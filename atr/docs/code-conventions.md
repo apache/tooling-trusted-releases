@@ -267,6 +267,14 @@ We use Bootstrap classes for style, and avoid custom classes unless absolutely n
 
 Do not use `*` for emphasis or `__` for strong emphasis.
 
+### Start new sentences on a new line
+
+Avoid writing paragraphs as one long line.
+Each sentence should start on a new line,
+and consider breaking very long sentences over multiple lines.
+
+Using separate lines makes it easier to spot changes (e.g. in commit emails), and does not affect the rendered output.
+
 ## JavaScript
 
 ### Do not use JavaScript unless necessary
