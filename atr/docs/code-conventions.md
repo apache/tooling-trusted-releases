@@ -251,6 +251,8 @@ Using `case _` breaks type checking in such situations.
 
 This should be adhered to even in contexts where printf style is usually expected, such as in `log.info` calls, unless there is a reason not to, such as when there are specific printf style flags which have no f-string equivalent.
 
+> While this choice appears arbitrary it is a preference which is not enforced by any checks. Enforcement is via code review. See [issue #339](https://github.com/apache/tooling-trusted-releases/issues/339) for a discussion.
+
 ## HTML
 
 ### Use sentence case for headings, form labels, and submission buttons
