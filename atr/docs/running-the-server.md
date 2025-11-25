@@ -32,16 +32,27 @@ To run ATR locally after cloning the source, you will need to install the follow
 * [mkcert](https://github.com/FiloSottile/mkcert)
 * [Python 3.13](https://www.python.org/downloads/release/python-3138/)
 * [uv](https://docs.astral.sh/uv/#installation)
+* [cmark](https://github.com/commonmark/cmark)
 
 You can install Python 3.13 through your package manager or through uv. Here is how to install these dependencies on [Alpine Linux](https://en.wikipedia.org/wiki/Alpine_Linux):
 
 ```shell
-apk add curl git make mkcert@testing
+apk add curl git make mkcert@testing cmark
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
 uv python install 3.13
 ```
 
-You do not need to have Alpine Linux to develop ATR. It should work in any POSIX style environment.
+For macOS these instructions become:
+
+```shell
+brew install mkcert cmark
+curl -LsSf https://astral.sh/uv/install.sh | sh
+rehash
+which uv # confirm matches
+uv python install 3.13
+```
+
+These instructions should work in any POSIX style environment.
 
 ## Run the server
 
