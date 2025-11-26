@@ -1,3 +1,4 @@
+exclude: ^node_modules/
 repos:
 - repo: local
   hooks:
@@ -6,14 +7,12 @@ repos:
       entry: ruff check --fix
       language: system
       types: [python]
-      exclude: ^node_modules/
 
     - id: ruff-format
       name: Ruff Formatter
       entry: ruff format --force-exclude
       language: system
       types: [python]
-      exclude: ^node_modules/
 
     - id: pyright
       name: Pyright Type Check
@@ -21,4 +20,4 @@ repos:
       language: system
       require_serial: true
       types: [python]
-      exclude: ^(node_modules|tests)/
+      exclude: ^tests/
