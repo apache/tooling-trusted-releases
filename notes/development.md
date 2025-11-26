@@ -19,7 +19,7 @@ make serve
 
 And add the following line to your `/etc/hosts`:
 
-```
+```text
 127.0.0.1  localhost.apache.org
 ```
 

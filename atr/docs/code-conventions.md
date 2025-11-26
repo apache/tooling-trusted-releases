@@ -71,10 +71,10 @@ Prefix all private interfaces, e.g. functions, classes, constants, variables, wi
 
 Exceptions to this rule include:
 
-- Type variables
-- Enumerations
-- Methods requiring interface compatibility with their superclass
-- Nested functions (which should generally be avoided)
+* Type variables
+* Enumerations
+* Methods requiring interface compatibility with their superclass
+* Nested functions (which should generally be avoided)
 
 Scripts are explicitly _not_ an exception. Underscores should be used to prefix private interfaces in scripts for consistency, e.g. so that linters don't need to carry exceptions, and to ease potential migration to modules.
 
@@ -206,8 +206,8 @@ Our use of blockbuster enables automatic detection of synchronous function calls
 
 Exceptions to this rule apply only in these scenarios:
 
-- When dealing with third party dependencies
-- When the asynchronous equivalent function is unknown
+* When dealing with third party dependencies
+* When the asynchronous equivalent function is unknown
 
 If either exception applies, either submit a brief issue with the blockbuster traceback, notify the team via Slack, or add a code comment if part of another commit. An ATR Tooling engineer will address the issue without requiring significant time investment from you.
 

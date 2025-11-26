@@ -75,16 +75,16 @@ The [`form.label`](/ref/atr/form.py:label) function is used to add metadata to P
 
 Fields use Pydantic type annotations to define their data type:
 
-- `str` - text input (default widget: `Widget.TEXT`)
-- `form.Email` - email input with validation
-- `form.URL` - URL input with validation
-- `form.Bool` - checkbox
-- `form.Int` - number input
-- `form.StrList` - multiple checkboxes that collect strings
-- `form.File` - single file upload
-- `form.FileList` - multiple file upload
-- `form.Enum[EnumType]` - dropdown select from enum values
-- `form.Set[EnumType]` - multiple checkboxes from enum values
+* `str` - text input (default widget: `Widget.TEXT`)
+* `form.Email` - email input with validation
+* `form.URL` - URL input with validation
+* `form.Bool` - checkbox
+* `form.Int` - number input
+* `form.StrList` - multiple checkboxes that collect strings
+* `form.File` - single file upload
+* `form.FileList` - multiple file upload
+* `form.Enum[EnumType]` - dropdown select from enum values
+* `form.Set[EnumType]` - multiple checkboxes from enum values
 
 Empty values for fields are allowed by default in most cases, but URL is an exception.
 
@@ -171,13 +171,13 @@ The `defaults` parameter accepts a dictionary to populate initial field values. 
 
 Key rendering parameters:
 
-- `action` - form submission URL (defaults to current path)
-- `submit_label` - text for the submit button
-- `cancel_url` - if provided, adds a cancel link next to submit
-- `defaults` - dictionary of initial values or dynamic choices
-- `textarea_rows` - number of rows for textarea widgets (default: 12)
-- `wider_widgets` - use wider input column (default: False)
-- `border` - add borders between fields (default: False)
+* `action` - form submission URL (defaults to current path)
+* `submit_label` - text for the submit button
+* `cancel_url` - if provided, adds a cancel link next to submit
+* `defaults` - dictionary of initial values or dynamic choices
+* `textarea_rows` - number of rows for textarea widgets (default: 12)
+* `wider_widgets` - use wider input column (default: False)
+* `border` - add borders between fields (default: False)
 
 ## Programmatic HTML
 

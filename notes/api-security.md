@@ -17,7 +17,6 @@ To make a request to a committer protected endpoint on the API, committers must 
 
 Every JWT issued by the ATR expires in 90 minutes, uses the HS256 (HMAC-SHA256) algorithm, and makes `sub` (ASF UID), `iat` (issue time), `exp` (expires at), and `jti` (token payload) claims. JWTs are stateless, so there is no analogue stored by the ATR, except for the secret symmetric key of the server which is initialised on startup. If the ATR server is restarted, all JWTs are expired immediately.
 
-
 The JWT can be used to access protected endpoints by using it in the `Authorization` header as a bearer token, i.e. `Authorization: Bearer ${JWT_TOKEN}`. PATs and JWTs must never appear in URLs. They must be protected by the user at all times. Accidental sharing of a PAT or a JWT must be reported to ASF security.
 
 Note that PATs cannot be used to access protected endpoints. They can only be used to issue a JWT, which is then used to access protected endpoints.

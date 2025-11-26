@@ -1,0 +1,17 @@
+MD004:
+  style: consistent
+
+MD013:
+  code_blocks: false
+  line_length: 915
+  tables: false
+
+MD033: false
+
+MD034: false
+
+MD040: false
+
+MD041: false
+
+MD046: false

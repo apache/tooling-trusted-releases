@@ -60,7 +60,7 @@ Analyses release artifact path patterns from Apache distribution repositories. R
 
 Excerpt from example output:
 
-```
+```console
 --- age ---
 
   VERSIONS: 1.1.0, 1.5.0

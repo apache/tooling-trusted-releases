@@ -8,19 +8,19 @@ To install the `atr` command, use the [instructions in the client `README.md`](h
 
 [Create a PAT](https://release-test.apache.org/tokens) using the UI, then store the value in `atr` configuration.
 
-```
+```shell
 atr set tokens.pat "$PAT_FROM_UI"
 ```
 
 You can view the configuration file to check that the value is set. **This will write secret values to stdout.**
 
-```
+```shell
 atr config file
 ```
 
 The following commands constitute roughly an entire flow, which will be reflected in the UI. We are using `tooling-test-example` as the project name. Don't forget to [create this or another project](https://release-test.apache.org/project/add/tooling), or [use an existing project](https://release-test.apache.org/committees) as applicable. Use your ASF UID `@apache.org` instead of `example`.
 
-```
+```shell
 atr release start tooling-test-example 0.1+demo
 
 atr upload tooling-test-example 0.1+demo example.txt ../example.txt
@@ -44,13 +44,13 @@ atr announce tooling-test-example 0.1+demo 00003 -m example@apache.org -s Subjec
 
 When finished with an example flow, it is recommended that you delete the version.
 
-```
+```shell
 atr dev delete tooling-test-example 0.1+demo
 ```
 
 If there is ever a problem with a JWT verification, try refreshing your JWT.
 
-```
+```shell
 atr jwt refresh | wc
 ```
 

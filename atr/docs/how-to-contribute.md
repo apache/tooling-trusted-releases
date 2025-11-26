@@ -54,15 +54,15 @@ You can also [email patches](https://lists.apache.org/list.html?dev@tooling.apac
 
 We follow a consistent style for commit messages. The first line of the commit message is called the subject line, and should follow these guidelines:
 
-- **Use the imperative mood.** The subject line should complete the sentence "If applied, this commit will...".
-- **Use sentence case.** Start with a capital letter, but do not use a full stop at the end.
-- **Use articles as appropriate before nouns**. Write about "a feature" not just "feature". Say, for example, "fix a bug", and not "fix bug".
-- **Be specific and descriptive.** Prefer "Fix a bug in vote resolution for tied votes" to "Fix a bug" or "Update the vote code".
-- **Keep it concise.** Aim for 50 to 72 characters. If you need more space to explain your changes, use the commit body.
+* **Use the imperative mood.** The subject line should complete the sentence "If applied, this commit will...".
+* **Use sentence case.** Start with a capital letter, but do not use a full stop at the end.
+* **Use articles as appropriate before nouns**. Write about "a feature" not just "feature". Say, for example, "fix a bug", and not "fix bug".
+* **Be specific and descriptive.** Prefer "Fix a bug in vote resolution for tied votes" to "Fix a bug" or "Update the vote code".
+* **Keep it concise.** Aim for 50 to 72 characters. If you need more space to explain your changes, use the commit body.
 
 **Examples of good subject lines:**
 
-```
+```cmd
 Add distribution platform validation to the compose phase
 Fix a bug with sorting version numbers containing release candidates
 Move code to delete releases to the storage interface
@@ -71,7 +71,7 @@ Update dependencies
 
 **Examples of poor subject lines:**
 
-```
+```cmd
 fixed stuff
 Updated the code.
 refactoring vote resolution logic
@@ -105,11 +105,11 @@ ATR is developed by ASF Tooling, which is an initiative of the ASF rather than a
 
 The primary goal of ATR is to deter and minimize supply chain attacks on ASF software releases. Since security is our highest priority, we scrutinize all contributions for potential vulnerabilities. To assist us when you make a contribution, please:
 
-- Follow secure coding practices. Review best practice guidelines to learn how to avoid vulnerabilities such as injection attacks, cross-site scripting, and insecure deserialization.
-- Validate all user inputs and sanitize all outputs.
-- Use well established, independently audited, and actively maintained libraries rather than implementing cryptographic or security sensitive functionality yourself.
-- Always consider the security implications of your changes. If you are unsure of the implications of your changes, ask the team for guidance.
-- Report any security issues you discover in ATR responsibly. Do not open a public issue for security vulnerabilities. Instead, follow the [ASF security reporting process](https://www.apache.org/security/).
+* Follow secure coding practices. Review best practice guidelines to learn how to avoid vulnerabilities such as injection attacks, cross-site scripting, and insecure deserialization.
+* Validate all user inputs and sanitize all outputs.
+* Use well established, independently audited, and actively maintained libraries rather than implementing cryptographic or security sensitive functionality yourself.
+* Always consider the security implications of your changes. If you are unsure of the implications of your changes, ask the team for guidance.
+* Report any security issues you discover in ATR responsibly. Do not open a public issue for security vulnerabilities. Instead, follow the [ASF security reporting process](https://www.apache.org/security/).
 
 ### High quality standards
 
@@ -123,9 +123,9 @@ We strongly encourage all contributors to enable two-factor authentication on th
 
 If you have questions about contributing to ATR, or if you need help with any step of the contribution process, please reach out to the team. You can:
 
-- Ask questions on the [dev mailing list](https://lists.apache.org/list.html?dev@tooling.apache.org), which is the primary forum for ATR development discussions.
-- Comment on the relevant issue or pull request in the [issue tracker](https://github.com/apache/tooling-trusted-releases/issues).
-- Chat with us in the [#apache-trusted-releases channel](https://the-asf.slack.com/archives/C049WADAAQG) on ASF Slack.
-- Read the rest of the [developer guide](developer-guide) for detailed information about how ATR works and how to make changes to it.
+* Ask questions on the [dev mailing list](https://lists.apache.org/list.html?dev@tooling.apache.org), which is the primary forum for ATR development discussions.
+* Comment on the relevant issue or pull request in the [issue tracker](https://github.com/apache/tooling-trusted-releases/issues).
+* Chat with us in the [#apache-trusted-releases channel](https://the-asf.slack.com/archives/C049WADAAQG) on ASF Slack.
+* Read the rest of the [developer guide](developer-guide) for detailed information about how ATR works and how to make changes to it.
 
 We welcome all types of contribution, and are happy to help you get started. Thank you for your interest in contributing to ATR.

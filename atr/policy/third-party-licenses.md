@@ -1,27 +1,27 @@
-Title: ASF 3rd Party License Policy
+Title: ASF 3rd Party License Policy <!-- markdownlint-disable-line MD041 -->
 license: https://www.apache.org/licenses/LICENSE-2.0
-
-
 
 [TOC]
 
 ## Purpose  {#audience}
+
 This policy provides licensing guidance to Apache Software Foundation projects. It identifies the acceptable
 licenses for inclusion of third-party Open Source components in Apache Software Foundation products.
 
 Projects can submit licensing questions to the Legal Affairs Committee
 [JIRA space](https://issues.apache.org/jira/browse/LEGAL).
 
-
 ### License Criteria  {#criteria}
+
 The following criteria serve as guidelines for the categories on this page.
 
 1. The license must meet the [Open Source Definition](https://opensource.org/osd-annotated).<sup>a</sup>
 2. The license, as applied in practice, must not impose significant restrictions beyond those imposed by the Apache License 2.0.
 
-<sub>*a. (reviewed: 2019-02-16)*</sub>
+<sub>*a. (reviewed: 2019-02-16)*</sub> <!-- markdownlint-disable-line MD036 -->
 
 ### High Level  {#highlevel}
+
 At a high level this policy separates licenses into three categories.
 
 - **Category A**: Licenses in Category A may be included in Apache Software Foundation products. They are said to be "Apache-like".
@@ -35,31 +35,31 @@ For inclusion in an Apache Software Foundation product, we consider the followin
 - [Apache License 2.0](/licenses/LICENSE-2.0 "Category A: Apache-2.0")
 - [Apache Software License 1.1](/licenses/LICENSE-1.1 "Category A: Apache-1.1").
   Including variants:
-    - [PHP License 3.01](http://www.php.net/license/3_01.txt "Category A: PHP-3.01")
-    - [MX4J License](http://mx4j.sourceforge.net/docs/ch01s06.html "Category A: LicenseRef-MX4J")
+  - [PHP License 3.01](http://www.php.net/license/3_01.txt "Category A: PHP-3.01")
+  - [MX4J License](http://mx4j.sourceforge.net/docs/ch01s06.html "Category A: LicenseRef-MX4J")
 - BSD (without advertising clause). Including variants:
-    - [BSD 2-clause](http://opensource.org/licenses/bsd-license.php "Category A: BSD-2-Clause")
-    - [BSD 3-clause](http://opensource.org/licenses/BSD-3-Clause "Category A: BSD-3-Clause")
-    - [DOM4J License](https://github.com/dom4j/dom4j/blob/master/LICENSE "Category A: LicenseRef-DOM4J")
-    - [PostgreSQL License](http://opensource.org/licenses/postgresql "Category A: PostgreSQL")
-    - [Eclipse Distribution License 1.0](http://www.eclipse.org/org/documents/edl-v10.php "Category A: BSD-3-Clause")
-    - [Lawrence Berkeley National Labs BSD](https://spdx.org/licenses/BSD-3-Clause-LBNL.html "Category A: BSD-3-Clause-LBNL")
+  - [BSD 2-clause](http://opensource.org/licenses/bsd-license.php "Category A: BSD-2-Clause")
+  - [BSD 3-clause](http://opensource.org/licenses/BSD-3-Clause "Category A: BSD-3-Clause")
+  - [DOM4J License](https://github.com/dom4j/dom4j/blob/master/LICENSE "Category A: LicenseRef-DOM4J")
+  - [PostgreSQL License](http://opensource.org/licenses/postgresql "Category A: PostgreSQL")
+  - [Eclipse Distribution License 1.0](http://www.eclipse.org/org/documents/edl-v10.php "Category A: BSD-3-Clause")
+  - [Lawrence Berkeley National Labs BSD](https://spdx.org/licenses/BSD-3-Clause-LBNL.html "Category A: BSD-3-Clause-LBNL")
 - [MIT/X11](http://opensource.org/licenses/mit-license.php "Category A: MIT")
-    - [ISC](https://opensource.org/licenses/ISC "Category A: ISC")
-    - [Standard ML of New Jersey](https://www.smlnj.org/license.html "Category A: SMLNJ")
-    - [Cup Parser Generator](http://www2.cs.tum.edu/projects/cup/licence.php "Category A: LicenseRef-CupPG")
-    - [MIT No Attribution (MIT-0)](https://opensource.org/license/mit-0/ "Category A: MIT-0")
+  - [ISC](https://opensource.org/licenses/ISC "Category A: ISC")
+  - [Standard ML of New Jersey](https://www.smlnj.org/license.html "Category A: SMLNJ")
+  - [Cup Parser Generator](http://www2.cs.tum.edu/projects/cup/licence.php "Category A: LicenseRef-CupPG")
+  - [MIT No Attribution (MIT-0)](https://opensource.org/license/mit-0/ "Category A: MIT-0")
 - [ICU](http://source.icu-project.org/repos/icu/icu/trunk/LICENSE "Category A: ICU")
 - [University of Illinois/NCSA](http://opensource.org/licenses/UoI-NCSA.php "Category A: NCSA")
 - [W3C Software License](http://opensource.org/licenses/W3C.php "Category A: W3C")
 - [W3C Community Contributor License Agreement](https://www.w3.org/community/about/agreements/cla/ "Category A: LicenseRef-W3C-CCLA") - if at least 45 days after publication</li>
 - [X.Net](https://opensource.org/license/xnet "Category A: Xnet")
 - [zlib](http://opensource.org/licenses/zlib-license.php "Category A: Zlib")/[libpng](https://spdx.org/licenses/Libpng.html "Category A: Libpng")
-- [FSF autoconf license](# "Category A: FSFAP")
+- [FSF autoconf license](# "Category A: FSFAP") <!-- markdownlint-disable-line MD042 -->
 - [DejaVu Fonts (Bitstream Vera/Arev licenses)](https://spdx.org/licenses/Bitstream-Vera.html "Category A: Bitstream-Vera")
 - [Academic Free License 3.0](http://opensource.org/licenses/afl-3.0.php "Category A: AFL-3.0")
 - [Service+Component+Architecture+Specifications](http://web.archive.org/web/20080704184203/http://www.osoa.org/xmlns/sca/1.0/license.txt "Category A: LicenseRef-SCA-Spec")
-- [OOXML XSD ECMA License](# "Category A: LicenseRef-ECMA-OOXML-XSD")
+- [OOXML XSD ECMA License](# "Category A: LicenseRef-ECMA-OOXML-XSD") <!-- markdownlint-disable-line MD042 -->
 - [Microsoft Public License (MsPL)](http://www.opensource.org/licenses/ms-pl.html "Category A: MS-PL")
 - [Creative Commons Copyright-Only Dedication](http://creativecommons.org/licenses/publicdomain/ "Category A: CC-PDDC")
 - [Python Software Foundation License](http://www.opensource.org/licenses/PythonSoftFoundation.php "Category A: Python-2.0")
@@ -93,28 +93,28 @@ You can include works in the public domain (or covered by a license treated simi
 
 A work should be treated as being in the public domain when one of the following applies:
 
-  - the work is covered by
-       - the Creative Commons [Public Domain Mark](http://creativecommons.org/publicdomain/mark/1.0/ "Category A: CC-PDM-1.0")
-       - a suitable dedication (to the public domain) by the authors
-  - clear evidence exists that US copyright for the work
-      - has expired
-      - cannot be claimed.
+- the work is covered by
+  - the Creative Commons [Public Domain Mark](http://creativecommons.org/publicdomain/mark/1.0/ "Category A: CC-PDM-1.0")
+  - a suitable dedication (to the public domain) by the authors
+- clear evidence exists that US copyright for the work
+  - has expired
+  - cannot be claimed.
 
 Licenses that we treat as similar to public domain:
 
-  - Creative Commons [CC0 “No Rights Reserved”](http://creativecommons.org/about/cc0 "Category A: CC0-1.0")
-  - Creative Commons [Public Domain Certification](http://creativecommons.org/licenses/publicdomain/ "Category A: CC-PDDC")
+- Creative Commons [CC0 “No Rights Reserved”](http://creativecommons.org/about/cc0 "Category A: CC0-1.0")
+- Creative Commons [Public Domain Certification](http://creativecommons.org/licenses/publicdomain/ "Category A: CC-PDDC")
 
 **Note that** whether a work falls in the public domain may be a
 [difficult](http://fairuse.stanford.edu/Copyright_and_Fair_Use_Overview/chapter8/) subject.
 Determining whether the copyright in a work has expired may be non-trivial and may vary between jurisdictions. Raise the topic on legal-discuss@ or via a JIRA issue if you have doubt over whether a work falls in the public domain.
-
 
 ## Category B: What can we *maybe* include in an ASF Project?  {#category-b}
 
 You may include the licenses and/or projects described in this section in an Apache Software Foundation product **IF** they meet the specified conditions.
 
 ### Appropriately Labelled Condition
+
 In all Category B cases our users should not be surprised at their inclusion in our products.
 If we attach an appropriate and prominent label to the distribution,
 users are less likely to be unaware of restrictions significantly
@@ -125,6 +125,7 @@ its licensing, and provide a url to the its homepage. Please also comply with
 any attribution/notice requirements in the specific license in question.
 
 ### Binary-only Inclusion Condition
+
 Any Category B licensed works may be included in binary-only form in Apache Software Foundation convenience binaries.
 Do not include Category B licensed works in source releases.
 
@@ -165,6 +166,7 @@ standard), you may include appropriately labeled source code. An example of this
 inclusion is mandated by the JSR 127: JavaServer Faces specification.
 
 ### Including Creative Commons Attribution content  {#cc-by}
+
 Works under the [Creative Commons Attribution (CC-BY)](http://creativecommons.org/licenses/by/4.0/ "Category B: CC-BY-4.0") licenses ([2.5](http://creativecommons.org/licenses/by/2.5/ "Category B: CC-BY-2.5"), [3.0](http://creativecommons.org/licenses/by/3.0/ "Category B: CC-BY-3.0"), and 4.0)
 contain terms related to "Effective Technological Measures", which may come as a surprise to users. Thus you should label them appropriately and only include them in binary form.
 
@@ -233,10 +235,10 @@ its typical use.
 To date, we have approved the following tools for such use:
 
 - The Autotools family of products, specifically:
-    - [Autoconf](http://www.gnu.org/software/autoconf/)
-    - [Automake](http://www.gnu.org/software/automake/)
-    - [Libtool](http://www.gnu.org/software/libtool/)
-    - [mkinstalldirs.sh](http://www.gnu.org/software/hello/manual/gettext/mkinstalldirs.html)
+  - [Autoconf](http://www.gnu.org/software/autoconf/)
+  - [Automake](http://www.gnu.org/software/automake/)
+  - [Libtool](http://www.gnu.org/software/libtool/)
+  - [mkinstalldirs.sh](http://www.gnu.org/software/hello/manual/gettext/mkinstalldirs.html)
 - [OCamlMakefile](http://hg.ocaml.info/release/ocaml-make/)
 - [setup.rb](http://i.loveruby.net/en/projects/setup/)
 
@@ -262,44 +264,43 @@ Also note that the Ruby license is listed on the 'Category B' Weak Copyleft list
 
 From Java 9 onwards, Javadoc can include JavaScript under MIT, MIT OR GPL-3.0, or GPL-2.0 WITH ClasspathException-2.0. Apache binary releases (including Maven javadoc jars) and Apache websites may include this for their javadoc. It must not be included in source releases.
 
-
 ## Category X: What can we NOT include in an ASF Project?  {#category-x}
 
 You may NOT include the following licenses within Apache products:
 
 - Not OSD-compliant:
-    - [Binary Code License (BCL)](# "Category X: LicenseRef-BCL")
-    - [Intel Simplified Software License](https://software.intel.com/en-us/license/intel-simplified-software-license "Category X: LicenseRef-Intel-SSL")
-    - [JSR-275 License](https://github.com/unitsofmeasurement/jsr-275/blob/0.9.3/LICENSE.txt "Category X: LicenseRef-JSR-275")
-    - Field of use restrictions:
-        - [Microsoft Limited Public License](https://www.openhub.net/licenses/mslpl "Category X: MS-LPL")
-        - [Amazon Software License (ASL)](https://aws.amazon.com/asl/ "Category X: LicenseRef-Amazon-Software-License")
-        - [Java SDK for Satori RTM license](https://github.com/satori-com/satori-rtm-sdk-java/blob/master/LICENSE "Category X: LicenseRef-Java-SDK-for-Satori-RTM")
-        - [Redis Source Available License (RSAL)](https://redislabs.com/community/licenses/ "Category X: LicenseRef-Redis-Source-Available")
-        - [Booz Allen Public License](http://boozallen.github.io/licenses/bapl "Category X: LicenseRef-Booz-Allen-Public-License")
-        - [Confluent Community License Version 1.0](https://www.confluent.io/confluent-community-license/ "Category X: LicenseRef-Confluent-Community-1.0")
-        - [Business Source License 1.1](https://spdx.org/licenses/BUSL-1.1.html "Category X: BUSL-1.1")
-        - Any license including the [Commons Clause License Condition v1.0](https://commonsclause.com "Category X: LicenseRef-Commons-Clause-1.0")
-    - Non-commercial licenses:
-        - [Creative Commons Non-Commercial](https://en.wikipedia.org/wiki/Creative_Commons_license#Non-commercial_licenses "Category X: CC-BY-NC-4.0") variants
-        - [Sun Community Source License 3.0](http://jcp.org/aboutJava/communityprocess/SCSL3.0.rtf "Category X: LicenseRef-Sun-Community-Source-3.0")
+  - [Binary Code License (BCL)](# "Category X: LicenseRef-BCL") <!-- markdownlint-disable-line MD042 -->
+  - [Intel Simplified Software License](https://software.intel.com/en-us/license/intel-simplified-software-license "Category X: LicenseRef-Intel-SSL")
+  - [JSR-275 License](https://github.com/unitsofmeasurement/jsr-275/blob/0.9.3/LICENSE.txt "Category X: LicenseRef-JSR-275")
+  - Field of use restrictions:
+    - [Microsoft Limited Public License](https://www.openhub.net/licenses/mslpl "Category X: MS-LPL")
+    - [Amazon Software License (ASL)](https://aws.amazon.com/asl/ "Category X: LicenseRef-Amazon-Software-License")
+    - [Java SDK for Satori RTM license](https://github.com/satori-com/satori-rtm-sdk-java/blob/master/LICENSE "Category X: LicenseRef-Java-SDK-for-Satori-RTM")
+    - [Redis Source Available License (RSAL)](https://redislabs.com/community/licenses/ "Category X: LicenseRef-Redis-Source-Available")
+    - [Booz Allen Public License](http://boozallen.github.io/licenses/bapl "Category X: LicenseRef-Booz-Allen-Public-License")
+    - [Confluent Community License Version 1.0](https://www.confluent.io/confluent-community-license/ "Category X: LicenseRef-Confluent-Community-1.0")
+    - [Business Source License 1.1](https://spdx.org/licenses/BUSL-1.1.html "Category X: BUSL-1.1")
+    - Any license including the [Commons Clause License Condition v1.0](https://commonsclause.com "Category X: LicenseRef-Commons-Clause-1.0")
+  - Non-commercial licenses:
+    - [Creative Commons Non-Commercial](https://en.wikipedia.org/wiki/Creative_Commons_license#Non-commercial_licenses "Category X: CC-BY-NC-4.0") variants
+    - [Sun Community Source License 3.0](http://jcp.org/aboutJava/communityprocess/SCSL3.0.rtf "Category X: LicenseRef-Sun-Community-Source-3.0")
 - Places restrictions on larger works:
-    - [GNU GPL 1](https://spdx.org/licenses/GPL-1.0-only.html "Category X: GPL-1.0-only, GPL-1.0-or-later"), [GNU GPL 2](https://spdx.org/licenses/GPL-2.0-only.html "Category X: GPL-2.0-only, GPL-2.0-or-later"), [GNU GPL 3](http://www.opensource.org/licenses/gpl-license.php "Category X: GPL-3.0-only, GPL-3.0-or-later")
-        - Special exceptions to the GNU GPL (e.g. [GNU Classpath](# "Category X: GPL-2.0-only WITH Classpath-exception-2.0, GPL-2.0-or-later WITH Classpath-exception-2.0, GPL-3.0-only WITH Classpath-exception-2.0, GPL-3.0-or-later WITH Classpath-exception-2.0")) unless otherwise permitted elsewhere on this page.
-    - [GNU Affero GPL 3](http://www.opensource.org/licenses/agpl-v3.html "Category X: AGPL-3.0-only, AGPL-3.0-or-later")
-    - [GNU LGPL 2](https://spdx.org/licenses/LGPL-2.0-only.html "Category X: LGPL-2.0-only, LGPL-2.0-or-later"), [LGPL 2.1](https://spdx.org/licenses/LGPL-2.1-only.html "Category X: LGPL-2.1-only, LGPL-2.1-or-later"), [LGPL 3](http://www.opensource.org/licenses/lgpl-license.php "Category X: LGPL-3.0-only, LGPL-3.0-or-later")
-    - [QPL](https://opensource.org/licenses/QPL-1.0 "Category X: QPL-1.0")
-    - [Sleepycat License](http://www.opensource.org/licenses/sleepycat.php "Category X: Sleepycat")
-    - [Server Side Public License (SSPL) version 1](https://www.mongodb.com/licensing/server-side-public-license "Category X: SSPL-1.0")
-    - [Code Project Open License (CPOL)](http://www.codeproject.com/info/cpol10.aspx "Category X: CPOL-1.02")
+  - [GNU GPL 1](https://spdx.org/licenses/GPL-1.0-only.html "Category X: GPL-1.0-only, GPL-1.0-or-later"), [GNU GPL 2](https://spdx.org/licenses/GPL-2.0-only.html "Category X: GPL-2.0-only, GPL-2.0-or-later"), [GNU GPL 3](http://www.opensource.org/licenses/gpl-license.php "Category X: GPL-3.0-only, GPL-3.0-or-later")
+    - Special exceptions to the GNU GPL (e.g. [GNU Classpath](# "Category X: GPL-2.0-only WITH Classpath-exception-2.0, GPL-2.0-or-later WITH Classpath-exception-2.0, GPL-3.0-only WITH Classpath-exception-2.0, GPL-3.0-or-later WITH Classpath-exception-2.0")) unless otherwise permitted elsewhere on this page. <!-- markdownlint-disable-line MD042 -->
+  - [GNU Affero GPL 3](http://www.opensource.org/licenses/agpl-v3.html "Category X: AGPL-3.0-only, AGPL-3.0-or-later")
+  - [GNU LGPL 2](https://spdx.org/licenses/LGPL-2.0-only.html "Category X: LGPL-2.0-only, LGPL-2.0-or-later"), [LGPL 2.1](https://spdx.org/licenses/LGPL-2.1-only.html "Category X: LGPL-2.1-only, LGPL-2.1-or-later"), [LGPL 3](http://www.opensource.org/licenses/lgpl-license.php "Category X: LGPL-3.0-only, LGPL-3.0-or-later")
+  - [QPL](https://opensource.org/licenses/QPL-1.0 "Category X: QPL-1.0")
+  - [Sleepycat License](http://www.opensource.org/licenses/sleepycat.php "Category X: Sleepycat")
+  - [Server Side Public License (SSPL) version 1](https://www.mongodb.com/licensing/server-side-public-license "Category X: SSPL-1.0")
+  - [Code Project Open License (CPOL)](http://www.codeproject.com/info/cpol10.aspx "Category X: CPOL-1.02")
 - Other concerns:
-    - [BSD-4-Clause](https://spdx.org/licenses/BSD-4-Clause.html "Category X: BSD-4-Clause")/[BSD-4-Clause (University of California-Specific)](https://spdx.org/licenses/BSD-4-Clause-UC.html "Category X: BSD-4-Clause-UC")
-    - [Facebook BSD+Patents license](https://code.facebook.com/pages/850928938376556 "Category X: LicenseRef-Facebook-BSD-Patents")
-    - [NPL 1.0](https://spdx.org/licenses/NPL-1.0.html "Category X: NPL-1.0")/[NPL 1.1](https://spdx.org/licenses/NPL-1.1.html "Category X: NPL-1.1")
-    - Nonsensical licenses:
-        - [The Solipsistic Eclipse Public License](# "Category X: LicenseRef-Solipsistic-Eclipse-Public-License")
-        - [The "Don't Be A Dick" Public License](https://dbad-license.org/ "Category X: LicenseRef-DBAD")
-        - [JSON License](http://www.json.org/license.html "Category X: JSON")
+  - [BSD-4-Clause](https://spdx.org/licenses/BSD-4-Clause.html "Category X: BSD-4-Clause")/[BSD-4-Clause (University of California-Specific)](https://spdx.org/licenses/BSD-4-Clause-UC.html "Category X: BSD-4-Clause-UC")
+  - [Facebook BSD+Patents license](https://code.facebook.com/pages/850928938376556 "Category X: LicenseRef-Facebook-BSD-Patents")
+  - [NPL 1.0](https://spdx.org/licenses/NPL-1.0.html "Category X: NPL-1.0")/[NPL 1.1](https://spdx.org/licenses/NPL-1.1.html "Category X: NPL-1.1")
+  - Nonsensical licenses:
+    - [The Solipsistic Eclipse Public License](# "Category X: LicenseRef-Solipsistic-Eclipse-Public-License") <!-- markdownlint-disable-line MD042 -->
+    - [The "Don't Be A Dick" Public License](https://dbad-license.org/ "Category X: LicenseRef-DBAD")
+    - [JSON License](http://www.json.org/license.html "Category X: JSON")
 
 Details of 'other concerns':
 
@@ -341,10 +342,9 @@ to obtain and install the non-included work. Optional means that the component i
 standard use of the product or for the product to achieve a desirable level of quality. The question to
 ask yourself in this situation is:
 
-* "Will the majority of users want to use my product without adding the optional components?"
+- "Will the majority of users want to use my product without adding the optional components?"
 
-
-## FAQ:
+## FAQ
 
 ### Does it matter what platform an Apache product is created to work with?  {#platform}
 
@@ -373,7 +373,6 @@ When including that work's licensing, state which license you are using and incl
 Category A to Category B to Category X. You don't need to modify the
 work itself if, for example, it mentions the various licensing options
 in the source headers.
-
 
 ### What Are Required Third-party Notices?  {#required-third-party-notices}
 
