@@ -34,6 +34,8 @@ import atr.models.helpers as helpers
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.util as util
+from datetime import datetime, timezone
+
 
 _WHIMSY_COMMITTEE_INFO_URL: Final[str] = "https://whimsy.apache.org/public/committee-info.json"
 _WHIMSY_COMMITTEE_RETIRED_URL: Final[str] = "https://whimsy.apache.org/public/committee-retired.json"
@@ -299,25 +301,35 @@ async def update_metadata() -> tuple[int, int]:
 
     async with db.session() as data:
         async with data.begin():
-            added, updated = await _update_committees(data, ldap_projects, committees_by_name)
-            added_count += added
-            updated_count += updated
+            added, updated = await _update_committees(
+                data, ldap_projects, committees_by_name
+            )
 
-            added, updated = await _update_podlings(data, podlings_data, ldap_projects_by_name)
-            added_count += added
-            updated_count += updated
+            # Record when committees were automatically updated
+            await data.metadata.set(
+                "last_auto_committee_update",
+                datetime.now(timezone.utc).isoformat()
+            )
+            
 
-            added, updated = await _update_projects(data, projects)
-            added_count += added
-            updated_count += updated
+        added_count += added
+        updated_count += updated
 
-            added, updated = await _update_tooling(data)
-            added_count += added
-            updated_count += updated
+        added, updated = await _update_podlings(data, podlings_data, ldap_projects_by_name)
+        added_count += added
+        updated_count += updated
 
-            added, updated = await _process_undiscovered(data)
-            added_count += added
-            updated_count += updated
+        added, updated = await _update_projects(data, projects)
+        added_count += added
+        updated_count += updated
+
+        added, updated = await _update_tooling(data)
+        added_count += added
+        updated_count += updated
+
+        added, updated = await _process_undiscovered(data)
+        added_count += added
+        updated_count += updated
 
     return added_count, updated_count
 
