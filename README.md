@@ -3,14 +3,11 @@
 *A prototype service for verifying and distributing Apache releases securely.*
 
 <a href="https://github.com/apache/tooling-trusted-releases/actions/workflows/build.yml?query=branch%3Amain">
-  <img alt="Build & Tests" src="https://github.com/apache/tooling-trusted-releases/actions/workflows/build.yml/badge.svg?branch=main" />
-</a>
+  <img alt="Build & Tests" src="https://github.com/apache/tooling-trusted-releases/actions/workflows/build.yml/badge.svg?branch=main" /></a>
 <a href="https://github.com/apache/tooling-trusted-releases/actions/workflows/analyze.yml">
-  <img alt="Analyze using pre-commit hooks" src="https://github.com/apache/tooling-trusted-releases/actions/workflows/analyze.yml/badge.svg" />
-</a>
+  <img alt="Analyze using pre-commit hooks" src="https://github.com/apache/tooling-trusted-releases/actions/workflows/analyze.yml/badge.svg" /></a>
 <a href="https://github.com/apache/tooling-trusted-releases/blob/main/LICENSE">
-  <img alt="Apache License" src="https://img.shields.io/github/license/apache/tooling-trusted-releases" />
-</a>
+  <img alt="Apache License" src="https://img.shields.io/github/license/apache/tooling-trusted-releases" /></a>
 
 **NOTE: New contributors must introduce themselves on [the development mailing list first](mailto:dev@tooling.apache.org), to deter spam. Contributions are very welcome, but please do not submit a PR until you have introduced yourself first.**
 
