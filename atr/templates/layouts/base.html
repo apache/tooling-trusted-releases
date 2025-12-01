@@ -22,9 +22,20 @@
     {% endblock stylesheets %}
     {% block head_extra %}
     {% endblock head_extra %}
+      <style>
+        body {
+            padding-top: 72px;
+        }
+        .fixed-top {
+            position: fixed;
+        }
+      </style>
   </head>
   <body class="{%- block body_class -%}{%- endblock body_class -%}">
-    <div class="wrapper">
+
+    {% include "includes/topnav.html" %}
+
+    <main class="wrapper">
       <div class="ribbon"></div>
       <div class="content">
         <input type="checkbox" id="nav-toggle" class="nav-toggle" />
@@ -53,7 +64,7 @@
 
         </div>
       </div>
-    </div>
+    </main>
 
     {% block javascripts %}
       <script src="{{ static_url('js/bootstrap.bundle.min.js') }}"></script>
