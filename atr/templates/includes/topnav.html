@@ -1,48 +1,103 @@
 <!-- nav bar -->
-<nav class="navbar navbar-expand-md navbar-light bg-info fixed-top" aria-label="Fifth navbar example">
+<nav class="navbar navbar-expand-md navbar-light bg-info fixed-top"
+     aria-label="Fifth navbar example">
   <div class="container-fluid">
     <a class="navbar-brand" href="{{ as_url(get.root.index) }}">
-      <img src="https://apache.org/img/asf_logo.png" alt="The Apache Software Foundation" style="height: 42px; margin-left: 6px;">
-      <span style="position: relative; top: -10px; margin-left: 10px;">Trusted Releases</span>
+      <img src="https://apache.org/img/asf_logo.png"
+           alt="The Apache Software Foundation"
+           class="asf-logo" />
+      <span class="trusted-releases">Trusted Releases</span>
     </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarADP" aria-controls="navbarADP" aria-expanded="false" aria-label="Toggle navigation">
+    <button class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarADP"
+            aria-controls="navbarADP"
+            aria-expanded="false"
+            aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
-    <div class="collapse navbar-collapse" id="navbarADP" style="position: relative; top: 3px; margin-left: 16px;">
+    <div class="collapse navbar-collapse navbar-adp-offset" id="navbarADP">
       <ul class="navbar-nav me-auto">
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">Menu</a>
+          <a class="nav-link dropdown-toggle"
+             href="#"
+             data-bs-toggle="dropdown"
+             aria-expanded="false">Menu</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="https://tooling.apache.org/team.html">About the team</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="https://tooling.apache.org/policies.html">Policies</a></li>
+            <li>
+              <a class="dropdown-item" href="https://tooling.apache.org/team.html">About the team</a>
+            </li>
+            <li>
+              <hr class="dropdown-divider" />
+            </li>
+            <li>
+              <a class="dropdown-item" href="https://tooling.apache.org/policies.html">Policies</a>
+            </li>
           </ul>
         </li>
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">Source</a>
+          <a class="nav-link dropdown-toggle"
+             href="#"
+             data-bs-toggle="dropdown"
+             aria-expanded="false">Source</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="https://github.com/apache/tooling-docs/">Documentation Website</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="https://github.com/apache/tooling-trusted-releases">Trusted Releases</a></li>
-            <li><a class="dropdown-item" href="https://github.com/apache/tooling-releases-client">Trusted Releases Client</a></li>
-            <li><a class="dropdown-item" href="https://github.com/apache/tooling-actions">Trusted Releases Actions</a></li>
+            <li>
+              <a class="dropdown-item" href="https://github.com/apache/tooling-docs/">Documentation Website</a>
+            </li>
+            <li>
+              <hr class="dropdown-divider" />
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://github.com/apache/tooling-trusted-releases">Trusted Releases</a>
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://github.com/apache/tooling-releases-client">Trusted Releases Client</a>
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://github.com/apache/tooling-actions">Trusted Releases Actions</a>
+            </li>
           </ul>
         </li>
       </ul>
       <ul class="navbar-nav">
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-            About The ASF
-          </a>
+          <a class="nav-link dropdown-toggle"
+             href="#"
+             role="button"
+             data-bs-toggle="dropdown"
+             aria-expanded="false">About The ASF</a>
           <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="https://www.apache.org/">Foundation</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="https://www.apache.org/licenses/">License</a></li>
-            <li><a class="dropdown-item" href="https://www.apache.org/foundation/sponsorship.html">Sponsorship</a></li>
-            <li><a class="dropdown-item" href="https://www.apache.org/foundation/thanks.html">Thanks</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="https://www.apache.org/security/">Security</a></li>
-            <li><a class="dropdown-item" href="https://privacy.apache.org/policies/privacy-policy-public.html">Privacy Policy</a></li>
+            <li>
+              <a class="dropdown-item" href="https://www.apache.org/">Foundation</a>
+            </li>
+            <li>
+              <hr class="dropdown-divider" />
+            </li>
+            <li>
+              <a class="dropdown-item" href="https://www.apache.org/licenses/">License</a>
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://www.apache.org/foundation/sponsorship.html">Sponsorship</a>
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://www.apache.org/foundation/thanks.html">Thanks</a>
+            </li>
+            <li>
+              <hr class="dropdown-divider" />
+            </li>
+            <li>
+              <a class="dropdown-item" href="https://www.apache.org/security/">Security</a>
+            </li>
+            <li>
+              <a class="dropdown-item"
+                 href="https://privacy.apache.org/policies/privacy-policy-public.html">Privacy Policy</a>
+            </li>
           </ul>
         </li>
       </ul>
