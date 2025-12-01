@@ -22,14 +22,32 @@
     {% endblock stylesheets %}
     {% block head_extra %}
     {% endblock head_extra %}
-      <style>
+    <style>
         body {
             padding-top: 72px;
         }
+
         .fixed-top {
             position: fixed;
         }
-      </style>
+
+        .asf-logo {
+            height: 42px;
+            margin-left: 6px;
+        }
+
+        .trusted-releases {
+            position: relative;
+            top: -10px;
+            margin-left: 10px;
+        }
+
+        .navbar-adp-offset {
+            position: relative;
+            top: 3px;
+            margin-left: 16px;
+        }
+    </style>
   </head>
   <body class="{%- block body_class -%}{%- endblock body_class -%}">
 
