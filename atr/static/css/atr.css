@@ -45,6 +45,28 @@ body {
     z-index:1030
 }
 
+.navbar-ribbon {
+    position: relative;
+}
+
+.navbar-ribbon::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(
+        90deg,
+        #282661 0%,
+        #662f8f 20%,
+        #9e2165 40%,
+        #cb2138 60%,
+        #ea7826 80%,
+        #f7ae18 100%
+    );
+}
+
 footer {
     padding: 1rem;
     background: #eeeeee;
@@ -342,6 +364,7 @@ aside.sidebar nav a:hover {
     border: none;
     cursor: pointer;
     padding: 0;
+    padding-top: 72px;
     z-index: 100;
 }
 
