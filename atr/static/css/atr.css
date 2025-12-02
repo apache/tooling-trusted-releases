@@ -37,6 +37,10 @@ body {
     font-weight: 425;
 }
 
+.bg-info-light {
+    background-color: #e3f7fc !important;
+}
+
 .fixed-top {
     position: fixed;
     top: 0;
