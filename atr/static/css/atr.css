@@ -393,17 +393,13 @@ aside.sidebar nav a:hover {
     .hamburger::before {
         content: "";
         position: absolute;
-
         width: 26px;          /* size of the square */
         height: 32px;
-
         bottom: 0;            /* anchor to bottom */
         right: 0;             /* anchor to right */
-
-        background: #fff;
+        background: #ffffff;
         border-radius: 4px;   /* rounded square */
-        box-shadow: 0 2px 2px rgba(0,0,0,0.2);
-
+        box-shadow: 0 2px 2px rgb(0 0 0 / 20%);
         z-index: -1;          /* places it behind the icon */
     }
 
