@@ -364,7 +364,7 @@ aside.sidebar nav a:hover {
     border: none;
     cursor: pointer;
     padding: 0;
-    padding-top: 72px;
+    padding-top: 20px;
     z-index: 100;
 }
 
@@ -385,18 +385,37 @@ aside.sidebar nav a:hover {
     .hamburger {
         display: block;
         position: fixed;
-        top: 20px;
+        top: 72px;
         padding-left: 2rem;
         transition: 0.3s;
+    }
+
+    .hamburger::before {
+        content: "";
+        position: absolute;
+
+        width: 26px;          /* size of the square */
+        height: 32px;
+
+        bottom: 0;            /* anchor to bottom */
+        right: 0;             /* anchor to right */
+
+        background: #fff;
+        border-radius: 4px;   /* rounded square */
+        box-shadow: 0 2px 2px rgba(0,0,0,0.2);
+
+        z-index: -1;          /* places it behind the icon */
     }
 
     .sidebar {
         position: fixed;
         left: -250px;
-        top: 20px;
+        top: 72px;
         bottom: 0;
+        height: calc(100vh - 72px); /* ensures the sidebar fills the space below the top bar */
+        overflow-y: auto;           /* enables vertical scrolling */
         transition: 0.3s;
-        z-index: 99;
+        z-index: 101;
     }
 
     /* Show sidebar when checkbox is checked */
