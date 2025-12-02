@@ -36,7 +36,7 @@ If you are an ASF committer or contributor interested in Trusted Releases:
 1. **Try it out** – The alpha test server allows you to experiment with the release process for your ASF project.
 
 2. **Introduce yourself** on the development mailing list:
-   📧 [dev@tooling.apache.org](mailto:dev@tooling.apache.org)
+   📧 [dev@tooling.apache.org](mailto:dev@tooling.apache.org) (Subscribe by sending email with empty subject and body to [dev-subscribe@tooling.apache.org](mailto:dev-subscribe@tooling.apache.org) and replying to the automated response, per the [ASF mailing list how-to](https://www.apache.org/foundation/mailinglists))
 
 3. **Share ideas or file issues:**
    Use the [GitHub Issues](https://github.com/apache/tooling-trusted-releases/issues) page to report bugs, suggest features, or discuss improvements.

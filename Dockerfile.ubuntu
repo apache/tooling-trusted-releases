@@ -37,7 +37,7 @@ RUN make generate-version
 RUN make docs
 
 WORKDIR /opt/atr/.venv/lib/python3.13/site-packages
-RUN patch -p2 < /opt/atr/patches/generics.py.patch
+RUN patch -p2 < /opt/atr/patches/generics.py.patch || :
 
 # final image
 FROM ubuntu:24.04
