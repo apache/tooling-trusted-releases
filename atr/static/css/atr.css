@@ -327,7 +327,7 @@ aside.sidebar nav a:hover {
 
 .sidebar {
     width: 250px;
-    background-color: #f6f7f8;
+    background-color: #e3f7fc !important;
     border-right: 1px solid #d1d2d3;
     padding: 1rem;
 }
@@ -401,7 +401,7 @@ aside.sidebar nav a:hover {
         height: 32px;
         bottom: 0;            /* anchor to bottom */
         right: 0;             /* anchor to right */
-        background: #ffffff;
+        background: #e3f7fc !important;
         border-radius: 4px;   /* rounded square */
         box-shadow: 0 2px 2px rgb(0 0 0 / 20%);
         z-index: -1;          /* places it behind the icon */
