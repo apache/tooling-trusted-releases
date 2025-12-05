@@ -30,20 +30,20 @@
                 &nbsp;<i class="bi bi-play-circle"></i>
                 <a href="{{ as_url(get.root.index) }}">View</a>
               </li>
-	      {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
-	      {% if unfinished_releases %}
+              {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
+              {% if unfinished_releases %}
                 {% for project_short_display_name, project_name, releases in unfinished_releases %}
                   <hr class="dropdown-divider" />
                   <h4>
-		    &nbsp;<a href="{{ as_url(get.projects.view, name=project_name) }}"
-		     class="text-decoration-none text-reset">{{ project_short_display_name }}</a>
-		  </h4>
+                    &nbsp;<a href="{{ as_url(get.projects.view, name=project_name) }}"
+   class="text-decoration-none text-reset">{{ project_short_display_name }}</a>
+                  </h4>
                   {% for release in releases %}
-		    <li>
+                    <li>
                       &nbsp;<i class="bi bi-tag"></i>
                       <a href="{{ release_as_url(release) }}">{{ release.version }}</a>
-	 	    </li>
-	          {% endfor %}
+                    </li>
+                  {% endfor %}
                 {% endfor %}
               {% endif %}
               {% set user_projects = user_projects_fn(current_user.uid) %}
@@ -71,16 +71,21 @@
           <a class="nav-link dropdown-toggle"
              href="#"
              data-bs-toggle="dropdown"
-             aria-expanded="false">Releases</a>
+             aria-expanded="false">Catalog</a>
           <ul class="dropdown-menu">
             <li>
-              <a class="dropdown-item" href="">Number 1</a>
+              &nbsp;<i class="bi bi-view-list"></i>
+              <a href="{{ as_url(get.release.releases) }}">Releases</a>
             </li>
             <li>
-              <hr class="dropdown-divider" />
+              &nbsp;<i class="bi bi-collection"></i>
+              <a href="{{ as_url(get.committees.directory) }}">Committees</a>
             </li>
             <li>
-              <a class="dropdown-item" href="">Number 2</a>
+              &nbsp;<i class="bi bi-download"></i>
+              {# This path is handled by the frontend proxy server #}
+              {# https://djlint.com/docs/ignoring-code/ #}
+              {# djlint:off J018 #} <a href="/downloads/">Downloads</a> {# djlint:on #}
             </li>
           </ul>
         </li>
