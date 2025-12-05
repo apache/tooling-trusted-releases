@@ -332,7 +332,7 @@ aside.sidebar nav a:hover {
 
 .sidebar {
     position: fixed;
-    left: 0px;
+    left: 0;
     top: 72px;
     bottom: 0;
     height: calc(100vh - 72px); /* ensures the sidebar fills the space below the top bar */
@@ -458,7 +458,7 @@ aside.sidebar nav a:hover {
     }
 
     .content {
-	margin-left: 0px;
+	margin-left: 0;
     }
 }
 
