@@ -41,6 +41,10 @@ body {
     background-color: #e3f7fc !important;
 }
 
+html {
+    scroll-padding-top: 80px;
+}
+
 .fixed-top {
     position: fixed;
     top: 0;
@@ -300,6 +304,7 @@ span.warning {
 .content {
     flex: 1;
     display: flex;
+    margin-left: 250px;
 }
 
 .main-container {
@@ -326,6 +331,13 @@ aside.sidebar nav a:hover {
 }
 
 .sidebar {
+    position: fixed;
+    left: 0px;
+    top: 72px;
+    bottom: 0;
+    height: calc(100vh - 72px); /* ensures the sidebar fills the space below the top bar */
+    overflow-y: auto;           /* enables vertical scrolling */
+    z-index: 101;
     width: 250px;
     background-color: #e3f7fc !important;
     border-right: 1px solid #d1d2d3;
@@ -443,6 +455,10 @@ aside.sidebar nav a:hover {
     .main-content {
         margin-left: 0;
         padding-top: 4rem;
+    }
+
+    .content {
+	margin-left: 0px;
     }
 }
 
