@@ -97,13 +97,13 @@ h1 {
 h2 {
     border-bottom: 1px solid #d1d2d3;
     padding-bottom: 0.5rem;
-    margin-top: 2.5rem;
+    margin-top: 1.5rem;
     margin-bottom: 1.5rem;
 }
 
 h3 {
     font-size: 1.3333rem;
-    margin-top: 1.5rem;
+    margin-top: .5rem;
     font-weight: 525 !important;
 }
 
