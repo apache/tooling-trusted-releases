@@ -19,23 +19,54 @@
     </button>
     <div class="collapse navbar-collapse navbar-adp-offset" id="navbarADP">
       <ul class="navbar-nav me-auto">
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle"
-             href="#"
-             data-bs-toggle="dropdown"
-             aria-expanded="false">Candidates</a>
-          <ul class="dropdown-menu">
-            <li>
-              <a class="dropdown-item" href="">Number 1</a>
-            </li>
-            <li>
-              <hr class="dropdown-divider" />
-            </li>
-            <li>
-              <a class="dropdown-item" href="">Number 2</a>
-            </li>
-          </ul>
-        </li>
+        {% if current_user %}
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle"
+               href="#"
+               data-bs-toggle="dropdown"
+               aria-expanded="false">Candidates</a>
+            <ul class="dropdown-menu">
+              <li>
+                &nbsp;<i class="bi bi-play-circle"></i>
+                <a href="{{ as_url(get.root.index) }}">View</a>
+              </li>
+	      {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
+	      {% if unfinished_releases %}
+                {% for project_short_display_name, project_name, releases in unfinished_releases %}
+                  <hr class="dropdown-divider" />
+                  <h4>
+		    &nbsp;<a href="{{ as_url(get.projects.view, name=project_name) }}"
+		     class="text-decoration-none text-reset">{{ project_short_display_name }}</a>
+		  </h4>
+                  {% for release in releases %}
+		    <li>
+                      &nbsp;<i class="bi bi-tag"></i>
+                      <a href="{{ release_as_url(release) }}">{{ release.version }}</a>
+	 	    </li>
+	          {% endfor %}
+                {% endfor %}
+              {% endif %}
+              {% set user_projects = user_projects_fn(current_user.uid) %}
+              {% if user_projects %}
+                {% set max_projects = 8 %}
+                <hr class="dropdown-divider" />
+                <h4>&nbsp;Start a release</h4>
+                {% for project_name, project_full_name in user_projects[:max_projects] %}
+                  <li>
+                    &nbsp;<i class="bi bi-plus-circle"></i>
+                    <a href="{{ as_url(get.start.selected, project_name=project_name) }}">{{ project_full_name.removeprefix("Apache ").removesuffix(" (Incubating)") }}</a>
+                  </li>
+                {% endfor %}
+                {% if user_projects|length > max_projects %}
+                  <li>
+                    &nbsp;<i class="bi bi-three-dots"></i>
+                    (<a href="{{ as_url(get.root.index) }}">{{ user_projects|length - max_projects }} more</a>)
+                  </li>
+                {% endif %}
+              {% endif %}
+            </ul>
+          </li>
+        {% endif %}
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle"
              href="#"
