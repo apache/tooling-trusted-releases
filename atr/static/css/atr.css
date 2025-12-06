@@ -412,6 +412,13 @@ aside.sidebar nav a:hover {
     display: none;
 }
 
+
+@media (width <= 990px) {
+    .dropdown-menu {
+	max-height: 40vh;
+    }
+}
+
 @media (width <= 768px) {
     .hamburger {
         display: block;
@@ -443,10 +450,6 @@ aside.sidebar nav a:hover {
         overflow-y: auto;           /* enables vertical scrolling */
         transition: 0.3s;
         z-index: 101;
-    }
-
-    .dropdown-menu {
-	max-height: 40vh;
     }
 
     /* Show sidebar when checkbox is checked */
