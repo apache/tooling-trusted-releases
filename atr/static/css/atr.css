@@ -37,6 +37,59 @@ body {
     font-weight: 425;
 }
 
+.bg-info-light {
+    background-color: #e3f7fc !important;
+}
+
+.dropdown-menu {
+    width: 250px;
+    max-height: 80vh;
+    overflow: hidden auto; /* prevents sideways scrollbars */
+    scrollbar-width: thin;       /* Firefox */
+}
+
+.dropdown-menu::-webkit-scrollbar {
+    width: 8px;                  /* Chrome/Edge */
+}
+
+html {
+    scroll-padding-top: 80px;
+}
+
+.fixed-top {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index:1030
+}
+
+.user-menu {
+    text-align: center;
+}
+
+.navbar-ribbon {
+    position: relative;
+}
+
+.navbar-ribbon::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(
+        90deg,
+        #282661 0%,
+        #662f8f 20%,
+        #9e2165 40%,
+        #cb2138 60%,
+        #ea7826 80%,
+        #f7ae18 100%
+    );
+}
+
 footer {
     padding: 1rem;
     background: #eeeeee;
@@ -59,13 +112,13 @@ h1 {
 h2 {
     border-bottom: 1px solid #d1d2d3;
     padding-bottom: 0.5rem;
-    margin-top: 2.5rem;
+    margin-top: 1.5rem;
     margin-bottom: 1.5rem;
 }
 
 h3 {
     font-size: 1.3333rem;
-    margin-top: 1.5rem;
+    margin-top: .5rem;
     font-weight: 525 !important;
 }
 
@@ -266,6 +319,7 @@ span.warning {
 .content {
     flex: 1;
     display: flex;
+    margin-left: 250px;
 }
 
 .main-container {
@@ -292,8 +346,15 @@ aside.sidebar nav a:hover {
 }
 
 .sidebar {
+    position: fixed;
+    left: 0;
+    top: 72px;
+    bottom: 0;
+    height: calc(100vh - 72px); /* ensures the sidebar fills the space below the top bar */
+    overflow-y: auto;           /* enables vertical scrolling */
+    z-index: 101;
     width: 250px;
-    background-color: #f6f7f8;
+    background-color: #e3f7fc !important;
     border-right: 1px solid #d1d2d3;
     padding: 1rem;
 }
@@ -334,6 +395,7 @@ aside.sidebar nav a:hover {
     border: none;
     cursor: pointer;
     padding: 0;
+    padding-top: 20px;
     z-index: 100;
 }
 
@@ -354,18 +416,33 @@ aside.sidebar nav a:hover {
     .hamburger {
         display: block;
         position: fixed;
-        top: 20px;
+        top: 72px;
         padding-left: 2rem;
         transition: 0.3s;
+    }
+
+    .hamburger::before {
+        content: "";
+        position: absolute;
+        width: 26px;          /* size of the square */
+        height: 32px;
+        bottom: 0;            /* anchor to bottom */
+        right: 0;             /* anchor to right */
+        background: #e3f7fc !important;
+        border-radius: 4px;   /* rounded square */
+        box-shadow: 0 2px 2px rgb(0 0 0 / 20%);
+        z-index: -1;          /* places it behind the icon */
     }
 
     .sidebar {
         position: fixed;
         left: -250px;
-        top: 20px;
+        top: 72px;
         bottom: 0;
+        height: calc(100vh - 72px); /* ensures the sidebar fills the space below the top bar */
+        overflow-y: auto;           /* enables vertical scrolling */
         transition: 0.3s;
-        z-index: 99;
+        z-index: 101;
     }
 
     /* Show sidebar when checkbox is checked */
@@ -393,6 +470,10 @@ aside.sidebar nav a:hover {
     .main-content {
         margin-left: 0;
         padding-top: 4rem;
+    }
+
+    .content {
+	margin-left: 0;
     }
 }
 

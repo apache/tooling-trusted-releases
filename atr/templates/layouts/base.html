@@ -19,10 +19,39 @@
     {% endblock stylesheets %}
     {% block head_extra %}
     {% endblock head_extra %}
+    <style>
+        body {
+            padding-top: 72px;
+        }
+
+        .fixed-top {
+            position: fixed;
+        }
+
+        .asf-logo {
+            height: 42px;
+            margin-left: 6px;
+        }
+
+        .trusted-releases {
+            position: relative;
+            top: -10px;
+            margin-left: 10px;
+            font-weight: 650 !important;
+        }
+
+        .navbar-adp-offset {
+            position: relative;
+            top: 3px;
+            margin-left: 16px;
+        }
+    </style>
   </head>
   <body class="{%- block body_class -%}{%- endblock body_class -%}">
-    <div class="wrapper">
-      <div class="ribbon"></div>
+
+    {% include "includes/topnav.html" %}
+
+    <main class="wrapper">
       <div class="content">
         <input type="checkbox" id="nav-toggle" class="nav-toggle" />
         <label for="nav-toggle" class="hamburger" aria-label="Menu">
@@ -50,7 +79,7 @@
 
         </div>
       </div>
-    </div>
+    </main>
 
     {% block javascripts %}
       <script src="{{ static_url('js/bootstrap.bundle.min.js') }}"></script>
