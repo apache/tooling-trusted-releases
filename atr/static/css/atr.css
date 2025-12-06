@@ -445,6 +445,10 @@ aside.sidebar nav a:hover {
         z-index: 101;
     }
 
+    .dropdown-menu {
+	max-height: 40vh;
+    }
+
     /* Show sidebar when checkbox is checked */
     .nav-toggle:checked ~ .sidebar {
         left: 0;
