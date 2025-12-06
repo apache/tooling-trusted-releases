@@ -44,8 +44,7 @@ body {
 .dropdown-menu {
     width: 250px;
     max-height: 80vh;
-    overflow-y: auto;
-    overflow-x: hidden; /* prevents sideways scrollbars */
+    overflow: hidden auto; /* prevents sideways scrollbars */
     scrollbar-width: thin;       /* Firefox */
 }
 
