@@ -121,43 +121,150 @@
              data-bs-toggle="dropdown"
              aria-expanded="false">Help</a>
           <ul class="dropdown-menu">
+            {% if current_user %}
+              <li>
+                &nbsp;<i class="bi bi-book"></i>
+                <a href="{{ as_url(get.root.tutorial) }}">Tutorial</a>
+              </li>
+            {% endif %}
             <li>
-              <a class="dropdown-item" href="">Number 1</a>
+              &nbsp;<i class="bi bi-book"></i>
+              <a href="{{ as_url(get.docs.index) }}">Documentation</a>
             </li>
             <li>
-              <hr class="dropdown-divider" />
+              &nbsp;<i class="bi bi-book"></i>
+              <a href="{{ as_url(get.root.policies) }}">ASF Policies</a>
             </li>
-            <li>
-              <a class="dropdown-item" href="">Number 2</a>
-            </li>
+            {% if current_user %}
+              <li>
+                &nbsp;<i class="bi bi-file-earmark-code"></i>
+                {# djlint:off J018 #} <a href="/api/docs">OpenAPI</a> {# djlint:on #}
+              </li>
+            {% endif %}
           </ul>
         </li>
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle"
-             href="#"
-             data-bs-toggle="dropdown"
-             aria-expanded="false">Admin</a>
-          <ul class="dropdown-menu">
-            <li>
-              <a class="dropdown-item" href="https://github.com/apache/tooling-docs/">Documentation Website</a>
-            </li>
-            <li>
-              <hr class="dropdown-divider" />
-            </li>
-            <li>
-              <a class="dropdown-item"
-                 href="https://github.com/apache/tooling-trusted-releases">Trusted Releases</a>
-            </li>
-            <li>
-              <a class="dropdown-item"
-                 href="https://github.com/apache/tooling-releases-client">Trusted Releases Client</a>
-            </li>
-            <li>
-              <a class="dropdown-item"
-                 href="https://github.com/apache/tooling-actions">Trusted Releases Actions</a>
-            </li>
-          </ul>
-        </li>
+        {% if current_user %}
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle"
+               href="#"
+               data-bs-toggle="dropdown"
+               aria-expanded="false">Source</a>
+            <ul class="dropdown-menu">
+              <li>
+                <a class="dropdown-item" href="https://github.com/apache/tooling-docs/">Tooling Docs</a>
+              </li>
+              <li>
+                <hr class="dropdown-divider" />
+              </li>
+              <li>
+                <a class="dropdown-item"
+                   href="https://github.com/apache/tooling-trusted-releases">Trusted Releases</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
+                   href="https://github.com/apache/tooling-releases-client">Trusted Releases Client</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
+                   href="https://github.com/apache/tooling-actions">Trusted Releases Actions</a>
+              </li>
+            </ul>
+          </li>
+        {% endif %}
+        {% if is_viewing_as_admin_fn(current_user.uid) %}
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle"
+               href="#"
+               data-bs-toggle="dropdown"
+               aria-expanded="false">Admin</a>
+            <ul class="dropdown-menu">
+              <li>
+                &nbsp;<i class="bi bi-list-ul"></i>
+                <a href="{{ as_url(admin.all_releases) }}"
+                   {% if request.endpoint == 'atr_admin_all_releases' %}class="active"{% endif %}>All releases</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-person-plus"></i>
+                <a href="{{ as_url(admin.browse_as_get) }}"
+                   {% if request.endpoint == 'atr_admin_browse_as_get' %}class="active"{% endif %}>Browse as user</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-arrow-repeat"></i>
+                <a href="{{ as_url(admin.consistency) }}"
+                   {% if request.endpoint == 'atr_admin_consistency' %}class="active"{% endif %}>Consistency</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-database"></i>
+                <a href="{{ as_url(admin.data) }}"
+                   {% if request.endpoint == 'atr_admin_data' %}class="active"{% endif %}>Browse database</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-trash"></i>
+                <a href="{{ as_url(admin.delete_committee_keys_get) }}"
+                   {% if request.endpoint == 'atr_admin_delete_committee_keys_get' %}class="active"{% endif %}>Delete committee keys</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-trash"></i>
+                <a href="{{ as_url(admin.delete_release_get) }}"
+                   {% if request.endpoint == 'atr_admin_delete_release_get' %}class="active"{% endif %}>Delete release</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-gear"></i>
+                <a href="{{ as_url(admin.env) }}"
+                   {% if request.endpoint == 'atr_admin_env' %}class="active"{% endif %}>Environment</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-key"></i>
+                <a href="{{ as_url(admin.keys_check_get) }}"
+                   {% if request.endpoint == 'atr_admin_keys_check_get' %}class="active"{% endif %}>Keys check</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-key"></i>
+                <a href="{{ as_url(admin.keys_regenerate_all_get) }}"
+                   {% if request.endpoint == 'atr_admin_keys_regenerate_all_get' %}class="active"{% endif %}>Regenerate all keys</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-key"></i>
+                <a href="{{ as_url(admin.keys_update_get) }}"
+                   {% if request.endpoint == 'atr_admin_keys_update_get' %}class="active"{% endif %}>Update keys</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-person-plus"></i>
+                <a href="{{ as_url(admin.ldap_get) }}"
+                   {% if request.endpoint == 'atr_admin_ldap_get' %}class="active"{% endif %}>LDAP search</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-speedometer2"></i>
+                <a href="{{ as_url(admin.performance) }}"
+                   {% if request.endpoint == 'atr_admin_performance' %}class="active"{% endif %}>Page performance</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-arrow-repeat"></i>
+                <a href="{{ as_url(admin.projects_update_get) }}"
+                   {% if request.endpoint == 'atr_admin_projects_update_get' %}class="active"{% endif %}>Update projects</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-list-task"></i>
+                <a href="{{ as_url(admin.tasks_) }}"
+                   {% if request.endpoint == 'atr_admin_tasks_' %}class="active"{% endif %}>Background tasks</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-clock-history"></i>
+                <a href="{{ as_url(admin.tasks_recent, minutes=5) }}">Recent tasks</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-person-badge"></i>
+                <a href="{{ as_url(admin.toggle_view_get) }}"
+                   {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}>Toggle admin view</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-arrow-repeat"></i>
+                <a href="{{ as_url(admin.validate_) }}"
+                   {% if request.endpoint == 'atr_admin_validate_' %}class="active"{% endif %}>Validate</a>
+              </li>
+            </ul>
+          </li>
+        {% endif %}
       </ul>
       <ul class="navbar-nav">
         <li class="nav-item dropdown">
