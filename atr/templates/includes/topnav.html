@@ -295,21 +295,30 @@ ASF Policies</a>
             type="button"
             data-bs-toggle="dropdown"
             aria-expanded="false"
-            aria-controls="menuUser">User</button>
-    <ul class="dropdown-menu dropdown-menu-end" id="menuUser" aria-labelledby="dropdownUser">
+            aria-controls="menuUser">
+      Log
+      {% if current_user %}
+        out
+      {% else %}
+        in
+      {% endif %}
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end"
+        id="menuUser"
+        aria-labelledby="dropdownUser">
       <div class="user-menu">
-	{% if current_user %}
+        {% if current_user %}
           <span>{{ current_user.fullname }}</span>
           (<code>{{ current_user.uid }}</code>)
           <br />
           <a href="#"
              onclick="location.href='/auth?logout=/';"
              class="logout-link btn btn-sm btn-outline-secondary mt-2">Log out</a>
-      {% else %}
-        <a href="#"
-           onclick="location.href='/auth?login=' + window.location.pathname;"
-           class="login-link btn btn-sm btn-secondary">Log in</a>
-      {% endif %}
+        {% else %}
+          <a href="#"
+             onclick="location.href='/auth?login=' + window.location.pathname;"
+             class="login-link btn btn-sm btn-secondary">Log in</a>
+        {% endif %}
       </div>
     </ul>
   </li>
