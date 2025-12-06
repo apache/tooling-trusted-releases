@@ -503,8 +503,8 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
 
     # Update Tooling PMC data
     # Could put this in the "if not tooling_committee" block, perhaps
-    tooling_committee.committee_members = ["wave", "tn", "sbp"]
-    tooling_committee.committers = ["wave", "tn", "sbp"]
+    tooling_committee.committee_members = ["wave", "tn", "sbp", "arm", "akm"]
+    tooling_committee.committers = ["wave", "tn", "sbp", "arm", "akm"]
     tooling_committee.release_managers = ["wave"]
     tooling_committee.is_podling = False
 
