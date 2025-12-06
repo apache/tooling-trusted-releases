@@ -93,7 +93,8 @@ class AppConfig:
             "gmcdonald",
             "humbedooh",
             "sbp",
-            "tn",
+            "akm",
+            "arm",
             "wave",
         }
         | set(ADMIN_USERS_ADDITIONAL.split(",") if ADMIN_USERS_ADDITIONAL else [])
