@@ -19,12 +19,15 @@
     </button>
     <div class="collapse navbar-collapse navbar-adp-offset" id="navbarADP">
       <ul class="navbar-nav me-auto">
+        <!-- Candidates start -->
         {% if current_user %}
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle"
                href="#"
+               role="button"
                data-bs-toggle="dropdown"
                aria-expanded="false">Candidates</a>
+            <!-- Drop start -->
             <ul class="dropdown-menu">
               <li>
               <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-play-circle"></i>
@@ -33,11 +36,15 @@
           {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
           {% if unfinished_releases %}
             {% for project_short_display_name, project_name, releases in unfinished_releases %}
-              <hr class="dropdown-divider" />
-              <h4>
-                <a class="dropdown-item"
-                   href="{{ as_url(get.projects.view, name=project_name) }}">{{ project_short_display_name }}</a>
-              </h4>
+              <li>
+                <hr class="dropdown-divider" />
+              </li>
+              <li>
+                <h6 class="dropdown-header">
+                  <a class="dropdown-item"
+                     href="{{ as_url(get.projects.view, name=project_name) }}">{{ project_short_display_name }}</a>
+                </h6>
+              </li>
               {% for release in releases %}
                 <li>
                 <a class="dropdown-item" href="{{ release_as_url(release) }}"><i class="bi bi-tag"></i>
@@ -49,8 +56,12 @@
       {% set user_projects = user_projects_fn(current_user.uid) %}
       {% if user_projects %}
         {% set max_projects = 8 %}
-        <hr class="dropdown-divider" />
-        <h4 class="dropdown-item">Start a release</h4>
+        <li>
+          <hr class="dropdown-divider" />
+        </li>
+        <li>
+          <h6 class="dropdown-header">Start a release</h6>
+        </li>
         {% for project_name, project_full_name in user_projects[:max_projects] %}
           <li>
           <a class="dropdown-item"
@@ -70,6 +81,7 @@
 <li class="nav-item dropdown">
   <a class="nav-link dropdown-toggle"
      href="#"
+     role="button"
      data-bs-toggle="dropdown"
      aria-expanded="false">Catalog</a>
   <ul class="dropdown-menu">
@@ -92,6 +104,7 @@ Committees</a>
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle"
        href="#"
+       role="button"
        data-bs-toggle="dropdown"
        aria-expanded="false">Configure</a>
     <ul class="dropdown-menu">
@@ -117,6 +130,7 @@ API tokens</a>
 <li class="nav-item dropdown">
   <a class="nav-link dropdown-toggle"
      href="#"
+     role="button"
      data-bs-toggle="dropdown"
      aria-expanded="false">Help</a>
   <ul class="dropdown-menu">
@@ -172,6 +186,7 @@ ASF Policies</a>
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle"
        href="#"
+       role="button"
        data-bs-toggle="dropdown"
        aria-expanded="false">Admin</a>
     <ul class="dropdown-menu">
@@ -267,6 +282,7 @@ ASF Policies</a>
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle"
        href="#"
+       role="button"
        data-bs-toggle="dropdown"
        aria-expanded="false">Sign-in</a>
     <ul class="dropdown-menu">

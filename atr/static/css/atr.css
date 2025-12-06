@@ -57,6 +57,18 @@ html {
     z-index:1030
 }
 
+/* Keep Bootstrap's accessible focus ring for keyboard navigation */
+.nav-link.dropdown-toggle:focus-visible {
+    /* Optional: customise instead of removing completely */
+    box-shadow: 0 0 0 0.2rem rgb(0 0 0 / 25%);
+}
+
+/* Remove focus ring for mouse interactions */
+.nav-link.dropdown-toggle:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
 .navbar-ribbon {
     position: relative;
 }
