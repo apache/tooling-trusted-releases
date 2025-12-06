@@ -19,16 +19,17 @@
     </button>
     <div class="collapse navbar-collapse navbar-adp-offset" id="navbarADP">
       <ul class="navbar-nav me-auto">
-        <!-- Candidates start -->
         {% if current_user %}
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle"
-               href="#"
-               role="button"
-               data-bs-toggle="dropdown"
-               aria-expanded="false">Candidates</a>
-            <!-- Drop start -->
-            <ul class="dropdown-menu">
+            <button class="nav-link dropdown-toggle btn"
+                    id="dropdownCandidates"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                    aria-controls="menuCandidates">Candidates</button>
+            <ul class="dropdown-menu"
+                id="menuCandidates"
+                aria-labelledby="dropdownCandidates">
               <li>
               <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-play-circle"></i>
             View</a>
@@ -40,10 +41,8 @@
                 <hr class="dropdown-divider" />
               </li>
               <li>
-                <h6 class="dropdown-header">
-                  <a class="dropdown-item"
-                     href="{{ as_url(get.projects.view, name=project_name) }}">{{ project_short_display_name }}</a>
-                </h6>
+                <a class="dropdown-item fw-bold"
+                   href="{{ as_url(get.projects.view, name=project_name) }}">{{ project_short_display_name }}</a>
               </li>
               {% for release in releases %}
                 <li>
@@ -60,7 +59,7 @@
           <hr class="dropdown-divider" />
         </li>
         <li>
-          <h6 class="dropdown-header">Start a release</h6>
+          <a class="dropdown-item fw-bold" href="{{ as_url(get.root.index) }}">Start a release</a>
         </li>
         {% for project_name, project_full_name in user_projects[:max_projects] %}
           <li>
@@ -79,12 +78,15 @@
 </li>
 {% endif %}
 <li class="nav-item dropdown">
-  <a class="nav-link dropdown-toggle"
-     href="#"
-     role="button"
-     data-bs-toggle="dropdown"
-     aria-expanded="false">Catalog</a>
-  <ul class="dropdown-menu">
+  <button class="nav-link dropdown-toggle btn"
+          id="dropdownCatalog"
+          type="button"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+          aria-controls="menuCatalog">Catalog</button>
+  <ul class="dropdown-menu"
+      id="menuCatalog"
+      aria-labelledby="dropdownCatalog">
     <li>
     <a class="dropdown-item" href="{{ as_url(get.release.releases) }}"><i class="bi bi-view-list"></i>
   Releases</a>
@@ -102,12 +104,15 @@ Committees</a>
 </li>
 {% if current_user %}
   <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle"
-       href="#"
-       role="button"
-       data-bs-toggle="dropdown"
-       aria-expanded="false">Configure</a>
-    <ul class="dropdown-menu">
+    <button class="nav-link dropdown-toggle btn"
+            id="dropdownConfigure"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            aria-controls="menuCandidates">Configure</button>
+    <ul class="dropdown-menu"
+        id="menuConfigure"
+        aria-labelledby="dropdownConfigure">
       <li>
       <a class="dropdown-item" href="{{ as_url(get.committees.directory) }}"><i class="bi bi-collection"></i>
     Committees</a>
@@ -128,12 +133,13 @@ API tokens</a>
 </li>
 {% endif %}
 <li class="nav-item dropdown">
-  <a class="nav-link dropdown-toggle"
-     href="#"
-     role="button"
-     data-bs-toggle="dropdown"
-     aria-expanded="false">Help</a>
-  <ul class="dropdown-menu">
+  <button class="nav-link dropdown-toggle btn"
+          id="dropdownHelp"
+          type="button"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+          aria-controls="menuHelp">Help</button>
+  <ul class="dropdown-menu" id="menuHelp" aria-labelledby="dropdownHelp">
     {% if current_user %}
       <li>
       <a class="dropdown-item" href="{{ as_url(get.root.tutorial) }}"><i class="bi bi-book"></i>
@@ -184,12 +190,13 @@ ASF Policies</a>
 </li>
 {% if is_viewing_as_admin_fn(current_user.uid) %}
   <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle"
-       href="#"
-       role="button"
-       data-bs-toggle="dropdown"
-       aria-expanded="false">Admin</a>
-    <ul class="dropdown-menu">
+    <button class="nav-link dropdown-toggle btn"
+            id="dropdownAdmin"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            aria-controls="menuAdmin">Admin</button>
+    <ul class="dropdown-menu" id="menuAdmin" aria-labelledby="dropdownAdmin">
       <li>
         <a class="dropdown-item"
            href="{{ as_url(admin.all_releases) }}"
@@ -261,6 +268,9 @@ ASF Policies</a>
            {% if request.endpoint == 'atr_admin_tasks_' %}class="active"{% endif %}><i class="bi bi-list-task"></i> Background tasks</a>
       </li>
       <li>
+        <hr class="dropdown-divider" />
+      </li>
+      <li>
         <a class="dropdown-item"
            href="{{ as_url(admin.tasks_recent, minutes=5) }}"><i class="bi bi-clock-history"></i> Recent tasks</a>
       </li>
@@ -280,30 +290,39 @@ ASF Policies</a>
 </ul>
 <ul class="navbar-nav">
   <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle"
-       href="#"
-       role="button"
-       data-bs-toggle="dropdown"
-       aria-expanded="false">Sign-in</a>
-    <ul class="dropdown-menu">
-      <li>
-        <a class="dropdown-item" href="">Number 1</a>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <a class="dropdown-item" href="">Number 2</a>
-      </li>
+    <button class="nav-link dropdown-toggle btn"
+            id="dropdownUser"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            aria-controls="menuUser">User</button>
+    <ul class="dropdown-menu dropdown-menu-end" id="menuUser" aria-labelledby="dropdownUser">
+      <div class="user-menu">
+	{% if current_user %}
+          <span>{{ current_user.fullname }}</span>
+          (<code>{{ current_user.uid }}</code>)
+          <br />
+          <a href="#"
+             onclick="location.href='/auth?logout=/';"
+             class="logout-link btn btn-sm btn-outline-secondary mt-2">Log out</a>
+      {% else %}
+        <a href="#"
+           onclick="location.href='/auth?login=' + window.location.pathname;"
+           class="login-link btn btn-sm btn-secondary">Log in</a>
+      {% endif %}
+      </div>
     </ul>
   </li>
   <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle"
-       href="#"
-       role="button"
-       data-bs-toggle="dropdown"
-       aria-expanded="false">About The ASF</a>
-    <ul class="dropdown-menu dropdown-menu-end">
+    <button class="nav-link dropdown-toggle btn"
+            id="dropdownASF"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            aria-controls="menuASF">About The ASF</button>
+    <ul class="dropdown-menu dropdown-menu-end"
+        id="menuASF"
+        aria-labelledby="dropdownASF">
       <li>
         <a class="dropdown-item" href="https://www.apache.org/">Foundation</a>
       </li>
