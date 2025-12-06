@@ -103,12 +103,10 @@ Committees</a>
   <a class="dropdown-item" href="{{ as_url(get.projects.projects) }}"><i class="bi bi-collection"></i>
 Projects</a>
 </li>
-<!--
 <li>
 <a class="dropdown-item" href="{{ as_url(get.keys.keys) }}"><i class="bi bi-key"></i>
 Public keys</a>
 </li>
--->
 <li>
 <a class="dropdown-item" href="{{ as_url(get.tokens.tokens) }}"><i class="bi bi-key"></i>
 API tokens</a>
@@ -141,42 +139,35 @@ ASF Policies</a>
     {# djlint:off J018 #} <a class="dropdown-item" href="/api/docs"><i class="bi bi-file-earmark-code"></i>
     OpenAPI</a> {# djlint:on #}
   </li>
+  <li>
+    <hr class="dropdown-divider" />
+  </li>
+  <li>
+    <a class="dropdown-item"
+       href="https://github.com/apache/tooling-docs/"
+       target="_blank"><i class="bi bi-github"></i> Tooling Docs</a>
+  </li>
+  <li>
+    <hr class="dropdown-divider" />
+  </li>
+  <li>
+    <a class="dropdown-item"
+       href="https://github.com/apache/tooling-trusted-releases"
+       target="_blank"><i class="bi bi-github"></i> Trusted Releases</a>
+  </li>
+  <li>
+    <a class="dropdown-item"
+       href="https://github.com/apache/tooling-releases-client"
+       target="_blank"><i class="bi bi-github"></i> Trusted Releases Client</a>
+  </li>
+  <li>
+    <a class="dropdown-item"
+       href="https://github.com/apache/tooling-actions"
+       target="_blank"><i class="bi bi-github"></i> Trusted Releases Actions</a>
+  </li>
 {% endif %}
 </ul>
 </li>
-{% if current_user %}
-  <li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle"
-       href="#"
-       data-bs-toggle="dropdown"
-       aria-expanded="false">Source</a>
-    <ul class="dropdown-menu">
-      <li>
-        <a class="dropdown-item"
-           href="https://github.com/apache/tooling-docs/"
-           target="_blank"><i class="bi bi-github"></i> Tooling Docs</a>
-      </li>
-      <li>
-        <hr class="dropdown-divider" />
-      </li>
-      <li>
-        <a class="dropdown-item"
-           href="https://github.com/apache/tooling-trusted-releases"
-           target="_blank"><i class="bi bi-github"></i> Trusted Releases</a>
-      </li>
-      <li>
-        <a class="dropdown-item"
-           href="https://github.com/apache/tooling-releases-client"
-           target="_blank"><i class="bi bi-github"></i> Trusted Releases Client</a>
-      </li>
-      <li>
-        <a class="dropdown-item"
-           href="https://github.com/apache/tooling-actions"
-           target="_blank"><i class="bi bi-github"></i> Trusted Releases Actions</a>
-      </li>
-    </ul>
-  </li>
-{% endif %}
 {% if is_viewing_as_admin_fn(current_user.uid) %}
   <li class="nav-item dropdown">
     <a class="nav-link dropdown-toggle"
