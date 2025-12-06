@@ -43,6 +43,14 @@ body {
 
 .dropdown-menu {
     width: 250px;
+    max-height: 80vh;
+    overflow-y: auto;
+    overflow-x: hidden; /* prevents sideways scrollbars */
+    scrollbar-width: thin;       /* Firefox */
+}
+
+.dropdown-menu::-webkit-scrollbar {
+    width: 8px;                  /* Chrome/Edge */
 }
 
 html {
