@@ -36,7 +36,7 @@
                   <hr class="dropdown-divider" />
                   <h4>
                     &nbsp;<a href="{{ as_url(get.projects.view, name=project_name) }}"
-   class="text-decoration-none text-reset">{{ project_short_display_name }}</a>
+   class="text-reset">{{ project_short_display_name }}</a>
                   </h4>
                   {% for release in releases %}
                     <li>
@@ -89,23 +89,32 @@
             </li>
           </ul>
         </li>
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle"
-             href="#"
-             data-bs-toggle="dropdown"
-             aria-expanded="false">Configure</a>
-          <ul class="dropdown-menu">
-            <li>
-              <a class="dropdown-item" href="">Number 1</a>
-            </li>
-            <li>
-              <hr class="dropdown-divider" />
-            </li>
-            <li>
-              <a class="dropdown-item" href="">Number 2</a>
-            </li>
-          </ul>
-        </li>
+        {% if current_user %}
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle"
+               href="#"
+               data-bs-toggle="dropdown"
+               aria-expanded="false">Configure</a>
+            <ul class="dropdown-menu">
+              <li>
+                &nbsp;<i class="bi bi-collection"></i>
+                <a href="{{ as_url(get.committees.directory) }}">Committees</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-collection"></i>
+                <a href="{{ as_url(get.projects.projects) }}">Projects</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-key"></i>
+                <a href="{{ as_url(get.keys.keys) }}">Public keys</a>
+              </li>
+              <li>
+                &nbsp;<i class="bi bi-key"></i>
+                <a href="{{ as_url(get.tokens.tokens) }}">API tokens</a>
+              </li>
+            </ul>
+          </li>
+        {% endif %}
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle"
              href="#"

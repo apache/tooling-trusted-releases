@@ -41,6 +41,10 @@ body {
     background-color: #e3f7fc !important;
 }
 
+.dropdown-menu {
+    width: 250px;
+}
+
 html {
     scroll-padding-top: 80px;
 }
