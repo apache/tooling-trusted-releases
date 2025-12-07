@@ -1,12 +1,10 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}
-  Download {{ release.project.display_name }} {{ release.version }} ~ ATR
-{% endblock title %}
+<!-- djlint:off -->
+{% block title %}Download {{ release.project.display_name }} {{ release.version }} ~ ATR{% endblock title %}
 
-{% block description %}
-  Download commands for {{ release.project.display_name }} {{ release.version }}.
-{% endblock description %}
+{% block description %}Download commands for {{ release.project.display_name }} {{ release.version }}.{% endblock description %}
+<!-- djlint:on -->
 
 {% block content %}
   {% set phase = release.phase.value %}
