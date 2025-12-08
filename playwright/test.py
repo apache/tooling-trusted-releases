@@ -748,6 +748,9 @@ def test_openpgp_01_upload(page: Page, credentials: Credentials) -> None:
         raise RuntimeError("No test key found")
 
     logging.info("Starting OpenPGP key upload test")
+    topnav_button_locator = page.get_by_role("button", name="Configure")
+    expect(topnav_button_locator).to_be_enabled()
+    topnav_button_locator.click()
     go_to_path(page, "/keys")
 
     logging.info("Following link to add OpenPGP key")
