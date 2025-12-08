@@ -1,8 +1,10 @@
 {% extends "layouts/base.html" %}
 
+{# djlint:off #}
 {% block title %}Report for {{ release.short_display_name }} {{ package.filename }} ~ ATR{% endblock title %}
 
 {% block description %}Show the report for the {{ release.short_display_name }} {{ package.filename }} candidate draft file.{% endblock description %}
+{# djlint:on #}
 
 {% block stylesheets %}
   {{ super() }}
