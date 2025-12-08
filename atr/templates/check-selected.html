@@ -1,9 +1,9 @@
 {% extends "layouts/base.html" %}
 
 {# djlint:off #}
-{% block title %}{{ release.project.display_name }} {{ version_name }} ~ ATR{% endblock title %}
+{%- block title -%}{{ release.project.display_name }} {{ version_name }} ~ ATR{%- endblock title -%}
 
-{% block description %}Review page for the {{ release.project.display_name }} {{ version_name }} candidate{% endblock description %}
+{%- block description -%}Review page for the {{ release.project.display_name }} {{ version_name }} candidate{%- endblock description -%}
 {# djlint:on #}
 
 {% import 'macros/dialog.html' as dialog %}
