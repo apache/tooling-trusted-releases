@@ -26,13 +26,13 @@
                     type="button"
                     data-bs-toggle="dropdown"
                     aria-expanded="false"
-                    aria-controls="menuCandidates">Candidates</button>
+                    aria-controls="menuCandidates">Draft</button>
             <ul class="dropdown-menu"
                 id="menuCandidates"
                 aria-labelledby="dropdownCandidates">
               <li>
               <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-play-circle"></i>
-            View</a>
+            Candidates</a>
           </li>
           {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
           {% if unfinished_releases %}
@@ -83,13 +83,13 @@
           type="button"
           data-bs-toggle="dropdown"
           aria-expanded="false"
-          aria-controls="menuCatalog">Catalog</button>
+          aria-controls="menuCatalog">Releases</button>
   <ul class="dropdown-menu"
       id="menuCatalog"
       aria-labelledby="dropdownCatalog">
     <li>
     <a class="dropdown-item" href="{{ as_url(get.release.releases) }}"><i class="bi bi-view-list"></i>
-  Releases</a>
+  Catalog</a>
 </li>
 <li>
 <a class="dropdown-item" href="{{ as_url(get.committees.directory) }}"><i class="bi bi-collection"></i>
