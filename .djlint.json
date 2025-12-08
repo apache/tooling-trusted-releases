@@ -1,0 +1,14 @@
+{
+  "profile": "jinja",
+  "ignore_rechecks": [
+    {
+	"regex": "{% block title %}[\\s\\S]*?{% endblock title %}",
+    },
+    {
+	"regex": "{% block desccription %}[\\s\\S]*?{% endblock description %}"
+    },
+    {
+	"regex": "{% block desccription %}{% endblock description %}"
+    },
+  ]
+}

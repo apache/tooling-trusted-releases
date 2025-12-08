@@ -1,10 +1,8 @@
 {% extends "layouts/base.html" %}
 
-<!-- djlint:off -->
 {% block title %}File tools ~ ATR{% endblock title %}
 
 {% block description %}Manage a file in the candidate draft using tools.{% endblock description %}
-<!-- djlint:on -->
 
 {% block content %}
   <a href="{{ as_url(get.compose.selected, project_name=project_name, version_name=version_name) }}"
