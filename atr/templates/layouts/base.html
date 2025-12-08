@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <meta name="description"
           content="{%- block description -%}{%- endblock description -%}" />
-    <title>
-      {% block title %}
-      {% endblock title %}
-    </title>
+    <title>{%- block title -%}{%- endblock title -%}</title>
 
     <link rel="icon"
           type="image/x-icon"
           href="https://apache.org/favicons/favicon.ico" />
+
     {% block stylesheets %}
       <link rel="stylesheet" href="{{ static_url('css/normalize.css') }}" />
       <link rel="stylesheet" href="{{ static_url('css/atr.css') }}" />
@@ -63,7 +61,7 @@
           <span class="hamburger-line"></span>
         </label>
 
-        {% include "includes/sidebar.html" %}
+        {# include "includes/sidebar.html" #}
 
         <div class="main-container {% block main_class %}{% endblock main_class %}">
           <main class="main-content">
