@@ -1,29 +1,27 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}Select a release ~ ATR{%- endblock title -%}
 
 {%- block description -%}Select a release ~ ATR{%- endblock description -%}
-{# djlint:on #}
 
 {% block stylesheets %}
   {{ super() }}
   <style>
-      .page-card {
-          min-width: 18rem;
-          min-height: 105px;
-      }
+    .page-card {
+      min-width: 18rem;
+      min-height: 105px;
+    }
 
-      .page-version {
-          border-bottom: 1px solid #aaaaaa;
-          padding-bottom: 1rem;
-      }
+    .page-version {
+      border-bottom: 1px solid #aaaaaa;
+      padding-bottom: 1rem;
+    }
 
-      .page-logo {
-          max-height: 72px;
-          background-color: #ffffff;
-          padding-left: 0.5rem;
-      }
+    .page-logo {
+      max-height: 72px;
+      background-color: #ffffff;
+      padding-left: 0.5rem;
+    }
   </style>
 {% endblock stylesheets %}
 

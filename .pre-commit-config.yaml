@@ -49,22 +49,27 @@ repos:
   rev: v0.11.0.1
   hooks:
     - id: shellcheck
-- repo: https://github.com/Riverside-Healthcare/djLint
-  rev: v1.36.4
+- repo: https://github.com/rtts/djhtml
+  rev: 3.0.10
   hooks:
-    - id: djlint
-      files: "atr/templates/.*\\.html$"
-      types_or: ['html']
-      args:
-        - --profile=jinja
-        - --lint
-    - id: djlint
-      name: Format HTML templates
-      files: "atr/templates/.*\\.html$"
-      types_or: ['html']
-      args:
-        - --profile=jinja
-        - --reformat
+    - id: djhtml
+      files: .*/.*\.html$
+#- repo: https://github.com/Riverside-Healthcare/djLint
+#  rev: v1.36.4
+#  hooks:
+#    - id: djlint
+#      files: "atr/templates/.*\\.html$"
+#      types_or: ['html']
+#      args:
+#        - --profile=jinja
+#        - --lint
+#    - id: djlint
+#      name: Format HTML templates
+#      files: "atr/templates/.*\\.html$"
+#      types_or: ['html']
+#      args:
+#        - --profile=jinja
+#        - --reformat
 - repo: https://github.com/thibaudcolas/pre-commit-stylelint
   rev: v16.25.0
   hooks:

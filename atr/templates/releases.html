@@ -1,23 +1,21 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}Releases ~ ATR{%- endblock title -%}
 
 {%- block description -%}Review public releases.{%- endblock description -%}
-{# djlint:on #}
 
 {% block stylesheets %}
   {{ super() }}
   <style>
-      .page-release-meta-item::after {
-          content: "•";
-          margin-left: 1rem;
-          color: #ccc;
-      }
+    .page-release-meta-item::after {
+      content: "•";
+      margin-left: 1rem;
+      color: #ccc;
+    }
 
-      .page-release-meta-item:last-child::after {
-          content: none;
-      }
+    .page-release-meta-item:last-child::after {
+      content: none;
+    }
   </style>
 {% endblock stylesheets %}
 

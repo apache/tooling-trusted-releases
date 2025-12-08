@@ -1,32 +1,30 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}About ATR ~ ATR{%- endblock title -%}
 
 {%- block description -%}About ATR ~ ATR{%- endblock description -%}
-{# djlint:on #}
 
 {% block stylesheets %}
   {{ super() }}
   <style>
-      img {
-          border: 1px solid #cccccc;
-          box-shadow: 0 0 1rem rgba(0, 0, 0, 0.2);
-          margin: 1rem 0;
-          max-width: 50%;
-      }
+    img {
+      border: 1px solid #cccccc;
+      box-shadow: 0 0 1rem rgba(0, 0, 0, 0.2);
+      margin: 1rem 0;
+      max-width: 50%;
+    }
 
-      table {
-          border: 1px solid #eeeeee;
-      }
+    table {
+      border: 1px solid #eeeeee;
+    }
 
-      th.step {
-          width: 15%;
-      }
+    th.step {
+      width: 15%;
+    }
 
-      td {
-          width: 28.333%;
-      }
+    td {
+      width: 28.333%;
+    }
   </style>
 {% endblock stylesheets %}
 

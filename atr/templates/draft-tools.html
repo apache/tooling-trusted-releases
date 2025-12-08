@@ -1,10 +1,8 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}File tools ~ ATR{%- endblock title -%}
 
 {%- block description -%}Manage a file in the candidate draft using tools.{%- endblock description -%}
-{# djlint:on #}
 
 {% block content %}
   <a href="{{ as_url(get.compose.selected, project_name=project_name, version_name=version_name) }}"
@@ -28,7 +26,7 @@
   <p>Generate an SHA256 or SHA512 hash file for this file.</p>
   <div class="alert alert-warning">
     <i class="bi bi-exclamation-triangle me-2"></i> IMPORTANT: The ASF security team <a href="https://infra.apache.org/release-signing.html#sha-checksum"
-    class="alert-link">recommends using SHA512</a> as the hash algorithm.
+                                                                                        class="alert-link">recommends using SHA512</a> as the hash algorithm.
     Please select SHA512 unless you have a specific reason to use SHA256.
   </div>
   <div class="d-flex gap-2 mb-4">

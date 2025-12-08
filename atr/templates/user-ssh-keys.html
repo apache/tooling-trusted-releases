@@ -11,7 +11,7 @@
   {% set key_comment = key_parts[2] if key_parts|length > 2 else 'key' %}
   <p>
     We have the SSH key <a href="{{ as_url(get.keys.keys, _anchor='ssh-key-' + key.fingerprint) }}"
-    title="{{ key.fingerprint }}"><code>{{- key_comment | trim -}}</code></a> on file for you. You can also <a href="{{ as_url(get.keys.ssh_add) }}">add another SSH key</a>.
+                           title="{{ key.fingerprint }}"><code>{{- key_comment | trim -}}</code></a> on file for you. You can also <a href="{{ as_url(get.keys.ssh_add) }}">add another SSH key</a>.
   </p>
 {% elif key_count > 1 %}
   <p>We have the following SSH keys on file for you:</p>

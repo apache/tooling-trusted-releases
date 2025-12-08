@@ -1,325 +1,323 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}Committee directory ~ ATR{%- endblock title -%}
 
 {%- block description -%}List of all ASF committees and their assated projects.{%- endblock description -%}
-{# djlint:on #}
 
 {% block stylesheets %}
-  {{ super() }}
-  <style>
-      .page-committee-title-link:hover {
-          cursor: pointer;
-      }
+    {{ super() }}
+    <style>
+        .page-committee-title-link:hover {
+            cursor: pointer;
+        }
 
-      .page-logo {
-          max-height: 100%;
-          width: auto;
-          object-fit: contain;
-      }
+        .page-logo {
+            max-height: 100%;
+            width: auto;
+            object-fit: contain;
+        }
 
-      .page-logo-container {
-          height: 48px;
-          width: 100%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-      }
+        .page-logo-container {
+            height: 48px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
-      .page-project-subcard {
-          min-height: 96px;
-          background-color: #f8f9fa;
-      }
+        .page-project-subcard {
+            min-height: 96px;
+            background-color: #f8f9fa;
+        }
 
-      .page-project-subcard:hover {
-          border-color: gray;
-          cursor: pointer;
-      }
+        .page-project-subcard:hover {
+            border-color: gray;
+            cursor: pointer;
+        }
 
-      .page-project-subcard-categories {
-          font-size: 0.8em;
-      }
+        .page-project-subcard-categories {
+            font-size: 0.8em;
+        }
 
-      .page-project-inactive {
-          opacity: 0.6;
-      }
-  </style>
+        .page-project-inactive {
+            opacity: 0.6;
+        }
+    </style>
 {% endblock stylesheets %}
 
 {% block content %}
-  <h1>Committee directory</h1>
-  <p>Current ASF committees and their projects:</p>
+    <h1>Committee directory</h1>
+    <p>Current ASF committees and their projects:</p>
 
-  <div class="mb-3">
-    <input type="text"
-           id="project-filter"
-           aria-label="Project name filter"
-           class="form-control d-inline-block w-auto" />
-    <button type="button" class="btn btn-primary" id="filter-button">Filter all</button>
-    {% if current_user %}
-      <button type="button"
-              class="btn btn-secondary ms-2"
-              id="filter-participant-button"
-              aria-pressed="false"
-              data-showing="participant">
+    <div class="mb-3">
+        <input type="text"
+               id="project-filter"
+               aria-label="Project name filter"
+               class="form-control d-inline-block w-auto" />
+        <button type="button" class="btn btn-primary" id="filter-button">Filter all</button>
         {% if current_user %}
-          Show all committees
-        {% else %}
-          Show my committees
-        {% endif %}
-      </button>
-    {% endif %}
-  </div>
-
-  <div class="mb-3">
-    <p>
-      Total count: <span id="committee-count">{{ committees|length }}</span>
-    </p>
-  </div>
-
-  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-    {% for committee in committees %}
-      {% set is_part = false %}
-      {% if current_user and committee %}
-        {% if (current_user.uid in committee.committee_members) or
-          (current_user.uid in committee.committers) or
-          (current_user.uid in committee.release_managers) %}
-          {% set is_part = true %}
-        {% endif %}
-      {% endif %}
-      <div class="col">
-        <div class="card h-100 shadow-sm page-project-card"
-             data-is-participant="{{ 'true' if is_part else 'false' }}">
-          <div class="card-body">
-            <div class="row mb-3 align-items-center">
-              <div class="col">
-                <h3 class="card-title fs-4 mb-0">
-                  <a href="{{ as_url(get.committees.view, name=committee.name) }}"
-                     class="text-decoration-none text-dark page-committee-title-link">{{ committee.display_name }}</a>
-                </h3>
-              </div>
-              <div class="col-5 col-lg-4 text-center">
-                <div class="page-logo-container">
-                  {% if (committee.name == "incubator") or committee.name.startswith("incubator-") %}
-                    <img src="https://www.apache.org/logos/res/incubator/default.png"
-                         alt=""
-                         class="page-logo"
-                         onerror="this.style.display='none';" />
-                  {% else %}
-                    <img src="https://www.apache.org/logos/res/{{ committee.name }}/default.png"
-                         alt=""
-                         class="page-logo"
-                         onerror="this.style.display='none';" />
-                  {% endif %}
-                </div>
-              </div>
-            </div>
-            <div class="mt-3 page-project-list-container">
-              {% set max_initial_projects = 2 %}
-              {% if committee.projects %}
-                {% for project in committee.projects|sort(attribute="name") %}
-                  <div class="card mb-3 shadow-sm page-project-subcard {% if loop.index > max_initial_projects %}page-project-extra d-none{% endif %} {% if project.status.value.lower() != "active" %}page-project-inactive{% endif %}"
-                       data-project-url="{{ as_url(get.projects.view, name=project.name) }}">
-                    <div class="card-body p-3 d-flex flex-column h-100">
-                      <div class="d-flex justify-content-between align-items-start">
-                        <p class="mb-1 me-2 fs-6">
-                          <a href="{{ as_url(get.projects.view, name=project.name) }}"
-                             class="text-decoration-none stretched-link">{{ project.display_name }}</a>
-                        </p>
-                        <div>
-                          {% if project.status.value.lower() != "active" %}
-                            <span class="badge text-bg-secondary ms-1">{{ project.status.value.lower() }}</span>
-                          {% endif %}
-                        </div>
-                      </div>
-                      <div class="mb-1 page-project-subcard-categories">
-                        {% set categories = project.category.split(', ') if project.category else [] %}
-                        {% for category in categories %}
-                          {% if category != "retired" %}<span class="badge text-bg-primary me-1">{{ category }}</span>{% endif %}
-                        {% endfor %}
-                        {% set langs = project.programming_languages.split(', ') if project.programming_languages else [] %}
-                        {% for lang in langs[:1] %}<span class="badge text-bg-success me-1">{{ lang }}</span>{% endfor %}
-                      </div>
-                    </div>
-                  </div>
-                {% endfor %}
-                {% if committee.projects|length > max_initial_projects %}
-                  <button type="button"
-                          class="btn btn-sm btn-outline-secondary mt-2 page-toggle-committee-projects"
-                          aria-expanded="false"
-                          data-text-show="Show {{ committee.projects|length - max_initial_projects }} more projects..."
-                          data-text-hide="Show less...">
-                    Show {{ committee.projects|length - max_initial_projects }} more projects...
-                  </button>
+            <button type="button"
+                    class="btn btn-secondary ms-2"
+                    id="filter-participant-button"
+                    aria-pressed="false"
+                    data-showing="participant">
+                {% if current_user %}
+                    Show all committees
+                {% else %}
+                    Show my committees
                 {% endif %}
-                {# Add an else clause here if we decide to show an alternative to an empty card #}
-              {% endif %}
-            </div>
-            {% if current_user and is_part and (not committee_is_standing(committee.name)) %}
-              <a href="{{ as_url(get.projects.add_project, committee_name=committee.name) }}"
-                 title="Create a project for {{ committee.display_name }}"
-                 class="text-decoration-none d-block mt-4 mb-3">
-                <div class="card h-100 shadow-sm atr-cursor-pointer page-project-subcard">
-                  <div class="card-body d-flex align-items-center text-secondary p-3">
-                    <div>
-                      <i class="bi bi-plus-circle me-2"></i>Create project
-                      <br />
-                      <small class="text-muted">for {{ committee.display_name }}</small>
-                    </div>
-                  </div>
-                </div>
-              </a>
+            </button>
+        {% endif %}
+    </div>
+
+    <div class="mb-3">
+        <p>
+            Total count: <span id="committee-count">{{ committees|length }}</span>
+        </p>
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+        {% for committee in committees %}
+            {% set is_part = false %}
+            {% if current_user and committee %}
+                {% if (current_user.uid in committee.committee_members) or
+                (current_user.uid in committee.committers) or
+                (current_user.uid in committee.release_managers) %}
+                {% set is_part = true %}
             {% endif %}
-          </div>
+        {% endif %}
+        <div class="col">
+            <div class="card h-100 shadow-sm page-project-card"
+                 data-is-participant="{{ 'true' if is_part else 'false' }}">
+                <div class="card-body">
+                    <div class="row mb-3 align-items-center">
+                        <div class="col">
+                            <h3 class="card-title fs-4 mb-0">
+                                <a href="{{ as_url(get.committees.view, name=committee.name) }}"
+                                   class="text-decoration-none text-dark page-committee-title-link">{{ committee.display_name }}</a>
+                            </h3>
+                        </div>
+                        <div class="col-5 col-lg-4 text-center">
+                            <div class="page-logo-container">
+                                {% if (committee.name == "incubator") or committee.name.startswith("incubator-") %}
+                                    <img src="https://www.apache.org/logos/res/incubator/default.png"
+                                         alt=""
+                                         class="page-logo"
+                                         onerror="this.style.display='none';" />
+                                {% else %}
+                                    <img src="https://www.apache.org/logos/res/{{ committee.name }}/default.png"
+                                         alt=""
+                                         class="page-logo"
+                                         onerror="this.style.display='none';" />
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 page-project-list-container">
+                        {% set max_initial_projects = 2 %}
+                        {% if committee.projects %}
+                            {% for project in committee.projects|sort(attribute="name") %}
+                                <div class="card mb-3 shadow-sm page-project-subcard {% if loop.index > max_initial_projects %}page-project-extra d-none{% endif %} {% if project.status.value.lower() != "active" %}page-project-inactive{% endif %}"
+                                     data-project-url="{{ as_url(get.projects.view, name=project.name) }}">
+                                    <div class="card-body p-3 d-flex flex-column h-100">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <p class="mb-1 me-2 fs-6">
+                                                <a href="{{ as_url(get.projects.view, name=project.name) }}"
+                                                   class="text-decoration-none stretched-link">{{ project.display_name }}</a>
+                                            </p>
+                                            <div>
+                                                {% if project.status.value.lower() != "active" %}
+                                                    <span class="badge text-bg-secondary ms-1">{{ project.status.value.lower() }}</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="mb-1 page-project-subcard-categories">
+                                            {% set categories = project.category.split(', ') if project.category else [] %}
+                                            {% for category in categories %}
+                                                {% if category != "retired" %}<span class="badge text-bg-primary me-1">{{ category }}</span>{% endif %}
+                                            {% endfor %}
+                                            {% set langs = project.programming_languages.split(', ') if project.programming_languages else [] %}
+                                            {% for lang in langs[:1] %}<span class="badge text-bg-success me-1">{{ lang }}</span>{% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            {% if committee.projects|length > max_initial_projects %}
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary mt-2 page-toggle-committee-projects"
+                                        aria-expanded="false"
+                                        data-text-show="Show {{ committee.projects|length - max_initial_projects }} more projects..."
+                                        data-text-hide="Show less...">
+                                    Show {{ committee.projects|length - max_initial_projects }} more projects...
+                                </button>
+                            {% endif %}
+                {# Add an else clause here if we decide to show an alternative to an empty card #}
+                        {% endif %}
+                    </div>
+                    {% if current_user and is_part and (not committee_is_standing(committee.name)) %}
+                        <a href="{{ as_url(get.projects.add_project, committee_name=committee.name) }}"
+                           title="Create a project for {{ committee.display_name }}"
+                           class="text-decoration-none d-block mt-4 mb-3">
+                            <div class="card h-100 shadow-sm atr-cursor-pointer page-project-subcard">
+                                <div class="card-body d-flex align-items-center text-secondary p-3">
+                                    <div>
+                                        <i class="bi bi-plus-circle me-2"></i>Create project
+                                        <br />
+                                        <small class="text-muted">for {{ committee.display_name }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-      </div>
-    {% endfor %}
-  </div>
+{% endfor %}
+</div>
 {% endblock content %}
 
 {% block javascripts %}
-  {{ super() }}
-  <script>
-      let allCommitteeCards = [];
+    {{ super() }}
+    <script>
+        let allCommitteeCards = [];
 
-      function filterCommitteesByText() {
-          const projectFilter = document.getElementById("project-filter").value;
-          const cards = allCommitteeCards;
-          let visibleCount = 0;
+        function filterCommitteesByText() {
+            const projectFilter = document.getElementById("project-filter").value;
+            const cards = allCommitteeCards;
+            let visibleCount = 0;
 
-          if (participantButton && participantButton.dataset.showing === "participant") {
-              participantButton.dataset.showing = "all";
-              participantButton.textContent = "Show my committees";
-              participantButton.setAttribute("aria-pressed", "false");
-          }
+            if (participantButton && participantButton.dataset.showing === "participant") {
+                participantButton.dataset.showing = "all";
+                participantButton.textContent = "Show my committees";
+                participantButton.setAttribute("aria-pressed", "false");
+            }
 
-          for (let card of cards) {
-              const nameElement = card.querySelector(".card-title");
-              const name = nameElement.textContent.trim();
-              if (!projectFilter) {
-                  card.parentElement.hidden = false;
-                  visibleCount++;
-              } else {
-                  let regex;
-                  try {
-                      regex = new RegExp(projectFilter, "i");
-                  } catch (e) {
-                      const escapedFilter = projectFilter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                      regex = new RegExp(escapedFilter, "i");
-                  }
-                  card.parentElement.hidden = !name.match(regex);
-                  if (!card.parentElement.hidden) {
-                      visibleCount++;
-                  }
-              }
-          }
-          document.getElementById("committee-count").textContent = visibleCount;
-      }
+            for (let card of cards) {
+                const nameElement = card.querySelector(".card-title");
+                const name = nameElement.textContent.trim();
+                if (!projectFilter) {
+                    card.parentElement.hidden = false;
+                    visibleCount++;
+                } else {
+                    let regex;
+                    try {
+                        regex = new RegExp(projectFilter, "i");
+                    } catch (e) {
+                        const escapedFilter = projectFilter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        regex = new RegExp(escapedFilter, "i");
+                    }
+                    card.parentElement.hidden = !name.match(regex);
+                    if (!card.parentElement.hidden) {
+                        visibleCount++;
+                    }
+                }
+            }
+            document.getElementById("committee-count").textContent = visibleCount;
+        }
 
       // Add event listeners
-      document.getElementById("filter-button").addEventListener("click", filterCommitteesByText);
-      document.getElementById("project-filter").addEventListener("keydown", function(event) {
-          if (event.key === "Enter") {
-              filterCommitteesByText();
-              event.preventDefault();
-          }
-      });
+        document.getElementById("filter-button").addEventListener("click", filterCommitteesByText);
+        document.getElementById("project-filter").addEventListener("keydown", function(event) {
+            if (event.key === "Enter") {
+                filterCommitteesByText();
+                event.preventDefault();
+            }
+        });
 
-      const participantButton = document.getElementById("filter-participant-button");
-      if (participantButton) {
-          participantButton.addEventListener("click", function() {
-              const showing = this.dataset.showing;
-              const cards = allCommitteeCards;
-              let visibleCount = 0;
+        const participantButton = document.getElementById("filter-participant-button");
+        if (participantButton) {
+            participantButton.addEventListener("click", function() {
+                const showing = this.dataset.showing;
+                const cards = allCommitteeCards;
+                let visibleCount = 0;
 
-              if (showing === "all") {
-                  cards.forEach(card => {
-                      const isParticipant = card.dataset.isParticipant === "true";
-                      card.parentElement.hidden = !isParticipant;
-                      if (!card.parentElement.hidden) {
-                          visibleCount++;
-                      }
-                  });
-                  this.textContent = "Show all committees";
-                  this.dataset.showing = "participant";
-                  this.setAttribute("aria-pressed", "true");
-              } else {
-                  cards.forEach(card => {
-                      card.parentElement.hidden = false;
-                      visibleCount++;
-                  });
-                  this.textContent = "Show my committees";
-                  this.dataset.showing = "all";
-                  this.setAttribute("aria-pressed", "false");
-              }
-              document.getElementById("project-filter").value = "";
-              document.getElementById("committee-count").textContent = visibleCount;
-          });
-      }
+                if (showing === "all") {
+                    cards.forEach(card => {
+                        const isParticipant = card.dataset.isParticipant === "true";
+                        card.parentElement.hidden = !isParticipant;
+                        if (!card.parentElement.hidden) {
+                            visibleCount++;
+                        }
+                    });
+                    this.textContent = "Show all committees";
+                    this.dataset.showing = "participant";
+                    this.setAttribute("aria-pressed", "true");
+                } else {
+                    cards.forEach(card => {
+                        card.parentElement.hidden = false;
+                        visibleCount++;
+                    });
+                    this.textContent = "Show my committees";
+                    this.dataset.showing = "all";
+                    this.setAttribute("aria-pressed", "false");
+                }
+                document.getElementById("project-filter").value = "";
+                document.getElementById("committee-count").textContent = visibleCount;
+            });
+        }
 
-      document.addEventListener("DOMContentLoaded", function() {
-          allCommitteeCards = Array.from(document.querySelectorAll(".page-project-card"));
-          const cards = allCommitteeCards;
-          const committeeCountSpan = document.getElementById("committee-count");
-          let initialVisibleCount = 0;
-          const initialShowingMode = participantButton ? participantButton.dataset.showing : "all";
+        document.addEventListener("DOMContentLoaded", function() {
+            allCommitteeCards = Array.from(document.querySelectorAll(".page-project-card"));
+            const cards = allCommitteeCards;
+            const committeeCountSpan = document.getElementById("committee-count");
+            let initialVisibleCount = 0;
+            const initialShowingMode = participantButton ? participantButton.dataset.showing : "all";
 
-          if (participantButton) {
-              if (initialShowingMode === "participant") {
-                  participantButton.setAttribute("aria-pressed", "true");
-              } else {
-                  participantButton.setAttribute("aria-pressed", "false");
-              }
-          }
+            if (participantButton) {
+                if (initialShowingMode === "participant") {
+                    participantButton.setAttribute("aria-pressed", "true");
+                } else {
+                    participantButton.setAttribute("aria-pressed", "false");
+                }
+            }
 
-          if (initialShowingMode === "participant") {
-              cards.forEach(card => {
-                  const isParticipant = card.dataset.isParticipant === "true";
-                  card.parentElement.hidden = !isParticipant;
-                  if (!card.parentElement.hidden) {
-                      initialVisibleCount++;
-                  }
-              });
-          } else {
-              cards.forEach(card => {
-                  card.parentElement.hidden = false;
-                  initialVisibleCount++;
-              });
-          }
-          committeeCountSpan.textContent = initialVisibleCount;
+            if (initialShowingMode === "participant") {
+                cards.forEach(card => {
+                    const isParticipant = card.dataset.isParticipant === "true";
+                    card.parentElement.hidden = !isParticipant;
+                    if (!card.parentElement.hidden) {
+                        initialVisibleCount++;
+                    }
+                });
+            } else {
+                cards.forEach(card => {
+                    card.parentElement.hidden = false;
+                    initialVisibleCount++;
+                });
+            }
+            committeeCountSpan.textContent = initialVisibleCount;
 
           // Add a click listener to project subcards to handle navigation
           // TODO: Improve accessibility
-          document.querySelectorAll(".page-project-subcard").forEach(function(subcard) {
-              subcard.addEventListener("click", function(event) {
-                  if (this.dataset.projectUrl) {
-                      window.location.href = this.dataset.projectUrl;
-                  }
-              });
-          });
+            document.querySelectorAll(".page-project-subcard").forEach(function(subcard) {
+                subcard.addEventListener("click", function(event) {
+                    if (this.dataset.projectUrl) {
+                        window.location.href = this.dataset.projectUrl;
+                    }
+                });
+            });
 
           // Add a click listener for toggling project visibility within each committee
-          document.querySelectorAll(".page-toggle-committee-projects").forEach(function(button) {
-              button.addEventListener("click", function() {
-                  const projectListContainer = this.closest(".page-project-list-container");
-                  if (projectListContainer) {
-                      const extraProjects = projectListContainer.querySelectorAll(".page-project-extra");
-                      extraProjects.forEach(function(proj) {
-                          proj.classList.toggle("d-none");
-                      });
+            document.querySelectorAll(".page-toggle-committee-projects").forEach(function(button) {
+                button.addEventListener("click", function() {
+                    const projectListContainer = this.closest(".page-project-list-container");
+                    if (projectListContainer) {
+                        const extraProjects = projectListContainer.querySelectorAll(".page-project-extra");
+                        extraProjects.forEach(function(proj) {
+                            proj.classList.toggle("d-none");
+                        });
 
-                      const isExpanded = this.getAttribute("aria-expanded") === "true";
-                      if (isExpanded) {
-                          this.textContent = this.dataset.textShow;
-                          this.setAttribute("aria-expanded", "false");
-                      } else {
-                          this.textContent = this.dataset.textHide;
-                          this.setAttribute("aria-expanded", "true");
-                      }
-                  }
-              });
-          });
-      });
-  </script>
+                        const isExpanded = this.getAttribute("aria-expanded") === "true";
+                        if (isExpanded) {
+                            this.textContent = this.dataset.textShow;
+                            this.setAttribute("aria-expanded", "false");
+                        } else {
+                            this.textContent = this.dataset.textHide;
+                            this.setAttribute("aria-expanded", "true");
+                        }
+                    }
+                });
+            });
+        });
+    </script>
 {% endblock javascripts %}

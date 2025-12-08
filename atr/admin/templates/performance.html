@@ -1,88 +1,86 @@
 {% extends "layouts/base-admin.html" %}
 
-{% block title %}
-  Performance dashboard
-{% endblock title %}
+{%- block title -%}Performance dashboard{%- endblock title -%}
 
 {% block stylesheets %}
   {{ super() }}
   <style>
-      .page-performance-stats {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-          gap: 1rem;
-          margin: 1rem 0;
-      }
+    .page-performance-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0;
+    }
 
-      .page-route-card {
-          background: #fff;
-          border-radius: 8px;
-          padding: 1rem;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      }
+    .page-route-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
 
-      .page-route-card.slow {
-          border-left: 4px solid #dc3545;
-      }
+    .page-route-card.slow {
+      border-left: 4px solid #dc3545;
+    }
 
-      .page-route-card.medium {
-          border-left: 4px solid #ffc107;
-      }
+    .page-route-card.medium {
+      border-left: 4px solid #ffc107;
+    }
 
-      .page-route-card.fast {
-          border-left: 4px solid #28a745;
-      }
+    .page-route-card.fast {
+      border-left: 4px solid #28a745;
+    }
 
-      .page-route-card h3 {
-          margin: 0 0 0.5rem 0;
-          font-size: 1.1rem;
-          font-family: monospace;
-      }
+    .page-route-card h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1.1rem;
+      font-family: monospace;
+    }
 
-      .page-route-meta {
-          display: flex;
-          gap: 1rem;
-          font-size: 0.9rem;
-          color: #666;
-          margin-bottom: 1rem;
-      }
+    .page-route-meta {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 1rem;
+    }
 
-      .page-timing-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 1rem;
-          margin-bottom: 1rem;
-      }
+    .page-timing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
 
-      .page-timing-section h4 {
-          margin: 0 0 0.5rem 0;
-          font-size: 0.9rem;
-          color: #444;
-      }
+    .page-timing-section h4 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.9rem;
+      color: #444;
+    }
 
-      .page-timing-section dl {
-          margin: 0;
-          font-size: 0.85rem;
-      }
+    .page-timing-section dl {
+      margin: 0;
+      font-size: 0.85rem;
+    }
 
-      .page-timing-section dt {
-          color: #666;
-          float: left;
-          clear: left;
-          margin-right: 0.5rem;
-      }
+    .page-timing-section dt {
+      color: #666;
+      float: left;
+      clear: left;
+      margin-right: 0.5rem;
+    }
 
-      .page-timing-section dd {
-          margin: 0;
-          font-family: monospace;
-      }
+    .page-timing-section dd {
+      margin: 0;
+      font-family: monospace;
+    }
 
-      .page-last-seen {
-          font-size: 0.8rem;
-          color: #666;
-          border-top: 1px solid #eee;
-          padding-top: 0.5rem;
-      }
+    .page-last-seen {
+      font-size: 0.8rem;
+      color: #666;
+      border-top: 1px solid #eee;
+      padding-top: 0.5rem;
+    }
   </style>
 {% endblock stylesheets %}
 

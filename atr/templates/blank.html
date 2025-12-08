@@ -1,10 +1,8 @@
 {% extends "layouts/base.html" %}
 
-{# djlint:off #}
 {%- block title -%}{{ title }} ~ ATR{%- endblock title -%}
 
 {%- block description -%}{{ description }}{%- endblock description -%}
-{# djlint:on #}
 
 {% block content %}
   {{ content }}
@@ -17,5 +15,5 @@
   {% endif %}
   {% if init_js %}<script>
     init();
-</script>{% endif %}
+  </script>{% endif %}
 {% endblock javascripts %}

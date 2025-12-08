@@ -1,66 +1,62 @@
 {% extends "layouts/base-admin.html" %}
 
-{% block title %}
-  Data browser ~ ATR
-{% endblock title %}
+{%- block title -%}Data browser ~ ATR{%- endblock title -%}
 
-{% block description %}
-  Browse all records in the database.
-{% endblock description %}
+{%- block description -%}Browse all records in the database.{%- endblock description -%}
 
 {% block stylesheets %}
   {{ super() }}
   <style>
-      .page-model-nav {
-          margin: 1rem 0;
-          padding: 0.5rem;
-          background: #f5f5f5;
-          border-radius: 4px;
-      }
+    .page-model-nav {
+      margin: 1rem 0;
+      padding: 0.5rem;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
 
-      .page-model-nav a {
-          margin-right: 1rem;
-          padding: 0.25rem 0.5rem;
-          text-decoration: none;
-          color: #333;
-      }
+    .page-model-nav a {
+      margin-right: 1rem;
+      padding: 0.25rem 0.5rem;
+      text-decoration: none;
+      color: #333;
+    }
 
-      .page-model-nav a.active {
-          background: #333;
-          color: white;
-          border-radius: 2px;
-      }
+    .page-model-nav a.active {
+      background: #333;
+      color: white;
+      border-radius: 2px;
+    }
 
-      .page-record {
-          border: 1px solid #ddd;
-          padding: 1rem;
-          margin-bottom: 1rem;
-          border-radius: 4px;
-      }
+    .page-record {
+      border: 1px solid #ddd;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border-radius: 4px;
+    }
 
-      .page-record pre {
-          background: #f5f5f5;
-          padding: 0.5rem;
-          border-radius: 2px;
-          overflow-x: auto;
-      }
+    .page-record pre {
+      background: #f5f5f5;
+      padding: 0.5rem;
+      border-radius: 2px;
+      overflow-x: auto;
+    }
 
-      .page-record-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 0.5rem;
-      }
+    .page-record-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
 
-      .page-record-meta {
-          color: #666;
-          font-size: 0.9em;
-      }
+    .page-record-meta {
+      color: #666;
+      font-size: 0.9em;
+    }
 
-      .page-no-records {
-          color: #666;
-          font-style: italic;
-      }
+    .page-no-records {
+      color: #666;
+      font-style: italic;
+    }
   </style>
 {% endblock stylesheets %}
 

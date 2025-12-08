@@ -1,8 +1,6 @@
 {% extends "layouts/base-admin.html" %}
 
-{% block title %}
-  Executed Tasks ~ ATR
-{% endblock %}
+{%- block title -%}Executed Tasks ~ ATR{%- endblock -%}
 
 {% block stylesheets %}
   {{ super() }}
@@ -11,7 +9,7 @@
 
   <style>
     .gridjs-pages button {
-        color: unset;
+      color: unset;
     }
   </style>
 {% endblock stylesheets %}
@@ -30,16 +28,16 @@
     new gridjs.Grid({
       columns: [
         {
-            name: 'ID',
-            width: '40px'
+          name: 'ID',
+          width: '40px'
         },
         {
-            name: 'Task Type',
-            width: '140px'
+          name: 'Task Type',
+          width: '140px'
         },
         {
-            name: 'Task Status',
-            width: '60px'
+          name: 'Task Status',
+          width: '60px'
         },
         {
           name: 'Added',
