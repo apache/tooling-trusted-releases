@@ -42,6 +42,7 @@ ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:Ma
 
 # go is required for syft
 # openjdk8 is required for Apache RAT
+# icu-libs are required for cyclonedx
 RUN apk update && \
     apk add --no-cache \
       bash \
@@ -51,6 +52,7 @@ RUN apk update && \
       go \
       gpg \
       gpg-agent \
+      icu-libs \
       make \
       openjdk8 \
       rsync \
@@ -97,8 +99,8 @@ RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v1.1.0
 
 ENV CDXCLI_VERSION=0.29.1
 # TODO: Check hash
-RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v{CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
-    -o /usr/local/bin/cyclonedx
+RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
+    -o /usr/local/bin/cyclonedx && chmod +x /usr/local/bin/cyclonedx
 
 EXPOSE 4443
 

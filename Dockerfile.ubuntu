@@ -110,8 +110,8 @@ RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v1.1.0
 
 ENV CDXCLI_VERSION=0.29.1
 # TODO: Check hash
-RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v{CDXCLI_VERSION}/cyclonedx-linux-x64 \
-    -o /usr/local/bin/cyclonedx
+RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-x64 \
+    -o /usr/local/bin/cyclonedx && chmod +x /usr/local/bin/cyclonedx
 
 EXPOSE 4443
 
