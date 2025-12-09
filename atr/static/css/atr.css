@@ -68,6 +68,24 @@ html {
     text-align: center;
 }
 
+.asf-logo {
+    height: 42px;
+    margin-left: 6px;
+}
+
+.trusted-releases {
+    position: relative;
+    top: -10px;
+    margin-left: 10px;
+    font-weight: 650 !important;
+}
+
+.navbar-adp-offset {
+    position: relative;
+    top: 3px;
+    margin-left: 16px;
+}
+
 .navbar-ribbon {
     position: relative;
 }
@@ -352,7 +370,7 @@ span.warning {
 
 @media (width <= 990px) {
     .dropdown-menu {
-	max-height: 40vh;
+        max-height: 40vh;
     }
 }
 
