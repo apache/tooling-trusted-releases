@@ -33,7 +33,6 @@ import atr.models.schema as schema
 import atr.sbom as sbom
 import atr.storage as storage
 import atr.tasks.checks as checks
-import atr.tasks.checks.targz as targz
 import atr.util as util
 
 _CONFIG: Final = config.get()
@@ -221,17 +220,17 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
     async with util.async_temporary_directory(prefix="cyclonedx_sbom_") as temp_dir:
         log.info(f"Created temporary directory: {temp_dir}")
 
-        # Find and validate the root directory
-        try:
-            root_dir = await asyncio.to_thread(targz.root_directory, artifact_path)
-        except targz.RootDirectoryError as e:
-            raise SBOMGenerationError(f"Archive root directory issue: {e}", {"artifact_path": artifact_path}) from e
-        except Exception as e:
-            raise SBOMGenerationError(
-                f"Failed to determine archive root directory: {e}", {"artifact_path": artifact_path}
-            ) from e
-
-        extract_dir = os.path.join(temp_dir, root_dir)
+        # # Find and validate the root directory
+        # try:
+        #     root_dir = await asyncio.to_thread(targz.root_directory, artifact_path)
+        # except targz.RootDirectoryError as e:
+        #     raise SBOMGenerationError(f"Archive root directory issue: {e}", {"artifact_path": artifact_path}) from e
+        # except Exception as e:
+        #     raise SBOMGenerationError(
+        #         f"Failed to determine archive root directory: {e}", {"artifact_path": artifact_path}
+        #     ) from e
+        #
+        # extract_dir = os.path.join(temp_dir, root_dir)
 
         # Extract the archive to the temporary directory
         # TODO: Ideally we'd have task dependencies or archive caching
@@ -243,7 +242,18 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
             max_size=_CONFIG.MAX_EXTRACT_SIZE,
             chunk_size=_CONFIG.EXTRACT_CHUNK_SIZE,
         )
-        log.info(f"Extracted {extracted_size} bytes into {extract_dir}")
+        log.info(f"Extracted {extracted_size} bytes")
+
+        # Find the root directory
+        if (extract_dir := _extracted_dir(str(temp_dir))) is None:
+            log.error("No root directory found in archive")
+            return {
+                "valid": False,
+                "message": "No root directory found in archive",
+                "errors": [],
+            }
+
+        log.info(f"Using root directory: {extract_dir}")
 
         # Run syft to generate the CycloneDX SBOM
         syft_command = ["syft", extract_dir, "-o", "cyclonedx-json"]
@@ -302,3 +312,21 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
         except FileNotFoundError:
             log.error("syft command not found. Is it installed and in PATH?")
             raise SBOMGenerationError("syft command not found")
+
+
+def _extracted_dir(temp_dir: str) -> str | None:
+    # Loop through all the dirs in temp_dir
+    extract_dir = None
+    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
+    for dir_name in os.listdir(temp_dir):
+        if dir_name.startswith("."):
+            continue
+        dir_path = os.path.join(temp_dir, dir_name)
+        if os.path.isdir(dir_path):
+            if extract_dir is None:
+                extract_dir = dir_path
+            else:
+                raise ValueError(f"Multiple root directories found: {extract_dir}, {dir_path}")
+    if extract_dir is None:
+        extract_dir = temp_dir
+    return extract_dir
