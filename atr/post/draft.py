@@ -35,6 +35,7 @@ import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
+from atr.db.interaction import wait_for_task
 
 
 class VotePreviewForm(form.Form):
@@ -193,19 +194,17 @@ async def sbomgen(session: web.Committer, project_name: str, version_name: str, 
                 if await aiofiles.os.path.exists(sbom_path_in_new_revision):
                     raise base.ASFQuartException("SBOM file already exists", errorcode=400)
 
-            if creating.new is None:
-                raise web.FlashError("Internal error: New revision not found")
+                # This shouldn't happen as we need a revision to kick the task off from
+                if creating.old is None:
+                    raise web.FlashError("Internal error: Revision not found")
 
-            # Calculate the paths in the revision now that create_and_manage moved it
-            new_revision_dir = util.get_unfinished_dir() / project_name / version_name / creating.new.number
-            path_in_new_revision = new_revision_dir / rel_path
-            sbom_path_in_new_revision = new_revision_dir / rel_path.parent / sbom_path_rel
-
-            # Create and queue the task, using paths within the new revision
-            sbom_task = await wacp.sbom.generate_cyclonedx(
-                project_name, version_name, creating.new.number, path_in_new_revision, sbom_path_in_new_revision
-            )
-            await wacp.sbom.generate_cyclonedx_wait(sbom_task)
+                # Create and queue the task, using paths within the new revision
+                sbom_task = await wacp.sbom.generate_cyclonedx(
+                    project_name, version_name, creating.old.number, path_in_new_revision, sbom_path_in_new_revision
+                )
+                success = await wait_for_task(sbom_task)
+                if not success:
+                    raise web.FlashError("Internal error: SBOM generation timed out")
 
     except Exception as e:
         log.exception("Error generating SBOM:")

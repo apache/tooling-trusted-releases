@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+import asyncio
 import contextlib
 import datetime
 import enum
@@ -453,6 +453,28 @@ async def user_committees_participant(asf_uid: str, caller_data: db.Session | No
 async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[str, str]]:
     projects = await user.projects(asf_uid)
     return [(p.name, p.display_name) for p in projects]
+
+
+async def wait_for_task(
+    task: sql.Task,
+    caller_data: db.Session | None = None,
+    desired_status: sql.TaskStatus = sql.TaskStatus.COMPLETED,
+    timeout_s: int = 10,
+) -> bool:
+    # We must wait until the sbom_task is complete before we can queue checks
+    # Maximum wait time is 60 * 100ms = 6000ms
+    log.info(f"Waiting for task {task.id} to complete")
+    async with db.ensure_session(caller_data) as data:
+        t = await data.task(id=task.id).get()
+        if t is None:
+            return False
+        for _attempt in range(timeout_s * 10):
+            await data.refresh(t)
+            if t.status == desired_status:
+                return True
+            # Wait 100ms before checking again
+            await asyncio.sleep(0.1)
+    return False
 
 
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:

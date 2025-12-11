@@ -18,7 +18,6 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
-import asyncio
 import datetime
 from typing import TYPE_CHECKING
 
@@ -130,18 +129,6 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.commit()
         await self.__data.refresh(sbom_task)
         return sbom_task
-
-    # TODO: This is not a writer
-    # Move this to the readers
-    async def generate_cyclonedx_wait(self, sbom_task: sql.Task) -> None:
-        # We must wait until the sbom_task is complete before we can queue checks
-        # Maximum wait time is 60 * 100ms = 6000ms
-        for _attempt in range(60):
-            await self.__data.refresh(sbom_task)
-            if sbom_task.status != sql.TaskStatus.QUEUED:
-                break
-            # Wait 100ms before checking again
-            await asyncio.sleep(0.1)
 
     async def osv_scan_cyclonedx(
         self,
