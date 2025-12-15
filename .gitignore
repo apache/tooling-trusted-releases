@@ -15,5 +15,4 @@ bootstrap/build/
 dev/
 /docs/
 node_modules/
-package-lock.json
 state/
