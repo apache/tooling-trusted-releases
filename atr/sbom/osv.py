@@ -28,11 +28,12 @@ _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
 _OSV_API_BASE: str = "https://api.osv.dev/v1"
 
 
-async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.ComponentVulnerabilities], int]:
+async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.ComponentVulnerabilities], list[str]]:
     components = bundle.bom.components or []
-    queries, ignored_count = _scan_bundle_build_queries(components)
+    queries, ignored = _scan_bundle_build_queries(components)
     if _DEBUG:
         print(f"[DEBUG] Scanning {len(queries)} components for vulnerabilities")
+        ignored_count = len(ignored)
         if ignored_count > 0:
             print(f"[DEBUG] {ignored_count} components ignored (missing purl or version)")
     async with aiohttp.ClientSession() as session:
@@ -43,7 +44,7 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
     result: list[models.osv.ComponentVulnerabilities] = []
     for purl, vulns in component_vulns_map.items():
         result.append(models.osv.ComponentVulnerabilities(purl=purl, vulnerabilities=vulns))
-    return result, ignored_count
+    return result, ignored
 
 
 def _component_purl_with_version(component: models.bom.Component) -> str | None:
@@ -125,17 +126,17 @@ async def _paginate_query(
 
 def _scan_bundle_build_queries(
     components: list[models.bom.Component],
-) -> tuple[list[tuple[str, dict[str, Any]]], int]:
+) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
     queries: list[tuple[str, dict[str, Any]]] = []
-    ignored_count = 0
+    ignored = []
     for component in components:
         purl_with_version = _component_purl_with_version(component)
         if purl_with_version is None:
-            ignored_count += 1
+            ignored.append(component.name)
             continue
         query = {"package": {"purl": purl_with_version}}
         queries.append((purl_with_version, query))
-    return queries, ignored_count
+    return queries, ignored
 
 
 async def _scan_bundle_fetch_vulnerabilities(

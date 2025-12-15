@@ -13,4 +13,4 @@ fi
 
 echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn.log
 exec hypercorn --reload --bind "${BIND}" \
-  --keyfile key.pem --certfile cert.pem atr.server:app >> /opt/atr/state/hypercorn.log 2>&1
+  --keyfile key.pem --certfile cert.pem atr.server:app | tee /opt/atr/state/hypercorn.log 2>&1

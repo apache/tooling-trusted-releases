@@ -289,7 +289,8 @@ def ntia_2021_issues(
             cpe_is_none = bom_value.metadata.component.cpe is None
             purl_is_none = bom_value.metadata.component.purl is None
             swid_is_none = bom_value.metadata.component.swid is None
-            if cpe_is_none and purl_is_none and swid_is_none:
+            type_is_file = bom_value.metadata.component.type == "file"
+            if cpe_is_none and purl_is_none and swid_is_none and (not type_is_file):
                 warnings.append(
                     models.conformance.MissingComponentProperty(
                         property=models.conformance.ComponentProperty.IDENTIFIER
@@ -307,11 +308,16 @@ def ntia_2021_issues(
         errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA))
 
     for index, component in enumerate(bom_value.components or []):
+        component_type = component.type
+        component_friendly_name = component.name
+        if component_type is not None:
+            component_friendly_name = f"{component_type}: {component_friendly_name}"
         if component.supplier is None:
             errors.append(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.SUPPLIER,
                     index=index,
+                    component=component_friendly_name,
                 )
             )
 
@@ -320,6 +326,7 @@ def ntia_2021_issues(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.NAME,
                     index=index,
+                    component=component_friendly_name,
                 )
             )
 
@@ -328,17 +335,20 @@ def ntia_2021_issues(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.VERSION,
                     index=index,
+                    component=component_friendly_name,
                 )
             )
 
         component_cpe_is_none = component.cpe is None
         component_purl_is_none = component.purl is None
         component_swid_is_none = component.swid is None
-        if component_cpe_is_none and component_purl_is_none and component_swid_is_none:
+        component_type_is_file = component_type == "file"
+        if component_cpe_is_none and component_purl_is_none and component_swid_is_none and (not component_type_is_file):
             warnings.append(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.IDENTIFIER,
                     index=index,
+                    component=component_friendly_name,
                 )
             )
 

@@ -139,7 +139,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     if not (full_path.endswith(".cdx.json") and os.path.isfile(full_path)):
         raise SBOMScanningError("SBOM file does not exist", {"file_path": args.file_path})
     bundle = sbom.utilities.path_to_bundle(pathlib.Path(full_path))
-    vulnerabilities, ignored_count = await sbom.osv.scan_bundle(bundle)
+    vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
     components = [results.OSVComponent(purl=v.purl, vulnerabilities=v.vulnerabilities) for v in vulnerabilities]
     return results.SBOMOSVScan(
         kind="sbom_osv_scan",
@@ -148,7 +148,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
         revision_number=args.revision_number,
         file_path=args.file_path,
         components=components,
-        ignored_count=ignored_count,
+        ignored=ignored,
     )
 
 
@@ -256,7 +256,7 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
         log.info(f"Using root directory: {extract_dir}")
 
         # Run syft to generate the CycloneDX SBOM
-        syft_command = ["syft", extract_dir, "-o", "cyclonedx-json"]
+        syft_command = ["syft", extract_dir, "-o", "cyclonedx-json", "--base-path", f"{temp_dir!s}"]
         log.info(f"Running syft: {' '.join(syft_command)}")
 
         try:

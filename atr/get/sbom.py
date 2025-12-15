@@ -194,10 +194,12 @@ def _vulnerability_component_details(block: htm.Block, component: results.OSVCom
     for vuln in component.vulnerabilities:
         vuln_id = vuln.get("id", "Unknown")
         vuln_summary = vuln.get("summary", "No summary available")
+        vuln_refs = [r for r in vuln.get("references", []) if r.get("type", "") == "WEB"]
+        vuln_primary_ref = vuln_refs[0] if (len(vuln_refs) > 0) else {}
         vuln_modified = vuln.get("modified", "Unknown")
         vuln_severity = _extract_vulnerability_severity(vuln)
 
-        vuln_header = [htm.strong(".me-2")[vuln_id]]
+        vuln_header = [htm.a(href=vuln_primary_ref.get("url", ""), target="_blank")[htm.strong(".me-2")[vuln_id]]]
         if vuln_severity != "Unknown":
             vuln_header.append(htm.span(".badge.bg-warning.text-dark")[vuln_severity])
 
@@ -256,13 +258,15 @@ def _vulnerability_scan_results(block: htm.Block, task: sql.Task) -> None:
         return
 
     components = task_result.components
-    ignored_count = task_result.ignored_count
+    ignored = task_result.ignored
+    ignored_count = len(ignored)
 
     if not components:
         block.p["No vulnerabilities found."]
         if ignored_count > 0:
-            component_word = "component" if (ignored_count == 1) else "components"
-            block.p[f"{ignored_count} {component_word} were ignored due to missing PURL or version information."]
+            component_word = "component was" if (ignored_count == 1) else "components were"
+            block.p[f"{ignored_count} {component_word} ignored due to missing PURL or version information:"]
+            block.p[f"{','.join(ignored)}"]
         return
 
     block.p[f"Found vulnerabilities in {len(components)} components:"]
@@ -271,8 +275,9 @@ def _vulnerability_scan_results(block: htm.Block, task: sql.Task) -> None:
         _vulnerability_component_details(block, component)
 
     if ignored_count > 0:
-        component_word = "component" if (ignored_count == 1) else "components"
-        block.p[f"{ignored_count} {component_word} were ignored due to missing PURL or version information."]
+        component_word = "component was" if (ignored_count == 1) else "components were"
+        block.p[f"{ignored_count} {component_word} ignored due to missing PURL or version information:"]
+        block.p[f"{','.join(ignored)}"]
 
 
 def _vulnerability_scan_section(

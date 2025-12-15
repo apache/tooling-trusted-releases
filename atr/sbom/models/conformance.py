@@ -57,6 +57,7 @@ class MissingProperty(Strict):
 class MissingComponentProperty(Strict):
     kind: Literal["missing_component_property"] = "missing_component_property"
     property: ComponentProperty
+    component: str | None = None
     index: int | None = None
 
     def __str__(self) -> str:

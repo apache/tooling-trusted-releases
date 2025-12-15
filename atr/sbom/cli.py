@@ -70,7 +70,8 @@ def command_missing(bundle: models.bundle.Bundle) -> None:
 
 
 def command_osv(bundle: models.bundle.Bundle) -> None:
-    results, ignored_count = asyncio.run(osv.scan_bundle(bundle))
+    results, ignored = asyncio.run(osv.scan_bundle(bundle))
+    ignored_count = len(ignored)
     if ignored_count > 0:
         print(f"Warning: {ignored_count} components ignored (missing purl or version)")
     for component_result in results:

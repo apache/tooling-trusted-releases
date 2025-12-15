@@ -58,7 +58,7 @@ class SBOMOSVScan(schema.Strict):
     revision_number: str = schema.description("Revision number")
     file_path: str = schema.description("Relative path to the scanned SBOM file")
     components: list[OSVComponent] = schema.description("Components with vulnerabilities")
-    ignored_count: int = schema.description("Number of components ignored")
+    ignored: list[str] = schema.description("Components ignored")
 
 
 class SbomQsScore(schema.Strict):

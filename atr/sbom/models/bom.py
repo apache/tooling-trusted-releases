@@ -28,6 +28,7 @@ class Swid(Lax):
 
 class Supplier(Lax):
     name: str | None = None
+    url: str | None = None
 
 
 class License(Lax):
@@ -51,6 +52,7 @@ class Component(Lax):
     swid: Swid | None = None
     licenses: list[LicenseChoice] | None = None
     scope: str | None = None
+    type: str | None = None
 
 
 class ToolComponent(Lax):
