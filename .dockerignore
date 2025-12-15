@@ -14,7 +14,7 @@
 .pytype/
 .ruff_cache/
 .tox/
-.venv*
+.venv
 __pycache__
 cert.pem
 dmypy.json

@@ -4,4 +4,4 @@ set -eu
 DOCKERFILE="${1:-Dockerfile.alpine}"
 IMAGE="${2:-tooling-trusted-releases}"
 
-docker build --no-cache -t "${IMAGE}" -f "${DOCKERFILE}" .
+DOCKER_BUILDKIT=1 docker build -t "${IMAGE}" -f "${DOCKERFILE}" .

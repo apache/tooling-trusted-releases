@@ -1,4 +1,3 @@
-# We can't use 24.10 because deadsnakes does not yet support it
 FROM ubuntu:24.04 AS builder
 
 ENV PIP_DEFAULT_TIMEOUT=100 \
@@ -8,29 +7,32 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
     UV_VERSION=0.7.12
 
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
       cmark \
       git \
       make \
-      patch \
-      software-properties-common
+      patch && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN add-apt-repository ppa:deadsnakes/ppa && \
-    apt update && \
-    apt install -y python3.13 python3.13-venv python3.13-dev
-
-RUN rm -rf /usr/local && python3.13 -m venv /usr/local
-
-RUN pip3 install uv==${UV_VERSION}
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv python install 3.13 --default
 
 # use the same workdir as in the final image
 # as the created venv will use that path
 WORKDIR /opt/atr
 
-COPY . .
+RUN uv venv .venv --python 3.13
+ENV PATH="/opt/atr/.venv/bin:$PATH"
+
+# Copy only what we need to install dependencies
+COPY Makefile pyproject.toml uv.lock .
 
 # only install runtime dependencies
 RUN make sync
+
+# Now copy everything else
+COPY . .
 
 # generate a version.py module from git information
 RUN make generate-version
@@ -38,6 +40,49 @@ RUN make docs
 
 WORKDIR /opt/atr/.venv/lib/python3.13/site-packages
 RUN patch -p2 < /opt/atr/patches/generics.py.patch || :
+
+# Dependency builder - install runtime system dependencies which can be copied and run in isolation
+FROM ubuntu:24.04 AS depbuilder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl \
+      ca-certificates \
+      golang && \
+    rm -rf /var/lib/apt/lists/*
+
+#RUN add-apt-repository ppa:deadsnakes/ppa && apt update && \
+#      apt install -y python3.13 python3.13-venv python3.13-dev
+
+# install additional tools
+
+RUN mkdir -p /opt/tools
+RUN mkdir -p /tmp/apache-rat
+WORKDIR /tmp/apache-rat
+# TODO: Check hash
+# TODO: This URL is not permanent, so we need to vendor this to pin it
+ENV RAT_VERSION=0.17
+RUN curl -L https://dlcdn.apache.org/creadur/apache-rat-${RAT_VERSION}/apache-rat-${RAT_VERSION}-bin.tar.gz -o apache-rat.tar.gz
+RUN tar -xzf apache-rat.tar.gz
+RUN find apache-rat-${RAT_VERSION} -type f -name "*.jar" -exec cp {} . \;
+# Rename to match expected filename if needed
+RUN [ -f apache-rat-${RAT_VERSION}.jar ] || mv $(find . -maxdepth 1 -type f -name "apache-rat*.jar" | head -1) apache-rat-${RAT_VERSION}.jar
+RUN mv apache-rat-${RAT_VERSION}.jar /opt/tools
+
+# WORKDIR /var/run
+ENV SYFT_VERSION=1.38.2
+RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
+ENV PARLAY_VERSION=0.9.0
+RUN GOPATH=/usr/local go install github.com/snyk/parlay@v${PARLAY_VERSION}
+ENV SBOMQS_VERSION=1.1.0
+RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v${SBOMQS_VERSION}
+
+ENV CDXCLI_VERSION=0.29.1
+# TODO: Check hash
+RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-x64 \
+    -o /usr/local/bin/cyclonedx && chmod +x /usr/local/bin/cyclonedx
+
+#RUN python3.13 -m venv /usr/local/venv
 
 # final image
 FROM ubuntu:24.04
@@ -48,31 +93,29 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set JAVA_TOOL_OPTIONS to limit memory usage
 ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:MaxRAM=256m -XX:CompressedClassSpaceSize=16m"
 
+RUN sed -i 's/htt[p|ps]:\/\/archive.ubuntu.com\/ubuntu\//mirror:\/\/mirrors.ubuntu.com\/mirrors.txt/g' /etc/apt/sources.list
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \
       curl \
       git \
-      golang \
       gpg \
       gpg-agent \
-      make \
       openjdk-8-jdk \
       rsync \
-      software-properties-common \
       subversion && \
     rm -rf /var/lib/apt/lists/*
 
-RUN add-apt-repository ppa:deadsnakes/ppa && \
-    apt update && \
-    apt install -y python3.13 python3.13-venv python3.13-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN rm -rf /usr/local && python3.13 -m venv /usr/local
+COPY --from=depbuilder /usr/local/bin/syft /usr/local/bin/syft
+COPY --from=depbuilder /usr/local/bin/parlay /usr/local/bin/parlay
+COPY --from=depbuilder /usr/local/bin/sbomqs /usr/local/bin/sbomqs
+COPY --from=depbuilder /usr/local/bin/cyclonedx /usr/local/bin/cyclonedx
+COPY --from=depbuilder /opt/tools /opt/tools
 
 WORKDIR /opt/atr
 
-# copy app and wheels from builder
+# copy python and app and wheels from builder
+COPY --from=builder /root/.local/share/uv /root/.local/share/uv
 COPY --from=builder /opt/atr/.venv ./.venv
 COPY --from=builder /opt/atr/atr ./atr
 COPY --from=builder /opt/atr/docs ./docs
@@ -83,35 +126,7 @@ COPY --from=builder /opt/atr/alembic.ini .
 COPY --from=builder /opt/atr/start-atr.sh .
 
 RUN chmod +x ./start-atr.sh
-
-# install additional tools
-ENV RAT_VERSION=0.17
-
-RUN mkdir -p /opt/tools
-RUN mkdir -p /tmp/apache-rat
-WORKDIR /tmp/apache-rat
-# TODO: Check hash
-# TODO: This URL is not permanent, so we need to vendor this to pin it
-RUN curl -L https://dlcdn.apache.org/creadur/apache-rat-${RAT_VERSION}/apache-rat-${RAT_VERSION}-bin.tar.gz -o apache-rat.tar.gz
-RUN tar -xzf apache-rat.tar.gz
-RUN find apache-rat-${RAT_VERSION} -type f -name "*.jar" -exec cp {} . \;
-# Rename to match expected filename if needed
-RUN [ -f apache-rat-${RAT_VERSION}.jar ] || mv $(find . -maxdepth 1 -type f -name "apache-rat*.jar" | head -1) apache-rat-${RAT_VERSION}.jar
-RUN mv apache-rat-${RAT_VERSION}.jar /opt/tools
 RUN java -version
-
-# WORKDIR /var/run
-RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v1.38.2
-# RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-# RUN git clone https://github.com/sbp/sbomasm && cd sbomasm && GOPATH=/usr/local go install ./...
-# RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomasm@v1.0.6
-RUN GOPATH=/usr/local go install github.com/snyk/parlay@v0.9.0
-RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v1.1.0
-
-ENV CDXCLI_VERSION=0.29.1
-# TODO: Check hash
-RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-x64 \
-    -o /usr/local/bin/cyclonedx && chmod +x /usr/local/bin/cyclonedx
 
 EXPOSE 4443
 
