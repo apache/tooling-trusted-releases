@@ -15,9 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import pydantic
+
+import atr.sbom.models.osv as osv
 
 from . import schema
 
@@ -48,7 +50,7 @@ class SBOMGenerateCycloneDX(schema.Strict):
 
 class OSVComponent(schema.Strict):
     purl: str = schema.description("Package URL")
-    vulnerabilities: list[dict[str, Any]] = schema.description("Vulnerabilities found")
+    vulnerabilities: list[osv.VulnerabilityDetails] = schema.description("Vulnerabilities found")
 
 
 class SBOMOSVScan(schema.Strict):
@@ -57,6 +59,7 @@ class SBOMOSVScan(schema.Strict):
     version_name: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     file_path: str = schema.description("Relative path to the scanned SBOM file")
+    new_file_path: str = schema.Field(default="", strict=False, description="Relative path to the updated SBOM file")
     components: list[OSVComponent] = schema.description("Components with vulnerabilities")
     ignored: list[str] = schema.description("Components ignored")
 
@@ -120,6 +123,12 @@ class SBOMToolScore(schema.Strict):
     warnings: list[str] = schema.description("Warnings from the SBOM tool")
     errors: list[str] = schema.description("Errors from the SBOM tool")
     outdated: str | None = schema.description("Outdated tool from the SBOM tool")
+    vulnerabilities: list[str] | None = schema.Field(
+        default=None, strict=False, description="Vulnerabilities found in the SBOM"
+    )
+    atr_props: list[dict[str, str]] | None = schema.Field(
+        default=None, strict=False, description="ATR properties found in the SBOM"
+    )
     cli_errors: list[str] | None = schema.description("Errors from the CycloneDX CLI")
 
 

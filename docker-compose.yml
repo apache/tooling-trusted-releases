@@ -9,6 +9,8 @@ services:
       - BIND=0.0.0.0:8080
       - SECRET_KEY=insecure-test-key
       - SSH_HOST=0.0.0.0
+      - LDAP_BIND_DN=$LDAP_BIND_DN
+      - LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD
     networks:
       - atr-network
     volumes:

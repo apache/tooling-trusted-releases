@@ -21,6 +21,7 @@ dependencies = [
   "blockbuster>=1.5.23,<2.0.0",
   "cmarkgfm>=2024.11.20",
   "cryptography~=44.0",
+  "cvss~=3.6",
   "cyclonedx-python-lib[json-validation]>=11.0.0",
   # "dkimpy @ git+https://github.com/sbp/dkimpy.git@main",
   "dnspython>=2.7.0,<3.0.0",

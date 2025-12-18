@@ -27,6 +27,7 @@ import atr.db as db
 import atr.get.download as download
 import atr.get.ignores as ignores
 import atr.get.report as report
+import atr.get.sbom as sbom
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.sql as sql
@@ -349,6 +350,7 @@ def _render_file_row(
         version_name=release.version,
         file_path=path_str,
     )
+    sbom_url = util.as_url(sbom.report, project=release.project.name, version=release.version, file_path=path_str)
 
     if not has_checks_before:
         path_display = htpy.code(".text-muted")[path_str]
@@ -393,6 +395,11 @@ def _render_file_row(
         err_cell = htpy.span(".text-muted", style=num_style)["0"]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-success", href=report_url)["Show details"]
 
+    # <a href="{{ as_url(get.sbom.report, project=project_name, version=version_name, file_path=path) }}"
+    # class="btn btn-sm btn-outline-secondary">Show SBOM</a>
+    sbom_btn = None
+    if path.suffixes[-2:] == [".cdx", ".json"]:
+        sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=sbom_url)["SBOM report"]
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
 
     tbody.tr[
@@ -403,6 +410,7 @@ def _render_file_row(
         htpy.td(".text-end.text-nowrap.py-2.pe-3")[
             htpy.div(".d-flex.justify-content-end.align-items-center.gap-2")[
                 report_btn,
+                sbom_btn,
                 download_btn,
             ],
         ],

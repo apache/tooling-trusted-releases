@@ -27,7 +27,7 @@ from .cyclonedx import validate_cli, validate_py
 from .licenses import check
 from .maven import plugin_outdated_version
 from .sbomqs import total_score
-from .utilities import bundle_to_patch, patch_to_data, path_to_bundle
+from .utilities import bundle_to_ntia_patch, bundle_to_vuln_patch, patch_to_data, path_to_bundle
 
 
 def command_license(bundle: models.bundle.Bundle) -> None:
@@ -54,7 +54,7 @@ def command_license(bundle: models.bundle.Bundle) -> None:
 
 
 def command_merge(bundle: models.bundle.Bundle) -> None:
-    patch_ops = asyncio.run(bundle_to_patch(bundle))
+    patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
         merged = bundle.doc.patch(yyjson.Document(patch_data))
@@ -75,11 +75,11 @@ def command_osv(bundle: models.bundle.Bundle) -> None:
     if ignored_count > 0:
         print(f"Warning: {ignored_count} components ignored (missing purl or version)")
     for component_result in results:
-        print(component_result.purl)
+        print(component_result.ref)
         for vuln in component_result.vulnerabilities:
-            vuln_id = vuln.get("id", "unknown")
-            modified = vuln.get("modified", "")
-            summary = vuln.get("summary", "(no summary)")
+            vuln_id = vuln.id
+            modified = vuln.modified
+            summary = vuln.summary
             print(f"  {vuln_id} {modified} {summary}")
 
 
@@ -91,8 +91,18 @@ def command_outdated(bundle: models.bundle.Bundle) -> None:
         print("no outdated tool found")
 
 
-def command_patch(bundle: models.bundle.Bundle) -> None:
-    patch_ops = asyncio.run(bundle_to_patch(bundle))
+def command_patch_ntia(bundle: models.bundle.Bundle) -> None:
+    patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
+    if patch_ops:
+        patch_data = patch_to_data(patch_ops)
+        print(yyjson.Document(patch_data).dumps())
+    else:
+        print("no patch needed")
+
+
+def command_patch_vuln(bundle: models.bundle.Bundle) -> None:
+    results, _ = asyncio.run(osv.scan_bundle(bundle))
+    patch_ops = asyncio.run(bundle_to_vuln_patch(bundle, results))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
         print(yyjson.Document(patch_data).dumps())
@@ -101,7 +111,7 @@ def command_patch(bundle: models.bundle.Bundle) -> None:
 
 
 def command_scores(bundle: models.bundle.Bundle) -> None:
-    patch_ops = asyncio.run(bundle_to_patch(bundle))
+    patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
         merged = bundle.doc.patch(yyjson.Document(patch_data))
@@ -153,6 +163,9 @@ def command_where(bundle: models.bundle.Bundle) -> None:
 
 
 def main() -> None:  # noqa: C901
+    if len(sys.argv) < 3:
+        print("Usage: python -m atr.sbom <command> <sbom-path>")
+        sys.exit(1)
     path = pathlib.Path(sys.argv[2])
     bundle = path_to_bundle(path)
     match sys.argv[1]:
@@ -166,8 +179,10 @@ def main() -> None:  # noqa: C901
             command_osv(bundle)
         case "outdated":
             command_outdated(bundle)
-        case "patch":
-            command_patch(bundle)
+        case "patch-ntia":
+            command_patch_ntia(bundle)
+        case "patch-vuln":
+            command_patch_vuln(bundle)
         case "scores":
             command_scores(bundle)
         case "validate-cli":

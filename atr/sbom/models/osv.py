@@ -19,14 +19,44 @@ from __future__ import annotations
 
 from typing import Any
 
+import pydantic
+
 from .base import Lax
 
 
 class QueryResult(Lax):
-    vulns: list[dict[str, Any]] | None = None
+    vulns: list[VulnerabilityDetails] | None = None
     next_page_token: str | None = None
 
 
 class ComponentVulnerabilities(Lax):
-    purl: str
-    vulnerabilities: list[dict[str, Any]]
+    ref: str
+    vulnerabilities: list[VulnerabilityDetails]
+
+
+class VulnerabilityDetails(Lax):
+    id: str
+    summary: str | None = None
+    details: str | None = None
+    references: list[dict[str, Any]] | None = None
+    severity: list[dict[str, Any]] | None = None
+    published: str | None = None
+    modified: str
+    database_specific: dict[str, Any] = pydantic.Field(default={})
+
+
+class CdxVulnerabilityDetail(Lax):
+    bom_ref: str | None = pydantic.Field(default=None, alias="bom-ref")
+    id: str
+    source: dict[str, str] | None = None
+    description: str | None = None
+    detail: str | None = None
+    advisories: list[dict[str, str]] | None = None
+    cwes: list[int] | None = None
+    published: str | None = None
+    updated: str | None = None
+    affects: list[dict[str, str]] | None = None
+    ratings: list[dict[str, str | float]] | None = None
+
+
+CdxVulnAdapter = pydantic.TypeAdapter(CdxVulnerabilityDetail)

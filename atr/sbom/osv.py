@@ -18,14 +18,66 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
 from . import models
+from .utilities import get_pointer, osv_severity_to_cdx
+
+if TYPE_CHECKING:
+    import yyjson
 
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
 _OSV_API_BASE: str = "https://api.osv.dev/v1"
+_SOURCE_DATABASE_NAMES = {
+    "ASB": "Android Security Bulletin",
+    "PUB": "Android Security Bulletin",
+    "ALSA": "AlmaLinux Security Advisory",
+    "ALBA": "AlmaLinux Security Advisory",
+    "ALEA": "AlmaLinux Security Advisory",
+    "ALPINE": "Alpine Security Advisory",
+    "BELL": "BellSoft Security Advisory",
+    "BIT": "Bitnami Vulnerability Database",
+    "CGA": "Chainguard Security Notices",
+    "CURL": "Curl CVEs",
+    "CVE": "National Vulnerability Database",
+    "DEBIAN": "Debian Security Tracker",
+    "DSA": "Debian Security Advisory",
+    "DLA": "Debian Security Advisory",
+    "DTSA": "Debian Security Advisory",
+    "ECHO": "Echo Security Advisory",
+    "EEF": "Erlang Ecosystem Foundation CNA Vulnerabilities",
+    "ELA": "Debian Extended LTS Security Advisory",
+    "GHSA": "GitHub Security Advisory",
+    "GO": "Go Vulnerability Database",
+    "GSD": "Global Security Database",
+    "HSEC": "Haskell Security Advisory",
+    "JLSEC": "Julia Security Advisory",
+    "KUBE": "Kubernetes Official CVE Feed",
+    "LBSEC": "LoopBack Advisory Database",
+    "LSN": "Livepatch Security Notices",
+    "MGASA": "Mageia Security Advisory",
+    "MAL": "Malicious Packages Repository",
+    "MINI": "Minimus Security Notices",
+    "OESA": "openEuler Security Advisory",
+    "OSV": "OSV Advisory",
+    "PHSA": "VMWare Photon Security Advisory",
+    "PSF": "Python Software Foundation Vulnerability Database",
+    "PYSEC": "PyPI Vulnerability Database",
+    "RHSA": "Red Hat Security Data",
+    "RHBA": "Red Hat Security Data",
+    "RHEA": "Red Hat Security Data",
+    "RLSA": "Rocky Linux Security Advisory",
+    "RXSA": "Rocky Linux Security Advisory",
+    "RSEC": "RConsortium Advisory Database",
+    "RUSTSEC": "RustSec Advisory Database",
+    "SUSE": "SUSE Security Landing Page",
+    "openSUSE": "SUSE Security Landing Page",
+    "UBUNTU": "Ubuntu CVE Reports",
+    "USN": "Ubuntu Security Notices",
+    "V8": "V8/Chromium Time-Based Policy",
+}
 
 
 async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.ComponentVulnerabilities], list[str]]:
@@ -42,9 +94,74 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
             print(f"[DEBUG] Total components with vulnerabilities: {len(component_vulns_map)}")
         await _scan_bundle_populate_vulnerabilities(session, component_vulns_map)
     result: list[models.osv.ComponentVulnerabilities] = []
-    for purl, vulns in component_vulns_map.items():
-        result.append(models.osv.ComponentVulnerabilities(purl=purl, vulnerabilities=vulns))
+    for ref, vulns in component_vulns_map.items():
+        result.append(models.osv.ComponentVulnerabilities(ref=ref, vulnerabilities=vulns))
     return result, ignored
+
+
+def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulnerabilityDetail]:
+    vulns = get_pointer(bundle.doc, "/vulnerabilities")
+    if vulns is None:
+        return []
+    print(vulns)
+    return [models.osv.CdxVulnerabilityDetail.model_validate(v) for v in vulns]
+
+
+async def vuln_patch(
+    session: aiohttp.ClientSession,
+    doc: yyjson.Document,
+    components: list[models.osv.ComponentVulnerabilities],
+) -> models.patch.Patch:
+    patch_ops: models.patch.Patch = []
+    _assemble_vulnerabilities(doc, patch_ops)
+    ix = 0
+    for c in components:
+        for vuln in c.vulnerabilities:
+            _assemble_component_vulnerability(doc, patch_ops, c.ref, vuln, ix)
+            ix += 1
+    return patch_ops
+
+
+def _assemble_vulnerabilities(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+    if get_pointer(doc, "/vulnerabilities") is not None:
+        patch_ops.append(models.patch.RemoveOp(op="remove", path="/vulnerabilities"))
+    patch_ops.append(
+        models.patch.AddOp(
+            op="add",
+            path="/vulnerabilities",
+            value=[],
+        )
+    )
+
+
+def _assemble_component_vulnerability(
+    doc: yyjson.Document, patch_ops: models.patch.Patch, ref: str, vuln: models.osv.VulnerabilityDetails, index: int
+) -> None:
+    vulnerability = {
+        "bom-ref": f"vuln:{ref}/{vuln.id}",
+        "id": vuln.id,
+        "source": _get_source(vuln),
+        "description": vuln.summary,
+        "detail": vuln.details,
+        "cwes": [int(r.replace("CWE-", "")) for r in vuln.database_specific.get("cwe_ids", [])],
+        "published": vuln.published,
+        "updated": vuln.modified,
+        "affects": [{"ref": ref}],
+        "ratings": osv_severity_to_cdx(vuln.severity, vuln.database_specific.get("severity", "")),
+    }
+    if vuln.references is not None:
+        vulnerability["advisories"] = [
+            {"url": r["url"]}
+            for r in vuln.references
+            if (r.get("type", "") == "WEB" and "advisories" in r.get("url", "")) or r.get("type", "") == "ADVISORY"
+        ]
+    patch_ops.append(
+        models.patch.AddOp(
+            op="add",
+            path=f"/vulnerabilities/{index!s}",
+            value=vulnerability,
+        )
+    )
 
 
 def _component_purl_with_version(component: models.bom.Component) -> str | None:
@@ -90,7 +207,7 @@ async def _fetch_vulnerabilities_for_batch(
 async def _fetch_vulnerability_details(
     session: aiohttp.ClientSession,
     vuln_id: str,
-) -> dict[str, Any]:
+) -> models.osv.VulnerabilityDetails:
     if _DEBUG:
         print(f"[DEBUG] Fetching details for {vuln_id}")
     async with session.get(f"{_OSV_API_BASE}/vulns/{vuln_id}") as response:
@@ -98,12 +215,24 @@ async def _fetch_vulnerability_details(
         return await response.json()
 
 
+def _get_source(vuln: models.osv.VulnerabilityDetails) -> dict[str, str]:
+    db = vuln.id.split("-")[0]
+    web_refs = list(filter(lambda v: v.get("type", "") == "WEB", vuln.references)) if vuln.references else []
+    first_ref = web_refs[0] if len(web_refs) > 0 else None
+
+    name = _SOURCE_DATABASE_NAMES.get(db, "Unknown Database")
+    source = {"name": name}
+    if first_ref is not None:
+        source["url"] = first_ref.get("url", "")
+    return source
+
+
 async def _paginate_query(
     session: aiohttp.ClientSession,
     query: dict[str, Any],
     page_token: str,
-) -> list[dict[str, Any]]:
-    all_vulns: list[dict[str, Any]] = []
+) -> list[models.osv.VulnerabilityDetails]:
+    all_vulns: list[models.osv.VulnerabilityDetails] = []
     current_query = query.copy()
     current_query["page_token"] = page_token
     page = 0
@@ -135,7 +264,8 @@ def _scan_bundle_build_queries(
             ignored.append(component.name)
             continue
         query = {"package": {"purl": purl_with_version}}
-        queries.append((purl_with_version, query))
+        if component.bom_ref is not None:
+            queries.append((component.bom_ref, query))
     return queries, ignored
 
 
@@ -143,31 +273,31 @@ async def _scan_bundle_fetch_vulnerabilities(
     session: aiohttp.ClientSession,
     queries: list[tuple[str, dict[str, Any]]],
     batch_size: int,
-) -> dict[str, list[dict[str, Any]]]:
-    component_vulns_map: dict[str, list[dict[str, Any]]] = {}
+) -> dict[str, list[models.osv.VulnerabilityDetails]]:
+    component_vulns_map: dict[str, list[models.osv.VulnerabilityDetails]] = {}
     for batch_start in range(0, len(queries), batch_size):
         batch_end = min(batch_start + batch_size, len(queries))
         batch = queries[batch_start:batch_end]
         if _DEBUG:
             batch_num = batch_start // batch_size + 1
             print(f"[DEBUG] Processing batch {batch_num} ({batch_start + 1}-{batch_end}/{len(queries)})")
-        batch_queries = [query for _purl, query in batch]
+        batch_queries = [query for _ref, query in batch]
         batch_results = await _fetch_vulnerabilities_for_batch(session, batch_queries)
         if _DEBUG and (len(batch_results) != len(batch)):
             print(f"[DEBUG] count mismatch (expected {len(batch)}, got {len(batch_results)})")
-        for i, (purl, query) in enumerate(batch):
+        for i, (ref, query) in enumerate(batch):
             if i >= len(batch_results):
                 break
             query_result = batch_results[i]
             if query_result.vulns:
-                existing_vulns = component_vulns_map.setdefault(purl, [])
+                existing_vulns = component_vulns_map.setdefault(ref, [])
                 existing_vulns.extend(query_result.vulns)
                 if _DEBUG:
-                    print(f"[DEBUG] {purl}: {len(query_result.vulns)} vulnerabilities")
+                    print(f"[DEBUG] {ref}: {len(query_result.vulns)} vulnerabilities")
             if query_result.next_page_token:
                 if _DEBUG:
-                    print(f"[DEBUG] {purl}: has pagination, fetching remaining pages")
-                existing_vulns = component_vulns_map.setdefault(purl, [])
+                    print(f"[DEBUG] {ref}: has pagination, fetching remaining pages")
+                existing_vulns = component_vulns_map.setdefault(ref, [])
                 paginated = await _paginate_query(session, query, query_result.next_page_token)
                 existing_vulns.extend(paginated)
     return component_vulns_map
@@ -175,19 +305,19 @@ async def _scan_bundle_fetch_vulnerabilities(
 
 async def _scan_bundle_populate_vulnerabilities(
     session: aiohttp.ClientSession,
-    component_vulns_map: dict[str, list[dict[str, Any]]],
+    component_vulns_map: dict[str, list[models.osv.VulnerabilityDetails]],
 ) -> None:
-    details_cache: dict[str, dict[str, Any]] = {}
+    details_cache: dict[str, models.osv.VulnerabilityDetails] = {}
     for vulns in component_vulns_map.values():
         for vuln in vulns:
-            vuln_id = vuln.get("id")
+            vuln_id = vuln.id
             if not vuln_id:
                 continue
             details = details_cache.get(vuln_id)
             if details is None:
                 details = await _fetch_vulnerability_details(session, vuln_id)
                 details_cache[vuln_id] = details
-            vuln.clear()
-            vuln.update(details)
+            vuln.__dict__.clear()
+            vuln.__dict__.update(details)
     if _DEBUG:
         print(f"[DEBUG] Fetched details for {len(details_cache)} unique vulnerabilities")

@@ -28,7 +28,7 @@ class Swid(Lax):
 
 class Supplier(Lax):
     name: str | None = None
-    url: str | None = None
+    url: list[str] | None = None
 
 
 class License(Lax):
