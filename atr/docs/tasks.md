@@ -25,12 +25,23 @@ There are several checks for correctness that are already built out, and this ho
 1. Compliant license (`sql.TaskType.LICENSE_FILES`, `license.files`)
 1. Compliant license headers (`sql.TaskType.LICENSE_HEADERS`, `license.headers`)
 1. File paths (`sql.TaskType.PATHS_CHECK`, `paths.check`)
-1. RAT results (`sql.TaskType.RAT_CHECK`, `rat.check`)
+1. RAT results (`sql.TaskType.RAT_CHECK`, `rat.check`) — see the RAT section below for how to reproduce failures locally.
 1. Correct signature (`sql.TaskType.SIGNATURE_CHECK`, `signature.check`)
 1. Tarball integrity (`sql.TaskType.TARGZ_INTEGRITY`, `targz.integrity`)
 1. Tarball structure (`sql.TaskType.TARGZ_STRUCTURE`, `targz.structure`)
 1. Zip file integrity (`sql.TaskType.ZIPFORMAT_INTEGRITY`, `zipformat.integrity`)
 1. Zip file structure (`sql.TaskType.ZIPFORMAT_STRUCTURE`, `zipformat.structure`)
+
+### Reproducing RAT check failures locally
+
+If the RAT check fails in CI, you can run it yourself against a source tarball:
+
+1. Download Apache RAT (e.g., `apache-rat-0.16.jar` from https://creadur.apache.org/rat/download_rat.cgi).
+2. Download the release source archive that failed.
+3. Set any project-specific excludes (see `rat-excludes.txt` if present in the release).
+4. Run RAT: `java -jar apache-rat-0.16.jar -E rat-excludes.txt -d <path-to-unpacked-src>`.
+
+This mirrors the automated RAT check (`sql.TaskType.RAT_CHECK`, `rat.check`) and should surface the same license/header issues locally.
 
 ### Adding a task check module
 
