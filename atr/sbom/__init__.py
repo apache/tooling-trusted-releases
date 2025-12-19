@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from . import cli, conformance, constants, cyclonedx, licenses, maven, models, osv, sbomqs, spdx, utilities
+from . import cli, conformance, constants, cyclonedx, licenses, maven, models, osv, sbomqs, spdx, tool, utilities
 
 __all__ = [
     "cli",
@@ -28,5 +28,6 @@ __all__ = [
     "osv",
     "sbomqs",
     "spdx",
+    "tool",
     "utilities",
 ]

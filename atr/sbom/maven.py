@@ -17,14 +17,13 @@
 
 from __future__ import annotations
 
-import datetime
 import pathlib
 import tempfile
 from typing import Any, Final
 
 import yyjson
 
-from . import constants, models
+from . import constants
 
 _CACHE_PATH: Final[pathlib.Path] = pathlib.Path(tempfile.gettempdir()) / "sbomtool-cache.json"
 
@@ -49,57 +48,6 @@ def cache_write(cache: dict[str, Any]) -> None:
         pass
 
 
-def plugin_outdated_version(bom_value: models.bom.Bom) -> models.maven.Outdated | None:
-    if bom_value.metadata is None:
-        return models.maven.OutdatedMissingMetadata()
-    timestamp = bom_value.metadata.timestamp
-    if timestamp is None:
-        # This quite often isn't available
-        # We could use the file mtime, but that's extremely heuristic
-        # return OutdatedMissingTimestamp()
-        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    tools = []
-    tools_value = bom_value.metadata.tools
-    if isinstance(tools_value, list):
-        tools = tools_value
-    elif tools_value:
-        tools = tools_value.components or []
-    for tool in tools:
-        names_or_descriptions = {
-            "cyclonedx maven plugin",
-            "cyclonedx-maven-plugin",
-        }
-        name_or_description = (tool.name or tool.description or "").lower()
-        if name_or_description not in names_or_descriptions:
-            continue
-        if tool.version is None:
-            return models.maven.OutdatedMissingVersion(name=name_or_description)
-        available_version = plugin_outdated_version_core(timestamp, tool.version)
-        if available_version is not None:
-            return models.maven.OutdatedTool(
-                name=name_or_description,
-                used_version=tool.version,
-                available_version=available_version,
-            )
-    return None
-
-
-def plugin_outdated_version_core(isotime: str, version: str) -> str | None:
-    expected_version = version_as_of(isotime)
-    if expected_version is None:
-        return None
-    if version == expected_version:
-        return None
-    expected_version_comparable = version_parse(expected_version)
-    version_comparable = version_parse(version)
-    # If the version used is less than the version available
-    if version_comparable < expected_version_comparable:
-        # Then note the version available
-        return expected_version
-    # Otherwise, the user is using the latest version
-    return None
-
-
 def version_as_of(isotime: str) -> str | None:
     # Given these mappings:
     # {
@@ -115,8 +63,3 @@ def version_as_of(isotime: str) -> str | None:
         if isotime >= date:
             return version
     return None
-
-
-def version_parse(version: str) -> tuple[int, int, int]:
-    parts = version.split(".")
-    return int(parts[0]), int(parts[1]), int(parts[2])

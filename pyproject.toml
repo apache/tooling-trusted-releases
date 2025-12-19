@@ -43,6 +43,7 @@ dependencies = [
   "quart-schema[pydantic]~=0.21",
   "quart-wtforms~=1.0.3",
   "rich~=14.0.0",
+  "semver>=3.0.4",
   "sqlmodel~=0.0.24",
   "standard-imghdr>=3.13.0",
   "yyjson>=4.0.6",

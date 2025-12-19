@@ -30,11 +30,44 @@ if TYPE_CHECKING:
 import aiohttp
 import yyjson
 
-from . import models
+from . import constants, models
+
+
+def get_atr_version():
+    try:
+        from atr import metadata
+
+        return metadata.version
+    except ImportError:
+        return "cli"
+
+
+_ATR_VERSION = get_atr_version()
 
 _SCORING_METHODS_OSV = {"CVSS_V2": "CVSSv2", "CVSS_V3": "CVSSv3", "CVSS_V4": "CVSSv4"}
 _SCORING_METHODS_CDX = {"CVSSv2": "CVSS_V2", "CVSSv3": "CVSS_V3", "CVSSv4": "CVSS_V4", "other": "Other"}
 _CDX_SEVERITIES = ["critical", "high", "medium", "low", "info", "none", "unknown"]
+_TOOL_METADATA = {
+    "bom-ref": "tool:asf:atr",
+    "provider": {
+        "name": constants.conformance.THE_APACHE_SOFTWARE_FOUNDATION,
+        "url": ["https://apache.org/"],
+    },
+    "name": "Apache Trusted Releases",
+    "authenticated": True,
+    "version": _ATR_VERSION,
+}
+
+
+def apply_patch(
+    reason: str, revision: str, bundle: models.bundle.Bundle, patch_ops: models.patch.Patch
+) -> tuple[int, yyjson.Document]:
+    """Take a list of patch operations and apply them to the bundle. Returns the patched document, with the
+    task recorded in `properties` and the SBOM version number incremented as per the CDX spec."""
+    _record_task(reason, revision, bundle.doc, patch_ops)
+    new_version = _increment_version(bundle.doc, patch_ops)
+    patch_data = patch_to_data(patch_ops)
+    return new_version, bundle.doc.patch(yyjson.Document(patch_data))
 
 
 async def bundle_to_ntia_patch(bundle_value: models.bundle.Bundle) -> models.patch.Patch:
@@ -51,9 +84,7 @@ async def bundle_to_vuln_patch(
 ) -> models.patch.Patch:
     from .osv import vuln_patch
 
-    # TODO: May not need session (copied from ntia patch)
-    async with aiohttp.ClientSession() as session:
-        patch_ops = await vuln_patch(session, bundle_value.doc, vulnerabilities)
+    patch_ops = await vuln_patch(bundle_value.doc, vulnerabilities)
     return patch_ops
 
 
@@ -67,11 +98,14 @@ def get_pointer(doc: yyjson.Document, path: str) -> Any | None:
         raise
 
 
-def get_atr_props_from_bundle(bundle_value: models.bundle.Bundle) -> list[dict[str, str]]:
+def get_props_from_bundle(bundle_value: models.bundle.Bundle) -> tuple[int, list[dict[str, str]]]:
+    version: int | None = get_pointer(bundle_value.doc, "/version")
+    if version is None:
+        version = 0
     properties: list[dict[str, str]] | None = get_pointer(bundle_value.doc, "/properties")
     if properties is None:
-        return []
-    return [p for p in properties if "asf:atr:" in p.get("name", "")]
+        return version, []
+    return version, [p for p in properties if "asf:atr:" in p.get("name", "")]
 
 
 def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
@@ -82,17 +116,6 @@ def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
     text = path.read_text(encoding="utf-8")
     bom = models.bom.Bom.model_validate_json(text)
     return models.bundle.Bundle(doc=yyjson.Document(text), bom=bom, path=path, text=text)
-
-
-def record_task(task: str, revision: str, doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
-    properties: list[dict[str, str]] | None = get_pointer(doc, "/properties")
-    operation = {"name": f"asf:atr:{task}", "value": revision}
-    if properties is None:
-        patch_ops.append(models.patch.AddOp(op="add", path="/properties", value=[operation]))
-    else:
-        properties.append(operation)
-        patch_ops.append(models.patch.ReplaceOp(op="replace", path="/properties", value=properties))
-    return patch_ops
 
 
 def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> list[dict[str, str | float]] | None:
@@ -155,6 +178,18 @@ def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:
             return {"severity": score_str}
 
 
+def _increment_version(doc: yyjson.Document, patch_ops: models.patch.Patch) -> int:
+    version: int | None = get_pointer(doc, "/version")
+    if version is not None:
+        version = version + 1
+        patch_ops.append(models.patch.ReplaceOp(op="replace", path="/version", value=version))
+    else:
+        # This shouldn't happen, but we can handle it just in case
+        version = 1
+        patch_ops.append(models.patch.AddOp(op="add", path="/version", value=version))
+    return version
+
+
 def _map_severity(severity: str) -> str:
     sev = severity.lower()
     if sev in _CDX_SEVERITIES:
@@ -164,3 +199,35 @@ def _map_severity(severity: str) -> str:
         if sev == "moderate":
             return "medium"
     return "unknown"
+
+
+def _record_task(task: str, revision: str, doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+    properties: list[dict[str, str]] | None = get_pointer(doc, "/properties")
+    tools: dict[str, Any] | None = get_pointer(doc, "/metadata/tools")
+    services: list[dict[str, Any]] | None = get_pointer(doc, "/metadata/tools/services")
+    operation = {"name": f"asf:atr:{task}", "value": revision}
+    if properties is None:
+        patch_ops.append(models.patch.AddOp(op="add", path="/properties", value=[operation]))
+    else:
+        properties.append(operation)
+        patch_ops.append(models.patch.ReplaceOp(op="replace", path="/properties", value=properties))
+    if tools is None:
+        tools = {}
+        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools", value=tools))
+    if services is None:
+        services = []
+        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools/services", value=services))
+    try:
+        tool_index = [s.get("bom-ref", "") for s in services].index("tool:asf:atr")
+    except ValueError:
+        tool_index = -1
+    if tool_index == -1:
+        patch_ops.append(
+            models.patch.AddOp(op="add", path=f"/metadata/tools/services/{len(services)}", value=_TOOL_METADATA)
+        )
+    else:
+        # If we ever add more metadata to this, such as task-specific properties under the tool, this changes
+        patch_ops.append(
+            models.patch.ReplaceOp(op="replace", path=f"/metadata/tools/services/{tool_index}", value=_TOOL_METADATA)
+        )
+    return patch_ops

@@ -58,6 +58,9 @@ class SBOMOSVScan(schema.Strict):
     project_name: str = schema.description("Project name")
     version_name: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
+    bom_version: int | None = schema.Field(
+        default=None, strict=False, description="BOM Version produced with scan results"
+    )
     file_path: str = schema.description("Relative path to the scanned SBOM file")
     new_file_path: str = schema.Field(default="", strict=False, description="Relative path to the updated SBOM file")
     components: list[OSVComponent] = schema.description("Components with vulnerabilities")
@@ -103,6 +106,11 @@ class SbomQsReport(schema.Strict):
 class SBOMAugment(schema.Strict):
     kind: Literal["sbom_augment"] = schema.Field(alias="kind")
     path: str = schema.description("The path to the augmented SBOM file")
+    bom_version: int | None = schema.Field(
+        default=None,
+        strict=False,
+        description="BOM Version produced by the augment task, if any augmentations were applied",
+    )
 
 
 class SBOMQsScore(schema.Strict):
@@ -119,10 +127,11 @@ class SBOMToolScore(schema.Strict):
     project_name: str = schema.description("Project name")
     version_name: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
+    bom_version: int | None = schema.Field(default=None, strict=False, description="BOM Version scanned")
     file_path: str = schema.description("Relative path to the scored SBOM file")
     warnings: list[str] = schema.description("Warnings from the SBOM tool")
     errors: list[str] = schema.description("Errors from the SBOM tool")
-    outdated: str | None = schema.description("Outdated tool from the SBOM tool")
+    outdated: list[str] | str | None = schema.description("Outdated tool(s) from the SBOM tool")
     vulnerabilities: list[str] | None = schema.Field(
         default=None, strict=False, description="Vulnerabilities found in the SBOM"
     )

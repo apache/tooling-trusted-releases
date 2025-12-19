@@ -17,11 +17,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, NamedTuple
 
 import pydantic
 
 from .base import Strict
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class OutdatedTool(Strict):
@@ -42,6 +45,12 @@ class OutdatedMissingTimestamp(Strict):
 class OutdatedMissingVersion(Strict):
     kind: Literal["missing_version"] = "missing_version"
     name: str
+
+
+class Tool(NamedTuple):
+    key: str
+    friendly_name: str
+    version_function: Callable[[str], str | None]
 
 
 type Outdated = Annotated[

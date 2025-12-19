@@ -59,6 +59,15 @@ class ToolComponent(Lax):
     name: str | None = None
     version: str | None = None
     description: str | None = None
+    supplier: Supplier | None = None
+
+
+class ServiceComponent(Lax):
+    name: str | None = None
+    version: str | None = None
+    description: str | None = None
+    supplier: Supplier | None = None
+    authenticated: bool | None = None
 
 
 class Tool(Lax):
@@ -69,6 +78,7 @@ class Tool(Lax):
 
 class Tools(Lax):
     components: list[ToolComponent] | None = None
+    services: list[ServiceComponent] | None = None
 
 
 class Metadata(Lax):

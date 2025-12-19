@@ -25,8 +25,8 @@ from . import models, osv
 from .conformance import ntia_2021_issues
 from .cyclonedx import validate_cli, validate_py
 from .licenses import check
-from .maven import plugin_outdated_version
 from .sbomqs import total_score
+from .tool import plugin_outdated_version
 from .utilities import bundle_to_ntia_patch, bundle_to_vuln_patch, patch_to_data, path_to_bundle
 
 

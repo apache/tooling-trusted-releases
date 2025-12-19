@@ -108,7 +108,6 @@ def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulner
 
 
 async def vuln_patch(
-    session: aiohttp.ClientSession,
     doc: yyjson.Document,
     components: list[models.osv.ComponentVulnerabilities],
 ) -> models.patch.Patch:

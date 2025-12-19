@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import asfquart.base as base
 import cmarkgfm
@@ -65,6 +65,16 @@ async def report(session: web.Committer, project: str, version: str, file_path: 
             .order_by(sql.sqlmodel.desc(via(sql.Task.completed)))
             .all()
         )
+        augment_tasks = (
+            await data.task(
+                project_name=project,
+                version_name=version,
+                task_type=sql.TaskType.SBOM_AUGMENT,
+                primary_rel_path=file_path,
+            )
+            .order_by(sql.sqlmodel.desc(via(sql.Task.completed)))
+            .all()
+        )
         # Run or running scans for the current revision
         osv_tasks = (
             await data.task(
@@ -90,11 +100,17 @@ async def report(session: web.Committer, project: str, version: str, file_path: 
     _report_header(block, is_release_candidate, release, task_result)
 
     if not is_release_candidate:
-        _augment_section(block, release, task_result)
+        latest_augment = None
+        last_augmented_bom = None
+        if len(augment_tasks) > 0:
+            latest_augment = augment_tasks[0]
+            augment_results: list[Any] = [t.result for t in augment_tasks]
+            last_augmented_bom = max(
+                [r.bom_version for r in augment_results if r is not None and r.bom_version is not None]
+            )
+        _augment_section(block, release, task_result, latest_augment, last_augmented_bom)
 
     _conformance_section(block, task_result)
-
-    block.h2["Vulnerabilities"]
 
     if task_result.vulnerabilities is not None:
         vulnerabilities = [
@@ -107,29 +123,55 @@ async def report(session: web.Committer, project: str, version: str, file_path: 
         block, project, version, file_path, task_result, vulnerabilities, osv_tasks, is_release_candidate
     )
 
-    block.h2["Outdated tool"]
-    outdated = None
-    if task_result.outdated:
-        outdated = sbom.models.maven.OutdatedAdapter.validate_python(json.loads(task_result.outdated))
-    if outdated:
-        if outdated.kind == "tool":
-            block.p[
-                f"""The CycloneDX Maven Plugin is outdated. The used version is
-                {outdated.used_version} and the available version is
-                {outdated.available_version}."""
-            ]
-        else:
-            block.p[
-                f"""There was a problem with the SBOM detected when trying to
-                determine if the CycloneDX Maven Plugin is outdated:
-                {outdated.kind.upper()}."""
-            ]
-    else:
-        block.p["No outdated tool found."]
+    _outdated_tool_section(block, task_result)
 
     _cyclonedx_cli_errors(block, task_result)
 
     return await template.blank("SBOM report", content=block.collect())
+
+
+def _outdated_tool_section(block: htm.Block, task_result: results.SBOMToolScore):
+    block.h2["Outdated tools"]
+    if task_result.outdated:
+        outdated = []
+        if isinstance(task_result.outdated, str):
+            # Older version, only checked one tool
+            outdated = [sbom.models.tool.OutdatedAdapter.validate_python(json.loads(task_result.outdated))]
+        elif isinstance(task_result.outdated, list):
+            # Newer version, checked multiple tools
+            outdated = [sbom.models.tool.OutdatedAdapter.validate_python(json.loads(o)) for o in task_result.outdated]
+        if len(outdated) == 0:
+            block.p["No outdated tools found."]
+        for result in outdated:
+            if result.kind == "tool":
+                if "Apache Trusted Releases" in result.name:
+                    block.p[
+                        f"""The last version of ATR used on this SBOM was
+                            {result.used_version} but ATR is currently version
+                            {result.available_version}."""
+                    ]
+                else:
+                    block.p[
+                        f"""The {result.name} is outdated. The used version is
+                            {result.used_version} and the available version is
+                            {result.available_version}."""
+                    ]
+            else:
+                if result.kind == "missing_metadata" or result.kind == "missing_timestamp":
+                    # These both return without checking any further tools as they prevent checking
+                    block.p[
+                        f"""There was a problem with the SBOM detected when trying to
+                            determine if any tools were outdated:
+                            {result.kind.upper()}."""
+                    ]
+                else:
+                    block.p[
+                        f"""There was a problem with the SBOM detected when trying to
+                            determine if the {result.name} is outdated:
+                            {result.kind.upper()}."""
+                    ]
+    else:
+        block.p["No outdated tools found."]
 
 
 def _conformance_section(block: htm.Block, task_result: results.SBOMToolScore) -> None:
@@ -180,12 +222,28 @@ async def _report_task_results(block: htm.Block, tasks: list[sql.Task]):
         return await template.blank("SBOM report", content=block.collect())
 
 
-def _augment_section(block: htm.Block, release: sql.Release, task_result: results.SBOMToolScore):
-    # TODO: Show the status if the task to augment the SBOM is still running
-    # And then don't allow it to be augmented again
+def _augment_section(
+    block: htm.Block,
+    release: sql.Release,
+    task_result: results.SBOMToolScore,
+    latest_task: sql.Task | None,
+    last_bom: int | None,
+):
     augments = []
     if task_result.atr_props is not None:
         augments = [t.get("value", "") for t in task_result.atr_props if t.get("name", "") == "asf:atr:augment"]
+    if latest_task is not None:
+        result: Any = latest_task.result
+        if latest_task.status == sql.TaskStatus.ACTIVE or latest_task.status == sql.TaskStatus.QUEUED:
+            block.p["This SBOM is currently being augmented by ATR."]
+            return
+        if latest_task.status == sql.TaskStatus.FAILED:
+            block.p[f"ATR attempted to augment this SBOM but failed: {latest_task.error}"]
+            return
+        if last_bom is not None and result.bom_version == last_bom and len(augments) != 0:
+            block.p["This SBOM was augmented by ATR at revision ", htm.code[augments[-1]], "."]
+            return
+
     if len(augments) == 0:
         block.p["We can attempt to augment this SBOM with additional data."]
         form.render_block(
@@ -195,6 +253,8 @@ def _augment_section(block: htm.Block, release: sql.Release, task_result: result
             empty=True,
         )
     else:
+        # These are edge cases as they cover situations where the BOM says it was augmented but we don't have a task
+        # record for it
         if release.latest_revision_number in augments:
             block.p["This SBOM was augmented by ATR."]
         else:
@@ -431,6 +491,8 @@ def _vulnerability_scan_section(
     completed_task = _vulnerability_scan_find_completed_task(osv_tasks, task_result.revision_number)
 
     in_progress_task = _vulnerability_scan_find_in_progress_task(osv_tasks, task_result.revision_number)
+
+    block.h2["Vulnerabilities"]
 
     scans = []
     if task_result.atr_props is not None:

@@ -23,7 +23,6 @@ from typing import Any, Final
 
 import aiofiles
 import aiofiles.os
-import yyjson
 
 import atr.archives as archives
 import atr.config as config
@@ -87,10 +86,9 @@ async def augment(args: FileArgs) -> results.Results | None:
     bundle = sbom.utilities.path_to_bundle(pathlib.Path(full_path))
     patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
     new_full_path: str | None = None
+    new_version = None
     if patch_ops:
-        sbom.utilities.record_task("augment", args.revision_number, bundle.doc, patch_ops)
-        patch_data = sbom.utilities.patch_to_data(patch_ops)
-        merged = bundle.doc.patch(yyjson.Document(patch_data))
+        new_version, merged = sbom.utilities.apply_patch("augment", args.revision_number, bundle, patch_ops)
         description = "SBOM augmentation through web interface"
         async with storage.write(args.asf_uid) as write:
             wacp = await write.as_project_committee_participant(args.project_name)
@@ -110,6 +108,7 @@ async def augment(args: FileArgs) -> results.Results | None:
     return results.SBOMAugment(
         kind="sbom_augment",
         path=(new_full_path if new_full_path is not None else full_path),
+        bom_version=new_version,
     )
 
 
@@ -145,31 +144,29 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     components = [results.OSVComponent(purl=v.ref, vulnerabilities=v.vulnerabilities) for v in vulnerabilities]
 
     new_full_path: str | None = None
-    if patch_ops:
-        sbom.utilities.record_task("osv-scan", args.revision_number, bundle.doc, patch_ops)
-        patch_data = sbom.utilities.patch_to_data(patch_ops)
-        merged = bundle.doc.patch(yyjson.Document(patch_data))
-        description = "SBOM vulnerability scan through web interface"
-        async with storage.write(args.asf_uid) as write:
-            wacp = await write.as_project_committee_participant(args.project_name)
-            async with wacp.revision.create_and_manage(
-                args.project_name, args.version_name, args.asf_uid or "unknown", description=description
-            ) as creating:
-                new_full_path = os.path.join(str(creating.interim_path), args.file_path)
-                # Write to the new revision
-                log.info(f"Writing updated SBOM to {new_full_path}")
-                await aiofiles.os.remove(new_full_path)
-                async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
-                    await f.write(merged.dumps())
+    new_version, merged = sbom.utilities.apply_patch("osv-scan", args.revision_number, bundle, patch_ops)
+    description = "SBOM vulnerability scan through web interface"
+    async with storage.write(args.asf_uid) as write:
+        wacp = await write.as_project_committee_participant(args.project_name)
+        async with wacp.revision.create_and_manage(
+            args.project_name, args.version_name, args.asf_uid or "unknown", description=description
+        ) as creating:
+            new_full_path = os.path.join(str(creating.interim_path), args.file_path)
+            # Write to the new revision
+            log.info(f"Writing updated SBOM to {new_full_path}")
+            await aiofiles.os.remove(new_full_path)
+            async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
+                await f.write(merged.dumps())
 
-            if creating.new is None:
-                raise RuntimeError("Internal error: New revision not found")
+        if creating.new is None:
+            raise RuntimeError("Internal error: New revision not found")
 
     return results.SBOMOSVScan(
         kind="sbom_osv_scan",
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
+        bom_version=new_version,
         file_path=full_path,
         new_file_path=new_full_path or full_path,
         components=components,
@@ -221,9 +218,10 @@ async def score_tool(args: FileArgs) -> results.Results | None:
     if not (full_path.endswith(".cdx.json") and os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": args.file_path})
     bundle = sbom.utilities.path_to_bundle(pathlib.Path(full_path))
-    properties = sbom.utilities.get_atr_props_from_bundle(bundle)
+    version, properties = sbom.utilities.get_props_from_bundle(bundle)
     warnings, errors = sbom.conformance.ntia_2021_issues(bundle.bom)
-    outdated = sbom.maven.plugin_outdated_version(bundle.bom)
+    # TODO: Could update the ATR version with a constant showing last change to the augment/scan tools
+    outdated = sbom.tool.plugin_outdated_version(bundle.bom)
     vulnerabilities = sbom.osv.vulns_from_bundle(bundle)
     cli_errors = sbom.cyclonedx.validate_cli(bundle)
     return results.SBOMToolScore(
@@ -231,10 +229,11 @@ async def score_tool(args: FileArgs) -> results.Results | None:
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
+        bom_version=version,
         file_path=args.file_path,
         warnings=[w.model_dump_json() for w in warnings],
         errors=[e.model_dump_json() for e in errors],
-        outdated=outdated.model_dump_json() if outdated else None,
+        outdated=[o.model_dump_json() for o in outdated] if outdated else None,
         vulnerabilities=[v.model_dump_json() for v in vulnerabilities],
         atr_props=properties,
         cli_errors=cli_errors,
