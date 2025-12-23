@@ -128,6 +128,9 @@ class SBOMToolScore(schema.Strict):
     version_name: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     bom_version: int | None = schema.Field(default=None, strict=False, description="BOM Version scanned")
+    prev_bom_version: int | None = schema.Field(
+        default=None, strict=False, description="BOM Version from previous release"
+    )
     file_path: str = schema.description("Relative path to the scored SBOM file")
     warnings: list[str] = schema.description("Warnings from the SBOM tool")
     errors: list[str] = schema.description("Errors from the SBOM tool")
@@ -140,6 +143,12 @@ class SBOMToolScore(schema.Strict):
     )
     vulnerabilities: list[str] | None = schema.Field(
         default=None, strict=False, description="Vulnerabilities found in the SBOM"
+    )
+    prev_licenses: list[str] | None = schema.Field(
+        default=None, strict=False, description="Licenses from previous release"
+    )
+    prev_vulnerabilities: list[str] | None = schema.Field(
+        default=None, strict=False, description="Vulnerabilities from previous release"
     )
     atr_props: list[dict[str, str]] | None = schema.Field(
         default=None, strict=False, description="ATR properties found in the SBOM"

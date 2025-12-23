@@ -21,7 +21,7 @@ import pydantic
 
 
 class Lax(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra="allow", strict=False)
+    model_config = pydantic.ConfigDict(extra="allow", strict=False, validate_assignment=True, validate_by_name=True)
 
 
 class Strict(pydantic.BaseModel):

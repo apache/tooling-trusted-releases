@@ -74,6 +74,10 @@ class FileArgs(schema.Strict):
     asf_uid: str | None = None
 
 
+class ScoreArgs(FileArgs):
+    previous_release_version: str | None = schema.description("Previous release version")
+
+
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
     base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
@@ -209,9 +213,12 @@ async def score_qs(args: FileArgs) -> results.Results | None:
     )
 
 
-@checks.with_model(FileArgs)
-async def score_tool(args: FileArgs) -> results.Results | None:
+@checks.with_model(ScoreArgs)
+async def score_tool(args: ScoreArgs) -> results.Results | None:
     base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    previous_base_dir = None
+    if args.previous_release_version is not None:
+        previous_base_dir = util.get_finished_dir() / args.project_name / args.previous_release_version
     if not os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = os.path.join(base_dir, args.file_path)
@@ -223,15 +230,35 @@ async def score_tool(args: FileArgs) -> results.Results | None:
     # TODO: Could update the ATR version with a constant showing last change to the augment/scan
     #  tools so we know if it's outdated
     outdated = sbom.tool.plugin_outdated_version(bundle.bom)
-    license_warnings, license_errors = sbom.licenses.check(bundle.bom)
+    _, license_warnings, license_errors = sbom.licenses.check(bundle.bom)
     vulnerabilities = sbom.osv.vulns_from_bundle(bundle)
     cli_errors = sbom.cyclonedx.validate_cli(bundle)
+
+    prev_version = None
+    prev_licenses = None
+    prev_vulnerabilities = None
+    if previous_base_dir is not None:
+        previous_full_path = os.path.join(previous_base_dir, args.file_path)
+        try:
+            previous_bundle = sbom.utilities.path_to_bundle(pathlib.Path(previous_full_path))
+        except FileNotFoundError:
+            # Previous release didn't include this file
+            previous_bundle = None
+        if previous_bundle is not None:
+            prev_version, _ = sbom.utilities.get_props_from_bundle(previous_bundle)
+            prev_good, prev_license_warnings, prev_license_errors = sbom.licenses.check(
+                previous_bundle.bom, include_all=True
+            )
+            prev_licenses = [*prev_good, *prev_license_warnings, *prev_license_errors]
+            prev_vulnerabilities = sbom.osv.vulns_from_bundle(previous_bundle)
+
     return results.SBOMToolScore(
         kind="sbom_tool_score",
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
         bom_version=version,
+        prev_bom_version=prev_version,
         file_path=args.file_path,
         warnings=[w.model_dump_json() for w in warnings],
         errors=[e.model_dump_json() for e in errors],
@@ -239,6 +266,8 @@ async def score_tool(args: FileArgs) -> results.Results | None:
         license_warnings=[w.model_dump_json() for w in license_warnings] if license_warnings else None,
         license_errors=[e.model_dump_json() for e in license_errors] if license_errors else None,
         vulnerabilities=[v.model_dump_json() for v in vulnerabilities],
+        prev_licenses=[w.model_dump_json() for w in prev_licenses] if prev_licenses else None,
+        prev_vulnerabilities=[v.model_dump_json() for v in prev_vulnerabilities] if prev_vulnerabilities else None,
         atr_props=properties,
         cli_errors=cli_errors,
     )

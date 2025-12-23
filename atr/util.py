@@ -1011,6 +1011,53 @@ def version_name_error(version_name: str) -> str | None:
     return None
 
 
+def version_sort_key(version: str) -> bytes:
+    """
+    Convert a version string into a sortable byte sequence.
+    Prefixes each digit sequence with its length as u16 little-endian.
+    Strips leading zeros and appends a byte for the count of leading zeros.
+    """
+    result = []
+    i = 0
+    length = len(version)
+    while i < length:
+        if version[i].isdigit():
+            # Find the end of this digit sequence
+            j = i
+            while j < length and version[j].isdigit():
+                j += 1
+
+            digit_sequence = version[i:j]
+
+            # Count leading zeros
+            leading_zeros = 0
+            for char in digit_sequence:
+                if char == "0":
+                    leading_zeros += 1
+                else:
+                    break
+
+            # Strip leading zeros (but keep at least one digit if all zeros)
+            stripped = digit_sequence.lstrip("0")
+
+            # Count the stripped digits and encode as u16 little-endian
+            digit_count = len(stripped)
+            length_bytes = digit_count.to_bytes(2)
+
+            # Add length prefix + stripped digits + leading zero count
+            result.extend(length_bytes)
+            result.extend(stripped.encode("utf-8"))
+            result.append(leading_zeros)
+
+            i = j
+        else:
+            # Non-digit character, just add it
+            result.extend(version[i].encode("utf-8"))
+            i += 1
+
+    return bytes(result)
+
+
 async def _create_hard_link_clone_checks(
     source_dir: pathlib.Path,
     dest_dir: pathlib.Path,

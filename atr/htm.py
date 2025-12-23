@@ -44,6 +44,7 @@ h1 = htpy.h1
 h2 = htpy.h2
 h3 = htpy.h3
 html = htpy.html
+i = htpy.i
 li = htpy.li
 p = htpy.p
 pre = htpy.pre
@@ -277,6 +278,10 @@ class Block:
     def ul(self) -> BlockElementCallable:
         self.__check_parent("ul", {"body", "div"})
         return BlockElementCallable(self, ul)
+
+
+def icon(name: str, classes="") -> Element:
+    return i(f".bi.bi-{name}{classes}")
 
 
 def ul_links(*items: tuple[str, str]) -> Element:

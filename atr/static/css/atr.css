@@ -545,3 +545,7 @@ td.atr-shrink {
 .atr-checks-files {
     line-height: 2.25;
 }
+
+.atr-text-strike {
+    text-decoration: line-through;
+}

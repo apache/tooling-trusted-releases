@@ -31,7 +31,7 @@ from .utilities import bundle_to_ntia_patch, bundle_to_vuln_patch, patch_to_data
 
 
 def command_license(bundle: models.bundle.Bundle) -> None:
-    warnings, errors = check(bundle.bom)
+    _, warnings, errors = check(bundle.bom)
     if warnings:
         print("WARNINGS (Category B):")
         for warning in warnings:

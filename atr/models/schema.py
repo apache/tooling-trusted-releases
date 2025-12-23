@@ -25,7 +25,7 @@ Field = pydantic.Field
 
 
 class Lax(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(extra="allow", strict=False, validate_assignment=True)
+    model_config = pydantic.ConfigDict(extra="allow", strict=False, validate_assignment=True, validate_by_name=True)
 
 
 class Strict(pydantic.BaseModel):

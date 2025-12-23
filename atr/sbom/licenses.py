@@ -23,9 +23,11 @@ from .spdx import license_expression_atoms
 
 def check(
     bom_value: models.bom.Bom,
-) -> tuple[list[models.licenses.Issue], list[models.licenses.Issue]]:
+    include_all: bool = False,
+) -> tuple[list[models.licenses.Issue], list[models.licenses.Issue], list[models.licenses.Issue]]:
     warnings: list[models.licenses.Issue] = []
     errors: list[models.licenses.Issue] = []
+    good: list[models.licenses.Issue] = []
 
     components = bom_value.components or []
     if bom_value.metadata and bom_value.metadata.component:
@@ -99,5 +101,17 @@ def check(
                         component_type=type,
                     )
                 )
+            elif include_all:
+                good.append(
+                    models.licenses.Issue(
+                        component_name=name,
+                        component_version=version,
+                        license_expression=license_expr,
+                        category=models.licenses.Category.A,
+                        any_unknown=False,
+                        scope=scope,
+                        component_type=type,
+                    )
+                )
 
-    return warnings, errors
+    return good, warnings, errors

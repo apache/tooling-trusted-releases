@@ -69,6 +69,18 @@ async def draft_checks(
         release = await data.release(name=sql.release_name(project_name, release_version), _committee=True).demand(
             RuntimeError("Release not found")
         )
+        other_releases = (
+            await data.release(project_name=project_name, phase=sql.ReleasePhase.RELEASE)
+            .order_by(sql.Release.released)
+            .all()
+        )
+        release_versions = sorted(
+            [v for v in other_releases], key=lambda v: util.version_sort_key(v.version), reverse=True
+        )
+        release_version_sortable = util.version_sort_key(release_version)
+        previous_version = next(
+            (v for v in release_versions if util.version_sort_key(v.version) < release_version_sortable), None
+        )
         for path in relative_paths:
             path_str = str(path)
             task_function: Callable[[str, sql.Release, str, str], Awaitable[list[sql.Task]]] | None = None
@@ -94,6 +106,7 @@ async def draft_checks(
                             "project_name": project_name,
                             "version_name": release_version,
                             "revision_number": revision_number,
+                            "previous_release_version": previous_version.version if previous_version else None,
                             "file_path": path_str,
                             "asf_uid": asf_uid,
                         },
