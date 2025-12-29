@@ -75,7 +75,7 @@ jobs:
 
       - name: Dismiss alerts of suppressed results
         if: github.ref == 'refs/heads/main'
-        uses: advanced-security/dismiss-alerts@29b55573401eedd7f600e4c3e5d0676a457b9f23
+        uses: advanced-security/dismiss-alerts@046d6b48d2e43cf563f96f67332c47c432eff83e
         with:
           sarif-id: ${{ steps.analyze.outputs.sarif-id }}
           sarif-file: ${{ steps.sarif-stats.outputs.sarif-file }}
