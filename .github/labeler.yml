@@ -1,0 +1,48 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.md"
+
+source:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.py"
+
+workflows:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+          - "playwright/**"
+
+routes:
+  - changed-files:
+      - any-glob-to-any-file: "atr/{get,post,shared}/**"
+
+storage:
+  - changed-files:
+      - any-glob-to-any-file: "atr/storage/**"
+
+migrations:
+  - changed-files:
+      - any-glob-to-any-file: "migrations/**"
+
+containers:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Dockerfile.alpine"
+          - "Dockerfile.ubuntu"
+          - "start-atr.sh"
+
+models:
+  - changed-files:
+      - any-glob-to-any-file: "atr/models/**"
+
+tasks:
+  - changed-files:
+      - any-glob-to-any-file: "atr/tasks/**"
+
+scripts:
+  - changed-files:
+      - any-glob-to-any-file: "scripts/**"
