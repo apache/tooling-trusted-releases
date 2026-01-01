@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Final
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+from typing import cast
+
 import aiohttp
 import sqlmodel
 
@@ -364,26 +366,24 @@ async def _update_committees(
 ) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
-
-    # First create PMC committees
+    added_committees: list[str] = []
+    updated_committees: list[str] = []
     for project in ldap_projects.projects:
         name = project.name
-        # Skip non-PMC committees
         if project.pmc is not True:
             continue
 
-        # Get or create PMC
         committee = await data.committee(name=name).get()
         if not committee:
             committee = sql.Committee(name=name)
             data.add(committee)
             added_count += 1
+            added_committees.append(name)
         else:
-            updated_count += 1
+            updated_committees.append(name)
 
         committee.committee_members = project.owners
         committee.committers = project.members
-        # We create PMCs for now
         committee.is_podling = False
         committee_info = committees_by_name.get(name)
         if committee_info:
@@ -391,6 +391,15 @@ async def _update_committees(
 
         updated_count += 1
 
+    if added_committees or updated_committees:
+        cast("Any", log).audit(
+            action="committee_sync",
+            source="apache_whimsy",
+            details={
+                "added": sorted(added_committees),
+                "updated": sorted(updated_committees),
+            },
+        )
     return added_count, updated_count
 
 
