@@ -94,6 +94,7 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
         default_body=default_body,
         default_download_path_suffix=default_download_path_suffix,
         download_path_description=f"The URL will be {description_download_prefix} plus this suffix",
+        preserve_downloads=bool(release.project.policy_preserve_download_files),
     )
 
     return await template.blank(
@@ -122,10 +123,16 @@ def _render_body_field(default_body: str, project_name: str) -> htm.Element:
     return htm.div[textarea, link]
 
 
-def _render_download_path_field(default_value: str, description: str) -> htm.Element:
-    """Render the download path suffix field with custom help text."""
+def _render_download_path_field(
+    default_value: str,
+    description: str,
+    preserve_downloads: bool = False,
+) -> htm.Element:
+    """Render the download path suffix field with custom help text.
+    When preserve_downloads is True, show a warning card beneath the help text.
+    """
     base_text = description.split(" plus this suffix")[0] if (" plus this suffix" in description) else description
-    return htm.div[
+    children = [
         htpy.input(
             "#download_path_suffix.form-control",
             type="text",
@@ -134,6 +141,19 @@ def _render_download_path_field(default_value: str, description: str) -> htm.Ele
         ),
         htpy.div(".form-text.text-muted.mt-2", data_base_text=base_text)[description],
     ]
+
+    if preserve_downloads:
+        warning_card = htm.div(".card.bg-warning-subtle.mb-3")[
+            htm.span(".card-body.p-3")[
+                htpy.i(".bi.bi-exclamation-triangle.me-1"),
+                htm.strong["WARNING: "],
+                "The preserve download files option is enabled, which means that "
+                "if any existing download paths match new paths in this release, "
+                "then the release will fail.",
+            ]
+        ]
+        children.append(warning_card)
+    return htm.div[children]
 
 
 def _render_mailing_list_with_warning(choices: list[tuple[str, str]], default_value: str) -> htm.Element:
@@ -183,6 +203,7 @@ async def _render_page(
     default_body: str,
     default_download_path_suffix: str,
     download_path_description: str,
+    preserve_downloads: bool,
 ) -> htm.Element:
     """Render the announce page."""
     page = htm.Block()
@@ -216,7 +237,11 @@ async def _render_page(
     custom_mailing_list_widget = _render_mailing_list_with_warning(mailing_list_choices, util.USER_TESTS_ADDRESS)
 
     # Custom widget for download_path_suffix with custom documentation
-    download_path_widget = _render_download_path_field(default_download_path_suffix, download_path_description)
+    download_path_widget = _render_download_path_field(
+        default_download_path_suffix,
+        download_path_description,
+        preserve_downloads=preserve_downloads,
+    )
 
     defaults_dict = {
         "revision_number": release.unwrap_revision_number,
