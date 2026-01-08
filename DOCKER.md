@@ -15,13 +15,24 @@ Build the image based on Ubuntu OS:
 ## Running the image
 
 Run the Alpine version:
+
 ```
-LDAP_BIND_DN=
+LDAP_BIND_DN=xxx
+export LDAP_BIND_DN
+LDAP_BIND_PASSWORD=yyy
+export LDAP_BIND_PASSWORD
 $ docker compose build
 ```
 
 Run the Ububtu version:
-```$ DOCKER_OS=ubuntu docker compose build```
+
+```
+LDAP_BIND_DN=xxx
+export LDAP_BIND_DN
+LDAP_BIND_PASSWORD=yyy
+export LDAP_BIND_PASSWORD
+$ DOCKER_OS=ubuntu docker compose build
+```
 
 ## Open the application in a browser
 
