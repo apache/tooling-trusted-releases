@@ -22,7 +22,7 @@ To run the tests, you will need Docker. Other OCI runtimes should work, but you 
 The simplest way to run the tests is using Docker Compose, which starts both ATR and the Playwright test container:
 
 ```shell
-sh tests/run-tests.sh
+sh tests/run-playwright.sh
 ```
 
 This uses [`tests/docker-compose.yml`](/ref/tests/docker-compose.yml) to orchestrate the test environment. The ATR server runs in one container and the Playwright tests run in another, connected via a Docker network. These tests are automatically run in our GitHub CI as part of [`.github/workflows/build.yml`](/ref/.github/workflows/build.yml).

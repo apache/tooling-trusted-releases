@@ -688,6 +688,18 @@ Thanks,
         return policy.license_check_mode
 
     @property
+    def policy_source_excludes_lightweight(self) -> list[str]:
+        if (policy := self.release_policy) is None:
+            return []
+        return policy.source_excludes_lightweight or []
+
+    @property
+    def policy_source_excludes_rat(self) -> list[str]:
+        if (policy := self.release_policy) is None:
+            return []
+        return policy.source_excludes_rat or []
+
+    @property
     def policy_strict_checking(self) -> bool:
         # This is bool, so it should never be None
         # TODO: Should we make it nullable for defaulting?
@@ -1033,6 +1045,12 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON)
     )
     license_check_mode: LicenseCheckMode = sqlmodel.Field(default=LicenseCheckMode.BOTH)
+    source_excludes_lightweight: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    source_excludes_rat: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
     strict_checking: bool = sqlmodel.Field(default=False)
     github_repository_name: str = sqlmodel.Field(default="")
     github_compose_workflow_path: list[str] = sqlmodel.Field(
