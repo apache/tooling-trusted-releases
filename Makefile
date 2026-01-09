@@ -1,5 +1,5 @@
 .PHONY: build build-alpine build-bootstrap build-playwright build-ts \
-  build-ubuntu bump-bootstrap certs check check-extra check-light commit \
+  bump-bootstrap certs check check-extra check-light commit \
   docs generate-version ipython manual run-alpine run-playwright \
   run-playwright-slow serve serve-local sync sync-all update-deps
 
@@ -9,7 +9,7 @@ IMAGE ?= tooling-trusted-release
 build: build-alpine
 
 build-alpine:
-	scripts/build Dockerfile.alpine $(IMAGE)
+	scripts/build $(IMAGE)
 
 build-bootstrap:
 	docker build -t atr-bootstrap bootstrap/context
@@ -23,9 +23,6 @@ build-playwright:
 
 build-ts:
 	tsgo --project ./tsconfig.json
-
-build-ubuntu:
-	scripts/build Dockerfile.ubuntu $(IMAGE)
 
 bump-bootstrap:
 	@test -n "$(BOOTSTRAP_VERSION)" \
@@ -41,7 +38,7 @@ certs:
 	fi
 
 certs-local:
-	cd state && mkcert localhost.apache.org localhost 127.0.0.1 ::1
+	cd state && mkcert localhost.apache.org 127.0.0.1 ::1
 
 check:
 	git add -A
@@ -88,8 +85,8 @@ run-alpine:
 	docker run --rm --init --user "$$(id -u):$$(id -g)" \
 	  -p 8080:8080 -p 2222:2222 \
 	  -v "$$PWD/state:/opt/atr/state" \
-	  -v "$$PWD/state/localhost.apache.org+3-key.pem:/opt/atr/state/key.pem" \
-	  -v "$$PWD/state/localhost.apache.org+3.pem:/opt/atr/state/cert.pem" \
+	  -v "$$PWD/state/localhost.apache.org+2-key.pem:/opt/atr/state/key.pem" \
+	  -v "$$PWD/state/localhost.apache.org+2.pem:/opt/atr/state/cert.pem" \
 	  -e APP_HOST=localhost.apache.org:8080 -e SECRET_KEY=insecure-local-key \
 	  -e ALLOW_TESTS=1 -e SSH_HOST=0.0.0.0 -e BIND=0.0.0.0:8080 \
 	  tooling-trusted-release
@@ -102,13 +99,13 @@ run-playwright-slow:
 
 serve:
 	SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile localhost.apache.org+3-key.pem --certfile localhost.apache.org+3.pem \
+	  --keyfile localhost.apache.org+2-key.pem --certfile localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 serve-local:
 	APP_HOST=localhost.apache.org:8080 SECRET_KEY=insecure-local-key \
 	  ALLOW_TESTS=1 SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile localhost.apache.org+3-key.pem --certfile localhost.apache.org+3.pem \
+	  --keyfile localhost.apache.org+2-key.pem --certfile localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 sync:

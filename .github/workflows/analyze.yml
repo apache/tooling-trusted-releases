@@ -3,6 +3,7 @@ name: Analyze using pre-commit hooks
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,7 +37,7 @@ jobs:
           version: ${{ env.BIOME_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --frozen --all-groups
 
       - name: Cache pre-commit data
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
@@ -46,4 +47,4 @@ jobs:
 
       - name: Run pre-commit
         run: |
-          uv run pre-commit run --show-diff-on-failure --color=always --all-files
+          uv run --frozen pre-commit run --show-diff-on-failure --color=always --all-files

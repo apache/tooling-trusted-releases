@@ -136,7 +136,9 @@ class CommitteeMember(CommitteeParticipant):
         # Get the base project to derive from
         # We're allowing derivation from a retired project here
         # TODO: Should we disallow this instead?
-        committee_projects = await self.__data.project(committee_name=committee_name, _committee=True).all()
+        committee_projects = await self.__data.project(
+            committee_name=committee_name, _committee=True, _release_policy=True
+        ).all()
         for committee_project in committee_projects:
             if label.startswith(committee_project.name + "-"):
                 if (super_project is None) or (len(super_project.name) < len(committee_project.name)):
@@ -156,10 +158,12 @@ class CommitteeMember(CommitteeParticipant):
             category=super_project.category if super_project else None,
             programming_languages=super_project.programming_languages if super_project else None,
             committee_name=committee_name,
-            release_policy_id=super_project.release_policy_id if super_project else None,
             created=datetime.datetime.now(datetime.UTC),
             created_by=self.__asf_uid,
         )
+
+        if super_project and super_project.release_policy:
+            project.release_policy = super_project.release_policy.duplicate()
 
         self.__data.add(project)
         await self.__data.commit()

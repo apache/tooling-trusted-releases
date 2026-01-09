@@ -32,7 +32,6 @@ containers:
   - changed-files:
       - any-glob-to-any-file:
           - "Dockerfile.alpine"
-          - "Dockerfile.ubuntu"
           - "start-atr.sh"
 
 models:

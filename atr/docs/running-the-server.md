@@ -64,7 +64,7 @@ make certs-local
 make serve-local
 ```
 
-The `certs-local` step runs `mkcert localhost.apache.org localhost 127.0.0.1 ::1` to generate a locally trusted TLS certificate. If the certificate is not trusted, you may have to follow the [mkcert guide](https://github.com/FiloSottile/mkcert/blob/master/README.md) to resolve the issue.
+The `certs-local` step runs `mkcert localhost.apache.org 127.0.0.1 ::1` to generate a locally trusted TLS certificate. To avoid potential DNS resolution issues such as [those alluded to in RFC 8252](https://datatracker.ietf.org/doc/html/rfc8252#section-8.3), we do not include `localhost`. If the certificate is not trusted, you may have to follow the [mkcert guide](https://github.com/FiloSottile/mkcert/blob/master/README.md) to resolve the issue.
 
 ATR requires TLS even for development because login is performed through the actual ASF OAuth server. This way, the development behavior aligns closely with the production behavior. We try to minimize differences between development and production environments.
 
@@ -74,7 +74,7 @@ ATR will then be served on various hosts, but we recommend using only `localhost
 
 [`https://localhost.apache.org:8080/`](https://localhost.apache.org:8080/)
 
-If you do not want to change your `/etc/hosts`, you can use `127.0.0.1`. You should not use `localhost`. The following link should work:
+If you do not want to change your `/etc/hosts`, you can use `127.0.0.1`. The following link should work:
 
 [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/)
 

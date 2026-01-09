@@ -1068,6 +1068,32 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     # 1-1: Project -C-> ReleasePolicy
     project: Project = sqlmodel.Relationship(back_populates="release_policy")
 
+    def duplicate(self) -> "ReleasePolicy":
+        # Cannot call this .copy because that's an existing BaseModel method
+        return ReleasePolicy(
+            mailto_addresses=list(self.mailto_addresses),
+            manual_vote=self.manual_vote,
+            min_hours=self.min_hours,
+            release_checklist=self.release_checklist,
+            vote_comment_template=self.vote_comment_template,
+            pause_for_rm=self.pause_for_rm,
+            start_vote_subject=self.start_vote_subject,
+            start_vote_template=self.start_vote_template,
+            announce_release_subject=self.announce_release_subject,
+            announce_release_template=self.announce_release_template,
+            binary_artifact_paths=list(self.binary_artifact_paths),
+            source_artifact_paths=list(self.source_artifact_paths),
+            license_check_mode=self.license_check_mode,
+            source_excludes_lightweight=list(self.source_excludes_lightweight),
+            source_excludes_rat=list(self.source_excludes_rat),
+            strict_checking=self.strict_checking,
+            github_repository_name=self.github_repository_name,
+            github_compose_workflow_path=list(self.github_compose_workflow_path),
+            github_vote_workflow_path=list(self.github_vote_workflow_path),
+            github_finish_workflow_path=list(self.github_finish_workflow_path),
+            preserve_download_files=self.preserve_download_files,
+        )
+
 
 # Revision: Release
 class Revision(sqlmodel.SQLModel, table=True):

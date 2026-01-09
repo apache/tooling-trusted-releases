@@ -45,7 +45,7 @@ def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: 
 
 class AppConfig:
     ALLOW_TESTS = decouple.config("ALLOW_TESTS", default=False, cast=bool)
-    APP_HOST = decouple.config("APP_HOST", default="localhost")
+    APP_HOST = decouple.config("APP_HOST", default="127.0.0.1")
     SSH_HOST = decouple.config("SSH_HOST", default="0.0.0.0")
     SSH_PORT = decouple.config("SSH_PORT", default=2222, cast=int)
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
