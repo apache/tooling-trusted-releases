@@ -46,3 +46,7 @@ TODO: explain how to trust the certificate
 ## Start shell in running container
 
 docker compose exec atr bash
+
+## Start container and run shell instead of atr
+
+docker compose run -rm atr bash
