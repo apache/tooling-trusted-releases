@@ -7,11 +7,6 @@ The following instructions assume the current directory is the same as this file
 Build the image based on Alpine OS:
 ```$ docker compose build```
 
-or
-
-Build the image based on Ubuntu OS:
-```$ DOCKER_OS=ubuntu docker compose build```
-
 ## Running the image
 
 Run the Alpine version:
@@ -22,16 +17,6 @@ export LDAP_BIND_DN
 LDAP_BIND_PASSWORD=yyy
 export LDAP_BIND_PASSWORD
 docker compose build
-```
-
-Run the Ububtu version:
-
-```shell
-LDAP_BIND_DN=xxx
-export LDAP_BIND_DN
-LDAP_BIND_PASSWORD=yyy
-export LDAP_BIND_PASSWORD
-DOCKER_OS=ubuntu docker compose build
 ```
 
 ## Open the application in a browser

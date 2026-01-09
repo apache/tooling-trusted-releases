@@ -1,9 +1,8 @@
 services:
   atr:
-    image: atr-${DOCKER_OS:-alpine}
     build:
       context: .
-      dockerfile: Dockerfile.${DOCKER_OS:-alpine}
+      dockerfile: Dockerfile.alpine
     environment:
       - ALLOW_TESTS=1
       - APP_HOST=atr:8080
