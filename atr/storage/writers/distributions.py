@@ -31,6 +31,8 @@ import atr.models.distribution as distribution
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.outcome as outcome
+import atr.tasks.gha as gha
+import atr.util as util
 
 
 class GeneralPublic:
@@ -95,6 +97,46 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
+    async def automate(
+        self,
+        release_name: str,
+        platform: sql.DistributionPlatform,
+        committee_name: str,
+        owner_namespace: str | None,
+        project_name: str,
+        version_name: str,
+        revision_number: str | None,
+        package: str,
+        version: str,
+        staging: bool,
+    ) -> sql.Task:
+        dist_task = sql.Task(
+            task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
+            task_args=gha.DistributionWorkflow(
+                name=release_name,
+                namespace=owner_namespace or "",
+                package=package,
+                version=version,
+                project_name=project_name,
+                version_name=version_name,
+                platform=platform.name,
+                staging=staging,
+                asf_uid=self.__asf_uid,
+                committee_name=committee_name,
+                arguments={},
+            ).model_dump(),
+            asf_uid=util.unwrap(self.__asf_uid),
+            added=datetime.datetime.now(datetime.UTC),
+            status=sql.TaskStatus.QUEUED,
+            project_name=project_name,
+            version_name=version_name,
+            revision_number=revision_number,
+        )
+        self.__data.add(dist_task)
+        await self.__data.commit()
+        await self.__data.refresh(dist_task)
+        return dist_task
+
     async def record(
         self,
         release_name: str,
@@ -148,7 +190,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record_from_data(
         self,
-        release: sql.Release,
+        release_name: str,
         staging: bool,
         dd: distribution.Data,
     ) -> tuple[sql.Distribution, bool, distribution.Metadata]:
@@ -176,7 +218,7 @@ class CommitteeMember(CommitteeParticipant):
             web_url=web_url,
         )
         dist, added = await self.record(
-            release_name=release.name,
+            release_name=release_name,
             platform=dd.platform,
             owner_namespace=dd.owner_namespace,
             package=dd.package,

@@ -19,7 +19,7 @@ import contextlib
 import datetime
 import enum
 from collections.abc import AsyncGenerator, Sequence
-from typing import Any
+from typing import Any, Final
 
 import packaging.version as version
 import sqlalchemy
@@ -35,6 +35,8 @@ import atr.models.sql as sql
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+_GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 
 
 class ApacheUserMissingError(RuntimeError):
@@ -168,15 +170,6 @@ async def ephemeral_gpg_home() -> AsyncGenerator[str]:
 async def full_releases(project: sql.Project) -> list[sql.Release]:
     """Get the full releases for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE)
-
-
-async def trusted_jwt(publisher: str, jwt: str, phase: TrustedProjectPhase) -> tuple[dict[str, Any], str, sql.Project]:
-    if publisher != "github":
-        raise InteractionError(f"Publisher {publisher} not supported")
-    payload = await jwtoken.verify_github_oidc(jwt)
-    asf_uid = await ldap.github_to_apache(payload["actor_id"])
-    project = await _trusted_project(payload["repository"], payload["workflow_ref"], phase)
-    return payload, asf_uid, project
 
 
 async def has_failing_checks(release: sql.Release, revision_number: str, caller_data: db.Session | None = None) -> bool:
@@ -395,6 +388,33 @@ async def tasks_ongoing_revision(
         return task_count, latest_revision
 
 
+async def trusted_jwt(publisher: str, jwt: str, phase: TrustedProjectPhase) -> tuple[dict[str, Any], str, sql.Project]:
+    payload, asf_uid = await validate_trusted_jwt(publisher, jwt)
+    # JWT could be for an ASF user or the trusted role, but we need a user here.
+    if asf_uid is None:
+        raise InteractionError("ASF user not found")
+    project = await _trusted_project(payload["repository"], payload["workflow_ref"], phase)
+    return payload, asf_uid, project
+
+
+async def trusted_jwt_for_version(
+    publisher: str, jwt: str, phase: TrustedProjectPhase, version_name: str
+) -> tuple[dict[str, Any], str, sql.Project]:
+    payload, asf_uid, project = await trusted_jwt(publisher, jwt, phase)
+    async with db.session() as db_data:
+        release = await db_data.release(project_name=project.name, version=version_name).get()
+        if not release:
+            raise InteractionError(f"Release {version_name} does not exist in project {project.name}")
+        if phase == TrustedProjectPhase.COMPOSE and release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            raise InteractionError(f"Release {version_name} is not in compose phase")
+        if phase == TrustedProjectPhase.VOTE and release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
+            raise InteractionError(f"Release {version_name} is not in vote phase")
+        if phase == TrustedProjectPhase.FINISH and release.phase != sql.ReleasePhase.RELEASE_PREVIEW:
+            raise InteractionError(f"Release {version_name} is not in finish phase")
+
+    return payload, asf_uid, project
+
+
 async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Release]]]:
     releases: list[tuple[str, str, list[sql.Release]]] = []
     async with db.session() as data:
@@ -453,6 +473,17 @@ async def user_committees_participant(asf_uid: str, caller_data: db.Session | No
 async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[str, str]]:
     projects = await user.projects(asf_uid)
     return [(p.name, p.display_name) for p in projects]
+
+
+async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[dict[str, Any], str | None]:
+    if publisher != "github":
+        raise InteractionError(f"Publisher {publisher} not supported")
+    payload = await jwtoken.verify_github_oidc(jwt)
+    if payload["actor_id"] != _GITHUB_TRUSTED_ROLE_NID:
+        asf_uid = await ldap.github_to_apache(payload["actor_id"])
+    else:
+        asf_uid = None
+    return payload, asf_uid
 
 
 async def wait_for_task(

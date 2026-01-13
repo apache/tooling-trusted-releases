@@ -19,6 +19,7 @@
 import dataclasses
 import json
 import pathlib
+from collections.abc import Sequence
 
 import aiofiles.os
 import asfquart.base as base
@@ -42,6 +43,7 @@ import atr.mapping as mapping
 import atr.models.sql as sql
 import atr.render as render
 import atr.shared as shared
+import atr.tasks.gha as gha
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -60,13 +62,9 @@ async def selected(
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse | str:
     """Finish a release preview."""
     try:
-        (
-            release,
-            source_files_rel,
-            target_dirs,
-            deletable_dirs,
-            rc_analysis,
-        ) = await _get_page_data(project_name, version_name)
+        (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
+            project_name, version_name
+        )
     except ValueError:
         async with db.session() as data:
             release_fallback = await data.release(
@@ -89,6 +87,7 @@ async def selected(
         target_dirs=target_dirs,
         deletable_dirs=deletable_dirs,
         rc_analysis=rc_analysis,
+        distribution_tasks=tasks,
     )
 
 
@@ -134,14 +133,31 @@ async def _deletable_choices(
 
 async def _get_page_data(
     project_name: str, version_name: str
-) -> tuple[sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult]:
+) -> tuple[
+    sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]
+]:
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
+        via = sql.validate_instrumented_attribute
         release = await data.release(
             project_name=project_name,
             version=version_name,
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        tasks = [
+            t
+            for t in (
+                await data.task(
+                    project_name=project_name,
+                    version_name=version_name,
+                    revision_number=release.latest_revision_number,
+                    task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
+                )
+                .order_by(sql.sqlmodel.desc(via(sql.Task.started)))
+                .all()
+            )
+            if t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE, sql.TaskStatus.FAILED]
+        ]
 
     if release.phase != sql.ReleasePhase.RELEASE_PREVIEW:
         raise ValueError("Release is not in preview phase")
@@ -151,7 +167,7 @@ async def _get_page_data(
     deletable_dirs = await _deletable_choices(latest_revision_dir, target_dirs)
     rc_analysis_result = await _analyse_rc_tags(latest_revision_dir)
 
-    return release, source_files_rel, target_dirs, deletable_dirs, rc_analysis_result
+    return release, source_files_rel, target_dirs, deletable_dirs, rc_analysis_result, tasks
 
 
 def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
@@ -170,6 +186,74 @@ def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.
     )
 
     return section.collect()
+
+
+def _render_dist_warning() -> htm.Element:
+    """Render the alert about distribution tools."""
+    return htm.div(".alert.alert-warning.mb-4", role="alert")[
+        htm.p(".fw-semibold.mb-1")["NOTE:"],
+        htm.p(".mb-1")[
+            "Tools to distribute automatically are still being developed, "
+            "you must do this manually at present. Please use the manual record function below to do so.",
+        ],
+    ]
+
+
+def _render_distribution_buttons(release: sql.Release) -> htm.Element:
+    """Render the distribution tool buttons."""
+    return htm.div()[
+        htm.p(".mb-1")[
+            htm.a(
+                ".btn.btn-primary.me-2",
+                href=util.as_url(
+                    distribution.automate,
+                    project=release.project.name,
+                    version=release.version,
+                ),
+            )["Distribute"],
+            htm.a(
+                ".btn.btn-secondary.me-2",
+                href=util.as_url(
+                    distribution.record,
+                    project=release.project.name,
+                    version=release.version,
+                ),
+            )["Record a manual distribution"],
+        ],
+    ]
+
+
+def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) -> htm.Element:
+    """Render current and failed distribution tasks."""
+    failed_tasks = [t for t in tasks if t.status == sql.TaskStatus.FAILED]
+    in_progress_tasks = [t for t in tasks if t.status in [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]]
+
+    block = htm.Block()
+
+    if len(failed_tasks) > 0:
+        summary = f"{len(failed_tasks)} distribution{'s' if len(failed_tasks) > 1 else ''} failed for this release"
+        block.append(
+            htm.div(".alert.alert-danger.mb-3")[
+                htm.h3["Failed distributions"],
+                htm.details[
+                    htm.summary[summary],
+                    htm.div[*[_render_task(f) for f in failed_tasks]],
+                ],
+            ]
+        )
+    if len(in_progress_tasks) > 0:
+        block.append(
+            htm.div(".alert.alert-info.mb-3")[
+                htm.h3["In-progress distributions"],
+                htm.p["One or more automatic distributions are still in-progress:"],
+                *[_render_task(f) for f in in_progress_tasks],
+                htm.button(
+                    ".btn.btn-success.me-2",
+                    {"onclick": "window.location.reload()"},
+                )["Refresh"],
+            ]
+        )
+    return block.collect()
 
 
 def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
@@ -247,6 +331,7 @@ async def _render_page(
     target_dirs: set,
     deletable_dirs: list[tuple[str, str]],
     rc_analysis: RCTagAnalysisResult,
+    distribution_tasks: Sequence[sql.Task],
 ) -> str:
     """Render the finish page using htm.py."""
     page = htm.Block()
@@ -275,8 +360,11 @@ async def _render_page(
         "such as Maven Central, PyPI, or Docker Hub."
     ]
 
-    # TODO alert
-    page.append(_render_todo_alert(release))
+    if len(distribution_tasks) > 0:
+        page.append(_render_distribution_tasks(release, distribution_tasks))
+
+    page.append(_render_dist_warning())
+    page.append(_render_distribution_buttons(release))
 
     # Move files section
     page.append(_render_move_section(max_files_to_show=10))
@@ -401,7 +489,7 @@ def _render_release_card(release: sql.Release) -> htm.Element:
                         version_name=release.version,
                     ),
                 )[
-                    htpy.i(".bi.bi-download"),
+                    htm.icon("download"),
                     " Download all files",
                 ],
                 htm.a(
@@ -413,7 +501,7 @@ def _render_release_card(release: sql.Release) -> htm.Element:
                         version_name=release.version,
                     ),
                 )[
-                    htpy.i(".bi.bi-archive"),
+                    htm.icon("archive"),
                     " Show files",
                 ],
                 htm.a(
@@ -425,7 +513,7 @@ def _render_release_card(release: sql.Release) -> htm.Element:
                         version_name=release.version,
                     ),
                 )[
-                    htpy.i(".bi.bi-clock-history"),
+                    htm.icon("clock-history"),
                     " Show revisions",
                 ],
                 htm.a(
@@ -437,7 +525,7 @@ def _render_release_card(release: sql.Release) -> htm.Element:
                         version_name=release.version,
                     ),
                 )[
-                    htpy.i(".bi.bi-check-circle"),
+                    htm.icon("check-circle"),
                     " Announce and distribute",
                 ],
             ],
@@ -446,22 +534,12 @@ def _render_release_card(release: sql.Release) -> htm.Element:
     return card
 
 
-def _render_todo_alert(release: sql.Release) -> htm.Element:
-    """Render the TODO alert about distribution tools."""
-    return htm.div(".alert.alert-warning.mb-4", role="alert")[
-        htm.p(".fw-semibold.mb-1")["TODO"],
-        htm.p(".mb-1")[
-            "We plan to add tools to help release managers to distribute release artifacts on distribution networks. "
-            "Currently you must do this manually. Once you've distributed your release artifacts, you can ",
-            htm.a(
-                href=util.as_url(
-                    distribution.record,
-                    project=release.project.name,
-                    version=release.version,
-                )
-            )["record them on the ATR"],
-            ".",
-        ],
+def _render_task(task: sql.Task) -> htm.Element:
+    """Render a distribution task's details."""
+    args: gha.DistributionWorkflow = gha.DistributionWorkflow.model_validate(task.task_args)
+    status = task.status.value
+    return htm.p[
+        f"{args.platform} ({args.package} {args.version}): {task.error if task.error else status.capitalize()}"
     ]
 
 

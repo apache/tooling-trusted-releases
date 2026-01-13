@@ -53,6 +53,7 @@ sqlmodel.SQLModel.metadata = sqlalchemy.MetaData(
 @dataclasses.dataclass(frozen=True)
 class DistributionPlatformValue:
     name: str
+    gh_slug: str
     template_url: str
     template_staging_url: str | None = None
     requires_owner_namespace: bool = False
@@ -95,12 +96,14 @@ class CheckResultStatusIgnore(str, enum.Enum):
 class DistributionPlatform(enum.Enum):
     ARTIFACT_HUB = DistributionPlatformValue(
         name="Artifact Hub",
+        gh_slug="artifacthub",
         template_url="https://artifacthub.io/api/v1/packages/helm/{owner_namespace}/{package}/{version}",
         template_staging_url="https://staging.artifacthub.io/api/v1/packages/helm/{owner_namespace}/{package}/{version}",
         requires_owner_namespace=True,
     )
     DOCKER_HUB = DistributionPlatformValue(
         name="Docker Hub",
+        gh_slug="dockerhub",
         template_url="https://hub.docker.com/v2/namespaces/{owner_namespace}/repositories/{package}/tags/{version}",
         # TODO: Need to use staging tags?
         # template_staging_url="https://hub.docker.com/v2/namespaces/{owner_namespace}/repositories/{package}/tags/{version}",
@@ -108,6 +111,7 @@ class DistributionPlatform(enum.Enum):
     )
     # GITHUB = DistributionPlatformValue(
     #     name="GitHub",
+    #     gh_slug="github",
     #     template_url="https://api.github.com/repos/{owner_namespace}/{package}/releases/tags/v{version}",
     #     # Combine with {"prerelease": true}
     #     template_staging_url="https://api.github.com/repos/{owner_namespace}/{package}/releases",
@@ -115,6 +119,7 @@ class DistributionPlatform(enum.Enum):
     # )
     MAVEN = DistributionPlatformValue(
         name="Maven Central",
+        gh_slug="maven",
         template_url="https://search.maven.org/solrsearch/select?q=g:{owner_namespace}+AND+a:{package}+AND+v:{version}&core=gav&rows=20&wt=json",
         # Java ASF projects use staging URLs along the lines of
         # https://repository.apache.org/content/repositories/orgapachePROJECT-NNNN/
@@ -123,17 +128,20 @@ class DistributionPlatform(enum.Enum):
     )
     NPM = DistributionPlatformValue(
         name="npm",
+        gh_slug="npm",
         # TODO: Need to parse dist-tags
         template_url="https://registry.npmjs.org/{package}",
     )
     NPM_SCOPED = DistributionPlatformValue(
         name="npm (scoped)",
+        gh_slug="npm",
         # TODO: Need to parse dist-tags
         template_url="https://registry.npmjs.org/@{owner_namespace}/{package}",
         requires_owner_namespace=True,
     )
     PYPI = DistributionPlatformValue(
         name="PyPI",
+        gh_slug="pypi",
         template_url="https://pypi.org/pypi/{package}/{version}/json",
         template_staging_url="https://test.pypi.org/pypi/{package}/{version}/json",
     )
@@ -179,7 +187,7 @@ class TaskStatus(str, enum.Enum):
 
 
 class TaskType(str, enum.Enum):
-    GITHUB_ACTION_WORKFLOW = "github_action_workflow"
+    DISTRIBUTION_WORKFLOW = "distribution_workflow"
     HASHING_CHECK = "hashing_check"
     KEYS_IMPORT_FILE = "keys_import_file"
     LICENSE_FILES = "license_files"
@@ -352,6 +360,8 @@ class Task(sqlmodel.SQLModel, table=True):
     )
     result: results.Results | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(ResultsJSON))
     error: str | None = None
+
+    workflow: "WorkflowStatus" = sqlmodel.Relationship(back_populates="task")
 
     # Used for check tasks
     # We don't put these in task_args because we want to query them efficiently
@@ -1155,6 +1165,17 @@ class Revision(sqlmodel.SQLModel, table=True):
         sqlmodel.UniqueConstraint("release_name", "seq", name="uq_revision_release_seq"),
         sqlmodel.UniqueConstraint("release_name", "number", name="uq_revision_release_number"),
     )
+
+
+# WorkflowStatus:
+class WorkflowStatus(sqlmodel.SQLModel, table=True):
+    workflow_id: str = sqlmodel.Field(primary_key=True, index=True)
+    run_id: int = sqlmodel.Field(primary_key=True, index=True)
+    project_name: str = sqlmodel.Field(index=True)
+    task_id: int | None = sqlmodel.Field(default=None, foreign_key="task.id", ondelete="SET NULL")
+    task: Task = sqlmodel.Relationship(back_populates="workflow")
+    status: str = sqlmodel.Field()
+    message: str | None = sqlmodel.Field(default=None)
 
 
 def revision_name(release_name: str, number: str) -> str:

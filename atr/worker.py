@@ -204,7 +204,10 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
             handler_result = await handler(function_arguments)
         else:
             # Otherwise, it's not a check handler
-            handler_result = await handler(task_args)
+            if sig.parameters.get("task_id") is None:
+                handler_result = await handler(task_args)
+            else:
+                handler_result = await handler(task_args, task_id=task_id)
 
         task_results = handler_result
         status = task.COMPLETED

@@ -125,9 +125,19 @@
     </div>
   </div>
   {% if phase == "release_candidate_draft" %}
+    <h3 id="distribution" class="mt-4">Distribution</h3>
+    <p>
+      While this release is in draft, you can create a staging distribution. Use the buttons below to either create one automatically (where supported) or record a manual distribution performed outside of ATR.
+    </p>
+    <div class="alert alert-warning mb-4">
+      <p class="fw-semibold mb-1">NOTE:</p>
+      <p>At present, automated distributions are being developed. Please use the manual record button if you need to record a distribution.</p>
+    </div>
     <p>
       <a class="btn btn-primary"
-         href="{{ as_url(get.distribution.stage, project=release.project.name, version=release.version) }}">Record a distribution</a>
+         href="{{ as_url(get.distribution.stage_automate, project=release.project.name, version=release.version) }}">Distribute</a>
+      <a class="btn btn-secondary"
+         href="{{ as_url(get.distribution.stage_record, project=release.project.name, version=release.version) }}">Record a manual distribution</a>
     </p>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>

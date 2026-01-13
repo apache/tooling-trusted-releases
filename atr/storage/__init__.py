@@ -218,6 +218,7 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
         self.ssh = writers.ssh.CommitteeMember(write, self, data, committee_name)
         self.tokens = writers.tokens.CommitteeMember(write, self, data, committee_name)
         self.vote = writers.vote.CommitteeMember(write, self, data, committee_name)
+        self.workflowstatus = writers.workflowstatus.CommitteeMember(write, self, data, committee_name)
 
     @property
     def asf_uid(self) -> str:

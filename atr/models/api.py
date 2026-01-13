@@ -67,6 +67,36 @@ class CommitteesListResults(schema.Strict):
     committees: Sequence[sql.Committee]
 
 
+class DistributeSshRegisterArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
+    phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
+    version: str = schema.example("0.0.1")
+
+
+class DistributeSshRegisterResults(schema.Strict):
+    endpoint: Literal["/distribute/ssh/register"] = schema.alias("endpoint")
+    fingerprint: str = schema.example("SHA256:0123456789abcdef0123456789abcdef01234567")
+    project: str = schema.example("example")
+    expires: int = schema.example(1713547200)
+
+
+class DistributeStatusUpdateArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    workflow: str = schema.description("Workflow name")
+    run_id: int = schema.description("Workflow run ID")
+    project_name: str = schema.description("Project name in ATR")
+    status: str = schema.description("Workflow status")
+    message: str = schema.description("Workflow message")
+
+
+class DistributeStatusUpdateResults(schema.Strict):
+    endpoint: Literal["/distribute/task/status"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+
+
 class DistributionRecordArgs(schema.Strict):
     project: str = schema.example("example")
     version: str = schema.example("0.0.1")
@@ -592,6 +622,7 @@ validate_committee_keys = validator(CommitteeKeysResults)
 validate_committee_projects = validator(CommitteeProjectsResults)
 validate_committees_list = validator(CommitteesListResults)
 validate_distribution_record = validator(DistributionRecordResults)
+validate_distribution_ssh_register = validator(DistributeSshRegisterResults)
 validate_ignore_add = validator(IgnoreAddResults)
 validate_ignore_delete = validator(IgnoreDeleteResults)
 validate_ignore_list = validator(IgnoreListResults)

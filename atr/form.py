@@ -517,6 +517,10 @@ Email = pydantic.EmailStr
 
 
 class Enum[EnumType: enum.Enum]:
+    # These exist for type checkers - at runtime, the actual type is the enum
+    name: str
+    value: str | int
+
     @staticmethod
     def __class_getitem__(enum_class: type[EnumType]):
         def validator(v: Any) -> EnumType:

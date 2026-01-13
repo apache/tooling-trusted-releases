@@ -189,7 +189,7 @@ def queued(
 
 def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results | None]]:  # noqa: C901
     match task_type:
-        case sql.TaskType.GITHUB_ACTION_WORKFLOW:
+        case sql.TaskType.DISTRIBUTION_WORKFLOW:
             return gha.trigger_workflow
         case sql.TaskType.HASHING_CHECK:
             return hashing.check

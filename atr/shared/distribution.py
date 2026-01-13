@@ -132,10 +132,7 @@ def html_tr_a(label: str, value: str | None) -> htm.Element:
 
 
 async def release_validated(
-    project: str,
-    version: str,
-    committee: bool = False,
-    staging: bool | None = None,
+    project: str, version: str, committee: bool = False, staging: bool | None = None, release_policy: bool = False
 ) -> sql.Release:
     match staging:
         case True:
@@ -149,6 +146,7 @@ async def release_validated(
             project_name=project,
             version=version,
             _committee=committee,
+            _release_policy=release_policy,
         ).demand(RuntimeError(f"Release {project} {version} not found"))
         if release.phase not in phase:
             raise RuntimeError(f"Release {project} {version} is not in {phase}")
@@ -158,12 +156,9 @@ async def release_validated(
 
 
 async def release_validated_and_committee(
-    project: str,
-    version: str,
-    *,
-    staging: bool | None = None,
+    project: str, version: str, *, staging: bool | None = None, release_policy: bool = False
 ) -> tuple[sql.Release, sql.Committee]:
-    release = await release_validated(project, version, committee=True, staging=staging)
+    release = await release_validated(project, version, committee=True, staging=staging, release_policy=release_policy)
     committee = release.committee
     if committee is None:
         raise RuntimeError(f"Release {project} {version} has no committee")

@@ -251,6 +251,54 @@ async def committees_list() -> DictResponse:
     ).model_dump(), 200
 
 
+@api.route("/distribute/ssh/register", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributeSshRegisterArgs)
+async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) -> DictResponse:
+    """
+    Register an SSH key sent with a corroborating Trusted Publisher JWT,
+    validating the requested version is in the correct phase.
+    """
+    payload, asf_uid, project = await interaction.trusted_jwt_for_version(
+        data.publisher, data.jwt, interaction.TrustedProjectPhase(data.phase), data.version
+    )
+    async with storage.write_as_committee_member(util.unwrap(project.committee).name, asf_uid) as wacm:
+        fingerprint, expires = await wacm.ssh.add_workflow_key(
+            payload["actor"],
+            payload["actor_id"],
+            project.name,
+            data.ssh_key,
+        )
+
+    return models.api.DistributeSshRegisterResults(
+        endpoint="/distribute/ssh/register",
+        fingerprint=fingerprint,
+        project=project.name,
+        expires=expires,
+    ).model_dump(), 200
+
+
+@api.route("/distribute/task/status", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributeStatusUpdateArgs)
+async def update_distribution_task_status(data: models.api.DistributeStatusUpdateArgs) -> DictResponse:
+    """
+    Update the status of a distribution task
+    """
+    _payload, _asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    async with db.session() as db_data:
+        status = await db_data.workflow_status(
+            workflow_id=data.workflow,
+            project_name=data.project_name,
+            run_id=data.run_id,
+        ).demand(exceptions.NotFound(f"Workflow {data.workflow} not found"))
+        status.status = data.status
+        status.message = data.message
+        await db_data.commit()
+    return models.api.DistributeStatusUpdateResults(
+        endpoint="/distribute/task/status",
+        success=True,
+    ).model_dump(), 200
+
+
 @api.route("/distribution/record", methods=["POST"])
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
@@ -279,7 +327,7 @@ async def distribution_record(data: models.api.DistributionRecordArgs) -> DictRe
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         await wacm.distributions.record_from_data(
-            release,
+            release.name,
             data.staging,
             dd,
         )
@@ -656,7 +704,7 @@ async def publisher_distribution_record(data: models.api.PublisherDistributionRe
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         await wacm.distributions.record_from_data(
-            release,
+            release.name,
             data.staging,
             dd,
         )

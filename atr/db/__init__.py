@@ -731,6 +731,26 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def workflow_status(
+        self,
+        workflow_id: Opt[str] = NOT_SET,
+        run_id: Opt[int] = NOT_SET,
+        project_name: Opt[str] = NOT_SET,
+        task_id: Opt[int] = NOT_SET,
+    ) -> Query[sql.WorkflowStatus]:
+        query = sqlmodel.select(sql.WorkflowStatus)
+
+        if is_defined(workflow_id):
+            query = query.where(sql.WorkflowStatus.workflow_id == workflow_id)
+        if is_defined(run_id):
+            query = query.where(sql.WorkflowStatus.run_id == run_id)
+        if is_defined(project_name):
+            query = query.where(sql.WorkflowStatus.project_name == project_name)
+        if is_defined(task_id):
+            query = query.where(sql.WorkflowStatus.task_id == task_id)
+
+        return Query(self, query)
+
 
 async def create_async_engine(app_config: type[config.AppConfig]) -> sqlalchemy.ext.asyncio.AsyncEngine:
     absolute_db_path = os.path.join(app_config.STATE_DIR, app_config.SQLITE_DB_PATH)
