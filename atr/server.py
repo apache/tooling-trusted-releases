@@ -335,9 +335,10 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
     # Both object-src 'none' and base-uri 'none' are required by ASVS v5 3.4.3 (L2)
     # The frame-ancestors 'none' directive is required by ASVS v5 3.4.6 (L2)
     # Bootstrap uses data: URLs extensively, so we need to include that in img-src
+    # The script hash allows window.location.reload() and nothing else
     csp_directives = [
         "default-src 'self'",
-        "script-src 'self'",
+        "script-src 'self' 'sha256-4TpZ3Tx5SLybDXPQaSHGuP1RU4D+pzck+02JLVY61BY=' 'unsafe-hashes'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' https://apache.org https://incubator.apache.org https://www.apache.org data:",
         "font-src 'self'",
@@ -396,6 +397,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
 
     _app_setup_api_docs(app)
     quart_wtf.CSRFProtect(app)
+    _app_setup_logging(app, config_mode, app_config)
     db.init_database(app)
     _register_routes(app)
     blueprints.register(app)
@@ -403,7 +405,6 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _app_setup_context(app)
     _app_setup_security_headers(app)
     _app_setup_lifecycle(app)
-    _app_setup_logging(app, config_mode, app_config)
 
     # do not enable template pre-loading if we explicitly want to reload templates
     if not app_config.TEMPLATES_AUTO_RELOAD:
