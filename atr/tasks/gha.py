@@ -63,7 +63,7 @@ class DistributionWorkflow(schema.Strict):
 
 class WorkflowStatusCheck(schema.Strict):
     run_id: int | None = schema.description("Run ID")
-    next_schedule: int = pydantic.Field(default=0, description="The next scheduled time (in minutes)")
+    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
 
 
 @checks.with_model(DistributionWorkflow)
@@ -123,7 +123,7 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
 
 
 @checks.with_model(WorkflowStatusCheck)
-async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
+async def status_check(args: WorkflowStatusCheck, asf_uid: str) -> DistributionWorkflowStatus:
     """Check remote workflow statuses."""
 
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
@@ -182,7 +182,7 @@ async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
         )
 
         # Schedule next update
-        await _schedule_next(args)
+        await _schedule_next(args, asf_uid)
 
         return results.DistributionWorkflowStatus(
             kind="distribution_workflow_status",
@@ -274,10 +274,10 @@ async def _request_and_retry(
     return None
 
 
-async def _schedule_next(args: WorkflowStatusCheck):
-    if args.next_schedule:
-        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=args.next_schedule)
-        await tasks.workflow_update("system", schedule=next_schedule, schedule_next=True)
+async def _schedule_next(args: WorkflowStatusCheck, asf_uid: str) -> None:
+    if args.next_schedule_seconds:
+        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=args.next_schedule_seconds)
+        await tasks.workflow_update(asf_uid, schedule=next_schedule, schedule_next=True)
         log.info(
             f"Scheduled next workflow status update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
         )

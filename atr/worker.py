@@ -28,6 +28,7 @@ import inspect
 import os
 import signal
 import traceback
+from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
 import sqlmodel
@@ -103,12 +104,13 @@ def _setup_logging() -> None:
 # Task functions
 
 
-async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any]] | None:
+async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str] | None:
     """
     Attempt to claim the oldest unclaimed task.
     Returns (task_id, task_type, task_args) if successful.
     Returns None if no tasks are available.
     """
+    via = sql.validate_instrumented_attribute
     async with db.session() as data:
         async with data.begin():
             # Get the ID of the oldest queued task
@@ -117,10 +119,12 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any]] | No
                 .where(
                     sqlmodel.and_(
                         sql.Task.status == task.QUEUED,
-                        sql.Task.added <= datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=2),
+                        sqlmodel.or_(
+                            via(sql.Task.scheduled).is_(None), sql.Task.scheduled <= datetime.datetime.now(datetime.UTC)
+                        ),
                     )
                 )
-                .order_by(sql.validate_instrumented_attribute(sql.Task.added).asc())
+                .order_by(via(sql.Task.added).asc())
                 .limit(1)
             )
 
@@ -135,6 +139,7 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any]] | No
                     sql.validate_instrumented_attribute(sql.Task.id),
                     sql.validate_instrumented_attribute(sql.Task.task_type),
                     sql.validate_instrumented_attribute(sql.Task.task_args),
+                    sql.validate_instrumented_attribute(sql.Task.asf_uid),
                 )
             )
 
@@ -142,14 +147,14 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any]] | No
             claimed_task = result.first()
 
             if claimed_task:
-                task_id, task_type, task_args = claimed_task
+                task_id, task_type, task_args, asf_uid = claimed_task
                 log.info(f"Claimed task {task_id} ({task_type}) with args {task_args}")
-                return task_id, task_type, task_args
+                return task_id, task_type, task_args, asf_uid
 
             return None
 
 
-async def _task_process(task_id: int, task_type: str, task_args: list[str] | dict[str, Any]) -> None:
+async def _task_process(task_id: int, task_type: str, task_args: list[str] | dict[str, Any], asf_uid: str) -> None:
     """Process a claimed task."""
     log.info(f"Processing task {task_id} ({task_type}) with raw args {task_args}")
     try:
@@ -167,52 +172,15 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
 
         # Check whether the handler is a check handler
         if (len(params) == 1) and (params[0].annotation == checks.FunctionArguments):
-            log.debug(f"Handler {handler.__name__} expects checks.FunctionArguments, fetching full task details")
-            async with db.session() as data:
-                task_obj = await data.task(id=task_id).demand(
-                    ValueError(f"Task {task_id} disappeared during processing")
-                )
-
-            # Validate required fields from the Task object itself
-            if task_obj.project_name is None:
-                raise ValueError(f"Task {task_id} is missing required project_name")
-            if task_obj.version_name is None:
-                raise ValueError(f"Task {task_id} is missing required version_name")
-            if task_obj.revision_number is None:
-                raise ValueError(f"Task {task_id} is missing required revision_number")
-
-            if not isinstance(task_args, dict):
-                raise TypeError(
-                    f"Task {task_id} ({task_type}) has non-dict raw args"
-                    f" {task_args} which should represent keyword_args"
-                )
-
-            async def recorder_factory() -> checks.Recorder:
-                return await checks.Recorder.create(
-                    checker=handler,
-                    project_name=task_obj.project_name or "",
-                    version_name=task_obj.version_name or "",
-                    revision_number=task_obj.revision_number or "",
-                    primary_rel_path=task_obj.primary_rel_path,
-                )
-
-            function_arguments = checks.FunctionArguments(
-                recorder=recorder_factory,
-                asf_uid=task_obj.asf_uid,
-                project_name=task_obj.project_name or "",
-                version_name=task_obj.version_name or "",
-                revision_number=task_obj.revision_number,
-                primary_rel_path=task_obj.primary_rel_path,
-                extra_args=task_args,
-            )
-            log.debug(f"Calling {handler.__name__} with structured arguments: {function_arguments}")
-            handler_result = await handler(function_arguments)
+            handler_result = await _execute_check_task(handler, task_args, task_id, task_type)
         else:
             # Otherwise, it's not a check handler
-            if sig.parameters.get("task_id") is None:
-                handler_result = await handler(task_args)
-            else:
-                handler_result = await handler(task_args, task_id=task_id)
+            additional_kwargs = {}
+            if sig.parameters.get("task_id") is not None:
+                additional_kwargs["task_id"] = task_id
+            if sig.parameters.get("asf_uid") is not None:
+                additional_kwargs["asf_uid"] = asf_uid
+            handler_result = await handler(task_args, **additional_kwargs)
 
         task_results = handler_result
         status = task.COMPLETED
@@ -224,6 +192,52 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         log.error(f"Task {task_id} failed processing: {error_details}")
         error = str(e)
     await _task_result_process(task_id, task_results, status, error)
+
+
+async def _execute_check_task(
+    handler: Callable[..., Awaitable[results.Results | None]],
+    task_args: list[str] | dict[str, Any],
+    task_id: int,
+    task_type: str,
+) -> results.Results | None:
+    log.debug(f"Handler {handler.__name__} expects checks.FunctionArguments, fetching full task details")
+    async with db.session() as data:
+        task_obj = await data.task(id=task_id).demand(ValueError(f"Task {task_id} disappeared during processing"))
+
+    # Validate required fields from the Task object itself
+    if task_obj.project_name is None:
+        raise ValueError(f"Task {task_id} is missing required project_name")
+    if task_obj.version_name is None:
+        raise ValueError(f"Task {task_id} is missing required version_name")
+    if task_obj.revision_number is None:
+        raise ValueError(f"Task {task_id} is missing required revision_number")
+
+    if not isinstance(task_args, dict):
+        raise TypeError(
+            f"Task {task_id} ({task_type}) has non-dict raw args {task_args} which should represent keyword_args"
+        )
+
+    async def recorder_factory() -> checks.Recorder:
+        return await checks.Recorder.create(
+            checker=handler,
+            project_name=task_obj.project_name or "",
+            version_name=task_obj.version_name or "",
+            revision_number=task_obj.revision_number or "",
+            primary_rel_path=task_obj.primary_rel_path,
+        )
+
+    function_arguments = checks.FunctionArguments(
+        recorder=recorder_factory,
+        asf_uid=task_obj.asf_uid,
+        project_name=task_obj.project_name or "",
+        version_name=task_obj.version_name or "",
+        revision_number=task_obj.revision_number,
+        primary_rel_path=task_obj.primary_rel_path,
+        extra_args=task_args,
+    )
+    log.debug(f"Calling {handler.__name__} with structured arguments: {function_arguments}")
+    handler_result = await handler(function_arguments)
+    return handler_result
 
 
 async def _task_result_process(
@@ -255,8 +269,8 @@ async def _worker_loop_run() -> None:
         try:
             task = await _task_next_claim()
             if task:
-                task_id, task_type, task_args = task
-                await _task_process(task_id, task_type, task_args)
+                task_id, task_type, task_args, asf_uid = task
+                await _task_process(task_id, task_type, task_args, asf_uid)
                 processed += 1
                 # Only process max_to_process tasks and then exit
                 # This prevents memory leaks from accumulating

@@ -32,7 +32,7 @@ class Update(schema.Strict):
     """Arguments for the task to update metadata from remote data sources."""
 
     asf_uid: str = schema.description("The ASF UID of the user triggering the update")
-    next_schedule: int = pydantic.Field(default=0, description="The next scheduled time (in minutes)")
+    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
 
 
 class UpdateError(Exception):
@@ -52,8 +52,8 @@ async def update(args: Update) -> results.Results | None:
         )
 
         # Schedule next update
-        if args.next_schedule and args.next_schedule > 0:
-            next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=args.next_schedule)
+        if args.next_schedule_seconds and args.next_schedule_seconds > 0:
+            next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=args.next_schedule_seconds)
             await tasks.metadata_update(args.asf_uid, schedule=next_schedule, schedule_next=True)
             log.info(
                 f"Scheduled next metadata update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",

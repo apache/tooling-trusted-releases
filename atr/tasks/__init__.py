@@ -74,7 +74,7 @@ async def clear_scheduled(caller_data: db.Session | None = None):
                 ]
             ),
             via(sql.Task.status) == sql.TaskStatus.QUEUED,
-            via(sql.Task.added) > now,
+            sqlmodel.or_(via(sql.Task.scheduled).is_(None), via(sql.Task.scheduled) > now),
         )
 
         await data.execute(delete_stmt)
@@ -181,9 +181,9 @@ async def metadata_update(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a metadata update task."""
-    args = metadata.Update(asf_uid=asf_uid, next_schedule=0)
+    args = metadata.Update(asf_uid=asf_uid, next_schedule_seconds=0)
     if schedule_next:
-        args.next_schedule = 60 * 24
+        args.next_schedule_seconds = 60 * 60 * 24
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
@@ -194,7 +194,7 @@ async def metadata_update(
             primary_rel_path=None,
         )
         if schedule:
-            task.added = schedule
+            task.scheduled = schedule
         data.add(task)
         await data.commit()
         await data.flush()
@@ -302,9 +302,9 @@ async def workflow_update(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a workflow status update task."""
-    args = gha.WorkflowStatusCheck(next_schedule=0, run_id=0)
+    args = gha.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0)
     if schedule_next:
-        args.next_schedule = 2
+        args.next_schedule_seconds = 2 * 60
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
@@ -315,7 +315,7 @@ async def workflow_update(
             primary_rel_path=None,
         )
         if schedule:
-            task.added = schedule
+            task.scheduled = schedule
         data.add(task)
         await data.commit()
         await data.flush()
