@@ -114,7 +114,12 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any]] | No
             # Get the ID of the oldest queued task
             oldest_queued_task = (
                 sqlmodel.select(sql.Task.id)
-                .where(sql.Task.status == task.QUEUED)
+                .where(
+                    sqlmodel.and_(
+                        sql.Task.status == task.QUEUED,
+                        sql.Task.added <= datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=2),
+                    )
+                )
                 .order_by(sql.validate_instrumented_attribute(sql.Task.added).asc())
                 .limit(1)
             )

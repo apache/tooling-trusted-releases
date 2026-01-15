@@ -208,6 +208,7 @@ class TaskType(str, enum.Enum):
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
     VOTE_INITIATE = "vote_initiate"
+    WORKFLOW_STATUS = "workflow_status"
     ZIPFORMAT_INTEGRITY = "zipformat_integrity"
     ZIPFORMAT_STRUCTURE = "zipformat_structure"
 

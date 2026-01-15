@@ -207,9 +207,8 @@ def _app_setup_lifecycle(app: base.QuartApp) -> None:
         worker_manager = manager.get_worker_manager()
         await worker_manager.start()
 
-        # Start the metadata update scheduler
-        metadata_scheduler_task = asyncio.create_task(_metadata_update_scheduler())
-        app.extensions["metadata_scheduler"] = metadata_scheduler_task
+        # Register recurring tasks (metadata updates, workflow status checks, etc.)
+        await _register_recurrent_tasks()
 
         await _initialise_test_environment()
 
@@ -251,13 +250,13 @@ def _app_setup_lifecycle(app: base.QuartApp) -> None:
         await worker_manager.stop()
 
         # Stop the metadata scheduler
-        metadata_scheduler = app.extensions.get("metadata_scheduler")
-        if metadata_scheduler:
-            metadata_scheduler.cancel()
-            try:
-                await metadata_scheduler
-            except asyncio.CancelledError:
-                ...
+        # metadata_scheduler = app.extensions.get("metadata_scheduler")
+        # if metadata_scheduler:
+        #     metadata_scheduler.cancel()
+        #     try:
+        #         await metadata_scheduler
+        #     except asyncio.CancelledError:
+        #         ...
 
         ssh_server = app.extensions.get("ssh_server")
         if ssh_server:
@@ -412,6 +411,8 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _app_setup_security_headers(app)
     _app_setup_lifecycle(app)
 
+    # _register_recurrent_tasks()
+
     # do not enable template pre-loading if we explicitly want to reload templates
     if not app_config.TEMPLATES_AUTO_RELOAD:
         preload.setup_template_preloading(app)
@@ -513,20 +514,36 @@ async def _initialise_test_environment() -> None:
             await data.commit()
 
 
-async def _metadata_update_scheduler() -> None:
-    """Periodically schedule remote metadata updates."""
+#
+# async def _metadata_update_scheduler() -> None:
+#     """Periodically schedule remote metadata updates."""
+#     # Wait one minute to allow the server to start
+#     await asyncio.sleep(60)
+#
+#     while True:
+#         try:
+#             task = await tasks.metadata_update(asf_uid="system")
+#             log.info(f"Scheduled remote metadata update with ID {task.id}")
+#         except Exception as e:
+#             log.exception(f"Failed to schedule remote metadata update: {e!s}")
+#
+#         # Schedule next update in 24 hours
+#         await asyncio.sleep(86400)
+
+
+async def _register_recurrent_tasks() -> None:
+    """Schedule recurring tasks"""
     # Wait one minute to allow the server to start
-    await asyncio.sleep(60)
+    await asyncio.sleep(30)
+    try:
+        await tasks.clear_scheduled()
+        metadata = await tasks.metadata_update(asf_uid="system", schedule_next=True)
+        log.info(f"Scheduled remote metadata update with ID {metadata.id}")
+        workflow = await tasks.workflow_update(asf_uid="system", schedule_next=True)
+        log.info(f"Scheduled workflow status update with ID {workflow.id}")
 
-    while True:
-        try:
-            task = await tasks.metadata_update(asf_uid="system")
-            log.info(f"Scheduled remote metadata update with ID {task.id}")
-        except Exception as e:
-            log.exception(f"Failed to schedule remote metadata update: {e!s}")
-
-        # Schedule next update in 24 hours
-        await asyncio.sleep(86400)
+    except Exception as e:
+        log.exception(f"Failed to schedule recurrent tasks: {e!s}")
 
 
 def _migrate_audit(state_dir: pathlib.Path) -> None:

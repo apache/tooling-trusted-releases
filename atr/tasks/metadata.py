@@ -15,12 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
+
 import aiohttp
+import pydantic
 
 import atr.datasources.apache as apache
 import atr.log as log
 import atr.models.results as results
 import atr.models.schema as schema
+import atr.tasks as tasks
 import atr.tasks.checks as checks
 
 
@@ -28,6 +32,7 @@ class Update(schema.Strict):
     """Arguments for the task to update metadata from remote data sources."""
 
     asf_uid: str = schema.description("The ASF UID of the user triggering the update")
+    next_schedule: int = pydantic.Field(default=0, description="The next scheduled time (in minutes)")
 
 
 class UpdateError(Exception):
@@ -45,6 +50,15 @@ async def update(args: Update) -> results.Results | None:
         log.info(
             f"Metadata update completed successfully: added {added_count}, updated {updated_count}",
         )
+
+        # Schedule next update
+        if args.next_schedule and args.next_schedule > 0:
+            next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=args.next_schedule)
+            await tasks.metadata_update(args.asf_uid, schedule=next_schedule, schedule_next=True)
+            log.info(
+                f"Scheduled next metadata update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
+            )
+
         return results.MetadataUpdate(
             kind="metadata_update",
             added_count=added_count,

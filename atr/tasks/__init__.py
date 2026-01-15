@@ -15,8 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Final
+
+import sqlmodel
 
 import atr.db as db
 import atr.models.results as results
@@ -55,6 +58,27 @@ async def asc_checks(asf_uid: str, release: sql.Release, revision: str, signatur
         )
 
     return tasks
+
+
+async def clear_scheduled(caller_data: db.Session | None = None):
+    """Clear all future scheduled tasks of the given types."""
+    async with db.ensure_session(caller_data) as data:
+        via = sql.validate_instrumented_attribute
+        now = datetime.datetime.now(datetime.UTC)
+
+        delete_stmt = sqlmodel.delete(sql.Task).where(
+            via(sql.Task.task_type).in_(
+                [
+                    sql.TaskType.METADATA_UPDATE,
+                    sql.TaskType.WORKFLOW_STATUS,
+                ]
+            ),
+            via(sql.Task.status) == sql.TaskStatus.QUEUED,
+            via(sql.Task.added) > now,
+        )
+
+        await data.execute(delete_stmt)
+        await data.commit()
 
 
 async def draft_checks(
@@ -150,17 +174,27 @@ async def keys_import_file(
         await data.commit()
 
 
-async def metadata_update(asf_uid: str, caller_data: db.Session | None = None) -> sql.Task:
+async def metadata_update(
+    asf_uid: str,
+    caller_data: db.Session | None = None,
+    schedule: datetime.datetime | None = None,
+    schedule_next: bool = False,
+) -> sql.Task:
     """Queue a metadata update task."""
+    args = metadata.Update(asf_uid=asf_uid, next_schedule=0)
+    if schedule_next:
+        args.next_schedule = 60 * 24
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.METADATA_UPDATE,
-            task_args=metadata.Update(asf_uid=asf_uid).model_dump(),
+            task_args=args.model_dump(),
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
         )
+        if schedule:
+            task.added = schedule
         data.add(task)
         await data.commit()
         await data.flush()
@@ -227,6 +261,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return targz.structure
         case sql.TaskType.VOTE_INITIATE:
             return vote.initiate
+        case sql.TaskType.WORKFLOW_STATUS:
+            return gha.status_check
         case sql.TaskType.ZIPFORMAT_INTEGRITY:
             return zipformat.integrity
         case sql.TaskType.ZIPFORMAT_STRUCTURE:
@@ -257,6 +293,33 @@ async def tar_gz_checks(asf_uid: str, release: sql.Release, revision: str, path:
     ]
 
     return tasks
+
+
+async def workflow_update(
+    asf_uid: str,
+    caller_data: db.Session | None = None,
+    schedule: datetime.datetime | None = None,
+    schedule_next: bool = False,
+) -> sql.Task:
+    """Queue a workflow status update task."""
+    args = gha.WorkflowStatusCheck(next_schedule=0, run_id=0)
+    if schedule_next:
+        args.next_schedule = 2
+    async with db.ensure_session(caller_data) as data:
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.WORKFLOW_STATUS,
+            task_args=args.model_dump(),
+            asf_uid=asf_uid,
+            revision_number=None,
+            primary_rel_path=None,
+        )
+        if schedule:
+            task.added = schedule
+        data.add(task)
+        await data.commit()
+        await data.flush()
+        return task
 
 
 async def zip_checks(asf_uid: str, release: sql.Release, revision: str, path: str) -> list[sql.Task]:

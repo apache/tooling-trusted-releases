@@ -33,6 +33,12 @@ class DistributionWorkflow(schema.Strict):
     url: str = schema.description("The URL of the workflow run")
 
 
+class DistributionWorkflowStatus(schema.Strict):
+    """Result of the task to update Github workflow statuses."""
+
+    kind: Literal["distribution_workflow_status"] = schema.Field(alias="kind")
+
+
 class HashingCheck(schema.Strict):
     """Result of the task to check the hash of a file."""
 
@@ -194,6 +200,7 @@ class MetadataUpdate(schema.Strict):
 
 Results = Annotated[
     DistributionWorkflow
+    | DistributionWorkflowStatus
     | HashingCheck
     | MessageSend
     | MetadataUpdate

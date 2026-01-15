@@ -15,14 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 import asyncio
+import datetime
 import json
 import uuid
 from collections.abc import Callable
 from typing import Any, Final, NoReturn
 
 import aiohttp
+import pydantic
 
 import atr.config as config
+import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.schema as schema
@@ -30,7 +33,9 @@ import atr.models.sql as sql
 
 # import atr.shared as shared
 import atr.storage as storage
+import atr.tasks as tasks
 import atr.tasks.checks as checks
+from atr.models.results import DistributionWorkflowStatus
 
 _BASE_URL: Final[str] = "https://api.github.com/repos"
 _IN_PROGRESS_STATUSES: Final[list[str]] = ["in_progress", "queued", "requested", "waiting", "pending", "expected"]
@@ -54,6 +59,11 @@ class DistributionWorkflow(schema.Strict):
     platform: str = schema.description("Distribution platform")
     arguments: dict[str, str] = schema.description("Workflow arguments")
     name: str = schema.description("Name of the run")
+
+
+class WorkflowStatusCheck(schema.Strict):
+    run_id: int | None = schema.description("Run ID")
+    next_schedule: int = pydantic.Field(default=0, description="The next scheduled time (in minutes)")
 
 
 @checks.with_model(DistributionWorkflow)
@@ -110,6 +120,78 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
         return results.DistributionWorkflow(
             kind="distribution_workflow", name=args.name, run_id=run_id, url=run.get("html_url", "")
         )
+
+
+@checks.with_model(WorkflowStatusCheck)
+async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
+    """Check remote workflow statuses."""
+
+    headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
+    log.info("Updating Github workflow statuses from apache/tooling-actions")
+    runs = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{_BASE_URL}/apache/tooling-actions/actions/runs?event=workflow_dispatch", headers=headers
+                ) as response:
+                    response.raise_for_status()
+                    resp_json = await response.json()
+                    runs = resp_json.get("workflow_runs", [])
+            except aiohttp.ClientResponseError as e:
+                _fail(f"Failed to lookup GitHub workflows: {e.message} ({e.status})")
+
+        updated_count = 0
+
+        if len(runs) > 0:
+            async with db.session() as data:
+                pending_runs = await data.workflow_status(status_in=[*_IN_PROGRESS_STATUSES, ""]).all()
+
+                for pending in pending_runs:
+                    # Find matching workflow run from GitHub API
+                    matching_run = next(
+                        (
+                            r
+                            for r in runs
+                            if r.get("id") == pending.run_id and r.get("path", "").endswith(f"/{pending.workflow_id}")
+                        ),
+                        None,
+                    )
+
+                    if matching_run:
+                        new_status = matching_run.get("status", "")
+                        new_message = matching_run.get("conclusion")
+                        if new_message == "failure":
+                            new_status = "failed"
+                            new_message = "GitHub workflow failed"
+
+                        # Update status if it has changed
+                        if new_status != pending.status:
+                            pending.status = new_status
+                            if new_message:
+                                pending.message = new_message
+                            updated_count += 1
+                            log.info(
+                                f"Updated workflow {pending.workflow_id} run {pending.run_id} to status {new_status}"
+                            )
+                # TODO: If we can't find this run ID in the bulk response, we could check it directly by ID in the API
+                await data.commit()
+
+        log.info(
+            f"Workflow status update completed: updated {updated_count} workflow(s)",
+        )
+
+        # Schedule next update
+        await _schedule_next(args)
+
+        return results.DistributionWorkflowStatus(
+            kind="distribution_workflow_status",
+        )
+
+    except aiohttp.ClientError as e:
+        _fail(f"Failed to fetch workflow data from GitHub: {e!s}")
+    except Exception as e:
+        _fail(f"Unexpected error during workflow status update: {e!s}")
 
 
 def _fail(message: str) -> NoReturn:
@@ -190,6 +272,15 @@ async def _request_and_retry(
                 log.error(f"Failure calling Github: {e.message} ({e.status}, attempt {_attempt + 1})")
                 await asyncio.sleep(0.1)
     return None
+
+
+async def _schedule_next(args: WorkflowStatusCheck):
+    if args.next_schedule:
+        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=args.next_schedule)
+        await tasks.workflow_update("system", schedule=next_schedule, schedule_next=True)
+        log.info(
+            f"Scheduled next workflow status update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
+        )
 
 
 #

@@ -755,7 +755,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         run_id: Opt[int] = NOT_SET,
         project_name: Opt[str] = NOT_SET,
         task_id: Opt[int] = NOT_SET,
+        status: Opt[str] = NOT_SET,
+        status_in: Opt[list[str]] = NOT_SET,
     ) -> Query[sql.WorkflowStatus]:
+        via = sql.validate_instrumented_attribute
         query = sqlmodel.select(sql.WorkflowStatus)
 
         if is_defined(workflow_id):
@@ -766,6 +769,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.WorkflowStatus.project_name == project_name)
         if is_defined(task_id):
             query = query.where(sql.WorkflowStatus.task_id == task_id)
+        if is_defined(status):
+            query = query.where(sql.WorkflowStatus.status == status)
+        if is_defined(status_in):
+            query = query.where(via(sql.WorkflowStatus.status).in_(status_in))
 
         return Query(self, query)
 
