@@ -133,26 +133,26 @@ def python_repr(object_name: str) -> str:
     return f"<{object_name}>"
 
 
-def secret(msg: str, data: bytes) -> None:
-    import base64
+# def secret(msg: str, data: bytes) -> None:
+#     import base64
 
-    import nacl.encoding as encoding
-    import nacl.public as public
+#     import nacl.encoding as encoding
+#     import nacl.public as public
 
-    import atr.config as config
+#     import atr.config as config
 
-    conf = config.get()
-    public_key_b64 = conf.LOG_PUBLIC_KEY
-    if public_key_b64 is None:
-        raise ValueError("LOG_PUBLIC_KEY is not set")
+#     conf = config.get()
+#     public_key_b64 = conf.LOG_PUBLIC_KEY
+#     if public_key_b64 is None:
+#         raise ValueError("LOG_PUBLIC_KEY is not set")
 
-    recipient_pk = public.PublicKey(
-        public_key_b64.encode("ascii"),
-        encoder=encoding.Base64Encoder,
-    )
-    ciphertext = public.SealedBox(recipient_pk).encrypt(data)
-    encoded_ciphertext = base64.b64encode(ciphertext).decode("ascii")
-    _event(logging.INFO, f"{msg} {encoded_ciphertext}")
+#     recipient_pk = public.PublicKey(
+#         public_key_b64.encode("ascii"),
+#         encoder=encoding.Base64Encoder,
+#     )
+#     ciphertext = public.SealedBox(recipient_pk).encrypt(data)
+#     encoded_ciphertext = base64.b64encode(ciphertext).decode("ascii")
+#     _event(logging.INFO, f"{msg} {encoded_ciphertext}")
 
 
 def warning(msg: str) -> None:
