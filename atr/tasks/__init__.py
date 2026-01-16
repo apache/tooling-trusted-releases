@@ -64,7 +64,6 @@ async def clear_scheduled(caller_data: db.Session | None = None):
     """Clear all future scheduled tasks of the given types."""
     async with db.ensure_session(caller_data) as data:
         via = sql.validate_instrumented_attribute
-        now = datetime.datetime.now(datetime.UTC)
 
         delete_stmt = sqlmodel.delete(sql.Task).where(
             via(sql.Task.task_type).in_(
@@ -74,7 +73,7 @@ async def clear_scheduled(caller_data: db.Session | None = None):
                 ]
             ),
             via(sql.Task.status) == sql.TaskStatus.QUEUED,
-            sqlmodel.or_(via(sql.Task.scheduled).is_(None), via(sql.Task.scheduled) > now),
+            via(sql.Task.scheduled).is_not(None),
         )
 
         await data.execute(delete_stmt)
@@ -302,7 +301,7 @@ async def workflow_update(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a workflow status update task."""
-    args = gha.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0)
+    args = gha.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0, asf_uid=asf_uid)
     if schedule_next:
         args.next_schedule_seconds = 2 * 60
     async with db.ensure_session(caller_data) as data:

@@ -358,7 +358,7 @@ class Task(sqlmodel.SQLModel, table=True):
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, index=True),
     )
-    scheduled: datetime.datetime = sqlmodel.Field(
+    scheduled: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime, index=True),
     )

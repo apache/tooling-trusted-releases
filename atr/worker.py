@@ -120,7 +120,8 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
                     sqlmodel.and_(
                         sql.Task.status == task.QUEUED,
                         sqlmodel.or_(
-                            via(sql.Task.scheduled).is_(None), sql.Task.scheduled <= datetime.datetime.now(datetime.UTC)
+                            via(sql.Task.scheduled).is_(None),
+                            via(sql.Task.scheduled) <= datetime.datetime.now(datetime.UTC),
                         ),
                     )
                 )
@@ -178,8 +179,6 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
             additional_kwargs = {}
             if sig.parameters.get("task_id") is not None:
                 additional_kwargs["task_id"] = task_id
-            if sig.parameters.get("asf_uid") is not None:
-                additional_kwargs["asf_uid"] = asf_uid
             handler_result = await handler(task_args, **additional_kwargs)
 
         task_results = handler_result
