@@ -34,7 +34,6 @@ import atr.models.results as results
 import atr.models.sql as sql
 import atr.render as render
 import atr.sbom as sbom
-import atr.sbom.models.osv as osv
 import atr.shared as shared
 import atr.template as template
 import atr.util as util
@@ -338,7 +337,7 @@ def _cyclonedx_cli_errors(block: htm.Block, task_result: results.SBOMToolScore):
         block.p["No CycloneDX CLI validation errors found."]
 
 
-def _extract_vulnerability_severity(vuln: osv.VulnerabilityDetails) -> str:
+def _extract_vulnerability_severity(vuln: results.VulnerabilityDetails) -> str:
     """Extract severity information from vulnerability data."""
     data = vuln.database_specific or {}
     if "severity" in data:
@@ -588,10 +587,10 @@ def _vulnerability_scan_find_in_progress_task(osv_tasks: Sequence[sql.Task], rev
 
 def _vulnerability_scan_results(
     block: htm.Block,
-    vulns: list[osv.CdxVulnerabilityDetail],
+    vulns: list[results.CdxVulnerabilityDetail],
     scans: list[str],
     task: sql.Task | None,
-    prev: list[osv.CdxVulnerabilityDetail] | None,
+    prev: list[results.CdxVulnerabilityDetail] | None,
 ) -> None:
     previous_vulns = None
     if prev is not None:
@@ -606,7 +605,7 @@ def _vulnerability_scan_results(
 
 
 def _vulnerability_results_from_bom(
-    vulns: list[osv.CdxVulnerabilityDetail],
+    vulns: list[results.CdxVulnerabilityDetail],
     block: htm.Block,
     scans: list[str],
     previous_vulns: dict[str, tuple[str, list[str]]] | None,
@@ -677,12 +676,12 @@ def _vulnerability_results_from_scan(
     block.append(new_block)
 
 
-def _cdx_to_osv(cdx: osv.CdxVulnerabilityDetail) -> osv.VulnerabilityDetails:
+def _cdx_to_osv(cdx: results.CdxVulnerabilityDetail) -> results.VulnerabilityDetails:
     score = []
     severity = ""
     if cdx.ratings is not None:
         severity, score = sbom.utilities.cdx_severity_to_osv(cdx.ratings)
-    return osv.VulnerabilityDetails(
+    return results.VulnerabilityDetails(
         id=cdx.id,
         summary=cdx.description,
         details=cdx.detail,
@@ -714,14 +713,12 @@ def _vulnerability_scan_section(
 
     scans = []
     if task_result.vulnerabilities is not None:
-        vulnerabilities = [
-            sbom.models.osv.CdxVulnAdapter.validate_python(json.loads(e)) for e in task_result.vulnerabilities
-        ]
+        vulnerabilities = [results.CdxVulnAdapter.validate_python(json.loads(e)) for e in task_result.vulnerabilities]
     else:
         vulnerabilities = []
     if task_result.prev_vulnerabilities is not None:
         prev_vulnerabilities = [
-            sbom.models.osv.CdxVulnAdapter.validate_python(json.loads(e)) for e in task_result.prev_vulnerabilities
+            results.CdxVulnAdapter.validate_python(json.loads(e)) for e in task_result.prev_vulnerabilities
         ]
     else:
         prev_vulnerabilities = None
