@@ -106,11 +106,11 @@ class CommitteeMember(CommitteeParticipant):
         version_name: str,
         preview_revision_number: str,
         recipient: str,
-        subject_template_hash: str | None,
         body: str,
         download_path_suffix: str,
         asf_uid: str,
         fullname: str,
+        subject_template_hash: str | None = None,
     ) -> None:
         if recipient not in util.permitted_announce_recipients(asf_uid):
             raise storage.AccessError(f"You are not permitted to send announcements to {recipient}")

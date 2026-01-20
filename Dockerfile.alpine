@@ -30,7 +30,7 @@ COPY . .
 
 # generate a version.py module from git information
 RUN make generate-version
-RUN make docs
+RUN make build-docs
 
 WORKDIR /opt/atr/.venv/lib/python3.13/site-packages
 RUN patch -p2 < /opt/atr/patches/generics.py.patch || :

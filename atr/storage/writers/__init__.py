@@ -30,6 +30,7 @@ import atr.storage.writers.sbom as sbom
 import atr.storage.writers.ssh as ssh
 import atr.storage.writers.tokens as tokens
 import atr.storage.writers.vote as vote
+import atr.storage.writers.workflowstatus as workflowstatus
 
 __all__ = [
     "announce",
@@ -45,4 +46,5 @@ __all__ = [
     "ssh",
     "tokens",
     "vote",
+    "workflowstatus",
 ]

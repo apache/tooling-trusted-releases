@@ -120,7 +120,7 @@ def log_outcome_errors(outcomes: outcome.List[types.Key], committee_name: str) -
 
 @contextlib.contextmanager
 def log_to_file(conf: config.AppConfig):
-    log_file_path = os.path.join(conf.STATE_DIR, "keys_import.log")
+    log_file_path = os.path.join(conf.STATE_DIR, "keys-import.log")
     # This should not be required
     os.makedirs(conf.STATE_DIR, exist_ok=True)
 

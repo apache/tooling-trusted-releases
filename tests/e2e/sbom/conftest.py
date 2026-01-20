@@ -17,10 +17,10 @@
 
 from __future__ import annotations
 
-import pathlib
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import e2e.helpers as helpers
+import e2e.sbom.helpers as sbom_helpers
 import pytest
 
 if TYPE_CHECKING:
@@ -28,25 +28,22 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Page
 
-PROJECT_NAME: Final[str] = "test"
-VERSION_NAME: Final[str] = "0.1+e2e-sbom"
-FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
-CURRENT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent.resolve()
-
 
 @pytest.fixture
 def page_release_with_file(page: Page) -> Generator[Page]:
     helpers.log_in(page)
 
-    helpers.delete_release_if_exists(page, PROJECT_NAME, VERSION_NAME)
+    helpers.delete_release_if_exists(page, sbom_helpers.PROJECT_NAME, sbom_helpers.VERSION_NAME)
 
-    helpers.visit(page, f"/start/{PROJECT_NAME}")
-    page.get_by_role("textbox").type(VERSION_NAME)
+    helpers.visit(page, f"/start/{sbom_helpers.PROJECT_NAME}")
+    page.get_by_role("textbox").type(sbom_helpers.VERSION_NAME)
     page.get_by_role("button", name="Start new release").click()
-    helpers.visit(page, f"/upload/{PROJECT_NAME}/{VERSION_NAME}")
-    page.locator('input[name="file_data"]').set_input_files(f"{CURRENT_DIR}/../test_files/{FILE_NAME}")
+    helpers.visit(page, f"/upload/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
+    page.locator('input[name="file_data"]').set_input_files(
+        f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}"
+    )
     page.get_by_role("button", name="Add files").click()
-    page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
-    helpers.visit(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
+    helpers.visit(page, f"/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
     page.wait_for_selector("#ongoing-tasks-banner", state="hidden")
     yield page

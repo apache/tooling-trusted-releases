@@ -9,11 +9,12 @@
 **Sections**:
 
 * [Python code](#python-code)
+* [Documentation and interfaces](#documentation-and-interfaces)
 * [HTML](#html)
 * [Markdown](#markdown)
 * [JavaScript](#javascript)
 * [Shell](#shell)
-* [OCI container files ("dockerfiles")](#oci-container-files-dockerfiles)
+* [Container files](#container-files)
 
 ## Python code
 
@@ -241,7 +242,7 @@ if a or b:
 
 ### Use terse comments on their own lines
 
-Place comments on dedicated lines preceding the relevant code block. Comments at the ends of lines are strictly reserved for linter or type checker directives. This convention enhances code scannability for such directives. General comments must not appear at the end of code lines. Keep comments concise, using sentence case without terminal punctuation. Each sentence forming a comment must occupy its own line. Comments must not include information about what has changed from earlier code revisions.
+Place comments on dedicated lines preceding the relevant code block. Comments at the ends of lines are strictly reserved for linter or type checker directives. This convention enhances code scannability for such directives. General comments must not appear at the end of code lines: PEP 8 says to use inline comments "sparingly", but we disallow them to make it easier to evaluate non-conformance. Keep comments concise, using sentence case without terminal punctuation. Each sentence forming a comment must occupy its own line. Comments must not include information about what has changed from earlier code revisions.
 
 ### Prefer explicit checks over `assert`
 
@@ -257,11 +258,13 @@ This should be adhered to even in contexts where printf style is usually expecte
 
 This convention is not enforced by any checks. Enforcement is via code review. See [issue #339](https://github.com/apache/tooling-trusted-releases/issues/339) for a discussion.
 
-## HTML
+## Documentation and interfaces
 
 ### Use sentence case for headings, form labels, and submission buttons
 
 We write headings, form labels, and submission buttons in the form "This is some text", and not "This is Some Text" or "This Is Some Text". This follows the [Wikipedia style for headings](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style#Section_headings).
+
+## HTML
 
 ### Use Bootstrap classes for all style
 
@@ -299,7 +302,7 @@ In some cases it may make more sense to indent at other levels, e.g. in `case` b
 
 Avoid the use of `; then`. Always put keywords on their own line.
 
-## OCI container files ("dockerfiles")
+## Container files
 
 ### Be FHS compliant
 

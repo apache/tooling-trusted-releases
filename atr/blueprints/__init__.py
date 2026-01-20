@@ -58,5 +58,5 @@ def _check_blueprint(module: ModuleType, routes: list[str]) -> None:
 
 
 def _export_routes(state_dir: pathlib.Path) -> None:
-    routes_file = state_dir / "routes.json"
+    routes_file = state_dir / "cache" / "routes.json"
     routes_file.write_text(json.dumps(sorted(_all_routes), indent=2))

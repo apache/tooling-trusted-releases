@@ -330,6 +330,8 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
                 "project_name": project.name,
                 "source_artifact_paths": "\n".join(project.policy_source_artifact_paths),
                 "license_check_mode": project.policy_license_check_mode,
+                "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
+                "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
                 "binary_artifact_paths": "\n".join(project.policy_binary_artifact_paths),
                 "github_repository_name": project.policy_github_repository_name or "",
                 "github_compose_workflow_path": "\n".join(project.policy_github_compose_workflow_path),

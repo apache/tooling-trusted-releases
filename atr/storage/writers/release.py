@@ -112,31 +112,48 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> str | None:
         """Handle the deletion of database records and filesystem data for a release."""
         release = await self.__data.release(
-            project_name=project_name, version=version, phase=phase, _project=True
+            project_name=project_name, version=version, phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_name} {version}' not found."))
         release_dir = util.release_directory_base(release)
 
-        # Delete from the database
+        # Delete from the database using bulk SQL DELETE for efficiency
         log.info(f"Deleting database records for release: {project_name} {version}")
-        # Cascade should handle this, but we delete manually anyway
-        tasks_to_delete = await self.__data.task(project_name=release.project.name, version_name=release.version).all()
-        for task in tasks_to_delete:
-            await self.__data.delete(task)
-        log.debug(f"Deleted {util.plural(len(tasks_to_delete), 'task')} for {project_name} {version}")
 
-        checks_to_delete = await self.__data.check_result(release_name=release.name).all()
-        for check in checks_to_delete:
-            await self.__data.delete(check)
-        log.debug(f"Deleted {util.plural(len(checks_to_delete), 'check result')} for {project_name} {version}")
+        # Bulk delete tasks
+        # These is no cascade, so we must delete explicitly
+        via = sql.validate_instrumented_attribute
+        task_delete_stmt = sqlmodel.delete(sql.Task).where(
+            via(sql.Task.project_name) == release.project.name,
+            via(sql.Task.version_name) == release.version,
+        )
+        task_result = await self.__data.execute(task_delete_stmt)
+        task_count = task_result.rowcount if isinstance(task_result, engine.CursorResult) else 0
+        log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_name} {version}")
 
-        # TODO: Ensure that revisions are not deleted
-        # But this makes testing difficult
-        # Perhaps delete revisions if associated with test accounts only
-        # But we want to test actual mechanisms, not special case tests
-        # We could create uniquely named releases in tests
-        # Currently part of the discussion in #171, but should be its own issue
+        # Bulk delete check results
+        # Handled by cascade, but we do this explicitly anyway
+        check_delete_stmt = sqlmodel.delete(sql.CheckResult).where(
+            via(sql.CheckResult.release_name) == release.name,
+        )
+        check_result = await self.__data.execute(check_delete_stmt)
+        check_count = check_result.rowcount if isinstance(check_result, engine.CursorResult) else 0
+        log.debug(f"Deleted {util.plural(check_count, 'check result')} for {project_name} {version}")
+
+        release_name = release.name
         await self.__data.delete(release)
         log.info(f"Deleted release record: {project_name} {version}")
+
+        # In test mode, delete the counter for test committee releases
+        # This allows revision numbers to be reused in testing
+        committee = release.project.committee
+        is_test_release = config.get().ALLOW_TESTS and (committee is not None) and (committee.name == "test")
+        if is_test_release:
+            counter_delete_stmt = sqlmodel.delete(sql.RevisionCounter).where(
+                via(sql.RevisionCounter.release_name) == release_name
+            )
+            await self.__data.execute(counter_delete_stmt)
+            log.info(f"Deleted revision counter for test release: {release_name}")
+
         await self.__data.commit()
 
         if include_downloads:

@@ -8,10 +8,11 @@
 
 **Sections**:
 
-* [Running tests](#running-tests)
-* [Creating tests](#creating-tests)
+* [Running Playwright tests](#running-playwright-tests)
+* [Creating Playwright tests](#creating-playwright-tests)
+* [Running end-to-end tests](#running-end-to-end-tests)
 
-## Running tests
+## Running Playwright tests
 
 We currently only have end-to-end browser tests, but we plan to expand these as part of [Issue #209](https://github.com/apache/tooling-trusted-releases/issues/209). Meanwhile, these browser tests serve as a simple consistency check when developing ATR.
 
@@ -48,7 +49,7 @@ In other words, we build [`tests/Dockerfile.playwright`](/ref/tests/Dockerfile.p
 
 The tests should, as of 14 Oct 2025, take about 40 to 50 seconds to run in Docker Compose, and 20 to 25 seconds to run on the host. The last line of the test output should be `Tests finished successfully`, and if the tests do not complete successfully there should be an obvious Python backtrace.
 
-## Creating tests
+## Creating Playwright tests
 
 You can add tests to `playwright/test.py`. If you're feeling particularly adventurous, you can add separate unit tests etc., but it's okay to add tests only to the Playwright test script until [Issue #209](https://github.com/apache/tooling-trusted-releases/issues/209) is resolved.
 
@@ -63,3 +64,78 @@ The `test.py` script calls [`run_tests`](/ref/playwright/test.py:run_tests) from
 We want to make it more clear which Playwright tests depend on which, and have more isolated tests. Reusing context, however, helps to speed up the tests.
 
 The actual test cases themselves tend to use helpers such as [`go_to_path`](/ref/playwright/test.py:go_to_path) and [`wait_for_path`](/ref/playwright/test.py:wait_for_path), and then call [`logging.info`](https://docs.python.org/3/library/logging.html#logging.info) to print information to the console. Try to keep logging messages terse and informative.
+
+## Running end-to-end tests
+
+To run ATR end-to-end (e2e) tests, you must first have an OCI container runtime with Compose functionality, such as Docker or Podman, installed. You will also need a POSIX shell. You can then run `tests/run-e2e.sh` to run the entire e2e test suite.
+
+### Debugging e2e test failures
+
+When e2e tests fail, the test script will display suggestions for debugging. You can also use the following techniques:
+
+**View the ATR server logs:**
+
+```shell
+cd tests && docker compose logs atr-dev --tail 100
+```
+
+**View specific log files from the state volume:**
+
+```shell
+# View the Hypercorn logs
+docker compose exec atr-dev cat /opt/atr/state/hypercorn/logs/hypercorn.log
+
+# View the worker logs
+docker compose exec atr-dev cat /opt/atr/state/logs/atr-worker.log
+
+# View the worker error logs
+docker compose exec atr-dev cat /opt/atr/state/logs/atr-worker-error.log
+```
+
+**Enter a shell in an already running ATR e2e container:**
+
+```shell
+cd tests && docker compose exec atr-dev sh
+```
+
+Once in a shell in the running container you can e.g. run `ls -al /opt/atr/state/logs`.
+
+### Resetting cached state
+
+The e2e tests use a persistent OCI container volume to store ATR state between runs. If you encounter errors due to stale or corrupted state, you need to reset this volume.
+
+**Stop containers and remove the state volume:**
+
+```shell
+cd tests && docker compose down -v
+```
+
+The `-v` flag removes the persistent state volume (`atr-dev-state`), which resets all ATR state including the database, logs, and any uploaded files.
+
+**Force rebuild the container images:**
+
+If you have made changes to `Dockerfile.e2e` or any other dependencies, and the cached image is stale, run:
+
+```shell
+cd tests && docker compose build --no-cache atr-dev
+```
+
+**Perform a full reset:**
+
+To stop the container, remove the volume, rebuild, and run the tests:
+
+```shell
+cd tests && docker compose down -v
+docker compose build --no-cache atr-dev
+cd .. && sh tests/run-e2e.sh
+```
+
+**Remove all test containers and images:**
+
+To completely remove all test related containers, volumes, and images:
+
+```shell
+cd tests && docker compose down -v --rmi all
+```
+
+You probably only need to do this if you're running out of disk space.

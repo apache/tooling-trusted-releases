@@ -14,6 +14,8 @@
 * [How do we add new storage functionality?](#how-do-we-add-new-storage-functionality)
 * [How do we use outcomes?](#how-do-we-use-outcomes)
 * [What about audit logging?](#what-about-audit-logging)
+* [How is the filesystem organized?](#how-is-the-filesystem-organized)
+* [How should the filesystem be backed up?](#how-should-the-filesystem-be-backed-up)
 
 ## Introduction
 
@@ -138,3 +140,42 @@ Use outcomes when an operation might fail for some items but succeed for others,
 Storage write operations can be logged to [`config.AppConfig.STORAGE_AUDIT_LOG_FILE`](/ref/atr/config.py:STORAGE_AUDIT_LOG_FILE), which is `state/storage-audit.log` by default. Each log entry is a JSON object containing the timestamp, the action name, and relevant parameters. When you write a storage method that should be audited, call `self.__write_as.append_to_audit_log(**kwargs)` with whatever parameters are relevant to that specific operation. The action name is extracted automatically from the call stack using [`log.caller_name()`](/ref/atr/log.py:caller_name), so if the method is called [`i_am_a_teapot`](https://datatracker.ietf.org/doc/html/rfc2324), the audit log will show `i_am_a_teapot` without you having to pass the name explicitly.
 
 Audit logging must be done manually because the values to log are often those computed during method execution, not just those passed as arguments which could be logged automatically. When deleting a release, for example, we log `asf_uid` (instance attribute), `project_name` (argument), and `version` (argument), but when issuing a JWT from a PAT, we log `asf_uid` (instance attribute) and `pat_hash` (_computed_). Each operation logs what makes sense for that operation.
+
+## How is the filesystem organized?
+
+The storage interface writes to the [database](database) and the filesystem. There is one shared state directory for all of ATR, configured by the `STATE_DIR` parameter in [atr/config.py]. By default this is `$PROJECT_ROOT/state`, where `PROJECT_ROOT` is another ATR configuration parameter.
+
+Only a small number of subdirectories of the state directory are written to by the storage interface, and many of these locations are also configurable. These directories, and their configuration variables, are:
+
+* `attestable`, configured by `ATTESTABLE_STORAGE_DIR`
+* `downloads`, configured by `DOWNLOADS_STORAGE_DIR`
+* `finished`, configured by `FINISHED_STORAGE_DIR`
+* `subversion`, configured by `SVN_STORAGE_DIR`
+* `temporary`, which is unconfigurable
+* `unfinished`, configured by `UNFINISHED_STORAGE_DIR`
+
+And the purposes of these directories is as follows. Note that "immutable" here means that existing files cannot be modified, but does not preclude new files from being added.
+
+* `attestable` [**immutable**] holds JSON files of data that ATR has automatically verified and which must now be held immutably. (We could store this data in the database, but the aim is to eventually write attestation files here, so this prepares for that approach.)
+* `downloads` [**mutable**] are hard links to released artifacts in the `finished` directory. The `finished` directory contains the files exactly as they were arranged by the release managers upon announcing the release, separated strictly into one directory per release. The `downloads` folder, on the other hand, has no restrictions on its organisation and can be rearranged.
+* `finished` [**immutable**, except for moving to external archive] contains, as mentioned above, all of the files of a release as they were when announced. This therefore constitutes an historical record and allows us to rewrite the hard links in the `downloads` directory without having to consider not accidentally deleting files by removing all references, etc.
+* `subversion` [**mutable**] is designed to mirror two subdirectories, `dev` and `release`, of `https://dist.apache.org/repos/dist`. This is currently unused.
+* `temporary` [**mutable**] holds temporary files during operations where the data cannot be modified in place. One important example is when creating a staging directory of a new revision. A subdirectory with a random name is made in this directory, and then the files in the prior version are hard linked into it. The modifications take place in this staging area before the directory is finalised and moved to `unfinished`.
+* `unfinished` [**immutable**, except for moving to `finished`] contains all of the files in a release before it is announced. In other words, when the release managers compose a release, when the committee votes on the release, and when the release has been voted on but not yet announced, the files for that release are in this directory.
+
+This list does not include any configuration files, logs, or log directories.
+
+## How should the filesystem be backed up?
+
+Only the `attestable`, `downloads`, `finished`, and `unfinished` directories need to be backed up. The `subversion` directory is unused, and the `temporary` directory is for temporary staging.
+
+The structure of the directories that need backing up is as follows. An ellipsis, `...`, means any number of further files or subdirectories containing subdirectories or files recursively.
+
+* `attestable/PROJECT/VERSION/REVISION.json`
+* `downloads/COMMITTEE/PATH/...`
+* `finished/PROJECT/VERSION/...`
+* `unfinished/PROJECT/VERSION/REVISION/`
+
+Because of the versioning scheme used for the `attestable`, `finished`, and `unfinished` directories, these can be incrementally updated by simple copying without deletion. The downloads directory, however, must be snapshotted as its organization is random.
+
+This list does not include any configuration files, logs, or log directories. All configuration files and the audit logs, at a minimum, should also be backed up.

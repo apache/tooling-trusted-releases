@@ -24,11 +24,16 @@ import atr.models as models
 import atr.models.sql as sql
 import atr.util as util
 
+MAX_THREAD_MESSAGES = 10000
 
 async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee | None:
     committee = release.project.committee
     if util.is_dev_environment():
+        message_count = 0
         async for _mid, msg in util.thread_messages(thread_id):
+            message_count += 1
+            if message_count > MAX_THREAD_MESSAGES:
+                raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
             list_raw = msg.get("list_raw", "")
             committee_label = list_raw.split(".apache.org", 1)[0].split(".", 1)[-1]
             async with db.session() as data:
@@ -148,7 +153,11 @@ async def votes(
     start = time.perf_counter_ns()
     tabulated_votes = {}
     start_unixtime = None
+    message_count = 0
     async for _mid, msg in util.thread_messages(thread_id):
+        message_count += 1
+        if message_count > MAX_THREAD_MESSAGES:
+            raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
         from_raw = msg.get("from_raw", "")
         ok, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid)
         if not ok:

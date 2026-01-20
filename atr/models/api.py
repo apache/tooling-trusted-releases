@@ -67,6 +67,38 @@ class CommitteesListResults(schema.Strict):
     committees: Sequence[sql.Committee]
 
 
+class DistributeSshRegisterArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
+    phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
+    asf_uid: str = schema.example("user")
+    project_name: str = schema.example("tooling")
+    version: str = schema.example("0.0.1")
+
+
+class DistributeSshRegisterResults(schema.Strict):
+    endpoint: Literal["/distribute/ssh/register"] = schema.alias("endpoint")
+    fingerprint: str = schema.example("SHA256:0123456789abcdef0123456789abcdef01234567")
+    project: str = schema.example("example")
+    expires: int = schema.example(1713547200)
+
+
+class DistributeStatusUpdateArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    workflow: str = schema.description("Workflow name")
+    run_id: str = schema.description("Workflow run ID")
+    project_name: str = schema.description("Project name in ATR")
+    status: str = schema.description("Workflow status")
+    message: str = schema.description("Workflow message")
+
+
+class DistributeStatusUpdateResults(schema.Strict):
+    endpoint: Literal["/distribute/task/status"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+
+
 class DistributionRecordArgs(schema.Strict):
     project: str = schema.example("example")
     version: str = schema.example("0.0.1")
@@ -90,6 +122,40 @@ class DistributionRecordArgs(schema.Strict):
     @pydantic.field_serializer("platform")
     def serialise_platform(self, v):
         return v.name if isinstance(v, sql.DistributionPlatform) else v
+
+
+class DistributionRecordFromWorkflowArgs(schema.Strict):
+    asf_uid: str = schema.example("user")
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    project: str = schema.example("example")
+    version: str = schema.example("0.0.1")
+    platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
+    distribution_owner_namespace: str | None = schema.default_example(None, "example")
+    distribution_package: str = schema.example("example")
+    distribution_version: str = schema.example("0.0.1")
+    phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
+    staging: bool = schema.example(False)
+    details: bool = schema.example(False)
+
+    @pydantic.field_validator("platform", mode="before")
+    @classmethod
+    def platform_to_enum(cls, v):
+        if isinstance(v, str):
+            try:
+                return sql.DistributionPlatform.__members__[v]
+            except KeyError:
+                raise ValueError(f"'{v}' is not a valid DistributionPlatform")
+        return v
+
+    @pydantic.field_serializer("platform")
+    def serialise_platform(self, v):
+        return v.name if isinstance(v, sql.DistributionPlatform) else v
+
+
+class DistributionRecordFromWorkflowResults(schema.Strict):
+    endpoint: Literal["/distribute/record_from_workflow"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
 
 
 class DistributionRecordResults(schema.Strict):
@@ -278,7 +344,6 @@ class PublisherReleaseAnnounceArgs(schema.Strict):
     version: str = schema.example("0.0.1")
     revision: str = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
-    subject: str = schema.example("[ANNOUNCE] Apache Example 1.0.0 release")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: str = schema.example("example/1.0.0")
 
@@ -318,7 +383,6 @@ class ReleaseAnnounceArgs(schema.Strict):
     version: str = schema.example("1.0.0")
     revision: str = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
-    subject: str = schema.example("[ANNOUNCE] Apache Example 1.0.0 release")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: str = schema.example("example/1.0.0")
 
@@ -592,6 +656,7 @@ validate_committee_keys = validator(CommitteeKeysResults)
 validate_committee_projects = validator(CommitteeProjectsResults)
 validate_committees_list = validator(CommitteesListResults)
 validate_distribution_record = validator(DistributionRecordResults)
+validate_distribution_ssh_register = validator(DistributeSshRegisterResults)
 validate_ignore_add = validator(IgnoreAddResults)
 validate_ignore_delete = validator(IgnoreDeleteResults)
 validate_ignore_list = validator(IgnoreListResults)

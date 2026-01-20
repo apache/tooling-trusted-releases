@@ -157,6 +157,13 @@ class CommitteeParticipant(FoundationCommitter):
             await aioshutil.rmtree(temp_dir)
             raise
 
+        # Make files read only to prevent them from being modified through hard links
+        try:
+            await asyncio.to_thread(util.chmod_files, temp_dir_path, 0o444)
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
         async with SafeSession(temp_dir) as data:
             try:
                 # This is the only place where models.Revision is constructed

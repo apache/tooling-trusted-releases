@@ -28,6 +28,7 @@ from typing import Any, Final, Literal, Optional, TypeVar
 
 import pydantic
 import sqlalchemy
+import sqlalchemy.dialects.sqlite as sqlite
 import sqlalchemy.event as event
 import sqlalchemy.orm as orm
 import sqlalchemy.sql.expression as expression
@@ -53,6 +54,7 @@ sqlmodel.SQLModel.metadata = sqlalchemy.MetaData(
 @dataclasses.dataclass(frozen=True)
 class DistributionPlatformValue:
     name: str
+    gh_slug: str
     template_url: str
     template_staging_url: str | None = None
     requires_owner_namespace: bool = False
@@ -95,12 +97,14 @@ class CheckResultStatusIgnore(str, enum.Enum):
 class DistributionPlatform(enum.Enum):
     ARTIFACT_HUB = DistributionPlatformValue(
         name="Artifact Hub",
+        gh_slug="artifacthub",
         template_url="https://artifacthub.io/api/v1/packages/helm/{owner_namespace}/{package}/{version}",
         template_staging_url="https://staging.artifacthub.io/api/v1/packages/helm/{owner_namespace}/{package}/{version}",
         requires_owner_namespace=True,
     )
     DOCKER_HUB = DistributionPlatformValue(
         name="Docker Hub",
+        gh_slug="dockerhub",
         template_url="https://hub.docker.com/v2/namespaces/{owner_namespace}/repositories/{package}/tags/{version}",
         # TODO: Need to use staging tags?
         # template_staging_url="https://hub.docker.com/v2/namespaces/{owner_namespace}/repositories/{package}/tags/{version}",
@@ -108,6 +112,7 @@ class DistributionPlatform(enum.Enum):
     )
     # GITHUB = DistributionPlatformValue(
     #     name="GitHub",
+    #     gh_slug="github",
     #     template_url="https://api.github.com/repos/{owner_namespace}/{package}/releases/tags/v{version}",
     #     # Combine with {"prerelease": true}
     #     template_staging_url="https://api.github.com/repos/{owner_namespace}/{package}/releases",
@@ -115,25 +120,31 @@ class DistributionPlatform(enum.Enum):
     # )
     MAVEN = DistributionPlatformValue(
         name="Maven Central",
-        template_url="https://search.maven.org/solrsearch/select?q=g:{owner_namespace}+AND+a:{package}+AND+v:{version}&core=gav&rows=20&wt=json",
-        # Java ASF projects use staging URLs along the lines of
+        gh_slug="maven",
+        template_url="https://repo1.maven.org/maven2/{owner_namespace}/{package}/maven-metadata.xml",
+        # Below is the old template using the maven search API - but the index isn't updated quickly enough for us
+        # template_url="https://search.maven.org/solrsearch/select?q=g:{owner_namespace}+AND+a:{package}+AND+v:{version}&core=gav&rows=20&wt=json",
+        template_staging_url="https://repository.apache.org:4443/repository/maven-staging/{owner_namespace}/{package}/maven-metadata.xml",
         # https://repository.apache.org/content/repositories/orgapachePROJECT-NNNN/
         # There's no JSON, but each individual package has maven-metadata.xml
         requires_owner_namespace=True,
     )
     NPM = DistributionPlatformValue(
         name="npm",
+        gh_slug="npm",
         # TODO: Need to parse dist-tags
         template_url="https://registry.npmjs.org/{package}",
     )
     NPM_SCOPED = DistributionPlatformValue(
         name="npm (scoped)",
+        gh_slug="npm",
         # TODO: Need to parse dist-tags
         template_url="https://registry.npmjs.org/@{owner_namespace}/{package}",
         requires_owner_namespace=True,
     )
     PYPI = DistributionPlatformValue(
         name="PyPI",
+        gh_slug="pypi",
         template_url="https://pypi.org/pypi/{package}/{version}/json",
         template_staging_url="https://test.pypi.org/pypi/{package}/{version}/json",
     )
@@ -179,7 +190,7 @@ class TaskStatus(str, enum.Enum):
 
 
 class TaskType(str, enum.Enum):
-    GITHUB_ACTION_WORKFLOW = "github_action_workflow"
+    DISTRIBUTION_WORKFLOW = "distribution_workflow"
     HASHING_CHECK = "hashing_check"
     KEYS_IMPORT_FILE = "keys_import_file"
     LICENSE_FILES = "license_files"
@@ -198,6 +209,7 @@ class TaskType(str, enum.Enum):
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
     VOTE_INITIATE = "vote_initiate"
+    WORKFLOW_STATUS = "workflow_status"
     ZIPFORMAT_INTEGRITY = "zipformat_integrity"
     ZIPFORMAT_STRUCTURE = "zipformat_structure"
 
@@ -321,6 +333,12 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
     label: str | None = None
 
 
+# RevisionCounter:
+class RevisionCounter(sqlmodel.SQLModel, table=True):
+    release_name: str = sqlmodel.Field(primary_key=True)
+    last_allocated_number: int = sqlmodel.Field(default=0)
+
+
 # SSHKey:
 class SSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True)
@@ -341,6 +359,10 @@ class Task(sqlmodel.SQLModel, table=True):
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, index=True),
     )
+    scheduled: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime, index=True),
+    )
     started: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
@@ -352,6 +374,8 @@ class Task(sqlmodel.SQLModel, table=True):
     )
     result: results.Results | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(ResultsJSON))
     error: str | None = None
+
+    workflow: "WorkflowStatus" = sqlmodel.Relationship(back_populates="task")
 
     # Used for check tasks
     # We don't put these in task_args because we want to query them efficiently
@@ -883,7 +907,9 @@ class CheckResult(sqlmodel.SQLModel, table=True):
 
     # M-1: CheckResult -> Release
     # 1-M: Release -C-> [CheckResult]
-    release_name: str = sqlmodel.Field(foreign_key="release.name", ondelete="CASCADE", **example("example-0.0.1"))
+    release_name: str = sqlmodel.Field(
+        foreign_key="release.name", ondelete="CASCADE", index=True, **example("example-0.0.1")
+    )
     release: Release = sqlmodel.Relationship(back_populates="check_results")
 
     # We don't call this latest_revision_number, because it might not be the latest
@@ -1155,13 +1181,24 @@ class Revision(sqlmodel.SQLModel, table=True):
     )
 
 
+# WorkflowStatus:
+class WorkflowStatus(sqlmodel.SQLModel, table=True):
+    workflow_id: str = sqlmodel.Field(primary_key=True, index=True)
+    run_id: int = sqlmodel.Field(primary_key=True, index=True)
+    project_name: str = sqlmodel.Field(index=True)
+    task_id: int | None = sqlmodel.Field(default=None, foreign_key="task.id", ondelete="SET NULL")
+    task: Task = sqlmodel.Relationship(back_populates="workflow")
+    status: str = sqlmodel.Field()
+    message: str | None = sqlmodel.Field(default=None)
+
+
 def revision_name(release_name: str, number: str) -> str:
     return f"{release_name} {number}"
 
 
 @event.listens_for(Revision, "before_insert")
 def populate_revision_sequence_and_name(
-    mapper: orm.Mapper, connection: sqlalchemy.engine.Connection, revision: Revision
+    _mapper: orm.Mapper, connection: sqlalchemy.engine.Connection, revision: Revision
 ) -> None:
     # We require Revision.release_name to have been set
     if not revision.release_name:
@@ -1169,36 +1206,36 @@ def populate_revision_sequence_and_name(
         # Otherwise, Revision.name would be "", Revision.seq 0, and Revision.number ""
         raise RuntimeError("Cannot populate revision sequence and name without release_name")
 
-    # Get the Revision with the maximum existing Revision.seq and the same Revision.release_name
-    stmt = (
-        sqlmodel.select(Revision.seq, Revision.name)
-        .where(Revision.release_name == revision.release_name)
+    # Allocate the next sequence number from the counter table
+    # This ensures that sequence numbers are never reused, even after release deletion
+    # Uses ON CONFLICT DO UPDATE with RETURNING
+    upsert_stmt = (
+        sqlite.insert(RevisionCounter)
+        .values(release_name=revision.release_name, last_allocated_number=1)
+        .on_conflict_do_update(
+            index_elements=["release_name"],
+            set_={"last_allocated_number": sqlalchemy.text("last_allocated_number + 1")},
+        )
+        .returning(sqlalchemy.literal_column("last_allocated_number"))
+    )
+    result = connection.execute(upsert_stmt)
+    new_seq = result.scalar_one()
+
+    revision.seq = new_seq
+    revision.number = str(new_seq).zfill(5)
+    revision.name = revision_name(revision.release_name, revision.number)
+
+    # Find the actual parent for the parent_name foreign key
+    # We cannot assume that the parent exists
+    parent_stmt = (
+        sqlmodel.select(validate_instrumented_attribute(Revision.name))
+        .where(validate_instrumented_attribute(Revision.release_name) == revision.release_name)
         .order_by(sqlalchemy.desc(validate_instrumented_attribute(Revision.seq)))
         .limit(1)
     )
-    parent_row = connection.execute(stmt).fetchone()
-
-    # We cannot happy path this, because we must recalculate the Revision.name afterwards
-    if parent_row is None:
-        # This is the first Revision for this Revision.release_name
-        # Revision.seq is 0, but we use a 1-based system
-        revision.seq = 1
-        revision.number = str(revision.seq).zfill(5)
-    else:
-        # We don't have the ORM available in this event listener
-        # Therefore we must construct a new Revision object from the database row
-        parent_row_seq = parent_row.seq
-        parent_row_name = parent_row.name
-        # Compute the next sequence number
-        revision.seq = parent_row_seq + 1
-        revision.number = str(revision.seq).zfill(5)
-        # Set the parent_name foreign key. SQLAlchemy will handle the relationship.
-        revision.parent_name = parent_row_name
-        # Do NOT set revision.parent directly here
-
-    # Recalculate the Revision.name
-    # This field has a unique constraint, which eliminates the potential for race conditions
-    revision.name = revision_name(revision.release_name, revision.number)
+    parent_row = connection.execute(parent_stmt).fetchone()
+    if parent_row is not None:
+        revision.parent_name = parent_row[0]
 
 
 @event.listens_for(Release, "before_insert")

@@ -21,6 +21,7 @@ import asyncio
 import asyncio.subprocess
 import datetime
 import os
+import stat
 import string
 import time
 from typing import Final, TypeVar
@@ -147,11 +148,15 @@ async def server_start() -> asyncssh.SSHAcceptor:
     # await aiofiles.os.makedirs(_CONFIG.STATE_DIR, exist_ok=True)
 
     # Generate temporary host key if it doesn't exist
-    key_path = os.path.join(_CONFIG.STATE_DIR, "ssh_host_key")
+    key_path = os.path.join(_CONFIG.STATE_DIR, "secrets", "generated", "ssh_host_key")
     if not await aiofiles.os.path.exists(key_path):
         private_key = asyncssh.generate_private_key("ssh-rsa")
         private_key.write_private_key(key_path)
         log.info(f"Generated SSH host key at {key_path}")
+        permissions = stat.S_IMODE(os.stat(key_path).st_mode)
+        if permissions != 0o400:
+            os.chmod(key_path, 0o400)
+            log.warning("Set permissions of SSH host key to 0o400")
 
     def process_factory(process: asyncssh.SSHServerProcess) -> asyncio.Task[None]:
         connection = process.get_extra_info("connection")

@@ -1,10 +1,11 @@
-.PHONY: build build-alpine build-bootstrap build-playwright build-ts \
-  bump-bootstrap certs check check-extra check-light commit \
+.PHONY: build build-alpine build-bootstrap build-docs build-playwright \
+  build-ts bump-bootstrap certs check check-extra check-light commit \
   docs generate-version ipython manual run-alpine run-playwright \
   run-playwright-slow serve serve-local sync sync-all update-deps
 
 BIND ?= 127.0.0.1:8080
 IMAGE ?= tooling-trusted-release
+STATE_DIR ?= state
 
 build: build-alpine
 
@@ -17,6 +18,13 @@ build-bootstrap:
 	  -v "$$PWD/bootstrap/source:/opt/bootstrap/source" \
 	  -v "$$PWD/atr/static:/run/bootstrap-output" \
 	  atr-bootstrap
+
+build-docs:
+	mkdir -p docs
+	rm -f docs/*.html
+	uv run --frozen python3 scripts/docs_build.py
+	for fn in atr/docs/*.md; do out=$${fn#atr/}; cmark "$$fn" > "$${out%.md}.html"; done
+	uv run --frozen python3 scripts/docs_post_process.py docs/*.html
 
 build-playwright:
 	docker build -t atr-playwright -f tests/Dockerfile.playwright playwright
@@ -33,12 +41,13 @@ bump-bootstrap:
 	  atr-bootstrap /opt/bootstrap/bump.sh $(BOOTSTRAP_VERSION)
 
 certs:
-	if test ! -f state/cert.pem || test ! -f state/key.pem; \
-	then uv run --frozen scripts/generate-certificates; \
+	if test ! -f $(STATE_DIR)/hypercorn/secrets/cert.pem || test ! -f $(STATE_DIR)/hypercorn/secrets/key.pem; \
+	then STATE_DIR=$(STATE_DIR) uv run --frozen scripts/generate-certificates; \
 	fi
 
 certs-local:
-	cd state && mkcert localhost.apache.org 127.0.0.1 ::1
+	mkdir -p $(STATE_DIR)/hypercorn/secrets
+	cd $(STATE_DIR)/hypercorn/secrets && umask 277 && mkcert localhost.apache.org 127.0.0.1 ::1
 
 check:
 	git add -A
@@ -84,11 +93,11 @@ ipython:
 run-alpine:
 	docker run --rm --init --user "$$(id -u):$$(id -g)" \
 	  -p 8080:8080 -p 2222:2222 \
-	  -v "$$PWD/state:/opt/atr/state" \
-	  -v "$$PWD/state/localhost.apache.org+2-key.pem:/opt/atr/state/key.pem" \
-	  -v "$$PWD/state/localhost.apache.org+2.pem:/opt/atr/state/cert.pem" \
-	  -e APP_HOST=localhost.apache.org:8080 -e SECRET_KEY=insecure-local-key \
-	  -e ALLOW_TESTS=1 -e SSH_HOST=0.0.0.0 -e BIND=0.0.0.0:8080 \
+	  -v "$$PWD/$(STATE_DIR):/opt/atr/state" \
+	  -v "$$PWD/$(STATE_DIR)/hypercorn/secrets/localhost.apache.org+2-key.pem:/opt/atr/state/hypercorn/secrets/key.pem" \
+	  -v "$$PWD/$(STATE_DIR)/hypercorn/secrets/localhost.apache.org+2.pem:/opt/atr/state/hypercorn/secrets/cert.pem" \
+	  -e APP_HOST=localhost.apache.org:8080 -e ALLOW_TESTS=1 \
+	  -e SSH_HOST=0.0.0.0 -e BIND=0.0.0.0:8080 \
 	  tooling-trusted-release
 
 run-playwright:
@@ -98,14 +107,20 @@ run-playwright-slow:
 	docker run --net=host -it atr-playwright python3 test.py --tidy
 
 serve:
+	@scripts/check-certs
+	@scripts/check-perms
 	SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile localhost.apache.org+2-key.pem --certfile localhost.apache.org+2.pem \
+	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
+	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 serve-local:
-	APP_HOST=localhost.apache.org:8080 SECRET_KEY=insecure-local-key \
-	  ALLOW_TESTS=1 SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile localhost.apache.org+2-key.pem --certfile localhost.apache.org+2.pem \
+	@scripts/check-certs
+	@scripts/check-perms
+	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 ALLOW_TESTS=1 \
+	  SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
+	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
+	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 sync:

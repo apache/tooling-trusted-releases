@@ -140,8 +140,6 @@ async def _download_or_list(project_name: str, version_name: str, file_path: str
     """Download a file or list a directory from a release in any phase."""
     import atr.get.root as root
 
-    # await session.check_access(project_name)
-
     # Validate the path, and allow "." for root directory
     if file_path == ".":
         validated_path = pathlib.Path(".")

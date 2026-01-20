@@ -255,6 +255,10 @@ h3, p, ul, form {
     margin-bottom: 1rem;
 }
 
+li ul {
+    margin-bottom: 0;
+}
+
 table th {
     text-align: left;
 }

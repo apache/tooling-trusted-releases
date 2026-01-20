@@ -138,7 +138,7 @@
                           {% for key, value in primary_result.data.items() %}
                             {% if key != "debug_info" %}
                               <tr>
-                                <th class="bg-light fw-bold align-top">{{ key|replace('_', ' ') |title }}</th>
+                                <th class="bg-light fw-bold align-top text-nowrap">{{ key|replace('_', ' ') |title }}</th>
                                 <td>
                                   {% if value is boolean %}
                                     {{ "Yes" if value else "No" }}
@@ -146,7 +146,7 @@
                                     <table class="table table-sm mb-0">
                                       {% for k, v in value.items() %}
                                         <tr>
-                                          <th class="bg-light fw-bold">{{ k|replace('_', ' ') |title }}</th>
+                                          <th class="bg-light fw-bold text-nowrap">{{ k|replace('_', ' ') |title }}</th>
                                           <td>
                                             <pre class="atr-pre-wrap">{{ v }}</pre>
                                           </td>
@@ -186,7 +186,7 @@
                           {% if primary_result.data.get("debug_info") is mapping %}
                             {% for debug_key, debug_value in primary_result.data.debug_info.items() %}
                               <tr>
-                                <th class="bg-light fw-bold align-top">
+                                <th class="bg-light fw-bold align-top text-nowrap">
                                   <span class="text-muted">(Debug)</span> {{ debug_key|replace('_', ' ') |title }}
                                 </th>
                                 <td>

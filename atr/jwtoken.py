@@ -30,6 +30,8 @@ import quart
 import atr.config as config
 
 _ALGORITHM: Final[str] = "HS256"
+_ATR_JWT_AUDIENCE: Final[str] = "atr-api-pat-test-v1"
+_ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
 _GITHUB_OIDC_AUDIENCE: Final[str] = "atr-test-v1"
 _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "enterprise": "the-asf",
@@ -48,9 +50,11 @@ def issue(uid: str, *, ttl: int = 90 * 60) -> str:
     now = datetime.datetime.now(tz=datetime.UTC)
     payload = {
         "sub": uid,
+        "iss": _ATR_JWT_ISSUER,
+        "aud": _ATR_JWT_AUDIENCE,
         "iat": now,
         "exp": now + datetime.timedelta(seconds=ttl),
-        "jti": secrets.token_hex(8),
+        "jti": secrets.token_hex(128 // 8),
     }
     return jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_ALGORITHM)
 
@@ -86,7 +90,14 @@ def unverified_header_and_payload(jwt_value: str) -> dict[str, Any]:
 
 
 def verify(token: str) -> dict[str, Any]:
-    return jwt.decode(token, _JWT_SECRET_KEY, algorithms=[_ALGORITHM])
+    return jwt.decode(
+        token,
+        _JWT_SECRET_KEY,
+        algorithms=[_ALGORITHM],
+        issuer=_ATR_JWT_ISSUER,
+        audience=_ATR_JWT_AUDIENCE,
+        options={"require": ["sub", "iss", "aud", "iat", "exp", "jti"]},
+    )
 
 
 async def verify_github_oidc(token: str) -> dict[str, Any]:

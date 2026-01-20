@@ -145,7 +145,14 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     bundle = sbom.utilities.path_to_bundle(pathlib.Path(full_path))
     vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
     patch_ops = await sbom.utilities.bundle_to_vuln_patch(bundle, vulnerabilities)
-    components = [results.OSVComponent(purl=v.ref, vulnerabilities=v.vulnerabilities) for v in vulnerabilities]
+    components = []
+    for v in vulnerabilities:
+        components.append(
+            results.OSVComponent(
+                purl=v.ref,
+                vulnerabilities=[results.VulnerabilityDetails.model_validate(vuln) for vuln in v.vulnerabilities],
+            )
+        )
 
     new_full_path: str | None = None
     new_version, merged = sbom.utilities.apply_patch("osv-scan", args.revision_number, bundle, patch_ops)

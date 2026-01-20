@@ -6,11 +6,18 @@ source .venv/bin/activate
 
 test -d /opt/atr/state || mkdir -p /opt/atr/state
 
-if [ ! -f state/cert.pem ] || [ ! -f state/key.pem ]
+if [ ! -f state/hypercorn/secrets/cert.pem ] || [ ! -f state/hypercorn/secrets/key.pem ]
 then
+  # The generate-certificates script creates the necessary directories
   python3 scripts/generate-certificates
 fi
 
-echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn.log
+# Ensure that the permissions of secret files are correct
+STATE_DIR=state scripts/check-perms
+
+mkdir -p /opt/atr/state/hypercorn/logs
+echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn/logs/hypercorn.log
 exec hypercorn --worker-class uvloop --bind "${BIND}" \
-  --keyfile key.pem --certfile cert.pem atr.server:app >> /opt/atr/state/hypercorn.log 2>&1
+  --keyfile hypercorn/secrets/key.pem \
+  --certfile hypercorn/secrets/cert.pem \
+  atr.server:app >> /opt/atr/state/hypercorn/logs/hypercorn.log 2>&1

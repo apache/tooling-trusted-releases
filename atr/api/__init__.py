@@ -251,6 +251,59 @@ async def committees_list() -> DictResponse:
     ).model_dump(), 200
 
 
+@api.route("/distribute/ssh/register", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributeSshRegisterArgs)
+async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) -> DictResponse:
+    """
+    Register an SSH key sent with a corroborating Trusted Publisher JWT,
+    validating the requested release is in the correct phase.
+    """
+    payload, asf_uid, project, release = await interaction.trusted_jwt_for_dist(
+        data.publisher,
+        data.jwt,
+        data.asf_uid,
+        interaction.TrustedProjectPhase(data.phase),
+        data.project_name,
+        data.version,
+    )
+    async with storage.write_as_committee_member(util.unwrap(project.committee).name, asf_uid) as wacm:
+        fingerprint, expires = await wacm.ssh.add_workflow_key(
+            payload["actor"],
+            payload["actor_id"],
+            release.project_name,
+            data.ssh_key,
+        )
+
+    return models.api.DistributeSshRegisterResults(
+        endpoint="/distribute/ssh/register",
+        fingerprint=fingerprint,
+        project=release.project_name,
+        expires=expires,
+    ).model_dump(), 200
+
+
+@api.route("/distribute/task/status", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributeStatusUpdateArgs)
+async def update_distribution_task_status(data: models.api.DistributeStatusUpdateArgs) -> DictResponse:
+    """
+    Update the status of a distribution task
+    """
+    _payload, _asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    async with db.session() as db_data:
+        status = await db_data.workflow_status(
+            workflow_id=data.workflow,
+            project_name=data.project_name,
+            run_id=int(data.run_id),
+        ).demand(exceptions.NotFound(f"Workflow {data.workflow} not found"))
+        status.status = data.status
+        status.message = data.message
+        await db_data.commit()
+    return models.api.DistributeStatusUpdateResults(
+        endpoint="/distribute/task/status",
+        success=True,
+    ).model_dump(), 200
+
+
 @api.route("/distribution/record", methods=["POST"])
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
@@ -279,13 +332,51 @@ async def distribution_record(data: models.api.DistributionRecordArgs) -> DictRe
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         await wacm.distributions.record_from_data(
-            release,
+            release.name,
             data.staging,
             dd,
         )
 
     return models.api.DistributionRecordResults(
         endpoint="/distribution/record",
+        success=True,
+    ).model_dump(), 200
+
+
+@api.route("/distribute/record_from_workflow", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributionRecordFromWorkflowArgs)
+async def distribution_record_from_workflow(data: models.api.DistributionRecordFromWorkflowArgs) -> DictResponse:
+    """
+    Record a distribution.
+    """
+    _payload, asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
+        data.publisher,
+        data.jwt,
+        data.asf_uid,
+        interaction.TrustedProjectPhase(data.phase),
+        data.project,
+        data.version,
+    )
+    # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
+    if release.committee is None:
+        raise exceptions.NotFound(f"Release {release.name} has no committee")
+    dd = models.distribution.Data(
+        platform=data.platform,
+        owner_namespace=data.distribution_owner_namespace,
+        package=data.distribution_package,
+        version=data.distribution_version,
+        details=data.details,
+    )
+    async with storage.write(asf_uid) as write:
+        wacm = write.as_committee_member(release.committee.name)
+        await wacm.distributions.record_from_data(
+            release.name,
+            data.staging,
+            dd,
+        )
+
+    return models.api.DistributionRecordFromWorkflowResults(
+        endpoint="/distribute/record_from_workflow",
         success=True,
     ).model_dump(), 200
 
@@ -656,7 +747,7 @@ async def publisher_distribution_record(data: models.api.PublisherDistributionRe
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         await wacm.distributions.record_from_data(
-            release,
+            release.name,
             data.staging,
             dd,
         )
@@ -683,15 +774,14 @@ async def publisher_release_announce(data: models.api.PublisherReleaseAnnounceAr
         committee = util.unwrap(project.committee)
         async with storage.write_as_committee_member(committee.name, asf_uid) as wacm:
             await wacm.announce.release(
-                project.name,
-                data.version,
-                data.revision,
-                data.email_to,
-                data.subject,
-                data.body,
-                data.path_suffix,
-                asf_uid,
-                asf_uid,
+                project_name=project.name,
+                version_name=data.version,
+                preview_revision_number=data.revision,
+                recipient=data.email_to,
+                body=data.body,
+                download_path_suffix=data.path_suffix,
+                asf_uid=asf_uid,
+                fullname=asf_uid,
             )
     except storage.AccessError as e:
         raise exceptions.BadRequest(str(e))
@@ -776,15 +866,14 @@ async def release_announce(data: models.api.ReleaseAnnounceArgs) -> DictResponse
         async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
             # TODO: Get fullname and use it instead of asf_uid
             await wacm.announce.release(
-                data.project,
-                data.version,
-                data.revision,
-                data.email_to,
-                data.subject,
-                data.body,
-                data.path_suffix,
-                asf_uid,
-                asf_uid,
+                project_name=data.project,
+                version_name=data.version,
+                preview_revision_number=data.revision,
+                recipient=data.email_to,
+                body=data.body,
+                download_path_suffix=data.path_suffix,
+                asf_uid=asf_uid,
+                fullname=asf_uid,
             )
     except storage.AccessError as e:
         raise exceptions.BadRequest(str(e))

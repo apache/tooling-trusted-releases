@@ -97,6 +97,8 @@ class CommitteeMember(CommitteeParticipant):
 
         release_policy.source_artifact_paths = _split_lines(form.source_artifact_paths)
         release_policy.license_check_mode = form.license_check_mode  # pyright: ignore[reportAttributeAccessIssue]
+        release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
+        release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.binary_artifact_paths = _split_lines(form.binary_artifact_paths)
         release_policy.github_repository_name = form.github_repository_name.strip()
         release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
@@ -235,3 +237,8 @@ class CommitteeMember(CommitteeParticipant):
 
 def _split_lines(text: str) -> list[str]:
     return [line.strip() for line in text.split("\n") if line.strip()]
+
+
+def _split_lines_verbatim(text: str) -> list[str]:
+    # This still excludes empty lines
+    return [line for line in text.split("\n") if line]

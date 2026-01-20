@@ -32,6 +32,7 @@ import asfquart
 import asfquart.base as base
 import asfquart.session
 import htpy
+import ldap3.utils.conv as conv
 import pydantic
 import quart
 import sqlalchemy.orm as orm
@@ -477,7 +478,8 @@ async def keys_update_get(session: web.Committer) -> str | web.WerkzeugResponse 
         empty=True,
         form_classes="",
     )
-    log_path = pathlib.Path("keys_import.log")
+    # TODO: All known file paths should be constants
+    log_path = pathlib.Path("logs") / "keys-import.log"
     if not await aiofiles.os.path.exists(log_path):
         previous_output = None
     else:
@@ -595,7 +597,7 @@ async def performance(session: web.Committer) -> str:
         raise base.ASFQuartException("APP is not set", errorcode=500)
 
     # Read and parse the performance log file
-    log_path = pathlib.Path("route-performance.log")
+    log_path = pathlib.Path("logs") / "route-performance.log"
     # # Show current working directory and its files
     # cwd = await asyncio.to_thread(Path.cwd)
     # await asyncio.to_thread(APP.logger.info, "Current working directory: %s", cwd)
@@ -1010,11 +1012,12 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 
 def _get_user_committees_from_ldap(uid: str, bind_dn: str, bind_password: str) -> set[str]:
+    escaped_uid = conv.escape_filter_chars(uid)
     with ldap.Search(bind_dn, bind_password) as ldap_search:
         result = ldap_search.search(
             ldap_base="ou=project,ou=groups,dc=apache,dc=org",
             ldap_scope="SUBTREE",
-            ldap_query=f"(|(ownerUid={uid})(owner=uid={uid},ou=people,dc=apache,dc=org))",
+            ldap_query=f"(|(ownerUid={escaped_uid})(owner=uid={escaped_uid},ou=people,dc=apache,dc=org))",
             ldap_attrs=["cn"],
         )
 

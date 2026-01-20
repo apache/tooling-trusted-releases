@@ -28,7 +28,7 @@ Extracts SPDX license identifiers from an HTML license list. Parses anchor `titl
 
 ## generate-certificates
 
-Generates self signed SSL certificates for development and testing purposes. It creates a private RSA key and a certificate valid for `127.0.0.1` with a one year expiration period, and stores them in the state directory as `cert.pem` and `key.pem`.
+Generates self signed SSL certificates for development and testing purposes. It creates a private RSA key and a certificate valid for `127.0.0.1` with a one year expiration period, and stores them as `hypercorn/secrets/cert.pem` and `hypercorn/secrets/key.pem` in the state directory.
 
 ## github\_tag\_dates.py
 
@@ -48,7 +48,7 @@ Detects external access to private interfaces in Python modules. Reports any acc
 
 ## keys\_import.py
 
-Imports OpenPGP public keys from ASF committee KEYS files into the ATR database. Downloads each committee's `KEYS` file from `https://downloads.apache.org/{committee}/KEYS`, parses the keys, and updates the database. Logs all activity to `state/keys_import.log`.
+Imports OpenPGP public keys from ASF committee KEYS files into the ATR database. Downloads each committee's `KEYS` file from `https://downloads.apache.org/{committee}/KEYS`, parses the keys, and updates the database. Logs all activity to `state/logs/keys-import.log`.
 
 ## lint/jinja\_route\_checker.py
 

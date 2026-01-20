@@ -208,6 +208,13 @@ def chmod_directories(path: pathlib.Path, permissions: int = 0o755) -> None:
             os.chmod(dir_path, permissions)
 
 
+def chmod_files(path: pathlib.Path, permissions: int) -> None:
+    """Set permissions on all files in a directory tree."""
+    for file_path in path.rglob("*"):
+        if file_path.is_file():
+            os.chmod(file_path, permissions)
+
+
 def committee_is_standing(committee_name: str) -> bool:
     return committee_name in registry.STANDING_COMMITTEES
 
@@ -487,7 +494,7 @@ async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
 
 def get_tmp_dir() -> pathlib.Path:
     # This must be on the same filesystem as the other state subdirectories
-    return pathlib.Path(config.get().STATE_DIR) / "tmp"
+    return pathlib.Path(config.get().STATE_DIR) / "temporary"
 
 
 def get_unfinished_dir() -> pathlib.Path:
@@ -825,7 +832,7 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
 
 
 async def session_cache_read() -> dict[str, dict]:
-    cache_path = pathlib.Path(config.get().STATE_DIR) / "user_session_cache.json"
+    cache_path = pathlib.Path(config.get().STATE_DIR) / "cache" / "user_session_cache.json"
     try:
         async with aiofiles.open(cache_path) as f:
             content = await f.read()
@@ -837,7 +844,7 @@ async def session_cache_read() -> dict[str, dict]:
 
 
 async def session_cache_write(cache_data: dict[str, dict]) -> None:
-    cache_path = pathlib.Path(config.get().STATE_DIR) / "user_session_cache.json"
+    cache_path = pathlib.Path(config.get().STATE_DIR) / "cache" / "user_session_cache.json"
     await atomic_write_file(cache_path, json.dumps(cache_data, indent=2))
 
 

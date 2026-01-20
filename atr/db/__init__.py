@@ -615,6 +615,20 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def revision_counter(
+        self,
+        release_name: Opt[str] = NOT_SET,
+        last_allocated_number: Opt[int] = NOT_SET,
+    ) -> Query[sql.RevisionCounter]:
+        query = sqlmodel.select(sql.RevisionCounter)
+
+        if is_defined(release_name):
+            query = query.where(sql.RevisionCounter.release_name == release_name)
+        if is_defined(last_allocated_number):
+            query = query.where(sql.RevisionCounter.last_allocated_number == last_allocated_number)
+
+        return Query(self, query)
+
     def ssh_key(
         self,
         fingerprint: Opt[str] = NOT_SET,
@@ -649,6 +663,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         version_name: Opt[str | None] = NOT_SET,
         revision_number: Opt[str | None] = NOT_SET,
         primary_rel_path: Opt[str | None] = NOT_SET,
+        _workflow: bool = False,
     ) -> Query[sql.Task]:
         query = sqlmodel.select(sql.Task)
 
@@ -682,6 +697,9 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Task.revision_number == revision_number)
         if is_defined(primary_rel_path):
             query = query.where(sql.Task.primary_rel_path == primary_rel_path)
+
+        if _workflow:
+            query = query.options(joined_load(sql.Task.workflow))
 
         return Query(self, query)
 
@@ -728,6 +746,33 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.WorkflowSSHKey.github_uid == github_uid)
         if is_defined(github_nid):
             query = query.where(sql.WorkflowSSHKey.github_nid == github_nid)
+
+        return Query(self, query)
+
+    def workflow_status(
+        self,
+        workflow_id: Opt[str] = NOT_SET,
+        run_id: Opt[int] = NOT_SET,
+        project_name: Opt[str] = NOT_SET,
+        task_id: Opt[int] = NOT_SET,
+        status: Opt[str] = NOT_SET,
+        status_in: Opt[list[str]] = NOT_SET,
+    ) -> Query[sql.WorkflowStatus]:
+        via = sql.validate_instrumented_attribute
+        query = sqlmodel.select(sql.WorkflowStatus)
+
+        if is_defined(workflow_id):
+            query = query.where(sql.WorkflowStatus.workflow_id == workflow_id)
+        if is_defined(run_id):
+            query = query.where(sql.WorkflowStatus.run_id == run_id)
+        if is_defined(project_name):
+            query = query.where(sql.WorkflowStatus.project_name == project_name)
+        if is_defined(task_id):
+            query = query.where(sql.WorkflowStatus.task_id == task_id)
+        if is_defined(status):
+            query = query.where(sql.WorkflowStatus.status == status)
+        if is_defined(status_in):
+            query = query.where(via(sql.WorkflowStatus.status).in_(status_in))
 
         return Query(self, query)
 

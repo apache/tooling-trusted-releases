@@ -15,22 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import pydantic
-
-import atr.sbom.models.osv as osv
 
 from . import schema
 
 
-class GithubActionsWorkflow(schema.Strict):
+class DistributionWorkflow(schema.Strict):
     """Result of the task to run a Github workflow."""
 
-    kind: Literal["github_actions_workflow"] = schema.Field(alias="kind")
+    kind: Literal["distribution_workflow"] = schema.Field(alias="kind")
     name: str = schema.description("The name of the action being performed")
     run_id: int = schema.description("The ID of the workflow run")
     url: str = schema.description("The URL of the workflow run")
+
+
+class DistributionWorkflowStatus(schema.Strict):
+    """Result of the task to update Github workflow statuses."""
+
+    kind: Literal["distribution_workflow_status"] = schema.Field(alias="kind")
 
 
 class HashingCheck(schema.Strict):
@@ -57,9 +61,39 @@ class SBOMGenerateCycloneDX(schema.Strict):
     msg: str = schema.description("The message from the SBOM generation")
 
 
+class VulnerabilityDetails(schema.Lax):
+    # Copied from atr/sbom/models/osv.py
+    id: str
+    summary: str | None = None
+    details: str | None = None
+    references: list[dict[str, Any]] | None = None
+    severity: list[dict[str, Any]] | None = None
+    published: str | None = None
+    modified: str
+    database_specific: dict[str, Any] = schema.Field(default={})
+
+
+class CdxVulnerabilityDetail(schema.Lax):
+    # Copied from atr/sbom/models/osv.py
+    bom_ref: str | None = schema.Field(default=None, alias="bom-ref")
+    id: str
+    source: dict[str, str] | None = None
+    description: str | None = None
+    detail: str | None = None
+    advisories: list[dict[str, str]] | None = None
+    cwes: list[int] | None = None
+    published: str | None = None
+    updated: str | None = None
+    affects: list[dict[str, str]] | None = None
+    ratings: list[dict[str, str | float]] | None = None
+
+
+CdxVulnAdapter = pydantic.TypeAdapter(CdxVulnerabilityDetail)
+
+
 class OSVComponent(schema.Strict):
     purl: str = schema.description("Package URL")
-    vulnerabilities: list[osv.VulnerabilityDetails] = schema.description("Vulnerabilities found")
+    vulnerabilities: list[VulnerabilityDetails] = schema.description("Vulnerabilities found")
 
 
 class SBOMOSVScan(schema.Strict):
@@ -193,7 +227,8 @@ class MetadataUpdate(schema.Strict):
 
 
 Results = Annotated[
-    GithubActionsWorkflow
+    DistributionWorkflow
+    | DistributionWorkflowStatus
     | HashingCheck
     | MessageSend
     | MetadataUpdate

@@ -8,7 +8,8 @@ NOTE: This documentation is a work in progress.
 
 * `1.` [Introduction to ATR](introduction-to-atr)
 * `2.` [User guide](user-guide)
-  * `2.1.` [Signing artifacts](signing-artifacts)
+  * `2.1.` [Components](components)
+  * `2.2.` [Signing artifacts](signing-artifacts)
 * `3.` [Developer guide](developer-guide)
   * `3.1.` [Running the server](running-the-server)
   * `3.2.` [Overview of the code](overview-of-the-code)

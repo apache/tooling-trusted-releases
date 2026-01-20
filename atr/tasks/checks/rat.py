@@ -21,12 +21,13 @@ import pathlib
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ElementTree
-from typing import Any, Final
+from typing import Final
 
 import atr.archives as archives
 import atr.config as config
 import atr.constants as constants
 import atr.log as log
+import atr.models.checkdata as checkdata
 import atr.models.results as results
 import atr.models.sql as sql
 import atr.tasks.checks as checks
@@ -47,11 +48,14 @@ _JAVA_MEMORY_ARGS: Final[list[str]] = []
 # Generated file patterns, always excluded
 _GENERATED_FILE_PATTERNS: Final[list[str]] = [f"**/*{s}" for s in constants.GENERATED_FILE_SUFFIXES]
 
+# The name of the temp file for excludes defined in release policies
+_POLICY_EXCLUDES_FILENAME: Final[str] = ".atr-policy-rat-excludes"
+
 # The name of the file that contains the exclusions for the specified archive
 _RAT_EXCLUDES_FILENAME: Final[str] = ".rat-excludes"
 
 # The name of the RAT report file
-_RAT_REPORT_FILENAME: Final[str] = "rat-report.xml"
+_RAT_REPORT_FILENAME: Final[str] = ".atr-rat-report.xml"
 
 # Standard exclusions, always applied explicitly
 _STD_EXCLUSIONS_ALWAYS: Final[list[str]] = ["MISC", "HIDDEN_DIR", "MAC"]
@@ -64,6 +68,10 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
     "GIT",
     "STANDARD_SCMS",
 ]
+
+
+class RatError(RuntimeError):
+    pass
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -86,8 +94,11 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
+    is_source = await recorder.primary_path_is_source()
+    policy_excludes = project.policy_source_excludes_rat if is_source else []
+
     try:
-        await _check_core(args, recorder, artifact_abs_path)
+        await _check_core(args, recorder, artifact_abs_path, policy_excludes)
     except Exception as e:
         # TODO: Or bubble for task failure?
         await recorder.failure("Error running Apache RAT check", {"error": str(e)})
@@ -98,7 +109,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 def _build_rat_command(
     rat_jar_path: str,
     xml_output_path: str,
-    exclude_file: str | None,
+    excludes_file: str | None,
+    apply_extended_std: bool,
 ) -> list[str]:
     """Build the RAT command with appropriate exclusions."""
     command = [
@@ -121,18 +133,20 @@ def _build_rat_command(
     for std in _STD_EXCLUSIONS_ALWAYS:
         command.extend(["--input-exclude-std", std])
 
-    if exclude_file is None:
+    if apply_extended_std:
         for std in _STD_EXCLUSIONS_EXTENDED:
             command.extend(["--input-exclude-std", std])
 
     for pattern in _GENERATED_FILE_PATTERNS:
         command.extend(["--input-exclude", pattern])
 
+    # Exclude the output just in case
+    # TODO: Check whether this file exists in the archive
     command.extend(["--input-exclude", _RAT_REPORT_FILENAME])
 
-    if exclude_file is not None:
-        command.extend(["--input-exclude", _RAT_EXCLUDES_FILENAME])
-        command.extend(["--input-exclude-file", exclude_file])
+    if excludes_file is not None:
+        command.extend(["--input-exclude", excludes_file])
+        command.extend(["--input-exclude-file", excludes_file])
 
     command.extend(["--", "."])
 
@@ -140,249 +154,44 @@ def _build_rat_command(
 
 
 async def _check_core(
-    args: checks.FunctionArguments, recorder: checks.Recorder, artifact_abs_path: pathlib.Path
+    args: checks.FunctionArguments,
+    recorder: checks.Recorder,
+    artifact_abs_path: pathlib.Path,
+    policy_excludes: list[str],
 ) -> None:
-    result_data = await asyncio.to_thread(
-        _check_core_logic,
+    result = await asyncio.to_thread(
+        _synchronous,
         artifact_path=str(artifact_abs_path),
+        policy_excludes=policy_excludes,
         rat_jar_path=args.extra_args.get("rat_jar_path", _CONFIG.APACHE_RAT_JAR_PATH),
         max_extract_size=args.extra_args.get("max_extract_size", _CONFIG.MAX_EXTRACT_SIZE),
         chunk_size=args.extra_args.get("chunk_size", _CONFIG.EXTRACT_CHUNK_SIZE),
     )
 
-    # This must come before the overall check result
-    # Otherwise the overall check result will contain the unknown license files
-    unknown_license_files = result_data.get("unknown_license_files", [])
-    if unknown_license_files:
-        for unknown_license_file in unknown_license_files:
-            await recorder.failure(
-                "Unknown license",
-                None,
-                member_rel_path=unknown_license_file["name"],
-            )
-    del result_data["unknown_license_files"]
+    # Record individual file failures before the overall result
+    for file in result.unknown_license_files:
+        await recorder.failure("Unknown license", None, member_rel_path=file.name)
+    for file in result.unapproved_files:
+        await recorder.failure("Unapproved license", {"license": file.license}, member_rel_path=file.name)
 
-    unapproved_files = result_data.get("unapproved_files", [])
-    if unapproved_files:
-        for unapproved_file in unapproved_files:
-            await recorder.failure(
-                "Unapproved license",
-                {"license": unapproved_file["license"]},
-                member_rel_path=unapproved_file["name"],
-            )
-    del result_data["unapproved_files"]
+    # Convert to dict for storage, excluding the file lists, which are already recorded
+    result_data = result.model_dump(exclude={"unapproved_files", "unknown_license_files"})
 
-    if result_data.get("warning"):
-        await recorder.warning(result_data["warning"], result_data)
-    elif result_data.get("error"):
-        # Handle errors from within the core logic
-        await recorder.failure(result_data["message"], result_data)
-    elif not result_data["valid"]:
-        # Handle RAT validation failures
-        await recorder.failure(result_data["message"], result_data)
+    if result.warning:
+        await recorder.warning(result.warning, result_data)
+    elif (not result.valid) or result.errors:
+        await recorder.failure(result.message, result_data)
     else:
-        # Handle success
-        await recorder.success(result_data["message"], result_data)
-
-
-def _check_core_logic(  # noqa: C901
-    artifact_path: str,
-    rat_jar_path: str = _CONFIG.APACHE_RAT_JAR_PATH,
-    max_extract_size: int = _CONFIG.MAX_EXTRACT_SIZE,
-    chunk_size: int = _CONFIG.EXTRACT_CHUNK_SIZE,
-) -> dict[str, Any]:
-    """Verify license headers using Apache RAT."""
-    log.info(f"Verifying licenses with Apache RAT for {artifact_path}")
-    log.info(f"PATH environment variable: {os.environ.get('PATH', 'PATH not found')}")
-
-    java_check = _check_java_installed()
-    if java_check is not None:
-        return java_check
-
-    # Verify RAT JAR exists and is accessible
-    rat_jar_path, jar_error = _check_core_logic_jar_exists(rat_jar_path)
-    if jar_error:
-        return jar_error
-
-    try:
-        # Create a temporary directory for extraction
-        # TODO: We could extract to somewhere in "state/" instead
-        with tempfile.TemporaryDirectory(prefix="rat_verify_") as temp_dir:
-            log.info(f"Created temporary directory: {temp_dir}")
-
-            # # Find and validate the root directory
-            # try:
-            #     root_dir = targz.root_directory(artifact_path)
-            # except targz.RootDirectoryError as e:
-            #     error_msg = str(e)
-            #     log.error(f"Archive root directory issue: {error_msg}")
-            #     return {
-            #         "valid": False,
-            #         "message": "No root directory found",
-            #         "total_files": 0,
-            #         "approved_licenses": 0,
-            #         "unapproved_licenses": 0,
-            #         "unknown_licenses": 0,
-            #         "unapproved_files": [],
-            #         "unknown_license_files": [],
-            #         "warning": error_msg or "No root directory found",
-            #         "errors": [],
-            #     }
-
-            # extract_dir = os.path.join(temp_dir, root_dir)
-
-            # Extract the archive to the temporary directory
-            log.info(f"Extracting {artifact_path} to {temp_dir}")
-            extracted_size, exclude_file_paths = archives.extract(
-                artifact_path,
-                temp_dir,
-                max_size=max_extract_size,
-                chunk_size=chunk_size,
-                track_files={_RAT_EXCLUDES_FILENAME},
-            )
-            log.info(f"Extracted {extracted_size} bytes")
-            log.info(f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} file(s): {exclude_file_paths}")
-
-            # Validate that we found at most one exclusion file
-            if len(exclude_file_paths) > 1:
-                log.error(f"Multiple {_RAT_EXCLUDES_FILENAME} files found: {exclude_file_paths}")
-                return {
-                    "valid": False,
-                    "message": f"Multiple {_RAT_EXCLUDES_FILENAME} files not allowed (found {len(exclude_file_paths)})",
-                    "total_files": 0,
-                    "approved_licenses": 0,
-                    "unapproved_licenses": 0,
-                    "unknown_licenses": 0,
-                    "unapproved_files": [],
-                    "unknown_license_files": [],
-                    "errors": [f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} files"],
-                }
-
-            # Narrow to single path after validation
-            exclude_file_path: str | None = exclude_file_paths[0] if exclude_file_paths else None
-
-            # Determine scan root
-            if exclude_file_path is not None:
-                scan_root = os.path.dirname(os.path.join(temp_dir, exclude_file_path))
-
-                # Verify that scan_root is inside temp_dir
-                abs_scan_root = os.path.abspath(scan_root)
-                abs_temp_dir = os.path.abspath(temp_dir)
-                scan_root_is_inside = (abs_scan_root == abs_temp_dir) or abs_scan_root.startswith(abs_temp_dir + os.sep)
-                if not scan_root_is_inside:
-                    log.error(f"Scan root {scan_root} is outside temp_dir {temp_dir}")
-                    return {
-                        "valid": False,
-                        "message": "Invalid archive structure: exclusion file path escapes extraction directory",
-                        "total_files": 0,
-                        "approved_licenses": 0,
-                        "unapproved_licenses": 0,
-                        "unknown_licenses": 0,
-                        "unapproved_files": [],
-                        "unknown_license_files": [],
-                        "errors": ["Exclusion file path escapes extraction directory"],
-                    }
-
-                log.info(f"Using {_RAT_EXCLUDES_FILENAME} directory as scan root: {scan_root}")
-
-                untracked_count = _count_files_outside_directory(temp_dir, scan_root)
-                if untracked_count > 0:
-                    log.error(f"Found {untracked_count} file(s) outside {_RAT_EXCLUDES_FILENAME} directory")
-                    return {
-                        "valid": False,
-                        "message": f"Files exist outside {_RAT_EXCLUDES_FILENAME} directory ({untracked_count} found)",
-                        "total_files": 0,
-                        "approved_licenses": 0,
-                        "unapproved_licenses": 0,
-                        "unknown_licenses": 0,
-                        "unapproved_files": [],
-                        "unknown_license_files": [],
-                        "errors": [f"{untracked_count} file(s) outside {_RAT_EXCLUDES_FILENAME} directory"],
-                    }
-            else:
-                scan_root = temp_dir
-                log.info(f"No {_RAT_EXCLUDES_FILENAME} found, using temp_dir as scan root: {scan_root}")
-
-            # Execute RAT and get results or error
-            error_result, xml_output_path = _check_core_logic_execute_rat(
-                rat_jar_path, scan_root, temp_dir, exclude_file_path
-            )
-            if error_result:
-                return error_result
-
-            # Parse the XML output
-            log.info(f"Parsing RAT XML output: {xml_output_path}")
-            # Make sure xml_output_path is not None before parsing
-            if xml_output_path is None:
-                raise ValueError("XML output path is None")
-
-            results = _check_core_logic_parse_output(xml_output_path, scan_root)
-            log.info(f"Successfully parsed RAT output with {util.plural(results.get('total_files', 0), 'file')}")
-
-            # The unknown_license_files and unapproved_files keys contain lists of dicts
-            # {"name": "./README.md", "license": "Unknown license"}
-            # The path is relative to scan_root, so we prepend the scan_root relative path
-            scan_root_rel = os.path.relpath(scan_root, temp_dir)
-            if scan_root_rel != ".":
-                for file in results["unknown_license_files"]:
-                    file["name"] = os.path.join(
-                        scan_root_rel,
-                        os.path.normpath(file["name"]),
-                    )
-                for file in results["unapproved_files"]:
-                    file["name"] = os.path.join(
-                        scan_root_rel,
-                        os.path.normpath(file["name"]),
-                    )
-
-            return results
-
-    except Exception as e:
-        import traceback
-
-        log.exception("Error running Apache RAT")
-        return {
-            "valid": False,
-            "message": f"Failed to run Apache RAT: {e!s}",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "unapproved_files": [],
-            "unknown_license_files": [],
-            "errors": [str(e), traceback.format_exc()],
-        }
+        await recorder.success(result.message, result_data)
 
 
 def _check_core_logic_execute_rat(
-    rat_jar_path: str, scan_root: str, temp_dir: str, exclude_file_path: str | None
-) -> tuple[dict[str, Any] | None, str | None]:
+    command: list[str],
+    scan_root: str,
+    temp_dir: str,
+    xml_output_path: str,
+) -> tuple[checkdata.Rat | None, str | None]:
     """Execute Apache RAT and process its output."""
-    xml_output_path = os.path.join(temp_dir, _RAT_REPORT_FILENAME)
-    log.info(f"XML output will be written to: {xml_output_path}")
-
-    # Convert exclusion file path from temp_dir relative to scan_root relative
-    exclude_file: str | None = None
-    if exclude_file_path is not None:
-        abs_path = os.path.join(temp_dir, exclude_file_path)
-        if not (os.path.exists(abs_path) and os.path.isfile(abs_path)):
-            log.error(f"Exclusion file not found or not a regular file: {abs_path}")
-            return {
-                "valid": False,
-                "message": f"Exclusion file is not a regular file: {exclude_file_path}",
-                "total_files": 0,
-                "approved_licenses": 0,
-                "unapproved_licenses": 0,
-                "unknown_licenses": 0,
-                "unapproved_files": [],
-                "unknown_license_files": [],
-                "errors": [f"Expected exclusion file but found: {abs_path}"],
-            }, None
-        exclude_file = os.path.relpath(abs_path, scan_root)
-        log.info(f"Using exclusion file: {exclude_file}")
-    command = _build_rat_command(rat_jar_path, xml_output_path, exclude_file)
-    log.info(f"Running Apache RAT: {' '.join(command)}")
-
     # Change working directory to scan_root when running the process
     current_dir = os.getcwd()
     os.chdir(scan_root)
@@ -390,10 +199,6 @@ def _check_core_logic_execute_rat(
     log.info(f"Executing Apache RAT from directory: {os.getcwd()}")
 
     try:
-        # # First make sure we can run Java
-        # java_check = subprocess.run(["java", "-version"], capture_output=True, timeout=10)
-        # log.info(f"Java check completed with return code {java_check.returncode}")
-
         # Run the actual RAT command
         # We do check=False because we'll handle errors below
         # The timeout is five minutes
@@ -410,54 +215,32 @@ def _check_core_logic_execute_rat(
             log.error(f"STDOUT: {process.stdout}")
             log.error(f"STDERR: {process.stderr}")
             os.chdir(current_dir)
-            error_dict = {
-                "valid": False,
-                "message": f"Apache RAT process failed with code {process.returncode}",
-                "total_files": 0,
-                "approved_licenses": 0,
-                "unapproved_licenses": 0,
-                "unknown_licenses": 0,
-                "unapproved_files": [],
-                "unknown_license_files": [],
-                "errors": [
+            return checkdata.Rat(
+                message=f"Apache RAT process failed with code {process.returncode}",
+                errors=[
                     f"Process error code: {process.returncode}",
                     f"STDOUT: {process.stdout}",
                     f"STDERR: {process.stderr}",
                 ],
-            }
-            return error_dict, None
+            ), None
 
         log.info(f"Apache RAT completed successfully with return code {process.returncode}")
         log.info(f"stdout: {process.stdout[:200]}...")
     except subprocess.TimeoutExpired as e:
         os.chdir(current_dir)
         log.error(f"Apache RAT process timed out: {e}")
-        return {
-            "valid": False,
-            "message": "Apache RAT process timed out",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "unapproved_files": [],
-            "unknown_license_files": [],
-            "errors": [f"Timeout: {e}"],
-        }, None
+        return checkdata.Rat(
+            message="Apache RAT process timed out",
+            errors=[f"Timeout: {e}"],
+        ), None
     except Exception as e:
         # Change back to the original directory before raising
         os.chdir(current_dir)
         log.error(f"Exception running Apache RAT: {e}")
-        return {
-            "valid": False,
-            "message": f"Apache RAT process failed: {e}",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "unapproved_files": [],
-            "unknown_license_files": [],
-            "errors": [f"Process error: {e}"],
-        }, None
+        return checkdata.Rat(
+            message=f"Apache RAT process failed: {e}",
+            errors=[f"Process error: {e}"],
+        ), None
 
     # Change back to the original directory
     os.chdir(current_dir)
@@ -469,24 +252,132 @@ def _check_core_logic_execute_rat(
         log.info(f"Files in {temp_dir}: {os.listdir(temp_dir)}")
         # Look in the current directory too
         log.info(f"Files in current directory: {os.listdir('.')}")
-        return {
-            "valid": False,
-            "message": f"RAT output XML file not found: {xml_output_path}",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "unapproved_files": [],
-            "unknown_license_files": [],
-            "errors": [f"Missing output file: {xml_output_path}"],
-        }, None
+        return checkdata.Rat(
+            message=f"RAT output XML file not found: {xml_output_path}",
+            errors=[f"Missing output file: {xml_output_path}"],
+        ), None
 
     # The XML was found correctly
     log.info(f"Found XML output at: {xml_output_path} (size: {os.path.getsize(xml_output_path)} bytes)")
     return None, xml_output_path
 
 
-def _check_core_logic_jar_exists(rat_jar_path: str) -> tuple[str, dict[str, Any] | None]:
+def _count_files_outside_directory(temp_dir: str, scan_root: str) -> int:
+    """Count regular files that exist outside the scan_root directory."""
+    count = 0
+    scan_root_rel = os.path.relpath(scan_root, temp_dir)
+    if scan_root_rel == ".":
+        scan_root_rel = ""
+
+    for root, _dirs, files in os.walk(temp_dir):
+        rel_root = os.path.relpath(root, temp_dir)
+        if rel_root == ".":
+            rel_root = ""
+
+        if _is_inside_directory(rel_root, scan_root_rel):
+            continue
+
+        # for filename in files:
+        #     if not filename.startswith("."):
+        #         count += 1
+        count += len(files)
+
+    return count
+
+
+def _get_command_and_xml_output_path(
+    temp_dir: str, excludes_file_path: str | None, apply_extended_std: bool, scan_root: str, rat_jar_path: str
+) -> tuple[list[str], str]:
+    xml_output_path = os.path.join(temp_dir, _RAT_REPORT_FILENAME)
+    log.info(f"XML output will be written to: {xml_output_path}")
+
+    # Convert exclusion file path from temp_dir relative to scan_root relative
+    excludes_file: str | None = None
+    if excludes_file_path is not None:
+        abs_path = os.path.join(temp_dir, excludes_file_path)
+        if not (os.path.exists(abs_path) and os.path.isfile(abs_path)):
+            log.error(f"Exclusion file not found or not a regular file: {abs_path}")
+            raise RatError(f"Exclusion file is not a regular file: {excludes_file_path}({abs_path})")
+        excludes_file = os.path.relpath(abs_path, scan_root)
+        log.info(f"Using exclusion file: {excludes_file}")
+    command = _build_rat_command(rat_jar_path, xml_output_path, excludes_file, apply_extended_std)
+    log.info(f"Running Apache RAT: {' '.join(command)}")
+    return command, xml_output_path
+
+
+def _is_inside_directory(path: str, directory: str) -> bool:
+    """Check whether path is inside directory, or is the directory itself."""
+    if directory == "":
+        return True
+    if path == directory:
+        return True
+    return path.startswith(directory + os.sep)
+
+
+def _sanitise_command_for_storage(command: list[str]) -> list[str]:
+    """Replace absolute paths with filenames for known arguments."""
+    path_args = {"-jar", "--output-file"}
+    result: list[str] = []
+    for i, arg in enumerate(command):
+        if (i > 0) and (command[i - 1] in path_args) and os.path.isabs(arg):
+            result.append(os.path.basename(arg))
+        else:
+            result.append(arg)
+    return result
+
+
+def _summary_message(valid: bool, unapproved_licenses: int, unknown_licenses: int) -> str:
+    message = "All files have approved licenses"
+    if not valid:
+        message = "Found "
+        if unapproved_licenses > 0:
+            message += f"{util.plural(unapproved_licenses, 'file')} with unapproved licenses"
+            if unknown_licenses > 0:
+                message += " and "
+        if unknown_licenses > 0:
+            message += f"{util.plural(unknown_licenses, 'file')} with unknown licenses"
+    return message
+
+
+def _synchronous(
+    artifact_path: str,
+    policy_excludes: list[str],
+    rat_jar_path: str = _CONFIG.APACHE_RAT_JAR_PATH,
+    max_extract_size: int = _CONFIG.MAX_EXTRACT_SIZE,
+    chunk_size: int = _CONFIG.EXTRACT_CHUNK_SIZE,
+) -> checkdata.Rat:
+    """Verify license headers using Apache RAT."""
+    log.info(f"Verifying licenses with Apache RAT for {artifact_path}")
+    log.info(f"PATH environment variable: {os.environ.get('PATH', 'PATH not found')}")
+
+    java_check = _synchronous_check_java_installed()
+    if java_check is not None:
+        return java_check
+
+    # Verify RAT JAR exists and is accessible
+    rat_jar_path, jar_error = _synchronous_check_jar_exists(rat_jar_path)
+    if jar_error:
+        return jar_error
+
+    try:
+        # Create a temporary directory for extraction
+        # TODO: We could extract to somewhere in "state/" instead
+        with tempfile.TemporaryDirectory(prefix="rat_verify_") as temp_dir:
+            log.info(f"Created temporary directory: {temp_dir}")
+            return _synchronous_extract(
+                artifact_path, temp_dir, max_extract_size, chunk_size, policy_excludes, rat_jar_path
+            )
+    except Exception as e:
+        import traceback
+
+        log.exception("Error running Apache RAT")
+        return checkdata.Rat(
+            message=f"Failed to run Apache RAT: {e!s}",
+            errors=[str(e), traceback.format_exc()],
+        )
+
+
+def _synchronous_check_jar_exists(rat_jar_path: str) -> tuple[str, checkdata.Rat | None]:
     """Verify that the Apache RAT JAR file exists and is accessible."""
     # Check that the RAT JAR exists
     if not os.path.exists(rat_jar_path):
@@ -519,109 +410,17 @@ def _check_core_logic_jar_exists(rat_jar_path: str) -> tuple[str, dict[str, Any]
             if os.path.exists("state"):
                 log.error(f"State directory contents: {os.listdir('state')}")
 
-            return rat_jar_path, {
-                "valid": False,
-                "message": f"Apache RAT JAR not found at: {rat_jar_path}",
-                "total_files": 0,
-                "approved_licenses": 0,
-                "unapproved_licenses": 0,
-                "unknown_licenses": 0,
-                "unapproved_files": [],
-                "unknown_license_files": [],
-                "errors": [f"Missing JAR: {rat_jar_path}"],
-            }
+            return rat_jar_path, checkdata.Rat(
+                message=f"Apache RAT JAR not found at: {rat_jar_path}",
+                errors=[f"Missing JAR: {rat_jar_path}"],
+            )
     else:
         log.info(f"Found Apache RAT JAR at: {rat_jar_path}")
 
     return rat_jar_path, None
 
 
-def _check_core_logic_parse_output(xml_file: str, base_dir: str) -> dict[str, Any]:
-    """Parse the XML output from Apache RAT safely."""
-    try:
-        return _check_core_logic_parse_output_core(xml_file, base_dir)
-    except Exception as e:
-        log.error(f"Error parsing RAT output: {e}")
-        return {
-            "valid": False,
-            "message": f"Failed to parse Apache RAT output: {e!s}",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "errors": [f"XML parsing error: {e!s}"],
-        }
-
-
-def _check_core_logic_parse_output_core(xml_file: str, base_dir: str) -> dict[str, Any]:
-    """Parse the XML output from Apache RAT."""
-    tree = ElementTree.parse(xml_file)
-    root = tree.getroot()
-
-    total_files = 0
-    approved_licenses = 0
-    unapproved_licenses = 0
-    unknown_licenses = 0
-
-    unapproved_files = []
-    unknown_license_files = []
-
-    # Process each resource
-    for resource in root.findall(".//resource"):
-        total_files += 1
-
-        # Get the name attribute value
-        name = resource.get("name", "")
-
-        # Remove base_dir prefix for cleaner display
-        if name.startswith(base_dir):
-            name = name[len(base_dir) :].lstrip("/")
-
-        # Get license information
-        license_elem = resource.find("license")
-
-        if license_elem is None:
-            resource_type = resource.get("type", "")
-            if resource_type in {"NOTICE", "BINARY", "IGNORED", "ARCHIVE"}:
-                approved_licenses += 1
-            else:
-                unknown_licenses += 1
-                unknown_license_files.append({"name": name, "license": "Unknown license"})
-        else:
-            approval = license_elem.get("approval", "false")
-            is_approved = approval == "true"
-            license_name = license_elem.get("name", "Unknown")
-
-            if is_approved:
-                approved_licenses += 1
-            elif license_name == "Unknown license":
-                unknown_licenses += 1
-                unknown_license_files.append({"name": name, "license": license_name})
-            else:
-                unapproved_licenses += 1
-                unapproved_files.append({"name": name, "license": license_name})
-
-    # Calculate overall validity
-    valid = (unapproved_licenses == 0) and (unknown_licenses == 0)
-
-    # Prepare a summary message of just the right length
-    message = _summary_message(valid, unapproved_licenses, unknown_licenses)
-
-    # We limit the number of files we report to 100
-    return {
-        "valid": valid,
-        "message": message,
-        "total_files": total_files,
-        "approved_licenses": approved_licenses,
-        "unapproved_licenses": unapproved_licenses,
-        "unknown_licenses": unknown_licenses,
-        "unapproved_files": unapproved_files[:100],
-        "unknown_license_files": unknown_license_files[:100],
-        "errors": [],
-    }
-
-
-def _check_java_installed() -> dict[str, Any] | None:
+def _synchronous_check_java_installed() -> checkdata.Rat | None:
     # Check that Java is installed
     # TODO: Run this only once, when the server starts
     try:
@@ -652,59 +451,221 @@ def _check_java_installed() -> dict[str, Any] | None:
         except Exception as inner_e:
             log.error(f"Additional error while trying to debug java: {inner_e}")
 
-        return {
-            "valid": False,
-            "message": "Java is not properly installed or not in PATH",
-            "total_files": 0,
-            "approved_licenses": 0,
-            "unapproved_licenses": 0,
-            "unknown_licenses": 0,
-            "unapproved_files": [],
-            "unknown_license_files": [],
-            "errors": [f"Java error: {e}"],
-        }
+        return checkdata.Rat(
+            message="Java is not properly installed or not in PATH",
+            errors=[f"Java error: {e}"],
+        )
 
 
-def _count_files_outside_directory(temp_dir: str, scan_root: str) -> int:
-    """Count regular files that exist outside the scan_root directory."""
-    count = 0
+def _synchronous_extract(
+    artifact_path: str,
+    temp_dir: str,
+    max_extract_size: int,
+    chunk_size: int,
+    policy_excludes: list[str],
+    rat_jar_path: str,
+) -> checkdata.Rat:
+    # Extract the archive to the temporary directory
+    log.info(f"Extracting {artifact_path} to {temp_dir}")
+    extracted_size, exclude_file_paths = archives.extract(
+        artifact_path,
+        temp_dir,
+        max_size=max_extract_size,
+        chunk_size=chunk_size,
+        track_files={_RAT_EXCLUDES_FILENAME},
+    )
+    log.info(f"Extracted {extracted_size} bytes")
+    log.info(f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} file(s): {exclude_file_paths}")
+
+    # Validate that we found at most one exclusion file
+    if len(exclude_file_paths) > 1:
+        log.error(f"Multiple {_RAT_EXCLUDES_FILENAME} files found: {exclude_file_paths}")
+        return checkdata.Rat(
+            message=f"Multiple {_RAT_EXCLUDES_FILENAME} files not allowed (found {len(exclude_file_paths)})",
+            errors=[f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} files"],
+        )
+
+    # Narrow to single path after validation
+    archive_excludes_path: str | None = exclude_file_paths[0] if exclude_file_paths else None
+
+    excludes_source, effective_excludes_path = _synchronous_extract_excludes_source(
+        archive_excludes_path, policy_excludes, temp_dir
+    )
+
+    try:
+        scan_root = _synchronous_extract_scan_root(archive_excludes_path, temp_dir)
+    except RatError as e:
+        return checkdata.Rat(
+            message=f"Failed to determine scan root: {e}",
+            errors=[str(e)],
+            excludes_source=excludes_source,
+        )
+
+    # Execute RAT and get results or error
+    # Extended std exclusions apply when there's no archive .rat-excludes
+    apply_extended_std = excludes_source != "archive"
+    try:
+        command, xml_output_path = _get_command_and_xml_output_path(
+            temp_dir, effective_excludes_path, apply_extended_std, scan_root, rat_jar_path
+        )
+    except RatError as e:
+        return checkdata.Rat(
+            message=f"Failed to build RAT command: {e}",
+            errors=[str(e)],
+        )
+    error_result, xml_output_path = _check_core_logic_execute_rat(command, scan_root, temp_dir, xml_output_path)
+    if error_result is not None:
+        return error_result
+
+    # Parse the XML output
+    log.info(f"Parsing RAT XML output: {xml_output_path}")
+    # Make sure xml_output_path is not None before parsing
+    if xml_output_path is None:
+        raise ValueError("XML output path is None")
+
+    result = _synchronous_extract_parse_output(xml_output_path, scan_root)
+    log.info(f"Successfully parsed RAT output with {util.plural(result.total_files, 'file')}")
+
+    # The unknown_license_files and unapproved_files contain FileEntry objects
+    # The path is relative to scan_root, so we prepend the scan_root relative path
     scan_root_rel = os.path.relpath(scan_root, temp_dir)
-    if scan_root_rel == ".":
-        scan_root_rel = ""
+    if scan_root_rel != ".":
+        for file in result.unknown_license_files:
+            file.name = os.path.join(scan_root_rel, os.path.normpath(file.name))
+        for file in result.unapproved_files:
+            file.name = os.path.join(scan_root_rel, os.path.normpath(file.name))
 
-    for root, _dirs, files in os.walk(temp_dir):
-        rel_root = os.path.relpath(root, temp_dir)
-        if rel_root == ".":
-            rel_root = ""
-
-        if _is_inside_directory(rel_root, scan_root_rel):
-            continue
-
-        # for filename in files:
-        #     if not filename.startswith("."):
-        #         count += 1
-        count += len(files)
-
-    return count
+    result.excludes_source = excludes_source
+    result.extended_std_applied = apply_extended_std
+    result.command = _sanitise_command_for_storage(command)
+    return result
 
 
-def _is_inside_directory(path: str, directory: str) -> bool:
-    """Check whether path is inside directory, or is the directory itself."""
-    if directory == "":
-        return True
-    if path == directory:
-        return True
-    return path.startswith(directory + os.sep)
+def _synchronous_extract_excludes_source(
+    archive_excludes_path: str | None, policy_excludes: list[str], temp_dir: str
+) -> tuple[str, str | None]:
+    # Determine excludes_source and effective excludes file
+    excludes_source: str
+    effective_excludes_path: str | None
+
+    if archive_excludes_path is not None:
+        excludes_source = "archive"
+        effective_excludes_path = archive_excludes_path
+        log.info(f"Using archive {_RAT_EXCLUDES_FILENAME}: {archive_excludes_path}")
+    elif policy_excludes:
+        excludes_source = "policy"
+        policy_excludes_file = os.path.join(temp_dir, _POLICY_EXCLUDES_FILENAME)
+        with open(policy_excludes_file, "w") as f:
+            f.write("\n".join(policy_excludes))
+        effective_excludes_path = os.path.relpath(policy_excludes_file, temp_dir)
+        log.info(f"Using policy excludes written to: {policy_excludes_file}")
+    else:
+        excludes_source = "none"
+        effective_excludes_path = None
+        log.info("No excludes: using defaults only")
+    return excludes_source, effective_excludes_path
 
 
-def _summary_message(valid: bool, unapproved_licenses: int, unknown_licenses: int) -> str:
-    message = "All files have approved licenses"
-    if not valid:
-        message = "Found "
-        if unapproved_licenses > 0:
-            message += f"{util.plural(unapproved_licenses, 'file')} with unapproved licenses"
-            if unknown_licenses > 0:
-                message += " and "
-        if unknown_licenses > 0:
-            message += f"{util.plural(unknown_licenses, 'file')} with unknown licenses"
-    return message
+def _synchronous_extract_parse_output(xml_file: str, base_dir: str) -> checkdata.Rat:
+    """Parse the XML output from Apache RAT safely."""
+    try:
+        return _synchronous_extract_parse_output_core(xml_file, base_dir)
+    except Exception as e:
+        log.error(f"Error parsing RAT output: {e}")
+        return checkdata.Rat(
+            message=f"Failed to parse Apache RAT output: {e!s}",
+            errors=[f"XML parsing error: {e!s}"],
+        )
+
+
+def _synchronous_extract_parse_output_core(xml_file: str, base_dir: str) -> checkdata.Rat:
+    """Parse the XML output from Apache RAT."""
+    tree = ElementTree.parse(xml_file)
+    root = tree.getroot()
+
+    total_files = 0
+    approved_licenses = 0
+    unapproved_licenses = 0
+    unknown_licenses = 0
+
+    unapproved_files: list[checkdata.RatFileEntry] = []
+    unknown_license_files: list[checkdata.RatFileEntry] = []
+
+    # Process each resource
+    for resource in root.findall(".//resource"):
+        total_files += 1
+
+        # Get the name attribute value
+        name = resource.get("name", "")
+
+        # Remove base_dir prefix for cleaner display
+        if name.startswith(base_dir):
+            name = name[len(base_dir) :].lstrip("/")
+
+        # Get license information
+        license_elem = resource.find("license")
+
+        if license_elem is None:
+            resource_type = resource.get("type", "")
+            if resource_type in {"NOTICE", "BINARY", "IGNORED", "ARCHIVE"}:
+                approved_licenses += 1
+            else:
+                unknown_licenses += 1
+                unknown_license_files.append(checkdata.RatFileEntry(name=name, license="Unknown license"))
+        else:
+            approval = license_elem.get("approval", "false")
+            is_approved = approval == "true"
+            license_name = license_elem.get("name", "Unknown")
+
+            if is_approved:
+                approved_licenses += 1
+            elif license_name == "Unknown license":
+                unknown_licenses += 1
+                unknown_license_files.append(checkdata.RatFileEntry(name=name, license=license_name))
+            else:
+                unapproved_licenses += 1
+                unapproved_files.append(checkdata.RatFileEntry(name=name, license=license_name))
+
+    # Calculate overall validity
+    valid = (unapproved_licenses == 0) and (unknown_licenses == 0)
+
+    # Prepare a summary message of just the right length
+    message = _summary_message(valid, unapproved_licenses, unknown_licenses)
+
+    # We limit the number of files we report to 100
+    return checkdata.Rat(
+        valid=valid,
+        message=message,
+        total_files=total_files,
+        approved_licenses=approved_licenses,
+        unapproved_licenses=unapproved_licenses,
+        unknown_licenses=unknown_licenses,
+        unapproved_files=unapproved_files[:100],
+        unknown_license_files=unknown_license_files[:100],
+    )
+
+
+def _synchronous_extract_scan_root(archive_excludes_path: str | None, temp_dir: str) -> str:
+    # Determine scan root based on archive .rat-excludes location
+    if archive_excludes_path is not None:
+        scan_root = os.path.dirname(os.path.join(temp_dir, archive_excludes_path))
+
+        # Verify that scan_root is inside temp_dir
+        abs_scan_root = os.path.abspath(scan_root)
+        abs_temp_dir = os.path.abspath(temp_dir)
+        scan_root_is_inside = (abs_scan_root == abs_temp_dir) or abs_scan_root.startswith(abs_temp_dir + os.sep)
+        if not scan_root_is_inside:
+            log.error(f"Scan root {scan_root} is outside temp_dir {temp_dir}")
+            raise RatError("Invalid archive structure: exclusion file path escapes extraction directory")
+
+        log.info(f"Using {_RAT_EXCLUDES_FILENAME} directory as scan root: {scan_root}")
+
+        untracked_count = _count_files_outside_directory(temp_dir, scan_root)
+        if untracked_count > 0:
+            log.error(f"Found {untracked_count} file(s) outside {_RAT_EXCLUDES_FILENAME} directory")
+            raise RatError(f"Files exist outside {_RAT_EXCLUDES_FILENAME} directory ({untracked_count} found)")
+    else:
+        scan_root = temp_dir
+        log.info(f"No archive {_RAT_EXCLUDES_FILENAME} found, using temp_dir as scan root: {scan_root}")
+
+    return scan_root

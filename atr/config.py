@@ -28,23 +28,48 @@ _RAT_VERSION: Final = "0.17"
 
 
 def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: type = str) -> str | None:
-    secrets_path = os.path.join(state_dir, "secrets.ini")
+    secrets_path = os.path.join(state_dir, "secrets", "curated", "secrets.ini")
+
+    # This code is deprecated and will be removed
+    # TODO: Remove this once migrations are no longer likely2026-
+    deprecated_path = os.path.join(state_dir, "secrets.ini")
+    if os.path.exists(deprecated_path):
+        if os.path.exists(secrets_path):
+            raise RuntimeError(f"Conflicting secrets files exist: {deprecated_path} and {secrets_path}")
+        return _config_secrets_get(deprecated_path, key, default, cast, allow_not_found=False)
+
+    return _config_secrets_get(secrets_path, key, default, cast)
+
+
+def _config_secrets_get(
+    secrets_path: str, key: str, default: str | None = None, cast: type = str, allow_not_found: bool = True
+) -> str | None:
     try:
         repo_ini = decouple.RepositoryIni(secrets_path)
-        config_obj = decouple.Config(repo_ini)
-        sentinel = object()
-        value = config_obj.get(key, default=sentinel, cast=cast)
-        if value is sentinel:
-            return decouple.config(key, default=default, cast=cast)
-        if isinstance(value, str) or (value is None):
-            return value
-        return None
     except FileNotFoundError:
-        return decouple.config(key, default=default, cast=cast)
+        if allow_not_found is False:
+            raise
+    else:
+        if key in repo_ini:
+            value = repo_ini[key]
+            return cast(value)
+
+    # There is no secrets file, or it does not contain the key
+    # Try getting the value from environment variables
+    sentinel = object()
+    # We do not use the cast keyword argument here
+    # If we did, it would also be applied to the default sentinel value
+    value = decouple.config(key, default=sentinel)
+    if value is sentinel:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"Secret value for {key} is not a string")
+    return cast(value)
 
 
 class AppConfig:
     ALLOW_TESTS = decouple.config("ALLOW_TESTS", default=False, cast=bool)
+    DISABLE_CHECK_CACHE = decouple.config("DISABLE_CHECK_CACHE", default=False, cast=bool)
     APP_HOST = decouple.config("APP_HOST", default="127.0.0.1")
     SSH_HOST = decouple.config("SSH_HOST", default="0.0.0.0")
     SSH_PORT = decouple.config("SSH_PORT", default=2222, cast=int)
@@ -62,19 +87,23 @@ class AppConfig:
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False
     USE_BLOCKBUSTER = False
-    JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str) or secrets.token_hex(128 // 8)
-    SECRET_KEY = _config_secrets("SECRET_KEY", STATE_DIR, default=None, cast=str) or secrets.token_hex(128 // 8)
-    WTF_CSRF_ENABLED = decouple.config("WTF_CSRF_ENABLED", default=True, cast=bool)
+    JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str) or secrets.token_hex(256 // 8)
+    # We no longer support SECRET_KEY
+    # We continue to read the value to print a migration warning
+    # We are now relying on apptoken.txt from ASFQuart instead
+    # By default, apptoken.txt is a 256 bit random value
+    # ASFQuart generates it using secrets.token_hex()
+    SECRET_KEY = _config_secrets("SECRET_KEY", STATE_DIR, default=None, cast=str)
     DOWNLOADS_STORAGE_DIR = os.path.join(STATE_DIR, "downloads")
     FINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "finished")
     UNFINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "unfinished")
     # TODO: By convention this is at /x1/, but we can symlink it here perhaps?
     # TODO: We need to get Puppet to check SVN out initially, or do it manually
-    SVN_STORAGE_DIR = os.path.join(STATE_DIR, "svn")
+    SVN_STORAGE_DIR = os.path.join(STATE_DIR, "subversion")
     ATTESTABLE_STORAGE_DIR = os.path.join(STATE_DIR, "attestable")
-    SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="atr.db")
-    STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "storage-audit.log")
-    PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "route-performance.log")
+    SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="database/atr.db")
+    STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
+    PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
 
     # Apache RAT configuration
     APACHE_RAT_JAR_PATH = decouple.config("APACHE_RAT_JAR_PATH", default=f"/opt/tools/apache-rat-{_RAT_VERSION}.jar")

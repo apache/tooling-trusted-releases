@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
     import atr.models.schema as schema
 
+import atr.config as config
 import atr.db as db
 import atr.models.sql as sql
 import atr.util as util
@@ -202,6 +203,9 @@ class Recorder:
 
     async def check_cache(self, path: pathlib.Path) -> bool:
         if not await aiofiles.os.path.isfile(path):
+            return False
+
+        if config.get().DISABLE_CHECK_CACHE:
             return False
 
         no_cache_file = self.abs_path_base() / ".atr-no-cache"

@@ -116,6 +116,17 @@ class ComposePolicyForm(form.Form):
         "Only affects source artifacts. Lightweight checks ALWAYS RUN on binary artifacts.",
         widget=form.Widget.RADIO,
     )
+    source_excludes_lightweight: str = form.label(
+        "Lightweight source excludes",
+        "Patterns using .gitignore syntax for files to exclude"
+        " from lightweight license header checks on source artifacts.",
+        widget=form.Widget.TEXTAREA,
+    )
+    source_excludes_rat: str = form.label(
+        "RAT source excludes",
+        "RAT exclude file contents for source artifacts. Used only when no .rat-excludes file exists in the archive.",
+        widget=form.Widget.TEXTAREA,
+    )
     binary_artifact_paths: str = form.label(
         "Binary artifact paths",
         "Paths to binary artifacts to be included in the release.",

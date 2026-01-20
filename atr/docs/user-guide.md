@@ -8,7 +8,8 @@
 
 **Pages**:
 
-* `2.1.` [Signing artifacts](signing-artifacts)
+* `2.1.` [Components](components)
+* `2.2.` [Signing artifacts](signing-artifacts)
 
 **Sections**:
 

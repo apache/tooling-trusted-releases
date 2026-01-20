@@ -119,7 +119,7 @@ def _archive_extract_member(  # noqa: C901
         if _safe_path(extract_dir, member.name) is None:
             log.warning(f"Skipping potentially unsafe path: {member.name}")
             return 0, extracted_paths
-        tf.extract(member, extract_dir, numeric_owner=True)
+        tf.extract(member, extract_dir, numeric_owner=True, filter="fully_trusted")
 
     elif member.isreg():
         extracted_size = _archive_extract_safe_process_file(

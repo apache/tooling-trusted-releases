@@ -35,10 +35,11 @@ dependencies = [
   "ldap3 (==2.10.2rc2)",
   "packaging>=25.0",
   "pgpy>=0.6.0",
+  "psutil>=7.2.1",
   "puremagic>=1.30",
   "pydantic-xml (>=2.17.2,<3.0.0)",
   "pyjwt (>=2.10.1,<3.0.0)",
-  "pynacl>=1.5.0",
+  # "pynacl>=1.5.0",
   "python-decouple~=3.8",
   "python-gnupg~=0.5",
   "quart-schema[pydantic]~=0.21",
@@ -111,6 +112,9 @@ minversion = "8.0"
 testpaths  = ["tests"]
 asyncio_mode = "auto"
 addopts = "--ignore=tests/e2e"
+filterwarnings = [
+  "ignore:imghdr was removed in Python 3.13:DeprecationWarning:pgpy.constants",
+]
 
 [tool.ruff]
 line-length = 120

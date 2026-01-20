@@ -31,6 +31,8 @@ import atr.models.distribution as distribution
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.outcome as outcome
+import atr.tasks.gha as gha
+import atr.util as util
 
 
 class GeneralPublic:
@@ -95,6 +97,48 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
+    async def automate(
+        self,
+        release_name: str,
+        platform: sql.DistributionPlatform,
+        committee_name: str,
+        owner_namespace: str | None,
+        project_name: str,
+        version_name: str,
+        phase: str,
+        revision_number: str | None,
+        package: str,
+        version: str,
+        staging: bool,
+    ) -> sql.Task:
+        dist_task = sql.Task(
+            task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
+            task_args=gha.DistributionWorkflow(
+                name=release_name,
+                namespace=owner_namespace or "",
+                package=package,
+                version=version,
+                project_name=project_name,
+                version_name=version_name,
+                phase=phase,
+                platform=platform.name,
+                staging=staging,
+                asf_uid=self.__asf_uid,
+                committee_name=committee_name,
+                arguments={},
+            ).model_dump(),
+            asf_uid=util.unwrap(self.__asf_uid),
+            added=datetime.datetime.now(datetime.UTC),
+            status=sql.TaskStatus.QUEUED,
+            project_name=project_name,
+            version_name=version_name,
+            revision_number=revision_number,
+        )
+        self.__data.add(dist_task)
+        await self.__data.commit()
+        await self.__data.refresh(dist_task)
+        return dist_task
+
     async def record(
         self,
         release_name: str,
@@ -148,7 +192,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record_from_data(
         self,
-        release: sql.Release,
+        release_name: str,
         staging: bool,
         dd: distribution.Data,
     ) -> tuple[sql.Distribution, bool, distribution.Metadata]:
@@ -158,7 +202,17 @@ class CommitteeMember(CommitteeParticipant):
             package=dd.package,
             version=dd.version,
         )
-        api_oc = await self.__json_from_distribution_platform(api_url, dd.platform, dd.version)
+        if dd.platform == sql.DistributionPlatform.MAVEN:
+            # We do this here because the CDNs break the namespace up into a / delimited URL
+            owner = (dd.owner_namespace or "").replace(".", "/")
+            api_url = template_url.format(
+                owner_namespace=owner,
+                package=dd.package,
+                version=dd.version,
+            )
+            api_oc = await self.__json_from_maven_xml(api_url, dd.version)
+        else:
+            api_oc = await self.__json_from_distribution_platform(api_url, dd.platform, dd.version)
         match api_oc:
             case outcome.Result(result):
                 pass
@@ -176,7 +230,7 @@ class CommitteeMember(CommitteeParticipant):
             web_url=web_url,
         )
         dist, added = await self.record(
-            release_name=release.name,
+            release_name=release_name,
             platform=dd.platform,
             owner_namespace=dd.owner_namespace,
             package=dd.package,
@@ -293,6 +347,100 @@ class CommitteeMember(CommitteeParticipant):
                     return outcome.Error(e)
         return outcome.Result(result)
 
+    async def __json_from_maven_cdn(
+        self, api_url: str, group_id: str, artifact_id: str, version: str
+    ) -> outcome.Outcome[basic.JSON]:
+        import datetime
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    response.raise_for_status()
+
+            # Use current time as timestamp since we're just validating the package exists
+            timestamp_ms = int(datetime.datetime.now(datetime.UTC).timestamp() * 1000)
+
+            # Convert to dict matching MavenResponse structure
+            result_dict = {
+                "response": {
+                    "start": 0,
+                    "docs": [
+                        {
+                            "g": group_id,
+                            "a": artifact_id,
+                            "v": version,
+                            "timestamp": timestamp_ms,
+                        }
+                    ],
+                }
+            }
+            result = basic.as_json(result_dict)
+            return outcome.Result(result)
+        except aiohttp.ClientError as e:
+            return outcome.Error(e)
+
+    async def __json_from_maven_xml(self, api_url: str, version: str) -> outcome.Outcome[basic.JSON]:
+        import datetime
+        import xml.etree.ElementTree as ET
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    response.raise_for_status()
+                    xml_text = await response.text()
+
+            # Parse the XML
+            root = ET.fromstring(xml_text)
+
+            # Extract versioning info
+            group = root.find("groupId")
+            artifact = root.find("artifactId")
+            versioning = root.find("versioning")
+            if versioning is None:
+                e = RuntimeError("No versioning element found in Maven metadata")
+                return outcome.Error(e)
+
+            # Get lastUpdated timestamp (format: yyyyMMddHHmmss)
+            last_updated_elem = versioning.find("lastUpdated")
+            if last_updated_elem is None or not last_updated_elem.text:
+                e = RuntimeError("No lastUpdated timestamp found in Maven metadata")
+                return outcome.Error(e)
+
+            # Convert lastUpdated string to Unix timestamp in milliseconds
+            last_updated_str = last_updated_elem.text
+            dt = datetime.datetime.strptime(last_updated_str, "%Y%m%d%H%M%S")
+            dt = dt.replace(tzinfo=datetime.UTC)
+            timestamp_ms = int(dt.timestamp() * 1000)
+
+            # Verify the version exists
+            versions_elem = versioning.find("versions")
+            if versions_elem is not None:
+                versions = [v.text for v in versions_elem.findall("version") if v.text]
+                if version not in versions:
+                    e = RuntimeError(f"Version '{version}' not found in Maven metadata")
+                    return outcome.Error(e)
+
+            # Convert to dict matching MavenResponse structure
+            result_dict = {
+                "response": {
+                    "start": 0,
+                    "docs": [
+                        {
+                            "g": group.text if group is not None else "",
+                            "a": artifact.text if artifact is not None else "",
+                            "v": version,
+                            "timestamp": timestamp_ms,
+                        }
+                    ],
+                }
+            }
+            result = basic.as_json(result_dict)
+            return outcome.Result(result)
+        except aiohttp.ClientError as e:
+            return outcome.Error(e)
+        except ET.ParseError as e:
+            return outcome.Error(RuntimeError(f"Failed to parse Maven XML: {e}"))
+
     async def __template_url(
         self,
         dd: distribution.Data,
@@ -301,9 +449,13 @@ class CommitteeMember(CommitteeParticipant):
         if staging is False:
             return dd.platform.value.template_url
 
-        supported = {sql.DistributionPlatform.ARTIFACT_HUB, sql.DistributionPlatform.PYPI}
+        supported = {
+            sql.DistributionPlatform.ARTIFACT_HUB,
+            sql.DistributionPlatform.PYPI,
+            sql.DistributionPlatform.MAVEN,
+        }
         if dd.platform not in supported:
-            raise storage.AccessError("Staging is currently supported only for ArtifactHub and PyPI.")
+            raise storage.AccessError("Staging is currently supported only for ArtifactHub, PyPI and Maven Central.")
 
         template_url = dd.platform.value.template_staging_url
         if template_url is None:

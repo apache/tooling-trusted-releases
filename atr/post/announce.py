@@ -73,15 +73,15 @@ async def selected(
     try:
         async with storage.write_as_project_committee_member(project_name, session) as wacm:
             await wacm.announce.release(
-                project_name,
-                version_name,
-                preview_revision_number,
-                announce_form.mailing_list,
-                announce_form.subject_template_hash,
-                announce_form.body,
-                announce_form.download_path_suffix,
-                session.uid,
-                session.fullname,
+                project_name=project_name,
+                version_name=version_name,
+                preview_revision_number=preview_revision_number,
+                recipient=announce_form.mailing_list,
+                body=announce_form.body,
+                download_path_suffix=announce_form.download_path_suffix,
+                asf_uid=session.uid,
+                fullname=session.fullname,
+                subject_template_hash=announce_form.subject_template_hash,
             )
     except storage.AccessError as e:
         return await session.redirect(

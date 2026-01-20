@@ -7,7 +7,6 @@ services:
       - ALLOW_TESTS=1
       - APP_HOST=atr:8080
       - BIND=0.0.0.0:8080
-      - SECRET_KEY=insecure-test-key
       - SSH_HOST=0.0.0.0
       - LDAP_BIND_DN=$LDAP_BIND_DN
       - LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD

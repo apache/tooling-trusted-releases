@@ -1,3 +1,5 @@
+# the pr-labeler.yml was deleted, but preserving this file for future consideration
+
 documentation:
   - changed-files:
       - any-glob-to-any-file: "**/*.md"

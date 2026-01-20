@@ -1,8 +1,8 @@
-# 2.1. Signing artifacts
+# 2.2. Signing artifacts
 
 **Up**: `2.` [User guide](user-guide)
 
-**Prev**: (none)
+**Prev**: `2.1.` [Components](components)
 
 **Next**: `3.1.` [Running the server](running-the-server)
 

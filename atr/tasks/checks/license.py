@@ -25,7 +25,6 @@ from collections.abc import Iterator
 from typing import Any, Final
 
 import atr.constants as constants
-import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.schema as schema
@@ -88,6 +87,7 @@ class ArtifactData(schema.Strict):
     files_with_valid_headers: int = schema.default(0)
     files_with_invalid_headers: int = schema.default(0)
     files_skipped: int = schema.default(0)
+    excludes_source: str = schema.default("none")
 
 
 class ArtifactResult(schema.Strict):
@@ -172,17 +172,18 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking license headers for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
-    async with db.session() as data:
-        release = await data.release(project_name=args.project_name, version=args.version_name).get()
-    ignore_lines = []
-    if release is not None:
-        release_directory_base = util.release_directory_base(release)
-        release_directory_revision = release_directory_base / args.revision_number
-        ignore_file = release_directory_revision / ".atr" / "license-headers-ignore"
-        if ignore_file.exists():
-            ignore_lines = ignore_file.read_text().splitlines()
+    is_source = await recorder.primary_path_is_source()
+    project = await recorder.project()
 
-    return await _headers_core(recorder, str(artifact_abs_path), ignore_lines)
+    ignore_lines: list[str] = []
+    excludes_source: str
+    if is_source:
+        ignore_lines = project.policy_source_excludes_lightweight
+        excludes_source = "policy" if ignore_lines else "none"
+    else:
+        excludes_source = "none"
+
+    return await _headers_core(recorder, str(artifact_abs_path), ignore_lines, excludes_source)
 
 
 def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
@@ -211,9 +212,6 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
         elif joined == HTTPS_APACHE_LICENSE_HEADER.lower():
             return True, None
     return False, "Could not find Apache License header"
-
-
-# File helpers
 
 
 def _files_check_core_logic(artifact_path: str, is_podling: bool) -> Iterator[Result]:
@@ -303,16 +301,183 @@ def _files_check_core_logic_notice(archive: tarzip.Archive, member: tarzip.Membe
     preamble = "".join(content.splitlines(keepends=True)[:3])
     issues = []
 
-    if not re.search(r"Apache\s+[\w\-\.]+", content, re.MULTILINE):
+    normalised = re.sub(r"\s+", " ", content)
+    if not re.search(r"Apache [\w\-\.]+", normalised):
         issues.append("missing or invalid Apache product header")
-    if not re.search(r"Copyright\s+(?:\d{4}|\d{4}-\d{4})\s+The Apache Software Foundation", content, re.MULTILINE):
+    if not re.search(r"Copyright (\d{4}|\d{4}-\d{4}) The Apache Software Foundation", normalised):
         issues.append("missing or invalid copyright statement")
-    if not re.search(
-        r"This product includes software developed at\s*\nThe Apache Software Foundation \(.*?\)", content, re.DOTALL
-    ):
+    if not re.search(r"This product includes software developed at The Apache Software Foundation", normalised):
         issues.append("missing or invalid foundation attribution")
 
     return len(issues) == 0, issues, preamble
+
+
+def _get_file_extension(filename: str) -> str | None:
+    """Get the file extension without the dot."""
+    _, ext = os.path.splitext(filename)
+    if not ext:
+        return None
+    return ext[1:].lower()
+
+
+def _headers_check_core_logic(artifact_path: str, ignore_lines: list[str], excludes_source: str) -> Iterator[Result]:
+    """Verify Apache License headers in source files within an archive."""
+    # We could modify @Lucas-C/pre-commit-hooks instead for this
+    # But hopefully this will be robust enough, at least for testing
+    # First find and validate the root directory
+    artifact_data = ArtifactData(excludes_source=excludes_source)
+
+    # try:
+    #     targz.root_directory(artifact_path)
+    # except targz.RootDirectoryError as e:
+    #     # Tooling believes that this should be a warning, not an error
+    #     yield ArtifactResult(
+    #         status=models.CheckResultStatus.WARNING,
+    #         message=f"Could not determine root directory: {e!s}",
+    #         data=None,
+    #     )
+
+    artifact_basename = os.path.basename(artifact_path)
+    # log.info(f"Ignore lines: {ignore_lines}")
+
+    # Check files in the archive
+    with tarzip.open_archive(artifact_path) as archive:
+        for member in archive:
+            if member.name and member.name.split("/")[-1].startswith("._"):
+                # Metadata convention
+                continue
+
+            ignore_path = "/" + artifact_basename + "/" + member.name.lstrip("/")
+            matcher = util.create_path_matcher(ignore_lines, pathlib.Path(ignore_path), pathlib.Path("/"))
+            # log.info(f"Checking {ignore_path} with matcher {matcher}")
+            if matcher(ignore_path):
+                # log.info(f"Skipping {ignore_path} because it matches the ignore list")
+                continue
+
+            match _headers_check_core_logic_process_file(archive, member):
+                case ArtifactResult() | MemberResult() as result:
+                    artifact_data.files_checked += 1
+                    match result.status:
+                        case sql.CheckResultStatus.SUCCESS:
+                            artifact_data.files_with_valid_headers += 1
+                        case sql.CheckResultStatus.FAILURE:
+                            artifact_data.files_with_invalid_headers += 1
+                        case sql.CheckResultStatus.WARNING:
+                            artifact_data.files_with_invalid_headers += 1
+                        case sql.CheckResultStatus.EXCEPTION:
+                            artifact_data.files_with_invalid_headers += 1
+                    yield result
+                case MemberSkippedResult():
+                    artifact_data.files_skipped += 1
+
+    yield ArtifactResult(
+        status=sql.CheckResultStatus.SUCCESS,
+        message=f"Checked {util.plural(artifact_data.files_checked, 'file')},"
+        f" found {artifact_data.files_with_valid_headers} with valid headers,"
+        f" {artifact_data.files_with_invalid_headers} with invalid headers,"
+        f" and {artifact_data.files_skipped} skipped",
+        data=artifact_data.model_dump(),
+    )
+
+
+def _headers_check_core_logic_process_file(
+    archive: tarzip.Archive,
+    member: tarzip.Member,
+) -> Result:
+    """Process a single file in an archive for license header verification."""
+    if not member.isfile():
+        return MemberSkippedResult(
+            path=member.name,
+            reason="Not a file",
+        )
+
+    # Check if we should verify this file, based on extension
+    if not _headers_check_core_logic_should_check(member.name):
+        return MemberSkippedResult(
+            path=member.name,
+            reason="Not a source file",
+        )
+
+    # Extract and check the file
+    try:
+        f = archive.extractfile(member)
+        if f is None:
+            return MemberResult(
+                status=sql.CheckResultStatus.EXCEPTION,
+                path=member.name,
+                message="Could not read file",
+                data=None,
+            )
+
+        # Allow for some extra content at the start of the file
+        # That may be shebangs, encoding declarations, etc.
+        content = f.read(4096)
+        is_valid, error = headers_validate(content, member.name)
+        if is_valid:
+            return MemberResult(
+                status=sql.CheckResultStatus.SUCCESS,
+                path=member.name,
+                message="Valid license header",
+                data=None,
+            )
+        else:
+            return MemberResult(
+                status=sql.CheckResultStatus.FAILURE,
+                path=member.name,
+                message=f"Invalid license header: {error}",
+                data=None,
+            )
+    except Exception as e:
+        return MemberResult(
+            status=sql.CheckResultStatus.EXCEPTION,
+            path=member.name,
+            message=f"Error processing file: {e!s}",
+            data=None,
+        )
+
+
+def _headers_check_core_logic_should_check(filepath: str) -> bool:
+    """Determine whether a file should be checked for license headers."""
+    if filepath.endswith(constants.GENERATED_FILE_SUFFIXES):
+        return False
+
+    ext = _get_file_extension(filepath)
+    if ext is None:
+        return False
+
+    # Then check if the file matches any of our included patterns
+    for pattern in INCLUDED_PATTERNS:
+        if re.search(pattern, filepath, re.IGNORECASE):
+            return True
+
+    return False
+
+
+async def _headers_core(
+    recorder: checks.Recorder, artifact_abs_path: str, ignore_lines: list[str], excludes_source: str
+) -> None:
+    try:
+        for result in await asyncio.to_thread(
+            _headers_check_core_logic, str(artifact_abs_path), ignore_lines, excludes_source
+        ):
+            match result:
+                case ArtifactResult():
+                    await _record_artifact(recorder, result)
+                case MemberResult():
+                    await _record_member(recorder, result)
+                case MemberSkippedResult():
+                    pass
+        member_failures = recorder.member_problems.get(sql.CheckResultStatus.FAILURE, 0)
+        if member_failures > 0:
+            await recorder.failure(
+                f"Some files had invalid license headers ({member_failures} failures)",
+                None,
+            )
+
+    except Exception as e:
+        await recorder.exception("Error during license header check execution", {"error": str(e)})
+
+    return None
 
 
 def _license_results(
@@ -396,173 +561,6 @@ def _notice_results(
                 message=f"{filename} is invalid",
                 data={"issues": notice_issues, "preamble": notice_preamble},
             )
-
-
-# Header helpers
-
-
-def _get_file_extension(filename: str) -> str | None:
-    """Get the file extension without the dot."""
-    _, ext = os.path.splitext(filename)
-    if not ext:
-        return None
-    return ext[1:].lower()
-
-
-def _headers_check_core_logic(artifact_path: str, ignore_lines: list[str]) -> Iterator[Result]:
-    """Verify Apache License headers in source files within an archive."""
-    # We could modify @Lucas-C/pre-commit-hooks instead for this
-    # But hopefully this will be robust enough, at least for testing
-    # First find and validate the root directory
-    artifact_data = ArtifactData()
-
-    # try:
-    #     targz.root_directory(artifact_path)
-    # except targz.RootDirectoryError as e:
-    #     # Tooling believes that this should be a warning, not an error
-    #     yield ArtifactResult(
-    #         status=models.CheckResultStatus.WARNING,
-    #         message=f"Could not determine root directory: {e!s}",
-    #         data=None,
-    #     )
-
-    artifact_basename = os.path.basename(artifact_path)
-    # log.info(f"Ignore lines: {ignore_lines}")
-
-    # Check files in the archive
-    with tarzip.open_archive(artifact_path) as archive:
-        for member in archive:
-            if member.name and member.name.split("/")[-1].startswith("._"):
-                # Metadata convention
-                continue
-
-            ignore_path = "/" + artifact_basename + "/" + member.name.lstrip("/")
-            matcher = util.create_path_matcher(ignore_lines, pathlib.Path(ignore_path), pathlib.Path("/"))
-            # log.info(f"Checking {ignore_path} with matcher {matcher}")
-            if matcher(ignore_path):
-                # log.info(f"Skipping {ignore_path} because it matches the ignore list")
-                continue
-
-            match _headers_check_core_logic_process_file(archive, member):
-                case ArtifactResult() | MemberResult() as result:
-                    artifact_data.files_checked += 1
-                    match result.status:
-                        case sql.CheckResultStatus.SUCCESS:
-                            artifact_data.files_with_valid_headers += 1
-                        case sql.CheckResultStatus.FAILURE:
-                            artifact_data.files_with_invalid_headers += 1
-                        case sql.CheckResultStatus.WARNING:
-                            artifact_data.files_with_invalid_headers += 1
-                        case sql.CheckResultStatus.EXCEPTION:
-                            artifact_data.files_with_invalid_headers += 1
-                    yield result
-                case MemberSkippedResult():
-                    artifact_data.files_skipped += 1
-
-    yield ArtifactResult(
-        status=sql.CheckResultStatus.SUCCESS,
-        message=f"Checked {util.plural(artifact_data.files_checked, 'file')},"
-        f" found {artifact_data.files_with_valid_headers} with valid headers,"
-        f" {artifact_data.files_with_invalid_headers} with invalid headers,"
-        f" and {artifact_data.files_skipped} skipped",
-        data=artifact_data.model_dump_json(),
-    )
-
-
-def _headers_check_core_logic_process_file(
-    archive: tarzip.Archive,
-    member: tarzip.Member,
-) -> Result:
-    """Process a single file in an archive for license header verification."""
-    if not member.isfile():
-        return MemberSkippedResult(
-            path=member.name,
-            reason="Not a file",
-        )
-
-    # Check if we should verify this file, based on extension
-    if not _headers_check_core_logic_should_check(member.name):
-        return MemberSkippedResult(
-            path=member.name,
-            reason="Not a source file",
-        )
-
-    # Extract and check the file
-    try:
-        f = archive.extractfile(member)
-        if f is None:
-            return MemberResult(
-                status=sql.CheckResultStatus.EXCEPTION,
-                path=member.name,
-                message="Could not read file",
-                data=None,
-            )
-
-        # Allow for some extra content at the start of the file
-        # That may be shebangs, encoding declarations, etc.
-        content = f.read(4096)
-        is_valid, error = headers_validate(content, member.name)
-        if is_valid:
-            return MemberResult(
-                status=sql.CheckResultStatus.SUCCESS,
-                path=member.name,
-                message="Valid license header",
-                data=None,
-            )
-        else:
-            return MemberResult(
-                status=sql.CheckResultStatus.FAILURE,
-                path=member.name,
-                message=f"Invalid license header: {error}",
-                data=None,
-            )
-    except Exception as e:
-        return MemberResult(
-            status=sql.CheckResultStatus.EXCEPTION,
-            path=member.name,
-            message=f"Error processing file: {e!s}",
-            data=None,
-        )
-
-
-def _headers_check_core_logic_should_check(filepath: str) -> bool:
-    """Determine whether a file should be checked for license headers."""
-    if filepath.endswith(constants.GENERATED_FILE_SUFFIXES):
-        return False
-
-    ext = _get_file_extension(filepath)
-    if ext is None:
-        return False
-
-    # Then check if the file matches any of our included patterns
-    for pattern in INCLUDED_PATTERNS:
-        if re.search(pattern, filepath, re.IGNORECASE):
-            return True
-
-    return False
-
-
-async def _headers_core(recorder: checks.Recorder, artifact_abs_path: str, ignore_lines: list[str]) -> None:
-    try:
-        for result in await asyncio.to_thread(_headers_check_core_logic, str(artifact_abs_path), ignore_lines):
-            match result:
-                case ArtifactResult():
-                    await _record_artifact(recorder, result)
-                case MemberResult():
-                    await _record_member(recorder, result)
-                case MemberSkippedResult():
-                    pass
-        member_failures = recorder.member_problems.get(sql.CheckResultStatus.FAILURE, 0)
-        if member_failures > 0:
-            await recorder.failure(
-                f"Some files had invalid license headers ({member_failures} failures)",
-                None,
-            )
-
-    except Exception as e:
-        await recorder.exception("Error during license header check execution", {"error": str(e)})
-
-    return None
 
 
 async def _record_artifact(recorder: checks.Recorder, result: ArtifactResult) -> None:

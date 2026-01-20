@@ -19,7 +19,7 @@ from typing import Annotated, Literal
 
 import pydantic
 
-import atr.models.schema as schema
+from . import schema
 
 
 class HashEntry(schema.Strict):
