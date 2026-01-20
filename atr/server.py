@@ -413,6 +413,7 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
 
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
+    # HSTS is required by ASVS v5 9.2.1 (L1)
     # ASVS does not specify exactly what is meant by strict
     # We can't use Referrer-Policy: no-referrer because it breaks form redirection
     # TODO: We could automatically include a form field noting the form action URL
@@ -424,6 +425,7 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 
