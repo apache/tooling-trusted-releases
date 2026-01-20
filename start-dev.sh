@@ -12,6 +12,9 @@ then
   python3 scripts/generate-certificates
 fi
 
+# Ensure that the permissions of secret files are correct
+STATE_DIR=state scripts/check-perms
+
 mkdir -p /opt/atr/state/hypercorn/logs
 echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn/logs/hypercorn.log
 exec hypercorn --worker-class uvloop --reload --bind "${BIND}" \
