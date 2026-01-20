@@ -90,10 +90,8 @@ class FoundationCommitter(GeneralPublic):
                 sql.PersonalAccessToken.token_hash == pat_hash,
             )
         )
-        if pat is None:
-            raise storage.AccessError("Invalid PAT")
-        if pat.expires < datetime.datetime.now(datetime.UTC):
-            raise storage.AccessError("Expired PAT")
+        if pat is None or pat.expires < datetime.datetime.now(datetime.UTC):
+            raise storage.AccessError("Authentication failed")
         issued_jwt = jwtoken.issue(self.__asf_uid)
         pat.last_used = datetime.datetime.now(datetime.UTC)
         await self.__data.commit()

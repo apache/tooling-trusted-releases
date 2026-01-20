@@ -148,7 +148,7 @@ class Committer:
                 ldap_scope="BASE",
             )
             if not (result and (len(result) == 1)):
-                raise CommitterError(f"User {self.user!r} not found in LDAP")
+                raise CommitterError(f"Authentication failed")
         except CommitterError:
             raise
         except Exception as ex:
