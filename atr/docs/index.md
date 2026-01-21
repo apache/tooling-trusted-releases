@@ -21,3 +21,6 @@ NOTE: This documentation is a work in progress.
   * `3.8.` [Running and creating tests](running-and-creating-tests)
   * `3.9.` [Code conventions](code-conventions)
   * `3.10.` [How to contribute](how-to-contribute)
+  * `3.11.` [Authentication security](security-authentication)
+  * `3.12.` [Authorization security](security-authorization)
+  * `3.13.` [Input validation](input-validation)

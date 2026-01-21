@@ -4,7 +4,7 @@
 
 **Prev**: `3.9.` [Code conventions](code-conventions)
 
-**Next**: (none)
+**Next**: `3.11.` [Authentication security](security-authentication)
 
 **Sections**:
 
