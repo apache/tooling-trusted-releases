@@ -99,6 +99,18 @@ class DistributeStatusUpdateResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class DistributeTaggingArgs(schema.Strict):
+    publisher: str = schema.example("user")
+    jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
+    project_name: str = schema.description("Project name in ATR")
+    version_name: str = schema.description("Version name in ATR")
+
+
+class DistributeTaggingResults(schema.Strict):
+    endpoint: Literal["/distribute/tagging"] = schema.alias("endpoint")
+    tagging_spec: dict[str, Any]
+
+
 class DistributionRecordArgs(schema.Strict):
     project: str = schema.example("example")
     version: str = schema.example("0.0.1")

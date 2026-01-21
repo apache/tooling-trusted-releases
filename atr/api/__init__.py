@@ -304,6 +304,27 @@ async def update_distribution_task_status(data: models.api.DistributeStatusUpdat
     ).model_dump(), 200
 
 
+@api.route("/distribute/tagging", methods=["POST"])
+@quart_schema.validate_request(models.api.DistributeTaggingArgs)
+@quart_schema.validate_response(models.api.DistributeTaggingResults)
+async def get_distribution_tags(data: models.api.DistributeTaggingArgs) -> DictResponse:
+    """
+    Get the tagging spec for a given project/version
+    """
+    _payload, _asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    async with db.session() as db_data:
+        release = await db_data.release(
+            project_name=data.project_name, version=data.version_name, _release_policy=True
+        ).demand(exceptions.NotFound(f"Release {data.project_name}/{data.version_name} not found"))
+
+    if (not release.release_policy) or (not release.release_policy.atr_file_tagging_spec):
+        raise exceptions.NotFound(f"No tagging spec found for {data.project_name}/{data.version_name}")
+    return models.api.DistributeTaggingResults(
+        endpoint="/distribute/tagging",
+        tagging_spec=release.release_policy.atr_file_tagging_spec,
+    ).model_dump(), 200
+
+
 @api.route("/distribution/record", methods=["POST"])
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
