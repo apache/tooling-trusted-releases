@@ -141,6 +141,11 @@ class ComposePolicyForm(form.Form):
         "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
         widget=form.Widget.TEXTAREA,
     )
+    atr_file_tagging_spec: str = form.label(
+        "Tagging spec",
+        "Spec for which files should be tagged for release in specific distribution types, YAML format",
+        widget=form.Widget.TEXTAREA,
+    )
     strict_checking: form.Bool = form.label(
         "Strict checking",
         "If enabled, then the release cannot be voted upon unless all checks pass.",

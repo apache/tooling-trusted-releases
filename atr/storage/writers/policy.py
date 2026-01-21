@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import yaml
+
 import atr.db as db
 import atr.models as models
 import atr.storage as storage
@@ -95,6 +97,7 @@ class CommitteeMember(CommitteeParticipant):
         project_name = form.project_name
         _, release_policy = await self.__get_or_create_policy(project_name)
 
+        atr_tags_dict = yaml.safe_load(form.atr_file_tagging_spec) or {}
         release_policy.source_artifact_paths = _split_lines(form.source_artifact_paths)
         release_policy.license_check_mode = form.license_check_mode  # pyright: ignore[reportAttributeAccessIssue]
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
@@ -102,6 +105,7 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.binary_artifact_paths = _split_lines(form.binary_artifact_paths)
         release_policy.github_repository_name = form.github_repository_name.strip()
         release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
+        release_policy.atr_file_tagging_spec = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
 
         await self.__commit_and_log(project_name)

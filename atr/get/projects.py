@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asfquart.base as base
 import htpy
+import yaml
 
 import atr.blueprints.get as get
 import atr.config as config
@@ -320,6 +321,7 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
         htm.h3(".mb-0")["Release policy - Compose options"]
     ]
 
+    atr_tag_yaml = yaml.dump(project.policy_atr_file_tagging_spec)
     with card.block(htm.div, classes=".card-body") as card_body:
         form.render_block(
             card_body,
@@ -335,6 +337,7 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
                 "binary_artifact_paths": "\n".join(project.policy_binary_artifact_paths),
                 "github_repository_name": project.policy_github_repository_name or "",
                 "github_compose_workflow_path": "\n".join(project.policy_github_compose_workflow_path),
+                "atr_file_tagging_spec": atr_tag_yaml,
                 "strict_checking": project.policy_strict_checking,
             },
             form_classes=".atr-canary.py-4.px-5",
