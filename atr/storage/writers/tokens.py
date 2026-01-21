@@ -25,6 +25,7 @@ import sqlmodel
 
 import atr.db as db
 import atr.jwtoken as jwtoken
+import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
 
@@ -65,6 +66,15 @@ class FoundationCommitter(GeneralPublic):
         )
         self.__data.add(pat)
         await self.__data.commit()
+        await mail.send(
+            mail.Message(
+                email_sender="noreply@apache.org",
+                email_recipient=f"{uid}@apache.org",
+                subject="New API Token Created",
+                body=f"A new API token '{label or 'unlabeled'}' was created for your account. "
+                "If you did not create this token, please revoke it immediately.",
+            )
+        )
         return pat
 
     async def delete_token(self, token_id: int) -> None:
@@ -80,6 +90,15 @@ class FoundationCommitter(GeneralPublic):
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
                 token_id=token_id,
+            )
+            await mail.send(
+                mail.Message(
+                    email_sender="noreply@apache.org",
+                    email_recipient=f"{self.__asf_uid}@apache.org",
+                    subject="Deleted API Token",
+                    body="An API token was deleted from your account. "
+                    "If you did not delete any tokens, please checkl your account immediately.",
+                )
             )
 
     async def issue_jwt(self, pat_text: str) -> str:
