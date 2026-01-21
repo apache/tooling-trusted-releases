@@ -703,8 +703,8 @@ def _register_routes(app: base.QuartApp) -> None:
     # Add a global error handler for payload too large which will normally be handled in front in httpd server
     @app.errorhandler(413)
     async def handle_payload_too_large(error: Exception) -> Any:
-        log.exception(f"Payload_too_large: {error!s}")
-        log.exception("Ignore any following stack traces from form parsing")
+        log.error("Payload_too_large")
+        log.error("Ignore any following stack traces from form parsing")
         if quart.request.path.startswith("/api"):
             return quart.jsonify({"error": "413 Payload Too Large"}), 413
         return await template.render("error.html", error="413 Payload Too Large", traceback="", status_code=413), 413
