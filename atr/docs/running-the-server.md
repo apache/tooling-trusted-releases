@@ -36,10 +36,8 @@ ATR is a Python application based on [ASFQuart](https://github.com/apache/infras
 
 **Trade-offs:**
 
-| Method | Pros | Cons |
-|--------|------|------|
-| Container | Isolated, includes all tools | Slower startup, certificate trust setup |
-| Direct | Fast iteration, auto-trusted certs | Manual dependency setup |
+- _Container_: isolated, includes all tools; slower startup, certificate trust setup
+- _Direct_: fast iteration, auto-trusted certs; manual dependency setup
 
 **Important:** Do not run both methods simultaneously - they share the same state directory and will conflict.
 
@@ -69,14 +67,12 @@ ATR serves on multiple hosts, but we recommend using `localhost.apache.org` cons
 
 ### Environment variables
 
-| Variable | Description |
-|----------|-------------|
-| `ALLOW_TESTS=1` | Enable test mode with mock authentication |
-| `APP_HOST` | Hostname for the application |
-| `BIND` | Address and port to bind (default: `127.0.0.1:8080`) |
-| `LDAP_BIND_DN` | LDAP bind DN for rsync writes |
-| `LDAP_BIND_PASSWORD` | LDAP bind password |
-| `SSH_HOST` | SSH host for rsync operations |
+- `ALLOW_TESTS=1`: Enable test mode with mock authentication
+- `APP_HOST`: Hostname for the application 
+- `BIND`: Address and port to bind (default: `127.0.0.1:8080`)
+- `LDAP_BIND_DN`: LDAP bind DN for rsync writes
+- `LDAP_BIND_PASSWORD`: LDAP bind password
+- `SSH_HOST`: SSH host for rsync operations
 
 ### Startup behavior
 
