@@ -58,6 +58,7 @@ def main() -> None:
         os.chdir(conf.STATE_DIR)
 
     _setup_logging()
+    log.add_context(worker_pid=os.getpid())
     log.info(f"Starting worker process with pid {os.getpid()}")
 
     tasks: list[asyncio.Task] = []
@@ -92,14 +93,45 @@ def main() -> None:
 
 
 def _setup_logging() -> None:
-    import logging
+    import logging.handlers
 
-    # Configure logging
-    log_format = "[%(asctime)s.%(msecs)03d] [%(process)d] [%(levelname)s] %(message)s"
-    date_format = "%Y-%m-%d %H:%M:%S"
+    import structlog
 
     os.makedirs("logs", exist_ok=True)
-    logging.basicConfig(filename="logs/atr-worker.log", format=log_format, datefmt=date_format, level=logging.INFO)
+    # Configure logging
+    shared_processors: list[structlog.types.Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.UnicodeDecoder(),
+    ]
+    output_handler = logging.FileHandler("logs/atr-worker.log")
+    renderer = structlog.processors.JSONRenderer()
+    output_handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                renderer,
+            ],
+            foreign_pre_chain=shared_processors,
+        )
+    )
+
+    logging.basicConfig(level=logging.INFO, handlers=[output_handler], force=True)
+
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
 
 
 # Task functions
@@ -266,10 +298,13 @@ async def _worker_loop_run() -> None:
     processed = 0
     max_to_process = 10
     while True:
+        log.clear_context()
         try:
+            log.add_context(worker_pid=os.getpid())
             task = await _task_next_claim()
             if task:
                 task_id, task_type, task_args, asf_uid = task
+                log.add_context(task_id=task_id, task_type=task_type, asf_uid=asf_uid)
                 await _task_process(task_id, task_type, task_args, asf_uid)
                 processed += 1
                 # Only process max_to_process tasks and then exit
