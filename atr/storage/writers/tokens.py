@@ -26,11 +26,9 @@ import sqlmodel
 
 import atr.db as db
 import atr.jwtoken as jwtoken
-import atr.log as log
 import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.util as util
 
 # TODO: Check that this is known and that its emails are correctly discarded
 NOREPLY_EMAIL_ADDRESS: Final[str] = "noreply@apache.org"
@@ -81,10 +79,7 @@ class FoundationCommitter(GeneralPublic):
             body=f"A new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",
         )
-        if util.is_dev_environment():
-            log.info("Dev environment detected, pretending to send mail")
-        else:
-            await mail.send(message)
+        await self.__write_as.mail.send(message)
         return pat
 
     async def delete_token(self, token_id: int) -> None:
@@ -109,10 +104,7 @@ class FoundationCommitter(GeneralPublic):
                 body=f"An API token called '{label}' was deleted from your account. "
                 "If you did not delete this token, please check your account immediately.",
             )
-            if util.is_dev_environment():
-                log.info("Dev environment detected, pretending to send mail")
-            else:
-                await mail.send(message)
+            await self.__write_as.mail.send(message)
 
     async def issue_jwt(self, pat_text: str) -> str:
         pat_hash = hashlib.sha3_256(pat_text.encode()).hexdigest()

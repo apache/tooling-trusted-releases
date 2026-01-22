@@ -306,6 +306,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     ]
 
     # Output handler: pretty console for dev (Debug and Allow Tests), JSON for non-dev (Docker, etc.)
+    # TODO: Align this with util.is_dev_environment()?
     is_dev = (config_mode == config.Mode.Debug) and app_config.ALLOW_TESTS
     output_handler = logging.StreamHandler(sys.stderr)
     if is_dev:

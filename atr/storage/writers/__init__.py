@@ -22,6 +22,7 @@ import atr.storage.writers.cache as cache
 import atr.storage.writers.checks as checks
 import atr.storage.writers.distributions as distributions
 import atr.storage.writers.keys as keys
+import atr.storage.writers.mail as mail
 import atr.storage.writers.policy as policy
 import atr.storage.writers.project as project
 import atr.storage.writers.release as release
@@ -38,6 +39,7 @@ __all__ = [
     "checks",
     "distributions",
     "keys",
+    "mail",
     "policy",
     "project",
     "release",

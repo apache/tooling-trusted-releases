@@ -23,6 +23,7 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.results as results
 import atr.models.schema as schema
+import atr.storage as storage
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -118,14 +119,9 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
         body=body,
     )
 
-    if util.is_dev_environment():
-        # Pretend to send the mail
-        log.info("Dev environment detected, pretending to send mail")
-        mid = util.DEV_TEST_MID
-        mail_errors = []
-    else:
-        # Send the mail
-        mid, mail_errors = await mail.send(message)
+    async with storage.write(args.initiator_id) as write:
+        wafc = write.as_foundation_committer()
+        mid, mail_errors = await wafc.mail.send(message)
 
     # Original success message structure
     result = results.VoteInitiate(
