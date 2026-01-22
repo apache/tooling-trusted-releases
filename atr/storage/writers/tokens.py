@@ -25,8 +25,11 @@ import sqlmodel
 
 import atr.db as db
 import atr.jwtoken as jwtoken
+import atr.log as log
+import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.util as util
 
 
 class GeneralPublic:
@@ -65,6 +68,20 @@ class FoundationCommitter(GeneralPublic):
         )
         self.__data.add(pat)
         await self.__data.commit()
+        # inform user
+        message = mail.Message(
+            email_sender="noreply@apache.org",
+            email_recipient=f"{uid}@apache.org",
+            subject="New API Token Created",
+            body=f"A new API token '{label or 'unlabeled'}' was created for your account. "
+            "If you did not create this token, please revoke it immediately.",
+        )
+        if util.is_dev_environment():
+            # Pretend to send the mail
+            log.info("Dev environment detected, pretending to send mail")
+        else:
+            # Send the mail
+            await mail.send(message)
         return pat
 
     async def delete_token(self, token_id: int) -> None:
@@ -81,6 +98,20 @@ class FoundationCommitter(GeneralPublic):
                 asf_uid=self.__asf_uid,
                 token_id=token_id,
             )
+            # inform user
+            message = mail.Message(
+                email_sender="noreply@apache.org",
+                email_recipient=f"{self.__asf_uid}@apache.org",
+                subject="Deleted API Token",
+                body="An API token was deleted from your account. "
+                "If you did not delete any tokens, please checkl your account immediately.",
+            )
+            if util.is_dev_environment():
+                # Pretend to send the mail
+                log.info("Dev environment detected, pretending to send mail")
+            else:
+                # Send the mail
+                await mail.send(message)
 
     async def issue_jwt(self, pat_text: str) -> str:
         pat_hash = hashlib.sha3_256(pat_text.encode()).hexdigest()
