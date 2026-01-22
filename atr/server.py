@@ -306,10 +306,8 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     ]
 
     # Output handler: pretty console for dev (Debug and Allow Tests), JSON for non-dev (Docker, etc.)
-    # TODO: Align this with util.is_dev_environment()?
-    is_dev = (config_mode == config.Mode.Debug) and app_config.ALLOW_TESTS
     output_handler = logging.StreamHandler(sys.stderr)
-    if is_dev:
+    if util.is_dev_environment():
         renderer: structlog.types.Processor = structlog.dev.ConsoleRenderer(colors=True)
     else:
         renderer = structlog.processors.JSONRenderer()
@@ -326,7 +324,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     # Queue-based logging for thread safety
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
     handlers: list[logging.Handler] = [output_handler]
-    if is_dev:
+    if util.is_dev_environment():
         handlers.append(log.create_debug_handler())
 
     listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
