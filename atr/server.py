@@ -235,8 +235,6 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
     @app.before_serving
     async def startup() -> None:
         """Start services before the app starts serving requests."""
-        if listener := app.extensions.get("logging_listener"):
-            listener.start()
 
         await asyncio.to_thread(_set_file_permissions_to_read_only)
 
@@ -320,7 +318,6 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
             foreign_pre_chain=shared_processors,
         )
     )
-
     # Queue-based logging for thread safety
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
     handlers: list[logging.Handler] = [output_handler]
@@ -329,6 +326,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
 
     listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
     app.extensions["logging_listener"] = listener
+    listener.start()
 
     logging.basicConfig(
         level=logging.INFO,
