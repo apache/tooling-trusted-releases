@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+from typing import Final
 
 import sqlmodel
 
@@ -30,6 +31,9 @@ import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.util as util
+
+# TODO: Check that this is known and that its emails are correctly discarded
+NOREPLY_EMAIL_ADDRESS: Final[str] = "noreply@apache.org"
 
 
 class GeneralPublic:
@@ -59,6 +63,8 @@ class FoundationCommitter(GeneralPublic):
     async def add_token(
         self, uid: str, token_hash: str, created: datetime.datetime, expires: datetime.datetime, label: str | None
     ) -> sql.PersonalAccessToken:
+        if not label:
+            raise ValueError("Label is required")
         pat = sql.PersonalAccessToken(
             asfuid=uid,
             token_hash=token_hash,
@@ -68,19 +74,16 @@ class FoundationCommitter(GeneralPublic):
         )
         self.__data.add(pat)
         await self.__data.commit()
-        # inform user
         message = mail.Message(
-            email_sender="noreply@apache.org",
+            email_sender=NOREPLY_EMAIL_ADDRESS,
             email_recipient=f"{uid}@apache.org",
             subject="New API Token Created",
-            body=f"A new API token '{label or 'unlabeled'}' was created for your account. "
+            body=f"A new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",
         )
         if util.is_dev_environment():
-            # Pretend to send the mail
             log.info("Dev environment detected, pretending to send mail")
         else:
-            # Send the mail
             await mail.send(message)
         return pat
 
@@ -98,19 +101,17 @@ class FoundationCommitter(GeneralPublic):
                 asf_uid=self.__asf_uid,
                 token_id=token_id,
             )
-            # inform user
+            label = pat.label or "[unlabeled]"
             message = mail.Message(
-                email_sender="noreply@apache.org",
+                email_sender=NOREPLY_EMAIL_ADDRESS,
                 email_recipient=f"{self.__asf_uid}@apache.org",
                 subject="Deleted API Token",
-                body="An API token was deleted from your account. "
-                "If you did not delete any tokens, please checkl your account immediately.",
+                body=f"An API token called '{label}' was deleted from your account. "
+                "If you did not delete this token, please check your account immediately.",
             )
             if util.is_dev_environment():
-                # Pretend to send the mail
                 log.info("Dev environment detected, pretending to send mail")
             else:
-                # Send the mail
                 await mail.send(message)
 
     async def issue_jwt(self, pat_text: str) -> str:
