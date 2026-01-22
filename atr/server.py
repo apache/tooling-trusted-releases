@@ -747,17 +747,11 @@ def _register_routes(app: base.QuartApp) -> None:
     # Add a global error handler to show helpful error messages with tracebacks
     @app.errorhandler(Exception)
     async def handle_any_exception(error: Exception) -> Any:
-        import traceback
-
-        # If the request was made to the API, return JSON
         if quart.request.path.startswith("/api"):
             status_code = getattr(error, "code", 500) if isinstance(error, Exception) else 500
             return quart.jsonify({"error": str(error)}), status_code
-
-        # Required to give to the error.html template
-        tb = traceback.format_exc()
         log.exception("Unhandled exception")
-        return await template.render("error.html", error=str(error), traceback=tb, status_code=500), 500
+        return await template.render("error.html", error=str(error), status_code=500), 500
 
     @app.errorhandler(base.ASFQuartException)
     async def handle_asfquart_exception(error: base.ASFQuartException) -> Any:
