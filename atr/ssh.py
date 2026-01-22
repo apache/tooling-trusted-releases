@@ -364,7 +364,7 @@ def _step_05a_command_path_validate_read(path: str) -> tuple[str, str, str | Non
     if not all(c in alphanum for c in path_project):
         raise RsyncArgsError("The project name should contain only alphanumeric characters or hyphens")
 
-    if tag and (not all(c in alphanum for c in path_project)):
+    if tag and (not all(c in alphanum for c in tag)):
         raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
 
     # From a survey of version numbers we find that only . and - are used
@@ -403,14 +403,10 @@ def _step_05b_command_path_validate_write(path: str) -> tuple[str, str, str | No
     if path.count("/") != 3:
         raise RsyncArgsError("The path argument should be a /PROJECT/VERSION/ directory path")
 
-    path_project, path_version, *rest = path.strip("/").split("/", 2)
-    tag = rest[0] if rest else None
+    path_project, path_version = path.strip("/").split("/", 1)
     alphanum = set(string.ascii_letters + string.digits + "-")
     if not all(c in alphanum for c in path_project):
         raise RsyncArgsError("The project name should contain only alphanumeric characters or hyphens")
-
-    if tag and (not all(c in alphanum for c in path_project)):
-        raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
 
     # From a survey of version numbers we find that only . and - are used
     # We also allow + which is in common use
@@ -424,7 +420,7 @@ def _step_05b_command_path_validate_write(path: str) -> tuple[str, str, str | No
     if not all(c in (alphanum | version_punctuation) for c in path_version):
         raise RsyncArgsError("The version should contain only alphanumeric characters, dots, dashes, or pluses")
 
-    return path_project, path_version, tag
+    return path_project, path_version, None
 
 
 async def _step_06a_validate_read_permissions(
