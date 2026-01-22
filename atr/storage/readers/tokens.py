@@ -43,7 +43,7 @@ class FoundationCommitter(GeneralPublic):
     async def own_personal_access_tokens(self) -> list[sql.PersonalAccessToken]:
         asf_uid = self.__read.authorisation.asf_uid
         if asf_uid is None:
-            raise ValueError("An ASF UID is required")
+            raise ValueError("Not authorized")
         via = sql.validate_instrumented_attribute
         stmt = (
             sqlmodel.select(sql.PersonalAccessToken)
@@ -57,7 +57,7 @@ class FoundationCommitter(GeneralPublic):
         # if asf_uid is None:
         asf_uid = self.__read.authorisation.asf_uid
         if asf_uid is None:
-            raise ValueError("An ASF UID is required")
+            raise ValueError("Not authorized")
         via = sql.validate_instrumented_attribute
         stmt = (
             sqlmodel.select(sql.PersonalAccessToken)

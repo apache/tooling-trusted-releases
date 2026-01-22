@@ -116,7 +116,7 @@ class GeneralPublic:
         self, release: sql.Release, latest_revision_number: str, info: types.PathInfo
     ) -> None:
         if release.committee is None:
-            raise ValueError("Release has no committee")
+            raise ValueError("Release has no committee - Invalid state")
 
         match_ignore = await self.__read_as.checks.ignores_matcher(release.committee.name)
 

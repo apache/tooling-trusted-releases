@@ -46,9 +46,9 @@ class GeneralPublic:
 
     async def by_release_path(self, release: sql.Release, rel_path: pathlib.Path) -> types.CheckResults:
         if release.committee is None:
-            raise ValueError("Release has no committee")
+            raise ValueError("Release has no committee - Invalid state")
         if release.latest_revision_number is None:
-            raise ValueError("Release has no revision")
+            raise ValueError("Release has no revision - Invalid state")
 
         query = self.__data.check_result(
             release_name=release.name,
