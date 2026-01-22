@@ -11,6 +11,7 @@
 * [Running Playwright tests](#running-playwright-tests)
 * [Creating Playwright tests](#creating-playwright-tests)
 * [Running end-to-end tests](#running-end-to-end-tests)
+* [Creating end-to-end tests](#creating-end-to-end-tests)
 
 ## Running Playwright tests
 
@@ -68,6 +69,16 @@ The actual test cases themselves tend to use helpers such as [`go_to_path`](/ref
 ## Running end-to-end tests
 
 To run ATR end-to-end (e2e) tests, you must first have an OCI container runtime with Compose functionality, such as Docker or Podman, installed. You will also need a POSIX shell. You can then run `tests/run-e2e.sh` to run the entire e2e test suite.
+
+### Running unit tests
+
+Unit tests can be run separately from e2e tests:
+
+```shell
+sh tests/run-unit.sh
+```
+
+Unit tests are located in `tests/unit/` and test individual functions without requiring a running ATR instance.
 
 ### Debugging e2e test failures
 
@@ -139,3 +150,88 @@ cd tests && docker compose down -v --rmi all
 ```
 
 You probably only need to do this if you're running out of disk space.
+
+## Creating end-to-end tests
+
+The e2e tests use [pytest](https://docs.pytest.org/) with the [pytest-playwright](https://playwright.dev/python/docs/pytest) plugin. Tests are organized in `tests/e2e/` by feature area.
+
+### Test structure
+
+Each feature area has its own directory containing:
+
+* `conftest.py` - Pytest fixtures for test setup
+* `test_*.py` - Test files containing test functions
+
+For example, the `tests/e2e/root/` directory contains tests for unauthenticated pages:
+
+```text
+tests/e2e/root/
+├── conftest.py      # Fixtures like page_index, page_policies
+└── test_get.py      # Tests using those fixtures
+```
+
+### Writing fixtures
+
+Fixtures set up the state needed for tests. They are defined in `conftest.py` files using the `@pytest.fixture` decorator. Fixtures can be scoped to control how often they run:
+
+* `scope="function"` (default) - Runs for each test function
+* `scope="module"` - Runs once per test module
+* `scope="session"` - Runs once per test session
+
+Here is an example fixture that creates a page navigated to the index:
+
+```python
+import pytest
+from playwright.sync_api import Page
+import e2e.helpers as helpers
+
+@pytest.fixture
+def page_index(page: Page):
+    helpers.visit(page, "/")
+    yield page
+```
+
+For tests that require authenticated state or complex setup, use module-scoped fixtures to avoid repeating expensive operations:
+
+```python
+@pytest.fixture(scope="module")
+def compose_context(browser: Browser):
+    context = browser.new_context(ignore_https_errors=True)
+    page = context.new_page()
+    helpers.log_in(page)
+    # ... set up state ...
+    yield context
+    context.close()
+```
+
+### Helper functions
+
+The `tests/e2e/helpers.py` module provides common utilities:
+
+* `visit(page, path)` - Navigate to a path and wait for load
+* `log_in(page)` - Log in using the test login endpoint
+* `delete_release_if_exists(page, project, version)` - Clean up test releases
+* `api_get(request, path)` - Make API requests
+
+### Writing tests
+
+Test functions receive fixtures as arguments. Use Playwright's `expect` for assertions:
+
+```python
+from playwright.sync_api import Page, expect
+
+def test_index_has_login_button(page_index: Page):
+    login_button = page_index.get_by_role("button", name="Log in")
+    expect(login_button).to_be_visible()
+```
+
+### Adding a new test area
+
+To add tests for a new feature:
+
+1. Create a directory: `tests/e2e/myfeature/`
+2. Add `__init__.py` (can be empty, but include the license header)
+3. Add `conftest.py` with fixtures for your feature
+4. Add `test_*.py` files with your tests
+
+Tests run in the order pytest discovers them. If your tests depend on state created by other tests, consider using module-scoped fixtures to manage that state explicitly.

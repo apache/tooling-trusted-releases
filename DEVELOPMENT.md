@@ -4,7 +4,7 @@ This guide will help you get started with developing ATR. For detailed technical
 
 ## Prerequisites
 
-ATR can be developed on **Linux** or **macOS**. Windows and other platforms are not supported.
+ATR can be developed on **Linux** or **macOS**. Windows and other platforms are not supported. This is because ATR's build scripts and test harnesses use POSIX shell, Docker volume mounts behave differently on Windows, and several tools (mkcert, cmark) have platform-specific considerations.
 
 **Required (install manually):**
 

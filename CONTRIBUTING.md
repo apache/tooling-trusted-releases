@@ -22,7 +22,23 @@ For detailed ASF policies, commit message guidelines, and security consideration
    ```shell
    git clone https://github.com/YOUR_USERNAME/tooling-trusted-releases.git
    cd tooling-trusted-releases
+   git remote add upstream https://github.com/apache/tooling-trusted-releases.git
+   git config pull.rebase true
    ```
+
+   This configures `origin` to point to your fork and `upstream` to point to the Apache repository. Setting `pull.rebase true` keeps your commit history clean by rebasing rather than creating merge commits.
+
+   **Important:** Never commit directly to your fork's `main` branch. Always create feature branches for your work. This keeps your `main` in sync with upstream and avoids conflicts.
+
+   Before starting new work, sync your fork with upstream:
+
+   ```shell
+   git checkout main
+   git pull upstream main
+   git push origin main
+   ```
+
+   The `git push origin main` updates your fork on GitHub. Do this regularly to keep your fork current.
 
 2. **Install dependencies** (includes pre-commit, dev tools, and test dependencies):
 
@@ -52,27 +68,49 @@ For detailed ASF policies, commit message guidelines, and security consideration
 
 2. **Make your changes** following our [code conventions](https://release-test.apache.org/docs/code-conventions)
 
-3. **Run checks** before committing:
+3. **Run checks and tests** before committing:
 
    ```shell
-   make check
+   make check              # Required: lints and type checks
+   sh tests/run-e2e.sh     # Required: end-to-end tests
+   sh tests/run-unit.sh    # Required: unit tests
    ```
+
+   All checks and tests must pass locally before submitting.
 
 4. **Commit** with a clear message (see [commit style](#commit-message-style) below)
 
-5. **Push** your branch:
+5. **Rebase on main** before pushing:
+
+   ```shell
+   git fetch upstream
+   git rebase upstream/main
+   ```
+
+   If you have conflicts, resolve them in each file, then `git add` the resolved files and run `git rebase --continue`. If you get stuck, `git rebase --abort` returns to your previous state.
+
+6. **Push** your branch:
 
    ```shell
    git push origin your-branch-name
    ```
 
-6. **Open a pull request** to the `main` branch
-   - Explain what your changes do and why
-   - Reference any related issues (e.g., "Fixes #123")
-   - Mark as draft until ready for review
-   - **Enable "Allow maintainer edits"** (strongly recommended)
+   If you've rebased a branch that was previously pushed, you'll need to force push:
 
-7. **Participate in review** - we may request changes
+   ```shell
+   git push --force-with-lease origin your-branch-name
+   ```
+
+7. **Open a pull request** to the `main` branch
+   - Fill out the PR template completely, confirming all required acknowledgements
+   - Reference any related issues (e.g., "Fixes #123")
+   - **Open as Draft** until all checks pass and you have confirmed local testing
+   - **Enable "Allow maintainer edits"** (strongly recommended)
+   - Convert from Draft to ready for review only after all acknowledgements are confirmed
+
+8. **Participate in review** - we may request changes
+
+PRs that fail to demonstrate proper local testing or do not complete the PR template may be closed.
 
 ## Commit message style
 
@@ -114,13 +152,19 @@ See the [full code conventions](https://release-test.apache.org/docs/code-conven
 ## Running tests
 
 ```shell
+# Full pre-commit checks (required before submitting PR)
+make check
+
+# End-to-end tests (required before submitting PR)
+sh tests/run-e2e.sh
+
+# Unit tests (required before submitting PR)
+sh tests/run-unit.sh
+
 # Browser tests (requires Docker)
 sh tests/run-playwright.sh
 
-# End-to-end tests
-sh tests/run-e2e.sh
-
-# Quick pre-commit checks
+# Quick pre-commit checks (for rapid iteration)
 make check-light
 ```
 
