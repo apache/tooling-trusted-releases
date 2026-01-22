@@ -19,6 +19,7 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.results as results
 import atr.models.schema as schema
+import atr.storage as storage
 import atr.tasks.checks as checks
 
 
@@ -60,10 +61,10 @@ async def send(args: Send) -> results.Results | None:
         in_reply_to=args.in_reply_to,
     )
 
-    # Send the email
-    # TODO: Move this call into send itself?
-    # await mail.set_secret_key_default()
-    mid, mail_errors = await mail.send(message)
+    async with storage.write(sender_asf_uid) as write:
+        wafc = write.as_foundation_committer()
+        mid, mail_errors = await wafc.mail.send(message)
+
     if mail_errors:
         log.warning(f"Mail sending to {args.email_recipient} for subject '{args.subject}' encountered errors:")
         for error in mail_errors:
