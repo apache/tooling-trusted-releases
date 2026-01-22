@@ -454,12 +454,12 @@ async def _step_06a_validate_read_permissions(
         )
 
     if tag:
-        if not release.release_policy or (not release.release_policy.atr_file_tagging_spec):
+        if not release.release_policy or (not release.release_policy.file_tag_mappings):
             raise RsyncArgsError(f"Release '{release.name}' does not support tags")
-        tags = release.release_policy.atr_file_tagging_spec.keys()
+        tags = release.release_policy.file_tag_mappings.keys()
         if tag not in tags:
             raise RsyncArgsError(f"Tag '{tag}' is not allowed for release '{release.name}'")
-        return release, release.release_policy.atr_file_tagging_spec[tag]
+        return release, release.release_policy.file_tag_mappings[tag]
     return release, None
 
 

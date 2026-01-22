@@ -744,10 +744,10 @@ Thanks,
         return policy.github_compose_workflow_path or []
 
     @property
-    def policy_atr_file_tagging_spec(self) -> dict[str, Any]:
+    def policy_file_tag_mappings(self) -> dict[str, Any]:
         if (policy := self.release_policy) is None:
             return {}
-        return policy.atr_file_tagging_spec or {}
+        return policy.file_tag_mappings or {}
 
     @property
     def policy_github_vote_workflow_path(self) -> list[str]:
@@ -1088,7 +1088,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     github_compose_workflow_path: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    atr_file_tagging_spec: dict[str, Any] = sqlmodel.Field(
+    file_tag_mappings: dict[str, Any] = sqlmodel.Field(
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     github_vote_workflow_path: list[str] = sqlmodel.Field(
