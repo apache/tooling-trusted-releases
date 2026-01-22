@@ -320,7 +320,6 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
             foreign_pre_chain=shared_processors,
         )
     )
-
     # Queue-based logging for thread safety
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
     handlers: list[logging.Handler] = [output_handler]
@@ -744,7 +743,7 @@ async def _register_recurrent_tasks() -> None:
         log.exception(f"Failed to schedule recurrent tasks: {e!s}")
 
 
-def _register_routes(app: base.QuartApp) -> None:
+def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
     # Add a global error handler to show helpful error messages with tracebacks
     @app.errorhandler(Exception)
     async def handle_any_exception(error: Exception) -> Any:
