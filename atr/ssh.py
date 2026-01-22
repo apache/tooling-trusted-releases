@@ -508,7 +508,9 @@ async def _step_07a_process_validated_rsync_read(
             if not argv[-1].endswith("/"):
                 argv[-1] += "/"
         else:
-            files = [f for pattern in file_patterns for f in glob.glob(f"{source_dir}/{pattern}")]
+            files = [
+                f for pattern in file_patterns for f in await asyncio.to_thread(glob.glob, f"{source_dir}/{pattern}")
+            ]
             argv[-1:] = files
 
         ###################################################
