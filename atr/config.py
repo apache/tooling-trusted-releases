@@ -114,10 +114,10 @@ class AppConfig:
     # Chunk size for reading files during extraction
     EXTRACT_CHUNK_SIZE: int = decouple.config("EXTRACT_CHUNK_SIZE", default=4 * _MB, cast=int)
 
-    # session cookie security
+    # Session cookie security
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SAMESITE = "Strict"
     SESSION_COOKIE_NAME = "__Host-session"
 
     # FIXME: retrieve the list of admin users from LDAP or oath session / isRoot
