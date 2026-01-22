@@ -48,6 +48,7 @@ dependencies = [
   "semver>=3.0.4",
   "sqlmodel~=0.0.24",
   "standard-imghdr>=3.13.0",
+  "structlog>=25.5.0",
   "yyjson>=4.0.6",
 ]
 

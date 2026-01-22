@@ -28,6 +28,7 @@ import queue
 import stat
 import sys
 import urllib.parse
+import uuid
 from collections.abc import Iterable
 from typing import Any, Final
 
@@ -39,7 +40,6 @@ import blockbuster
 import quart
 import quart_schema
 import quart_wtf
-import rich.logging as rich_logging
 import werkzeug.routing as routing
 
 import atr
@@ -249,32 +249,7 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
 
         await _initialise_test_environment(app_config)
 
-        pubsub_url = app_config.PUBSUB_URL
-        pubsub_user = app_config.PUBSUB_USER
-        pubsub_password = app_config.PUBSUB_PASSWORD
-        parsed_pubsub_url = urllib.parse.urlparse(pubsub_url) if pubsub_url else None
-        valid_pubsub_url = bool(parsed_pubsub_url and parsed_pubsub_url.scheme and parsed_pubsub_url.netloc)
-
-        if valid_pubsub_url and pubsub_url and pubsub_user and pubsub_password:
-            log.info("Starting PubSub SVN listener")
-            listener = pubsub.SVNListener(
-                working_copy_root=app_config.SVN_STORAGE_DIR,
-                url=pubsub_url,
-                username=pubsub_user,
-                password=pubsub_password,
-            )
-            task = asyncio.create_task(listener.start())
-            app.extensions["svn_listener"] = task
-            log.info("PubSub SVN listener task created")
-        else:
-            log.info(
-                "PubSub SVN listener not started: "
-                f"pubsub_url={bool(valid_pubsub_url)} "
-                f"pubsub_user={bool(pubsub_user)} "
-                # Essential to use bool(...) here to avoid logging the password
-                # TODO: We plan to add secret scanning when we migrate to t-strings
-                f"pubsub_password={bool(pubsub_password)}",
-            )
+        await _initialise_pubsub(app_config, app)
 
         ssh_server = await ssh.server_start()
         app.extensions["ssh_server"] = ssh_server
@@ -303,58 +278,97 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
+        await db.shutdown_database()
+
+        if audit_listener := app.extensions.get("audit_listener"):
+            audit_listener.stop()
         if listener := app.extensions.get("logging_listener"):
             listener.stop()
-
-        await db.shutdown_database()
 
         app.background_tasks.clear()
 
 
 def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config: type[config.AppConfig]) -> None:
-    """Setup application logging."""
-    import logging
+    """Setup application logging with structlog and queue-based handlers."""
     import logging.handlers
 
-    console_handler = rich_logging.RichHandler(rich_tracebacks=True, show_time=False)
-    log_queue = queue.Queue(-1)
-    handlers: list[logging.Handler] = [console_handler]
-    if (config_mode == config.Mode.Debug) and app_config.ALLOW_TESTS:
+    import structlog
+
+    # Shared processors for structlog (run before formatting)
+    shared_processors: list[structlog.types.Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.UnicodeDecoder(),
+    ]
+
+    # Output handler: pretty console for dev (Debug and Allow Tests), JSON for non-dev (Docker, etc.)
+    is_dev = (config_mode == config.Mode.Debug) and app_config.ALLOW_TESTS
+    output_handler = logging.StreamHandler(sys.stderr)
+    if is_dev:
+        renderer: structlog.types.Processor = structlog.dev.ConsoleRenderer(colors=True)
+    else:
+        renderer = structlog.processors.JSONRenderer()
+    output_handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                renderer,
+            ],
+            foreign_pre_chain=shared_processors,
+        )
+    )
+
+    # Queue-based logging for thread safety
+    log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
+    handlers: list[logging.Handler] = [output_handler]
+    if is_dev:
         handlers.append(log.create_debug_handler())
-    listener = logging.handlers.QueueListener(log_queue, *handlers)
+
+    listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
     app.extensions["logging_listener"] = listener
 
     logging.basicConfig(
-        format="[ %(asctime)s.%(msecs)03d ] %(process)d <%(name)s> %(message)s",
         level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.handlers.QueueHandler(log_queue)],
+        handlers=[log.StructlogQueueHandler(log_queue)],
         force=True,
     )
 
-    # Configure dedicated audit logger
-    try:
-        audit_handler = logging.FileHandler(
-            app_config.STORAGE_AUDIT_LOG_FILE,
-            encoding="utf-8",
-            mode="a",
-        )
-        # audit_handler.setFormatter(
-        #     logging.Formatter("%(message)s")
-        # )
-        audit_queue = queue.Queue(-1)
-        audit_listener = logging.handlers.QueueListener(audit_queue, audit_handler)
-        audit_listener.start()
-        app.extensions["audit_listener"] = audit_listener
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
 
-        audit_logger = logging.getLogger("atr.storage.audit")
-        audit_logger.setLevel(logging.INFO)
-        audit_logger.addHandler(audit_handler)
-        audit_logger.propagate = False
-        audit_queue_handler = logging.handlers.QueueHandler(audit_queue)
-        audit_logger.handlers = [audit_queue_handler]
-    except Exception:
-        logging.getLogger(__name__).exception("Failed to configure audit logger")
+    # Audit logger - JSON to dedicated file via queue
+    audit_handler = logging.FileHandler(app_config.STORAGE_AUDIT_LOG_FILE, encoding="utf-8")
+    audit_handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.JSONRenderer(),
+            ],
+            foreign_pre_chain=shared_processors,
+        )
+    )
+    audit_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
+    audit_listener = logging.handlers.QueueListener(audit_queue, audit_handler)
+    audit_listener.start()
+    app.extensions["audit_listener"] = audit_listener
+
+    audit_logger = logging.getLogger("atr.storage.audit")
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.handlers.clear()
+    audit_logger.addHandler(logging.handlers.QueueHandler(audit_queue))
+    audit_logger.propagate = False
 
     # Enable debug output for atr.* in DEBUG mode
     if config_mode == config.Mode.Debug:
@@ -367,6 +381,34 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
             log.info(f"DEBUG        = {config_mode == config.Mode.Debug}")
             log.info(f"ENVIRONMENT  = {config_mode.value}")
             log.info(f"STATE_DIR    = {app_config.STATE_DIR}")
+
+
+def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
+    """Setup application request lifecycle hooks."""
+    import structlog
+
+    logger = structlog.get_logger("atr.request")
+
+    @app.before_request
+    async def bind_request_context_vars() -> None:
+        log.clear_context()
+        log.add_context(request_id=str(uuid.uuid4()))
+
+        # Bind user_id if authenticated
+        session = await asfquart.session.read()
+        if session is not None:
+            log.add_context(user_id=session.uid)
+
+    @app.after_request
+    async def log_request(response: quart.Response) -> quart.Response:
+        logger.info(
+            "request",
+            method=quart.request.method,
+            path=quart.request.path,
+            status=response.status_code,
+            remote_addr=quart.request.remote_addr,
+        )
+        return response
 
 
 def _app_setup_security_headers(app: base.QuartApp) -> None:
@@ -450,6 +492,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     filters.register_filters(app)
     _app_setup_context(app)
     _app_setup_security_headers(app)
+    _app_setup_request_lifecycle(app)
     _app_setup_lifecycle(app, app_config)
 
     # _register_recurrent_tasks()
@@ -477,6 +520,35 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
             log.info("Blockbuster deactivated")
 
     return app
+
+
+async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
+    pubsub_url = conf.PUBSUB_URL
+    pubsub_user = conf.PUBSUB_USER
+    pubsub_password = conf.PUBSUB_PASSWORD
+    parsed_pubsub_url = urllib.parse.urlparse(pubsub_url) if pubsub_url else None
+    valid_pubsub_url = bool(parsed_pubsub_url and parsed_pubsub_url.scheme and parsed_pubsub_url.netloc)
+
+    if valid_pubsub_url and pubsub_url and pubsub_user and pubsub_password:
+        log.info("Starting PubSub SVN listener")
+        listener = pubsub.SVNListener(
+            working_copy_root=conf.SVN_STORAGE_DIR,
+            url=pubsub_url,
+            username=pubsub_user,
+            password=pubsub_password,
+        )
+        task = asyncio.create_task(listener.start())
+        app.extensions["svn_listener"] = task
+        log.info("PubSub SVN listener task created")
+    else:
+        log.info(
+            "PubSub SVN listener not started: "
+            f"pubsub_url={bool(valid_pubsub_url)} "
+            f"pubsub_user={bool(pubsub_user)} "
+            # Essential to use bool(...) here to avoid logging the password
+            # TODO: We plan to add secret scanning when we migrate to t-strings
+            f"pubsub_password={bool(pubsub_password)}",
+        )
 
 
 async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:

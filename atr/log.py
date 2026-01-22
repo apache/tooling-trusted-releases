@@ -23,6 +23,8 @@ import queue
 import threading
 from typing import Final
 
+import structlog
+
 PERFORMANCE: logging.Logger | None = None
 
 _global_recent_logs: collections.deque[str] | None = None
@@ -39,6 +41,19 @@ class BufferingHandler(logging.Handler):
                 _global_recent_logs.append(msg)
         except Exception:
             self.handleError(record)
+
+
+class StructlogQueueHandler(logging.handlers.QueueHandler):
+    """QueueHandler that preserves structlog's record.msg dict."""
+
+    def prepare(self, record: logging.LogRecord) -> logging.LogRecord:
+        # Don't call format() - it would convert the dict msg to a string
+        return record
+
+
+def add_context(**kwargs):
+    """Add context to the request log"""
+    structlog.contextvars.bind_contextvars(**kwargs)
 
 
 def caller_name(depth: int = 1) -> str:
@@ -72,6 +87,11 @@ def caller_name(depth: int = 1) -> str:
         name = f"{module}.{func}"
 
     return name
+
+
+def clear_context():
+    """Clear context from the request log"""
+    structlog.contextvars.clear_contextvars()
 
 
 def critical(msg: str) -> None:
@@ -160,7 +180,7 @@ def warning(msg: str) -> None:
 
 
 def _caller_logger(depth: int = 1) -> logging.Logger:
-    return logging.getLogger(caller_name(depth))
+    return structlog.getLogger(caller_name(depth))
 
 
 def _event(level: int, msg: str, stacklevel: int = 3, exc_info: bool = False) -> None:
@@ -191,7 +211,7 @@ def _performance_logger() -> logging.Logger:
     performance_queue = queue.Queue(-1)
     performance_listener = logging.handlers.QueueListener(performance_queue, performance_handler)
     performance_listener.start()
-    performance.addHandler(logging.handlers.QueueHandler(performance_queue))
+    performance.addHandler(StructlogQueueHandler(performance_queue))
     performance.setLevel(logging.INFO)
     # If we don't set propagate to False then it logs to the term as well
     performance.propagate = False
