@@ -53,7 +53,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
 
@@ -71,7 +71,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -214,7 +214,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -246,7 +246,7 @@ class CommitteeMember(CommitteeParticipant):
         if is_podling is True:
             voting_round = 1 if (podling_thread_id is None) else 2
         if release.committee is None:
-            raise ValueError("Project has no committee")
+            raise ValueError("Project has no committee - Invalid state")
 
         return await self.resolve_release(
             project_name,
@@ -322,10 +322,10 @@ class CommitteeMember(CommitteeParticipant):
             # incubator_vote_address = "general@incubator.apache.org"
             incubator_vote_address = util.USER_TESTS_ADDRESS
             if not release.project.committee:
-                raise ValueError("Project has no committee")
+                raise ValueError("Project has no committee - Invalid state")
             revision_number = release.latest_revision_number
             if revision_number is None:
-                raise ValueError("Release has no revision number")
+                raise ValueError("Release has no revision number - Invalid state")
             vote_duration = latest_vote_task.task_args["vote_duration"]
             subject_template = await construct.start_vote_subject_default(release.project.name)
             body_template = await construct.start_vote_default(release.project.name)

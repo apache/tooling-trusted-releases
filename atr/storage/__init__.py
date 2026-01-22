@@ -171,7 +171,7 @@ class WriteAsFoundationCommitter(WriteAsGeneralPublic):
     @property
     def asf_uid(self) -> str:
         if self.__asf_uid is None:
-            raise AccessError("No ASF UID")
+            raise AccessError("Not authorized")
         return self.__asf_uid
 
 
@@ -196,7 +196,7 @@ class WriteAsCommitteeParticipant(WriteAsFoundationCommitter):
     @property
     def asf_uid(self) -> str:
         if self.__asf_uid is None:
-            raise AccessError("No ASF UID")
+            raise AccessError("No authorized")
         return self.__asf_uid
 
     @property
@@ -227,7 +227,7 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
     @property
     def asf_uid(self) -> str:
         if self.__asf_uid is None:
-            raise AccessError("No ASF UID")
+            raise AccessError("Not authorized")
         return self.__asf_uid
 
     @property
@@ -245,7 +245,7 @@ class WriteAsFoundationAdmin(WriteAsCommitteeMember):
     @property
     def asf_uid(self) -> str:
         if self.__asf_uid is None:
-            raise AccessError("No ASF UID")
+            raise AccessError("Not authorized")
         return self.__asf_uid
 
     @property
@@ -270,11 +270,9 @@ class Write:
 
     def as_committee_member_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeMember]:
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         if not self.__authorisation.is_member_of(committee_name):
-            return outcome.Error(
-                AccessError(f"ASF UID {self.__authorisation.asf_uid} is not a member of {committee_name}")
-            )
+            return outcome.Error(AccessError(f"{self.__authorisation.asf_uid} is not a member of {committee_name}"))
         try:
             wacm = WriteAsCommitteeMember(self, self.__data, committee_name)
         except Exception as e:
@@ -286,7 +284,7 @@ class Write:
 
     def as_committee_participant_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeParticipant]:
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         if not self.__authorisation.is_participant_of(committee_name):
             return outcome.Error(AccessError(f"Not a participant of {committee_name}"))
         try:
@@ -300,7 +298,7 @@ class Write:
 
     def as_foundation_committer_outcome(self) -> outcome.Outcome[WriteAsFoundationCommitter]:
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         try:
             wafm = WriteAsFoundationCommitter(self, self.__data)
         except Exception as e:
@@ -312,7 +310,7 @@ class Write:
 
     def as_foundation_admin_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsFoundationAdmin]:
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         if not user.is_admin(self.__authorisation.asf_uid):
             return outcome.Error(AccessError("Not an admin"))
         try:
@@ -343,9 +341,9 @@ class Write:
             AccessError(f"Project not found: {project_name}")
         )
         if project.committee is None:
-            return outcome.Error(AccessError("No committee found for project"))
+            return outcome.Error(AccessError("No committee found for project - Invalid state"))
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         if not self.__authorisation.is_member_of(project.committee.name):
             return outcome.Error(AccessError(f"Not a member of {project.committee.name}"))
         try:
@@ -365,9 +363,9 @@ class Write:
             AccessError(f"Project not found: {project_name}")
         )
         if project.committee is None:
-            return outcome.Error(AccessError("No committee found for project"))
+            return outcome.Error(AccessError("No committee found for project - Invalid state"))
         if self.__authorisation.asf_uid is None:
-            return outcome.Error(AccessError("No ASF UID"))
+            return outcome.Error(AccessError("Not authorized"))
         if not self.__authorisation.is_participant_of(project.committee.name):
             return outcome.Error(AccessError(f"Not a participant of {project.committee.name}"))
         try:

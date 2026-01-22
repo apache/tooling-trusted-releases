@@ -66,7 +66,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
         # Specific to this module
@@ -374,7 +374,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -471,7 +471,7 @@ class CommitteeParticipant(FoundationCommitter):
         async with aiofiles.open(keys_path, encoding="utf-8") as f:
             keys_file_text = await f.read()
         if release.committee is None:
-            raise storage.AccessError("No committee found for release")
+            raise storage.AccessError("No committee found for release - Invalid state")
         if release.committee.name != self.__committee_name:
             raise storage.AccessError(
                 f"Release {project_name} {version_name} is not associated with committee {self.__committee_name}"
@@ -639,7 +639,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -658,7 +658,7 @@ class FoundationAdmin(CommitteeMember):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 

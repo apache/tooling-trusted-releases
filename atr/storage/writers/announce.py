@@ -59,7 +59,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
 
@@ -77,7 +77,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -96,7 +96,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -131,7 +131,7 @@ class CommitteeMember(CommitteeParticipant):
             )
         )
         if (committee := release.project.committee) is None:
-            raise storage.AccessError("Release has no committee")
+            raise storage.AccessError("Release has no committee - Invalid state")
 
         # Fetch the current subject template and verify the hash
         subject_template = await construct.announce_release_subject_default(project_name)

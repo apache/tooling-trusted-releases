@@ -55,7 +55,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
     async def add_token(
@@ -140,7 +140,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
@@ -159,6 +159,6 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("No ASF UID")
+            raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
