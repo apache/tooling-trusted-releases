@@ -127,6 +127,7 @@ extend-exclude = [
 ignore = [
   "S101", # assert
   "S104", # interfaces
+  "S105", # hardcoded password
   "S106", # password keyword
   "S314", # old expat concerns
   "S603", # subprocess.run
