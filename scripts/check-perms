@@ -5,11 +5,11 @@ STATE_DIR="${STATE_DIR:-state}"
 
 if [ -d "$STATE_DIR/hypercorn/secrets" ]
 then
-  find "$STATE_DIR/hypercorn/secrets" -type f -exec chmod 400 {} +
+  find "$STATE_DIR/hypercorn/secrets" -type f ! -perm 400 -exec chmod 400 {} +
 fi
 
 if [ -d "$STATE_DIR/secrets" ]
 then
-  find "$STATE_DIR/secrets" -type f ! -name "apptoken.txt" -exec chmod 400 {} +
-  find "$STATE_DIR/secrets" -type f -name "apptoken.txt" -exec chmod 600 {} +
+  find "$STATE_DIR/secrets" -type f ! -name "apptoken.txt" ! -perm 400 -exec chmod 400 {} +
+  find "$STATE_DIR/secrets" -type f -name "apptoken.txt" ! -perm 600 -exec chmod 600 {} +
 fi
