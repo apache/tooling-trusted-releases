@@ -18,7 +18,8 @@
 import dataclasses
 import datetime
 import hashlib
-from typing import Literal
+import html
+from typing import Literal, Mapping
 
 import aiofiles.os
 import quart
@@ -27,6 +28,31 @@ import atr.config as config
 import atr.db as db
 import atr.models.sql as sql
 import atr.util as util
+
+
+class SafeHTML(str):
+    """Marker type for HTML that has been safely escaped."""
+
+
+def mark_safe_html(value: str) -> SafeHTML:
+    """Convert trusted content into SafeHTML without additional escaping."""
+
+    return SafeHTML(value)
+
+
+def _escape_value(value: str | SafeHTML) -> str:
+    if isinstance(value, SafeHTML):
+        return str(value)
+    return html.escape(str(value), quote=True)
+
+
+def substitute(template: str, variables: Mapping[str, str | SafeHTML]) -> SafeHTML:
+    """Replace template variables with escaped values and return SafeHTML."""
+
+    rendered = template
+    for key, value in variables.items():
+        rendered = rendered.replace(f"{{{{{key}}}}}", _escape_value(value))
+    return SafeHTML(rendered)
 
 type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
 
@@ -78,7 +104,7 @@ async def announce_release_default(project_name: str) -> str:
 
 async def announce_release_subject_and_body(
     subject: str, body: str, options: AnnounceReleaseOptions
-) -> tuple[str, str]:
+) -> tuple[SafeHTML, SafeHTML]:
     # NOTE: The present module is imported by routes
     # Therefore this must be done here to avoid a circular import
     import atr.get as get
@@ -113,21 +139,29 @@ async def announce_release_subject_and_body(
     # TODO: This download_url should probably be for the proxy download directory, not the ATR view
     download_url = f"https://{host}{download_path}"
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{VERSION}}", options.version_name)
+    substituted_subject = substitute(
+        subject,
+        {
+            "PROJECT": project_display_name,
+            "VERSION": options.version_name,
+        },
+    )
 
-    # Perform substitutions in the body
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
-    body = body.replace("{{DOWNLOAD_URL}}", download_url)
-    body = body.replace("{{PROJECT}}", project_display_name)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
+    substituted_body = substitute(
+        body,
+        {
+            "COMMITTEE": committee.display_name,
+            "DOWNLOAD_URL": mark_safe_html(download_url),
+            "PROJECT": project_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "YOUR_ASF_ID": options.asfuid,
+            "YOUR_FULL_NAME": options.fullname,
+        },
+    )
 
-    return subject, body
+    return substituted_subject, substituted_body
 
 
 async def announce_release_subject_default(project_name: str) -> str:
@@ -153,7 +187,7 @@ def checklist_body(
     version_name: str,
     committee: sql.Committee,
     revision: sql.Revision | None,
-) -> str:
+) -> SafeHTML:
     import atr.get.vote as vote
 
     try:
@@ -166,13 +200,17 @@ def checklist_body(
     review_path = util.as_url(vote.selected, project_name=project.name, version_name=version_name)
     review_url = f"https://{host}{review_path}"
 
-    markdown = markdown.replace("{{COMMITTEE}}", committee.display_name)
-    markdown = markdown.replace("{{PROJECT}}", project.short_display_name)
-    markdown = markdown.replace("{{REVIEW_URL}}", review_url)
-    markdown = markdown.replace("{{REVISION}}", revision_number)
-    markdown = markdown.replace("{{TAG}}", revision_tag)
-    markdown = markdown.replace("{{VERSION}}", version_name)
-    return markdown
+    return substitute(
+        markdown,
+        {
+            "COMMITTEE": committee.display_name,
+            "PROJECT": project.short_display_name,
+            "REVIEW_URL": mark_safe_html(review_url),
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": version_name,
+        },
+    )
 
 
 def checklist_template_variables() -> list[tuple[str, str]]:
@@ -188,7 +226,7 @@ async def start_vote_default(project_name: str) -> str:
     return project.policy_start_vote_template
 
 
-async def start_vote_subject_and_body(subject: str, body: str, options: StartVoteOptions) -> tuple[str, str]:
+async def start_vote_subject_and_body(subject: str, body: str, options: StartVoteOptions) -> tuple[SafeHTML, SafeHTML]:
     import atr.get.checklist as checklist
     import atr.get.vote as vote
 
@@ -250,30 +288,40 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             revision=revision,
         )
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{COMMITTEE}}", committee.display_name)
-    subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{REVISION}}", revision_number)
-    subject = subject.replace("{{TAG}}", revision_tag)
-    subject = subject.replace("{{VERSION}}", options.version_name)
-    subject = subject.replace("{{VOTE_ENDS_UTC}}", vote_end_str)
+    substituted_subject = substitute(
+        subject,
+        {
+            "COMMITTEE": committee.display_name,
+            "PROJECT": project_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "VOTE_ENDS_UTC": vote_end_str,
+        },
+    )
 
-    # Perform substitutions in the body
+    keys_file_value: str | SafeHTML = mark_safe_html(keys_file) if keys_file else "(Sorry, the KEYS file is missing!)"
+
     # TODO: Handle the DURATION == 0 case
-    body = body.replace("{{CHECKLIST_URL}}", checklist_url)
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
-    body = body.replace("{{DURATION}}", str(options.vote_duration))
-    body = body.replace("{{KEYS_FILE}}", keys_file or "(Sorry, the KEYS file is missing!)")
-    body = body.replace("{{PROJECT}}", project_display_name)
-    body = body.replace("{{RELEASE_CHECKLIST}}", checklist_content)
-    body = body.replace("{{REVIEW_URL}}", review_url)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
+    substituted_body = substitute(
+        body,
+        {
+            "CHECKLIST_URL": mark_safe_html(checklist_url),
+            "COMMITTEE": committee.display_name,
+            "DURATION": str(options.vote_duration),
+            "KEYS_FILE": keys_file_value,
+            "PROJECT": project_display_name,
+            "RELEASE_CHECKLIST": checklist_content,
+            "REVIEW_URL": mark_safe_html(review_url),
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "YOUR_ASF_ID": options.asfuid,
+            "YOUR_FULL_NAME": options.fullname,
+        },
+    )
 
-    return subject, body
+    return substituted_subject, substituted_body
 
 
 async def start_vote_subject_default(project_name: str) -> str:
