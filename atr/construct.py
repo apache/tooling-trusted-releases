@@ -19,7 +19,8 @@ import dataclasses
 import datetime
 import hashlib
 import html
-from typing import Literal, Mapping
+from collections.abc import Mapping
+from typing import Literal
 
 import aiofiles.os
 import quart
@@ -53,6 +54,7 @@ def substitute(template: str, variables: Mapping[str, str | SafeHTML]) -> SafeHT
     for key, value in variables.items():
         rendered = rendered.replace(f"{{{{{key}}}}}", _escape_value(value))
     return SafeHTML(rendered)
+
 
 type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
 
