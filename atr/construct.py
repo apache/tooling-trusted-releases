@@ -18,6 +18,7 @@
 import dataclasses
 import datetime
 import hashlib
+import html
 from typing import Literal
 
 import aiofiles.os
@@ -67,6 +68,13 @@ class StartVoteOptions:
     vote_duration: int
 
 
+def substitute(template: str, values: dict[str, str]) -> str:
+    """Substitute {{KEYS}} with HTML-escaped values to prevent XSS."""
+    for key, value in values.items():
+        template = template.replace(f"{{{{{key}}}}}", html.escape(value, quote=True))
+    return template
+
+
 async def announce_release_default(project_name: str) -> str:
     async with db.session() as data:
         project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
@@ -113,19 +121,26 @@ async def announce_release_subject_and_body(
     # TODO: This download_url should probably be for the proxy download directory, not the ATR view
     download_url = f"https://{host}{download_path}"
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{VERSION}}", options.version_name)
-
-    # Perform substitutions in the body
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
+    subject = substitute(
+        subject,
+        {
+            "PROJECT": project_display_name,
+            "VERSION": options.version_name,
+        },
+    )
+    body = substitute(
+        body,
+        {
+            "COMMITTEE": committee.display_name,
+            "PROJECT": project_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "YOUR_ASF_ID": options.asfuid,
+            "YOUR_FULL_NAME": options.fullname,
+        },
+    )
     body = body.replace("{{DOWNLOAD_URL}}", download_url)
-    body = body.replace("{{PROJECT}}", project_display_name)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
@@ -166,12 +181,17 @@ def checklist_body(
     review_path = util.as_url(vote.selected, project_name=project.name, version_name=version_name)
     review_url = f"https://{host}{review_path}"
 
-    markdown = markdown.replace("{{COMMITTEE}}", committee.display_name)
-    markdown = markdown.replace("{{PROJECT}}", project.short_display_name)
+    markdown = substitute(
+        markdown,
+        {
+            "COMMITTEE": committee.display_name,
+            "PROJECT": project.short_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": version_name,
+        },
+    )
     markdown = markdown.replace("{{REVIEW_URL}}", review_url)
-    markdown = markdown.replace("{{REVISION}}", revision_number)
-    markdown = markdown.replace("{{TAG}}", revision_tag)
-    markdown = markdown.replace("{{VERSION}}", version_name)
     return markdown
 
 
@@ -250,28 +270,36 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             revision=revision,
         )
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{COMMITTEE}}", committee.display_name)
-    subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{REVISION}}", revision_number)
-    subject = subject.replace("{{TAG}}", revision_tag)
-    subject = subject.replace("{{VERSION}}", options.version_name)
-    subject = subject.replace("{{VOTE_ENDS_UTC}}", vote_end_str)
-
-    # Perform substitutions in the body
+    subject = substitute(
+        subject,
+        {
+            "COMMITTEE": committee.display_name,
+            "PROJECT": project_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "VOTE_ENDS_UTC": vote_end_str,
+        },
+    )
+    body = substitute(
+        body,
+        {
+            "COMMITTEE": committee.display_name,
+            "DURATION": str(options.vote_duration),
+            "KEYS_FILE": keys_file or "(Sorry, the KEYS file is missing!)",
+            "PROJECT": project_display_name,
+            "REVISION": revision_number,
+            "TAG": revision_tag,
+            "VERSION": options.version_name,
+            "YOUR_ASF_ID": options.asfuid,
+            "YOUR_FULL_NAME": options.fullname,
+        },
+    )
+    # Trusted URLs and pre-rendered Markdown injected after escaping
     # TODO: Handle the DURATION == 0 case
     body = body.replace("{{CHECKLIST_URL}}", checklist_url)
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
-    body = body.replace("{{DURATION}}", str(options.vote_duration))
-    body = body.replace("{{KEYS_FILE}}", keys_file or "(Sorry, the KEYS file is missing!)")
-    body = body.replace("{{PROJECT}}", project_display_name)
     body = body.replace("{{RELEASE_CHECKLIST}}", checklist_content)
     body = body.replace("{{REVIEW_URL}}", review_url)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
