@@ -25,7 +25,6 @@ def use_template(
     template,
 ):  # -> Callable[..., _Wrapped[Callable[..., Any], Any, Callable[..., Any], Coroutine[Any, Any, str]]]:
     ...
-
 def render(t, data):  # -> str:
     "Simple function to render a template into a string."
     ...

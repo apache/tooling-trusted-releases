@@ -20,12 +20,13 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
+import atr.util as util
 
 from . import models
 from .utilities import get_pointer, osv_severity_to_cdx
 
 if TYPE_CHECKING:
+    import aiohttp
     import yyjson
 
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
@@ -88,7 +89,7 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
         ignored_count = len(ignored)
         if ignored_count > 0:
             print(f"[DEBUG] {ignored_count} components ignored (missing purl or version)")
-    async with aiohttp.ClientSession() as session:
+    async with await util.create_secure_session() as session:
         component_vulns_map = await _scan_bundle_fetch_vulnerabilities(session, queries, 1000)
         if _DEBUG:
             print(f"[DEBUG] Total components with vulnerabilities: {len(component_vulns_map)}")

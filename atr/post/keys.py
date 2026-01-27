@@ -231,7 +231,7 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
     """Fetch KEYS file from ASF downloads."""
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with await util.create_secure_session(timeout=timeout) as session:
             async with session.get(keys_url, allow_redirects=True) as response:
                 response.raise_for_status()
                 return await response.text()

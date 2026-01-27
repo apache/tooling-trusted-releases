@@ -29,6 +29,7 @@ import quart
 
 import atr.config as config
 import atr.log as log
+import atr.util as util
 
 _ALGORITHM: Final[str] = "HS256"
 _ATR_JWT_AUDIENCE: Final[str] = "atr-api-pat-test-v1"
@@ -103,7 +104,7 @@ def verify(token: str) -> dict[str, Any]:
 
 async def verify_github_oidc(token: str) -> dict[str, Any]:
     try:
-        async with aiohttp.ClientSession() as session:
+        async with await util.create_secure_session() as session:
             r = await session.get(
                 f"{_GITHUB_OIDC_ISSUER}/.well-known/openid-configuration",
                 timeout=aiohttp.ClientTimeout(total=10),

@@ -27,7 +27,6 @@ from collections.abc import Callable, Mapping
 from typing import Any, Final, Literal, NamedTuple
 
 import aiofiles.os
-import aiohttp
 import asfquart
 import asfquart.base as base
 import asfquart.session
@@ -789,7 +788,7 @@ async def test(session: web.Committer) -> web.QuartResponse:
     """Test the storage layer."""
     import atr.storage as storage
 
-    async with aiohttp.ClientSession() as aiohttp_client_session:
+    async with await util.create_secure_session() as aiohttp_client_session:
         url = "https://downloads.apache.org/zeppelin/KEYS"
         async with aiohttp_client_session.get(url) as response:
             keys_file_text = await response.text()

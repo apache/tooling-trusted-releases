@@ -333,7 +333,7 @@ class CommitteeMember(CommitteeParticipant):
         self, api_url: str, platform: sql.DistributionPlatform, version: str
     ) -> outcome.Outcome[basic.JSON]:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await util.create_secure_session() as session:
                 async with session.get(api_url) as response:
                     response.raise_for_status()
                     response_json = await response.json()
@@ -353,7 +353,7 @@ class CommitteeMember(CommitteeParticipant):
         import datetime
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await util.create_secure_session() as session:
                 async with session.get(api_url) as response:
                     response.raise_for_status()
 
@@ -384,7 +384,7 @@ class CommitteeMember(CommitteeParticipant):
         import xml.etree.ElementTree as ET
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await util.create_secure_session() as session:
                 async with session.get(api_url) as response:
                     response.raise_for_status()
                     xml_text = await response.text()

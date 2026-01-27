@@ -26,6 +26,7 @@ import json
 import os
 import pathlib
 import re
+import ssl
 import tarfile
 import tempfile
 import uuid
@@ -87,6 +88,38 @@ class FetchError(RuntimeError):
     def __init__(self, message: str, url: str):
         super().__init__(message)
         self.url = url
+
+
+def create_secure_ssl_context() -> ssl.SSLContext:
+    """Create a secure SSL context compliant with ASVS 9.1.1 and 9.1.2.
+
+    Explicitly configures:
+    - check_hostname = True: Verifies hostname matches the certificate
+    - verify_mode = ssl.CERT_REQUIRED: Requires a valid certificate
+    - minimum_version = ssl.TLSVersion.TLSv1_2: Enforces TLS 1.2 or higher
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+async def create_secure_session(
+    timeout: aiohttp.ClientTimeout | None = None,  # noqa: ASYNC109
+) -> aiohttp.ClientSession:
+    """Create a secure aiohttp.ClientSession with hardened SSL/TLS configuration.
+
+    Returns a ClientSession with TCPConnector using the secure SSL context.
+    This ensures all HTTP connections made through this session use secure TLS settings.
+
+    Args:
+        timeout: Optional ClientTimeout object for request timeouts.
+                 Provided for backward compatibility with existing call sites (ASVS 9.1.1, 9.1.2).
+    """
+    connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context())
+    # We pass the timeout to the ClientSession constructor
+    return aiohttp.ClientSession(connector=connector, timeout=timeout)
 
 
 async def archive_listing(file_path: pathlib.Path) -> list[str] | None:
