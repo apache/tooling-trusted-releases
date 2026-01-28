@@ -16,12 +16,12 @@
 # under the License.
 
 import asyncio
-import tarfile
 from typing import Final
 
 import atr.archives as archives
 import atr.log as log
 import atr.models.results as results
+import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 
 
@@ -52,8 +52,8 @@ def root_directory(tgz_path: str) -> str:
     """Find the root directory in a tar archive and validate that it has only one root dir."""
     root = None
 
-    with tarfile.open(tgz_path, mode="r|gz") as tf:
-        for member in tf:
+    with tarzip.open_archive(tgz_path) as archive:
+        for member in archive:
             if member.name and member.name.split("/")[-1].startswith("._"):
                 # Metadata convention
                 continue

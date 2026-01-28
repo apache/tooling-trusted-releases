@@ -50,6 +50,7 @@ import atr.ldap as ldap
 import atr.log as log
 import atr.models.sql as sql
 import atr.registry as registry
+import atr.tarzip as tarzip
 import atr.user as user
 
 T = TypeVar("T")
@@ -95,26 +96,16 @@ async def archive_listing(file_path: pathlib.Path) -> list[str] | None:
         return None
 
     with contextlib.suppress(Exception):
-        if file_path.name.endswith((".tar.gz", ".tgz")):
+        if file_path.name.endswith((".tar.gz", ".tgz", ".zip")):
 
-            def _read_tar() -> list[str] | None:
-                with contextlib.suppress(tarfile.ReadError, EOFError, ValueError, OSError):
-                    with tarfile.open(file_path, mode="r:*") as tf:
+            def _read_archive() -> list[str] | None:
+                with contextlib.suppress(tarfile.ReadError, zipfile.BadZipFile, EOFError, ValueError, OSError):
+                    with tarzip.open_archive(str(file_path)) as archive:
                         # TODO: Skip metadata files
-                        return sorted(tf.getnames())
+                        return sorted(member.name for member in archive)
                 return None
 
-            return await asyncio.to_thread(_read_tar)
-
-        elif file_path.name.endswith(".zip"):
-
-            def _read_zip() -> list[str] | None:
-                with contextlib.suppress(zipfile.BadZipFile, EOFError, ValueError, OSError):
-                    with zipfile.ZipFile(file_path, "r") as zf:
-                        return sorted(zf.namelist())
-                return None
-
-            return await asyncio.to_thread(_read_zip)
+            return await asyncio.to_thread(_read_archive)
 
     return None
 

@@ -22,6 +22,7 @@ from typing import Any
 
 import atr.log as log
 import atr.models.results as results
+import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -76,11 +77,13 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
 def _integrity_check_core_logic(artifact_path: str) -> dict[str, Any]:
     """Verify that a zip file can be opened and its members listed."""
     try:
-        with zipfile.ZipFile(artifact_path, "r") as zf:
+        with tarzip.open_archive(artifact_path) as archive:
             # This is a simple check using list members
             # We can use zf.testzip() for CRC checks if needed, though this will be slower
-            member_list = zf.namelist()
-            return {"member_count": len(member_list)}
+            member_count = sum(1 for _ in archive)
+            return {"member_count": member_count}
+    except tarzip.ArchiveMemberLimitExceededError as e:
+        return {"error": f"Archive has too many members: {e}"}
     except zipfile.BadZipFile as e:
         return {"error": f"Bad zip file: {e}"}
     except FileNotFoundError:
@@ -92,8 +95,8 @@ def _integrity_check_core_logic(artifact_path: str) -> dict[str, Any]:
 def _structure_check_core_logic(artifact_path: str) -> dict[str, Any]:
     """Verify the internal structure of the zip archive."""
     try:
-        with zipfile.ZipFile(artifact_path, "r") as zf:
-            members = zf.namelist()
+        with tarzip.open_archive(artifact_path) as archive:
+            members: list[tarzip.Member] = list(archive)
             if not members:
                 return {"error": "Archive is empty"}
 
@@ -107,9 +110,10 @@ def _structure_check_core_logic(artifact_path: str) -> dict[str, Any]:
             #     name_part = "-".join(name_part.split("-")[:-1])
             expected_root = name_part
 
-            root_dirs, non_rooted_files = _structure_check_core_logic_find_roots(zf, members)
+            root_dirs, non_rooted_files = _structure_check_core_logic_find_roots(members)
+            member_names = [m.name for m in members]
             actual_root, error_msg = _structure_check_core_logic_validate_root(
-                members, root_dirs, non_rooted_files, expected_root
+                member_names, root_dirs, non_rooted_files, expected_root
             )
 
             if error_msg:
@@ -121,6 +125,8 @@ def _structure_check_core_logic(artifact_path: str) -> dict[str, Any]:
                 return {"root_dir": actual_root}
             return {"error": "Unknown structure validation error"}
 
+    except tarzip.ArchiveMemberLimitExceededError as e:
+        return {"error": f"Archive has too many members: {e}"}
     except zipfile.BadZipFile as e:
         return {"error": f"Bad zip file: {e}"}
     except FileNotFoundError:
@@ -129,15 +135,15 @@ def _structure_check_core_logic(artifact_path: str) -> dict[str, Any]:
         return {"error": f"Unexpected error: {e}"}
 
 
-def _structure_check_core_logic_find_roots(zf: zipfile.ZipFile, members: list[str]) -> tuple[set[str], list[str]]:
+def _structure_check_core_logic_find_roots(members: list[tarzip.Member]) -> tuple[set[str], list[str]]:
     """Identify root directories and non-rooted files in a zip archive."""
     root_dirs: set[str] = set()
     non_rooted_files: list[str] = []
     for member in members:
-        if "/" in member:
-            root_dirs.add(member.split("/", 1)[0])
-        elif not zipfile.Path(zf, member).is_dir():
-            non_rooted_files.append(member)
+        if "/" in member.name:
+            root_dirs.add(member.name.split("/", 1)[0])
+        elif not member.isdir():
+            non_rooted_files.append(member.name)
     return root_dirs, non_rooted_files
 
 

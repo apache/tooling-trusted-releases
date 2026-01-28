@@ -43,10 +43,19 @@ def extract(
     try:
         with tarzip.open_archive(archive_path) as archive:
             match archive.specific():
-                case tarfile.TarFile() as tf:
-                    for member in tf:
-                        total_extracted, extracted_paths = _archive_extract_member(
-                            tf, member, extract_dir, total_extracted, max_size, chunk_size, track_files, extracted_paths
+                case tarfile.TarFile():
+                    for member in archive:
+                        if not isinstance(member, tarzip.TarMember):
+                            continue
+                        total_extracted, extracted_paths = _tar_archive_extract_member(
+                            archive,
+                            member,
+                            extract_dir,
+                            total_extracted,
+                            max_size,
+                            chunk_size,
+                            track_files,
+                            extracted_paths,
                         )
 
                 case zipfile.ZipFile():
@@ -64,7 +73,7 @@ def extract(
                             extracted_paths,
                         )
 
-    except (tarfile.TarError, zipfile.BadZipFile, ValueError) as e:
+    except (tarfile.TarError, zipfile.BadZipFile, ValueError, tarzip.ArchiveMemberLimitExceededError) as e:
         raise ExtractionError(f"Failed to read archive: {e}", {"archive_path": archive_path}) from e
 
     return total_extracted, extracted_paths
@@ -73,8 +82,8 @@ def extract(
 def total_size(tgz_path: str, chunk_size: int = 4096) -> int:
     with tarzip.open_archive(tgz_path) as archive:
         match archive.specific():
-            case tarfile.TarFile() as tf:
-                total_size = _size_tar(tf, chunk_size)
+            case tarfile.TarFile():
+                total_size = _size_tar(archive, chunk_size)
 
             case zipfile.ZipFile():
                 total_size = _size_zip(archive, chunk_size)
@@ -82,9 +91,9 @@ def total_size(tgz_path: str, chunk_size: int = 4096) -> int:
     return total_size
 
 
-def _archive_extract_member(  # noqa: C901
-    tf: tarfile.TarFile,
-    member: tarfile.TarInfo,
+def _tar_archive_extract_member(  # noqa: C901
+    archive: tarzip.Archive,
+    member: tarzip.TarMember,
     extract_dir: str,
     total_extracted: int,
     max_size: int,
@@ -107,7 +116,7 @@ def _archive_extract_member(  # noqa: C901
             extracted_paths.append(member.name)
 
     # Check whether extraction would exceed the size limit
-    if member.isreg() and ((total_extracted + member.size) > max_size):
+    if member.isfile() and ((total_extracted + member.size) > max_size):
         raise ExtractionError(
             f"Extraction would exceed maximum size limit of {max_size} bytes",
             {"max_size": max_size, "current_size": total_extracted, "file_size": member.size},
@@ -119,32 +128,32 @@ def _archive_extract_member(  # noqa: C901
         if _safe_path(extract_dir, member.name) is None:
             log.warning(f"Skipping potentially unsafe path: {member.name}")
             return 0, extracted_paths
-        tf.extract(member, extract_dir, numeric_owner=True, filter="fully_trusted")
+        archive.extract_member(member, extract_dir, numeric_owner=True, tar_filter="fully_trusted")
 
-    elif member.isreg():
-        extracted_size = _archive_extract_safe_process_file(
-            tf, member, extract_dir, total_extracted, max_size, chunk_size
+    elif member.isfile():
+        extracted_size = _tar_archive_extract_safe_process_file(
+            archive, member, extract_dir, total_extracted, max_size, chunk_size
         )
         total_extracted += extracted_size
 
     elif member.issym():
-        _archive_extract_safe_process_symlink(member, extract_dir)
+        _tar_archive_extract_safe_process_symlink(member, extract_dir)
 
     elif member.islnk():
-        _archive_extract_safe_process_hardlink(member, extract_dir)
+        _tar_archive_extract_safe_process_hardlink(member, extract_dir)
 
     return total_extracted, extracted_paths
 
 
-def _archive_extract_safe_process_file(
-    tf: tarfile.TarFile,
-    member: tarfile.TarInfo,
+def _tar_archive_extract_safe_process_file(
+    archive: tarzip.Archive,
+    member: tarzip.TarMember,
     extract_dir: str,
     total_extracted: int,
     max_size: int,
     chunk_size: int,
 ) -> int:
-    """Process a single file member during safe archive extraction."""
+    """Process a single file member during safe tar archive extraction."""
     target_path = _safe_path(extract_dir, member.name)
     if target_path is None:
         log.warning(f"Skipping potentially unsafe path: {member.name}")
@@ -152,9 +161,9 @@ def _archive_extract_safe_process_file(
 
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    source = tf.extractfile(member)
+    source = archive.extractfile(member)
     if source is None:
-        # Should not happen if member.isreg() is true
+        # Should not happen if member.isfile() is true
         log.warning(f"Could not extract file object for member: {member.name}")
         return 0
 
@@ -180,8 +189,8 @@ def _archive_extract_safe_process_file(
     return extracted_file_size
 
 
-def _archive_extract_safe_process_hardlink(member: tarfile.TarInfo, extract_dir: str) -> None:
-    """Safely create a hard link from the TarInfo entry."""
+def _tar_archive_extract_safe_process_hardlink(member: tarzip.TarMember, extract_dir: str) -> None:
+    """Safely create a hard link from the TarMember entry."""
     target_path = _safe_path(extract_dir, member.name)
     if target_path is None:
         log.warning(f"Skipping potentially unsafe hard link path: {member.name}")
@@ -203,8 +212,8 @@ def _archive_extract_safe_process_hardlink(member: tarfile.TarInfo, extract_dir:
         log.warning(f"Failed to create hard link {target_path} -> {source_path}: {e}")
 
 
-def _archive_extract_safe_process_symlink(member: tarfile.TarInfo, extract_dir: str) -> None:
-    """Safely create a symbolic link from the TarInfo entry."""
+def _tar_archive_extract_safe_process_symlink(member: tarzip.TarMember, extract_dir: str) -> None:
+    """Safely create a symbolic link from the TarMember entry."""
     target_path = _safe_path(extract_dir, member.name)
     if target_path is None:
         log.warning(f"Skipping potentially unsafe symlink path: {member.name}")
@@ -242,12 +251,14 @@ def _safe_path(base_dir: str, *paths: str) -> str | None:
     return None
 
 
-def _size_tar(tf: tarfile.TarFile, chunk_size: int) -> int:
+def _size_tar(archive: tarzip.Archive, chunk_size: int) -> int:
     total_size = 0
-    for member in tf:
+    for member in archive:
+        if not isinstance(member, tarzip.TarMember):
+            continue
         total_size += member.size
         if member.isfile():
-            fileobj = tf.extractfile(member)
+            fileobj = archive.extractfile(member)
             if fileobj is not None:
                 while fileobj.read(chunk_size):
                     pass

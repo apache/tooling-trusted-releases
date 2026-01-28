@@ -19,8 +19,15 @@ import contextlib
 import tarfile
 import zipfile
 from collections.abc import Generator, Iterator
-from typing import IO, TypeVar
+from typing import IO, Final, Literal, TypeVar
 from typing import Protocol as TypingProtocol
+
+MAX_ARCHIVE_MEMBERS: Final[int] = 100_000
+
+
+class ArchiveMemberLimitExceededError(Exception):
+    pass
+
 
 ArchiveT = TypeVar("ArchiveT", tarfile.TarFile, zipfile.ZipFile)
 # If you set this covariant=True, then mypy says an "invariant one is expected"
@@ -96,19 +103,32 @@ type Member = TarMember | ZipMember
 
 class ArchiveContext[ArchiveT: (tarfile.TarFile, zipfile.ZipFile)]:
     _archive_obj: ArchiveT
+    _max_members: int
 
-    def __init__(self, archive_obj: ArchiveT):
+    def __init__(self, archive_obj: ArchiveT, max_members: int = MAX_ARCHIVE_MEMBERS):
         self._archive_obj = archive_obj
+        self._max_members = max_members
 
     def __iter__(self) -> Iterator[TarMember | ZipMember]:
+        count = 0
         match self._archive_obj:
             case tarfile.TarFile() as tf:
                 for member_orig in tf:
                     if member_orig.isdev():
                         continue
+                    count += 1
+                    if count > self._max_members:
+                        raise ArchiveMemberLimitExceededError(
+                            f"Archive contains too many members: exceeded limit of {self._max_members}"
+                        )
                     yield TarMember(member_orig)
             case zipfile.ZipFile() as zf:
                 for member_orig in zf.infolist():
+                    count += 1
+                    if count > self._max_members:
+                        raise ArchiveMemberLimitExceededError(
+                            f"Archive contains too many members: exceeded limit of {self._max_members}"
+                        )
                     yield ZipMember(member_orig)
 
     def extractfile(self, member_wrapper: Member) -> IO[bytes] | None:
@@ -125,6 +145,34 @@ class ArchiveContext[ArchiveT: (tarfile.TarFile, zipfile.ZipFile)]:
         except (KeyError, AttributeError, Exception):
             return None
 
+    def extract_member(
+        self,
+        member_wrapper: Member,
+        path: str,
+        *,
+        numeric_owner: bool = True,
+        tar_filter: Literal["fully_trusted", "tar", "data"] | None = "fully_trusted",
+    ) -> None:
+        """Extract a single member to the specified path.
+
+        For tar archives, this uses the tarfile extract method with the specified filter.
+        For zip archives, this is a no-op as zip extraction is handled differently
+        (directories are created via os.makedirs in the calling code).
+        """
+        match self._archive_obj:
+            case tarfile.TarFile() as tf:
+                if not isinstance(member_wrapper, TarMember):
+                    raise TypeError("Archive is TarFile, but member_wrapper is not TarMember")
+                tf.extract(
+                    member_wrapper._original_info,
+                    path,
+                    numeric_owner=numeric_owner,
+                    filter=tar_filter,
+                )
+            case zipfile.ZipFile():
+                # Zip extraction is handled differently in the calling code
+                pass
+
     def specific(self) -> tarfile.TarFile | zipfile.ZipFile:
         return self._archive_obj
 
@@ -135,7 +183,22 @@ type Archive = TarArchive | ZipArchive
 
 
 @contextlib.contextmanager
-def open_archive(archive_path: str) -> Generator[Archive]:
+def open_archive(
+    archive_path: str,
+    max_members: int = MAX_ARCHIVE_MEMBERS,
+) -> Generator[Archive]:
+    """Open an archive file (tar or zip) and yield an ArchiveContext.
+
+    Args:
+        archive_path: Path to the archive file.
+        max_members: Maximum number of members allowed in the archive.
+            Defaults to MAX_ARCHIVE_MEMBERS (100,000).
+            Set to 0 or negative to disable the limit.
+
+    Raises:
+        ValueError: If the archive format is unsupported or corrupted.
+        ArchiveMemberLimitExceededError: If the archive exceeds max_members during iteration.
+    """
     archive_file: tarfile.TarFile | zipfile.ZipFile | None = None
     try:
         try:
@@ -148,9 +211,9 @@ def open_archive(archive_path: str) -> Generator[Archive]:
 
         match archive_file:
             case tarfile.TarFile() as tf_concrete:
-                yield ArchiveContext[tarfile.TarFile](tf_concrete)
+                yield ArchiveContext[tarfile.TarFile](tf_concrete, max_members)
             case zipfile.ZipFile() as zf_concrete:
-                yield ArchiveContext[zipfile.ZipFile](zf_concrete)
+                yield ArchiveContext[zipfile.ZipFile](zf_concrete, max_members)
 
     finally:
         if archive_file:
