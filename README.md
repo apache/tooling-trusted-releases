@@ -40,7 +40,7 @@ docker compose up --build
 
 Then visit https://127.0.0.1:8080/ (accept the self-signed certificate).
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for more options including running without containers.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for additional options including running without containers.
 
 ## Documentation
 
