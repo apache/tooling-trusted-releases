@@ -81,6 +81,7 @@ class CommitteeParticipant(FoundationCommitter):
         vote: str,
         comment: str,
         fullname: str,
+        is_binding: bool = False,
     ) -> tuple[str, str]:
         # Get the email thread
         latest_vote_task = await interaction.release_latest_vote_task(release)
@@ -102,12 +103,13 @@ class CommitteeParticipant(FoundationCommitter):
         email_recipient = latest_vote_task.task_args["email_to"]
         email_sender = f"{self.__asf_uid}@apache.org"
         subject = f"Re: {original_subject}"
-        body = [f"{vote.lower()} ({self.__asf_uid}) {fullname}"]
-        if comment:
-            body.append(f"{comment}")
-            # Only include the signature if there is a comment
-            body.append(f"-- \n{fullname} ({self.__asf_uid})")
-        body_text = "\n\n".join(body)
+        body_text = format_vote_email_body(
+            vote=vote,
+            asf_uid=self.__asf_uid,
+            fullname=fullname,
+            is_binding=is_binding,
+            comment=comment,
+        )
         in_reply_to = vote_thread_mid
 
         task = sql.Task(
@@ -473,3 +475,33 @@ class CommitteeMember(CommitteeParticipant):
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):
     #         raise storage.AccessError("You do not have permission to perform this action")
+
+
+def format_vote_email_body(
+    vote: str,
+    asf_uid: str,
+    fullname: str,
+    is_binding: bool,
+    comment: str = "",
+) -> str:
+    """Format the body of a vote email.
+
+    Args:
+        vote: The vote value (+1, 0, or -1)
+        asf_uid: The ASF user ID of the voter
+        fullname: The full name of the voter
+        is_binding: Whether this is a binding vote (PMC member)
+        comment: Optional comment to include
+
+    Returns:
+        The formatted email body text
+    """
+    if is_binding:
+        body = [f"{vote} (binding) ({asf_uid}) {fullname}"]
+    else:
+        body = [f"{vote} ({asf_uid}) {fullname}"]
+    if comment:
+        body.append(f"{comment}")
+        # Only include the signature if there is a comment
+        body.append(f"-- \n{fullname} ({asf_uid})")
+    return "\n\n".join(body)
