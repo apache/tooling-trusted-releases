@@ -65,9 +65,27 @@ def validate_directory(directory: pathlib.Path) -> list[str]:
             errors.append(f"{path.name}: Symbolic links are not allowed")
             continue
         if path.is_file():
-            if error := _validate_file(path):
+            if error := validate_file(path):
                 errors.append(error)
     return errors
+
+
+def validate_file(path: pathlib.Path) -> str | None:
+    # TODO: Report errors using the whole relative path, not just the filename
+    suffix = _suffix(path.name)
+    if suffix not in _EXPECTED:
+        return f"{path.name}: Unsupported file format ({suffix})"
+    if path.stat().st_size == 0:
+        return f"{path.name}: Empty file"
+    try:
+        results = puremagic.magic_file(path)
+    except puremagic.PureError:
+        return f"{path.name}: Unidentified file format (expected {suffix})"
+    detected_types = {r.mime_type for r in results if r.mime_type != ""}
+    if not (detected_types & _EXPECTED[suffix]):
+        primary = next(iter(detected_types)) if len(detected_types) > 0 else "unknown"
+        return f"{path.name}: Content mismatch (expected {suffix}, detected {primary})"
+    return None
 
 
 def _suffix(filename: str) -> str:
@@ -76,21 +94,3 @@ def _suffix(filename: str) -> str:
         if name.endswith(compound):
             return compound
     return pathlib.Path(name).suffix
-
-
-def _validate_file(path: pathlib.Path) -> str | None:
-    # TODO: Report errors using the whole relative path, not just the filename
-    suffix = _suffix(path.name)
-    if suffix not in _EXPECTED:
-        return None
-    if path.stat().st_size == 0:
-        return f"{path.name}: Empty file"
-    try:
-        results = puremagic.magic_file(path)
-    except puremagic.PureError:
-        return f"{path.name}: Unidentified file format (expected {suffix})"
-    detected_types = {r.mime_type for r in results}
-    if not (detected_types & _EXPECTED[suffix]):
-        primary = results[0].mime_type if results else "unknown"
-        return f"{path.name}: Content mismatch (expected {suffix}, detected {primary})"
-    return None

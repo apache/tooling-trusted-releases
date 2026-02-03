@@ -28,6 +28,7 @@ import werkzeug.wrappers.response as response
 
 import atr.blueprints.post as post
 import atr.db as db
+import atr.detection as detection
 import atr.form as form
 import atr.get as get
 import atr.log as log
@@ -136,6 +137,9 @@ async def stage(
             # 1 MiB chunks
             while chunk := await asyncio.to_thread(file.stream.read, 1024 * 1024):
                 await f.write(chunk)
+        content_error = detection.validate_file(path=target_path)
+        if content_error:
+            raise ValueError(content_error)
     except Exception as e:
         log.exception("Error staging file:")
         if await aiofiles.os.path.exists(target_path):
