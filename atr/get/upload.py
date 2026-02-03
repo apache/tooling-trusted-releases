@@ -70,7 +70,8 @@ async def selected(
     block.p[
         htm.a(".btn.btn-outline-primary.me-2", href="#file-upload")["Use the browser"],
         htm.a(".btn.btn-outline-primary.me-2", href="#svn-upload")["Use SVN"],
-        htm.a(".btn.btn-outline-primary", href="#rsync-upload")["Use rsync"],
+        htm.a(".btn.btn-outline-primary.me-2", href="#rsync-upload")["Use rsync"],
+        htm.a(".btn.btn-outline-primary", href="#github-upload")["Use GitHub Workflow"],
     ]
 
     block.h2(id="file-upload")["File upload"]
@@ -151,6 +152,56 @@ async def selected(
     block.pre(".bg-light.p-3.mb-3")[rsync_command]
 
     _render_ssh_keys_info(block, user_ssh_keys)
+
+    block.h2(id="github-upload")["GitHub Workflow"]
+    block.p["Upload files into this draft from a GitHub repository using GitHub Actions."]
+    block.append(
+        htm.ol[
+            htm.li["Ensure GitHub Actions is enabled for your repository"],
+            htm.li[
+                "Create a new workflow file in the .github/workflows/ directory of your repository, ",
+                "following the steps ",
+                htm.a(href="https://docs.github.com/en/actions/tutorials/create-an-example-workflow")["here"],
+            ],
+            htm.li["Add the example code below to your workflow file, making sure to set the correct file paths"],
+        ]
+    )
+    block.pre[
+        f"""
+name: Upload to ATR
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Build artifacts
+        run: |
+          ./build.sh
+
+      - name: Upload to ATR
+        uses: apache/tooling-actions/upload-to-atr@04741906f3f38a64ed4489bb12ad78b99424a7a0
+        with:
+          project: {project_name!s}
+          version: ${{{{ github.ref_name }}}}
+        """
+    ]
+    block.p[
+        "(assuming your ",
+        htm.code["github.ref_name"],
+        " resolves to match your version - currently ",
+        htm.code[str(version_name)],
+        " and ",
+        htm.code["build.sh"],
+        " produces the files you want to upload)",
+    ]
+    block.p["You can also use the ", htm.code["Upload to ATR"], " step directly in an existing workflow."]
 
     return await template.blank(
         f"Upload files to {release.short_display_name}",
