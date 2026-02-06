@@ -281,37 +281,31 @@
         {% endif %}
       </ul>
       <ul class="navbar-nav">
-        <li class="nav-item dropdown">
-          <button class="nav-link dropdown-toggle btn"
-                  id="dropdownUser"
-                  type="button"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
-                  aria-controls="menuUser">
-            Log
-            {% if current_user %}
-              out
-            {% else %}
-              in
-            {% endif %}
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end"
-              id="menuUser"
-              aria-labelledby="dropdownUser">
-            <div class="user-menu">
-              {% if current_user %}
+        <li class="nav-item">
+          {% if current_user %}
+            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-outline-secondary ms-2">Log out</a>
+          {% else %}
+            <a href="/auth?login={{ request.path }}" class="login-link btn btn-sm btn-secondary ms-2">Log in</a>
+          {% endif %}
+        </li>
+        {% if current_user %}
+          <li class="nav-item dropdown">
+            <button class="nav-link dropdown-toggle btn"
+                    id="dropdownUser"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                    aria-controls="menuUser">Account</button>
+            <ul class="dropdown-menu dropdown-menu-end"
+                id="menuUser"
+                aria-labelledby="dropdownUser">
+              <div class="user-menu">
                 <span>{{ current_user.fullname }}</span>
                 (<code>{{ current_user.uid }}</code>)
-                <br />
-                <a href="/auth?logout=/"
-                   class="logout-link btn btn-sm btn-outline-secondary mt-2">Log out</a>
-              {% else %}
-                <a href="/auth?login={{ request.path }}"
-                   class="login-link btn btn-sm btn-secondary">Log in</a>
-              {% endif %}
-            </div>
-          </ul>
-        </li>
+              </div>
+            </ul>
+          </li>
+        {% endif %}
         <li class="nav-item dropdown">
           <button class="nav-link dropdown-toggle btn"
                   id="dropdownASF"
