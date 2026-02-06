@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
-import ast
-import sys
-from pathlib import Path
-from collections import defaultdict
-import re
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 import argparse
+import ast
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
 
 TEMPLATE_SUFFIXES = {".html", ".htm", ".j2", ".jinja"}
 JINJA_REF_RE = re.compile(
@@ -37,7 +54,7 @@ def detect_cycles(graph):
 
     def visit(node, stack):
         if node in visiting:
-            cycle = stack[stack.index(node):] + [node]
+            cycle = [*stack[stack.index(node) :], node]
             cycles.append(cycle)
             return
         if node in visited:
@@ -45,7 +62,7 @@ def detect_cycles(graph):
 
         visiting.add(node)
         for nxt in graph.get(node, ()):
-            visit(nxt, stack + [nxt])
+            visit(nxt, [*stack, nxt])
         visiting.remove(node)
         visited.add(node)
 
@@ -102,7 +119,7 @@ def find_templates_in_code(source_root: Path):
 
     used.add("blank.html")
     origins["blank.html"].append(("atr/template.py", 42))
-        
+
     return used, origins
 
 
@@ -149,7 +166,23 @@ def reverse_refs(refs):
     return rev
 
 
-def main():
+def print_map(reachable, origins, rev_refs, refs):
+    print("\n== Template usage map ==")
+    for name in sorted(reachable):
+        print(f"\n{name}")
+
+        if name in origins:
+            for file, line in origins[name]:
+                print(f"  rendered from {file}:{line}")
+
+        for parent in sorted(rev_refs.get(name, [])):
+            print(f"  included by {parent}")
+
+        for child in sorted(refs.get(name, [])):
+            print(f"  includes {child}")
+
+
+def main():  # noqa: C901
     parser = argparse.ArgumentParser()
     parser.add_argument("source_root", help="Source tree root")
     parser.add_argument(
@@ -168,25 +201,13 @@ def main():
     rev_refs = reverse_refs(refs)
 
     missing = used - present
-    
+
     duplicates = {k: v for k, v in locations.items() if len(v) > 1}
     unreachable = present - reachable
     cycles = detect_cycles(refs)
 
     if args.usage_map:
-        print("\n== Template usage map ==")
-        for name in sorted(reachable):
-            print(f"\n{name}")
-
-            if name in origins:
-                for file, line in origins[name]:
-                    print(f"  rendered from {file}:{line}")
-
-            for parent in sorted(rev_refs.get(name, [])):
-                print(f"  included by {parent}")
-
-            for child in sorted(refs.get(name, [])):
-                print(f"  includes {child}")
+        print_map(reachable, origins, rev_refs, refs)
 
     errors = False
 
@@ -228,6 +249,7 @@ def main():
             print("  " + " → ".join(cycle))
 
     sys.exit(1 if errors else 0)
+
 
 if __name__ == "__main__":
     main()

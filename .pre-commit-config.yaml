@@ -195,3 +195,10 @@ repos:
       language: system
       pass_filenames: false
       files: ^atr/models/.*\.py$
+
+    - id: template-usage-linter
+      name: check template usage
+      description: Ensure that all templates are used and available w/o duplicates
+      entry: uv run --frozen python scripts/check_templates.py atr
+      language: system
+      pass_filenames: false
