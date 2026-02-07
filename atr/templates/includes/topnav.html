@@ -280,22 +280,15 @@
           </li>
         {% endif %}
       </ul>
-      <ul class="navbar-nav">
-        <li class="nav-item">
-          {% if current_user %}
-            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-outline-secondary ms-2">Log out</a>
-          {% else %}
-            <a href="/auth?login={{ request.path }}" class="login-link btn btn-sm btn-secondary ms-2">Log in</a>
-          {% endif %}
-        </li>
+      <ul class="navbar-nav align-items-center">
         {% if current_user %}
           <li class="nav-item dropdown">
-            <button class="nav-link dropdown-toggle btn"
+            <button class="dropdown-toggle btn btn-sm btn-secondary ms-2 mt-1"
                     id="dropdownUser"
                     type="button"
                     data-bs-toggle="dropdown"
                     aria-expanded="false"
-                    aria-controls="menuUser">Account</button>
+                    aria-controls="menuUser">User</button>
             <ul class="dropdown-menu dropdown-menu-end"
                 id="menuUser"
                 aria-labelledby="dropdownUser">
@@ -306,6 +299,13 @@
             </ul>
           </li>
         {% endif %}
+        <li class="nav-item">
+          {% if current_user %}
+            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-secondary ms-2 mt-1">Log out</a>
+          {% else %}
+            <a href="/auth?login={{ request.path }}" class="login-link btn btn-sm btn-secondary ms-2">Log in</a>
+          {% endif %}
+        </li>
         <li class="nav-item dropdown">
           <button class="nav-link dropdown-toggle btn"
                   id="dropdownASF"
