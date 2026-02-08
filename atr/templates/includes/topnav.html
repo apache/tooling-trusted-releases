@@ -283,7 +283,7 @@
       <ul class="navbar-nav align-items-center">
         {% if current_user %}
           <li class="nav-item dropdown">
-            <button class="dropdown-toggle btn btn-sm btn-secondary ms-2 mt-1"
+            <button class="nav-link dropdown-toggle btn"
                     id="dropdownUser"
                     type="button"
                     data-bs-toggle="dropdown"
@@ -301,7 +301,7 @@
         {% endif %}
         <li class="nav-item">
           {% if current_user %}
-            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-secondary ms-2 mt-1">Log out</a>
+            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-secondary ms-2">Log out</a>
           {% else %}
             <a href="/auth?login={{ request.path }}" class="login-link btn btn-sm btn-secondary ms-2">Log in</a>
           {% endif %}
