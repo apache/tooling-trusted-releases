@@ -488,6 +488,7 @@ class Committee(sqlmodel.SQLModel, table=True):
     release_managers: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example(["wave"])
     )
+    committers_may_release: bool = sqlmodel.Field(default=False)
 
     # M-M: Committee -> [PublicSigningKey]
     # M-M: PublicSigningKey -> [Committee]

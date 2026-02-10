@@ -32,6 +32,7 @@ import atr.log as log
 import atr.models.helpers as helpers
 import atr.models.schema as schema
 import atr.models.sql as sql
+import atr.registry as registry
 import atr.util as util
 
 _WHIMSY_COMMITTEE_INFO_URL: Final[str] = "https://whimsy.apache.org/public/committee-info.json"
@@ -387,6 +388,7 @@ async def _update_committees(
         committee_info = committees_by_name.get(name)
         if committee_info:
             committee.full_name = committee_info.display_name
+        committee.committers_may_release = committee.name in registry.COMMITTERS_MAY_RELEASE_COMMITTEES
 
         updated_count += 1
 
