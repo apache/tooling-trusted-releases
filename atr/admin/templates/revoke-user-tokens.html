@@ -1,0 +1,48 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Revoke user tokens ~ ATR{%- endblock title -%}
+
+{%- block description -%}Revoke all Personal Access Tokens for a user.{%- endblock description -%}
+
+{% block content %}
+  <h1>Revoke user tokens</h1>
+  <p>Revoke all Personal Access Tokens (PATs) for a user account. Use this when an account
+    is being disabled or when immediate token revocation is needed.</p>
+
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Revoke tokens</h5>
+    </div>
+    <div class="card-body">
+      {{ form }}
+    </div>
+  </div>
+
+  {% if token_counts %}
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">Users with active tokens</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-striped table-bordered">
+          <thead>
+            <tr>
+              <th>ASF UID</th>
+              <th>Token count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for uid, count in token_counts %}
+              <tr>
+                <td><code>{{ uid }}</code></td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-info" role="alert">No users currently have active tokens.</div>
+  {% endif %}
+{% endblock content %}

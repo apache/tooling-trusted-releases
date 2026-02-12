@@ -218,6 +218,11 @@
               </li>
               <li>
                 <a class="dropdown-item"
+                   href="{{ as_url(admin.revoke_user_tokens_get) }}"
+                   {% if request.endpoint == 'atr_admin_revoke_user_tokens_get' %}class="active"{% endif %}><i class="bi bi-shield-x"></i> Revoke user tokens</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
                    href="{{ as_url(admin.toggle_view_get) }}"
                    {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
               </li>

@@ -61,6 +61,7 @@ import atr.ssh as ssh
 import atr.svn.pubsub as pubsub
 import atr.tasks as tasks
 import atr.template as template
+import atr.token_cleanup as token_cleanup
 import atr.user as user
 import atr.util as util
 
@@ -269,6 +270,9 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         admins_task = asyncio.create_task(cache.admins_refresh_loop())
         app.extensions["admins_task"] = admins_task
 
+        pat_cleanup_task = asyncio.create_task(token_cleanup.cleanup_loop())
+        app.extensions["pat_cleanup_task"] = pat_cleanup_task
+
         worker_manager = manager.get_worker_manager()
         await worker_manager.start()
 
@@ -308,6 +312,11 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
                 await task
 
         if task := app.extensions.get("admins_task"):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        if task := app.extensions.get("pat_cleanup_task"):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

@@ -122,10 +122,21 @@ Token operations apply to the authenticated user:
 * Allowed for: The token owner, or administrators
 * Constraint: Users can only revoke their own tokens (unless admin)
 
+**Revoke all tokens for a user (admin)**:
+
+* Allowed for: ATR administrators only
+* Interface: Admin "Revoke user tokens" page
+* Constraint: Requires typing "REVOKE" as confirmation
+
+**Automated token revocation**:
+
+* The [`token_cleanup`](/ref/atr/token_cleanup.py) background loop runs approximately every hour, queries LDAP for all users who hold PATs, and revokes tokens belonging to accounts that are banned or deleted. This runs without human intervention and is audit logged.
+
 **Exchange PAT for JWT**:
 
 * Allowed for: Anyone with a valid PAT
 * Note: This is an unauthenticated endpoint; the PAT serves as the credential
+* Constraint: LDAP is checked at exchange time; banned or deleted accounts are rejected even if the PAT has not yet been cleaned up
 
 ## Access control for check ignores
 
