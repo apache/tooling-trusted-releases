@@ -57,13 +57,13 @@ class AddFilesForm(form.Form):
 class SvnImportForm(form.Form):
     variant: SVN_IMPORT = form.value(SVN_IMPORT)
     svn_area: form.Enum[SvnArea] = form.label(
-        "SVN area",
+        "svn:dist area",
         "Select whether to import from dev or release.",
         widget=form.Widget.RADIO,
     )
     svn_path: form.URLPath = form.label(
         "SVN path",
-        "Path within the project's SVN directory, e.g. 'java-library/4_0_4' or '3.1.5rc1'.",
+        "Path within the committee's svn:dist directory, e.g. 'java-library/4_0_4' or '3.1.5rc1'.",
     )
     revision: str = form.label(
         "Revision",

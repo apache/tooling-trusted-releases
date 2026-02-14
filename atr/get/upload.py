@@ -94,7 +94,11 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
     block.append(htpy.div("#upload-progress-container.d-none"))
 
     block.h2(id="svn-upload")["SVN upload"]
-    block.p["Import files from this project's ASF Subversion repository into this draft."]
+    block.p[
+        "Import files from this committee's ASF ",
+        htm.a(href="https://dist.apache.org/repos/dist/")[htm.code["svn:dist"]],
+        " repository into this draft.",
+    ]
     block.p[
         "The import will be processed in the background using the ",
         htm.code["svn export"],
