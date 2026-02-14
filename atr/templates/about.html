@@ -34,21 +34,22 @@
   <h2>Release functionality</h2>
 
   <p>
-    For Alpha v2, the ATR allows users to start votes by sending the vote initiation email to their own mailing lists. Announcements of finished releases, however, must still be performed manually using dist SVN as usual.
+    For Alpha v2, the ATR allows users to start votes by sending the vote initiation email to their own mailing lists. Announcements of finished releases, however, must still be performed manually using <a href="https://dist.apache.org/repos/dist/release/"><code>svn:dist/release</code></a> as usual.
   </p>
 
   <h2>Release process</h2>
 
   <p>
-    The following table compares the UI, CLI, and GitHub actions for each step in the release process. Variables <code>P</code>, <code>V</code>, and <code>R</code> represent the project, version, and revision of a release, respectively.
+    The following table compares <a href="https://release-test.apache.org/tutorial">the UI</a>, <a href="https://github.com/apache/tooling-releases-client"><code>atr</code> CLI</a>, and <a href="https://github.com/apache/tooling-actions"><code>apache/tooling-actions/*</code> GitHub actions</a> for each step in the release process. Variables <code>P</code>, <code>V</code>, and <code>R</code> represent the project, version, and revision of a release, respectively.
   </p>
 
   <table class="table table-bordered table-striped">
     <tr>
       <th>Step</th>
-      <th>UI</th>
-      <th>CLI</th>
-      <th>GitHub</th>
+      <th><a href="https://release-test.apache.org/tutorial">UI</a></th>
+      <th><a href="https://github.com/apache/tooling-releases-client/blob/main/COMMANDS.md">CLI</a></th>
+      <th><a href="https://github.com/apache/tooling-actions">GHA</a></th>
+      <th><a href="/api/docs">API</a></th>
     </tr>
     <tr>
       <th class="step">Start a release</th>
@@ -59,6 +60,9 @@
         <code>atr release start P V</code>
       </td>
       <td class="github">-</td>
+      <td class="api">
+        <code>/api/release/create</code>
+      </td>
     </tr>
     <tr>
       <th class="step">Upload files</th>
@@ -69,6 +73,9 @@
         <code>atr upload P V path file</code>
       </td>
       <td class="github">tooling-actions/upload-to-atr</td>
+      <td class="api">
+        <code>/api/release/upload</code>
+      </td>
     </tr>
     <tr>
       <th class="step">Wait for checks</th>
@@ -77,6 +84,7 @@
         <code>atr check wait P V</code>
       </td>
       <td class="github">-</td>
+      <td class="api">-</td>
     </tr>
     <tr>
       <th class="step">Review checks</th>
@@ -87,6 +95,7 @@
         <code>atr check status P V</code>
       </td>
       <td class="github">-</td>
+      <td class="api">-</td>
     </tr>
     <tr>
       <th class="step">Record test distribution</th>
@@ -97,6 +106,7 @@
         <code>atr distribution record P V plat owner pkg ver stg details</code>
       </td>
       <td class="github">tooling-actions/record-atr-distribution</td>
+      <td class="api">-</td>
     </tr>
     <tr>
       <th class="step">Start voting</th>
@@ -107,6 +117,9 @@
         <code>atr vote start P V R -m email</code>
       </td>
       <td class="github">-</td>
+      <td class="api">
+        <code>/api/vote/start</code>
+      </td>
     </tr>
     <tr>
       <th class="step">Resolve vote</th>
@@ -117,6 +130,9 @@
         <code>atr vote resolve P V passed</code>
       </td>
       <td class="github">tooling-actions/release-on-atr</td>
+      <td class="api">
+        <code>/api/vote/resolve</code>
+      </td>
     </tr>
     <tr>
       <th class="step">Record distribution</th>
@@ -127,6 +143,9 @@
         <code>atr distribution record P V plat owner pkg ver stg details</code>
       </td>
       <td class="github">tooling-actions/record-atr-distribution</td>
+      <td class="api">
+        <code>/api/publisher/distribution/record</code>
+      </td>
     </tr>
     <tr>
       <th class="step">Announce release</th>
@@ -137,6 +156,9 @@
         <code>atr announce P V R -m email -s subject -b body</code>
       </td>
       <td class="github">tooling-actions/release-on-atr</td>
+      <td class="api">
+        <code>/api/release/announce</code>
+      </td>
     </tr>
     <!--
     <tr>
@@ -144,6 +166,7 @@
       <td class="ui"><code></code></td>
       <td class="cli"><code></code></td>
       <td class="github"></td>
+      <td class="api"></td>
     </tr>
     -->
   </table>
