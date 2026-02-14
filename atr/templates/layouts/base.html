@@ -48,7 +48,7 @@
           <main class="main-content">
             {% if (not current_user) or (current_user.uid != "sbp") %}
               <div class="warning-banner">
-                <strong>Alpha 2 Software:</strong> ATR is available as Alpha software. You can test the release process. Actual releases can be downloaded and committed to svn.
+                <strong>Alpha 2 Software:</strong> ATR is available as Alpha software. You can test the release process and download test content, but release have to be committed by hand to <a href="https://dist.apache.org/repos/dist/release/">svn:dist/release</a> (see <a href="https://tooling.apache.org/svn-dist.html">future plans</a>).
               </div>
             {% endif %}
             {% from "macros/flash.html" import render_flash_messages %}
