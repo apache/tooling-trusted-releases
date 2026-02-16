@@ -216,7 +216,8 @@ class CommitteeParticipant(FoundationCommitter):
                 if (old_revision is not None) and (prior_name is not None) and (prior_name != old_revision.name):
                     prior_number = prior_name.split()[-1]
                     prior_dir = util.release_directory_base(release) / prior_number
-                    await merge.merge(
+                    # <--- CHANGED: Capture the log in a variable
+                    merge_ops = await merge.merge(
                         base_inodes,
                         base_hashes,
                         prior_dir,
@@ -228,6 +229,13 @@ class CommitteeParticipant(FoundationCommitter):
                         path_to_hash,
                         path_to_size,
                     )
+                    
+                    # <--- NEW: Save the log to the database object
+                    # This assumes your Revision model has a 'merge_log' column.
+                    # If you get an error saying "Revision has no attribute merge_log", 
+                    # change this to: new_revision.meta = {"merge_log": merge_ops}
+                    new_revision.merge_log = merge_ops 
+
                     previous_attestable = await attestable.load(project_name, version_name, prior_number)
 
                 # Rename the directory to the new revision number

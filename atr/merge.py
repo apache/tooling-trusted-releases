@@ -42,11 +42,17 @@ async def merge(
     n_inodes: dict[str, int],
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
-) -> None:
+) -> list[dict[str, str]]:
+    """
+    Merges revisions and returns a list of operations performed (the calculation log).
+    """
     # Note: the present function modifies n_hashes and n_sizes in place
     # This happens in the _add_from_prior and _replace_with_prior calls somewhat below
     prior_inodes = await asyncio.to_thread(util.paths_to_inodes, prior_dir)
     prior_hashes: dict[str, str] | None = None
+
+    # NEW: Initialize the operation log
+    ops: list[dict[str, str]] = []
 
     # Collect implicit directory paths from new (N) files for type conflict detection
     n_dirs: set[str] = set()
@@ -65,9 +71,14 @@ async def merge(
         # Case 9: only the prior revision introduced this path
         if (b_ino is None) and (p_ino is not None) and (n_ino is None):
             if _has_type_conflict(path, n_inodes, n_dirs):
+                ops.append({"path": path, "action": "skip", "reason": "type_conflict"})
                 continue
             if await aiofiles.os.path.isdir(temp_dir / path):
+                ops.append({"path": path, "action": "skip", "reason": "is_directory"})
                 continue
+            
+            # Record action
+            ops.append({"path": path, "action": "add_from_prior", "reason": "case_9_prior_only"})
             prior_hashes = await _add_from_prior(
                 prior_dir,
                 temp_dir,
@@ -85,11 +96,14 @@ async def merge(
         if (b_ino is not None) and (p_ino is None) and (n_ino is not None):
             if _content_matches(b_ino, n_ino, base_hashes[path], n_hashes[path]):
                 # Case 10: new still has the base content so the deletion applies
+                ops.append({"path": path, "action": "delete", "reason": "case_10_prior_deleted"})
                 await aiofiles.os.remove(temp_dir / path)
                 # Update n_hashes and n_sizes in place
                 n_hashes.pop(path, None)
                 n_sizes.pop(path, None)
-            # Case 13: new has different content so new wins
+            else:
+                # Case 13: new has different content so new wins
+                ops.append({"path": path, "action": "keep_new", "reason": "case_13_new_modified"})
             continue
 
         # Cases 4, 5, 6, 8, 11, and 15: all three revisions have this path
@@ -109,7 +123,10 @@ async def merge(
                 project_name,
                 version_name,
                 prior_revision_number,
+                ops, # Pass the log list down
             )
+            
+    return ops
 
 
 async def _add_from_prior(
@@ -180,17 +197,21 @@ async def _merge_all_present(
     project_name: str,
     version_name: str,
     prior_revision_number: str,
+    ops: list[dict[str, str]], # NEW ARGUMENT
 ) -> dict[str, str] | None:
     # Cases 6, 8: prior and new share an inode so they already agree
     if p_ino == n_ino:
+        ops.append({"path": path, "action": "keep_existing", "reason": "case_6_8_match"})
         return prior_hashes
 
     # Cases 4, 5: base and prior share an inode so there was no intervening change
     if b_ino == p_ino:
+        ops.append({"path": path, "action": "keep_new", "reason": "case_4_5_no_prior_change"})
         return prior_hashes
 
     # Case 11 via inode: base and new share an inode so prior wins
     if b_ino == n_ino:
+        ops.append({"path": path, "action": "replace_with_prior", "reason": "case_11_inode_match"})
         return await _replace_with_prior(
             prior_dir,
             temp_dir,
@@ -213,8 +234,10 @@ async def _merge_all_present(
             p_hash = prior_hashes[path]
         else:
             p_hash = await hashes.compute_file_hash(prior_dir / path)
+        
         if p_hash != b_hash:
             # Case 11 via hash: base and new have the same content but prior differs
+            ops.append({"path": path, "action": "replace_with_prior", "reason": "case_11_hash_diff"})
             return await _replace_with_prior(
                 prior_dir,
                 temp_dir,
@@ -228,6 +251,7 @@ async def _merge_all_present(
             )
 
     # Cases 4, 5, 8, 15: no merge action needed so new wins
+    ops.append({"path": path, "action": "keep_new", "reason": "case_15_fallthrough"})
     return prior_hashes
 
 
