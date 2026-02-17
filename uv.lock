@@ -3,7 +3,7 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-02-17T14:20:34Z"
+exclude-newer = "2026-02-17T14:22:10Z"
 
 [[package]]
 name = "aiofiles"
@@ -1838,6 +1838,15 @@ wheels = [
 ]
 
 [[package]]
+name = "ssh-audit"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/ec/e89fdfaaa6f08813e1a5cf926bc0dc155761144ebcac57191b4c8001aae3/ssh_audit-3.3.0.tar.gz", hash = "sha256:b76e36ac9844f45d64986c9f293a4b46766a10412dc29fb43bd52d0f6661a5b0", size = 116958, upload-time = "2024-10-15T21:08:28.632Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/21/2b3cd275bc3c09fc765691f6c005a6683edf47f47c18d2f9eb78c39ca7e6/ssh_audit-3.3.0-py3-none-any.whl", hash = "sha256:8d2b22b7bb7c20c9d84452c9f13408015ec76eb025379cc70335e5315e4378d6", size = 121789, upload-time = "2024-10-15T21:08:27.182Z" },
+]
+
+[[package]]
 name = "standard-imghdr"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1920,6 +1929,7 @@ dependencies = [
     { name = "rich" },
     { name = "semver" },
     { name = "sqlmodel" },
+    { name = "ssh-audit" },
     { name = "standard-imghdr" },
     { name = "strictyaml" },
     { name = "structlog" },
@@ -1984,6 +1994,7 @@ requires-dist = [
     { name = "rich", specifier = "~=14.0.0" },
     { name = "semver", specifier = ">=3.0.4" },
     { name = "sqlmodel", specifier = "~=0.0.24" },
+    { name = "ssh-audit", specifier = ">=3.3.0" },
     { name = "standard-imghdr", specifier = ">=3.13.0" },
     { name = "strictyaml", specifier = ">=1.7.3" },
     { name = "structlog", specifier = ">=25.5.0" },

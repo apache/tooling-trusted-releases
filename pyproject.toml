@@ -50,6 +50,7 @@ dependencies = [
   "rich~=14.0.0",
   "semver>=3.0.4",
   "sqlmodel~=0.0.24",
+  "ssh-audit>=3.3.0",
   "standard-imghdr>=3.13.0",
   "strictyaml>=1.7.3",
   "structlog>=25.5.0",

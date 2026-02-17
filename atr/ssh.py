@@ -30,6 +30,10 @@ from typing import Any, Final
 import aiofiles
 import aiofiles.os
 import asyncssh
+import asyncssh.encryption as encryption
+import asyncssh.kex as kex
+import asyncssh.mac as mac
+import ssh_audit.builtin_policies as builtin_policies
 
 import atr.attestable as attestable
 import atr.config as config
@@ -42,6 +46,17 @@ import atr.user as user
 import atr.util as util
 
 _CONFIG: Final = config.get()
+
+_SSH_AUDIT_POLICY: Final = builtin_policies.BUILTIN_POLICIES["Hardened OpenSSH Server v9.9 (version 1)"]
+
+_ASYNCSSH_SUPPORTED_ENC: Final = {bytes(a) for a in encryption.get_encryption_algs()}
+_ASYNCSSH_SUPPORTED_KEX: Final = {bytes(a) for a in kex.get_kex_algs()}
+_ASYNCSSH_SUPPORTED_MAC: Final = {bytes(a) for a in mac.get_mac_algs()}
+
+
+_APPROVED_CIPHERS: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "ciphers", _ASYNCSSH_SUPPORTED_ENC)
+_APPROVED_KEX: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "kex", _ASYNCSSH_SUPPORTED_KEX)
+_APPROVED_MACS: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "macs", _ASYNCSSH_SUPPORTED_MAC)
 
 
 class RsyncArgsError(Exception):
@@ -178,6 +193,9 @@ async def server_start() -> asyncssh.SSHAcceptor:
         host=_CONFIG.SSH_HOST,
         port=_CONFIG.SSH_PORT,
         encoding=None,
+        encryption_algs=_APPROVED_CIPHERS,
+        kex_algs=_APPROVED_KEX,
+        mac_algs=_APPROVED_MACS,
     )
 
     log.info(f"SSH server started on {_CONFIG.SSH_HOST}:{_CONFIG.SSH_PORT}")

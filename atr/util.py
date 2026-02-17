@@ -190,22 +190,6 @@ async def async_temporary_directory(
             log.exception(f"Failed to remove temporary directory {temp_dir_path}")
 
 
-async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str = "utf-8") -> None:
-    """Atomically write content to a file using a temporary file."""
-    await aiofiles.os.makedirs(file_path.parent, exist_ok=True)
-    temp_path = file_path.parent / f".{file_path.name}.{uuid.uuid4()}.tmp"
-    try:
-        async with aiofiles.open(temp_path, "w", encoding=encoding) as f:
-            await f.write(content)
-            await f.flush()
-            await asyncio.to_thread(os.fsync, f.fileno())
-        await aiofiles.os.rename(temp_path, file_path)
-    except Exception:
-        with contextlib.suppress(FileNotFoundError):
-            await aiofiles.os.remove(temp_path)
-        raise
-
-
 async def atomic_modify_file(
     file_path: pathlib.Path,
     modify: Callable[[str], str],
@@ -225,6 +209,22 @@ async def atomic_modify_file(
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
     finally:
         await asyncio.to_thread(os.close, lock_fd)
+
+
+async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str = "utf-8") -> None:
+    """Atomically write content to a file using a temporary file."""
+    await aiofiles.os.makedirs(file_path.parent, exist_ok=True)
+    temp_path = file_path.parent / f".{file_path.name}.{uuid.uuid4()}.tmp"
+    try:
+        async with aiofiles.open(temp_path, "w", encoding=encoding) as f:
+            await f.write(content)
+            await f.flush()
+            await asyncio.to_thread(os.fsync, f.fileno())
+        await aiofiles.os.rename(temp_path, file_path)
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            await aiofiles.os.remove(temp_path)
+        raise
 
 
 def chmod_directories(path: pathlib.Path, permissions: int = DIRECTORY_PERMISSIONS) -> None:
@@ -619,6 +619,13 @@ async def has_files(release: sql.Release) -> bool:
     except FileNotFoundError:
         ...
     return False
+
+
+def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes]) -> list[str]:
+    algs = policy[policy_key]
+    if not isinstance(algs, list):
+        raise TypeError(f"ssh-audit policy '{policy_key}' is not a list")
+    return [a for a in algs if isinstance(a, str) and (a.encode("ascii") in supported)]
 
 
 def is_dev_environment() -> bool:
