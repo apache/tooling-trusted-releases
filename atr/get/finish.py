@@ -210,8 +210,12 @@ def _render_dist_warning() -> htm.Element:
     return htm.div(".alert.alert-warning.mb-4", role="alert")[
         htm.p(".fw-semibold.mb-1")["NOTE:"],
         htm.p(".mb-1")[
-            "Tools to distribute automatically are still being developed, "
-            "you must do this manually at present. Please use the manual record function below to do so.",
+            "Tools to distribute from ",
+            htm.a(href="https://github.com/apache/tooling-docs/blob/main/apache-trusted-releases/distributions.md")[
+                "ATR to third party channels"
+            ],
+            " are still being developed, "
+            "you must do this manually at present. Please use the manual record function below to test.",
         ],
     ]
 
@@ -288,12 +292,15 @@ def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
     """Render the move files section with JavaScript interaction."""
     section = htm.Block()
 
-    section.h2["Move items to a different directory"]
+    section.h2["Move ASF distribution items to a different directory"]
     section.p[
         "You may ",
         htm.strong["optionally"],
-        " move files between your directories here if you want change their location for the final release. "
-        "Note that files with associated metadata (e.g. ",
+        " move files between your directories here if you want change their location for the final release in ",
+        htm.a(href="https://dist.apache.org/repos/dist/release/")["svn:dist/release"],
+        "/",
+        htm.a(href="https://downloads.apache.org/")["ASF Distribution Directory"],
+        " area. Note that files with associated metadata (e.g. ",
         htm.code[".asc"],
         " or ",
         htm.code[".sha512"],
@@ -383,11 +390,11 @@ async def _render_page(
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
 
-    page.h2["Distributions"]
+    page.h2["Third Party Distributions"]
     # Information paragraph
     page.p[
-        "During this phase you should distribute release artifacts to your package distribution networks "
-        "such as Maven Central, PyPI, or Docker Hub."
+        "During this finish phase of the release, you should distribute non-ASF release artifacts to your favorite ",
+        "third party distribution networks, such as Maven Central, PyPI, or Docker Hub.",
     ]
 
     if len(distribution_tasks) > 0:
