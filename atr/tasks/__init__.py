@@ -18,9 +18,11 @@
 import asyncio
 import datetime
 import pathlib
+import sqlite3
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Final
 
+import sqlalchemy.exc
 import sqlmodel
 
 import atr.attestable as attestable
@@ -187,7 +189,7 @@ async def draft_checks(
             extra_args={"is_podling": is_podling},
         )
         if path_check_task:
-            data.add(path_check_task)
+            await _add_task(data, path_check_task)
             if caller_data is None:
                 await data.commit()
 
@@ -215,7 +217,7 @@ async def _draft_file_checks(
         for task in await task_function(asf_uid, release, revision_number, path_str, data):
             if task:
                 task.revision_number = revision_number
-                data.add(task)
+                await _add_task(data, task)
     # TODO: Should we check .json files for their content?
     # Ideally we would not have to do that
     if path.name.endswith(".cdx.json"):
@@ -236,7 +238,7 @@ async def _draft_file_checks(
             },
         )
         if cdx_task:
-            data.add(cdx_task)
+            await _add_task(data, cdx_task)
 
 
 async def keys_import_file(
@@ -298,39 +300,43 @@ async def queued(
     extra_args: dict[str, Any] | None = None,
     check_cache_key: dict[str, Any] | None = None,
 ) -> sql.Task | None:
-    # If there's a queued or running task for this same set of inputs and hash value, don't start a new one
-    # If there isn't one, but there is an existing check result, also don't run a new task, just use the existing one
+    hash_val = None
     if check_cache_key is not None:
         hash_val = hashes.compute_dict_hash(check_cache_key)
         if not data:
             raise RuntimeError("DB Session is required for check_cache_key")
-        existing_task = await data.task(
-            inputs_hash=hash_val,
-            project_name=release.project_name,
-            version_name=release.version,
-            task_args=extra_args or {},
-            status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
-        ).all()
-        if existing_task:
+        existing = await data.check_result(inputs_hash=hash_val, release_name=release.name).all()
+        if existing:
+            await attestable.write_checks_data(
+                release.project.name, release.version, revision_number, [c.id for c in existing]
+            )
             return None
-        else:
-            existing = await data.check_result(inputs_hash=hash_val, release_name=release.name).all()
-            if existing:
-                await attestable.write_checks_data(
-                    release.project.name, release.version, revision_number, [c.id for c in existing]
-                )
-                return None
+        return sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=task_type,
+            task_args=extra_args or {},
+            asf_uid=asf_uid,
+            project_name=release.project.name,
+            version_name=release.version,
+            revision_number=revision_number,
+            primary_rel_path=primary_rel_path,
+            inputs_hash=hash_val,
+        )
 
-    return sql.Task(
-        status=sql.TaskStatus.QUEUED,
-        task_type=task_type,
-        task_args=extra_args or {},
-        asf_uid=asf_uid,
-        project_name=release.project.name,
-        version_name=release.version,
-        revision_number=revision_number,
-        primary_rel_path=primary_rel_path,
-    )
+
+async def _add_task(data: db.Session, task: sql.Task) -> None:
+    try:
+        async with data.begin_nested():
+            data.add(task)
+            await data.flush()
+    except sqlalchemy.exc.IntegrityError as e:
+        if (
+            isinstance(e.orig, sqlite3.IntegrityError)
+            and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE)
+            and ("task.inputs_hash" in str(e.orig))
+        ):
+            return
+        raise
 
 
 def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results | None]]:  # noqa: C901

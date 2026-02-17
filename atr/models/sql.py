@@ -357,7 +357,12 @@ class Task(sqlmodel.SQLModel, table=True):
     status: TaskStatus = sqlmodel.Field(default=TaskStatus.QUEUED, index=True)
     task_type: TaskType
     task_args: Any = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
-    inputs_hash: str | None = sqlmodel.Field(default=None, index=True, **example("blake3:7f83b1657ff1fc..."))
+    inputs_hash: str | None = sqlmodel.Field(
+        default=None,
+        **example("blake3:7f83b1657ff1fc..."),
+        unique=True,
+        index=True,
+    )
     asf_uid: str
     added: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
