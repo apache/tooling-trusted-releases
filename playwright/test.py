@@ -20,6 +20,7 @@
 import argparse
 import dataclasses
 import glob
+import json
 import logging
 import os
 import re
@@ -554,6 +555,7 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
         test_checks_04_paths,
         test_checks_05_signature,
         test_checks_06_targz,
+        test_checks_07_cache,
     ]
 
     # Order between our tests must be preserved
@@ -746,6 +748,56 @@ def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
     structure_success_badge = structure_row_locator.locator("td span.badge.bg-success:text-is('Success')")
     expect(structure_success_badge).to_be_visible()
     logging.info("Targz Structure status verified as Success")
+
+
+def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
+    project_name = TEST_PROJECT
+    version_name = "0.2"
+    filename_targz = f"apache-{project_name}-{version_name}.tar.gz"
+    report_file_path = f"/report/{project_name}/{version_name}/{filename_targz}"
+
+    logging.info(f"Starting check cache checks for {filename_targz}")
+    logging.info("Uploading new file to create new revision")
+    logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_name}")
+    go_to_path(page, f"/upload/{TEST_PROJECT}/{version_name}")
+    logging.info("Upload file page loaded")
+
+    logging.info("Locating the file input")
+    file_input_locator = page.locator('input[name="file_data"]')
+    expect(file_input_locator).to_be_visible()
+
+    logging.info("Setting the input file to /run/tests/example.txt")
+    file_input_locator.set_input_files("/run/tests/example.txt")
+
+    logging.info("Locating and activating the add files button")
+    submit_button_locator = page.get_by_role("button", name="Add files")
+    expect(submit_button_locator).to_be_enabled()
+    submit_button_locator.click()
+
+    logging.info("Waiting for upload to complete and redirect to compose page")
+    page.wait_for_url(f"**/compose/{TEST_PROJECT}/{version_name}*", timeout=30000)
+    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+    logging.info("Add file actions completed successfully")
+
+    logging.info(f"Navigating to report page {report_file_path}")
+    go_to_path(page, report_file_path)
+    logging.info(f"Successfully navigated to {report_file_path}")
+
+    ensure_success_results_are_visible(page, "primary")
+
+    logging.info("Verifying Targz Integrity status exists")
+    integrity_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Integrity'))")
+    expect(integrity_row_locator).to_be_visible()
+
+    logging.info("Verifying Targz Integrity result is from previous revision")
+    check_link_locator = integrity_row_locator.locator("th:has-text('Targz Integrity') a")
+    check_link_url = (check_link_locator.get_attribute("href") or "").replace(ATR_BASE_URL, "")
+    check_link_locator.click()
+    logging.info(f"Waiting for raw check result to load: {check_link_url}")
+    wait_for_path(page, check_link_url)
+    check_result = json.loads(page.locator("pre").inner_text())
+    logging.info("Verifying revision number")
+    assert check_result["revision_number"] == "00001"
 
 
 def test_openpgp_01_upload(page: Page, credentials: Credentials) -> None:
