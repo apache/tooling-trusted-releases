@@ -43,6 +43,36 @@ import atr.util as util
 
 _CONFIG: Final = config.get()
 
+_APPROVED_CIPHERS: Final[list[str]] = [
+    "chacha20-poly1305@openssh.com",
+    "aes256-gcm@openssh.com",
+    "aes128-gcm@openssh.com",
+    "aes256-ctr",
+    "aes192-ctr",
+    "aes128-ctr",
+]
+
+_APPROVED_KEX: Final[list[str]] = [
+    "rsa2048-sha256",
+    "curve25519-sha256",
+    "ecdh-sha2-nistp256",
+    "diffie-hellman-group16-sha512",
+]
+
+_APPROVED_MACS: Final[list[str]] = [
+    "hmac-sha2-256-etm@openssh.com",
+    "hmac-sha2-512-etm@openssh.com",
+    "hmac-sha1-etm@openssh.com",
+    "hmac-sha2-256",
+    "hmac-sha2-512",
+    "hmac-sha1",
+    "hmac-sha256-2@ssh.com",
+    "hmac-sha224@ssh.com",
+    "hmac-sha256@ssh.com",
+    "hmac-sha384@ssh.com",
+    "hmac-sha512@ssh.com",
+]
+
 
 class RsyncArgsError(Exception):
     """Exception raised when the rsync arguments are invalid."""
@@ -178,6 +208,9 @@ async def server_start() -> asyncssh.SSHAcceptor:
         host=_CONFIG.SSH_HOST,
         port=_CONFIG.SSH_PORT,
         encoding=None,
+        encryption_algs=_APPROVED_CIPHERS,
+        kex_algs=_APPROVED_KEX,
+        mac_algs=_APPROVED_MACS,
     )
 
     log.info(f"SSH server started on {_CONFIG.SSH_HOST}:{_CONFIG.SSH_PORT}")
