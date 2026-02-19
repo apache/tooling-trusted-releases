@@ -1244,6 +1244,9 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     if path_segment in (".", ".."):
         raise ValueError(f"{position} cannot be a directory traversal")
 
+    if path_segment in (".git", ".svn"):
+        raise ValueError(f"{position} cannot be a SCM directory")
+
     return path_segment
 
 
