@@ -29,6 +29,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
+CHECK_VERSION: Final[str] = "1"
 
 
 async def integrity(args: checks.FunctionArguments) -> results.Results | None:
@@ -37,7 +38,7 @@ async def integrity(args: checks.FunctionArguments) -> results.Results | None:
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     log.info(f"Checking zip integrity for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -63,7 +64,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     if await recorder.primary_path_is_binary():
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     log.info(f"Checking zip structure for {artifact_abs_path} (rel: {args.primary_rel_path})")
 

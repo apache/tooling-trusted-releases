@@ -32,7 +32,8 @@ import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_name"]
+INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_name", "unsuffixed_file_hash"]
+CHECK_VERSION: Final[str] = "1"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -54,7 +55,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.exception("Committee name is required", {"committee_name": committee_name})
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     log.info(
         f"Checking signature {primary_abs_path} for {artifact_abs_path}"

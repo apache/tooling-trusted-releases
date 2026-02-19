@@ -29,7 +29,7 @@ class HashEntry(schema.Strict):
 
 class AttestableChecksV1(schema.Strict):
     version: Literal[1] = 1
-    checks: list[int] = schema.factory(list)
+    checks: dict[str, dict[str, str]] = schema.factory(dict)
 
 
 class AttestablePathsV1(schema.Strict):

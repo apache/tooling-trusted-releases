@@ -20,10 +20,12 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import functools
+import json
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles
 import aiofiles.os
+import pydantic
 import sqlmodel
 
 if TYPE_CHECKING:
@@ -39,6 +41,7 @@ import atr.file_paths as file_paths
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.sql as sql
+import atr.sbom.models.github as github_models
 import atr.util as util
 
 
@@ -104,7 +107,15 @@ class Recorder:
         member_rel_path: str | None = None,
         afresh: bool = True,
     ) -> Recorder:
-        recorder = cls(checker, project_name, version_name, revision_number, primary_rel_path, member_rel_path, afresh)
+        recorder = cls(
+            checker,
+            project_name,
+            version_name,
+            revision_number,
+            primary_rel_path,
+            member_rel_path,
+            afresh,
+        )
         if afresh is True:
             # Clear outer path whether it's specified or not
             await recorder.clear(primary_rel_path=primary_rel_path, member_rel_path=member_rel_path)
@@ -198,7 +209,11 @@ class Recorder:
         return matches(str(abs_path))
 
     async def cache_key_set(
-        self, policy_keys: list[str], input_args: list[str] | None = None, checker: str | None = None
+        self,
+        policy_keys: list[str],
+        version,
+        input_args: list[str] | None = None,
+        checker: str | None = None,
     ) -> bool:
         # TODO: Should this just be in the constructor?
 
@@ -216,9 +231,15 @@ class Recorder:
             release = await data.release(
                 name=self.release_name, _release_policy=True, _project_release_policy=True, _project=True
             ).demand(RuntimeError(f"Release {self.release_name} not found"))
-            args = await resolve_extra_args(input_args or [], release)
+            args = await resolve_extra_args(input_args or [], release, self.primary_rel_path)
             cache_key = await resolve_cache_key(
-                checker or self.checker, policy_keys, release, self.revision_number, args, file=self.primary_rel_path
+                checker or self.checker,
+                version,
+                policy_keys,
+                release,
+                self.revision_number,
+                args,
+                file=self.primary_rel_path,
             )
             self.__input_hash = hashes.compute_dict_hash(cache_key) if cache_key else None
         return True
@@ -257,7 +278,6 @@ class Recorder:
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
         )
-        await attestable.write_checks_data(self.project_name, self.version_name, self.revision_number, [result.id])
         return result
 
     async def exception(
@@ -274,7 +294,6 @@ class Recorder:
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
         )
-        await attestable.write_checks_data(self.project_name, self.version_name, self.revision_number, [result.id])
         return result
 
     async def failure(
@@ -291,7 +310,6 @@ class Recorder:
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
         )
-        await attestable.write_checks_data(self.project_name, self.version_name, self.revision_number, [result.id])
         return result
 
     async def success(
@@ -308,7 +326,6 @@ class Recorder:
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
         )
-        await attestable.write_checks_data(self.project_name, self.version_name, self.revision_number, [result.id])
         return result
 
     async def use_check_cache(self) -> bool:
@@ -337,7 +354,6 @@ class Recorder:
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
         )
-        await attestable.write_checks_data(self.project_name, self.version_name, self.revision_number, [result.id])
         return result
 
 
@@ -347,6 +363,7 @@ def function_key(func: Callable[..., Any] | str) -> str:
 
 async def resolve_cache_key(
     checker: str | Callable[..., Any],
+    checker_version: str,
     policy_keys: list[str],
     release: sql.Release,
     revision: str,
@@ -381,7 +398,7 @@ async def resolve_cache_key(
         return {**cache_key, **args}
 
 
-async def resolve_extra_args(arg_names: list[str], release: sql.Release) -> dict[str, Any]:
+async def resolve_extra_args(arg_names: list[str], release: sql.Release, rel_path: str | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for name in arg_names:
         resolver = _EXTRA_ARG_RESOLVERS.get(name, None)
@@ -389,7 +406,7 @@ async def resolve_extra_args(arg_names: list[str], release: sql.Release) -> dict
         if resolver is None:
             log.warning(f"Unknown extra arg resolver: {name}")
             return {}
-        result[name] = await resolver(release)
+        result[name] = await resolver(release, rel_path)
     return result
 
 
@@ -407,7 +424,7 @@ def with_model(cls: type[schema.Strict]) -> Callable[[Callable[..., Any]], Calla
     return decorator
 
 
-async def _resolve_all_files(release: sql.Release) -> list[str]:
+async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) -> list[str]:
     if not release.latest_revision_number:
         return []
     if not (
@@ -422,21 +439,57 @@ async def _resolve_all_files(release: sql.Release) -> list[str]:
         return []
     relative_paths = [p async for p in util.paths_recursive(base_path)]
     relative_paths_set = set(str(p) for p in relative_paths)
-    return list(relative_paths_set)
+    return list(sorted(relative_paths_set))
 
 
-async def _resolve_is_podling(release: sql.Release) -> bool:
+async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None) -> bool:
     return (release.committee is not None) and release.committee.is_podling
 
 
-async def _resolve_committee_name(release: sql.Release) -> str:
+async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
+    if not release.latest_revision_number:
+        return ""
+    payload_path = attestable.github_tp_payload_path(
+        release.project_name, release.version, release.latest_revision_number
+    )
+    if not await aiofiles.os.path.isfile(payload_path):
+        return ""
+    try:
+        async with aiofiles.open(payload_path, encoding="utf-8") as f:
+            data = json.loads(await f.read())
+        if not isinstance(data, dict):
+            log.warning(f"TP payload was not a JSON object in {payload_path}")
+            return ""
+        tp_data = github_models.TrustedPublisherPayload.model_validate(data)
+        return tp_data.sha
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning(f"Failed to read TP payload from {payload_path}: {e}")
+        return ""
+    except pydantic.ValidationError as e:
+        log.warning(f"Failed to validate TP payload from {payload_path}: {e}")
+        return ""
+
+
+async def _resolve_committee_name(release: sql.Release, rel_path: str | None = None) -> str:
     if release.committee is None:
         raise ValueError("Release has no committee")
     return release.committee.name
 
 
-_EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release], Any]]] = {
+async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | None = None) -> str:
+    if (not rel_path) or (not release.latest_revision_number):
+        return ""
+    abs_path = file_paths.revision_path_for_file(
+        release.project_name, release.version, release.latest_revision_number, rel_path
+    )
+    plain_path = abs_path.with_suffix("")
+    return await hashes.compute_file_hash(plain_path)
+
+
+_EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]] = {
     "all_files": _resolve_all_files,
-    "is_podling": _resolve_is_podling,
     "committee_name": _resolve_committee_name,
+    "github_tp_sha": _resolve_github_tp_sha,
+    "is_podling": _resolve_is_podling,
+    "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
 }

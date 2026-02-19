@@ -52,7 +52,6 @@ async def data(
 
         check_result = await data.check_result(
             id=check_id,
-            release_name=release.name,
         ).demand(base.ASFQuartException("Check result not found", errorcode=404))
 
     payload = check_result.model_dump(mode="json", exclude={"release"})

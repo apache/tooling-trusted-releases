@@ -98,7 +98,7 @@ async def load_checks(
     project_name: str,
     version_name: str,
     revision_number: str,
-) -> list[int] | None:
+) -> dict[str, dict[str, str]] | None:
     file_path = attestable_checks_path(project_name, version_name, revision_number)
     if await aiofiles.os.path.isfile(file_path):
         try:
@@ -107,7 +107,7 @@ async def load_checks(
             return models.AttestableChecksV1.model_validate(data).checks
         except (json.JSONDecodeError, pydantic.ValidationError) as e:
             log.warning(f"Could not parse {file_path}: {e}")
-    return []
+    return {}
 
 
 def migrate_to_paths_files() -> int:
@@ -182,18 +182,21 @@ async def write_checks_data(
     project_name: str,
     version_name: str,
     revision_number: str,
-    checks: list[int],
+    rel_path: str,
+    checks: dict[str, str],
 ) -> None:
-    log.info(f"Writing checks for {project_name}/{version_name}/{revision_number}: {checks}")
+    log.info(f"Writing checks for {project_name}/{version_name}/{revision_number}/{rel_path}: {checks}")
 
     def modify(content: str) -> str:
         try:
             current = AttestableChecksV1.model_validate_json(content).checks
         except pydantic.ValidationError:
-            current = []
-        new_checks = set(current or [])
-        new_checks.update(checks)
-        result = models.AttestableChecksV1(checks=sorted(new_checks))
+            current = {}
+        if rel_path not in current:
+            current[rel_path] = checks
+        else:
+            current[rel_path].update(checks)
+        result = models.AttestableChecksV1(checks=current)
         return result.model_dump_json(indent=2)
 
     await util.atomic_modify_file(attestable_checks_path(project_name, version_name, revision_number), modify)

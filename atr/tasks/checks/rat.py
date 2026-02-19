@@ -68,6 +68,7 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
+CHECK_VERSION: Final[str] = "1"
 
 
 class RatError(RuntimeError):
@@ -88,7 +89,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         log.info(f"Skipping RAT check for {artifact_abs_path} (mode is LIGHTWEIGHT)")
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 

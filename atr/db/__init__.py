@@ -166,6 +166,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         message: Opt[str] = NOT_SET,
         data: Opt[Any] = NOT_SET,
         inputs_hash: Opt[str] = NOT_SET,
+        inputs_hash_in: Opt[list[str]] = NOT_SET,
         _release: bool = False,
     ) -> Query[sql.CheckResult]:
         query = sqlmodel.select(sql.CheckResult)
@@ -196,6 +197,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.CheckResult.data == data)
         if is_defined(inputs_hash):
             query = query.where(sql.CheckResult.inputs_hash == inputs_hash)
+        if is_defined(inputs_hash_in):
+            query = query.where(via(sql.CheckResult.inputs_hash).in_(inputs_hash_in))
 
         if _release:
             query = query.options(joined_load(sql.CheckResult.release))
