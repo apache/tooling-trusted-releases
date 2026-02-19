@@ -123,8 +123,17 @@ class GeneralPublic:
         self, release: sql.Release, latest_revision_number: str, info: types.PathInfo
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.project_name)
-        check_ids = await attestable.load_checks(release.project_name, release.version, latest_revision_number)
-        attestable_checks = [a for a in await self.__data.check_result(id_in=check_ids).all()] if check_ids else []
+        file_path_checks = await attestable.load_checks(release.project_name, release.version, latest_revision_number)
+        attestable_checks = (
+            [
+                a
+                for a in await self.__data.check_result(
+                    inputs_hash_in=[h for inner in file_path_checks.values() for h in inner.values()]
+                ).all()
+            ]
+            if file_path_checks
+            else []
+        )
 
         cs = types.ChecksSubset(
             checks=attestable_checks,

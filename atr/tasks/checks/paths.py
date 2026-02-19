@@ -40,6 +40,7 @@ _ALLOWED_TOP_LEVEL: Final = frozenset(
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
+CHECK_VERSION: Final[str] = "1"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -89,9 +90,15 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     relative_paths = [p async for p in util.paths_recursive(base_path)]
     relative_paths_set = set(str(p) for p in relative_paths)
 
-    await recorder_errors.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS, checker=checks.function_key(check))
-    await recorder_warnings.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS, checker=checks.function_key(check))
-    await recorder_success.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS, checker=checks.function_key(check))
+    await recorder_errors.cache_key_set(
+        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
+    )
+    await recorder_warnings.cache_key_set(
+        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
+    )
+    await recorder_success.cache_key_set(
+        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
+    )
 
     for relative_path in relative_paths:
         # Delegate processing of each path to the helper function

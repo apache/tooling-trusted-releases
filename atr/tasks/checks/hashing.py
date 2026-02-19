@@ -27,7 +27,8 @@ import atr.tasks.checks as checks
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = []
+INPUT_EXTRA_ARGS: Final[list[str]] = ["unsuffixed_file_hash"]
+CHECK_VERSION: Final[str] = "1"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -41,7 +42,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.failure("Unsupported hash algorithm", {"algorithm": algorithm})
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     # Remove the hash file suffix to get the artifact path
     # This replaces the last suffix, which is what we want

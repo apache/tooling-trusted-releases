@@ -82,6 +82,7 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = [""]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
+CHECK_VERSION: Final[str] = "1"
 
 # Types
 
@@ -139,7 +140,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
             return None
 
     is_podling = args.extra_args.get("is_podling", False)
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -172,7 +173,7 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
         if project.policy_license_check_mode == sql.LicenseCheckMode.RAT:
             return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     # if await recorder.check_cache(artifact_abs_path):
     #     log.info(f"Using cached license headers result for {artifact_abs_path} (rel: {args.primary_rel_path})")

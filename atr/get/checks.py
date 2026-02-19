@@ -23,6 +23,7 @@ import asfquart.base as base
 import htpy
 import quart
 
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
@@ -232,11 +233,17 @@ async def _compute_stats(  # noqa: C901
         empty_stats = FileStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         return {p: empty_stats for p in paths}, empty_stats
 
-    async with db.session() as data:
-        check_results = await data.check_result(
-            release_name=release.name,
-            revision_number=release.latest_revision_number,
-        ).all()
+    file_path_checks = await attestable.load_checks(
+        release.project_name, release.version, release.latest_revision_number
+    )
+
+    if file_path_checks:
+        async with db.session() as data:
+            check_results = await data.check_result(
+                inputs_hash_in=[h for inner in file_path_checks.values() for h in inner.values()]
+            ).all()
+    else:
+        check_results = []
 
     for cr in check_results:
         if not cr.primary_rel_path:

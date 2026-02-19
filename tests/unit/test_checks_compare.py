@@ -243,7 +243,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
         self._is_source = is_source
 
     async def cache_key_set(
-        self, policy_keys: list[str], input_args: list[str] | None = None, checker: str | None = None
+        self, policy_keys: list[str], version: str, input_args: list[str] | None = None, checker: str | None = None
     ) -> bool:
         return False
 
@@ -272,8 +272,8 @@ class RecorderStub(atr.tasks.checks.Recorder):
     ) -> atr.models.sql.CheckResult:
         self.success_calls.append((message, data))
         return atr.models.sql.CheckResult(
-            release_name=self.release_name,
-            revision_number=self.revision_number,
+            release_name=None,
+            revision_number=None,
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,

@@ -42,7 +42,7 @@ class RecorderStub(checks.Recorder):
         return self._path if (rel_path is None) else self._path / rel_path
 
     async def cache_key_set(
-        self, policy_keys: list[str], input_args: list[str] | None = None, checker: str | None = None
+        self, policy_keys: list[str], version: str, input_args: list[str] | None = None, checker: str | None = None
     ) -> bool:
         return False
 

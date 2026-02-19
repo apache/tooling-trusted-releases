@@ -53,7 +53,8 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 }
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = []
+INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
+CHECK_VERSION: Final[str] = "1"
 
 
 @dataclasses.dataclass
@@ -93,7 +94,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         )
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, INPUT_EXTRA_ARGS)
+    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     payload = await _load_tp_payload(args.project_name, args.version_name, args.revision_number)
     checkout_dir: str | None = None

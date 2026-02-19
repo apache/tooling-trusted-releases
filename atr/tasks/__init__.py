@@ -63,14 +63,15 @@ async def asc_checks(
                 sql.TaskType.SIGNATURE_CHECK,
                 release,
                 revision,
-                data,
                 signature_path,
                 check_cache_key=await checks.resolve_cache_key(
                     resolve(sql.TaskType.SIGNATURE_CHECK),
+                    signature.CHECK_VERSION,
                     signature.INPUT_POLICY_KEYS,
                     release,
                     revision,
-                    await checks.resolve_extra_args(signature.INPUT_EXTRA_ARGS, release),
+                    await checks.resolve_extra_args(signature.INPUT_EXTRA_ARGS, release, signature_path),
+                    file=signature_path,
                 ),
                 extra_args={"committee_name": release.committee.name},
             )
@@ -177,9 +178,9 @@ async def draft_checks(
             sql.TaskType.PATHS_CHECK,
             release,
             revision_number,
-            caller_data,
             check_cache_key=await checks.resolve_cache_key(
                 resolve(sql.TaskType.PATHS_CHECK),
+                paths.CHECK_VERSION,
                 paths.INPUT_POLICY_KEYS,
                 release,
                 revision_number,
@@ -226,7 +227,6 @@ async def _draft_file_checks(
             sql.TaskType.SBOM_TOOL_SCORE,
             release,
             revision_number,
-            caller_data,
             path_str,
             extra_args={
                 "project_name": project_name,
@@ -295,33 +295,33 @@ async def queued(
     task_type: sql.TaskType,
     release: sql.Release,
     revision_number: str,
-    data: db.Session | None = None,
     primary_rel_path: str | None = None,
     extra_args: dict[str, Any] | None = None,
     check_cache_key: dict[str, Any] | None = None,
 ) -> sql.Task | None:
-    hash_val = None
+    hash_val: str | None = None
     if check_cache_key is not None:
+        if "checker" not in check_cache_key:
+            raise ValueError("Cache key must contain a 'checker' key")
         hash_val = hashes.compute_dict_hash(check_cache_key)
-        if not data:
-            raise RuntimeError("DB Session is required for check_cache_key")
-        existing = await data.check_result(inputs_hash=hash_val, release_name=release.name).all()
-        if existing:
-            await attestable.write_checks_data(
-                release.project.name, release.version, revision_number, [c.id for c in existing]
-            )
-            return None
-        return sql.Task(
-            status=sql.TaskStatus.QUEUED,
-            task_type=task_type,
-            task_args=extra_args or {},
-            asf_uid=asf_uid,
-            project_name=release.project.name,
-            version_name=release.version,
-            revision_number=revision_number,
-            primary_rel_path=primary_rel_path,
-            inputs_hash=hash_val,
+        await attestable.write_checks_data(
+            release.project.name,
+            release.version,
+            revision_number,
+            primary_rel_path or "",
+            {check_cache_key["checker"]: hash_val},
         )
+    return sql.Task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=task_type,
+        task_args=extra_args or {},
+        asf_uid=asf_uid,
+        project_name=release.project.name,
+        version_name=release.version,
+        revision_number=revision_number,
+        primary_rel_path=primary_rel_path,
+        inputs_hash=hash_val,
+    )
 
 
 async def _add_task(data: db.Session, task: sql.Task) -> None:
@@ -405,14 +405,14 @@ async def sha_checks(
             sql.TaskType.HASHING_CHECK,
             release,
             revision,
-            data,
             hash_file,
             check_cache_key=await checks.resolve_cache_key(
                 resolve(sql.TaskType.HASHING_CHECK),
+                hashing.CHECK_VERSION,
                 hashing.INPUT_POLICY_KEYS,
                 release,
                 revision,
-                await checks.resolve_extra_args(hashing.INPUT_EXTRA_ARGS, release),
+                await checks.resolve_extra_args(hashing.INPUT_EXTRA_ARGS, release, hash_file),
                 file=hash_file,
             ),
         )
@@ -429,6 +429,7 @@ async def tar_gz_checks(
     is_podling = (release.project.committee is not None) and release.project.committee.is_podling
     compare_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.COMPARE_SOURCE_TREES),
+        compare.CHECK_VERSION,
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -437,6 +438,7 @@ async def tar_gz_checks(
     )
     license_h_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_HEADERS),
+        license.CHECK_VERSION,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -445,6 +447,7 @@ async def tar_gz_checks(
     )
     license_f_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_FILES),
+        license.CHECK_VERSION,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -453,6 +456,7 @@ async def tar_gz_checks(
     )
     rat_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.RAT_CHECK),
+        rat.CHECK_VERSION,
         rat.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -461,6 +465,7 @@ async def tar_gz_checks(
     )
     targz_i_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.TARGZ_INTEGRITY),
+        targz.CHECK_VERSION,
         targz.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -469,6 +474,7 @@ async def tar_gz_checks(
     )
     targz_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.TARGZ_STRUCTURE),
+        targz.CHECK_VERSION,
         targz.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -476,21 +482,20 @@ async def tar_gz_checks(
         file=path,
     )
     tasks = [
-        queued(asf_uid, sql.TaskType.COMPARE_SOURCE_TREES, release, revision, data, path, check_cache_key=compare_ck),
+        queued(asf_uid, sql.TaskType.COMPARE_SOURCE_TREES, release, revision, path, check_cache_key=compare_ck),
         queued(
             asf_uid,
             sql.TaskType.LICENSE_FILES,
             release,
             revision,
-            data,
             path,
             check_cache_key=license_f_ck,
             extra_args={"is_podling": is_podling},
         ),
-        queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, data, path, check_cache_key=license_h_ck),
-        queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, data, path, check_cache_key=rat_ck),
-        queued(asf_uid, sql.TaskType.TARGZ_INTEGRITY, release, revision, data, path, check_cache_key=targz_i_ck),
-        queued(asf_uid, sql.TaskType.TARGZ_STRUCTURE, release, revision, data, path, check_cache_key=targz_s_ck),
+        queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, path, check_cache_key=license_h_ck),
+        queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, path, check_cache_key=rat_ck),
+        queued(asf_uid, sql.TaskType.TARGZ_INTEGRITY, release, revision, path, check_cache_key=targz_i_ck),
+        queued(asf_uid, sql.TaskType.TARGZ_STRUCTURE, release, revision, path, check_cache_key=targz_s_ck),
     ]
 
     return await asyncio.gather(*tasks)
@@ -531,6 +536,7 @@ async def zip_checks(
     is_podling = (release.project.committee is not None) and release.project.committee.is_podling
     compare_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.COMPARE_SOURCE_TREES),
+        compare.CHECK_VERSION,
         compare.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -539,6 +545,7 @@ async def zip_checks(
     )
     license_h_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_HEADERS),
+        license.CHECK_VERSION,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -547,6 +554,7 @@ async def zip_checks(
     )
     license_f_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_FILES),
+        license.CHECK_VERSION,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -555,6 +563,7 @@ async def zip_checks(
     )
     rat_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.RAT_CHECK),
+        rat.CHECK_VERSION,
         rat.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -563,6 +572,7 @@ async def zip_checks(
     )
     zip_i_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.ZIPFORMAT_INTEGRITY),
+        zipformat.CHECK_VERSION,
         zipformat.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -571,6 +581,7 @@ async def zip_checks(
     )
     zip_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.ZIPFORMAT_STRUCTURE),
+        zipformat.CHECK_VERSION,
         zipformat.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -579,21 +590,20 @@ async def zip_checks(
     )
 
     tasks = [
-        queued(asf_uid, sql.TaskType.COMPARE_SOURCE_TREES, release, revision, data, path, check_cache_key=compare_ck),
+        queued(asf_uid, sql.TaskType.COMPARE_SOURCE_TREES, release, revision, path, check_cache_key=compare_ck),
         queued(
             asf_uid,
             sql.TaskType.LICENSE_FILES,
             release,
             revision,
-            data,
             path,
             check_cache_key=license_f_ck,
             extra_args={"is_podling": is_podling},
         ),
-        queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, data, path, check_cache_key=license_h_ck),
-        queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, data, path, check_cache_key=rat_ck),
-        queued(asf_uid, sql.TaskType.ZIPFORMAT_INTEGRITY, release, revision, data, path, check_cache_key=zip_i_ck),
-        queued(asf_uid, sql.TaskType.ZIPFORMAT_STRUCTURE, release, revision, data, path, check_cache_key=zip_s_ck),
+        queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, path, check_cache_key=license_h_ck),
+        queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, path, check_cache_key=rat_ck),
+        queued(asf_uid, sql.TaskType.ZIPFORMAT_INTEGRITY, release, revision, path, check_cache_key=zip_i_ck),
+        queued(asf_uid, sql.TaskType.ZIPFORMAT_STRUCTURE, release, revision, path, check_cache_key=zip_s_ck),
     ]
     return await asyncio.gather(*tasks)
 

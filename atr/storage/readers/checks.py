@@ -18,51 +18,18 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
 
 import atr.attestable as attestable
 import atr.db as db
-import atr.hashes as hashes
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.types as types
-import atr.tasks.checks as checks
 import atr.util as util
 
 if TYPE_CHECKING:
     import pathlib
-    from collections.abc import Callable, Sequence
-
-
-async def _filter_check_results_by_hash(
-    all_check_results: Sequence[sql.CheckResult],
-    rel_path: pathlib.Path,
-    input_hash_by_module: dict[str, str | None],
-    release: sql.Release,
-) -> Sequence[sql.CheckResult]:
-    filtered_check_results = []
-    if release.latest_revision_number is None:
-        raise ValueError("Release has no revision - Invalid state")
-    for cr in all_check_results:
-        if cr.checker not in input_hash_by_module:
-            module_path = cr.checker.rsplit(".", 1)[0]
-            try:
-                module = importlib.import_module(module_path)
-                policy_keys: list[str] = module.INPUT_POLICY_KEYS
-                extra_arg_names: list[str] = getattr(module, "INPUT_EXTRA_ARGS", [])
-            except (ImportError, AttributeError):
-                policy_keys = []
-                extra_arg_names = []
-            extra_args = await checks.resolve_extra_args(extra_arg_names, release)
-            cache_key = await checks.resolve_cache_key(
-                cr.checker, policy_keys, release, release.latest_revision_number, extra_args, file=rel_path.name
-            )
-            input_hash_by_module[cr.checker] = hashes.compute_dict_hash(cache_key) if cache_key else None
-
-        if cr.inputs_hash == input_hash_by_module[cr.checker]:
-            filtered_check_results.append(cr)
-    return filtered_check_results
+    from collections.abc import Callable
 
 
 class GeneralPublic:
@@ -82,18 +49,28 @@ class GeneralPublic:
         if release.latest_revision_number is None:
             raise ValueError("Release has no revision - Invalid state")
 
-        check_ids = await attestable.load_checks(release.project_name, release.version, release.latest_revision_number)
+        file_path_checks = await attestable.load_checks(
+            release.project_name, release.version, release.latest_revision_number
+        )
         all_check_results = (
             [
                 a
-                for a in await self.__data.check_result(id_in=check_ids)
+                for a in await self.__data.check_result(
+                    inputs_hash_in=[
+                        h
+                        for key in ("", str(rel_path))
+                        if key in file_path_checks
+                        for h in file_path_checks[key].values()
+                    ],
+                    primary_rel_path=str(rel_path),
+                )
                 .order_by(
                     sql.validate_instrumented_attribute(sql.CheckResult.checker).asc(),
                     sql.validate_instrumented_attribute(sql.CheckResult.created).desc(),
                 )
                 .all()
             ]
-            if check_ids
+            if file_path_checks
             else []
         )
 
