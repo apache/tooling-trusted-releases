@@ -1247,6 +1247,9 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     if path_segment in (".git", ".svn"):
         raise ValueError(f"{position} cannot be a SCM directory")
 
+    if path_segment.startswith(".") and not path_segment.startswith(".atr"):
+        raise ValueError(f"{position} cannot be a DOT file")
+
     return path_segment
 
 
