@@ -70,6 +70,7 @@ def _config_secrets_get(
 class AppConfig:
     ABSOLUTE_SESSION_MAX_SECONDS = decouple.config("ABSOLUTE_SESSION_MAX_SECONDS", default=60 * 60 * 72, cast=int)
     ALLOW_TESTS = decouple.config("ALLOW_TESTS", default=False, cast=bool)
+    ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
     DISABLE_CHECK_CACHE = decouple.config("DISABLE_CHECK_CACHE", default=False, cast=bool)
     APP_HOST = decouple.config("APP_HOST", default="127.0.0.1")
     SSH_HOST = decouple.config("SSH_HOST", default="0.0.0.0")

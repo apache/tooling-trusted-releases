@@ -830,12 +830,16 @@ def paths_to_inodes(directory: pathlib.Path) -> dict[str, int]:
 
 
 def permitted_announce_recipients(asf_uid: str) -> list[str]:
-    return [
+    recipients = [
         # f"dev@{committee.name}.apache.org",
         # f"private@{committee.name}.apache.org",
-        USER_TESTS_ADDRESS,
-        f"{asf_uid}@apache.org",
     ]
+    if config.get().ATR_STATUS == "ALPHA":
+        recipients.append(USER_TESTS_ADDRESS)
+        recipients.append(f"{asf_uid}@apache.org")
+    else:
+        recipients.append("announce@apache.org")
+    return recipients
 
 
 def permitted_archive_roots(basename_from_filename: str) -> list[str]:
@@ -848,12 +852,14 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
 
 
 def permitted_voting_recipients(asf_uid: str, committee_name: str) -> list[str]:
-    return [
+    recipients = [
         f"dev@{committee_name}.apache.org",
         f"private@{committee_name}.apache.org",
-        USER_TESTS_ADDRESS,
-        f"{asf_uid}@apache.org",
     ]
+    if config.get().ATR_STATUS == "ALPHA":
+        recipients.append(USER_TESTS_ADDRESS)
+        recipients.append(f"{asf_uid}@apache.org")
+    return recipients
 
 
 def plural(count: int, singular: str, plural_form: str | None = None, *, include_count: bool = True) -> str:
