@@ -171,6 +171,8 @@ async def browse_as_post(session: web.Committer, browse_form: BrowseAsUserForm) 
 async def configuration(session: web.Committer) -> web.QuartResponse:
     """Display the current application configuration values."""
 
+    sensitive_config_patterns = ("_PASSWORD", "_KEY", "_TOKEN", "_SECRET")
+
     conf = config.get()
     values: list[str] = []
     for name in dir(conf):
@@ -180,7 +182,7 @@ async def configuration(session: web.Committer) -> web.QuartResponse:
             val = getattr(conf, name)
         except Exception as exc:
             val = log.python_repr(f"error: {exc}")
-        if name.endswith("_PASSWORD"):
+        if any(pattern in name for pattern in sensitive_config_patterns):
             val = log.python_repr("redacted")
         if callable(val):
             continue
