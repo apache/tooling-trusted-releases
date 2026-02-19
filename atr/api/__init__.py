@@ -424,6 +424,7 @@ async def ignore_list(project_name: str) -> DictResponse:
     """
     _simple_check(project_name)
     async with db.session() as data:
+        await data.project(name=project_name).demand(exceptions.NotFound())
         ignores = await data.check_result_ignore(project_name=project_name).all()
     return models.api.IgnoreListResults(
         endpoint="/ignore/list",
@@ -678,6 +679,7 @@ async def project_releases(name: str) -> DictResponse:
     """
     _simple_check(name)
     async with db.session() as data:
+        await data.project(name=name).demand(exceptions.NotFound())
         releases = await data.release(project_name=name).all()
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
