@@ -17,6 +17,6 @@
 
 from __future__ import annotations
 
-from . import base, bom, bundle, conformance, github, licenses, osv, patch, sbomqs, tool
+from . import base, bom, bundle, conformance, licenses, osv, patch, sbomqs, tool
 
-__all__ = ["base", "bom", "bundle", "conformance", "github", "licenses", "osv", "patch", "sbomqs", "tool"]
+__all__ = ["base", "bom", "bundle", "conformance", "licenses", "osv", "patch", "sbomqs", "tool"]

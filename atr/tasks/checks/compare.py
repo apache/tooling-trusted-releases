@@ -40,8 +40,8 @@ import atr.archives as archives
 import atr.attestable as attestable
 import atr.config as config
 import atr.log as log
+import atr.models.github as github_models
 import atr.models.results as results
-import atr.sbom.models.github as github_models
 import atr.tasks.checks as checks
 import atr.util as util
 

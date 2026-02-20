@@ -17,10 +17,10 @@
 
 from __future__ import annotations
 
-from .base import Lax
+from . import schema
 
 
-class TrustedPublisherPayload(Lax):
+class TrustedPublisherPayload(schema.Subset):
     actor: str
     actor_id: str
     aud: str

@@ -30,7 +30,7 @@ import quart
 import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
-import atr.models.schema as schema
+import atr.models.github as github
 import atr.util as util
 
 _ALGORITHM: Final[str] = "HS256"
@@ -49,41 +49,6 @@ _JWT_SECRET_KEY: Final[str] = config.get().JWT_SECRET_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
-
-
-class GitHubOIDCPayload(schema.Subset):
-    # Not in atr.models because this is not used outside of this file
-
-    actor: str
-    actor_id: str
-    aud: str
-    base_ref: str
-    check_run_id: str
-    enterprise: str
-    enterprise_id: str
-    event_name: str
-    exp: int
-    head_ref: str
-    iat: int
-    iss: str
-    job_workflow_ref: str
-    job_workflow_sha: str
-    jti: str
-    nbf: int | None = None
-    ref: str
-    ref_protected: str
-    ref_type: str
-    repository: str
-    repository_owner: str
-    repository_visibility: str
-    run_attempt: str
-    run_number: str
-    runner_environment: str
-    sha: str
-    sub: str
-    workflow: str
-    workflow_ref: str
-    workflow_sha: str
 
 
 def issue(uid: str, *, ttl: int = _ATR_JWT_TTL) -> str:
@@ -187,7 +152,7 @@ async def verify_github_oidc(token: str) -> dict[str, Any]:
                 f"GitHub OIDC payload mismatch: {key} = {payload[key]} != {value}",
                 errorcode=401,
             )
-    return GitHubOIDCPayload.model_validate(payload).model_dump()
+    return github.TrustedPublisherPayload.model_validate(payload).model_dump()
 
 
 def _extract_bearer_token(request: quart.Request) -> str:

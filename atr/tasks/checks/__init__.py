@@ -40,8 +40,8 @@ import atr.db as db
 import atr.file_paths as file_paths
 import atr.hashes as hashes
 import atr.log as log
+import atr.models.github as github_models
 import atr.models.sql as sql
-import atr.sbom.models.github as github_models
 import atr.util as util
 
 
