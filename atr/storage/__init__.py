@@ -247,6 +247,7 @@ class WriteAsFoundationAdmin(WriteAsCommitteeMember):
         self.__committee_name = committee_name
         self.keys = writers.keys.FoundationAdmin(write, self, data, committee_name)
         self.release = writers.release.FoundationAdmin(write, self, data, committee_name)
+        self.tokens = writers.tokens.FoundationAdmin(write, self, data, committee_name)
 
     @property
     def asf_uid(self) -> str:

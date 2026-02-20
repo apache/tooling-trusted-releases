@@ -88,6 +88,11 @@ class LdapLookupForm(form.Form):
     email: str = form.label("Email address (optional)", "Enter email address, e.g. user@example.org")
 
 
+class RevokeUserTokensForm(form.Form):
+    asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose tokens should be revoked.")
+    confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
+
+
 class SessionDataCommon(NamedTuple):
     uid: str
     fullname: str
@@ -699,6 +704,53 @@ async def projects_update_post(session: web.Committer) -> str | web.WerkzeugResp
             "message": f"Failed to queue metadata update: {e!s}",
             "category": "error",
         }, 200
+
+
+@admin.get("/revoke-user-tokens")
+async def revoke_user_tokens_get(session: web.Committer) -> str:
+    """Revoke all Personal Access Tokens for a specified user."""
+    token_counts: list[tuple[str, int]] = []
+    async with db.session() as data:
+        stmt = (
+            sqlmodel.select(
+                sql.PersonalAccessToken.asfuid,
+                sqlmodel.func.count(),
+            )
+            .group_by(sql.PersonalAccessToken.asfuid)
+            .order_by(sql.PersonalAccessToken.asfuid)
+        )
+        rows = await data.execute_query(stmt)
+        token_counts = [(row[0], row[1]) for row in rows]
+
+    rendered_form = form.render(
+        model_cls=RevokeUserTokensForm,
+        submit_label="Revoke all tokens",
+    )
+    return await template.render(
+        "revoke-user-tokens.html",
+        form=rendered_form,
+        token_counts=token_counts,
+    )
+
+
+@admin.post("/revoke-user-tokens")
+@admin.form(RevokeUserTokensForm)
+async def revoke_user_tokens_post(
+    session: web.Committer, revoke_form: RevokeUserTokensForm
+) -> str | web.WerkzeugResponse:
+    """Revoke all Personal Access Tokens for a specified user."""
+    target_uid = revoke_form.asf_uid.strip()
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin("infrastructure")
+        count = await wafa.tokens.revoke_all_user_tokens(target_uid)
+
+    if count > 0:
+        await quart.flash(f"Revoked {count} token(s) for {target_uid}.", "success")
+    else:
+        await quart.flash(f"No tokens found for {target_uid}.", "info")
+
+    return await session.redirect(revoke_user_tokens_get)
 
 
 @admin.get("/task-times/<project_name>/<version_name>/<revision_number>")

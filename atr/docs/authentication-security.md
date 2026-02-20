@@ -69,12 +69,12 @@ Committers can obtain PATs from the `/tokens` page on the ATR website. PATs have
 
 * **Validity**: 180 days from creation, while LDAP account is still active
 * **Storage**: ATR stores only SHA3-256 hashes, never the plaintext PAT
-* **Revocation**: Users can revoke their own PATs at any time; admins can revoke any PAT
+* **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any user via the admin "Revoke user tokens" page
 * **Purpose**: PATs are used solely to obtain JWTs; they cannot be used directly for API access
 
 Only authenticated committers (signed in via ASF OAuth) can create PATs. Each user can have multiple active PATs.
 
-PATs are rejected if the user who created them has been removed from LDAP.
+PATs are rejected if the user who created them has been banned in or removed from LDAP.
 
 ### JSON Web Tokens (JWTs)
 
@@ -139,7 +139,7 @@ For web users, authentication happens once via ASF OAuth, and the session persis
 ### Personal Access Tokens
 
 * Stored as SHA3-256 hashes
-* Can be revoked immediately by the user
+* Can be revoked immediately by the user or in bulk by administrators
 * Limited purpose (only for JWT issuance) reduces impact of compromise
 * Long validity (180 days) balanced by easy revocation
 
@@ -162,3 +162,4 @@ Tokens must be protected by the user at all times:
 
 * [`principal.py`](/ref/atr/principal.py) - Session caching and authorization data
 * [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators
+* [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation

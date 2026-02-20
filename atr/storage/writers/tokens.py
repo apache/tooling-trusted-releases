@@ -169,3 +169,34 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
+
+
+class FoundationAdmin(CommitteeMember):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsFoundationAdmin,
+        data: db.Session,
+        committee_name: str,
+    ):
+        super().__init__(write, write_as, data, committee_name)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+
+    async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
+        """Revoke all PATs for a specified user. Returns count of revoked tokens."""
+        tokens = await self.__data.query_all(
+            sqlmodel.select(sql.PersonalAccessToken).where(sql.PersonalAccessToken.asfuid == target_asf_uid)
+        )
+        count = len(tokens)
+        for token in tokens:
+            await self.__data.delete(token)
+
+        if count > 0:
+            await self.__data.commit()
+            self.__write_as.append_to_audit_log(
+                target_asf_uid=target_asf_uid,
+                tokens_revoked=count,
+            )
+        return count

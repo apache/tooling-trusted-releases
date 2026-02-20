@@ -122,6 +122,12 @@ Token operations apply to the authenticated user:
 * Allowed for: The token owner, or administrators
 * Constraint: Users can only revoke their own tokens (unless admin)
 
+**Revoke all tokens for a user (admin)**:
+
+* Allowed for: ATR administrators only
+* Interface: Admin "Revoke user tokens" page
+* Constraint: Requires typing "REVOKE" as confirmation
+
 **Exchange PAT for JWT**:
 
 * Allowed for: Anyone with a valid PAT
