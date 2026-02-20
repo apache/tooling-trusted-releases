@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     import atr.models.schema as schema
 
 import atr.attestable as attestable
-import atr.config as config
 import atr.db as db
 import atr.file_paths as file_paths
 import atr.hashes as hashes
@@ -69,11 +68,11 @@ class Recorder:
     afresh: bool
     __cached: bool
     __input_hash: str | None
-    __use_check_cache: bool | None
 
     def __init__(
         self,
         checker: str | Callable[..., Any],
+        inputs_hash: str | None,
         project_name: str,
         version_name: str,
         revision_number: str,
@@ -90,8 +89,7 @@ class Recorder:
         self.constructed = False
         self.member_problems: dict[sql.CheckResultStatus, int] = {}
         self.__cached = False
-        self.__input_hash = None
-        self.__use_check_cache = None
+        self.__input_hash = inputs_hash
 
         self.project_name = project_name
         self.version_name = version_name
@@ -100,6 +98,7 @@ class Recorder:
     async def create(
         cls,
         checker: str | Callable[..., Any],
+        inputs_hash: str,
         project_name: str,
         version_name: str,
         revision_number: str,
@@ -109,6 +108,7 @@ class Recorder:
     ) -> Recorder:
         recorder = cls(
             checker,
+            inputs_hash,
             project_name,
             version_name,
             revision_number,
@@ -208,42 +208,6 @@ class Recorder:
         abs_path = await self.abs_path()
         return matches(str(abs_path))
 
-    async def cache_key_set(
-        self,
-        policy_keys: list[str],
-        version,
-        input_args: list[str] | None = None,
-        checker: str | None = None,
-    ) -> bool:
-        # TODO: Should this just be in the constructor?
-
-        if config.get().DISABLE_CHECK_CACHE:
-            return False
-
-        if not await self.use_check_cache():
-            return False
-
-        no_cache_file = self.abs_path_base() / ".atr-no-cache"
-        if await aiofiles.os.path.exists(no_cache_file):
-            return False
-
-        async with db.session() as data:
-            release = await data.release(
-                name=self.release_name, _release_policy=True, _project_release_policy=True, _project=True
-            ).demand(RuntimeError(f"Release {self.release_name} not found"))
-            args = await resolve_extra_args(input_args or [], release, self.primary_rel_path)
-            cache_key = await resolve_cache_key(
-                checker or self.checker,
-                version,
-                policy_keys,
-                release,
-                self.revision_number,
-                args,
-                file=self.primary_rel_path,
-            )
-            self.__input_hash = hashes.compute_dict_hash(cache_key) if cache_key else None
-        return True
-
     @property
     def cached(self) -> bool:
         return self.__cached
@@ -328,18 +292,6 @@ class Recorder:
         )
         return result
 
-    async def use_check_cache(self) -> bool:
-        if self.__use_check_cache is not None:
-            return self.__use_check_cache
-
-        async with db.session() as data:
-            revision = await data.revision(release_name=self.release_name, number=self.revision_number).get()
-        if revision is None:
-            self.__use_check_cache = True
-            return True
-        self.__use_check_cache = revision.use_check_cache
-        return self.__use_check_cache
-
     async def warning(
         self,
         message: str,
@@ -374,7 +326,7 @@ async def resolve_cache_key(
 ) -> dict[str, Any] | None:
     if not args:
         args = {}
-    cache_key = {"checker": function_key(checker)}
+    cache_key = {"checker": function_key(checker), "version": checker_version}
     file_hash = None
     attestable_data = await attestable.load(release.project_name, release.version, revision)
     if attestable_data:
@@ -390,6 +342,8 @@ async def resolve_cache_key(
             file_hash = await hashes.compute_file_hash(path)
     if file_hash:
         cache_key["file_hash"] = file_hash
+    if release.check_cache_key:
+        cache_key["release_cache_key"] = release.check_cache_key
 
     if (len(policy_keys) > 0) and (policy is not None):
         policy_dict = policy.model_dump(exclude_none=True)

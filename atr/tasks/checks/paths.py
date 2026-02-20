@@ -52,9 +52,11 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     # https://infra.apache.org/release-distribution.html
     # - Incubation Policy (IP)
     # https://incubator.apache.org/policy/incubation.html
+    base_recorder = await args.recorder()
 
     recorder_errors = await checks.Recorder.create(
         checker=checks.function_key(check) + "_errors",
+        inputs_hash=base_recorder.input_hash or "",
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
@@ -63,6 +65,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     )
     recorder_warnings = await checks.Recorder.create(
         checker=checks.function_key(check) + "_warnings",
+        inputs_hash=base_recorder.input_hash or "",
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
@@ -71,6 +74,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     )
     recorder_success = await checks.Recorder.create(
         checker=checks.function_key(check) + "_success",
+        inputs_hash=base_recorder.input_hash or "",
         project_name=args.project_name,
         version_name=args.version_name,
         revision_number=args.revision_number,
@@ -89,16 +93,6 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     is_podling = args.extra_args.get("is_podling", False)
     relative_paths = [p async for p in util.paths_recursive(base_path)]
     relative_paths_set = set(str(p) for p in relative_paths)
-
-    await recorder_errors.cache_key_set(
-        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
-    )
-    await recorder_warnings.cache_key_set(
-        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
-    )
-    await recorder_success.cache_key_set(
-        INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS, checker=checks.function_key(check)
-    )
 
     for relative_path in relative_paths:
         # Delegate processing of each path to the helper function

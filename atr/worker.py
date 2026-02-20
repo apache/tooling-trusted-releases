@@ -121,6 +121,7 @@ async def _execute_check_task(
     async def recorder_factory() -> checks.Recorder:
         return await checks.Recorder.create(
             checker=handler,
+            inputs_hash=task_obj.inputs_hash or "",
             project_name=task_obj.project_name or "",
             version_name=task_obj.version_name or "",
             revision_number=task_obj.revision_number or "",

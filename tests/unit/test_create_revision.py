@@ -43,7 +43,6 @@ class FakeRevision:
         created: object,
         phase: sql.ReleasePhase,
         description: str | None,
-        use_check_cache: bool,
     ):
         self.asfuid = asfuid
         self.created = created
@@ -54,7 +53,6 @@ class FakeRevision:
         self.phase = phase
         self.release = release
         self.release_name = release_name
-        self.use_check_cache = use_check_cache
 
 
 class MockSafeData:

@@ -28,6 +28,7 @@ class RecorderStub(checks.Recorder):
     def __init__(self, path: pathlib.Path, checker: str) -> None:
         super().__init__(
             checker=checker,
+            inputs_hash=None,
             project_name="test",
             version_name="test",
             revision_number="00001",
@@ -40,11 +41,6 @@ class RecorderStub(checks.Recorder):
 
     async def abs_path(self, rel_path: str | None = None) -> pathlib.Path | None:
         return self._path if (rel_path is None) else self._path / rel_path
-
-    async def cache_key_set(
-        self, policy_keys: list[str], version: str, input_args: list[str] | None = None, checker: str | None = None
-    ) -> bool:
-        return False
 
     async def primary_path_is_binary(self) -> bool:
         return False

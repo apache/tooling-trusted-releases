@@ -42,8 +42,6 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.failure("Unsupported hash algorithm", {"algorithm": algorithm})
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
-
     # Remove the hash file suffix to get the artifact path
     # This replaces the last suffix, which is what we want
     # >>> pathlib.Path("a/b/c.d.e.f.g").with_suffix(".x")

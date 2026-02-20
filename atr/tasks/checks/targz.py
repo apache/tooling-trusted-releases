@@ -43,8 +43,6 @@ async def integrity(args: checks.FunctionArguments) -> results.Results | None:
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
-
     log.info(f"Checking integrity for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     chunk_size = 4096
@@ -101,8 +99,6 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
         return None
     if await recorder.primary_path_is_binary():
         return None
-
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
 
     filename = artifact_abs_path.name
     basename_from_filename: Final[str] = (

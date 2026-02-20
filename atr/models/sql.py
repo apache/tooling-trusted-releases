@@ -803,6 +803,8 @@ class Release(sqlmodel.SQLModel, table=True):
         **example(datetime.datetime(2025, 6, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
 
+    check_cache_key: str | None = sqlmodel.Field(default=None, **example("ef0ccb0a-3514-4b65-abcd-879850349f74"))
+
     # M-1: Release -> Project
     # 1-M: Project -> [Release]
     project_name: str = sqlmodel.Field(foreign_key="project.name", **example("example"))
@@ -1200,7 +1202,6 @@ class Revision(sqlmodel.SQLModel, table=True):
 
     description: str | None = sqlmodel.Field(default=None, **example("This is a description"))
     tag: str | None = sqlmodel.Field(default=None, **example("rc1"))
-    use_check_cache: bool = sqlmodel.Field(default=True, **example(True))
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
