@@ -85,6 +85,8 @@ async def sh_selected(session: web.Committer | None, project_name: str, version_
         content = await f.read()
     download_urls_selected = util.as_url(urls_selected, project_name=project_name, version_name=version_name)
     download_path = util.as_url(path, project_name=project_name, version_name=version_name, file_path="")
+    curl_options = "--insecure" if util.is_dev_environment() else "--proto '=https' --tlsv1.2"
+    content = content.replace("[CURL_EXTRA]", curl_options)
     content = content.replace("[URL_OF_URLS]", f"https://{app_host}{download_urls_selected}")
     content = content.replace("[URLS_PREFIX]", f"https://{app_host}{download_path}")
     return web.ShellResponse(content)
