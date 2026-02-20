@@ -94,8 +94,6 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         )
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
-
     payload = await _load_tp_payload(args.project_name, args.version_name, args.revision_number)
     checkout_dir: str | None = None
     archive_dir: str | None = None

@@ -112,17 +112,18 @@ async def check(
             ),
         )
 
-    fresh_form = form.render(
-        model_cls=form.Empty,
-        action=util.as_url(post.draft.fresh, project_name=release.project.name, version_name=release.version),
-        submit_label="Restart all checks",
-        submit_classes="btn btn-primary",
-    )
     recheck_form = form.render(
         model_cls=form.Empty,
         action=util.as_url(post.draft.recheck, project_name=release.project.name, version_name=release.version),
-        submit_label="Recheck all without cache",
-        submit_classes="btn btn-outline-secondary",
+        submit_label="Disable global cache",
+        submit_classes="btn btn-primary",
+        # confirm="Restart all checks without using cached results? This creates a new revision.",
+    )
+    cache_reset_form = form.render(
+        model_cls=form.Empty,
+        action=util.as_url(post.draft.cache_reset, project_name=release.project.name, version_name=release.version),
+        submit_label="Enable global cache",
+        submit_classes="btn btn-primary",
         # confirm="Restart all checks without using cached results? This creates a new revision.",
     )
 
@@ -135,6 +136,8 @@ async def check(
     blocker_errors = False
     if revision_number is not None:
         blocker_errors = await interaction.has_blocker_checks(release, revision_number)
+
+    is_local_caching = release.check_cache_key is not None
 
     checks_summary_html = _render_checks_summary(info, release.project.name, release.version)
 
@@ -162,8 +165,9 @@ async def check(
         vote_task=vote_task,
         archive_url=archive_url,
         vote_task_warnings=vote_task_warnings,
-        fresh_form=fresh_form,
         recheck_form=recheck_form,
+        cache_reset_form=cache_reset_form,
+        is_local_caching=is_local_caching,
         csrf_input=str(form.csrf_input()),
         resolve_form=resolve_form,
         has_files=has_files,

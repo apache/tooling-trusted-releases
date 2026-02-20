@@ -28,7 +28,6 @@ import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
 import atr.util as util
-from atr.models.attestable import AttestableChecksV1
 
 if TYPE_CHECKING:
     import pathlib
@@ -104,7 +103,10 @@ async def load_checks(
         try:
             async with aiofiles.open(file_path, encoding="utf-8") as f:
                 data = json.loads(await f.read())
-            return models.AttestableChecksV1.model_validate(data).checks
+                if data.get("version") == 1:
+                    log.warning(f"Found old checks file format in {file_path}, ignoring old checks")
+                    return {}
+            return models.AttestableChecksV2.model_validate(data).checks
         except (json.JSONDecodeError, pydantic.ValidationError) as e:
             log.warning(f"Could not parse {file_path}: {e}")
     return {}
@@ -175,7 +177,7 @@ async def write_files_data(
     checks_file_path = attestable_checks_path(project_name, version_name, revision_number)
     if not checks_file_path.exists():
         async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
-            await f.write(models.AttestableChecksV1().model_dump_json(indent=2))
+            await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
 
 
 async def write_checks_data(
@@ -189,14 +191,14 @@ async def write_checks_data(
 
     def modify(content: str) -> str:
         try:
-            current = AttestableChecksV1.model_validate_json(content).checks
+            current = models.AttestableChecksV2.model_validate_json(content).checks
         except pydantic.ValidationError:
             current = {}
         if rel_path not in current:
             current[rel_path] = checks
         else:
             current[rel_path].update(checks)
-        result = models.AttestableChecksV1(checks=current)
+        result = models.AttestableChecksV2(checks=current)
         return result.model_dump_json(indent=2)
 
     await util.atomic_modify_file(attestable_checks_path(project_name, version_name, revision_number), modify)

@@ -89,29 +89,6 @@ async def delete_file(
     )
 
 
-@post.committer("/draft/fresh/<project_name>/<version_name>")
-@post.empty()
-async def fresh(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
-    """Restart all checks for a whole release candidate draft."""
-    # Admin only button, but it's okay if users find and use this manually
-    await session.check_access(project_name)
-
-    # Restart checks by creating a new identical draft revision
-    # This doesn't make sense unless the checks themselves have been updated
-    # Therefore we only show the button for this to admins
-    description = "Empty revision to restart all checks for the whole release candidate draft"
-    async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
-        await wacp.revision.create_revision(project_name, version_name, session.uid, description=description)
-
-    return await session.redirect(
-        get.compose.selected,
-        project_name=project_name,
-        version_name=version_name,
-        success="All checks restarted",
-    )
-
-
 @post.committer("/draft/hashgen/<project_name>/<version_name>/<path:file_path>")
 @post.empty()
 async def hashgen(session: web.Committer, project_name: str, version_name: str, file_path: str) -> web.WerkzeugResponse:
@@ -144,7 +121,7 @@ async def hashgen(session: web.Committer, project_name: str, version_name: str, 
 @post.committer("/draft/recheck/<project_name>/<version_name>")
 @post.empty()
 async def recheck(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
-    """Start a new draft revision to rerun all checks without using caches."""
+    """Start a new draft revision and switch this release to release-local caching"""
     await session.check_access(project_name)
     if not session.is_admin:
         raise base.ASFQuartException("Admin access required", errorcode=403)
@@ -157,14 +134,41 @@ async def recheck(session: web.Committer, project_name: str, version_name: str) 
             version_name,
             session.uid,
             description=description,
-            use_check_cache=False,
+            set_local_cache=True,
         )
 
     return await session.redirect(
         get.compose.selected,
         project_name=project_name,
         version_name=version_name,
-        success="All checks restarted without cache",
+        success="All checks restarted with release-local cache",
+    )
+
+
+@post.committer("/draft/reset/<project_name>/<version_name>")
+@post.empty()
+async def cache_reset(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
+    """Start a new draft revision and switch this release to global caching"""
+    await session.check_access(project_name)
+    if not session.is_admin:
+        raise base.ASFQuartException("Admin access required", errorcode=403)
+
+    description = "Empty revision to restart all checks without cache for the whole release candidate draft"
+    async with storage.write(session) as write:
+        wacp = await write.as_project_committee_participant(project_name)
+        await wacp.revision.create_revision(
+            project_name,
+            version_name,
+            session.uid,
+            description=description,
+            reset_to_global_cache=True,
+        )
+
+    return await session.redirect(
+        get.compose.selected,
+        project_name=project_name,
+        version_name=version_name,
+        success="Release set back to global caching",
     )
 
 

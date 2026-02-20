@@ -231,6 +231,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
     def __init__(self, is_source: bool) -> None:
         super().__init__(
             checker="compare.source_trees",
+            inputs_hash=None,
             project_name="project",
             version_name="version",
             revision_number="00001",
@@ -241,11 +242,6 @@ class RecorderStub(atr.tasks.checks.Recorder):
         self.failure_calls: list[tuple[str, object]] = []
         self.success_calls: list[tuple[str, object]] = []
         self._is_source = is_source
-
-    async def cache_key_set(
-        self, policy_keys: list[str], version: str, input_args: list[str] | None = None, checker: str | None = None
-    ) -> bool:
-        return False
 
     async def primary_path_is_source(self) -> bool:
         return self._is_source

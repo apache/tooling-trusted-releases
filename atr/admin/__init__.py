@@ -786,7 +786,10 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
     async with db.session() as data:
         statement = (
             sqlmodel.select(sql.Task)
-            .where(via(sql.Task.added) >= cutoff, sqlalchemy.not_(via(sql.Task.scheduled) > now))
+            .where(
+                via(sql.Task.added) >= cutoff,
+                sqlalchemy.or_(sqlalchemy.not_(via(sql.Task.scheduled) > now), via(sql.Task.scheduled).is_(None)),
+            )
             .order_by(via(sql.Task.added).desc())
         )
         recent_tasks = (await data.execute(statement)).scalars().all()

@@ -189,14 +189,23 @@
       You can also <a href="{{ as_url(get.ignores.ignores, project_name=release.project_name) }}">manage which check results are ignored</a>.
     </p>
 
-    <h3 id="debugging" class="mt-4">Debugging</h3>
-    <div class="mb-2">
-      <p>The following form is for debugging purposes only. It will create a new revision.</p>
-    </div>
-    <div class="mb-2">{{ fresh_form|safe }}</div>
     {% if is_viewing_as_admin_fn(current_user.uid) %}
-      <div class="mb-2">{{ recheck_form|safe }}</div>
-      <p class="text-muted small mb-3">Rechecks without using cached results.</p>
+      <h3 id="cache-control" class="mt-4">Check cache control</h3>
+
+      {% if not is_local_caching %}
+        <div class="mb-2">
+          <p>Click the button below to opt this release out of the global check cache</p>
+          <p>This will create a new revision and restart all checks.</p>
+        </div>
+        <div class="mb-2">{{ recheck_form|safe }}</div>
+      {% else %}
+        <div class="mb-2">
+          <p>This release is using a local check cache.</p>
+          <p>Click the button below to reset back to using the default global cache</p>
+          <p>This will create a new revision and update check results from the cache or new checks as appropriate</p>
+        </div>
+        <div class="mb-2">{{ cache_reset_form |safe }}</div>
+      {% endif %}
     {% endif %}
 
     <h3 id="delete-draft" class="mt-4">Delete this draft</h3>

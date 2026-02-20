@@ -55,8 +55,6 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.exception("Committee name is required", {"committee_name": committee_name})
         return None
 
-    await recorder.cache_key_set(INPUT_POLICY_KEYS, CHECK_VERSION, INPUT_EXTRA_ARGS)
-
     log.info(
         f"Checking signature {primary_abs_path} for {artifact_abs_path}"
         f" using {committee_name} keys (rel: {primary_rel_path})"

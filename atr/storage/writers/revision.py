@@ -24,6 +24,7 @@ import datetime
 import pathlib
 import secrets
 import tempfile
+import uuid
 from typing import TYPE_CHECKING
 
 import aiofiles.os
@@ -111,7 +112,8 @@ class CommitteeParticipant(FoundationCommitter):
         version_name: str,
         asf_uid: str,
         description: str | None = None,
-        use_check_cache: bool = True,
+        set_local_cache: bool = False,
+        reset_to_global_cache: bool = False,
         modify: Callable[[pathlib.Path, sql.Revision | None], Awaitable[None]] | None = None,
         clone_from: str | None = None,
     ) -> sql.Revision:
@@ -128,6 +130,10 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             else:
                 old_revision = await interaction.latest_revision(release)
+            if set_local_cache:
+                release.check_cache_key = str(uuid.uuid4())
+            if reset_to_global_cache:
+                release.check_cache_key = None
 
         if clone_from is not None:
             old_release_dir = util.release_directory_base(release) / clone_from
@@ -206,7 +212,6 @@ class CommitteeParticipant(FoundationCommitter):
                     created=datetime.datetime.now(datetime.UTC),
                     phase=release.phase,
                     description=description,
-                    use_check_cache=use_check_cache,
                 )
 
                 # Acquire the write lock and add the row
