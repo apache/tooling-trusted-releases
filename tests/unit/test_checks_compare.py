@@ -26,8 +26,8 @@ import dulwich.objects
 import dulwich.refs
 import pytest
 
+import atr.models.github
 import atr.models.sql
-import atr.sbom.models.github
 import atr.tasks.checks
 import atr.tasks.checks.compare
 
@@ -39,7 +39,7 @@ class CheckoutRecorder:
 
     async def __call__(
         self,
-        payload: atr.sbom.models.github.TrustedPublisherPayload,
+        payload: atr.models.github.TrustedPublisherPayload,
         checkout_dir: pathlib.Path,
     ) -> str | None:
         self.checkout_dir = checkout_dir
@@ -194,12 +194,12 @@ class RunRecorder:
 
 
 class PayloadLoader:
-    def __init__(self, payload: atr.sbom.models.github.TrustedPublisherPayload | None) -> None:
+    def __init__(self, payload: atr.models.github.TrustedPublisherPayload | None) -> None:
         self.payload = payload
 
     async def __call__(
         self, project_name: str, version_name: str, revision_number: str
-    ) -> atr.sbom.models.github.TrustedPublisherPayload | None:
+    ) -> atr.models.github.TrustedPublisherPayload | None:
         return self.payload
 
 
@@ -935,7 +935,7 @@ def _make_payload(
     repository: str = "apache/test",
     ref: str = "refs/heads/main",
     sha: str = "0000000000000000000000000000000000000000",
-) -> atr.sbom.models.github.TrustedPublisherPayload:
+) -> atr.models.github.TrustedPublisherPayload:
     payload = {
         "actor": "actor",
         "actor_id": "1",
@@ -968,7 +968,7 @@ def _make_payload(
         "workflow_ref": "refs/heads/main",
         "workflow_sha": "ffffffffffffffffffffffffffffffffffffffff",
     }
-    return atr.sbom.models.github.TrustedPublisherPayload.model_validate(payload)
+    return atr.models.github.TrustedPublisherPayload.model_validate(payload)
 
 
 def _make_tree(root: pathlib.Path, files: Iterable[str]) -> None:
