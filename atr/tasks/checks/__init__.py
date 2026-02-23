@@ -215,11 +215,8 @@ class Recorder:
     async def clear(self, primary_rel_path: str | None = None, member_rel_path: str | None = None) -> None:
         async with db.session() as data:
             stmt = sqlmodel.delete(sql.CheckResult).where(
-                sql.validate_instrumented_attribute(sql.CheckResult.release_name) == self.release_name,
-                sql.validate_instrumented_attribute(sql.CheckResult.revision_number) == self.revision_number,
-                sql.validate_instrumented_attribute(sql.CheckResult.checker) == self.checker,
+                sql.validate_instrumented_attribute(sql.CheckResult.inputs_hash) == self.input_hash,
                 sql.validate_instrumented_attribute(sql.CheckResult.primary_rel_path) == primary_rel_path,
-                sql.validate_instrumented_attribute(sql.CheckResult.member_rel_path) == member_rel_path,
             )
             await data.execute(stmt)
             await data.commit()
@@ -437,7 +434,10 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
         release.project_name, release.version, release.latest_revision_number, rel_path
     )
     plain_path = abs_path.with_suffix("")
-    return await hashes.compute_file_hash(plain_path)
+    if await aiofiles.os.path.isfile(plain_path):
+        return await hashes.compute_file_hash(plain_path)
+    else:
+        return ""
 
 
 _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]] = {

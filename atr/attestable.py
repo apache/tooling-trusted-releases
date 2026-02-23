@@ -97,8 +97,10 @@ async def load_checks(
     project_name: str,
     version_name: str,
     revision_number: str,
-) -> dict[str, dict[str, str]] | None:
+) -> dict[str, dict[str, str]]:
     file_path = attestable_checks_path(project_name, version_name, revision_number)
+    # TODO: Once we're sure everyone is on V2, we should be strict about failures here,
+    # rather than returning {}
     if await aiofiles.os.path.isfile(file_path):
         try:
             async with aiofiles.open(file_path, encoding="utf-8") as f:
@@ -109,6 +111,7 @@ async def load_checks(
             return models.AttestableChecksV2.model_validate(data).checks
         except (json.JSONDecodeError, pydantic.ValidationError) as e:
             log.warning(f"Could not parse {file_path}: {e}")
+            return {}
     return {}
 
 

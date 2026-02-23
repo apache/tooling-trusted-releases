@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import atr.attestable as attestable
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.types as types
@@ -49,30 +49,7 @@ class GeneralPublic:
         if release.latest_revision_number is None:
             raise ValueError("Release has no revision - Invalid state")
 
-        file_path_checks = await attestable.load_checks(
-            release.project_name, release.version, release.latest_revision_number
-        )
-        all_check_results = (
-            [
-                a
-                for a in await self.__data.check_result(
-                    inputs_hash_in=[
-                        h
-                        for key in ("", str(rel_path))
-                        if key in file_path_checks
-                        for h in file_path_checks[key].values()
-                    ],
-                    primary_rel_path=str(rel_path),
-                )
-                .order_by(
-                    sql.validate_instrumented_attribute(sql.CheckResult.checker).asc(),
-                    sql.validate_instrumented_attribute(sql.CheckResult.created).desc(),
-                )
-                .all()
-            ]
-            if file_path_checks
-            else []
-        )
+        all_check_results = await interaction.checks_for(release, rel_path=str(rel_path), caller_data=self.__data)
 
         # Filter out any results that are ignored
         unignored_checks = []

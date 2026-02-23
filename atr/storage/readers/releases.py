@@ -21,9 +21,9 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-import atr.attestable as attestable
 import atr.classify as classify
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.types as types
@@ -123,16 +123,8 @@ class GeneralPublic:
         self, release: sql.Release, latest_revision_number: str, info: types.PathInfo
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.project_name)
-        file_path_checks = await attestable.load_checks(release.project_name, release.version, latest_revision_number)
-        attestable_checks = (
-            [
-                a
-                for a in await self.__data.check_result(
-                    inputs_hash_in=[h for inner in file_path_checks.values() for h in inner.values()]
-                ).all()
-            ]
-            if file_path_checks
-            else []
+        attestable_checks = await interaction.checks_for(
+            release, revision=latest_revision_number, caller_data=self.__data
         )
 
         cs = types.ChecksSubset(
