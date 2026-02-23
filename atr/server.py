@@ -174,6 +174,7 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "secrets" / "generated",
         util.get_downloads_dir(),
         util.get_finished_dir(),
+        util.get_quarantined_dir(),
         util.get_tmp_dir(),
         util.get_unfinished_dir(),
     ]

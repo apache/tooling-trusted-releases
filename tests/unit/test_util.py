@@ -19,6 +19,9 @@ import json
 import os
 import pathlib
 import stat
+import types
+
+import pytest
 
 import atr.util as util
 
@@ -92,6 +95,12 @@ def test_chmod_files_sets_default_permissions(tmp_path: pathlib.Path):
     assert file_mode == 0o444
 
 
+def test_get_quarantined_dir_uses_state_dir(monkeypatch, tmp_path: pathlib.Path):
+    mock_config = types.SimpleNamespace(STATE_DIR=str(tmp_path))
+    monkeypatch.setattr("atr.config.get", lambda: mock_config)
+    assert util.get_quarantined_dir() == tmp_path / "quarantined"
+
+
 def test_json_for_script_element_escapes_correctly():
     payload = ["example.txt", "</script><script>alert(1)</script>", "apple&banana"]
 
@@ -102,3 +111,17 @@ def test_json_for_script_element_escapes_correctly():
     assert "apple&banana" not in serialized
     assert "apple\\u0026banana" in serialized
     assert json.loads(serialized) == payload
+
+
+def test_quarantine_directory_builds_deterministic_path(monkeypatch, tmp_path: pathlib.Path):
+    mock_config = types.SimpleNamespace(STATE_DIR=str(tmp_path))
+    monkeypatch.setattr("atr.config.get", lambda: mock_config)
+    mock_release = types.SimpleNamespace(project_name="example", version="1.2.3")
+    quarantined = types.SimpleNamespace(release=mock_release, token="0123456789abcdef")
+    assert util.quarantine_directory(quarantined) == tmp_path / "quarantined" / "example" / "1.2.3" / "0123456789abcdef"
+
+
+def test_quarantine_directory_rejects_non_alnum_token():
+    quarantined = types.SimpleNamespace(token="../escape")
+    with pytest.raises(ValueError, match="Invalid quarantine token"):
+        util.quarantine_directory(quarantined)

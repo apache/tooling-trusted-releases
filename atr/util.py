@@ -140,11 +140,6 @@ def as_url(func: Callable, **kwargs: Any) -> str:
     return quart.url_for(annotations["endpoint"], **kwargs)
 
 
-def json_for_script_element(value: Any) -> markupsafe.Markup:
-    """Serialise JSON safely for use inside a script element."""
-    return jinja2.utils.htmlsafe_json_dumps(value, dumps=json.dumps, ensure_ascii=False)
-
-
 def asf_uid_from_email(email: str) -> str | None:
     ldap_params = ldap.SearchParameters(email_query=email)
     ldap.search(ldap_params)
@@ -559,6 +554,10 @@ def get_finished_dir() -> pathlib.Path:
     return pathlib.Path(config.get().FINISHED_STORAGE_DIR)
 
 
+def get_quarantined_dir() -> pathlib.Path:
+    return pathlib.Path(config.get().STATE_DIR) / "quarantined"
+
+
 async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
     """Calculate file count, total byte size, and formatted size for a release."""
     base_dir = release_directory(release)
@@ -679,6 +678,11 @@ def is_user_viewing_as_admin(uid: str | None) -> bool:
     except Exception:
         log.exception(f"Error checking admin downgrade session status for {uid}")
         return True
+
+
+def json_for_script_element(value: Any) -> markupsafe.Markup:
+    """Serialise JSON safely for use inside a script element."""
+    return jinja2.utils.htmlsafe_json_dumps(value, dumps=json.dumps, ensure_ascii=False)
 
 
 def key_ssh_fingerprint(ssh_key_string: str) -> str:
@@ -887,6 +891,13 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     if include_count:
         return f"{count} {word}"
     return word
+
+
+def quarantine_directory(quarantined: sql.Quarantined) -> pathlib.Path:
+    if not quarantined.token.isalnum():
+        raise ValueError("Invalid quarantine token")
+    release = quarantined.release
+    return get_quarantined_dir() / release.project_name / release.version / quarantined.token
 
 
 async def read_file_for_viewer(full_path: pathlib.Path, max_size: int) -> tuple[str | None, bool, bool, str | None]:
