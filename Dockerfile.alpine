@@ -50,7 +50,8 @@ RUN set -eux; \
     cd /tmp/apache-rat; \
     curl -fsSLO https://dlcdn.apache.org/creadur/apache-rat-${RAT_VERSION}/apache-rat-${RAT_VERSION}-bin.tar.gz; \
     curl -fsSLO https://downloads.apache.org/creadur/apache-rat-${RAT_VERSION}/apache-rat-${RAT_VERSION}-bin.tar.gz.sha512; \
-    sha512sum -c apache-rat-${RAT_VERSION}-bin.tar.gz.sha512; \
+    test "$(sha512sum apache-rat-${RAT_VERSION}-bin.tar.gz | awk '{print $1}')" = \
+         "$(cat apache-rat-${RAT_VERSION}-bin.tar.gz.sha512)"; \
     tar -xzf apache-rat-${RAT_VERSION}-bin.tar.gz; \
     find apache-rat-${RAT_VERSION} -type f -name "*.jar" -exec cp {} . \; ; \
     mv apache-rat-${RAT_VERSION}.jar /opt/tools; \
