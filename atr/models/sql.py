@@ -164,6 +164,11 @@ class ProjectStatus(enum.StrEnum):
     STANDING = "standing"
 
 
+class QuarantineStatus(enum.Enum):
+    PENDING = "PENDING"
+    FAILED = "FAILED"
+
+
 class ReleasePhase(enum.StrEnum):
     # TODO: Rename these to the UI names?
     # COMPOSE, VOTE, FINISH, "DISTRIBUTE"
@@ -231,6 +236,14 @@ class UserRole(enum.StrEnum):
 
 def pydantic_example(value: Any) -> dict[Literal["json_schema_extra"], dict[str, Any]]:
     return {"json_schema_extra": {"example": value}}
+
+
+class QuarantineFileEntryV1(schema.Strict):
+    version: Literal[1] = 1
+    rel_path: str
+    size_bytes: int
+    content_hash: str
+    errors: list[str] = schema.factory(list)
 
 
 class VoteEntry(schema.Strict):
@@ -305,6 +318,24 @@ class ResultsJSON(sqlalchemy.types.TypeDecorator):
         except pydantic.ValidationError:
             # TODO: Should we make this more strict?
             return None
+
+
+_QUARANTINE_FILE_METADATA_ADAPTER: Final = pydantic.TypeAdapter(list[QuarantineFileEntryV1])
+
+
+class QuarantineFileMetadataJSON(sqlalchemy.types.TypeDecorator):
+    impl = sqlalchemy.JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return _QUARANTINE_FILE_METADATA_ADAPTER.dump_python(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return _QUARANTINE_FILE_METADATA_ADAPTER.validate_python(value)
 
 
 # SQL models
@@ -1081,6 +1112,53 @@ class PublicSigningKey(sqlmodel.SQLModel, table=True):
             self.expires = datetime.datetime.fromisoformat(self.expires.rstrip("Z"))
 
 
+# Quarantined: Release
+class Quarantined(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+
+    # M-1: Quarantined -> Release
+    release_name: str = sqlmodel.Field(
+        foreign_key="release.name", ondelete="CASCADE", index=True, **example("example-0.0.1")
+    )
+    release: Release = sqlmodel.Relationship(
+        sa_relationship_kwargs={
+            "foreign_keys": "[Quarantined.release_name]",
+        },
+    )
+
+    asf_uid: str = sqlmodel.Field(**example("user"))
+    prior_revision_name: str | None = sqlmodel.Field(default=None, **example("example-0.0.1 00005"))
+    status: QuarantineStatus = sqlmodel.Field(
+        default=QuarantineStatus.PENDING, index=True, **example(QuarantineStatus.PENDING)
+    )
+    token: str = sqlmodel.Field(**example("0123456789abcdef0123456789abcdef"))
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    completed: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=True),
+        **example(datetime.datetime(2025, 5, 1, 1, 32, 3, tzinfo=datetime.UTC)),
+    )
+    file_metadata: list[QuarantineFileEntryV1] | None = sqlmodel.Field(
+        default=None, sa_column=sqlalchemy.Column(QuarantineFileMetadataJSON)
+    )
+    use_check_cache: bool = sqlmodel.Field(default=True, **example(True))
+    description: str | None = sqlmodel.Field(default=None, **example("Upload from web compose flow"))
+
+    def model_post_init(self, _context):
+        if isinstance(self.created, str):
+            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+
+        if isinstance(self.completed, str):
+            self.completed = datetime.datetime.fromisoformat(self.completed.rstrip("Z"))
+
+        if isinstance(self.status, str):
+            self.status = QuarantineStatus(self.status)
+
+
 # ReleasePolicy: Project
 class ReleasePolicy(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True)
@@ -1202,6 +1280,7 @@ class Revision(sqlmodel.SQLModel, table=True):
 
     description: str | None = sqlmodel.Field(default=None, **example("This is a description"))
     tag: str | None = sqlmodel.Field(default=None, **example("rc1"))
+    was_quarantined: bool = sqlmodel.Field(default=False, **example(False))
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
