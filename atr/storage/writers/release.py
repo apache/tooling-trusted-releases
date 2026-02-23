@@ -122,15 +122,6 @@ class CommitteeParticipant(FoundationCommitter):
         task_count = task_result.rowcount if isinstance(task_result, engine.CursorResult) else 0
         log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_name} {version}")
 
-        # Bulk delete check results
-        # Handled by cascade, but we do this explicitly anyway
-        check_delete_stmt = sqlmodel.delete(sql.CheckResult).where(
-            via(sql.CheckResult.release_name) == release.name,
-        )
-        check_result = await self.__data.execute(check_delete_stmt)
-        check_count = check_result.rowcount if isinstance(check_result, engine.CursorResult) else 0
-        log.debug(f"Deleted {util.plural(check_count, 'check result')} for {project_name} {version}")
-
         release_name = release.name
         await self.__data.delete(release)
         log.info(f"Deleted release record: {project_name} {version}")

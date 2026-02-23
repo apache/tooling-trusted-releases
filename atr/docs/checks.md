@@ -106,9 +106,9 @@ SBOM tasks record task results rather than check results, so there is no checker
 
 ## Check caching and reruns
 
-To save time, ATR will sometimes reuse results from a prior revision when a file has not changed. The system computes a content hash and copies earlier results so that the same check does not run again.
+To save time, ATR caches check results based on a hash of the check inputs, and will therefore sometimes reuse results from a prior run if the file is identical.
 
-_For debugging only_, if you need a fresh run, place a file named `.atr-no-cache` in the revision root. When that file is present, ATR does not reuse cached results for that revision. We may remove this functionality.
+_For debugging only_, an admin can force a cache bust by clicking the "Disable global cache" button in the compose phase, which will add a release-specific suffix to the cache key, forcing a re-run.
 
 ## Project policy inputs
 

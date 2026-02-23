@@ -29,7 +29,6 @@ import sqlalchemy
 import sqlmodel
 import werkzeug.exceptions as exceptions
 
-import atr.attestable as attestable
 import atr.blueprints.api as api
 import atr.config as config
 import atr.db as db
@@ -73,27 +72,17 @@ async def checks_list(project: str, version: str) -> DictResponse:
     may potentially be thousands or results or more.
     """
     # TODO: We should perhaps paginate this
-    # TODO: Add phase in the response, and the revision too
     _simple_check(project, version)
-    # TODO: Merge with checks_list_project_version_revision
 
     async with db.session() as data:
         release_name = sql.release_name(project, version)
         release = await data.release(name=release_name).demand(exceptions.NotFound(f"Release {release_name} not found"))
-        if not release.latest_revision_number:
-            raise exceptions.InternalServerError("No latest revision found")
-        file_path_checks = await attestable.load_checks(project, version, release.latest_revision_number)
-        if file_path_checks:
-            check_results = await data.check_result(
-                inputs_hash_in=[h for inner in file_path_checks.values() for h in inner.values()]
-            ).all()
-        else:
-            check_results = []
+        check_results = await interaction.checks_for(release, caller_data=data)
 
     return models.api.ChecksListResults(
         endpoint="/checks/list",
         checks=check_results,
-        checks_revision=release.latest_revision_number,
+        checks_revision=release.unwrap_revision_number,
         current_phase=release.phase,
     ).model_dump(), 200
 
@@ -127,13 +116,7 @@ async def checks_list_revision(project: str, version: str, revision: str) -> Dic
         if revision_result is None:
             raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{project}-{version}'")
 
-        file_path_checks = await attestable.load_checks(project, version, revision)
-        if file_path_checks:
-            check_results = await data.check_result(
-                inputs_hash_in=[h for inner in file_path_checks.values() for h in inner.values()]
-            ).all()
-        else:
-            check_results = []
+        check_results = await interaction.checks_for(release_result, revision=revision, caller_data=data)
 
     return models.api.ChecksListResults(
         endpoint="/checks/list",

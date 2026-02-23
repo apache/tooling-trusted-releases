@@ -26,6 +26,7 @@ import sqlalchemy
 import sqlalchemy.orm as orm
 import sqlmodel
 
+import atr.attestable as attestable
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -160,6 +161,37 @@ async def candidates(project: sql.Project) -> list[sql.Release]:
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_CANDIDATE)
 
 
+async def checks_for(
+    release: sql.Release,
+    revision: str | None = None,
+    rel_path: str | None = None,
+    caller_data: db.Session | None = None,
+) -> list[sql.CheckResult]:
+    """Get the check results for a release, optionally for a specific revision and/or file path."""
+    if revision is None:
+        revision = release.unwrap_revision_number
+    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision)
+    if file_path_checks:
+        if rel_path is not None:
+            hashes = [
+                h for key in ("", str(rel_path)) if key in file_path_checks for h in file_path_checks[key].values()
+            ]
+        else:
+            hashes = [h for inner in file_path_checks.values() for h in inner.values()]
+        async with db.ensure_session(caller_data) as data:
+            check_results = (
+                await data.check_result(inputs_hash_in=hashes, primary_rel_path=rel_path or db.NOT_SET)
+                .order_by(
+                    sql.validate_instrumented_attribute(sql.CheckResult.checker).asc(),
+                    sql.validate_instrumented_attribute(sql.CheckResult.created).desc(),
+                )
+                .all()
+            )
+    else:
+        check_results = []
+    return list(check_results)
+
+
 @contextlib.asynccontextmanager
 async def ephemeral_gpg_home() -> AsyncGenerator[str]:
     """Create a temporary directory for an isolated GPG home, and clean it up on exit."""
@@ -173,33 +205,17 @@ async def full_releases(project: sql.Project) -> list[sql.Release]:
 
 
 async def has_blocker_checks(release: sql.Release, revision_number: str, caller_data: db.Session | None = None) -> bool:
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sqlalchemy.func.count())
-            .select_from(sql.CheckResult)
-            .where(
-                sql.CheckResult.release_name == release.name,
-                sql.CheckResult.revision_number == revision_number,
-                sql.CheckResult.status == sql.CheckResultStatus.BLOCKER,
-            )
-        )
-        result = await data.execute(query)
-        return result.scalar_one() > 0
+    count = await count_checks_for_revision_by_status(
+        sql.CheckResultStatus.BLOCKER, release, revision_number, caller_data
+    )
+    return count > 0
 
 
 async def has_failing_checks(release: sql.Release, revision_number: str, caller_data: db.Session | None = None) -> bool:
-    async with db.ensure_session(caller_data) as data:
-        query = (
-            sqlmodel.select(sqlalchemy.func.count())
-            .select_from(sql.CheckResult)
-            .where(
-                sql.CheckResult.release_name == release.name,
-                sql.CheckResult.revision_number == revision_number,
-                sql.CheckResult.status == sql.CheckResultStatus.FAILURE,
-            )
-        )
-        result = await data.execute(query)
-        return result.scalar_one() > 0
+    count = await count_checks_for_revision_by_status(
+        sql.CheckResultStatus.FAILURE, release, revision_number, caller_data
+    )
+    return count > 0
 
 
 async def latest_info(project_name: str, version_name: str) -> tuple[str, str, datetime.datetime] | None:
@@ -532,6 +548,27 @@ async def wait_for_task(
             # Wait 100ms before checking again
             await asyncio.sleep(0.1)
     return False
+
+
+async def count_checks_for_revision_by_status(
+    status: sql.CheckResultStatus, release: sql.Release, revision_number: str, caller_data: db.Session | None = None
+):
+    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision_number)
+    check_hashes = [h for inner in file_path_checks.values() for h in inner.values()]
+    if len(check_hashes) == 0:
+        return 0
+    async with db.ensure_session(caller_data) as data:
+        via = sql.validate_instrumented_attribute
+        query = (
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.CheckResult)
+            .where(
+                via(sql.CheckResult.inputs_hash).in_(check_hashes),
+                sql.CheckResult.status == status,
+            )
+        )
+        result = await data.execute(query)
+        return result.scalar_one()
 
 
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:
