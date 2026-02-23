@@ -18,12 +18,12 @@
 import asyncio
 import collections
 import dataclasses
+import ssl
 from typing import Any, Final, Literal
 
 import ldap3
 import ldap3.utils.conv as conv
 import ldap3.utils.dn as dn
-import ssl
 
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
