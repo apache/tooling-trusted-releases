@@ -160,7 +160,6 @@ def _makedirs_with_permissions(target_parent: pathlib.Path, root: pathlib.Path) 
     os.makedirs(target_parent, exist_ok=True)
     current = target_parent
     while current != root:
-        # codeql[py/overly-permissive-file]
         os.chmod(current, util.DIRECTORY_PERMISSIONS)
         current = current.parent
 

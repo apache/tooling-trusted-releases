@@ -234,11 +234,9 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
 
 
 def chmod_directories(path: pathlib.Path, permissions: int = DIRECTORY_PERMISSIONS) -> None:
-    # codeql[py/overly-permissive-file]
     os.chmod(path, permissions)
     for dir_path in path.rglob("*"):
         if dir_path.is_dir():
-            # codeql[py/overly-permissive-file]
             os.chmod(dir_path, permissions)
 
 
@@ -246,7 +244,6 @@ def chmod_files(path: pathlib.Path, permissions: int) -> None:
     """Set permissions on all files in a directory tree."""
     for file_path in path.rglob("*"):
         if file_path.is_file():
-            # codeql[py/overly-permissive-file]
             os.chmod(file_path, permissions)
 
 

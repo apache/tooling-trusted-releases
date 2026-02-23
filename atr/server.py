@@ -936,7 +936,6 @@ def _set_file_permissions_to_read_only() -> None:
                 continue
             mode = stat.S_IMODE(file_path.stat().st_mode)
             if mode != 0o444:
-                # codeql[py/overly-permissive-file]
                 os.chmod(file_path, 0o444)
                 fixed_count += 1
     if fixed_count > 0:

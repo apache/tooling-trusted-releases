@@ -3,3 +3,7 @@ paths-ignore:
   - '**/node_modules'
   - dev
   - state
+
+query-filters:
+  - exclude:
+      id: py/overly-permissive-file

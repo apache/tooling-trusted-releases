@@ -44,7 +44,6 @@ def test_chmod_files_handles_multiple_files(tmp_path: pathlib.Path):
     files = [tmp_path / f"file{i}.txt" for i in range(5)]
     for f in files:
         f.write_text("content")
-        # codeql[py/overly-permissive-file]
         os.chmod(f, 0o644)
 
     util.chmod_files(tmp_path, 0o400)
@@ -62,7 +61,6 @@ def test_chmod_files_handles_nested_directories(tmp_path: pathlib.Path):
     file3 = nested_dir / "deep.txt"
     for f in [file1, file2, file3]:
         f.write_text("content")
-        # codeql[py/overly-permissive-file]
         os.chmod(f, 0o644)
 
     util.chmod_files(tmp_path, 0o444)
@@ -75,7 +73,6 @@ def test_chmod_files_handles_nested_directories(tmp_path: pathlib.Path):
 def test_chmod_files_sets_custom_permissions(tmp_path: pathlib.Path):
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
-    # codeql[py/overly-permissive-file]
     os.chmod(test_file, 0o644)
 
     util.chmod_files(tmp_path, 0o400)
@@ -87,7 +84,6 @@ def test_chmod_files_sets_custom_permissions(tmp_path: pathlib.Path):
 def test_chmod_files_sets_default_permissions(tmp_path: pathlib.Path):
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
-    # codeql[py/overly-permissive-file]
     os.chmod(test_file, 0o644)
 
     util.chmod_files(tmp_path, 0o444)
