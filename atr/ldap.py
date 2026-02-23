@@ -23,6 +23,7 @@ from typing import Any, Final, Literal
 import ldap3
 import ldap3.utils.conv as conv
 import ldap3.utils.dn as dn
+import ssl
 
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
@@ -37,7 +38,11 @@ class Search:
         self._conn: ldap3.Connection | None = None
 
     def __enter__(self):
-        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True)
+        tls_config = ldap3.Tls(
+            validate=ssl.CERT_REQUIRED,
+            version=ssl.PROTOCOL_TLS_CLIENT,
+        )
+        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=tls_config)
         self._conn = ldap3.Connection(
             server,
             user=self._bind_dn,
