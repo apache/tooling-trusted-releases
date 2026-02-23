@@ -28,13 +28,6 @@ import atr.models.validation as validation
 import atr.storage as storage
 
 
-def _validate_ignore_patterns(*patterns: str | None) -> None:
-    for pattern in patterns:
-        if pattern is None:
-            continue
-        validation.validate_ignore_pattern(pattern)
-
-
 class GeneralPublic:
     def __init__(
         self,
@@ -191,3 +184,10 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError(f"Project {project_name} not found")
         if project.committee_name != self.__committee_name:
             raise storage.AccessError(f"Project {project_name} is not in committee {self.__committee_name}")
+
+
+def _validate_ignore_patterns(*patterns: str | None) -> None:
+    for pattern in patterns:
+        if pattern is None:
+            continue
+        validation.validate_ignore_pattern(pattern)

@@ -100,14 +100,6 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
     return result, ignored
 
 
-def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulnerabilityDetail]:
-    vulns = get_pointer(bundle.doc, "/vulnerabilities")
-    if vulns is None:
-        return []
-    print(vulns)
-    return [models.osv.CdxVulnerabilityDetail.model_validate(v) for v in vulns]
-
-
 async def vuln_patch(
     doc: yyjson.Document,
     components: list[models.osv.ComponentVulnerabilities],
@@ -122,16 +114,12 @@ async def vuln_patch(
     return patch_ops
 
 
-def _assemble_vulnerabilities(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
-    if get_pointer(doc, "/vulnerabilities") is not None:
-        patch_ops.append(models.patch.RemoveOp(op="remove", path="/vulnerabilities"))
-    patch_ops.append(
-        models.patch.AddOp(
-            op="add",
-            path="/vulnerabilities",
-            value=[],
-        )
-    )
+def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulnerabilityDetail]:
+    vulns = get_pointer(bundle.doc, "/vulnerabilities")
+    if vulns is None:
+        return []
+    print(vulns)
+    return [models.osv.CdxVulnerabilityDetail.model_validate(v) for v in vulns]
 
 
 def _assemble_component_vulnerability(
@@ -161,6 +149,18 @@ def _assemble_component_vulnerability(
             op="add",
             path=f"/vulnerabilities/{index!s}",
             value=vulnerability,
+        )
+    )
+
+
+def _assemble_vulnerabilities(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+    if get_pointer(doc, "/vulnerabilities") is not None:
+        patch_ops.append(models.patch.RemoveOp(op="remove", path="/vulnerabilities"))
+    patch_ops.append(
+        models.patch.AddOp(
+            op="add",
+            path="/vulnerabilities",
+            value=[],
         )
     )
 

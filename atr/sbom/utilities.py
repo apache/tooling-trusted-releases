@@ -33,18 +33,18 @@ import atr.util as util
 
 from . import constants, models
 
+if True:
 
-def get_atr_version():
-    try:
-        from atr import metadata
+    def get_atr_version():
+        try:
+            from atr import metadata
 
-        return metadata.version
-    except ImportError:
-        return "cli"
+            return metadata.version
+        except ImportError:
+            return "cli"
 
 
 _ATR_VERSION = get_atr_version()
-
 _SCORING_METHODS_OSV = {"CVSS_V2": "CVSSv2", "CVSS_V3": "CVSSv3", "CVSS_V4": "CVSSv4"}
 _SCORING_METHODS_CDX = {"CVSSv2": "CVSS_V2", "CVSSv3": "CVSS_V3", "CVSSv4": "CVSS_V4", "other": "Other"}
 _CDX_SEVERITIES = ["critical", "high", "medium", "low", "info", "none", "unknown"]
@@ -89,6 +89,18 @@ async def bundle_to_vuln_patch(
     return patch_ops
 
 
+def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | None, list[dict[str, str]]]:
+    severities = [
+        {
+            "score": str(s.get("score", str(s.get("vector", "")))),
+            "type": _SCORING_METHODS_CDX.get(str(s.get("method", "other"))),
+        }
+        for s in severity
+    ]
+    textual = severity[0].get("severity")
+    return str(textual), severities
+
+
 def get_pointer(doc: yyjson.Document, path: str) -> Any | None:
     try:
         return doc.get_pointer(path)
@@ -109,16 +121,6 @@ def get_props_from_bundle(bundle_value: models.bundle.Bundle) -> tuple[int, list
     return version, [p for p in properties if "asf:atr:" in p.get("name", "")]
 
 
-def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
-    return [op.model_dump(by_alias=True, exclude_none=True) for op in patch_ops]
-
-
-def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
-    text = path.read_text(encoding="utf-8")
-    bom = models.bom.Bom.model_validate_json(text)
-    return models.bundle.Bundle(doc=yyjson.Document(text), bom=bom, path=path, text=text)
-
-
 def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> list[dict[str, str | float]] | None:
     if severity is not None:
         return [
@@ -132,16 +134,14 @@ def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> 
     return None
 
 
-def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | None, list[dict[str, str]]]:
-    severities = [
-        {
-            "score": str(s.get("score", str(s.get("vector", "")))),
-            "type": _SCORING_METHODS_CDX.get(str(s.get("method", "other"))),
-        }
-        for s in severity
-    ]
-    textual = severity[0].get("severity")
-    return str(textual), severities
+def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
+    return [op.model_dump(by_alias=True, exclude_none=True) for op in patch_ops]
+
+
+def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
+    text = path.read_text(encoding="utf-8")
+    bom = models.bom.Bom.model_validate_json(text)
+    return models.bundle.Bundle(doc=yyjson.Document(text), bom=bom, path=path, text=text)
 
 
 def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:

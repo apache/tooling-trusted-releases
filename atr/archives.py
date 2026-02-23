@@ -91,6 +91,43 @@ def total_size(tgz_path: str, chunk_size: int = 4096) -> int:
     return total_size
 
 
+def _safe_path(base_dir: str, *paths: str) -> str | None:
+    """Return an absolute path within the base_dir built from the given paths, or None if it escapes."""
+    target = os.path.abspath(os.path.join(base_dir, *paths))
+    abs_base = os.path.abspath(base_dir)
+    if (target == abs_base) or target.startswith(abs_base + os.sep):
+        return target
+    return None
+
+
+def _size_tar(archive: tarzip.Archive, chunk_size: int) -> int:
+    total_size = 0
+    for member in archive:
+        if not isinstance(member, tarzip.TarMember):
+            continue
+        total_size += member.size
+        if member.isfile():
+            fileobj = archive.extractfile(member)
+            if fileobj is not None:
+                while fileobj.read(chunk_size):
+                    pass
+    return total_size
+
+
+def _size_zip(archive: tarzip.Archive, chunk_size: int) -> int:
+    total_size = 0
+    for member in archive:
+        if not isinstance(member, tarzip.ZipMember):
+            continue
+        total_size += member.size
+        if member.isfile():
+            fileobj = archive.extractfile(member)
+            if fileobj is not None:
+                while fileobj.read(chunk_size):
+                    pass
+    return total_size
+
+
 def _tar_archive_extract_member(  # noqa: C901
     archive: tarzip.Archive,
     member: tarzip.TarMember,
@@ -240,43 +277,6 @@ def _tar_archive_extract_safe_process_symlink(member: tarzip.TarMember, extract_
         os.symlink(link_target, target_path)
     except (OSError, NotImplementedError) as e:
         log.warning(f"Failed to create symlink {target_path} -> {link_target}: {e}")
-
-
-def _safe_path(base_dir: str, *paths: str) -> str | None:
-    """Return an absolute path within the base_dir built from the given paths, or None if it escapes."""
-    target = os.path.abspath(os.path.join(base_dir, *paths))
-    abs_base = os.path.abspath(base_dir)
-    if (target == abs_base) or target.startswith(abs_base + os.sep):
-        return target
-    return None
-
-
-def _size_tar(archive: tarzip.Archive, chunk_size: int) -> int:
-    total_size = 0
-    for member in archive:
-        if not isinstance(member, tarzip.TarMember):
-            continue
-        total_size += member.size
-        if member.isfile():
-            fileobj = archive.extractfile(member)
-            if fileobj is not None:
-                while fileobj.read(chunk_size):
-                    pass
-    return total_size
-
-
-def _size_zip(archive: tarzip.Archive, chunk_size: int) -> int:
-    total_size = 0
-    for member in archive:
-        if not isinstance(member, tarzip.ZipMember):
-            continue
-        total_size += member.size
-        if member.isfile():
-            fileobj = archive.extractfile(member)
-            if fileobj is not None:
-                while fileobj.read(chunk_size):
-                    pass
-    return total_size
 
 
 def _zip_archive_extract_member(

@@ -33,6 +33,10 @@ if TYPE_CHECKING:
     import pathlib
 
 
+def attestable_checks_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
+    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.checks.json"
+
+
 def attestable_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
     return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.json"
 
@@ -43,10 +47,6 @@ def attestable_paths_path(project_name: str, version_name: str, revision_number:
 
 def github_tp_payload_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
     return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.github-tp.json"
-
-
-def attestable_checks_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.checks.json"
 
 
 async def github_tp_payload_write(
@@ -73,26 +73,6 @@ async def load(
         return None
 
 
-async def load_paths(
-    project_name: str,
-    version_name: str,
-    revision_number: str,
-) -> dict[str, str] | None:
-    file_path = attestable_paths_path(project_name, version_name, revision_number)
-    if await aiofiles.os.path.isfile(file_path):
-        try:
-            async with aiofiles.open(file_path, encoding="utf-8") as f:
-                data = json.loads(await f.read())
-            return models.AttestablePathsV1.model_validate(data).paths
-        except (json.JSONDecodeError, pydantic.ValidationError) as e:
-            # log.warning(f"Could not parse {file_path}, trying combined file: {e}")
-            log.warning(f"Could not parse {file_path}: {e}")
-    # combined = await load(project_name, version_name, revision_number)
-    # if combined is not None:
-    #     return combined.paths
-    return None
-
-
 async def load_checks(
     project_name: str,
     version_name: str,
@@ -113,6 +93,26 @@ async def load_checks(
             log.warning(f"Could not parse {file_path}: {e}")
             return {}
     return {}
+
+
+async def load_paths(
+    project_name: str,
+    version_name: str,
+    revision_number: str,
+) -> dict[str, str] | None:
+    file_path = attestable_paths_path(project_name, version_name, revision_number)
+    if await aiofiles.os.path.isfile(file_path):
+        try:
+            async with aiofiles.open(file_path, encoding="utf-8") as f:
+                data = json.loads(await f.read())
+            return models.AttestablePathsV1.model_validate(data).paths
+        except (json.JSONDecodeError, pydantic.ValidationError) as e:
+            # log.warning(f"Could not parse {file_path}, trying combined file: {e}")
+            log.warning(f"Could not parse {file_path}: {e}")
+    # combined = await load(project_name, version_name, revision_number)
+    # if combined is not None:
+    #     return combined.paths
+    return None
 
 
 def migrate_to_paths_files() -> int:
@@ -161,28 +161,6 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, 
     return path_to_hash, path_to_size
 
 
-async def write_files_data(
-    project_name: str,
-    version_name: str,
-    revision_number: str,
-    release_policy: dict[str, Any] | None,
-    uploader_uid: str,
-    previous: models.AttestableV1 | None,
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
-) -> None:
-    result = _generate_files_data(path_to_hash, path_to_size, revision_number, release_policy, uploader_uid, previous)
-    file_path = attestable_path(project_name, version_name, revision_number)
-    await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
-    paths_result = models.AttestablePathsV1(paths=result.paths)
-    paths_file_path = attestable_paths_path(project_name, version_name, revision_number)
-    await util.atomic_write_file(paths_file_path, paths_result.model_dump_json(indent=2))
-    checks_file_path = attestable_checks_path(project_name, version_name, revision_number)
-    if not checks_file_path.exists():
-        async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
-            await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
-
-
 async def write_checks_data(
     project_name: str,
     version_name: str,
@@ -205,6 +183,28 @@ async def write_checks_data(
         return result.model_dump_json(indent=2)
 
     await util.atomic_modify_file(attestable_checks_path(project_name, version_name, revision_number), modify)
+
+
+async def write_files_data(
+    project_name: str,
+    version_name: str,
+    revision_number: str,
+    release_policy: dict[str, Any] | None,
+    uploader_uid: str,
+    previous: models.AttestableV1 | None,
+    path_to_hash: dict[str, str],
+    path_to_size: dict[str, int],
+) -> None:
+    result = _generate_files_data(path_to_hash, path_to_size, revision_number, release_policy, uploader_uid, previous)
+    file_path = attestable_path(project_name, version_name, revision_number)
+    await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
+    paths_result = models.AttestablePathsV1(paths=result.paths)
+    paths_file_path = attestable_paths_path(project_name, version_name, revision_number)
+    await util.atomic_write_file(paths_file_path, paths_result.model_dump_json(indent=2))
+    checks_file_path = attestable_checks_path(project_name, version_name, revision_number)
+    if not checks_file_path.exists():
+        async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
+            await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
 
 
 def _compute_hashes_with_attribution(

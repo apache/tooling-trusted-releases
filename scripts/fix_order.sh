@@ -12,8 +12,7 @@ tmp="$$.tmp.py"
 backup="$HOME/.fix_order.backup.py"
 script_dir="$(dirname "$0")"
 
-# TODO: Use uv here?
-python3 "$script_dir/fix_order.py" "$file" > "$tmp"
+uv run --frozen python3 "$script_dir/fix_order.py" "$file" > "$tmp"
 status=$?
 if [ $status -ne 0 ]
 then

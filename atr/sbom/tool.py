@@ -38,6 +38,27 @@ _KNOWN_TOOLS: Final[dict[str, models.tool.Tool]] = {
 }
 
 
+def outdated_version_core(
+    isotime: str, version: str, version_as_of: Callable[[str], str | None]
+) -> semver.VersionInfo | None:
+    expected_version = version_as_of(isotime)
+    if expected_version is None:
+        return None
+    if version == expected_version:
+        return None
+    expected_version_comparable = version_parse(expected_version)
+    version_comparable = version_parse(version)
+    if (expected_version_comparable is None) or (version_comparable is None):
+        # Couldn't parse the version
+        return None
+    # If the version used is less than the version available
+    if version_comparable < expected_version_comparable:
+        # Then note the version available
+        return expected_version_comparable
+    # Otherwise, the user is using the latest version
+    return None
+
+
 def plugin_outdated_version(bom_value: models.bom.Bom) -> list[models.tool.Outdated] | None:
     if bom_value.metadata is None:
         return [models.tool.OutdatedMissingMetadata()]
@@ -74,27 +95,6 @@ def plugin_outdated_version(bom_value: models.bom.Bom) -> list[models.tool.Outda
                 )
             )
     return errors
-
-
-def outdated_version_core(
-    isotime: str, version: str, version_as_of: Callable[[str], str | None]
-) -> semver.VersionInfo | None:
-    expected_version = version_as_of(isotime)
-    if expected_version is None:
-        return None
-    if version == expected_version:
-        return None
-    expected_version_comparable = version_parse(expected_version)
-    version_comparable = version_parse(version)
-    if (expected_version_comparable is None) or (version_comparable is None):
-        # Couldn't parse the version
-        return None
-    # If the version used is less than the version available
-    if version_comparable < expected_version_comparable:
-        # Then note the version available
-        return expected_version_comparable
-    # Otherwise, the user is using the latest version
-    return None
 
 
 def version_parse(version_str: str) -> semver.VersionInfo | None:

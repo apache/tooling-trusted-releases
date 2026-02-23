@@ -50,31 +50,50 @@ type ReleaseAnnotatedDivergences = Callable[[sql.Release], AnnotatedDivergences]
 
 T = TypeVar("T")
 
+if True:
+
+    def committee_components(
+        *components: str,
+    ) -> Callable[[CommitteeDivergences], CommitteeAnnotatedDivergences]:
+        """Wrap a Committee divergence generator to yield annotated divergences."""
+
+        def wrap(original: CommitteeDivergences) -> CommitteeAnnotatedDivergences:
+            def replacement(c: sql.Committee) -> AnnotatedDivergences:
+                yield from divergences_with_annotations(
+                    components,
+                    original.__name__,
+                    c.name,
+                    original(c),
+                )
+
+            return replacement
+
+        return wrap
+
+    def project_components(
+        *components: str,
+    ) -> Callable[[ProjectDivergences], ProjectAnnotatedDivergences]:
+        """Wrap a Project divergence generator to yield annotated divergences."""
+
+        def wrap(original: ProjectDivergences) -> ProjectAnnotatedDivergences:
+            def replacement(p: sql.Project) -> AnnotatedDivergences:
+                yield from divergences_with_annotations(
+                    components,
+                    original.__name__,
+                    p.name,
+                    original(p),
+                )
+
+            return replacement
+
+        return wrap
+
 
 def committee(c: sql.Committee) -> AnnotatedDivergences:
     """Check that a committee is valid."""
 
     yield from committee_child_committees(c)
     yield from committee_full_name(c)
-
-
-def committee_components(
-    *components: str,
-) -> Callable[[CommitteeDivergences], CommitteeAnnotatedDivergences]:
-    """Wrap a Committee divergence generator to yield annotated divergences."""
-
-    def wrap(original: CommitteeDivergences) -> CommitteeAnnotatedDivergences:
-        def replacement(c: sql.Committee) -> AnnotatedDivergences:
-            yield from divergences_with_annotations(
-                components,
-                original.__name__,
-                c.name,
-                original(c),
-            )
-
-        return replacement
-
-    return wrap
 
 
 @committee_components("Committee.child_committees")
@@ -174,25 +193,6 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_full_name(p)
     yield from project_programming_languages(p)
     yield from project_release_policy(p)
-
-
-def project_components(
-    *components: str,
-) -> Callable[[ProjectDivergences], ProjectAnnotatedDivergences]:
-    """Wrap a Project divergence generator to yield annotated divergences."""
-
-    def wrap(original: ProjectDivergences) -> ProjectAnnotatedDivergences:
-        def replacement(p: sql.Project) -> AnnotatedDivergences:
-            yield from divergences_with_annotations(
-                components,
-                original.__name__,
-                p.name,
-                original(p),
-            )
-
-        return replacement
-
-    return wrap
 
 
 @project_components("Project.category")

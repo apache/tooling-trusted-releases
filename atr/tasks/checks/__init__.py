@@ -393,8 +393,10 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
     return list(sorted(relative_paths_set))
 
 
-async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None) -> bool:
-    return (release.committee is not None) and release.committee.is_podling
+async def _resolve_committee_name(release: sql.Release, rel_path: str | None = None) -> str:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    return release.committee.name
 
 
 async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
@@ -421,10 +423,8 @@ async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = No
         return ""
 
 
-async def _resolve_committee_name(release: sql.Release, rel_path: str | None = None) -> str:
-    if release.committee is None:
-        raise ValueError("Release has no committee")
-    return release.committee.name
+async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None) -> bool:
+    return (release.committee is not None) and release.committee.is_podling
 
 
 async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | None = None) -> str:

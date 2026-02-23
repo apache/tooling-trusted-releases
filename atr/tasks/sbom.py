@@ -293,6 +293,24 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     )
 
 
+def _extracted_dir(temp_dir: str) -> str | None:
+    # Loop through all the dirs in temp_dir
+    extract_dir = None
+    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
+    for dir_name in os.listdir(temp_dir):
+        if dir_name.startswith("."):
+            continue
+        dir_path = os.path.join(temp_dir, dir_name)
+        if os.path.isdir(dir_path):
+            if extract_dir is None:
+                extract_dir = dir_path
+            else:
+                return temp_dir
+    if extract_dir is None:
+        extract_dir = temp_dir
+    return extract_dir
+
+
 async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict[str, Any]:
     """Core logic to generate CycloneDX SBOM on failure."""
     log.info(f"Generating CycloneDX SBOM for {artifact_path} -> {output_path}")
@@ -393,21 +411,3 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
         except FileNotFoundError:
             log.error("syft command not found. Is it installed and in PATH?")
             raise SBOMGenerationError("syft command not found")
-
-
-def _extracted_dir(temp_dir: str) -> str | None:
-    # Loop through all the dirs in temp_dir
-    extract_dir = None
-    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
-    for dir_name in os.listdir(temp_dir):
-        if dir_name.startswith("."):
-            continue
-        dir_path = os.path.join(temp_dir, dir_name)
-        if os.path.isdir(dir_path):
-            if extract_dir is None:
-                extract_dir = dir_path
-            else:
-                return temp_dir
-    if extract_dir is None:
-        extract_dir = temp_dir
-    return extract_dir

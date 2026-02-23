@@ -66,61 +66,6 @@ class WorkflowStatusCheck(schema.Strict):
     asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
 
 
-@checks.with_model(DistributionWorkflow)
-async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
-    unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
-    try:
-        sql_platform = sql.DistributionPlatform[args.platform]
-    except KeyError:
-        _fail(f"Invalid platform: {args.platform}")
-    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if args.staging else ''}.yml"
-    payload = {
-        "ref": "main",
-        "inputs": {
-            "atr-id": unique_id,
-            "asf-uid": args.asf_uid,
-            "project": args.project_name,
-            "phase": args.phase,
-            "version": args.version_name,
-            "distribution-owner-namespace": args.namespace,
-            "distribution-package": args.package,
-            "distribution-version": args.version,
-            **args.arguments,
-        },
-    }
-    headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
-    log.info(
-        f"Triggering Github workflow apache/tooling-actions/{workflow} with args: {
-            json.dumps(args.arguments, indent=2)
-        }"
-    )
-    async with util.create_secure_session() as session:
-        try:
-            async with session.post(
-                f"{_BASE_URL}/apache/tooling-actions/actions/workflows/{workflow}/dispatches",
-                headers=headers,
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-        except aiohttp.ClientResponseError as e:
-            _fail(f"Failed to trigger GitHub workflow: {e.message} ({e.status})")
-
-        run, run_id = await _find_triggered_run(session, headers, unique_id)
-
-        if run.get("status") in _FAILED_STATUSES:
-            _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
-        async with storage.write_as_committee_member(args.committee_name, args.asf_uid) as w:
-            try:
-                await w.workflowstatus.add_workflow_status(
-                    workflow, run_id, args.project_name, task_id, status=run.get("status")
-                )
-            except storage.AccessError as e:
-                _fail(f"Failed to record distribution: {e}")
-        return results.DistributionWorkflow(
-            kind="distribution_workflow", name=args.name, run_id=run_id, url=run.get("html_url", "")
-        )
-
-
 @checks.with_model(WorkflowStatusCheck)
 async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
     """Check remote workflow statuses."""
@@ -193,6 +138,61 @@ async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
         _fail(f"Unexpected error during workflow status update: {e!s}")
 
 
+@checks.with_model(DistributionWorkflow)
+async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
+    unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
+    try:
+        sql_platform = sql.DistributionPlatform[args.platform]
+    except KeyError:
+        _fail(f"Invalid platform: {args.platform}")
+    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if args.staging else ''}.yml"
+    payload = {
+        "ref": "main",
+        "inputs": {
+            "atr-id": unique_id,
+            "asf-uid": args.asf_uid,
+            "project": args.project_name,
+            "phase": args.phase,
+            "version": args.version_name,
+            "distribution-owner-namespace": args.namespace,
+            "distribution-package": args.package,
+            "distribution-version": args.version,
+            **args.arguments,
+        },
+    }
+    headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
+    log.info(
+        f"Triggering Github workflow apache/tooling-actions/{workflow} with args: {
+            json.dumps(args.arguments, indent=2)
+        }"
+    )
+    async with util.create_secure_session() as session:
+        try:
+            async with session.post(
+                f"{_BASE_URL}/apache/tooling-actions/actions/workflows/{workflow}/dispatches",
+                headers=headers,
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+        except aiohttp.ClientResponseError as e:
+            _fail(f"Failed to trigger GitHub workflow: {e.message} ({e.status})")
+
+        run, run_id = await _find_triggered_run(session, headers, unique_id)
+
+        if run.get("status") in _FAILED_STATUSES:
+            _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
+        async with storage.write_as_committee_member(args.committee_name, args.asf_uid) as w:
+            try:
+                await w.workflowstatus.add_workflow_status(
+                    workflow, run_id, args.project_name, task_id, status=run.get("status")
+                )
+            except storage.AccessError as e:
+                _fail(f"Failed to record distribution: {e}")
+        return results.DistributionWorkflow(
+            kind="distribution_workflow", name=args.name, run_id=run_id, url=run.get("html_url", "")
+        )
+
+
 def _fail(message: str) -> NoReturn:
     log.error(message)
     raise RuntimeError(message)
@@ -220,31 +220,6 @@ async def _find_triggered_run(
     if run_id is None:
         _fail(f"Found run for {unique_id} but run ID is missing")
     return run, run_id
-
-
-#
-# async def _record_distribution(
-#     committee_name: str,
-#     release: str,
-#     platform: sql.DistributionPlatform,
-#     namespace: str,
-#     package: str,
-#     version: str,
-#     staging: bool,
-# ):
-#     log.info("Creating distribution record")
-#     dd = distribution.Data(
-#         platform=platform,
-#         owner_namespace=namespace,
-#         package=package,
-#         version=version,
-#         details=False,
-#     )
-#     async with storage.write_as_committee_member(committee_name=committee_name) as w:
-#         try:
-#             _dist, _added, _metadata = await w.distributions.record_from_data(release=release, staging=staging, dd=dd)
-#         except storage.AccessError as e:
-#             _fail(f"Failed to record distribution: {e}")
 
 
 async def _request_and_retry(

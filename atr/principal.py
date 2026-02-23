@@ -63,20 +63,6 @@ ArgumentNone = ArgumentNoneType()
 type UID = web.Committer | str | None | ArgumentNoneType
 
 
-def attr_to_list(attr):
-    """Converts a list of bytestring attribute values to a unique list of strings."""
-    return list(set([value for value in attr or []]))
-
-
-def get_ldap_bind_dn_and_password() -> tuple[str, str]:
-    conf = config.get()
-    bind_dn = conf.LDAP_BIND_DN
-    bind_password = conf.LDAP_BIND_PASSWORD
-    if (not bind_dn) or (not bind_password):
-        raise CommitterError("LDAP bind DN or password not set")
-    return bind_dn, bind_password
-
-
 class Committer:
     """Verifies and loads a committer's credentials via LDAP."""
 
@@ -416,6 +402,20 @@ class Authorisation(AsyncObject):
         if self.__asf_uid is None:
             return frozenset()
         return self.__authoriser.member_of(self.__asf_uid)
+
+
+def attr_to_list(attr):
+    """Converts a list of bytestring attribute values to a unique list of strings."""
+    return list(set([value for value in attr or []]))
+
+
+def get_ldap_bind_dn_and_password() -> tuple[str, str]:
+    conf = config.get()
+    bind_dn = conf.LDAP_BIND_DN
+    bind_password = conf.LDAP_BIND_PASSWORD
+    if (not bind_dn) or (not bind_password):
+        raise CommitterError("LDAP bind DN or password not set")
+    return bind_dn, bind_password
 
 
 def _augment_test_membership(

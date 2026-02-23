@@ -30,11 +30,13 @@ def main() -> None:
     blocks = _parse_blocks(path.read_text(encoding="utf-8"))
     nonfunc, func = [], []
     seen_func = False
-    main_guard: list[str] | None = None
 
-    if blocks and _is_main_guard(blocks[-1][1]):
-        main_guard = blocks[-1][1]
-        blocks = blocks[:-1]
+    trailing: list[tuple[int, list[str]]] = []
+    while blocks and not _is_func(blocks[-1][1]):
+        trailing.insert(0, blocks.pop())
+    if not blocks:
+        blocks = trailing
+        trailing = []
 
     for lineno, lines in blocks:
         count = _count_defs(lines)
@@ -49,6 +51,14 @@ def main() -> None:
             nonfunc.append((lineno, lines))
 
     func.sort(key=_sort_key)
+    print(_assemble(nonfunc, func, trailing), end="")
+
+
+def _assemble(
+    nonfunc: list[tuple[int, list[str]]],
+    func: list[tuple[int, list[str]]],
+    trailing: list[tuple[int, list[str]]],
+) -> str:
     nonfunc_text = "".join("".join(b) for _, b in nonfunc)
     func_parts = [_normalise(b) for _, b in func]
     func_text = "\n\n".join(func_parts)
@@ -56,12 +66,14 @@ def main() -> None:
         output = nonfunc_text.rstrip("\n") + "\n\n\n" + func_text
     else:
         output = nonfunc_text + func_text
-    if main_guard:
+    if trailing:
+        trailing_parts = [_normalise(b) for _, b in trailing]
+        trailing_text = "\n\n".join(trailing_parts)
         if output:
-            output = output.rstrip("\n") + "\n\n\n" + _normalise(main_guard)
+            output = output.rstrip("\n") + "\n\n\n" + trailing_text
         else:
-            output = _normalise(main_guard)
-    print(output, end="")
+            output = trailing_text
+    return output
 
 
 def _count_defs(block: list[str]) -> int:
@@ -76,13 +88,6 @@ def _is_func(block: list[str]) -> bool:
             break
         if line.startswith(("def ", "async def ")):
             return True
-    return False
-
-
-def _is_main_guard(block: list[str]) -> bool:
-    for line in block:
-        if line.strip():
-            return line.startswith("if __name__")
     return False
 
 

@@ -577,11 +577,6 @@ async def logs(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(recent_logs))
 
 
-@admin.get("/raise-error")
-async def raise_error(session: web.Committer) -> web.QuartResponse:
-    raise RuntimeError("Admin test route deliberately raised an unhandled error")
-
-
 @admin.get("/ongoing-tasks/<project_name>/<version_name>/<revision>")
 async def ongoing_tasks_get(
     session: web.Committer, project_name: str, version_name: str, revision: str
@@ -704,6 +699,11 @@ async def projects_update_post(session: web.Committer) -> str | web.WerkzeugResp
             "message": f"Failed to queue metadata update: {e!s}",
             "category": "error",
         }, 200
+
+
+@admin.get("/raise-error")
+async def raise_error(session: web.Committer) -> web.QuartResponse:
+    raise RuntimeError("Admin test route deliberately raised an unhandled error")
 
 
 @admin.get("/revoke-user-tokens")

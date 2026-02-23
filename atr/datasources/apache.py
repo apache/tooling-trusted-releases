@@ -321,17 +321,6 @@ async def update_metadata() -> tuple[int, int]:
     return added_count, updated_count
 
 
-def _project_status(pmc: sql.Committee, project_name: str, project_status: ProjectStatus) -> sql.ProjectStatus:
-    if pmc.name == "attic":
-        # This must come first, because attic is also a standing committee
-        return sql.ProjectStatus.RETIRED
-    elif ("_dormant_" in project_name) or project_status.name.endswith("(Dormant)"):
-        return sql.ProjectStatus.DORMANT
-    elif util.committee_is_standing(pmc.name):
-        return sql.ProjectStatus.STANDING
-    return sql.ProjectStatus.ACTIVE
-
-
 async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
@@ -356,6 +345,17 @@ async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
         # added_count += 1
 
     return added_count, updated_count
+
+
+def _project_status(pmc: sql.Committee, project_name: str, project_status: ProjectStatus) -> sql.ProjectStatus:
+    if pmc.name == "attic":
+        # This must come first, because attic is also a standing committee
+        return sql.ProjectStatus.RETIRED
+    elif ("_dormant_" in project_name) or project_status.name.endswith("(Dormant)"):
+        return sql.ProjectStatus.DORMANT
+    elif util.committee_is_standing(pmc.name):
+        return sql.ProjectStatus.STANDING
+    return sql.ProjectStatus.ACTIVE
 
 
 async def _update_committees(

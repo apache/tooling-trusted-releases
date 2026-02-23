@@ -38,6 +38,33 @@ if TYPE_CHECKING:
     import pathlib
 
 
+@post.committer("/draft/reset/<project_name>/<version_name>")
+@post.empty()
+async def cache_reset(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
+    """Start a new draft revision and switch this release to global caching"""
+    await session.check_access(project_name)
+    if not session.is_admin:
+        raise base.ASFQuartException("Admin access required", errorcode=403)
+
+    description = "Empty revision to restart all checks without cache for the whole release candidate draft"
+    async with storage.write(session) as write:
+        wacp = await write.as_project_committee_participant(project_name)
+        await wacp.revision.create_revision(
+            project_name,
+            version_name,
+            session.uid,
+            description=description,
+            reset_to_global_cache=True,
+        )
+
+    return await session.redirect(
+        get.compose.selected,
+        project_name=project_name,
+        version_name=version_name,
+        success="Release set back to global caching",
+    )
+
+
 @post.committer("/compose/<project_name>/<version_name>")
 @post.empty()
 async def delete(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
@@ -142,33 +169,6 @@ async def recheck(session: web.Committer, project_name: str, version_name: str) 
         project_name=project_name,
         version_name=version_name,
         success="All checks restarted with release-local cache",
-    )
-
-
-@post.committer("/draft/reset/<project_name>/<version_name>")
-@post.empty()
-async def cache_reset(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
-    """Start a new draft revision and switch this release to global caching"""
-    await session.check_access(project_name)
-    if not session.is_admin:
-        raise base.ASFQuartException("Admin access required", errorcode=403)
-
-    description = "Empty revision to restart all checks without cache for the whole release candidate draft"
-    async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
-        await wacp.revision.create_revision(
-            project_name,
-            version_name,
-            session.uid,
-            description=description,
-            reset_to_global_cache=True,
-        )
-
-    return await session.redirect(
-        get.compose.selected,
-        project_name=project_name,
-        version_name=version_name,
-        success="Release set back to global caching",
     )
 
 

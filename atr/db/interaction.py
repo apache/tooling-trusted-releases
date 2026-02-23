@@ -192,6 +192,27 @@ async def checks_for(
     return list(check_results)
 
 
+async def count_checks_for_revision_by_status(
+    status: sql.CheckResultStatus, release: sql.Release, revision_number: str, caller_data: db.Session | None = None
+):
+    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision_number)
+    check_hashes = [h for inner in file_path_checks.values() for h in inner.values()]
+    if len(check_hashes) == 0:
+        return 0
+    async with db.ensure_session(caller_data) as data:
+        via = sql.validate_instrumented_attribute
+        query = (
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.CheckResult)
+            .where(
+                via(sql.CheckResult.inputs_hash).in_(check_hashes),
+                sql.CheckResult.status == status,
+            )
+        )
+        result = await data.execute(query)
+        return result.scalar_one()
+
+
 @contextlib.asynccontextmanager
 async def ephemeral_gpg_home() -> AsyncGenerator[str]:
     """Create a temporary directory for an isolated GPG home, and clean it up on exit."""
@@ -548,27 +569,6 @@ async def wait_for_task(
             # Wait 100ms before checking again
             await asyncio.sleep(0.1)
     return False
-
-
-async def count_checks_for_revision_by_status(
-    status: sql.CheckResultStatus, release: sql.Release, revision_number: str, caller_data: db.Session | None = None
-):
-    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision_number)
-    check_hashes = [h for inner in file_path_checks.values() for h in inner.values()]
-    if len(check_hashes) == 0:
-        return 0
-    async with db.ensure_session(caller_data) as data:
-        via = sql.validate_instrumented_attribute
-        query = (
-            sqlmodel.select(sqlalchemy.func.count())
-            .select_from(sql.CheckResult)
-            .where(
-                via(sql.CheckResult.inputs_hash).in_(check_hashes),
-                sql.CheckResult.status == status,
-            )
-        )
-        result = await data.execute(query)
-        return result.scalar_one()
 
 
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:

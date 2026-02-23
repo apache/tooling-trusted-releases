@@ -94,6 +94,15 @@ def clear_context():
     structlog.contextvars.clear_contextvars()
 
 
+def create_debug_handler() -> logging.Handler:
+    global _global_recent_logs
+    _global_recent_logs = collections.deque(maxlen=100)
+    handler = BufferingHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s: %(message)s"))
+    handler.setLevel(logging.DEBUG)
+    return handler
+
+
 def critical(msg: str, **kwargs) -> None:
     _event(logging.CRITICAL, msg, **kwargs)
 
@@ -126,15 +135,6 @@ def info(msg: str, **kwargs) -> None:
     _event(logging.INFO, msg, **kwargs)
 
 
-def create_debug_handler() -> logging.Handler:
-    global _global_recent_logs
-    _global_recent_logs = collections.deque(maxlen=100)
-    handler = BufferingHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s: %(message)s"))
-    handler.setLevel(logging.DEBUG)
-    return handler
-
-
 def interface_name(depth: int = 1) -> str:
     return caller_name(depth=depth)
 
@@ -156,28 +156,6 @@ def performance_init() -> None:
 
 def python_repr(object_name: str) -> str:
     return f"<{object_name}>"
-
-
-# def secret(msg: str, data: bytes) -> None:
-#     import base64
-
-#     import nacl.encoding as encoding
-#     import nacl.public as public
-
-#     import atr.config as config
-
-#     conf = config.get()
-#     public_key_b64 = conf.LOG_PUBLIC_KEY
-#     if public_key_b64 is None:
-#         raise ValueError("LOG_PUBLIC_KEY is not set")
-
-#     recipient_pk = public.PublicKey(
-#         public_key_b64.encode("ascii"),
-#         encoder=encoding.Base64Encoder,
-#     )
-#     ciphertext = public.SealedBox(recipient_pk).encrypt(data)
-#     encoded_ciphertext = base64.b64encode(ciphertext).decode("ascii")
-#     _event(logging.INFO, f"{msg} {encoded_ciphertext}")
 
 
 def warning(msg: str, **kwargs) -> None:

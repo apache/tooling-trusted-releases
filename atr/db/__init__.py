@@ -951,25 +951,6 @@ def log_queries() -> Iterator[None]:
         global_log_query = original_global_log_query_state
 
 
-# async def recent_tasks(data: Session, release_name: str, file_path: str, modified: int) -> dict[str, models.Task]:
-#     """Get the most recent task for each task type for a specific file."""
-#     tasks = await data.task(
-#         release_name=release_name,
-#         path=str(file_path),
-#         modified=modified,
-#     ).all()
-#
-#     # Group by task_type and keep the most recent one
-#     # We use the highest id to determine the most recent task
-#     recent_tasks: dict[str, models.Task] = {}
-#     for task in tasks:
-#         # If we haven't seen this task type before or if this task is newer
-#         if (task.task_type.value not in recent_tasks) or (task.id > recent_tasks[task.task_type.value].id):
-#             recent_tasks[task.task_type.value] = task
-#
-#     return recent_tasks
-
-
 def select_in_load(*entities: Any) -> orm.strategy_options._AbstractLoad:
     """Eagerly load the given entities from the query."""
     validated_entities = []

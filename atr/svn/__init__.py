@@ -90,46 +90,6 @@ class SvnLog(pydantic_xml.BaseXmlModel, tag="log"):
     entries: list[SvnLogEntry] = pydantic_xml.element(tag="logentry")
 
 
-async def _run_svnmucc_command(*args: str) -> str:
-    return await run_command("svnmucc", *args)
-
-
-async def _run_svn_command(sub_cmd: str, path: str, *args: str) -> str:
-    # Do not log this command, as it may contain a password or secret token
-    return await run_command("svn", *[sub_cmd, *args, path])
-
-
-async def _run_svn_info(path_or_url: str) -> str:
-    log.debug(f"fetching svn info for '{path_or_url}'")
-    return await _run_svn_command("info", path_or_url)
-
-
-async def update(path: pathlib.Path) -> str:
-    log.debug(f"running svn update for '{path}'")
-    return await _run_svn_command("update", str(path), "--parents")
-
-
-async def get_log(path: pathlib.Path) -> SvnLog:
-    log.debug(f"running svn log for '{path}'")
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
-    # TODO: Or omit username entirely?
-    log_output = await _run_svn_command("log", str(path), "--xml", "--username", _ASF_TOOL, "--password", svn_token)
-    return SvnLog.from_xml(log_output)
-
-
-async def get_diff(path: pathlib.Path, revision: int) -> str:
-    log.debug(f"running svn diff for '{path}': r{revision}")
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
-    # TODO: Or omit username entirely?
-    return await _run_svn_command(
-        "diff", str(path), "-c", str(revision), "--username", _ASF_TOOL, "--password", svn_token
-    )
-
-
 async def commit(path: pathlib.Path, url: str, username: str, revision: str, message: str) -> str:
     log.debug(f"running svn commit for user '{username}' to '{url}'")
     # The username here is the ASF UID of the committer
@@ -152,6 +112,27 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
         "-m",
         message,
     )
+
+
+async def get_diff(path: pathlib.Path, revision: int) -> str:
+    log.debug(f"running svn diff for '{path}': r{revision}")
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    # TODO: Or omit username entirely?
+    return await _run_svn_command(
+        "diff", str(path), "-c", str(revision), "--username", _ASF_TOOL, "--password", svn_token
+    )
+
+
+async def get_log(path: pathlib.Path) -> SvnLog:
+    log.debug(f"running svn log for '{path}'")
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    # TODO: Or omit username entirely?
+    log_output = await _run_svn_command("log", str(path), "--xml", "--username", _ASF_TOOL, "--password", svn_token)
+    return SvnLog.from_xml(log_output)
 
 
 async def run_command(cmd: str, *args: str) -> str:
@@ -177,3 +158,22 @@ async def run_command(cmd: str, *args: str) -> str:
     else:
         output = stdout.decode().strip()
         return output
+
+
+async def update(path: pathlib.Path) -> str:
+    log.debug(f"running svn update for '{path}'")
+    return await _run_svn_command("update", str(path), "--parents")
+
+
+async def _run_svn_command(sub_cmd: str, path: str, *args: str) -> str:
+    # Do not log this command, as it may contain a password or secret token
+    return await run_command("svn", *[sub_cmd, *args, path])
+
+
+async def _run_svn_info(path_or_url: str) -> str:
+    log.debug(f"fetching svn info for '{path_or_url}'")
+    return await _run_svn_command("info", path_or_url)
+
+
+async def _run_svnmucc_command(*args: str) -> str:
+    return await run_command("svnmucc", *args)

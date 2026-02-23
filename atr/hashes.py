@@ -25,18 +25,18 @@ import blake3
 _HASH_CHUNK_SIZE: Final[int] = 4 * 1024 * 1024
 
 
+def compute_dict_hash(to_hash: dict[Any, Any]) -> str:
+    hasher = blake3.blake3()
+    for k in sorted(to_hash.keys()):
+        hasher.update(str(k).encode("utf-8"))
+        hasher.update(str(to_hash[k]).encode("utf-8"))
+    return f"blake3:{hasher.hexdigest()}"
+
+
 async def compute_file_hash(path: str | pathlib.Path) -> str:
     path = pathlib.Path(path)
     hasher = blake3.blake3()
     async with aiofiles.open(path, "rb") as f:
         while chunk := await f.read(_HASH_CHUNK_SIZE):
             hasher.update(chunk)
-    return f"blake3:{hasher.hexdigest()}"
-
-
-def compute_dict_hash(to_hash: dict[Any, Any]) -> str:
-    hasher = blake3.blake3()
-    for k in sorted(to_hash.keys()):
-        hasher.update(str(k).encode("utf-8"))
-        hasher.update(str(to_hash[k]).encode("utf-8"))
     return f"blake3:{hasher.hexdigest()}"

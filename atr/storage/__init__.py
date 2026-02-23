@@ -41,27 +41,6 @@ import atr.user as user
 ## Access credentials
 
 
-# Do not rename this interface
-# It is named to reserve the atr.storage.audit logger name
-def audit(**kwargs: basic.JSON) -> None:
-    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
-    now = now.replace("+00:00", "Z")
-    action = log.caller_name(depth=2)
-    request_user_id = log.get_context("user_id")
-    admin_user_id = log.get_context("admin_id")
-    kwargs = {"datetime": now, "action": action, **kwargs}
-    if request_user_id:
-        kwargs["request_user_id"] = request_user_id
-    if admin_user_id and (request_user_id != admin_user_id):
-        kwargs["admin_user_id"] = admin_user_id
-    msg = json.dumps(kwargs, allow_nan=False)
-    # The atr.log logger should give the same name
-    # But to be extra sure, we set it manually
-    logger = logging.getLogger("atr.storage.audit")
-    # TODO: Convert to async
-    logger.info(msg)
-
-
 class AccessAs:
     def append_to_audit_log(self, **kwargs: basic.JSON) -> None:
         audit(**kwargs)
@@ -404,7 +383,25 @@ class Write:
         return committees
 
 
-# Context managers
+# Do not rename this interface
+# It is named to reserve the atr.storage.audit logger name
+def audit(**kwargs: basic.JSON) -> None:
+    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
+    now = now.replace("+00:00", "Z")
+    action = log.caller_name(depth=2)
+    request_user_id = log.get_context("user_id")
+    admin_user_id = log.get_context("admin_id")
+    kwargs = {"datetime": now, "action": action, **kwargs}
+    if request_user_id:
+        kwargs["request_user_id"] = request_user_id
+    if admin_user_id and (request_user_id != admin_user_id):
+        kwargs["admin_user_id"] = admin_user_id
+    msg = json.dumps(kwargs, allow_nan=False)
+    # The atr.log logger should give the same name
+    # But to be extra sure, we set it manually
+    logger = logging.getLogger("atr.storage.audit")
+    # TODO: Convert to async
+    logger.info(msg)
 
 
 @contextlib.asynccontextmanager
@@ -416,6 +413,19 @@ async def read(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerato
     async with db.session() as data:
         # TODO: Replace data with a DatabaseReader instance
         yield Read(authorisation, data)
+
+
+@contextlib.asynccontextmanager
+async def read_and_write(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerator[tuple[Read, Write]]:
+    if asf_uid is principal.ArgumentNone:
+        authorisation = await principal.Authorisation()
+    else:
+        authorisation = await principal.Authorisation(asf_uid)
+    async with db.session() as data:
+        # TODO: Replace data with a DatabaseWriter instance
+        r = Read(authorisation, data)
+        w = Write(authorisation, data)
+        yield r, w
 
 
 @contextlib.asynccontextmanager
@@ -432,19 +442,6 @@ async def read_as_general_public(
 ) -> AsyncGenerator[ReadAsGeneralPublic]:
     async with read(asf_uid) as r:
         yield r.as_general_public()
-
-
-@contextlib.asynccontextmanager
-async def read_and_write(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerator[tuple[Read, Write]]:
-    if asf_uid is principal.ArgumentNone:
-        authorisation = await principal.Authorisation()
-    else:
-        authorisation = await principal.Authorisation(asf_uid)
-    async with db.session() as data:
-        # TODO: Replace data with a DatabaseWriter instance
-        r = Read(authorisation, data)
-        w = Write(authorisation, data)
-        yield r, w
 
 
 @contextlib.asynccontextmanager

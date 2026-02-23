@@ -57,9 +57,6 @@ async def render_sync(
     return await _render_in_thread(template, context_vars, app_instance)
 
 
-render = render_sync
-
-
 async def _render_in_thread(template: jinja2.Template, context: dict, app: app.Quart) -> str:
     if template.environment.is_async is False:
         raise RuntimeError("Template environment is not async")
@@ -77,3 +74,6 @@ async def _render_in_thread(template: jinja2.Template, context: dict, app: app.Q
         context=context,
     )
     return rendered_template
+
+
+render = render_sync

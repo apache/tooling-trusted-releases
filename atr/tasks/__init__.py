@@ -197,50 +197,6 @@ async def draft_checks(
     return len(relative_paths)
 
 
-async def _draft_file_checks(
-    asf_uid: str,
-    caller_data: db.Session | None,
-    data: db.Session,
-    path: pathlib.Path,
-    previous_version: sql.Release | None,
-    project_name: str,
-    release: sql.Release,
-    release_version: str,
-    revision_number: str,
-):
-    path_str = str(path)
-    task_function: Callable[[str, sql.Release, str, str, db.Session], Awaitable[list[sql.Task | None]]] | None = None
-    for suffix, func in TASK_FUNCTIONS.items():
-        if path.name.endswith(suffix):
-            task_function = func
-            break
-    if task_function:
-        for task in await task_function(asf_uid, release, revision_number, path_str, data):
-            if task:
-                task.revision_number = revision_number
-                await _add_task(data, task)
-    # TODO: Should we check .json files for their content?
-    # Ideally we would not have to do that
-    if path.name.endswith(".cdx.json"):
-        cdx_task = await queued(
-            asf_uid,
-            sql.TaskType.SBOM_TOOL_SCORE,
-            release,
-            revision_number,
-            path_str,
-            extra_args={
-                "project_name": project_name,
-                "version_name": release_version,
-                "revision_number": revision_number,
-                "previous_release_version": previous_version.version if previous_version else None,
-                "file_path": path_str,
-                "asf_uid": asf_uid,
-            },
-        )
-        if cdx_task:
-            await _add_task(data, cdx_task)
-
-
 async def keys_import_file(
     asf_uid: str, project_name: str, version_name: str, revision_number: str, caller_data: db.Session | None = None
 ) -> None:
@@ -322,21 +278,6 @@ async def queued(
         primary_rel_path=primary_rel_path,
         inputs_hash=hash_val,
     )
-
-
-async def _add_task(data: db.Session, task: sql.Task) -> None:
-    try:
-        async with data.begin_nested():
-            data.add(task)
-            await data.flush()
-    except sqlalchemy.exc.IntegrityError as e:
-        if (
-            isinstance(e.orig, sqlite3.IntegrityError)
-            and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE)
-            and ("task.inputs_hash" in str(e.orig))
-        ):
-            return
-        raise
 
 
 def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results | None]]:  # noqa: C901
@@ -606,6 +547,65 @@ async def zip_checks(
         queued(asf_uid, sql.TaskType.ZIPFORMAT_STRUCTURE, release, revision, path, check_cache_key=zip_s_ck),
     ]
     return await asyncio.gather(*tasks)
+
+
+async def _add_task(data: db.Session, task: sql.Task) -> None:
+    try:
+        async with data.begin_nested():
+            data.add(task)
+            await data.flush()
+    except sqlalchemy.exc.IntegrityError as e:
+        if (
+            isinstance(e.orig, sqlite3.IntegrityError)
+            and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE)
+            and ("task.inputs_hash" in str(e.orig))
+        ):
+            return
+        raise
+
+
+async def _draft_file_checks(
+    asf_uid: str,
+    caller_data: db.Session | None,
+    data: db.Session,
+    path: pathlib.Path,
+    previous_version: sql.Release | None,
+    project_name: str,
+    release: sql.Release,
+    release_version: str,
+    revision_number: str,
+):
+    path_str = str(path)
+    task_function: Callable[[str, sql.Release, str, str, db.Session], Awaitable[list[sql.Task | None]]] | None = None
+    for suffix, func in TASK_FUNCTIONS.items():
+        if path.name.endswith(suffix):
+            task_function = func
+            break
+    if task_function:
+        for task in await task_function(asf_uid, release, revision_number, path_str, data):
+            if task:
+                task.revision_number = revision_number
+                await _add_task(data, task)
+    # TODO: Should we check .json files for their content?
+    # Ideally we would not have to do that
+    if path.name.endswith(".cdx.json"):
+        cdx_task = await queued(
+            asf_uid,
+            sql.TaskType.SBOM_TOOL_SCORE,
+            release,
+            revision_number,
+            path_str,
+            extra_args={
+                "project_name": project_name,
+                "version_name": release_version,
+                "revision_number": revision_number,
+                "previous_release_version": previous_version.version if previous_version else None,
+                "file_path": path_str,
+                "asf_uid": asf_uid,
+            },
+        )
+        if cdx_task:
+            await _add_task(data, cdx_task)
 
 
 TASK_FUNCTIONS: Final[dict[str, Callable[..., Coroutine[Any, Any, list[sql.Task | None]]]]] = {
