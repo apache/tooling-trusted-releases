@@ -244,6 +244,7 @@ async def committees_list() -> DictResponse:
 
 
 @api.route("/distribute/ssh/register", methods=["POST"])
+@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @quart_schema.validate_request(models.api.DistributeSshRegisterArgs)
 async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) -> DictResponse:
     """
@@ -282,7 +283,7 @@ async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) ->
 @quart_schema.validate_response(models.api.DistributionRecordResults, 200)
 async def distribution_record(data: models.api.DistributionRecordArgs) -> DictResponse:
     """
-    Record a distribution.
+    Record a manual distribution.
     """
     asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
@@ -320,7 +321,7 @@ async def distribution_record(data: models.api.DistributionRecordArgs) -> DictRe
 @quart_schema.validate_request(models.api.DistributionRecordFromWorkflowArgs)
 async def distribution_record_from_workflow(data: models.api.DistributionRecordFromWorkflowArgs) -> DictResponse:
     """
-    Record a distribution.
+    Record the result of an automated distribution from the GH tooling-actions workflow.
     """
     _payload, asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
         data.publisher,
