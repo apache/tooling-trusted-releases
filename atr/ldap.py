@@ -18,6 +18,7 @@
 import asyncio
 import collections
 import dataclasses
+import ssl
 from typing import Any, Final, Literal
 
 import ldap3
@@ -30,6 +31,11 @@ LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"
 LDAP_TOOLING_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
 
 
+_tls_config = ldap3.Tls(
+    validate=ssl.CERT_REQUIRED,
+)
+
+
 class Search:
     def __init__(self, ldap_bind_dn: str, ldap_bind_password: str):
         self._bind_dn = ldap_bind_dn
@@ -37,7 +43,7 @@ class Search:
         self._conn: ldap3.Connection | None = None
 
     def __enter__(self):
-        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True)
+        server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config)
         self._conn = ldap3.Connection(
             server,
             user=self._bind_dn,
@@ -234,7 +240,7 @@ def _search_core(params: SearchParameters) -> None:
     params.detail_err = None
     params.connection = None
 
-    server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, get_info=ldap3.ALL)
+    server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config, get_info=ldap3.ALL)
     params.srv_info = repr(server)
 
     if params.bind_dn_from_config and params.bind_password_from_config:
