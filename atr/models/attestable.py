@@ -25,6 +25,7 @@ from . import schema
 class HashEntry(schema.Strict):
     size: int
     uploaders: list[Annotated[tuple[str, str], pydantic.BeforeValidator(tuple)]]
+    basenames: list[str] = schema.factory(list)
 
 
 class AttestableChecksV1(schema.Strict):

@@ -20,6 +20,8 @@ from typing import Final
 
 import puremagic
 
+import atr.models.attestable as models
+
 _BZIP2_TYPES: Final[set[str]] = {"application/x-bzip2"}
 _DEB_TYPES: Final[set[str]] = {"application/vnd.debian.binary-package", "application/x-archive"}
 _EXE_TYPES: Final[set[str]] = {"application/vnd.microsoft.portable-executable", "application/octet-stream"}
@@ -55,6 +57,37 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 }
 
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
+_QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
+_QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
+
+
+def detect_archives_requiring_quarantine(
+    path_to_hash: dict[str, str], previous_attestable: models.AttestableV1 | None
+) -> list[str]:
+    quarantine_paths: list[str] = []
+    for path_key, hash_ref in path_to_hash.items():
+        basename = _path_basename(path_key)
+        suffix = _quarantine_archive_suffix(basename)
+        if suffix is None:
+            continue
+
+        if previous_attestable is None:
+            quarantine_paths.append(path_key)
+            continue
+
+        historical_hash_entry = previous_attestable.hashes.get(hash_ref)
+        if historical_hash_entry is None:
+            quarantine_paths.append(path_key)
+            continue
+
+        if "basenames" not in historical_hash_entry.model_fields_set:
+            quarantine_paths.append(path_key)
+            continue
+
+        if not any(_quarantine_archive_suffix(b) == suffix for b in historical_hash_entry.basenames):
+            quarantine_paths.append(path_key)
+
+    return quarantine_paths
 
 
 def validate_directory(directory: pathlib.Path) -> list[str]:
@@ -68,6 +101,18 @@ def validate_directory(directory: pathlib.Path) -> list[str]:
             if error := _validate_file(path):
                 errors.append(error)
     return errors
+
+
+def _path_basename(path_key: str) -> str:
+    return path_key.rsplit("/", maxsplit=1)[-1]
+
+
+def _quarantine_archive_suffix(filename: str) -> str | None:
+    lower_name = filename.lower()
+    for suffix in _QUARANTINE_ARCHIVE_SUFFIXES:
+        if lower_name.endswith(suffix):
+            return _QUARANTINE_NORMALISED_SUFFIXES.get(suffix, suffix)
+    return None
 
 
 def _suffix(filename: str) -> str:

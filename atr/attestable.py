@@ -207,7 +207,7 @@ async def write_files_data(
             await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
 
 
-def _compute_hashes_with_attribution(
+def _compute_hashes_with_attribution(  # noqa: C901
     current_hash_to_paths: dict[str, set[str]],
     path_to_size: dict[str, int],
     previous: models.AttestableV1 | None,
@@ -228,13 +228,23 @@ def _compute_hashes_with_attribution(
         previous_paths = previous_hash_to_paths.get(hash_ref, set())
         sample_path = next(iter(current_paths))
         file_size = path_to_size[sample_path]
+        current_basenames = {_path_basename(path_key) for path_key in current_paths}
 
         if hash_ref not in new_hashes:
             new_hashes[hash_ref] = models.HashEntry(
                 size=file_size,
                 uploaders=[(uploader_uid, revision_number)],
+                basenames=sorted(current_basenames),
             )
-        elif len(current_paths) > len(previous_paths):
+            continue
+
+        existing_basenames = set(new_hashes[hash_ref].basenames)
+        for basename in sorted(current_basenames):
+            if basename not in existing_basenames:
+                new_hashes[hash_ref].basenames.append(basename)
+                existing_basenames.add(basename)
+
+        if len(current_paths) > len(previous_paths):
             existing_entries = set(new_hashes[hash_ref].uploaders)
             if (uploader_uid, revision_number) not in existing_entries:
                 new_hashes[hash_ref].uploaders.append((uploader_uid, revision_number))
@@ -263,3 +273,7 @@ def _generate_files_data(
         hashes=dict(new_hashes),
         policy=release_policy or {},
     )
+
+
+def _path_basename(path_key: str) -> str:
+    return path_key.rsplit("/", maxsplit=1)[-1]
