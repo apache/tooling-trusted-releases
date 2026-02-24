@@ -36,6 +36,7 @@ import atr.db.interaction as interaction
 import atr.detection as detection
 import atr.merge as merge
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.types as types
 import atr.tasks as tasks
@@ -136,16 +137,16 @@ class CommitteeParticipant(FoundationCommitter):
                 release.check_cache_key = None
 
         if clone_from is not None:
-            old_release_dir = util.release_directory_base(release) / clone_from
+            old_release_dir = paths.release_directory_base(release) / clone_from
         else:
-            old_release_dir = util.release_directory(release)
+            old_release_dir = paths.release_directory(release)
         merge_enabled = clone_from is None
 
         # Create a temporary directory
         # We ensure, below, that it's removed on any exception
         # Use the tmp subdirectory of state, to ensure that it is on the same filesystem
         prefix_token = secrets.token_hex(16)
-        temp_dir: str = await asyncio.to_thread(tempfile.mkdtemp, prefix=prefix_token + "-", dir=util.get_tmp_dir())
+        temp_dir: str = await asyncio.to_thread(tempfile.mkdtemp, prefix=prefix_token + "-", dir=paths.get_tmp_dir())
         temp_dir_path = pathlib.Path(temp_dir)
 
         try:
@@ -233,7 +234,7 @@ class CommitteeParticipant(FoundationCommitter):
                     and (prior_name != old_revision.name)
                 ):
                     prior_number = prior_name.split()[-1]
-                    prior_dir = util.release_directory_base(release) / prior_number
+                    prior_dir = paths.release_directory_base(release) / prior_number
                     await merge.merge(
                         base_inodes,
                         base_hashes,
@@ -250,7 +251,7 @@ class CommitteeParticipant(FoundationCommitter):
 
                 # Rename the directory to the new revision number
                 await data.refresh(release)
-                new_revision_dir = util.release_directory(release)
+                new_revision_dir = paths.release_directory(release)
 
                 # Ensure that the parent directory exists
                 await aiofiles.os.makedirs(new_revision_dir.parent, exist_ok=True)

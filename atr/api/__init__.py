@@ -33,10 +33,12 @@ import atr.blueprints.api as api
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.hashes as hashes
 import atr.jwtoken as jwtoken
 import atr.log as log
 import atr.models as models
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
 import atr.storage.outcome as outcome
@@ -949,10 +951,10 @@ async def release_paths(project: str, version: str, revision: str | None = None)
         release_name = sql.release_name(project, version)
         release = await data.release(name=release_name).demand(exceptions.NotFound())
         if revision is None:
-            dir_path = util.release_directory(release)
+            dir_path = paths.release_directory(release)
         else:
             await data.revision(release_name=release_name, number=revision).demand(exceptions.NotFound())
-            dir_path = util.release_directory_version(release) / revision
+            dir_path = paths.release_directory_version(release) / revision
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
     files: list[str] = [str(path) for path in [p async for p in util.paths_recursive(dir_path)]]
@@ -1086,14 +1088,14 @@ async def signature_provenance(data: models.api.SignatureProvenanceArgs) -> Dict
             )
         )
 
-    downloads_dir = util.get_downloads_dir()
-    matched_committee_names = await _match_committee_names(key.committees, util.get_finished_dir(), data)
+    downloads_dir = paths.get_downloads_dir()
+    matched_committee_names = await _match_committee_names(key.committees, paths.get_finished_dir(), data)
 
     for matched_committee_name in matched_committee_names:
         keys_file_path = downloads_dir / matched_committee_name / "KEYS"
         async with aiofiles.open(keys_file_path, "rb") as f:
             keys_file_data = await f.read()
-        keys_file_sha3_256 = hashlib.sha3_256(keys_file_data).hexdigest()
+        keys_file_sha3_256 = hashes.compute_sha3_256(keys_file_data)
         signing_keys.append(
             models.api.SignatureProvenanceKey(
                 committee=matched_committee_name,
@@ -1422,7 +1424,7 @@ async def _match_committee_names(
     key_committees: list[sql.Committee], finished_dir: pathlib.Path, data: models.api.SignatureProvenanceArgs
 ) -> set[str]:
     key_committee_names = set(committee.name for committee in key_committees)
-    finished_dir = util.get_finished_dir()
+    finished_dir = paths.get_finished_dir()
     matched_committee_names = set()
 
     # Check for finished files
@@ -1446,7 +1448,7 @@ async def _match_committee_names(
             projects = await db_data.project(committee_name=key_committee_name).all()
             for project in projects:
                 releases = await db_data.release(project_name=project.name).all()
-                release_directories.extend(util.release_directory(release) for release in releases)
+                release_directories.extend(paths.release_directory(release) for release in releases)
             for release_directory in release_directories:
                 if await _match_unfinished(release_directory, data):
                     matched_committee_names.add(key_committee_name)

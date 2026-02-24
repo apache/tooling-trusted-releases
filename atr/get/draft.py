@@ -24,6 +24,7 @@ import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.form as form
+import atr.paths as paths
 import atr.post as post
 import atr.shared as shared
 import atr.template as template
@@ -41,7 +42,7 @@ async def tools(session: web.Committer, project_name: str, version_name: str, fi
         raise base.ASFQuartException("Invalid file path", errorcode=400)
 
     release = await session.release(project_name, version_name)
-    full_path = str(util.release_directory(release) / validated_path)
+    full_path = str(paths.release_directory(release) / validated_path)
 
     # Check that the file exists
     if not await aiofiles.os.path.exists(full_path):

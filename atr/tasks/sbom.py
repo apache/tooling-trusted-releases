@@ -30,6 +30,7 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.schema as schema
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.sbom as sbom
 import atr.storage as storage
 import atr.tasks.checks as checks
@@ -81,7 +82,7 @@ class ScoreArgs(FileArgs):
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -141,7 +142,7 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def osv_scan(args: FileArgs) -> results.Results | None:
-    base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -198,7 +199,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def score_qs(args: FileArgs) -> results.Results | None:
-    base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -234,10 +235,10 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(ScoreArgs)
 async def score_tool(args: ScoreArgs) -> results.Results | None:
-    base_dir = util.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     previous_base_dir = None
     if args.previous_release_version is not None:
-        previous_base_dir = util.get_finished_dir() / args.project_name / args.previous_release_version
+        previous_base_dir = paths.get_finished_dir() / args.project_name / args.previous_release_version
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path

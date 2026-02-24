@@ -40,6 +40,7 @@ import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.render as render
 import atr.shared as shared
 import atr.tasks.gha as gha
@@ -178,7 +179,7 @@ async def _get_page_data(
     if release.phase != sql.ReleasePhase.RELEASE_PREVIEW:
         raise ValueError("Release is not in preview phase")
 
-    latest_revision_dir = util.release_directory(release)
+    latest_revision_dir = paths.release_directory(release)
     source_files_rel, target_dirs = await _sources_and_targets(latest_revision_dir)
     deletable_dirs = await _deletable_choices(latest_revision_dir, target_dirs)
     rc_analysis_result = await _analyse_rc_tags(latest_revision_dir)

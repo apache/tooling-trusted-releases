@@ -134,10 +134,10 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(
             revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock
         ) as create_hard_link_clone_mock,
-        mock.patch.object(revision.util, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}) as paths_to_inodes_mock,
-        mock.patch.object(revision.util, "release_directory", return_value=tmp_path / "releases" / "00006"),
-        mock.patch.object(revision.util, "release_directory_base", return_value=tmp_path / "releases"),
+        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00006"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
         await participant.create_revision("proj", "1.0", "test", clone_from="00002")
 
@@ -187,7 +187,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
     with (
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
-        mock.patch.object(revision.util, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
             await participant.create_revision("proj", "1.0", "test", modify=modify)

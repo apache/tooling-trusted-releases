@@ -33,6 +33,7 @@ import atr.get.root as root
 import atr.htm as htm
 import atr.models.schema as schema
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.shared as shared
 import atr.template as template
@@ -57,7 +58,7 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
     except base.ASFQuartException:
         release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_PREVIEW)
         phase_key = "preview"
-    release_dir = util.release_directory_base(release)
+    release_dir = paths.release_directory_base(release)
 
     # Determine the current revision
     latest_revision_number = release.latest_revision_number

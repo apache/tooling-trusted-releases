@@ -36,11 +36,11 @@ if TYPE_CHECKING:
 
 import atr.attestable as attestable
 import atr.db as db
-import atr.file_paths as file_paths
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.github as github_models
 import atr.models.sql as sql
+import atr.paths as file_paths
 import atr.util as util
 
 

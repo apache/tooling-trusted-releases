@@ -49,6 +49,7 @@ import atr.log as log
 import atr.mapping as mapping
 import atr.models.session
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
 import atr.storage.outcome as outcome
@@ -205,7 +206,7 @@ async def consistency(session: web.Committer) -> web.TextResponse:
         releases = await data.release().all()
     database_dirs = []
     for release in releases:
-        path = util.release_directory_version(release)
+        path = paths.release_directory_version(release)
         database_dirs.append(str(path))
     if len(set(database_dirs)) != len(database_dirs):
         raise base.ASFQuartException("Duplicate release directories in database", errorcode=500)
@@ -1092,7 +1093,7 @@ async def _get_filesystem_dirs() -> list[str]:
 
 
 async def _get_filesystem_dirs_finished(filesystem_dirs: list[str]) -> None:
-    finished_dir = util.get_finished_dir()
+    finished_dir = paths.get_finished_dir()
     finished_dir_contents = await aiofiles.os.listdir(finished_dir)
     for project_dir in finished_dir_contents:
         project_dir_path = os.path.join(finished_dir, project_dir)
@@ -1105,7 +1106,7 @@ async def _get_filesystem_dirs_finished(filesystem_dirs: list[str]) -> None:
 
 
 async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
-    unfinished_dir = util.get_unfinished_dir()
+    unfinished_dir = paths.get_unfinished_dir()
     unfinished_dir_contents = await aiofiles.os.listdir(unfinished_dir)
     for project_dir in unfinished_dir_contents:
         project_dir_path = os.path.join(unfinished_dir, project_dir)

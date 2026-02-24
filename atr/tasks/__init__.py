@@ -30,6 +30,7 @@ import atr.db as db
 import atr.hashes as hashes
 import atr.models.results as results
 import atr.models.sql as sql
+import atr.paths as file_paths
 import atr.tasks.checks as checks
 import atr.tasks.checks.compare as compare
 import atr.tasks.checks.hashing as hashing
@@ -134,7 +135,7 @@ async def draft_checks(
     """Core logic to analyse a draft revision and queue checks."""
     # Construct path to the specific revision
     # We don't have the release object here, so we can't use util.release_directory
-    revision_path = util.get_unfinished_dir() / project_name / release_version / revision_number
+    revision_path = file_paths.get_unfinished_dir() / project_name / release_version / revision_number
     relative_paths = [path async for path in util.paths_recursive(revision_path)]
 
     async with db.ensure_session(caller_data) as data:

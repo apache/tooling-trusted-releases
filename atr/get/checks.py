@@ -34,6 +34,7 @@ import atr.get.sbom as sbom
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -85,14 +86,14 @@ class FileStats(NamedTuple):
 
 async def get_file_totals(release: sql.Release, session: web.Committer | None) -> FileStats:
     """Get file level check totals after ignores are applied."""
-    base_path = util.release_directory(release)
-    paths = [path async for path in util.paths_recursive(base_path)]
+    base_path = paths.release_directory(release)
+    all_paths = [path async for path in util.paths_recursive(base_path)]
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
         match_ignore = await ragp.checks.ignores_matcher(release.project_name)
 
-    _, totals = await _compute_stats(release, paths, match_ignore)
+    _, totals = await _compute_stats(release, all_paths, match_ignore)
     return totals
 
 
@@ -110,22 +111,22 @@ async def selected(session: web.Committer | None, project_name: str, version_nam
     if release.committee is None:
         raise ValueError("Release has no committee")
 
-    base_path = util.release_directory(release)
-    paths = [path async for path in util.paths_recursive(base_path)]
-    paths.sort()
+    base_path = paths.release_directory(release)
+    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths.sort()
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
         match_ignore = await ragp.checks.ignores_matcher(release.project_name)
 
-    per_file_stats, totals = await _compute_stats(release, paths, match_ignore)
+    per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
 
     page = htm.Block()
     _render_header(page, release)
-    _render_summary(page, totals, paths, per_file_stats)
-    _render_checks_table(page, release, paths, per_file_stats)
+    _render_summary(page, totals, all_paths, per_file_stats)
+    _render_checks_table(page, release, all_paths, per_file_stats)
     _render_ignores_section(page, release)
-    _render_debug_table(page, paths, per_file_stats)
+    _render_debug_table(page, all_paths, per_file_stats)
 
     return await template.blank(
         f"File checks for {release.project.short_display_name} {release.version}",
@@ -150,13 +151,13 @@ async def selected_revision(
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
-    base_path = util.release_directory(release)
-    paths = [path async for path in util.paths_recursive(base_path)]
-    paths.sort()
+    base_path = paths.release_directory(release)
+    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths.sort()
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        info = await ragp.releases.path_info(release, paths)
+        info = await ragp.releases.path_info(release, all_paths)
 
     ongoing_count = await interaction.tasks_ongoing(project_name, version_name, revision_number)
 
@@ -165,7 +166,7 @@ async def selected_revision(
 
     delete_file_forms: dict[str, str] = {}
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-        for path in paths:
+        for path in all_paths:
             delete_file_forms[str(path)] = str(
                 form.render(
                     model_cls=draft.DeleteFileForm,

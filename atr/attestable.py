@@ -27,6 +27,7 @@ import pydantic
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
+import atr.paths as paths
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -34,19 +35,19 @@ if TYPE_CHECKING:
 
 
 def attestable_checks_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.checks.json"
+    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.checks.json"
 
 
 def attestable_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.json"
+    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.json"
 
 
 def attestable_paths_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.paths.json"
+    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.paths.json"
 
 
 def github_tp_payload_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return util.get_attestable_dir() / project_name / version_name / f"{revision_number}.github-tp.json"
+    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.github-tp.json"
 
 
 async def github_tp_payload_write(
@@ -116,7 +117,7 @@ async def load_paths(
 
 
 def migrate_to_paths_files() -> int:
-    attestable_dir = util.get_attestable_dir()
+    attestable_dir = paths.get_attestable_dir()
     if not attestable_dir.is_dir():
         return 0
     count = 0

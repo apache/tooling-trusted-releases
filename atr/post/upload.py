@@ -32,6 +32,7 @@ import atr.form as form
 import atr.get as get
 import atr.log as log
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
 import atr.storage.types as types
@@ -48,7 +49,7 @@ async def finalise(
     await session.check_access(project_name)
 
     try:
-        staging_dir = util.get_upload_staging_dir(upload_session)
+        staging_dir = paths.get_upload_staging_dir(upload_session)
     except ValueError:
         return _json_error("Invalid session token", 400)
 
@@ -123,7 +124,7 @@ async def stage(
     await session.check_access(project_name)
 
     try:
-        staging_dir = util.get_upload_staging_dir(upload_session)
+        staging_dir = paths.get_upload_staging_dir(upload_session)
     except ValueError:
         return _json_error("Invalid session token", 400)
 

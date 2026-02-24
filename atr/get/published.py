@@ -25,6 +25,7 @@ import quart
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
+import atr.paths as paths
 import atr.util as util
 import atr.web as web
 
@@ -105,7 +106,7 @@ async def _file_content(full_path: pathlib.Path) -> web.QuartResponse:
 
 
 async def _path(session: web.Committer, path: str) -> web.QuartResponse:
-    downloads_path = util.get_downloads_dir()
+    downloads_path = paths.get_downloads_dir()
     full_path = downloads_path / path
     if await aiofiles.os.path.isdir(full_path):
         return await _directory_listing(full_path, path)

@@ -41,6 +41,7 @@ import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.storage.types as types
@@ -416,7 +417,7 @@ class CommitteeParticipant(FoundationCommitter):
         self,
     ) -> outcome.Outcome[str]:
         try:
-            base_downloads_dir = util.get_downloads_dir()
+            base_downloads_dir = paths.get_downloads_dir()
 
             committee = await self.committee()
             is_podling = committee.is_podling
@@ -470,7 +471,7 @@ class CommitteeParticipant(FoundationCommitter):
             version=version_name,
             _committee=True,
         ).demand(storage.AccessError(f"Release not found: {project_name} {version_name}"))
-        keys_path = util.release_directory(release) / "KEYS"
+        keys_path = paths.release_directory(release) / "KEYS"
         async with aiofiles.open(keys_path, encoding="utf-8") as f:
             keys_file_text = await f.read()
         if release.committee is None:

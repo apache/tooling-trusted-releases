@@ -42,6 +42,7 @@ import atr.config as config
 import atr.log as log
 import atr.models.github as github_models
 import atr.models.results as results
+import atr.paths as paths
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -102,7 +103,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             return None
         max_extract_size = args.extra_args.get("max_extract_size", _CONFIG.MAX_EXTRACT_SIZE)
         chunk_size = args.extra_args.get("chunk_size", _CONFIG.EXTRACT_CHUNK_SIZE)
-        tmp_dir = util.get_tmp_dir()
+        tmp_dir = paths.get_tmp_dir()
         await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
         async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
             github_dir = temp_dir / "github"

@@ -24,6 +24,7 @@ import atr.get.finish as finish
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.render as render
 import atr.template as template
 import atr.util as util
@@ -42,11 +43,11 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
     revision_number = release.latest_revision_number
     file_stats = []
     if release.phase == sql.ReleasePhase.RELEASE:
-        file_stats = [stat async for stat in util.content_list(util.get_finished_dir(), project_name, version_name)]
+        file_stats = [stat async for stat in util.content_list(paths.get_finished_dir(), project_name, version_name)]
     elif revision_number is not None:
         file_stats = [
             stat
-            async for stat in util.content_list(util.get_unfinished_dir(), project_name, version_name, revision_number)
+            async for stat in util.content_list(paths.get_unfinished_dir(), project_name, version_name, revision_number)
         ]
     else:
         raise ValueError("No revision number found for unfinished release")
@@ -135,7 +136,7 @@ async def selected_path(session: web.Committer, project_name: str, version_name:
 
     release = await session.release(project_name, version_name, phase=None)
     _max_view_size = 512 * 1024
-    full_path = util.release_directory(release) / validated_path
+    full_path = paths.release_directory(release) / validated_path
     content_listing = await util.archive_listing(full_path)
     content, is_text, is_truncated, error_message = await util.read_file_for_viewer(full_path, _max_view_size)
 

@@ -36,6 +36,7 @@ import atr.form as form
 import atr.log as log
 import atr.models.api as api
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.types as types
 import atr.util as util
@@ -104,8 +105,8 @@ class CommitteeParticipant(FoundationCommitter):
             project_name=project_name, version=version, phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_name} {version}' not found."))
         release_dirs = [
-            util.release_directory_base(release),
-            util.get_attestable_dir() / project_name / version,
+            paths.release_directory_base(release),
+            paths.get_attestable_dir() / project_name / version,
         ]
 
         # Delete from the database using bulk SQL DELETE for efficiency
@@ -527,7 +528,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __delete_release_data_downloads(self, release: sql.Release) -> None:
         # Delete hard links from the downloads directory
-        finished_dir = util.release_directory(release)
+        finished_dir = paths.release_directory(release)
         if await aiofiles.os.path.isdir(finished_dir):
             release_inodes = set()
             async for file_path in util.paths_recursive(finished_dir):
@@ -538,7 +539,7 @@ class CommitteeParticipant(FoundationCommitter):
                     continue
 
             if release_inodes:
-                downloads_dir = util.get_downloads_dir()
+                downloads_dir = paths.get_downloads_dir()
                 async for link_path in util.paths_recursive(downloads_dir):
                     full_link_path = downloads_dir / link_path
                     try:

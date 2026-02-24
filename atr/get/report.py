@@ -23,6 +23,7 @@ import asfquart.base as base
 import atr.blueprints.get as get
 import atr.form as form
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.template as template
 import atr.util as util
@@ -57,7 +58,7 @@ async def selected_path(session: web.Committer, project_name: str, version_name:
         raise base.ASFQuartException("Release has no committee", errorcode=500)
 
     # TODO: When we do more than one thing in a dir, we should use the revision directory directly
-    abs_path = util.release_directory(release) / validated_path
+    abs_path = paths.release_directory(release) / validated_path
     if release.latest_revision_number is None:
         raise base.ASFQuartException("Release has no revision", errorcode=500)
 

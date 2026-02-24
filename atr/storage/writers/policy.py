@@ -24,9 +24,9 @@ import strictyaml
 import strictyaml.ruamel.error as error
 
 import atr.db as db
+import atr.hashes as hashes
 import atr.models as models
 import atr.storage as storage
-import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
@@ -190,8 +190,8 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         submitted_subject = submitted_subject.strip()
         current_default_text = project.policy_announce_release_subject_default
-        current_default_hash = util.compute_sha3_256(current_default_text.encode())
-        submitted_hash = util.compute_sha3_256(submitted_subject.encode())
+        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
+        submitted_hash = hashes.compute_sha3_256(submitted_subject.encode())
 
         if submitted_hash == current_default_hash:
             release_policy.announce_release_subject = ""
@@ -206,8 +206,8 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         submitted_template = submitted_template.replace("\r\n", "\n")
         current_default_text = project.policy_announce_release_default
-        current_default_hash = util.compute_sha3_256(current_default_text.encode())
-        submitted_hash = util.compute_sha3_256(submitted_template.encode())
+        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
+        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
 
         if submitted_hash == current_default_hash:
             release_policy.announce_release_template = ""
@@ -235,8 +235,8 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         submitted_subject = submitted_subject.strip()
         current_default_text = project.policy_start_vote_subject_default
-        current_default_hash = util.compute_sha3_256(current_default_text.encode())
-        submitted_hash = util.compute_sha3_256(submitted_subject.encode())
+        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
+        submitted_hash = hashes.compute_sha3_256(submitted_subject.encode())
 
         if submitted_hash == current_default_hash:
             release_policy.start_vote_subject = ""
@@ -251,8 +251,8 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         submitted_template = submitted_template.replace("\r\n", "\n")
         current_default_text = project.policy_start_vote_default
-        current_default_hash = util.compute_sha3_256(current_default_text.encode())
-        submitted_hash = util.compute_sha3_256(submitted_template.encode())
+        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
+        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
 
         if submitted_hash == current_default_hash:
             release_policy.start_vote_template = ""

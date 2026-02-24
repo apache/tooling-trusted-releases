@@ -684,7 +684,7 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -721,7 +721,7 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
         "_decompress_archive",
         RaiseAsync("_decompress_archive should not be called"),
     )
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -754,7 +754,7 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress_with_pyproject)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -780,7 +780,7 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -809,7 +809,7 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -833,7 +833,7 @@ async def test_source_trees_records_failure_when_decompress_fails(
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -861,7 +861,7 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 
@@ -892,7 +892,7 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
     monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
-    monkeypatch.setattr(atr.tasks.checks.compare.util, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
     await atr.tasks.checks.compare.source_trees(args)
 

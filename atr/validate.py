@@ -23,7 +23,7 @@ from typing import NamedTuple, TypeVar
 
 import atr.db as db
 import atr.models.sql as sql
-import atr.util as util
+import atr.paths as paths
 
 
 class Divergence(NamedTuple):
@@ -330,7 +330,7 @@ def release_name(r: sql.Release) -> Divergences:
 @release_components("Release")
 def release_on_disk(r: sql.Release) -> Divergences:
     """Check that the release is on disk."""
-    path = util.release_directory(r)
+    path = paths.release_directory(r)
 
     def okay(p: pathlib.Path) -> bool:
         # The release directory must exist and contain at least one entry

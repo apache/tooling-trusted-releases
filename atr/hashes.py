@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+import hashlib
 import pathlib
 from typing import Any, Final
 
@@ -40,3 +40,26 @@ async def compute_file_hash(path: str | pathlib.Path) -> str:
         while chunk := await f.read(_HASH_CHUNK_SIZE):
             hasher.update(chunk)
     return f"blake3:{hasher.hexdigest()}"
+
+
+def compute_sha3_256(file_data: bytes) -> str:
+    """Compute SHA3-256 hash of file data."""
+    return hashlib.sha3_256(file_data).hexdigest()
+
+
+async def compute_sha512(file_path: pathlib.Path) -> str:
+    """Compute SHA-512 hash of a file."""
+    sha512 = hashlib.sha512()
+    async with aiofiles.open(file_path, "rb") as f:
+        while chunk := await f.read(4096):
+            sha512.update(chunk)
+    return sha512.hexdigest()
+
+
+async def file_sha3(path: str) -> str:
+    """Compute SHA3-256 hash of a file."""
+    sha3 = hashlib.sha3_256()
+    async with aiofiles.open(path, "rb") as f:
+        while chunk := await f.read(4096):
+            sha3.update(chunk)
+    return sha3.hexdigest()

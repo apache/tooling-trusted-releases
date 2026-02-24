@@ -25,6 +25,7 @@ import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.types as types
 import atr.util as util
@@ -54,20 +55,20 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def path_info(self, release: sql.Release, paths: list[pathlib.Path]) -> types.PathInfo | None:
+    async def path_info(self, release: sql.Release, all_paths: list[pathlib.Path]) -> types.PathInfo | None:
         info = types.PathInfo()
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             return None
         await self.__successes_errors_warnings(release, latest_revision_number, info)
-        base_path = util.release_directory(release)
+        base_path = paths.release_directory(release)
         source_matcher = None
         source_artifact_paths = release.project.policy_source_artifact_paths
         if source_artifact_paths:
             source_matcher = util.create_path_matcher(source_artifact_paths, None, base_path)
-        for path in paths:
+        for path in all_paths:
             info.file_types[path] = classify.classify(path, base_path=base_path, source_matcher=source_matcher)
-        self.__compute_checker_stats(info, paths)
+        self.__compute_checker_stats(info, all_paths)
         return info
 
     def __accumulate_results(

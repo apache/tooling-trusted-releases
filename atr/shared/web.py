@@ -25,6 +25,7 @@ import atr.get as get
 import atr.htm as htm
 import atr.models.results as results
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.shared.draft as draft
 import atr.storage as storage
@@ -48,16 +49,16 @@ async def check(
     can_vote: bool = False,
     can_resolve: bool = False,
 ) -> web.WerkzeugResponse | str:
-    base_path = util.release_directory(release)
+    base_path = paths.release_directory(release)
 
     # TODO: This takes 180ms for providers
     # We could cache it
-    paths = [path async for path in util.paths_recursive(base_path)]
-    paths.sort()
+    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths.sort()
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        info = await ragp.releases.path_info(release, paths)
+        info = await ragp.releases.path_info(release, all_paths)
 
     user_ssh_keys: Sequence[sql.SSHKey] = []
     asf_id: str | None = None
@@ -95,7 +96,7 @@ async def check(
     )
 
     delete_file_forms: dict[str, htm.Element] = {}
-    for path in paths:
+    for path in all_paths:
         delete_file_forms[str(path)] = form.render(
             model_cls=draft.DeleteFileForm,
             action=util.as_url(post.draft.delete_file, project_name=release.project.name, version_name=release.version),
@@ -130,7 +131,7 @@ async def check(
     vote_task_warnings = _warnings_from_vote_result(vote_task)
     has_files = await util.has_files(release)
 
-    has_any_errors = any(info.errors.get(path, []) for path in paths) if info else False
+    has_any_errors = any(info.errors.get(path, []) for path in all_paths) if info else False
     strict_checking = release.project.policy_strict_checking
     strict_checking_errors = strict_checking and has_any_errors
     blocker_errors = False
@@ -146,7 +147,7 @@ async def check(
         project_name=release.project.name,
         version_name=release.version,
         release=release,
-        paths=paths,
+        paths=all_paths,
         info=info,
         revision_editor=revision_editor,
         revision_time=revision_timestamp,

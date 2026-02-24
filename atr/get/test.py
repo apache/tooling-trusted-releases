@@ -31,6 +31,7 @@ import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.session
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
 import atr.template as template
@@ -116,7 +117,7 @@ async def test_merge(session: web.Committer, project_name: str, version_name: st
         release = await data.release(name=release_name, _project=True).demand(
             RuntimeError("Release not found after merge test")
         )
-        release_dir = util.release_directory(release)
+        release_dir = paths.release_directory(release)
     async for path in util.paths_recursive(release_dir):
         files.append(str(path))
 

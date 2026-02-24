@@ -29,6 +29,7 @@ import atr.get.keys as keys
 import atr.get.projects as projects
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -102,9 +103,9 @@ async def selected_revision(
 
 async def _check_keys_warning(committee: sql.Committee) -> bool:
     if committee.is_podling:
-        keys_file_path = util.get_downloads_dir() / "incubator" / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.name / "KEYS"
     else:
-        keys_file_path = util.get_downloads_dir() / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / committee.name / "KEYS"
 
     return not await aiofiles.os.path.isfile(keys_file_path)
 

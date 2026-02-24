@@ -58,6 +58,7 @@ import atr.models.validation as validation
 import atr.registry as registry
 import atr.tarzip as tarzip
 import atr.user as user
+from atr.paths import release_directory, release_directory_revision
 
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-source", "-src")
 DIRECTORY_PERMISSIONS: Final[int] = 0o755
@@ -244,20 +245,6 @@ def chmod_files(path: pathlib.Path, permissions: int) -> None:
 
 def committee_is_standing(committee_name: str) -> bool:
     return committee_name in registry.STANDING_COMMITTEES
-
-
-def compute_sha3_256(file_data: bytes) -> str:
-    """Compute SHA3-256 hash of file data."""
-    return hashlib.sha3_256(file_data).hexdigest()
-
-
-async def compute_sha512(file_path: pathlib.Path) -> str:
-    """Compute SHA-512 hash of a file."""
-    sha512 = hashlib.sha512()
-    async with aiofiles.open(file_path, "rb") as f:
-        while chunk := await f.read(4096):
-            sha512.update(chunk)
-    return sha512.hexdigest()
 
 
 async def content_list(
@@ -449,15 +436,6 @@ async def email_to_uid_map() -> dict[str, str]:
     return email_to_uid
 
 
-async def file_sha3(path: str) -> str:
-    """Compute SHA3-256 hash of a file."""
-    sha3 = hashlib.sha3_256()
-    async with aiofiles.open(path, "rb") as f:
-        while chunk := await f.read(4096):
-            sha3.update(chunk)
-    return sha3.hexdigest()
-
-
 def format_datetime(dt_obj: datetime.datetime | int) -> str:
     """Format a datetime object or Unix timestamp into a human readable datetime string."""
     # Integers are unix timestamps
@@ -542,22 +520,6 @@ async def get_asf_id_or_die() -> str:
     return web_session.uid
 
 
-def get_attestable_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
-
-
-def get_downloads_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().DOWNLOADS_STORAGE_DIR)
-
-
-def get_finished_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().FINISHED_STORAGE_DIR)
-
-
-def get_quarantined_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().STATE_DIR) / "quarantined"
-
-
 async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
     """Calculate file count, total byte size, and formatted size for a release."""
     base_dir = release_directory(release)
@@ -578,21 +540,6 @@ async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
 
     formatted_size = format_file_size(total_bytes)
     return count, total_bytes, formatted_size
-
-
-def get_tmp_dir() -> pathlib.Path:
-    # This must be on the same filesystem as the other state subdirectories
-    return pathlib.Path(config.get().STATE_DIR) / "temporary"
-
-
-def get_unfinished_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().UNFINISHED_STORAGE_DIR)
-
-
-def get_upload_staging_dir(session_token: str) -> pathlib.Path:
-    if not session_token.isalnum():
-        raise ValueError("Invalid session token")
-    return get_tmp_dir() / "upload-staging" / session_token
 
 
 async def get_urls_as_completed(urls: Sequence[str]) -> AsyncGenerator[tuple[str, int | str | None, bytes]]:
@@ -893,13 +840,6 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     return word
 
 
-def quarantine_directory(quarantined: sql.Quarantined) -> pathlib.Path:
-    if not quarantined.token.isalnum():
-        raise ValueError("Invalid quarantine token")
-    release = quarantined.release
-    return get_quarantined_dir() / release.project_name / release.version / quarantined.token
-
-
 async def read_file_for_viewer(full_path: pathlib.Path, max_size: int) -> tuple[str | None, bool, bool, str | None]:
     """Read file content for viewer."""
     content: str | None = None
@@ -941,70 +881,6 @@ async def read_file_for_viewer(full_path: pathlib.Path, max_size: int) -> tuple[
         error_message = f"An error occurred reading the file: {e!s}"
 
     return content, is_text, is_truncated, error_message
-
-
-def release_directory(release: sql.Release) -> pathlib.Path:
-    """Return the absolute path to the directory containing the active files for a given release phase."""
-    latest_revision_number = release.latest_revision_number
-    if (release.phase == sql.ReleasePhase.RELEASE) or (latest_revision_number is None):
-        return release_directory_base(release)
-    return release_directory_base(release) / latest_revision_number
-
-
-def release_directory_base(release: sql.Release) -> pathlib.Path:
-    """Determine the filesystem directory for a given release based on its phase."""
-    phase = release.phase
-    project_name = release.project.name
-    version_name = release.version
-
-    base_dir: pathlib.Path | None = None
-    match phase:
-        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE_CANDIDATE:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE_PREVIEW:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE:
-            base_dir = get_finished_dir()
-        # Do not add "case _" here
-    return base_dir / project_name / version_name
-
-
-def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
-    """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
-    path_version = release.version
-    match release.phase:
-        case (
-            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-            | sql.ReleasePhase.RELEASE_CANDIDATE
-            | sql.ReleasePhase.RELEASE_PREVIEW
-        ):
-            if (path_revision := release.latest_revision_number) is None:
-                return None
-            path = get_unfinished_dir() / path_project / path_version / path_revision
-        case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
-        # Do not add "case _" here
-    return path
-
-
-def release_directory_version(release: sql.Release) -> pathlib.Path:
-    """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
-    path_version = release.version
-    match release.phase:
-        case (
-            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-            | sql.ReleasePhase.RELEASE_CANDIDATE
-            | sql.ReleasePhase.RELEASE_PREVIEW
-        ):
-            path = get_unfinished_dir() / path_project / path_version
-        case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
-        # Do not add "case _" here
-    return path
 
 
 async def session_cache_read() -> dict[str, dict]:

@@ -26,6 +26,7 @@ import quart
 import atr.config as config
 import atr.db as db
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.util as util
 
 type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
@@ -227,11 +228,11 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     # Therefore there is no route handler, so we have to construct the URL manually
     keys_file = None
     if committee.is_podling:
-        keys_file_path = util.get_downloads_dir() / "incubator" / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.name / "KEYS"
         if await aiofiles.os.path.isfile(keys_file_path):
             keys_file = f"https://{host}/downloads/incubator/{committee.name}/KEYS"
     else:
-        keys_file_path = util.get_downloads_dir() / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / committee.name / "KEYS"
         if await aiofiles.os.path.isfile(keys_file_path):
             keys_file = f"https://{host}/downloads/{committee.name}/KEYS"
 

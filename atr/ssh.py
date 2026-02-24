@@ -41,6 +41,7 @@ import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.storage.types as types
 import atr.user as user
@@ -521,7 +522,7 @@ async def _step_07a_process_validated_rsync_read(
     exit_status = 1
     try:
         # Determine the source directory based on the release phase and revision
-        source_dir = util.release_directory(release)
+        source_dir = paths.release_directory(release)
         log.info(
             f"Identified source directory for read: {source_dir} for release "
             f"{release.name} (phase {release.phase.value})"

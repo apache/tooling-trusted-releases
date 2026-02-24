@@ -30,6 +30,7 @@ import sqlmodel
 import atr.construct as construct
 import atr.db as db
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.storage as storage
 import atr.tasks.message as message
 import atr.util as util
@@ -170,12 +171,12 @@ class CommitteeMember(CommitteeParticipant):
         subject, _ = await construct.announce_release_subject_and_body(subject_template, "", options)
 
         # Prepare paths for file operations
-        unfinished_revisions_path = util.release_directory_base(release)
+        unfinished_revisions_path = paths.release_directory_base(release)
         unfinished_path = unfinished_revisions_path / release.unwrap_revision_number
         unfinished_dir = str(unfinished_path)
         release_date = datetime.datetime.now(datetime.UTC)
         predicted_finished_release = self.__predicted_finished_release(release, release_date)
-        finished_path = util.release_directory(predicted_finished_release)
+        finished_path = paths.release_directory(predicted_finished_release)
         finished_dir = str(finished_path)
         if await aiofiles.os.path.exists(finished_dir):
             raise storage.AccessError("Release already exists")
@@ -258,7 +259,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         """Hard link the release files to the downloads directory."""
         # TODO: Rename *_dir functions to _path functions
-        downloads_base_path = util.get_downloads_dir()
+        downloads_base_path = paths.get_downloads_dir()
         downloads_path = downloads_base_path / committee.name / download_path_suffix.removeprefix("/")
         # The "exist_ok" parameter means to overwrite files if True
         # We only overwrite if we're not preserving, so we supply "not preserve"

@@ -56,6 +56,7 @@ import atr.filters as filters
 import atr.log as log
 import atr.manager as manager
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.preload as preload
 import atr.ssh as ssh
 import atr.svn.pubsub as pubsub
@@ -172,13 +173,13 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "runtime",
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
-        util.get_downloads_dir(),
-        util.get_finished_dir(),
-        util.get_quarantined_dir(),
-        util.get_tmp_dir(),
-        util.get_unfinished_dir(),
+        paths.get_downloads_dir(),
+        paths.get_finished_dir(),
+        paths.get_quarantined_dir(),
+        paths.get_tmp_dir(),
+        paths.get_unfinished_dir(),
     ]
-    unfinished_dir = util.get_unfinished_dir()
+    unfinished_dir = paths.get_unfinished_dir()
     for directory in directories_to_ensure:
         directory.mkdir(parents=True, exist_ok=True)
         if directory != unfinished_dir:
@@ -927,7 +928,7 @@ async def _reset_request_log_context():
 def _set_file_permissions_to_read_only() -> None:
     """Set permissions of all files in the unfinished and finished directories to read only."""
     # TODO: After a migration period, incorrect permissions should be an error
-    directories = [util.get_unfinished_dir(), util.get_finished_dir()]
+    directories = [paths.get_unfinished_dir(), paths.get_finished_dir()]
     fixed_count = 0
     for directory in directories:
         if not directory.exists():

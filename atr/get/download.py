@@ -31,6 +31,7 @@ import atr.form as form
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -116,7 +117,7 @@ async def zip_selected(session: web.Committer, project_name: str, version_name: 
     except Exception as e:
         return web.TextResponse(f"Server error: {e}", status=500)
 
-    base_dir = util.release_directory(release)
+    base_dir = paths.release_directory(release)
     files_to_zip = []
     try:
         async for rel_path in util.paths_recursive(base_dir):
@@ -155,7 +156,7 @@ async def _download_or_list(project_name: str, version_name: str, file_path: str
         release = await data.release(project_name=project_name, version=version_name).demand(
             base.ASFQuartException("Release does not exist", errorcode=404)
         )
-    full_path = util.release_directory(release) / validated_path
+    full_path = paths.release_directory(release) / validated_path
 
     if await aiofiles.os.path.isdir(full_path):
         return await _list(validated_path, full_path, project_name, version_name, str(validated_path))
@@ -175,7 +176,7 @@ async def _download_or_list(project_name: str, version_name: str, file_path: str
 
 
 async def _generate_file_url_list(release: sql.Release) -> str:
-    base_dir = util.release_directory(release)
+    base_dir = paths.release_directory(release)
     urls = []
     async for rel_path in util.paths_recursive(base_dir):
         full_item_path = base_dir / rel_path
