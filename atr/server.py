@@ -553,7 +553,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     if os.sep != "/":
         raise RuntimeError('ATR requires a POSIX compatible filesystem where os.sep is "/"')
     config_mode = config.get_mode()
-    if not util.is_dev_environment() and config_mode == config.Mode.Debug:
+    if (not util.is_dev_environment()) and (config_mode == config.Mode.Debug):
         raise RuntimeError("Debug mode can only be set in development environment")
     hot_reload = _is_hot_reload()
     _validate_config(app_config, hot_reload)
