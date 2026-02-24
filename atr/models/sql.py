@@ -775,6 +775,12 @@ Thanks,
         return policy.strict_checking
 
     @property
+    def policy_tagging_spec(self) -> dict[str, Any] | None:
+        if (policy := self.release_policy) is None:
+            return None
+        return policy.file_tag_mappings
+
+    @property
     def policy_github_repository_name(self) -> str:
         if (policy := self.release_policy) is None:
             return ""

@@ -215,7 +215,7 @@ async def _svn_import(
 ) -> web.WerkzeugResponse:
     try:
         target_subdirectory = str(svn_form.target_subdirectory) if svn_form.target_subdirectory else None
-        svn_area = svn_form.svn_area
+        svn_area = shared.upload.SvnArea.DEV
         svn_path = svn_form.svn_path or ""
 
         async with db.session() as data:

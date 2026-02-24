@@ -38,6 +38,7 @@ ARTIFACT_SUFFIXES: Final[list[str]] = [
     "msi",
     "nar",
     "nbm",
+    "ntb",
     "snupkg",
     "nupkg",
     "pkg",
