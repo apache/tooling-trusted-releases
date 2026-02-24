@@ -54,44 +54,17 @@ def test_ongoing_tasks_banner_appears_when_tasks_restart(page_compose: Page) -> 
     banner = page_compose.locator("#ongoing-tasks-banner")
     expect(banner).to_be_hidden()
 
-    restart_button = page_compose.get_by_role("button", name="Restart all checks")
+    restart_button = page_compose.get_by_role("button", name=re.compile(r"(Disable|Enable) global cache"))
     with page_compose.expect_navigation():
         restart_button.click()
 
     expect(banner).to_be_visible(timeout=10000)
-
-
-def test_ongoing_tasks_banner_has_progress_bar(page_compose: Page) -> None:
-    """The ongoing tasks banner should have a progress bar."""
-    restart_button = page_compose.get_by_role("button", name="Restart all checks")
-    with page_compose.expect_navigation():
-        restart_button.click()
 
     progress_bar = page_compose.locator("#poll-progress")
     expect(progress_bar).to_be_visible(timeout=10000)
 
-
-def test_ongoing_tasks_banner_has_task_count(page_compose: Page) -> None:
-    """The ongoing tasks banner should display the task count."""
-    restart_button = page_compose.get_by_role("button", name="Restart all checks")
-    with page_compose.expect_navigation():
-        restart_button.click()
-
-    banner = page_compose.locator("#ongoing-tasks-banner")
-    expect(banner).to_be_visible(timeout=10000)
-
     count_element = banner.locator("#ongoing-tasks-count")
     expect(count_element).to_have_text(re.compile(r"\d+"))
-
-
-def test_ongoing_tasks_banner_has_warning_icon(page_compose: Page) -> None:
-    """The ongoing tasks banner should have a warning icon when visible."""
-    restart_button = page_compose.get_by_role("button", name="Restart all checks")
-    with page_compose.expect_navigation():
-        restart_button.click()
-
-    banner = page_compose.locator("#ongoing-tasks-banner")
-    expect(banner).to_be_visible(timeout=10000)
 
     warning_icon = page_compose.locator("#ongoing-tasks-banner i.bi-exclamation-triangle")
     expect(warning_icon).to_be_visible(timeout=10000)
@@ -105,7 +78,7 @@ def test_ongoing_tasks_banner_hidden_when_complete(page_compose: Page) -> None:
 
 def test_ongoing_tasks_banner_hides_when_tasks_complete(page_compose: Page) -> None:
     """The ongoing tasks banner should hide when all tasks complete."""
-    restart_button = page_compose.get_by_role("button", name="Restart all checks")
+    restart_button = page_compose.get_by_role("button", name=re.compile(r"(Disable|Enable) global cache"))
     restart_button.click()
 
     banner = page_compose.locator("#ongoing-tasks-banner")
