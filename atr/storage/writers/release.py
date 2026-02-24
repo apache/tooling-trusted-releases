@@ -186,6 +186,10 @@ class CommitteeParticipant(FoundationCommitter):
             # Path to delete within the new revision directory
             path_in_new_revision = path / rel_path_to_delete
 
+            # Make sure the requested path is relative to the actual path
+            resolved = await asyncio.to_thread(path_in_new_revision.resolve)
+            resolved.relative_to(await asyncio.to_thread(path.resolve))
+
             # Check that the file exists in the new revision
             if not await aiofiles.os.path.exists(path_in_new_revision):
                 # This indicates a potential severe issue with hard linking or logic
@@ -216,6 +220,11 @@ class CommitteeParticipant(FoundationCommitter):
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
             # Uses new_revision_number for logging only
             path_in_new_revision = path / rel_path
+
+            # Make sure the requested path is relative to the actual path
+            resolved = await asyncio.to_thread(path_in_new_revision.resolve)
+            resolved.relative_to(await asyncio.to_thread(path.resolve))
+
             hash_path_rel = rel_path.name + ".sha512"
             hash_path_in_new_revision = path / rel_path.parent / hash_path_rel
 
