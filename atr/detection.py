@@ -16,11 +16,14 @@
 # under the License.
 
 import pathlib
+import tarfile
+import zipfile
 from typing import Final
 
 import puremagic
 
 import atr.models.attestable as models
+import atr.tarzip as tarzip
 
 _BZIP2_TYPES: Final[set[str]] = {"application/x-bzip2"}
 _DEB_TYPES: Final[set[str]] = {"application/vnd.debian.binary-package", "application/x-archive"}
@@ -59,6 +62,25 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
 _QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
 _QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
+
+
+def check_archive_safety(archive_path: str) -> list[str]:
+    errors: list[str] = []
+    try:
+        with tarzip.open_archive(archive_path) as archive:
+            for member in archive:
+                if _archive_member_has_path_traversal(member.name):
+                    errors.append(f"{member.name}: Archive member path traversal is not allowed")
+
+                if (member.issym() or member.islnk()) and _archive_link_escapes_root(
+                    member.name, member.linkname, is_hardlink=member.islnk()
+                ):
+                    link_target = member.linkname or ""
+                    errors.append(f"{member.name}: Archive link target escapes root ({link_target})")
+    except (tarfile.TarError, zipfile.BadZipFile, ValueError, tarzip.ArchiveMemberLimitExceededError) as e:
+        errors.append(f"Failed to read archive: {e}")
+
+    return errors
 
 
 def detect_archives_requiring_quarantine(
@@ -101,6 +123,34 @@ def validate_directory(directory: pathlib.Path) -> list[str]:
             if error := _validate_file(path):
                 errors.append(error)
     return errors
+
+
+def _archive_link_escapes_root(member_name: str, link_target: str | None, *, is_hardlink: bool = False) -> bool:
+    if link_target is None:
+        return False
+    if link_target.startswith("/"):
+        return True
+
+    link_parts = pathlib.PurePosixPath(link_target).parts
+    base_parts = () if is_hardlink else pathlib.PurePosixPath(member_name).parent.parts
+    depth = 0
+    for part in (*base_parts, *link_parts):
+        if part in ("", ".", "/"):
+            continue
+        if part == "..":
+            if depth == 0:
+                return True
+            depth -= 1
+        else:
+            depth += 1
+    return False
+
+
+def _archive_member_has_path_traversal(path_key: str) -> bool:
+    if path_key.startswith("/"):
+        return True
+
+    return ".." in pathlib.PurePosixPath(path_key).parts
 
 
 def _path_basename(path_key: str) -> str:
