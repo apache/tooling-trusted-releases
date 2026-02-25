@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
@@ -24,8 +26,11 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/user/cache")
-async def cache_get(session: web.Committer) -> str:
+@get.typed
+async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) -> str:
+    """
+    URL: /user/cache
+    """
     cache_data = await util.session_cache_read()
     user_cached = session.uid in cache_data
 

@@ -15,25 +15,34 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.db as db
 import atr.mapping as mapping
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.web as web
 
 
-@get.committer("/compose/<project_name>/<version_name>")
-async def selected(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse | str:
-    """Show the contents of the release candidate draft."""
-    await session.check_access(project_name)
-
+@get.typed
+async def selected(
+    session: web.Committer,
+    _compose: Literal["compose"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /compose/<project_name>/<version_name>
+    Show the contents of the release candidate draft.
+    """
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))

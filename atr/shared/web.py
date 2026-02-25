@@ -140,7 +140,7 @@ async def check(
 
     is_local_caching = release.check_cache_key is not None
 
-    checks_summary_html = _render_checks_summary(info, release.project.name, release.version)
+    checks_summary_html = render_checks_summary(info, release.project.name, release.version)
 
     return await template.render(
         "check-selected.html",
@@ -180,11 +180,7 @@ async def check(
     )
 
 
-def _checker_display_name(checker: str) -> str:
-    return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
-
-
-def _render_checks_summary(info: types.PathInfo | None, project_name: str, version_name: str) -> htm.Element | None:
+def render_checks_summary(info: types.PathInfo | None, project_name: str, version_name: str) -> htm.Element | None:
     if (info is None) or (not info.checker_stats):
         return None
 
@@ -210,7 +206,7 @@ def _render_checks_summary(info: types.PathInfo | None, project_name: str, versi
         files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
         all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
         for file_path in sorted(all_files):
-            report_url = f"/report/{project_name}/{version_name}/{file_path}"
+            report_url = f"/report/{project_name!s}/{version_name!s}/{file_path}"
             error_count = stat.failure_files.get(file_path, 0)
             blocker_count = stat.blocker_files.get(file_path, 0)
             warning_count = stat.warning_files.get(file_path, 0)
@@ -233,6 +229,10 @@ def _render_checks_summary(info: types.PathInfo | None, project_name: str, versi
 
     card.append(body.collect())
     return card.collect()
+
+
+def _checker_display_name(checker: str) -> str:
+    return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
 
 
 def _warnings_from_vote_result(vote_task: sql.Task | None) -> list[str]:

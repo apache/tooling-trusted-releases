@@ -16,13 +16,16 @@
 # under the License.
 
 import datetime
+from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.form as form
+import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.storage as storage
 import atr.template as template
@@ -30,11 +33,18 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/report/<project_name>/<version_name>/<path:rel_path>")
-async def selected_path(session: web.Committer, project_name: str, version_name: str, rel_path: str) -> str:
-    """Show the report for a specific file."""
-    await session.check_access(project_name)
-
+@get.typed
+async def selected_path(
+    session: web.Committer,
+    _report: Literal["report"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    rel_path: unsafe.Path,
+) -> str:
+    """
+    URL: /report/<project_name>/<version_name>/<rel_path>
+    Show the report for a specific file.
+    """
     validated_path = form.to_relpath(rel_path)
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)
@@ -42,12 +52,16 @@ async def selected_path(session: web.Committer, project_name: str, version_name:
     # If the draft is not found, we try to get the release candidate
     try:
         release = await session.release(
-            project_name, version_name, with_committee=True, with_release_policy=True, with_project_release_policy=True
+            str(project_name),
+            str(version_name),
+            with_committee=True,
+            with_release_policy=True,
+            with_project_release_policy=True,
         )
     except base.ASFQuartException:
         release = await session.release(
-            project_name,
-            version_name,
+            str(project_name),
+            str(version_name),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             with_committee=True,
             with_release_policy=True,
@@ -82,8 +96,8 @@ async def selected_path(session: web.Committer, project_name: str, version_name:
 
     return await template.render(
         "report-selected-path.html",
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
         rel_path=str(validated_path),
         package=file_data,
         release=release,

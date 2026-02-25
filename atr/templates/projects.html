@@ -37,12 +37,12 @@
     {% endif %}
     <div class="col">
       <div class="card h-100 shadow-sm position-relative page-project-card {{ '' if project.status.value.lower() == 'active' else 'bg-body-secondary' }}"
-           data-project-url="{{ as_url(get.projects.view, name=project.name) }}"
+           data-project-url="{{ as_url(get.projects.view, project_name=project.name) }}"
            data-is-participant="{{ 'true' if is_part else 'false' }}">
         <div class="card-body">
           <div class="row g-1">
             <div class="col-sm">
-              <h3 class="card-title fs-4 mb-3"><a href="{{ as_url(get.projects.view, name=project.name) }}" class="text-decoration-none text-body stretched-link">{{ project.display_name }}</a></h3>
+              <h3 class="card-title fs-4 mb-3"><a href="{{ as_url(get.projects.view, project_name=project.name) }}" class="text-decoration-none text-body stretched-link">{{ project.display_name }}</a></h3>
             </div>
             {% if project.status.value.lower() != 'active' %}
               <div class="col-sm-2">

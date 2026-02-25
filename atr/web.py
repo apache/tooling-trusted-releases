@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     import pydantic
     import werkzeug.wrappers.response as response
 
+
 R = TypeVar("R", covariant=True)
 
 type WerkzeugResponse = response.Response
@@ -87,7 +88,7 @@ class Committer:
         return user.is_admin(self.uid)
 
     async def check_access(self, project_name: str) -> None:
-        if not any((p.name == project_name) for p in (await self.user_projects)):
+        if not any((p.name == str(project_name)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
                 # But we must warn them when the project is not one of their own
@@ -180,7 +181,7 @@ class Committer:
             phase_value = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
         else:
             phase_value = phase
-        release_name = sql.release_name(project_name, version_name)
+        release_name = sql.release_name(str(project_name), str(version_name))
         if data is None:
             async with db.session() as data:
                 release = await data.release(
@@ -254,6 +255,9 @@ class HeaderValue:
 
     def __str__(self) -> str:
         return self.__value
+
+
+type Public = Committer | None
 
 
 class RouteFunction(Protocol[R]):

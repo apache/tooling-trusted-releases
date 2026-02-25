@@ -16,7 +16,7 @@
 # under the License.
 
 import pathlib
-from typing import Final
+from typing import Final, Literal
 
 import aiofiles
 import asfquart.session
@@ -58,15 +58,21 @@ _POLICIES: Final = htm.div[
 ]
 
 
-@get.committer("/about")
-async def about(session: web.Committer) -> str:
-    """About page."""
+@get.typed
+async def about(session: web.Committer, _about: Literal["about"]) -> str:
+    """
+    URL: /about
+    About page.
+    """
     return await template.render("about.html")
 
 
-@get.public("/")
-async def index(session: web.Committer | None) -> quart_response.Response | str:
-    """Show public info or an entry portal for participants."""
+@get.typed
+async def index(session: web.Public, _root: Literal[""]) -> quart_response.Response | str:
+    """
+    URL: /
+    Show public info or an entry portal for participants.
+    """
     session_data = await asfquart.session.read()
     if session_data:
         uid = session_data.uid
@@ -139,20 +145,31 @@ async def index(session: web.Committer | None) -> quart_response.Response | str:
     return await template.render("index-public.html")
 
 
-@get.public("/policies")
-async def policies(session: web.Committer | None) -> str:
+@get.typed
+async def policies(session: web.Public, _policies: Literal["policies"]) -> str:
+    """
+    URL: /policies
+    """
     return await template.blank("Policies", content=_POLICIES)
 
 
-@get.public("/miscellaneous/resolved.json")
-async def resolved_json(session: web.Committer | None) -> quart_response.Response:
+@get.typed
+async def resolved_json(
+    session: web.Public, _miscellaneous_resolved_json: Literal["miscellaneous/resolved.json"]
+) -> quart_response.Response:
+    """
+    URL: /miscellaneous/resolved.json
+    """
     json_path = pathlib.Path(config.get().PROJECT_ROOT) / "atr" / "static" / "json" / "resolved.json"
     async with aiofiles.open(json_path) as f:
         content = await f.read()
     return quart_response.Response(content, mimetype="application/json")
 
 
-@get.committer("/tutorial")
-async def tutorial(session: web.Committer) -> str:
-    """Tutorial page."""
+@get.typed
+async def tutorial(session: web.Committer, _tutorial: Literal["tutorial"]) -> str:
+    """
+    URL: /tutorial
+    Tutorial page.
+    """
     return await template.render("tutorial.html")

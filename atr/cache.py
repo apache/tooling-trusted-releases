@@ -27,10 +27,13 @@ import pydantic
 import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.schema as schema
 
 # Fifth prime after 3600
 ADMINS_POLL_INTERVAL_SECONDS: Final[int] = 3631
+
+PROJECT_VERSION_POLL_INTERVAL_SECONDS: Final[int] = 307
 
 
 class AdminsCache(schema.Strict):
@@ -92,6 +95,39 @@ async def admins_startup_load() -> None:
         log.warning(f"Failed to fetch admin users from LDAP at startup: {e}")
 
 
+def project_version_get() -> dict[str, set[str]]:
+    if asfquart.APP is not None:
+        return asfquart.APP.extensions.get("project_versions", {})
+    return {}
+
+
+def project_version_has_project(project_name: str) -> bool:
+    return project_name in project_version_get()
+
+
+def project_version_has_version(project_name: safe.ProjectName, version_name: str) -> bool:
+    projects = project_version_get()
+    if str(project_name) not in projects:
+        return False
+    return version_name in projects[str(project_name)]
+
+
+async def project_version_refresh_loop() -> None:
+    while True:
+        await asyncio.sleep(PROJECT_VERSION_POLL_INTERVAL_SECONDS)
+        try:
+            await _project_version_refresh()
+        except Exception as e:
+            log.warning(f"Project/version cache refresh failed: {e}")
+
+
+async def project_version_startup_load() -> None:
+    try:
+        await _project_version_refresh()
+    except Exception as e:
+        log.warning(f"Failed to populate project/version cache at startup: {e}")
+
+
 def _admins_path() -> pathlib.Path:
     return pathlib.Path(config.get().STATE_DIR) / "cache" / "admins.json"
 
@@ -134,3 +170,29 @@ def _admins_update_app_extensions(admins: frozenset[str]) -> None:
     app = asfquart.APP
     app.extensions["admins"] = admins
     app.extensions["admins_refreshed"] = datetime.datetime.now(datetime.UTC)
+
+
+async def _project_version_fetch_from_db() -> dict[str, set[str]]:
+    import atr.db as db
+    import atr.models.sql as sql
+
+    projects: dict[str, set[str]] = {}
+    async with db.session() as data:
+        all_projects = await data.project(status=sql.ProjectStatus.ACTIVE, _committee=False).all()
+        for project in all_projects:
+            all_releases = await data.release(project_name=project.name, _project=False, _committee=False).all()
+            projects[project.name] = {release.version for release in all_releases}
+    return projects
+
+
+async def _project_version_refresh() -> None:
+    projects = await _project_version_fetch_from_db()
+    _project_version_update_app_extensions(projects)
+    total_versions = sum(len(v) for v in projects.values())
+    log.info(f"Project/version cache refreshed: {len(projects)} projects, {total_versions} versions")
+
+
+def _project_version_update_app_extensions(projects: dict[str, set[str]]) -> None:
+    app = asfquart.APP
+    app.extensions["project_versions"] = projects
+    app.extensions["project_versions_refreshed"] = datetime.datetime.now(datetime.UTC)

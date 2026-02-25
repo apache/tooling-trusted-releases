@@ -17,6 +17,7 @@
 
 import ast
 import pathlib
+from typing import Literal
 
 import aiofiles
 import aiofiles.os
@@ -25,6 +26,7 @@ import quart
 import atr.blueprints.get as get
 import atr.config as config
 import atr.form as form
+import atr.models.unsafe as unsafe
 import atr.web as web
 
 # Perhaps GitHub will get around to implementing symbol permalinks:
@@ -32,8 +34,12 @@ import atr.web as web
 # Then this code will be easier, but we should still keep our own links
 
 
-@get.public("/ref/<path:ref_path>")
-async def resolve(session: web.Committer | None, ref_path: str) -> web.WerkzeugResponse:
+@get.typed
+async def resolve(session: web.Public, _ref: Literal["ref"], ref_path: unsafe.Path) -> web.WerkzeugResponse:
+    """
+    URL: /ref/<ref_path>
+    Resolve a code reference to a GitHub permalink.
+    """
     project_root = pathlib.Path(config.get().PROJECT_ROOT)
 
     if ":" in ref_path:

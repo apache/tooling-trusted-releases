@@ -16,6 +16,8 @@
 # under the License.
 
 
+from typing import Literal
+
 import aiofiles.os
 import htpy
 
@@ -28,6 +30,7 @@ import atr.get.compose as compose
 import atr.get.keys as keys
 import atr.get.projects as projects
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
@@ -38,22 +41,27 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/voting/<project_name>/<version_name>/<revision>")
+@get.typed
 async def selected_revision(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer,
+    _voting: Literal["voting"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: str,
 ) -> web.WerkzeugResponse | str:
-    await session.check_access(project_name)
-
+    """
+    URL: /voting/<project_name>/<version_name>/<revision>
+    """
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=False
+            session, str(project_name), str(version_name), revision, data, manual_vote=False
         ):
             case str() as error:
                 return await session.redirect(
                     compose.selected,
                     error=error,
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                     revision=revision,
                 )
             case (release, committee):
@@ -65,14 +73,14 @@ async def selected_revision(
         if release.release_policy and (release.release_policy.min_hours is not None):
             min_hours = release.release_policy.min_hours
 
-        default_subject_template = await construct.start_vote_subject_default(project_name)
-        default_body_template = await construct.start_vote_default(project_name)
+        default_subject_template = await construct.start_vote_subject_default(str(project_name))
+        default_body_template = await construct.start_vote_default(str(project_name))
         subject_template_hash = construct.template_hash(default_subject_template)
 
         options = construct.StartVoteOptions(
             asfuid=session.uid,
             fullname=session.fullname,
-            project_name=project_name,
+            project_name=str(project_name),
             version_name=release.version,
             revision_number=revision,
             vote_duration=min_hours,
@@ -118,7 +126,7 @@ def _render_body_field(default_body: str, project_name: str) -> htm.Element:
         rows="12",
     )[default_body]
 
-    settings_url = util.as_url(projects.view, name=project_name) + "#start_vote_template"
+    settings_url = util.as_url(projects.view, project_name=project_name) + "#start_vote_template"
     link = htm.div(".form-text.text-muted.mt-2")[
         "To edit the template, go to the ",
         htm.a(href=settings_url)["project settings"],
@@ -213,7 +221,7 @@ async def _render_page(
 
 
 def _render_subject_field(default_subject: str, project_name: str) -> htm.Element:
-    settings_url = util.as_url(projects.view, name=project_name) + "#start_vote_subject"
+    settings_url = util.as_url(projects.view, project_name=project_name) + "#start_vote_subject"
     return htm.div[
         htpy.input(
             type="text",

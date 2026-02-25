@@ -17,6 +17,7 @@
 
 import pathlib
 from html.parser import HTMLParser
+from typing import Literal
 
 import aiofiles
 import aiofiles.os
@@ -26,6 +27,7 @@ import quart
 import atr.blueprints.get as get
 import atr.config as config
 import atr.form as form
+import atr.models.unsafe as unsafe
 import atr.template as template
 import atr.web as web
 
@@ -49,14 +51,14 @@ class H1Parser(HTMLParser):
             self.h1_content = data.strip()
 
 
-@get.public("/docs/")
-async def index(session: web.Committer | None) -> str:
+@get.typed
+async def index(session: web.Public, _docs: Literal["docs"]) -> str:
     return await _serve_docs_page("index")
 
 
-@get.public("/docs/<path:page>")
-async def page(session: web.Committer | None, page: str) -> str:
-    validated_page = form.to_relpath(page)
+@get.typed
+async def page(session: web.Public, _docs: Literal["docs"], path: unsafe.Path) -> str:
+    validated_page = form.to_relpath(path)
     if validated_page is None:
         quart.abort(400)
     return await _serve_docs_page(str(validated_page))

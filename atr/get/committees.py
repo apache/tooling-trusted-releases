@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+from typing import Literal
 
 import asfquart.base as base
 
@@ -30,9 +31,12 @@ import atr.util as util
 import atr.web as web
 
 
-@get.public("/committees")
-async def directory(session: web.Committer | None) -> str:
-    """Main committee directory page."""
+@get.typed
+async def directory(session: web.Public, _committees: Literal["committees"]) -> str:
+    """
+    URL: /committees
+    Main committee directory page.
+    """
     async with db.session() as data:
         committees = await data.committee(_projects=True).order_by(sql.Committee.name).all()
         return await template.render(
@@ -43,8 +47,11 @@ async def directory(session: web.Committer | None) -> str:
         )
 
 
-@get.public("/committees/<name>")
-async def view(session: web.Committer | None, name: str) -> str:
+@get.typed
+async def view(session: web.Public, _committees: Literal["committees"], name: str) -> str:
+    """
+    URL: /committees/<name>
+    """
     # TODO: Could also import this from keys.py
     async with db.session() as data:
         committee = await data.committee(

@@ -19,6 +19,7 @@
 import dataclasses
 import pathlib
 from collections.abc import Sequence
+from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
@@ -39,6 +40,7 @@ import atr.get.revisions as revisions
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.render as render
@@ -56,20 +58,26 @@ class RCTagAnalysisResult:
     total_paths: int
 
 
-@get.committer("/finish/<project_name>/<version_name>")
+@get.typed
 async def selected(
-    session: web.Committer, project_name: str, version_name: str
+    session: web.Committer,
+    _finish: Literal["finish"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse | str:
-    """Finish a release preview."""
+    """
+    URL: /finish/<project_name>/<version_name>
+    Finish a release preview.
+    """
     try:
         (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
-            project_name, version_name
+            str(project_name), str(version_name)
         )
     except ValueError:
         async with db.session() as data:
             release_fallback = await data.release(
-                project_name=project_name,
-                version=version_name,
+                project_name=str(project_name),
+                version=str(version_name),
                 _committee=True,
             ).get()
             if release_fallback:
@@ -224,16 +232,16 @@ def _render_distribution_buttons(release: sql.Release) -> htm.Element:
                 ".btn.btn-primary.me-2",
                 href=util.as_url(
                     distribution.automate,
-                    project=release.project.name,
-                    version=release.version,
+                    project_name=release.project.name,
+                    version_name=release.version,
                 ),
             )["Distribute"],
             htm.a(
                 ".btn.btn-secondary.me-2",
                 href=util.as_url(
                     distribution.record,
-                    project=release.project.name,
-                    version=release.version,
+                    project_name=release.project.name,
+                    version_name=release.version,
                 ),
             )["Record a manual distribution"],
         ],

@@ -42,7 +42,7 @@
                   </li>
                   <li>
                     <a class="dropdown-item fw-bold"
-                       href="{{ as_url(get.projects.view, name=project_name) }}">{{ project_short_display_name }}</a>
+                       href="{{ as_url(get.projects.view, project_name=project_name) }}">{{ project_short_display_name }}</a>
                   </li>
                   {% for release in releases %}
                     <li>

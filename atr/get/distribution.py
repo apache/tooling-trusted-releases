@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 from collections.abc import Sequence
+from typing import Literal
 
 import asfquart.base as base
 import htpy
@@ -23,6 +24,7 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
@@ -33,35 +35,51 @@ import atr.web as web
 from atr.tasks import gha
 
 
-@get.committer("/distribution/automate/<project>/<version>")
-async def automate(session: web.Committer, project: str, version: str) -> str:
-    return await _automate_form_page(project, version, staging=False)
+@get.typed
+async def automate(
+    session: web.Committer,
+    _distribution: Literal["distribution/automate"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /distribution/automate/<project_name>/<version>
+    """
+    return await _automate_form_page(str(project_name), str(version_name), staging=False)
 
 
-@get.committer("/distributions/list/<project_name>/<version_name>")
-async def list_get(session: web.Committer, project_name: str, version_name: str) -> str:
-    distributions, tasks = await _get_page_data(project_name, version_name)
+@get.typed
+async def list_get(
+    session: web.Committer,
+    _distribution: Literal["distribution/list"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /distribution/list/<project_name>/<version_name>
+    """
+    distributions, tasks = await _get_page_data(str(project_name), str(version_name))
 
     block = htm.Block()
 
-    release = await shared.distribution.release_validated(project_name, version_name, staging=None)
+    release = await shared.distribution.release_validated(str(project_name), str(version_name), staging=None)
     staging = release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-    render.html_nav_phase(block, project_name, version_name, staging)
+    render.html_nav_phase(block, str(project_name), str(version_name), staging)
 
     record_a_distribution = htm.a(
         ".btn.btn-primary",
         href=util.as_url(
             stage_record if staging else record,
-            project=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         ),
     )["Record a distribution"]
 
     # Distribution list for project-version
-    block.h1["Distribution list for ", htm.em[f"{project_name}-{version_name}"]]
+    block.h1["Distribution list for ", htm.em[f"{project_name!s}-{version_name!s}"]]
 
     if len(tasks) > 0:
-        _render_distribution_tasks(tasks, block, project_name, version_name)
+        _render_distribution_tasks(tasks, block, str(project_name), str(version_name))
 
     if not distributions:
         block.p["No distributions found."]
@@ -102,7 +120,7 @@ async def list_get(session: web.Committer, project_name: str, version_name: str)
 
         delete_form = form.render(
             model_cls=shared.distribution.DeleteForm,
-            action=util.as_url(post.distribution.delete, project=project_name, version=version_name),
+            action=util.as_url(post.distribution.delete, project=str(project_name), version=str(version_name)),
             form_classes=".d-inline-block.m-0",
             submit_classes="btn-danger btn-sm",
             submit_label="Delete",
@@ -118,23 +136,47 @@ async def list_get(session: web.Committer, project_name: str, version_name: str)
         )
         block.append(htm.div(".mb-3")[delete_form])
 
-    title = f"Distribution list for {project_name} {version_name}"
+    title = f"Distribution list for {project_name!s} {version_name!s}"
     return await template.blank(title, content=block.collect())
 
 
-@get.committer("/distribution/record/<project>/<version>")
-async def record(session: web.Committer, project: str, version: str) -> str:
-    return await _record_form_page(project, version, staging=False)
+@get.typed
+async def record(
+    session: web.Committer,
+    _distribution: Literal["distribution/record"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /distribution/record/<project_name>/<version_name>
+    """
+    return await _record_form_page(str(project_name), str(version_name), staging=False)
 
 
-@get.committer("/distribution/stage/automate/<project>/<version>")
-async def stage_automate(session: web.Committer, project: str, version: str) -> str:
-    return await _automate_form_page(project, version, staging=True)
+@get.typed
+async def stage_automate(
+    session: web.Committer,
+    _distribution: Literal["distribution/stage/automate"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /distribution/stage/automate/<project_name>/<version_name>
+    """
+    return await _automate_form_page(str(project_name), str(version_name), staging=True)
 
 
-@get.committer("/distribution/stage/record/<project>/<version>")
-async def stage_record(session: web.Committer, project: str, version: str) -> str:
-    return await _record_form_page(project, version, staging=True)
+@get.typed
+async def stage_record(
+    session: web.Committer,
+    _distribution: Literal["distribution/stage/record"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /distribution/stage/record/<project_name>/<version_name>
+    """
+    return await _record_form_page(str(project_name), str(version_name), staging=True)
 
 
 async def _automate_form_page(project: str, version: str, staging: bool) -> str:

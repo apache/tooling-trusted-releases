@@ -16,34 +16,39 @@
 # under the License.
 
 import json
+from typing import Literal
 
 import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.web as web
 
 
-@get.committer("/result/data/<project_name>/<version_name>/<int:check_id>")
+@get.typed
 async def data(
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    _result_data: Literal["result/data"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     check_id: int,
 ) -> web.TextResponse:
-    """Show a check result as formatted JSON."""
+    """
+    URL: /result/data/<project_name>/<version_name>/<check_id>
+    Show a check result as formatted JSON.
+    """
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
         ).get()
 
         if release is None:
-            await session.check_access(project_name)
-            release = await session.release(project_name, version_name, with_committee=True)
+            release = await session.release(str(project_name), str(version_name), with_committee=True)
 
         if release.committee is None:
             raise base.ASFQuartException("Release has no committee", errorcode=500)

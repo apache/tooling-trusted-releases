@@ -23,7 +23,9 @@ import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.render as render
 import atr.template as template
@@ -33,21 +35,31 @@ import atr.web as web
 type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
 
 
-@get.committer("/file/<project_name>/<version_name>")
-async def selected(session: web.Committer, project_name: str, version_name: str) -> str:
-    """View all the files in a release (any phase)."""
-    await session.check_access(project_name)
-
-    release = await session.release(project_name, version_name, phase=None)
+@get.typed
+async def selected(
+    session: web.Committer,
+    _file: Literal["file"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /file/<project_name>/<version_name>
+    View all the files in a release (any phase).
+    """
+    release = await session.release(str(project_name), str(version_name), phase=None)
 
     revision_number = release.latest_revision_number
     file_stats = []
     if release.phase == sql.ReleasePhase.RELEASE:
-        file_stats = [stat async for stat in util.content_list(paths.get_finished_dir(), project_name, version_name)]
+        file_stats = [
+            stat async for stat in util.content_list(paths.get_finished_dir(), str(project_name), str(version_name))
+        ]
     elif revision_number is not None:
         file_stats = [
             stat
-            async for stat in util.content_list(paths.get_unfinished_dir(), project_name, version_name, revision_number)
+            async for stat in util.content_list(
+                paths.get_unfinished_dir(), str(project_name), str(version_name), revision_number
+            )
         ]
     else:
         raise ValueError("No revision number found for unfinished release")
@@ -125,16 +137,23 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
     return await template.blank(f"Files in {release.short_display_name}", content=block.collect())
 
 
-@get.committer("/file/<project_name>/<version_name>/<path:file_path>")
-async def selected_path(session: web.Committer, project_name: str, version_name: str, file_path: str) -> str:
-    """View the content of a specific file in a release (any phase)."""
-    await session.check_access(project_name)
-
-    validated_path = form.to_relpath(file_path)
+@get.typed
+async def selected_path(
+    session: web.Committer,
+    _file: Literal["file"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    file_path: unsafe.Path,
+) -> str:
+    """
+    URL: /file/<project_name>/<version_name>/<path:file_path>
+    View the content of a specific file in a release (any phase).
+    """
+    validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise web.FlashError("Invalid file path")
 
-    release = await session.release(project_name, version_name, phase=None)
+    release = await session.release(str(project_name), str(version_name), phase=None)
     _max_view_size = 512 * 1024
     full_path = paths.release_directory(release) / validated_path
     content_listing = await util.archive_listing(full_path)

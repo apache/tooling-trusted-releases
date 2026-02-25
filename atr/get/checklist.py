@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Literal
 
 import cmarkgfm
 import markupsafe
@@ -25,18 +26,24 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.render as render
 import atr.template as template
 import atr.util as util
 import atr.web as web
 
 
-@get.public("/checklist/<project_name>/<version_name>")
-async def selected(session: web.Committer | None, project_name: str, version_name: str) -> str:
+@get.typed
+async def selected(
+    session: web.Public,
+    _checklist: Literal["checklist"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _project=True,
             _committee=True,
             _project_release_policy=True,
@@ -60,7 +67,7 @@ async def selected(session: web.Committer | None, project_name: str, version_nam
     substituted_markdown = construct.checklist_body(
         checklist_markdown,
         project=project,
-        version_name=version_name,
+        version_name=str(version_name),
         committee=committee,
         revision=latest_revision,
     )
@@ -69,8 +76,8 @@ async def selected(session: web.Committer | None, project_name: str, version_nam
     page = htm.Block()
     render.html_nav(
         page,
-        back_url=util.as_url(vote.selected, project_name=project_name, version_name=version_name),
-        back_anchor=f"Vote on {project.short_display_name} {version_name}",
+        back_url=util.as_url(vote.selected, project_name=str(project_name), version_name=str(version_name)),
+        back_anchor=f"Vote on {project.short_display_name} {version_name!s}",
         phase="VOTE",
     )
     page.h1["Release checklist"]
@@ -78,12 +85,12 @@ async def selected(session: web.Committer | None, project_name: str, version_nam
         "Checklist for ",
         htm.strong[project.short_display_name],
         " version ",
-        version_name,
+        str(version_name),
         ":",
     ]
     page.div(".checklist-content.mt-4")[checklist_html]
 
     return await template.blank(
-        title=f"Release checklist for {project.short_display_name} {version_name}",
+        title=f"Release checklist for {project.short_display_name} {version_name!s}",
         content=page.collect(),
     )

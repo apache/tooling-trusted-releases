@@ -130,9 +130,9 @@
     </div>
     <p>
       <a class="btn btn-primary"
-         href="{{ as_url(get.distribution.stage_automate, project=release.project.name, version=release.version) }}">Distribute</a>
+         href="{{ as_url(get.distribution.stage_automate, project_name=release.project.name, version_name=release.version) }}">Distribute</a>
       <a class="btn btn-secondary"
-         href="{{ as_url(get.distribution.stage_record, project=release.project.name, version=release.version) }}">Record a manual distribution</a>
+         href="{{ as_url(get.distribution.stage_record, project_name=release.project.name, version_name=release.version) }}">Record a manual distribution</a>
     </p>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>

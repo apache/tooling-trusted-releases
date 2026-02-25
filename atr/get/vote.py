@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import enum
 import urllib.parse
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import asfquart.base as base
 import htpy
@@ -35,6 +35,7 @@ import atr.get.keys as keys
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
@@ -171,10 +172,18 @@ async def render_vote_closed_page(release: sql.Release) -> str:
     )
 
 
-@get.public("/vote/<project_name>/<version_name>")
-async def selected(session: web.Committer | None, project_name: str, version_name: str) -> web.WerkzeugResponse | str:
-    """Show voting options for a release candidate."""
-    user_category, release, latest_vote_task = await category_and_release(session, project_name, version_name)
+@get.typed
+async def selected(
+    session: web.Public,
+    _vote: Literal["vote"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /vote/<project_name>/<version_name>
+    Show voting options for a release candidate.
+    """
+    user_category, release, latest_vote_task = await category_and_release(session, str(project_name), str(version_name))
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
         if session is None:

@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+from typing import Literal
 
 import htpy
 import markupsafe
@@ -26,6 +26,7 @@ import atr.construct as construct
 import atr.form as form
 import atr.get.projects as projects
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
@@ -35,12 +36,18 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/announce/<project_name>/<version_name>")
-async def selected(session: web.Committer, project_name: str, version_name: str) -> str | web.WerkzeugResponse:
-    """Allow the user to announce a release preview."""
-    await session.check_access(project_name)
-
-    release = await _get_page_data(project_name, session, version_name)
+@get.typed
+async def selected(
+    session: web.Committer,
+    _announce: Literal["announce"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str | web.WerkzeugResponse:
+    """
+    URL: /announce/<project_name>/<version_name>
+    Allow the user to announce a release preview.
+    """
+    release = await _get_page_data(session, project_name, version_name)
 
     latest_revision_number = release.latest_revision_number
     if latest_revision_number is None:
@@ -51,16 +58,16 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
         )
 
     # Get the templates from the release policy
-    default_subject_template = await construct.announce_release_subject_default(project_name)
-    default_body_template = await construct.announce_release_default(project_name)
+    default_subject_template = await construct.announce_release_subject_default(str(project_name))
+    default_body_template = await construct.announce_release_default(str(project_name))
     subject_template_hash = construct.template_hash(default_subject_template)
 
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
         asfuid=session.uid,
         fullname=session.fullname,
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
         revision_number=latest_revision_number,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
@@ -102,10 +109,12 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
     )
 
 
-async def _get_page_data(project_name: str, session: web.Committer, version_name: str) -> sql.Release:
+async def _get_page_data(
+    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName
+) -> sql.Release:
     release = await session.release(
-        project_name,
-        version_name,
+        str(project_name),
+        str(version_name),
         with_committee=True,
         phase=sql.ReleasePhase.RELEASE_PREVIEW,
         with_distributions=True,
@@ -123,7 +132,7 @@ def _render_body_field(default_body: str, project_name: str) -> htm.Element:
         rows="12",
     )[default_body]
 
-    settings_url = util.as_url(projects.view, name=project_name) + "#announce_release_template"
+    settings_url = util.as_url(projects.view, project_name=project_name) + "#announce_release_template"
     link = htm.div(".form-text.text-muted.mt-2")[
         "To edit the template, go to the ",
         htm.a(href=settings_url)["project settings"],
@@ -288,7 +297,7 @@ def _render_release_card(release: sql.Release) -> htm.Element:
 
 
 def _render_subject_field(default_subject: str, project_name: str) -> htm.Element:
-    settings_url = util.as_url(projects.view, name=project_name) + "#announce_release_subject"
+    settings_url = util.as_url(projects.view, project_name=project_name) + "#announce_release_subject"
     return htm.div[
         htpy.input(
             type="text",

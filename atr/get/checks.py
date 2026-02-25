@@ -17,7 +17,7 @@
 
 import pathlib
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import asfquart.base as base
 import htpy
@@ -33,6 +33,7 @@ import atr.get.report as report
 import atr.get.sbom as sbom
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
@@ -97,13 +98,18 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
     return totals
 
 
-@get.public("/checks/<project_name>/<version_name>")
-async def selected(session: web.Committer | None, project_name: str, version_name: str) -> str:
-    """Show the file checks for a release candidate."""
+@get.typed
+async def selected(
+    session: web.Public, _checks: Literal["checks"], project_name: safe.ProjectName, version_name: safe.VersionName
+) -> str:
+    """
+    URL: /checks/<project_name>/<version_name>
+    Show the file checks for a release candidate.
+    """
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
@@ -134,18 +140,22 @@ async def selected(session: web.Committer | None, project_name: str, version_nam
     )
 
 
-@get.committer("/checks/<project_name>/<version_name>/<revision_number>")
+@get.typed
 async def selected_revision(
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    _checks: Literal["checks"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
 ) -> web.QuartResponse:
-    """Return JSON with ongoing count and HTML fragments for dynamic updates."""
+    """
+    URL: /checks/<project_name>/<version_name>/<revision_number>
+    Return JSON with ongoing count and HTML fragments for dynamic updates.
+    """
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
             # _project=True is included in _project_release_policy=True
             _project_release_policy=True,
@@ -159,9 +169,9 @@ async def selected_revision(
         ragp = read.as_general_public()
         info = await ragp.releases.path_info(release, all_paths)
 
-    ongoing_count = await interaction.tasks_ongoing(project_name, version_name, revision_number)
+    ongoing_count = await interaction.tasks_ongoing(str(project_name), str(version_name), revision_number)
 
-    checks_summary_elem = shared.web._render_checks_summary(info, project_name, version_name)
+    checks_summary_elem = shared.web.render_checks_summary(info, str(project_name), str(version_name))
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
     delete_file_forms: dict[str, str] = {}
@@ -170,7 +180,9 @@ async def selected_revision(
             delete_file_forms[str(path)] = str(
                 form.render(
                     model_cls=draft.DeleteFileForm,
-                    action=util.as_url(post.draft.delete_file, project_name=project_name, version_name=version_name),
+                    action=util.as_url(
+                        post.draft.delete_file, project_name=str(project_name), version_name=str(version_name)
+                    ),
                     form_classes=".d-inline-block.m-0",
                     submit_classes="btn-sm btn-outline-danger",
                     submit_label="Delete",
@@ -188,8 +200,8 @@ async def selected_revision(
         "check-selected-path-table.html",
         paths=all_paths,
         info=info,
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
         release=release,
         phase=release.phase.value,
         delete_file_forms=delete_file_forms,
@@ -422,7 +434,9 @@ def _render_file_row(
         version_name=release.version,
         file_path=path_str,
     )
-    sbom_url = util.as_url(sbom.report, project=release.project.name, version=release.version, file_path=path_str)
+    sbom_url = util.as_url(
+        sbom.report, project_name=release.project.name, version_name=release.version, file_path=path_str
+    )
 
     if not has_checks_before:
         path_display = htpy.code(".text-muted")[path_str]

@@ -85,16 +85,16 @@ async def _augment(
         await quart.flash(f"Error augmenting SBOM: {e!s}", "error")
         return await session.redirect(
             get.sbom.report,
-            project=project_name,
-            version=version_name,
+            project_name=project_name,
+            version_name=version_name,
             file_path=str(rel_path),
         )
 
     return await session.redirect(
         get.sbom.report,
         success=f"SBOM augmentation task queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
-        project=project_name,
-        version=version_name,
+        project_name=project_name,
+        version_name=version_name,
         file_path=str(rel_path),
     )
 
@@ -128,15 +128,15 @@ async def _scan(
         await quart.flash(f"Error starting OSV scan: {e!s}", "error")
         return await session.redirect(
             get.sbom.report,
-            project=project_name,
-            version=version_name,
+            project_name=project_name,
+            version_name=version_name,
             file_path=str(rel_path),
         )
 
     return await session.redirect(
         get.sbom.report,
         success=f"OSV vulnerability scan queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
-        project=project_name,
-        version=version_name,
+        project_name=project_name,
+        version_name=version_name,
         file_path=str(rel_path),
     )

@@ -31,7 +31,9 @@ import atr.get.compose as compose
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.render as render
 import atr.sbom as sbom
 import atr.shared as shared
@@ -43,15 +45,24 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-@get.committer("/sbom/report/<project>/<version>/<path:file_path>")
-async def report(session: web.Committer, project: str, version: str, file_path: str) -> str:
-    await session.check_access(project)
-
+@get.typed
+async def report(
+    session: web.Committer,
+    _sbom_report: Literal["sbom/report"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    file_path: unsafe.Path,
+) -> str:
+    """
+    URL: /sbom/report/<project_name>/<version_name>/<file_path>
+    """
     # If the draft is not found, we try to get the release candidate
     try:
-        release = await session.release(project, version, with_committee=True)
+        release = await session.release(str(project_name), str(version_name), with_committee=True)
     except base.ASFQuartException:
-        release = await session.release(project, version, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True)
+        release = await session.release(
+            str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
+        )
 
     block = htm.Block()
 
@@ -84,7 +95,9 @@ async def report(session: web.Committer, project: str, version: str, file_path: 
         raise base.ASFQuartException("Invalid file path", errorcode=400)
     validated_path_str = str(validated_path)
 
-    task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project, release, version)
+    task, augment_tasks, osv_tasks = await _fetch_tasks(
+        validated_path_str, str(project_name), release, str(version_name)
+    )
 
     task_status = await _report_task_results(block, task)
     if task_status:
@@ -112,7 +125,9 @@ async def report(session: web.Committer, project: str, version: str, file_path: 
     _conformance_section(block, task_result)
     _license_section(block, task_result)
 
-    _vulnerability_scan_section(block, project, version, file_path, task_result, osv_tasks, is_release_candidate)
+    _vulnerability_scan_section(
+        block, str(project_name), str(version_name), str(file_path), task_result, osv_tasks, is_release_candidate
+    )
 
     _outdated_tool_section(block, task_result)
 

@@ -37,17 +37,25 @@ _BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__)
 _routes: list[str] = []
 
 
+async def _authenticate() -> web.Committer:
+    web_session = await asfquart.session.read()
+    if web_session is None:
+        raise base.ASFQuartException("Not authenticated", errorcode=401)
+    if (web_session.uid is None) or (not await ldap.is_active(web_session.uid)):
+        asfquart.session.clear()
+        raise base.ASFQuartException("Account is disabled", errorcode=401)
+    return web.Committer(web_session)
+
+
+def _register(func: Callable[..., Any]) -> None:
+    module_name = func.__module__.split(".")[-1]
+    _routes.append(f"post.{module_name}.{func.__name__}")
+
+
 def committer(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunction[Any]]:
     def decorator(func: web.CommitterRouteFunction[Any]) -> web.RouteFunction[Any]:
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            web_session = await asfquart.session.read()
-            if web_session is None:
-                raise base.ASFQuartException("Not authenticated", errorcode=401)
-            if (web_session.uid is None) or (not await ldap.is_active(web_session.uid)):
-                asfquart.session.clear()
-                raise base.ASFQuartException("Account is disabled", errorcode=401)
-
-            enhanced_session = web.Committer(web_session)
+            enhanced_session = await _authenticate()
             start_time_ns = time.perf_counter_ns()
             response = await func(enhanced_session, *args, **kwargs)
             end_time_ns = time.perf_counter_ns()
@@ -68,9 +76,7 @@ def committer(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.Rout
 
         decorated = auth.require(auth.Requirements.committer)(wrapper)
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=decorated, methods=["POST"])
-
-        module_name = func.__module__.split(".")[-1]
-        _routes.append(f"post.{module_name}.{func.__name__}")
+        _register(func)
 
         return decorated
 
@@ -82,7 +88,7 @@ def empty() -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable
     #
     # @post.form(form.Empty)
     # async def test_empty(
-    #     session: web.Committer | None,
+    #     session: web.Public,
     #     form: form.Empty,
     # ) -> web.WerkzeugResponse:
     #     pass
@@ -91,7 +97,7 @@ def empty() -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable
     #
     # @post.empty()
     # async def test_empty(
-    #     session: web.Committer | None,
+    #     session: web.Public,
     # ) -> web.WerkzeugResponse:
     #     pass
     def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
@@ -187,9 +193,7 @@ def public(path: str) -> Callable[[Callable[..., Awaitable[Any]]], web.RouteFunc
         wrapper.__name__ = func.__name__
 
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=["POST"])
-
-        module_name = func.__module__.split(".")[-1]
-        _routes.append(f"post.{module_name}.{func.__name__}")
+        _register(func)
 
         return wrapper
 

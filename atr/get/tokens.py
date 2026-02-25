@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
@@ -27,8 +29,11 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/tokens")
-async def tokens(session: web.Committer) -> str:
+@get.typed
+async def tokens(session: web.Committer, _tokens: Literal["tokens"]) -> str:
+    """
+    URL: /tokens
+    """
     async with storage.read_as_foundation_committer() as rafc:
         tokens_list = await rafc.tokens.own_personal_access_tokens()
         most_recent_pat = await rafc.tokens.most_recent_jwt_pat()

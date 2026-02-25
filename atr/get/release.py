@@ -16,23 +16,30 @@
 # under the License.
 
 import datetime
+from typing import Literal
 
 import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.template as template
 import atr.util as util
 import atr.web as web
 
 
-@get.public("/releases/finished/<project_name>")
-async def finished(session: web.Committer | None, project_name: str) -> str:
-    """View all finished releases for a project."""
+@get.typed
+async def finished(
+    session: web.Public, _releases_finished: Literal["releases/finished"], project_name: safe.ProjectName
+) -> str:
+    """
+    URL: /releases/finished/<project_name>
+    View all finished releases for a project.
+    """
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE).demand(
+        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
 
@@ -52,9 +59,12 @@ async def finished(session: web.Committer | None, project_name: str) -> str:
     )
 
 
-@get.public("/releases")
-async def releases(session: web.Committer | None) -> str:
-    """View all releases."""
+@get.typed
+async def releases(session: web.Public, _releases: Literal["releases"]) -> str:
+    """
+    URL: /releases
+    View all releases.
+    """
     # Releases are public, so we don't need to filter by user
     async with db.session() as data:
         releases = await data.release(
@@ -77,13 +87,16 @@ async def releases(session: web.Committer | None) -> str:
     )
 
 
-@get.committer("/release/select/<project_name>")
-async def select(session: web.Committer, project_name: str) -> str:
-    """Show releases in progress for a project."""
-    await session.check_access(project_name)
-
+@get.typed
+async def select(
+    session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectName
+) -> str:
+    """
+    URL: /release/select/<project_name>
+    Show releases in progress for a project.
+    """
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
+        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)

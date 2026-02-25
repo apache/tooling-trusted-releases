@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import asfquart.base as base
 import htpy
 import strictyaml
@@ -31,6 +33,7 @@ import atr.get.committees as committees
 import atr.get.file as file
 import atr.get.start as start
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.registry as registry
@@ -41,8 +44,13 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/project/add/<committee_name>")
-async def add_project(session: web.Committer, committee_name: str) -> web.WerkzeugResponse | str:
+@get.typed
+async def add_project(
+    session: web.Committer, _project_add: Literal["project/add"], committee_name: str
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/add/<committee_name>
+    """
     await session.check_access_committee(committee_name)
 
     async with db.session() as data:
@@ -85,9 +93,12 @@ async def add_project(session: web.Committer, committee_name: str) -> web.Werkze
     )
 
 
-@get.public("/projects")
-async def projects(session: web.Committer | None) -> str:
-    """Main project directory page."""
+@get.typed
+async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
+    """
+    URL: /projects
+    Main project directory page.
+    """
     async with db.session() as data:
         projects = await data.project(_committee=True).order_by(sql.Project.full_name).all()
 
@@ -107,9 +118,12 @@ async def projects(session: web.Committer | None) -> str:
     return await template.render("projects.html", projects=projects, delete_forms=delete_forms)
 
 
-@get.committer("/project/select")
-async def select(session: web.Committer) -> str:
-    """Select a project to work on."""
+@get.typed
+async def select(session: web.Committer, _project_select: Literal["project/select"]) -> str:
+    """
+    URL: /project/select
+    Select a project to work on.
+    """
     user_projects = []
     if session.uid:
         async with db.session() as data:
@@ -133,12 +147,17 @@ async def select(session: web.Committer) -> str:
     return await template.render("project-select.html", user_projects=user_projects)
 
 
-@get.committer("/projects/<name>")
-async def view(session: web.Committer, name: str) -> web.WerkzeugResponse | str:
+@get.typed
+async def view(
+    session: web.Committer, _projects: Literal["projects"], project_name: safe.ProjectName
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /projects/<project_name>
+    """
     async with db.session() as data:
         project = await data.project(
-            name=name, _committee=True, _committee_public_signing_keys=True, _release_policy=True
-        ).demand(base.ASFQuartException(f"Project {name} not found", errorcode=404))
+            name=str(project_name), _committee=True, _committee_public_signing_keys=True, _release_policy=True
+        ).demand(base.ASFQuartException(f"Project {project_name} not found", errorcode=404))
 
     is_committee_member = project.committee and (user.is_committee_member(project.committee, session.uid))
     is_privileged = session.is_admin

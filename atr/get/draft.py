@@ -18,12 +18,15 @@
 from __future__ import annotations
 
 import datetime
+from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
 
 import atr.blueprints.get as get
 import atr.form as form
+import atr.models.safe as safe
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.post as post
 import atr.shared as shared
@@ -32,16 +35,23 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/draft/tools/<project_name>/<version_name>/<path:file_path>")
-async def tools(session: web.Committer, project_name: str, version_name: str, file_path: str) -> str:
-    """Show the tools for a specific file."""
-    await session.check_access(project_name)
-
-    validated_path = form.to_relpath(file_path)
+@get.typed
+async def tools(
+    session: web.Committer,
+    _draft_tools: Literal["draft/tools"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    file_path: unsafe.Path,
+) -> str:
+    """
+    URL: /draft/tools/<project_name>/<version_name>/<path:file_path>
+    Show the tools for a specific file.
+    """
+    validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)
 
-    release = await session.release(project_name, version_name)
+    release = await session.release(str(project_name), str(version_name))
     full_path = str(paths.release_directory(release) / validated_path)
 
     # Check that the file exists
@@ -60,7 +70,10 @@ async def tools(session: web.Committer, project_name: str, version_name: str, fi
     }
 
     hashgen_action = util.as_url(
-        post.draft.hashgen, project_name=project_name, version_name=version_name, file_path=validated_path_str
+        post.draft.hashgen,
+        project_name=str(project_name),
+        version_name=str(version_name),
+        file_path=validated_path_str,
     )
     sha512_form = form.render(
         model_cls=shared.draft.HashGen,
@@ -72,7 +85,10 @@ async def tools(session: web.Committer, project_name: str, version_name: str, fi
     sbom_form = form.render(
         model_cls=form.Empty,
         action=util.as_url(
-            post.draft.sbomgen, project_name=project_name, version_name=version_name, file_path=validated_path_str
+            post.draft.sbomgen,
+            project_name=str(project_name),
+            version_name=str(version_name),
+            file_path=validated_path_str,
         ),
         submit_label="Generate CycloneDX SBOM (.cdx.json)",
         submit_classes="btn-outline-secondary",
@@ -82,8 +98,8 @@ async def tools(session: web.Committer, project_name: str, version_name: str, fi
     return await template.render(
         "draft-tools.html",
         asf_id=session.uid,
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
         file_path=validated_path_str,
         file_data=file_data,
         release=release,

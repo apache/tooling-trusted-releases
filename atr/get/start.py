@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import asfquart.base as base
 import htpy
 
@@ -24,6 +26,7 @@ import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.root as root
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.template as template
@@ -31,12 +34,13 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/start/<project_name>")
-async def selected(session: web.Committer, project_name: str) -> str:
-    await session.check_access(project_name)
-
+@get.typed
+async def selected(session: web.Committer, _start: Literal["start"], project_name: safe.ProjectName) -> str:
+    """
+    URL: /start/<project_name>
+    """
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE).demand(
+        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
 

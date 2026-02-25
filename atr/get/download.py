@@ -17,6 +17,7 @@
 
 import pathlib
 from collections.abc import AsyncGenerator
+from typing import Literal
 
 import aiofiles
 import aiofiles.os
@@ -30,20 +31,32 @@ import atr.db as db
 import atr.form as form
 import atr.htm as htm
 import atr.mapping as mapping
+import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.template as template
 import atr.util as util
 import atr.web as web
 
 
-@get.committer("/download/all/<project_name>/<version_name>")
-async def all_selected(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse | str:
-    """Display download commands for a release."""
+@get.typed
+async def all_selected(
+    session: web.Committer,
+    _download_all: Literal["download/all"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /download/all/<project_name>/<version_name>
+    Display download commands for a release.
+    """
     import atr.get.root as root
 
     async with db.session() as data:
-        release = await session.release(project_name=project_name, version_name=version_name, phase=None, data=data)
+        release = await session.release(
+            project_name=str(project_name), version_name=str(version_name), phase=None, data=data
+        )
         if not release:
             return await session.redirect(root.index, error="Release not found")
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
@@ -52,8 +65,8 @@ async def all_selected(session: web.Committer, project_name: str, version_name: 
 
     return await template.render(
         "download-all.html",
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
         release=release,
         asf_id=session.uid,
         server_domain=session.app_host.split(":", 1)[0],
@@ -64,28 +77,53 @@ async def all_selected(session: web.Committer, project_name: str, version_name: 
     )
 
 
-@get.public("/download/path/<project_name>/<version_name>/<path:file_path>")
-async def path(session: web.Committer | None, project_name: str, version_name: str, file_path: str) -> web.Response:
-    """Download a file or list a directory from a release in any phase."""
-    return await _download_or_list(project_name, version_name, file_path)
+@get.typed
+async def path(
+    session: web.Public,
+    _download_path: Literal["download/path"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    file_path: unsafe.Path,
+) -> web.Response:
+    """
+    URL: /download/path/<project_name>/<version_name>/<path:file_path>
+    Download a file or list a directory from a release in any phase.
+    """
+    return await _download_or_list(str(project_name), str(version_name), str(file_path))
 
 
-@get.public("/download/path/<project_name>/<version_name>/")
-async def path_empty(session: web.Committer | None, project_name: str, version_name: str) -> web.Response:
-    """List files at the root of a release directory for download."""
-    return await _download_or_list(project_name, version_name, ".")
+@get.typed
+async def path_empty(
+    session: web.Public,
+    _download_path: Literal["download/path"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.Response:
+    """
+    URL: /download/path/<project_name>/<version_name>/
+    List files at the root of a release directory for download.
+    """
+    return await _download_or_list(str(project_name), str(version_name), ".")
 
 
-@get.public("/download/sh/<project_name>/<version_name>")
-async def sh_selected(session: web.Committer | None, project_name: str, version_name: str) -> web.Response:
-    """Shell script to download a release."""
+@get.typed
+async def sh_selected(
+    session: web.Public,
+    _download_sh: Literal["download/sh"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.Response:
+    """
+    URL: /download/sh/<project_name>/<version_name>
+    Shell script to download a release.
+    """
     conf = config.get()
     app_host = conf.APP_HOST
     script_path = (pathlib.Path(__file__).parent / "../static/sh/download-urls.sh").resolve()
     async with aiofiles.open(script_path) as f:
         content = await f.read()
-    download_urls_selected = util.as_url(urls_selected, project_name=project_name, version_name=version_name)
-    download_path = util.as_url(path, project_name=project_name, version_name=version_name, file_path="")
+    download_urls_selected = util.as_url(urls_selected, project_name=str(project_name), version_name=str(version_name))
+    download_path = util.as_url(path, project_name=str(project_name), version_name=str(version_name), file_path="")
     curl_options = "--insecure" if util.is_dev_environment() else "--proto =https --tlsv1.2"
     content = content.replace("[CURL_EXTRA]", curl_options)
     content = content.replace("[URL_OF_URLS]", f"https://{app_host}{download_urls_selected}")
@@ -93,11 +131,19 @@ async def sh_selected(session: web.Committer | None, project_name: str, version_
     return web.ShellResponse(content)
 
 
-@get.public("/download/urls/<project_name>/<version_name>")
-async def urls_selected(session: web.Committer | None, project_name: str, version_name: str) -> web.Response:
+@get.typed
+async def urls_selected(
+    session: web.Public,
+    _download_urls: Literal["download/urls"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.Response:
+    """
+    URL: /download/urls/<project_name>/<version_name>
+    """
     try:
         async with db.session() as data:
-            release = await data.release(project_name=project_name, version=version_name).demand(
+            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
                 ValueError("Release not found")
             )
         url_list_str = await _generate_file_url_list(release)
@@ -108,10 +154,18 @@ async def urls_selected(session: web.Committer | None, project_name: str, versio
         return web.TextResponse(f"Internal server error: {e}", status=500)
 
 
-@get.committer("/download/zip/<project_name>/<version_name>")
-async def zip_selected(session: web.Committer, project_name: str, version_name: str) -> web.Response:
+@get.typed
+async def zip_selected(
+    session: web.Committer,
+    _download_zip: Literal["download/zip"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.Response:
+    """
+    URL: /download/zip/<project_name>/<version_name>
+    """
     try:
-        release = await session.release(project_name=project_name, version_name=version_name, phase=None)
+        release = await session.release(project_name=str(project_name), version_name=str(version_name), phase=None)
     except ValueError as e:
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:

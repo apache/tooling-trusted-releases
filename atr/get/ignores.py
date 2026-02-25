@@ -15,9 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.shared as shared
@@ -27,16 +30,23 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/ignores/<project_name>")
-async def ignores(session: web.Committer, project_name: str) -> str | web.WerkzeugResponse:
+@get.typed
+async def ignores(
+    session: web.Committer,
+    _ignores: Literal["ignores"],
+    project_name: safe.ProjectName,
+) -> str | web.WerkzeugResponse:
+    """
+    URL: /ignores/<project_name>
+    """
     async with storage.read() as read:
         ragp = read.as_general_public()
-        ignores = await ragp.checks.ignores(project_name)
+        ignores = await ragp.checks.ignores(str(project_name))
 
     content = htm.div[
         htm.h1["Ignored checks"],
-        htm.p[f"Manage ignored checks for project {project_name}."],
-        _add_ignore(project_name),
+        htm.p[f"Manage ignored checks for project {project_name!s}."],
+        _add_ignore(str(project_name)),
         _existing_ignores(ignores),
     ]
 

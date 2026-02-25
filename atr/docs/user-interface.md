@@ -226,21 +226,23 @@ The block class also adds a `data-src` attribute to elements, which records whic
 A typical route that renders UI first authenticates the user, loads data from the database, builds HTML using htpy, and renders it using a template. GET and POST requests are handled by separate routes, with form validation automatically handled by the [`@post.form()`](/ref/atr/blueprints/post.py:form) decorator. Here is a simplified example from [`get/keys.py`](/ref/atr/get/keys.py:add):
 
 ```python
-@get.committer("/keys/add")
-async def add(session: web.Committer) -> str:
-    """Add a new public signing key to the user's account."""
+@get.typed
+async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
+    """
+    URL: /keys/add
+    Add a new public signing key to the user's account.
+    """
     async with storage.write() as write:
         participant_of_committees = await write.participant_of_committees()
 
     committee_choices = [(c.name, c.display_name or c.name) for c in participant_of_committees]
 
     page = htm.Block()
-    page.p[htm.a(".atr-back-link", href=util.as_url(keys))["← Back to Manage keys"]]
+    page.p[htm.a(".atr-back-link", href=util.as_url(keys))["← Back to Manage keys"],]
     page.div(".my-4")[
         htm.h1(".mb-4")["Add your OpenPGP key"],
         htm.p["Add your public key to use for signing release artifacts."],
     ]
-
     form.render_block(
         page,
         model_cls=shared.keys.AddOpenPGPKeyForm,
@@ -251,15 +253,17 @@ async def add(session: web.Committer) -> str:
             "selected_committees": committee_choices,
         },
     )
-    ...
+
     return await template.blank(
         "Add your OpenPGP key",
         content=page.collect(),
         description="Add your public signing key to your ATR account.",
+        javascripts=["keys-add-toggle"],
     )
 ```
 
-The route is decorated with [`@get.committer()`](/ref/atr/blueprints/get.py:committer), which handles authentication and provides a `session` object that is an instance of [`web.Committer`](/ref/atr/web.py:Committer) with a range of useful properties and methods.
+The route is decorated with [`@get.typed`](/ref/atr/blueprints/get.py:typed), which handles authentication and provides a `session` object that is an instance of [`web.Committer`](/ref/atr/web.py:Committer) with a range of useful properties and methods.
+[`@get.typed`](/ref/atr/blueprints/get.py:typed) also validates `project_name` and `version_name` route params, and checks that the user is authorised to access the project (if a project name is required).
 
 The function builds the UI using an [`htm.Block`](/ref/atr/htm.py:Block) object, which provides a convenient API for incrementally building HTML. The form is rendered directly into the block using [`form.render_block()`](/ref/atr/form.py:render_block), which generates all the necessary HTML with Bootstrap styling.
 

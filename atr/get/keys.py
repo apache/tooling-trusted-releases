@@ -17,6 +17,7 @@
 
 
 import datetime
+from typing import Literal
 
 import htpy
 import quart
@@ -34,9 +35,12 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/keys/add")
-async def add(session: web.Committer) -> str:
-    """Add a new public signing key to the user's account."""
+@get.typed
+async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
+    """
+    URL: /keys/add
+    Add a new public signing key to the user's account.
+    """
     async with storage.write() as write:
         participant_of_committees = await write.participant_of_committees()
 
@@ -67,9 +71,12 @@ async def add(session: web.Committer) -> str:
     )
 
 
-@get.committer("/keys/details/<fingerprint>")
-async def details(session: web.Committer, fingerprint: str) -> str:
-    """Display details for a specific OpenPGP key."""
+@get.typed
+async def details(session: web.Committer, _keys_details: Literal["keys/details"], fingerprint: str) -> str:
+    """
+    URL: /keys/details/<fingerprint>
+    Display details for a specific OpenPGP key.
+    """
     fingerprint = fingerprint.lower()
     async with db.session() as data:
         key, is_owner = await _key_and_is_owner(data, session, fingerprint)
@@ -173,9 +180,12 @@ async def details(session: web.Committer, fingerprint: str) -> str:
     )
 
 
-@get.committer("/keys/export/<committee_name>")
-async def export(session: web.Committer, committee_name: str) -> web.TextResponse:
-    """Export a KEYS file for a specific committee."""
+@get.typed
+async def export(session: web.Committer, _keys_export: Literal["keys/export"], committee_name: str) -> web.TextResponse:
+    """
+    URL: /keys/export/<committee_name>
+    Export a KEYS file for a specific committee.
+    """
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
         keys_file_text = await wafc.keys.keys_file_text(committee_name)
@@ -183,9 +193,12 @@ async def export(session: web.Committer, committee_name: str) -> web.TextRespons
     return web.TextResponse(keys_file_text)
 
 
-@get.committer("/keys")
-async def keys(session: web.Committer) -> str:
-    """View all keys associated with the user's account."""
+@get.typed
+async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
+    """
+    URL: /keys
+    View all keys associated with the user's account.
+    """
     committees_to_query = list(set(session.committees + session.projects))
 
     async with db.session() as data:
@@ -220,9 +233,12 @@ async def keys(session: web.Committer) -> str:
     )
 
 
-@get.committer("/keys/ssh/add")
-async def ssh_add(session: web.Committer) -> str:
-    """Add a new SSH key to the user's account."""
+@get.typed
+async def ssh_add(session: web.Committer, _keys_ssh_add: Literal["keys/ssh/add"]) -> str:
+    """
+    URL: /keys/ssh/add
+    Add a new SSH key to the user's account.
+    """
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(keys))["← Back to Manage keys"]]
     page.h1["Add your SSH key"]
@@ -249,9 +265,12 @@ async def ssh_add(session: web.Committer) -> str:
     )
 
 
-@get.committer("/keys/upload")
-async def upload(session: web.Committer) -> str:
-    """Upload a KEYS file containing multiple OpenPGP keys."""
+@get.typed
+async def upload(session: web.Committer, _keys_upload: Literal["keys/upload"]) -> str:
+    """
+    URL: /keys/upload
+    Upload a KEYS file containing multiple OpenPGP keys.
+    """
     return await shared.keys.render_upload_page()
 
 

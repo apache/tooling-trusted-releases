@@ -18,6 +18,7 @@
 import pathlib
 import stat
 from datetime import datetime
+from typing import Literal
 
 import aiofiles.os
 import quart
@@ -25,25 +26,32 @@ import quart
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.util as util
 import atr.web as web
 
 
-@get.committer("/published/<path:path>")
-async def path(session: web.Committer, path: str) -> web.QuartResponse:
-    """View the content of a specific file in the downloads directory."""
+@get.typed
+async def path(session: web.Committer, _published: Literal["published"], file_path: unsafe.Path) -> web.QuartResponse:
+    """
+    URL: /published/<path:file_path>
+    View the content of a specific file in the downloads directory.
+    """
     # This route is for debugging
     # When developing locally, there is no proxy to view the downloads directory
     # Therefore this path acts as a way to check the contents of that directory
-    validated_path = form.to_relpath(path)
+    validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         return quart.abort(400)
     return await _path(session, str(validated_path))
 
 
-@get.committer("/published/")
-async def root(session: web.Committer) -> web.QuartResponse:
+@get.typed
+async def root(session: web.Committer, _published: Literal["published/"]) -> web.QuartResponse:
+    """
+    URL: /published/
+    """
     return await _path(session, "")
 
 
@@ -63,7 +71,7 @@ async def _directory_listing_pre(full_path: pathlib.Path, current_path: str, pre
         parent_path = pathlib.Path(current_path).parent
         parent_url_path = str(parent_path) if (str(parent_path) != ".") else ""
         if parent_url_path:
-            pre.a(href=util.as_url(path, path=parent_url_path))["../"]
+            pre.a(href=util.as_url(path, file_path=parent_url_path))["../"]
         else:
             pre.a(href=util.as_url(root))["../"]
         pre.text("\n\n")
@@ -92,7 +100,7 @@ async def _directory_listing_pre(full_path: pathlib.Path, current_path: str, pre
             entry_path = str(pathlib.Path(current_path) / entry["name"])
             display_name = f"{entry['name']}/" if is_dir else entry["name"]
             pre.text(f"{mode} {nlink} {size} {mtime}  ")
-            pre.a(href=util.as_url(path, path=entry_path))[display_name]
+            pre.a(href=util.as_url(path, file_path=entry_path))[display_name]
             pre.text("\n")
 
 

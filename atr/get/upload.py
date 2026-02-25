@@ -17,6 +17,7 @@
 
 import secrets
 from collections.abc import Sequence
+from typing import Literal
 
 import htpy
 
@@ -26,6 +27,7 @@ import atr.form as form
 import atr.get.compose as compose
 import atr.get.keys as keys
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
@@ -35,12 +37,18 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/upload/<project_name>/<version_name>")
-async def selected(session: web.Committer, project_name: str, version_name: str) -> str:
-    await session.check_access(project_name)
-
+@get.typed
+async def selected(
+    session: web.Committer,
+    _upload: Literal["upload"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /upload/<project_name>/<version_name>
+    """
     async with db.session() as data:
-        release = await session.release(project_name, version_name, data=data)
+        release = await session.release(str(project_name), str(version_name), data=data)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
     block = htm.Block()
@@ -70,10 +78,16 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
 
     upload_session_token = secrets.token_hex(16)
     stage_url = util.as_url(
-        post.upload.stage, upload_session=upload_session_token, project_name=project_name, version_name=version_name
+        post.upload.stage,
+        upload_session=upload_session_token,
+        project_name=str(project_name),
+        version_name=str(version_name),
     )
     finalise_url = util.as_url(
-        post.upload.finalise, upload_session=upload_session_token, project_name=project_name, version_name=version_name
+        post.upload.finalise,
+        upload_session=upload_session_token,
+        project_name=str(project_name),
+        version_name=str(version_name),
     )
 
     block.append(

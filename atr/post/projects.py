@@ -47,7 +47,7 @@ async def add_project(
             )
 
     return await session.redirect(
-        get.projects.view, name=label, success=f"Project '{display_name}' added successfully."
+        get.projects.view, project_name=label, success=f"Project '{display_name}' added successfully."
     )
 
 
@@ -158,10 +158,10 @@ async def _process_add_category(
 
     if modified:
         return await session.redirect(
-            get.projects.view, name=project_name, success=f"Category '{category_to_add}' added."
+            get.projects.view, project_name=project_name, success=f"Category '{category_to_add}' added."
         )
     return await session.redirect(
-        get.projects.view, name=project_name, error=f"Category '{category_to_add}' already exists."
+        get.projects.view, project_name=project_name, error=f"Category '{category_to_add}' already exists."
     )
 
 
@@ -181,10 +181,10 @@ async def _process_add_language(
 
     if modified:
         return await session.redirect(
-            get.projects.view, name=project_name, success=f"Language '{language_to_add}' added."
+            get.projects.view, project_name=project_name, success=f"Language '{language_to_add}' added."
         )
     return await session.redirect(
-        get.projects.view, name=project_name, error=f"Language '{language_to_add}' already exists."
+        get.projects.view, project_name=project_name, error=f"Language '{language_to_add}' already exists."
     )
 
 
@@ -199,10 +199,12 @@ async def _process_compose_form(
             await wacm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, name=project_name, error=f"Error editing compose policy: {e}"
+                get.projects.view, project_name=project_name, error=f"Error editing compose policy: {e}"
             )
 
-    return await session.redirect(get.projects.view, name=project_name, success="Compose options saved successfully.")
+    return await session.redirect(
+        get.projects.view, project_name=project_name, success="Compose options saved successfully."
+    )
 
 
 async def _process_delete_project(
@@ -231,10 +233,12 @@ async def _process_finish_form(
             await wacm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, name=project_name, error=f"Error editing finish policy: {e}"
+                get.projects.view, project_name=project_name, error=f"Error editing finish policy: {e}"
             )
 
-    return await session.redirect(get.projects.view, name=project_name, success="Finish options saved successfully.")
+    return await session.redirect(
+        get.projects.view, project_name=project_name, success="Finish options saved successfully."
+    )
 
 
 async def _process_remove_category(
@@ -253,10 +257,10 @@ async def _process_remove_category(
 
     if modified:
         return await session.redirect(
-            get.projects.view, name=project_name, success=f"Category '{category_to_remove}' removed."
+            get.projects.view, project_name=project_name, success=f"Category '{category_to_remove}' removed."
         )
     return await session.redirect(
-        get.projects.view, name=project_name, error=f"Category '{category_to_remove}' does not exist."
+        get.projects.view, project_name=project_name, error=f"Category '{category_to_remove}' does not exist."
     )
 
 
@@ -276,10 +280,10 @@ async def _process_remove_language(
 
     if modified:
         return await session.redirect(
-            get.projects.view, name=project_name, success=f"Language '{language_to_remove}' removed."
+            get.projects.view, project_name=project_name, success=f"Language '{language_to_remove}' removed."
         )
     return await session.redirect(
-        get.projects.view, name=project_name, error=f"Language '{language_to_remove}' does not exist."
+        get.projects.view, project_name=project_name, error=f"Language '{language_to_remove}' does not exist."
     )
 
 
@@ -291,6 +295,10 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
         try:
             await wacm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
-            return await session.redirect(get.projects.view, name=project_name, error=f"Error editing vote policy: {e}")
+            return await session.redirect(
+                get.projects.view, project_name=project_name, error=f"Error editing vote policy: {e}"
+            )
 
-    return await session.redirect(get.projects.view, name=project_name, success="Vote options saved successfully.")
+    return await session.redirect(
+        get.projects.view, project_name=project_name, success="Vote options saved successfully."
+    )

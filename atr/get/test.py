@@ -17,6 +17,7 @@
 
 import json
 import pathlib
+from typing import Literal
 
 import aiofiles
 import asfquart.base as base
@@ -29,6 +30,7 @@ import atr.form as form
 import atr.get.root as root
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.session
 import atr.models.sql as sql
 import atr.paths as paths
@@ -39,8 +41,11 @@ import atr.util as util
 import atr.web as web
 
 
-@get.public("/test/empty")
-async def test_empty(session: web.Committer | None) -> str:
+@get.typed
+async def test_empty(session: web.Public, _test_empty: Literal["test/empty"]) -> str:
+    """
+    URL: /test/empty
+    """
     empty_form = form.render(
         model_cls=form.Empty,
         submit_label="Submit empty form",
@@ -56,8 +61,11 @@ async def test_empty(session: web.Committer | None) -> str:
     return await template.blank(title="Test empty form", content=forms_html)
 
 
-@get.public("/test/login")
-async def test_login(session: web.Committer | None) -> web.WerkzeugResponse:
+@get.typed
+async def test_login(session: web.Public, _test_login: Literal["test/login"]) -> web.WerkzeugResponse:
+    """
+    URL: /test/login
+    """
     if not config.get().ALLOW_TESTS:
         raise base.ASFQuartException("Test login not enabled", errorcode=404)
 
@@ -76,36 +84,44 @@ async def test_login(session: web.Committer | None) -> web.WerkzeugResponse:
     return await web.redirect(root.index)
 
 
-@get.committer("/test/merge/<project_name>/<version_name>")
-async def test_merge(session: web.Committer, project_name: str, version_name: str) -> web.WerkzeugResponse:
+@get.typed
+async def test_merge(
+    session: web.Committer,
+    _test_merge: Literal["test/merge"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/merge/<project_name>/<version_name>
+    """
     if not config.get().ALLOW_TESTS:
         raise base.ASFQuartException("Test routes not enabled", errorcode=404)
 
     async with storage.write(session) as write_n:
-        wacp_n = await write_n.as_project_committee_participant(project_name)
+        wacp_n = await write_n.as_project_committee_participant(str(project_name))
 
         async def modify_new(path_new: pathlib.Path, _old_rev_new: sql.Revision | None) -> None:
             async with aiofiles.open(path_new / "from_new.txt", "w") as f:
                 await f.write("new content")
 
             async with storage.write(session) as write_p:
-                wacp_p = await write_p.as_project_committee_participant(project_name)
+                wacp_p = await write_p.as_project_committee_participant(str(project_name))
 
                 async def modify_prior(path_prior: pathlib.Path, _old_rev_prior: sql.Revision | None) -> None:
                     async with aiofiles.open(path_prior / "from_prior.txt", "w") as f:
                         await f.write("prior content")
 
                 await wacp_p.revision.create_revision(
-                    project_name,
-                    version_name,
+                    str(project_name),
+                    str(version_name),
                     session.uid,
                     description="Test merge: prior revision",
                     modify=modify_prior,
                 )
 
         await wacp_n.revision.create_revision(
-            project_name,
-            version_name,
+            str(project_name),
+            str(version_name),
             session.uid,
             description="Test merge: new revision",
             modify=modify_new,
@@ -113,7 +129,7 @@ async def test_merge(session: web.Committer, project_name: str, version_name: st
 
     files: list[str] = []
     async with db.session() as data:
-        release_name = sql.release_name(project_name, version_name)
+        release_name = sql.release_name(str(project_name), str(version_name))
         release = await data.release(name=release_name, _project=True).demand(
             RuntimeError("Release not found after merge test")
         )
@@ -125,8 +141,11 @@ async def test_merge(session: web.Committer, project_name: str, version_name: st
     return response.Response(result, status=200, mimetype="application/json")
 
 
-@get.public("/test/multiple")
-async def test_multiple(session: web.Committer | None) -> str:
+@get.typed
+async def test_multiple(session: web.Public, _test_multiple: Literal["test/multiple"]) -> str:
+    """
+    URL: /test/multiple
+    """
     apple_form = form.render(
         model_cls=shared.test.AppleForm,
         submit_label="Order apples",
@@ -149,8 +168,11 @@ async def test_multiple(session: web.Committer | None) -> str:
     return await template.blank(title="Test multiple forms", content=forms_html)
 
 
-@get.public("/test/single")
-async def test_single(session: web.Committer | None) -> str:
+@get.typed
+async def test_single(session: web.Public, _test_single: Literal["test/single"]) -> str:
+    """
+    URL: /test/single
+    """
     import htpy
 
     vote_widget = htpy.div(class_="btn-group", role="group")[
@@ -177,8 +199,17 @@ async def test_single(session: web.Committer | None) -> str:
     return await template.blank(title="Test single form", content=forms_html)
 
 
-@get.public("/test/vote/<category>/<project_name>/<version_name>")
-async def test_vote(session: web.Committer | None, category: str, project_name: str, version_name: str) -> str:
+@get.typed
+async def test_vote(
+    session: web.Public,
+    _test_vote: Literal["test/vote"],
+    category: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /test/vote/<category>/<project_name>/<version_name>
+    """
     if not config.get().ALLOW_TESTS:
         raise base.ASFQuartException("Test routes not enabled", errorcode=404)
 
@@ -200,7 +231,7 @@ async def test_vote(session: web.Committer | None, category: str, project_name: 
     if (user_category != vote.UserCategory.UNAUTHENTICATED) and (session is None):
         raise base.ASFQuartException("You must be logged in to preview authenticated views", errorcode=401)
 
-    _, release, latest_vote_task = await vote.category_and_release(session, project_name, version_name)
+    _, release, latest_vote_task = await vote.category_and_release(session, str(project_name), str(version_name))
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
         raise base.ASFQuartException("Release is not a candidate", errorcode=404)

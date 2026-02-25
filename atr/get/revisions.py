@@ -17,6 +17,7 @@
 
 import asyncio
 import pathlib
+from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
@@ -31,6 +32,7 @@ import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.root as root
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
@@ -47,16 +49,22 @@ class FilesDiff(schema.Strict):
     modified: list[pathlib.Path]
 
 
-@get.committer("/revisions/<project_name>/<version_name>")
-async def selected(session: web.Committer, project_name: str, version_name: str) -> str:
-    """Show the revision history for a release candidate draft or release preview."""
-    await session.check_access(project_name)
-
+@get.typed
+async def selected(
+    session: web.Committer,
+    _revisions: Literal["revisions"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /revisions/<project_name>/<version_name>
+    Show the revision history for a release candidate draft or release preview.
+    """
     try:
-        release = await session.release(project_name, version_name)
+        release = await session.release(str(project_name), str(version_name))
         phase_key = "draft"
     except base.ASFQuartException:
-        release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_PREVIEW)
+        release = await session.release(str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_PREVIEW)
         phase_key = "preview"
     release_dir = paths.release_directory_base(release)
 
@@ -96,8 +104,8 @@ async def selected(session: web.Committer, project_name: str, version_name: str)
         phase_key,
         list(reversed(revision_history)),
         latest_revision_number,
-        project_name,
-        version_name,
+        str(project_name),
+        str(version_name),
     )
 
     return await template.blank(

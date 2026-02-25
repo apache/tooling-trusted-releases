@@ -26,7 +26,7 @@ import atr.web as web
 
 @post.public("/test/empty")
 @post.empty()
-async def test_empty(session: web.Committer | None) -> web.WerkzeugResponse:
+async def test_empty(session: web.Public) -> web.WerkzeugResponse:
     msg = "Empty form submitted successfully"
     log.info(msg)
     await quart.flash(msg, "success")
@@ -35,7 +35,7 @@ async def test_empty(session: web.Committer | None) -> web.WerkzeugResponse:
 
 @post.public("/test/multiple")
 @post.form(shared.test.MultipleForm)
-async def test_multiple(session: web.Committer | None, form: shared.test.MultipleForm) -> web.WerkzeugResponse:
+async def test_multiple(session: web.Public, form: shared.test.MultipleForm) -> web.WerkzeugResponse:
     match form:
         case shared.test.AppleForm() as apple:
             msg = f"Apple order received: variety={apple.variety}, quantity={apple.quantity}, organic={apple.organic}"
@@ -52,7 +52,7 @@ async def test_multiple(session: web.Committer | None, form: shared.test.Multipl
 
 @post.public("/test/single")
 @post.form(shared.test.SingleForm)
-async def test_single(session: web.Committer | None, form: shared.test.SingleForm) -> web.WerkzeugResponse:
+async def test_single(session: web.Public, form: shared.test.SingleForm) -> web.WerkzeugResponse:
     file_names = [f.filename for f in form.files] if form.files else []
     compatibility_names = [f.value for f in form.compatibility] if form.compatibility else []
     if (form.message == "Forbidden message!") and (session is not None):

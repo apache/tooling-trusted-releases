@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
@@ -22,6 +24,7 @@ import atr.form as form
 import atr.get.compose as compose
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
@@ -31,14 +34,20 @@ import atr.util as util
 import atr.web as web
 
 
-@get.committer("/manual/resolve/<project_name>/<version_name>")
-async def resolve_selected(session: web.Committer, project_name: str, version_name: str) -> str:
-    """Get the manual vote resolution page."""
-    await session.check_access(project_name)
-
+@get.typed
+async def resolve_selected(
+    session: web.Committer,
+    _manual_resolve: Literal["manual/resolve"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> str:
+    """
+    URL: /manual/resolve/<project_name>/<version_name>
+    Get the manual vote resolution page.
+    """
     release = await session.release(
-        project_name,
-        version_name,
+        str(project_name),
+        str(version_name),
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -55,22 +64,27 @@ async def resolve_selected(session: web.Committer, project_name: str, version_na
     )
 
 
-@get.committer("/manual/start/<project_name>/<version_name>/<revision>")
+@get.typed
 async def start_selected_revision(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer,
+    _manual_start: Literal["manual/start"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: str,
 ) -> web.WerkzeugResponse | str:
-    await session.check_access(project_name)
-
+    """
+    URL: /manual/start/<project_name>/<version_name>/<revision>
+    """
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=True
+            session, str(project_name), str(version_name), revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
                     compose.selected,
                     error=error,
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                     revision=revision,
                 )
             case (release, _committee):
