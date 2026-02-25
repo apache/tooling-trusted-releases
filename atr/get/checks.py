@@ -186,7 +186,7 @@ async def selected_revision(
 
     files_table_html = await quart.render_template(
         "check-selected-path-table.html",
-        paths=paths,
+        paths=all_paths,
         info=info,
         project_name=project_name,
         version_name=version_name,
