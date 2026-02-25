@@ -680,8 +680,8 @@ class CommitteeParticipant(FoundationCommitter):
         if not await aiofiles.os.path.exists(target_path):
             for part in target_path.parts:
                 # TODO: This .prefix check could include some existing directory segment
-                if part.startswith("."):
-                    raise types.FailedError("Segments must not start with '.'")
+                if util.is_disallowed_dotfile(part):
+                    raise types.FailedError("This segment is a disallowed dotfile")
                 if ".." in part:
                     raise types.FailedError("Segments must not contain '..'")
 

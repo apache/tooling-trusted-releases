@@ -603,6 +603,17 @@ async def is_dir_resolve(path: pathlib.Path) -> pathlib.Path | None:
     return resolved_path
 
 
+def is_disallowed_dotfile(segment: str) -> bool:
+    if not segment.startswith("."):
+        return False
+    if segment.startswith(".atr"):
+        return False
+    # Temporary, and only due to issues #757 and #769
+    if segment == ".gitkeep":
+        return False
+    return True
+
+
 def is_ldap_configured() -> bool:
     return ldap.get_bind_credentials() is not None
 
@@ -1158,7 +1169,7 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     if path_segment in (".git", ".svn"):
         raise ValueError(f"{position} cannot be a SCM directory")
 
-    if path_segment.startswith(".") and (not path_segment.startswith(".atr")):
+    if is_disallowed_dotfile(path_segment):
         raise ValueError(f"{position} cannot be a DOT file")
 
     return path_segment

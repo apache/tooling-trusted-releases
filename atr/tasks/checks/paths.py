@@ -235,14 +235,13 @@ async def _check_path_process_single(  # noqa: C901
             warnings,
         )
         return
-    elif any(part.startswith(".") for part in relative_path.parts):
+    elif any(util.is_disallowed_dotfile(part) for part in relative_path.parts):
         # TODO: There is not a a policy for this
         # We should enquire as to whether such a policy should be instituted
         # We're forbidding dotfiles to catch accidental uploads of e.g. .git or .htaccess
         # Such cases are likely to be in error, and could carry security risks
         # We allow .atr/ files, e.g. .atr/license-headers-ignore
-        if relative_path.parts[0] != ".atr":
-            errors.append("Dotfiles are forbidden")
+        errors.append("Contains a segment that is a disallowed dotfile")
 
     search = re.search(analysis.extension_pattern(), relative_path_str)
     ext_artifact = search.group("artifact") if search else None
