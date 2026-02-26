@@ -35,7 +35,7 @@ import atr.web as web
 
 @get.typed
 async def selected(
-    session: web.Public,
+    _session: web.Public,
     _checklist: Literal["checklist"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,

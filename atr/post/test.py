@@ -28,7 +28,7 @@ import atr.web as web
 
 @post.typed
 async def test_empty(
-    session: web.Public, _test_empty: Literal["test/empty"], _form: form.Empty
+    _session: web.Public, _test_empty: Literal["test/empty"], _form: form.Empty
 ) -> web.WerkzeugResponse:
     """
     URL: /test/empty
@@ -41,7 +41,7 @@ async def test_empty(
 
 @post.typed
 async def test_multiple(
-    session: web.Public, _test_multiple: Literal["test/multiple"], multiple_form: shared.test.MultipleForm
+    _session: web.Public, _test_multiple: Literal["test/multiple"], multiple_form: shared.test.MultipleForm
 ) -> web.WerkzeugResponse:
     """
     URL: /test/multiple

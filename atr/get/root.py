@@ -59,7 +59,7 @@ _POLICIES: Final = htm.div[
 
 
 @get.typed
-async def about(session: web.Committer, _about: Literal["about"]) -> str:
+async def about(_session: web.Committer, _about: Literal["about"]) -> str:
     """
     URL: /about
     About page.
@@ -68,7 +68,7 @@ async def about(session: web.Committer, _about: Literal["about"]) -> str:
 
 
 @get.typed
-async def index(session: web.Public, _root: Literal[""]) -> quart_response.Response | str:
+async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Response | str:
     """
     URL: /
     Show public info or an entry portal for participants.

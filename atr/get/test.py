@@ -42,7 +42,7 @@ import atr.web as web
 
 
 @get.typed
-async def test_empty(session: web.Public, _test_empty: Literal["test/empty"]) -> str:
+async def test_empty(_session: web.Public, _test_empty: Literal["test/empty"]) -> str:
     """
     URL: /test/empty
     """
@@ -62,7 +62,7 @@ async def test_empty(session: web.Public, _test_empty: Literal["test/empty"]) ->
 
 
 @get.typed
-async def test_login(session: web.Public, _test_login: Literal["test/login"]) -> web.WerkzeugResponse:
+async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -> web.WerkzeugResponse:
     """
     URL: /test/login
     """
@@ -142,7 +142,7 @@ async def test_merge(
 
 
 @get.typed
-async def test_multiple(session: web.Public, _test_multiple: Literal["test/multiple"]) -> str:
+async def test_multiple(_session: web.Public, _test_multiple: Literal["test/multiple"]) -> str:
     """
     URL: /test/multiple
     """

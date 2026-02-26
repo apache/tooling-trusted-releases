@@ -212,7 +212,7 @@ async def ssh_add(
 
 @post.typed
 async def upload(
-    session: web.Committer,
+    _session: web.Committer,
     _keys_upload: Literal["keys/upload"],
     upload_form: shared.keys.UploadKeysForm,
 ) -> str:

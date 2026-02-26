@@ -35,7 +35,7 @@ import atr.web as web
 
 
 @get.typed
-async def resolve(session: web.Public, _ref: Literal["ref"], ref_path: unsafe.Path) -> web.WerkzeugResponse:
+async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.Path) -> web.WerkzeugResponse:
     """
     URL: /ref/<ref_path>
     Resolve a code reference to a GitHub permalink.

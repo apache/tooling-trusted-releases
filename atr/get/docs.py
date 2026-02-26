@@ -52,12 +52,12 @@ class H1Parser(HTMLParser):
 
 
 @get.typed
-async def index(session: web.Public, _docs: Literal["docs"]) -> str:
+async def index(_session: web.Public, _docs: Literal["docs"]) -> str:
     return await _serve_docs_page("index")
 
 
 @get.typed
-async def page(session: web.Public, _docs: Literal["docs"], path: unsafe.Path) -> str:
+async def page(_session: web.Public, _docs: Literal["docs"], path: unsafe.Path) -> str:
     validated_page = form.to_relpath(path)
     if validated_page is None:
         quart.abort(400)

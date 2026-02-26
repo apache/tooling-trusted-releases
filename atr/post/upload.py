@@ -131,7 +131,7 @@ async def selected(
 
 @post.typed
 async def stage(
-    session: web.Committer,
+    _session: web.Committer,
     _upload_stage: Literal["upload/stage"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,

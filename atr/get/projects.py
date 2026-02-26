@@ -94,7 +94,7 @@ async def add_project(
 
 
 @get.typed
-async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
+async def projects(_session: web.Public, _projects: Literal["projects"]) -> str:
     """
     URL: /projects
     Main project directory page.

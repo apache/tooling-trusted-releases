@@ -36,7 +36,7 @@ import atr.web as web
 
 
 @get.typed
-async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
+async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
     """
     URL: /keys/add
     Add a new public signing key to the user's account.
@@ -181,7 +181,9 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
 
 @get.typed
-async def export(session: web.Committer, _keys_export: Literal["keys/export"], committee_name: str) -> web.TextResponse:
+async def export(
+    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: str
+) -> web.TextResponse:
     """
     URL: /keys/export/<committee_name>
     Export a KEYS file for a specific committee.
@@ -266,7 +268,7 @@ async def ssh_add(session: web.Committer, _keys_ssh_add: Literal["keys/ssh/add"]
 
 
 @get.typed
-async def upload(session: web.Committer, _keys_upload: Literal["keys/upload"]) -> str:
+async def upload(_session: web.Committer, _keys_upload: Literal["keys/upload"]) -> str:
     """
     URL: /keys/upload
     Upload a KEYS file containing multiple OpenPGP keys.

@@ -79,7 +79,7 @@ async def all_selected(
 
 @get.typed
 async def path(
-    session: web.Public,
+    _session: web.Public,
     _download_path: Literal["download/path"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -94,7 +94,7 @@ async def path(
 
 @get.typed
 async def path_empty(
-    session: web.Public,
+    _session: web.Public,
     _download_path: Literal["download/path"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -108,7 +108,7 @@ async def path_empty(
 
 @get.typed
 async def sh_selected(
-    session: web.Public,
+    _session: web.Public,
     _download_sh: Literal["download/sh"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -133,7 +133,7 @@ async def sh_selected(
 
 @get.typed
 async def urls_selected(
-    session: web.Public,
+    _session: web.Public,
     _download_urls: Literal["download/urls"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,

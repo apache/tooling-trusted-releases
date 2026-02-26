@@ -37,7 +37,7 @@ from atr.tasks import gha
 
 @get.typed
 async def automate(
-    session: web.Committer,
+    _session: web.Committer,
     _distribution: Literal["distribution/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -50,7 +50,7 @@ async def automate(
 
 @get.typed
 async def list_get(
-    session: web.Committer,
+    _session: web.Committer,
     _distribution: Literal["distribution/list"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -144,7 +144,7 @@ async def list_get(
 
 @get.typed
 async def record(
-    session: web.Committer,
+    _session: web.Committer,
     _distribution: Literal["distribution/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -157,7 +157,7 @@ async def record(
 
 @get.typed
 async def stage_automate(
-    session: web.Committer,
+    _session: web.Committer,
     _distribution: Literal["distribution/stage/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -170,7 +170,7 @@ async def stage_automate(
 
 @get.typed
 async def stage_record(
-    session: web.Committer,
+    _session: web.Committer,
     _distribution: Literal["distribution/stage/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,

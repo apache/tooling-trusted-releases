@@ -30,7 +30,7 @@ import atr.web as web
 
 
 @get.typed
-async def tokens(session: web.Committer, _tokens: Literal["tokens"]) -> str:
+async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     """
     URL: /tokens
     """

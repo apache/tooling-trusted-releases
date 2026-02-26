@@ -85,7 +85,7 @@ def build_path(
         if hint is None:
             raise TypeError(f"Parameter {param_name!r} in {func.__name__} has no type annotation")
 
-        if param_name == "session":
+        if hint is web.Public or hint is web.Committer:
             if ix != 0:
                 raise TypeError(f"Parameter {param_name!r} in {func.__name__} must be first")
             public = hint is web.Public
