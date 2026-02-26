@@ -627,7 +627,7 @@ def is_user_viewing_as_admin(uid: str | None) -> bool:
         app = asfquart.APP
         if (not hasattr(app, "app_id")) or (not isinstance(app.app_id, str)):
             log.error("Cannot get valid app_id to read session for admin view check")
-            return True
+            return False
 
         cookie_id = app.app_id
         session_dict = quart.session.get(cookie_id, {})
@@ -635,7 +635,7 @@ def is_user_viewing_as_admin(uid: str | None) -> bool:
         return not is_downgraded
     except Exception:
         log.exception(f"Error checking admin downgrade session status for {uid}")
-        return True
+        return False
 
 
 def json_for_script_element(value: Any) -> markupsafe.Markup:
