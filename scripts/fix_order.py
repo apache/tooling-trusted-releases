@@ -42,6 +42,8 @@ def main() -> None:
         count = _count_defs(lines)
         if count > 1:
             sys.exit(f"{path}:{lineno}: multiple function definitions in block")
+        if _has_overload(lines):
+            sys.exit(f"{path}:{lineno}: @overload requires manual ordering")
         if _is_func(lines):
             seen_func = True
             func.append((lineno, lines))
@@ -78,6 +80,10 @@ def _assemble(
 
 def _count_defs(block: list[str]) -> int:
     return sum(1 for line in block if line.startswith(("def ", "async def ")))
+
+
+def _has_overload(block: list[str]) -> bool:
+    return any((line.strip() == "@overload") for line in block)
 
 
 def _is_func(block: list[str]) -> bool:
