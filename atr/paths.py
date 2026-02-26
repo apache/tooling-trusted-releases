@@ -25,10 +25,6 @@ def base_path_for_revision(project_name: str, version_name: str, revision: str) 
     return pathlib.Path(get_unfinished_dir(), project_name, version_name, revision)
 
 
-def revision_path_for_file(project_name: str, version_name: str, revision: str, file_name: str) -> pathlib.Path:
-    return base_path_for_revision(project_name, version_name, revision) / file_name
-
-
 def get_attestable_dir() -> pathlib.Path:
     return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
 
@@ -129,3 +125,7 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
             path = get_finished_dir() / path_project / path_version
         # Do not add "case _" here
     return path
+
+
+def revision_path_for_file(project_name: str, version_name: str, revision: str, file_name: str) -> pathlib.Path:
+    return base_path_for_revision(project_name, version_name, revision) / file_name

@@ -29,6 +29,13 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
+def page_about(page: Page) -> Generator[Page]:
+    helpers.log_in(page)
+    helpers.visit(page, "/about")
+    yield page
+
+
+@pytest.fixture
 def page_index(page: Page) -> Generator[Page]:
     helpers.visit(page, "/")
     yield page
@@ -37,11 +44,4 @@ def page_index(page: Page) -> Generator[Page]:
 @pytest.fixture
 def page_policies(page: Page) -> Generator[Page]:
     helpers.visit(page, "/policies")
-    yield page
-
-
-@pytest.fixture
-def page_about(page: Page) -> Generator[Page]:
-    helpers.log_in(page)
-    helpers.visit(page, "/about")
     yield page

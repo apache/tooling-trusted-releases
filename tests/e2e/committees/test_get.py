@@ -71,17 +71,6 @@ def test_filter_updates_committee_count(page_committees: Page) -> None:
     expect(count_span).not_to_have_text(initial_count or "")
 
 
-def test_participant_button_toggles_text(page_committees: Page) -> None:
-    """Clicking participant button should toggle the button text."""
-    participant_button = page_committees.locator("#filter-participant-button")
-
-    expect(participant_button).to_have_text("Show all committees")
-
-    participant_button.click()
-
-    expect(participant_button).to_have_text("Show my committees")
-
-
 def test_participant_button_toggles_aria_pressed(page_committees: Page) -> None:
     """Clicking participant button should toggle aria pressed state."""
     participant_button = page_committees.locator("#filter-participant-button")
@@ -95,3 +84,14 @@ def test_participant_button_toggles_aria_pressed(page_committees: Page) -> None:
     participant_button.click()
 
     expect(participant_button).to_have_attribute("aria-pressed", "true")
+
+
+def test_participant_button_toggles_text(page_committees: Page) -> None:
+    """Clicking participant button should toggle the button text."""
+    participant_button = page_committees.locator("#filter-participant-button")
+
+    expect(participant_button).to_have_text("Show all committees")
+
+    participant_button.click()
+
+    expect(participant_button).to_have_text("Show my committees")
