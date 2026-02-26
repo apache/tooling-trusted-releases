@@ -43,6 +43,7 @@ class FakeRevision:
         created: object,
         phase: sql.ReleasePhase,
         description: str | None,
+        was_quarantined: bool = False,
     ):
         self.asfuid = asfuid
         self.created = created
@@ -53,6 +54,7 @@ class FakeRevision:
         self.phase = phase
         self.release = release
         self.release_name = release_name
+        self.was_quarantined = was_quarantined
 
 
 class MockSafeData:

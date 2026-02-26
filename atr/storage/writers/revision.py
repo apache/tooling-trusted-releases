@@ -66,7 +66,7 @@ class SafeSession:
         return False
 
 
-async def _finalise_revision(
+async def finalise_revision(
     data: db.Session,
     *,
     asf_uid: str,
@@ -85,6 +85,7 @@ async def _finalise_revision(
     temp_dir: str,
     temp_dir_path: pathlib.Path,
     version_name: str,
+    was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
         # This is the only place where models.Revision is constructed
@@ -98,6 +99,7 @@ async def _finalise_revision(
             created=datetime.datetime.now(datetime.UTC),
             phase=release.phase,
             description=description,
+            was_quarantined=was_quarantined,
         )
 
         # Acquire the write lock and add the row
@@ -326,7 +328,7 @@ class CommitteeParticipant(FoundationCommitter):
             raise
 
         async with SafeSession(temp_dir) as data:
-            return await _finalise_revision(
+            return await finalise_revision(
                 data,
                 asf_uid=asf_uid,
                 base_hashes=base_hashes,

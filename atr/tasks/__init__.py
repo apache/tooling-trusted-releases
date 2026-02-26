@@ -45,6 +45,7 @@ import atr.tasks.gha as gha
 import atr.tasks.keys as keys
 import atr.tasks.message as message
 import atr.tasks.metadata as metadata
+import atr.tasks.quarantine as quarantine
 import atr.tasks.sbom as sbom
 import atr.tasks.svn as svn
 import atr.tasks.vote as vote
@@ -303,6 +304,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return metadata.update
         case sql.TaskType.PATHS_CHECK:
             return paths.check
+        case sql.TaskType.QUARANTINE_VALIDATE:
+            return quarantine.validate
         case sql.TaskType.RAT_CHECK:
             return rat.check
         case sql.TaskType.SBOM_AUGMENT:

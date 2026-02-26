@@ -63,3 +63,7 @@ async def file_sha3(path: str) -> str:
         while chunk := await f.read(4096):
             sha3.update(chunk)
     return sha3.hexdigest()
+
+
+def filesystem_cache_archives_key(content_hash: str) -> str:
+    return content_hash.replace(":", "_")

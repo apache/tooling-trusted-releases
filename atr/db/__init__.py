@@ -473,6 +473,31 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         result = await self.execute(stmt)
         return result.scalars().one_or_none()
 
+    def quarantined(
+        self,
+        id: Opt[int] = NOT_SET,
+        release_name: Opt[str] = NOT_SET,
+        status: Opt[sql.QuarantineStatus] = NOT_SET,
+        token: Opt[str] = NOT_SET,
+        _release: bool = False,
+    ) -> Query[sql.Quarantined]:
+        query = sqlmodel.select(sql.Quarantined)
+
+        via = sql.validate_instrumented_attribute
+        if is_defined(id):
+            query = query.where(via(sql.Quarantined.id) == id)
+        if is_defined(release_name):
+            query = query.where(sql.Quarantined.release_name == release_name)
+        if is_defined(status):
+            query = query.where(sql.Quarantined.status == status)
+        if is_defined(token):
+            query = query.where(sql.Quarantined.token == token)
+
+        if _release:
+            query = query.options(joined_load(sql.Quarantined.release))
+
+        return Query(self, query)
+
     def release(
         self,
         name: Opt[str] = NOT_SET,

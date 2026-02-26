@@ -216,6 +216,22 @@ Exceptions to this rule apply only in these scenarios:
 
 If either exception applies, either submit a brief issue with the blockbuster traceback, notify the team via Slack, or add a code comment if part of another commit. An ATR Tooling engineer will address the issue without requiring significant time investment from you.
 
+### Use explicit `commit()` for database transactions
+
+When writing database mutations within a `db.session()`, prefer calling `await data.commit()` explicitly after the mutations, rather than wrapping them in `async with data.begin():`. The explicit commit makes the transaction boundary visible and is the more common pattern that we use.
+
+```python
+# Prefer
+async with db.session() as data:
+    data.add(item)
+    await data.commit()
+
+# Avoid
+async with db.session() as data:
+    async with data.begin():
+        data.add(item)
+```
+
 ### Always use parentheses to group complex nested subexpressions
 
 Complex subexpressions are those which contain a keyword or operator.

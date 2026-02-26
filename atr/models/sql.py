@@ -206,6 +206,7 @@ class TaskType(enum.StrEnum):
     MESSAGE_SEND = "message_send"
     METADATA_UPDATE = "metadata_update"
     PATHS_CHECK = "paths_check"
+    QUARANTINE_VALIDATE = "quarantine_validate"
     RAT_CHECK = "rat_check"
     SBOM_AUGMENT = "sbom_augment"
     SBOM_GENERATE_CYCLONEDX = "sbom_generate_cyclonedx"
