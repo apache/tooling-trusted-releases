@@ -120,7 +120,9 @@ async def list_get(
 
         delete_form = form.render(
             model_cls=shared.distribution.DeleteForm,
-            action=util.as_url(post.distribution.delete, project=str(project_name), version=str(version_name)),
+            action=util.as_url(
+                post.distribution.delete, project_name=str(project_name), version_name=str(version_name)
+            ),
             form_classes=".d-inline-block.m-0",
             submit_classes="btn-danger btn-sm",
             submit_label="Delete",
@@ -202,9 +204,9 @@ async def _automate_form_page(project: str, version: str, staging: bool) -> str:
 
     # Determine the action based on staging
     action = (
-        util.as_url(post.distribution.stage_automate_selected, project=project, version=version)
+        util.as_url(post.distribution.stage_automate_selected, project_name=project, version_name=version)
         if staging
-        else util.as_url(post.distribution.automate_selected, project=project, version=version)
+        else util.as_url(post.distribution.automate_selected, project_name=project, version_name=version)
     )
 
     # TODO: Reuse the same form for now - maybe we can combine this and the function below adding an automate=True arg
@@ -275,9 +277,9 @@ async def _record_form_page(project: str, version: str, staging: bool) -> str:
 
     # Determine the action based on staging
     action = (
-        util.as_url(post.distribution.stage_record_selected, project=project, version=version)
+        util.as_url(post.distribution.stage_record_selected, project_name=project, version_name=version)
         if staging
-        else util.as_url(post.distribution.record_selected, project=project, version=version)
+        else util.as_url(post.distribution.record_selected, project_name=project, version_name=version)
     )
 
     # Render the distribution form

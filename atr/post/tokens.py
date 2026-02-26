@@ -18,12 +18,13 @@
 import datetime
 import hashlib
 import secrets
-from typing import Final
+from typing import Final, Literal
 
 import quart
 import quart_rate_limiter as rate_limiter
 
 import atr.blueprints.post as post
+import atr.form as form
 import atr.get as get
 import atr.htm as htm
 import atr.jwtoken as jwtoken
@@ -34,18 +35,24 @@ import atr.web as web
 _EXPIRY_DAYS: Final[int] = 180
 
 
-@post.committer("/tokens/jwt")
+@post.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@post.empty()
-async def jwt_post(session: web.Committer) -> web.QuartResponse:
+async def jwt_post(session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], _form: form.Empty) -> web.QuartResponse:
+    """
+    URL: /tokens/jwt
+    """
     jwt_token = jwtoken.issue(session.uid)
     return web.TextResponse(jwt_token)
 
 
-@post.committer("/tokens")
+@post.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@post.form(shared.tokens.TokenForm)
-async def tokens(session: web.Committer, token_form: shared.tokens.TokenForm) -> web.WerkzeugResponse:
+async def tokens(
+    session: web.Committer, _tokens: Literal["tokens"], token_form: shared.tokens.TokenForm
+) -> web.WerkzeugResponse:
+    """
+    URL: /tokens
+    """
     match token_form:
         case shared.tokens.AddTokenForm() as add_form:
             return await _add_token(session, add_form)

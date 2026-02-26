@@ -16,28 +16,36 @@
 # under the License.
 
 
+from typing import Literal
+
 import atr.blueprints.post as post
 import atr.get as get
+import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
 
 
-@post.committer("/ignores/<project_name>")
-@post.form(shared.ignores.IgnoreForm)
+@post.typed
 async def ignores(
-    session: web.Committer, ignore_form: shared.ignores.IgnoreForm, project_name: str
+    session: web.Committer,
+    _ignores: Literal["ignores"],
+    project_name: safe.ProjectName,
+    ignore_form: shared.ignores.IgnoreForm,
 ) -> web.WerkzeugResponse:
-    """Handle forms on the ignores page."""
+    """
+    URL: /ignores/<project_name>
+    Handle forms on the ignores page.
+    """
     match ignore_form:
         case shared.ignores.AddIgnoreForm() as add_form:
-            return await _add_ignore(session, add_form, project_name)
+            return await _add_ignore(session, add_form, str(project_name))
 
         case shared.ignores.DeleteIgnoreForm() as delete_form:
-            return await _delete_ignore(session, delete_form, project_name)
+            return await _delete_ignore(session, delete_form, str(project_name))
 
         case shared.ignores.UpdateIgnoreForm() as update_form:
-            return await _update_ignore(session, update_form, project_name)
+            return await _update_ignore(session, update_form, str(project_name))
 
 
 async def _add_ignore(

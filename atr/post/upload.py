@@ -18,7 +18,7 @@
 import asyncio
 import json
 import pathlib
-from typing import Final
+from typing import Final, Literal
 
 import aiofiles
 import aiofiles.os
@@ -31,6 +31,7 @@ import atr.db as db
 import atr.form as form
 import atr.get as get
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.shared as shared
@@ -42,11 +43,17 @@ import atr.web as web
 _SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
 
-@post.committer("/upload/finalise/<project_name>/<version_name>/<upload_session>")
+@post.typed
 async def finalise(
-    session: web.Committer, project_name: str, version_name: str, upload_session: str
+    session: web.Committer,
+    _upload_finalise: Literal["upload/finalise"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    upload_session: str,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project_name)
+    """
+    URL: /upload/finalise/<project_name>/<version_name>/<upload_session>
+    """
 
     try:
         staging_dir = paths.get_upload_staging_dir(upload_session)
@@ -67,7 +74,7 @@ async def finalise(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(str(project_name))
             number_of_files = len(staged_files)
             description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
 
@@ -78,7 +85,7 @@ async def finalise(
                     await aioshutil.move(str(src), str(dst))
 
             await wacp.revision.create_revision(
-                project_name, version_name, session.uid, description=description, modify=modify
+                str(project_name), str(version_name), session.uid, description=description, modify=modify
             )
 
         await aioshutil.rmtree(staging_dir)
@@ -86,42 +93,53 @@ async def finalise(
         return await session.redirect(
             get.compose.selected,
             success=f"{util.plural(number_of_files, 'file')} added successfully",
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
     except types.FailedError as e:
         await aioshutil.rmtree(staging_dir)
         await quart.flash(str(e), "error")
         return await session.redirect(
             get.upload.selected,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
     except Exception as e:
         log.exception("Error finalising upload:")
         return _json_error(f"Error finalising upload: {e!s}", 500)
 
 
-@post.committer("/upload/<project_name>/<version_name>")
-@post.form(shared.upload.UploadForm)
+@post.typed
 async def selected(
-    session: web.Committer, upload_form: shared.upload.UploadForm, project_name: str, version_name: str
+    session: web.Committer,
+    _upload: Literal["upload"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    upload_form: shared.upload.UploadForm,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project_name)
+    """
+    URL: /upload/<project_name>/<version_name>
+    """
 
     match upload_form:
         case shared.upload.AddFilesForm() as add_form:
-            return await _add_files(session, add_form, project_name, version_name)
+            return await _add_files(session, add_form, str(project_name), str(version_name))
 
         case shared.upload.SvnImportForm() as svn_form:
-            return await _svn_import(session, svn_form, project_name, version_name)
+            return await _svn_import(session, svn_form, str(project_name), str(version_name))
 
 
-@post.committer("/upload/stage/<project_name>/<version_name>/<upload_session>")
+@post.typed
 async def stage(
-    session: web.Committer, project_name: str, version_name: str, upload_session: str
+    session: web.Committer,
+    _upload_stage: Literal["upload/stage"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    upload_session: str,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project_name)
+    """
+    URL: /upload/stage/<project_name>/<version_name>/<upload_session>
+    """
 
     try:
         staging_dir = paths.get_upload_staging_dir(upload_session)

@@ -17,13 +17,14 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 import atr.blueprints.post as post
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.get as get
 import atr.models.distribution as distribution
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
@@ -50,8 +51,8 @@ async def automate_form_process_page(
         platform_str = form_data.platform.value
         return await session.redirect(
             get.distribution.stage_automate if staging else get.distribution.automate,
-            project=project,
-            version=version,
+            project_name=project,
+            version_name=version,
             error=f"Platform {platform_str} is not supported for automated distribution",
         )
     sql_platform = form_data.platform.to_sql()  # type: ignore[attr-defined]
@@ -92,8 +93,8 @@ async def automate_form_process_page(
             # Instead of calling record_form_page_new, redirect with error message
             return await session.redirect(
                 get.distribution.stage_automate if staging else get.distribution.automate,
-                project=project,
-                version=version,
+                project_name=project,
+                version_name=version,
                 error=str(e),
             )
 
@@ -107,19 +108,33 @@ async def automate_form_process_page(
     )
 
 
-@post.committer("/distribution/automate/<project>/<version>")
-@post.form(shared.distribution.DistributeForm)
+@post.typed
 async def automate_selected(
-    session: web.Committer, distribute_form: shared.distribution.DistributeForm, project: str, version: str
+    session: web.Committer,
+    _distribution_automate: Literal["distribution/automate"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    distribute_form: shared.distribution.DistributeForm,
 ) -> web.WerkzeugResponse:
-    return await automate_form_process_page(session, distribute_form, project, version, staging=False)
+    """
+    URL: /distribution/automate/<project_name>/<version_name>
+    """
+    return await automate_form_process_page(
+        session, distribute_form, str(project_name), str(version_name), staging=False
+    )
 
 
-@post.committer("/distribution/delete/<project>/<version>")
-@post.form(shared.distribution.DeleteForm)
+@post.typed
 async def delete(
-    session: web.Committer, delete_form: shared.distribution.DeleteForm, project: str, version: str
+    session: web.Committer,
+    _distribution_delete: Literal["distribution/delete"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    delete_form: shared.distribution.DeleteForm,
 ) -> web.WerkzeugResponse:
+    """
+    URL: /distribution/delete/<project_name>/<version_name>
+    """
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
     # Validate the submitted data, and obtain the committee for its name
@@ -142,8 +157,8 @@ async def delete(
         )
     return await session.redirect(
         get.distribution.list_get,
-        project_name=project,
-        version_name=version,
+        project_name=str(project_name),
+        version_name=str(version_name),
         success="Distribution deleted",
     )
 
@@ -182,8 +197,8 @@ async def record_form_process_page(
             # Instead of calling record_form_page_new, redirect with error message
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
-                project=project,
-                version=version,
+                project_name=project,
+                version_name=version,
                 error=str(e),
             )
 
@@ -197,25 +212,45 @@ async def record_form_process_page(
     )
 
 
-@post.committer("/distribution/record/<project>/<version>")
-@post.form(shared.distribution.DistributeForm)
+@post.typed
 async def record_selected(
-    session: web.Committer, distribute_form: shared.distribution.DistributeForm, project: str, version: str
+    session: web.Committer,
+    _distribution_record: Literal["distribution/record"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    distribute_form: shared.distribution.DistributeForm,
 ) -> web.WerkzeugResponse:
-    return await record_form_process_page(session, distribute_form, project, version, staging=False)
+    """
+    URL: /distribution/record/<project_name>/<version_name>
+    """
+    return await record_form_process_page(session, distribute_form, str(project_name), str(version_name), staging=False)
 
 
-@post.committer("/distribution/stage/automate/<project>/<version>")
-@post.form(shared.distribution.DistributeForm)
+@post.typed
 async def stage_automate_selected(
-    session: web.Committer, distribute_form: shared.distribution.DistributeForm, project: str, version: str
+    session: web.Committer,
+    _distribution_stage_automate: Literal["distribution/stage/automate"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    distribute_form: shared.distribution.DistributeForm,
 ) -> web.WerkzeugResponse:
-    return await automate_form_process_page(session, distribute_form, project, version, staging=True)
+    """
+    URL: /distribution/stage/automate/<project_name>/<version_name>
+    """
+    return await automate_form_process_page(
+        session, distribute_form, str(project_name), str(version_name), staging=True
+    )
 
 
-@post.committer("/distribution/stage/record/<project>/<version>")
-@post.form(shared.distribution.DistributeForm)
+@post.typed
 async def stage_record_selected(
-    session: web.Committer, distribute_form: shared.distribution.DistributeForm, project: str, version: str
+    session: web.Committer,
+    _distribution_stage_record: Literal["distribution/stage/record"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    distribute_form: shared.distribution.DistributeForm,
 ) -> web.WerkzeugResponse:
-    return await record_form_process_page(session, distribute_form, project, version, staging=True)
+    """
+    URL: /distribution/stage/record/<project_name>/<version_name>
+    """
+    return await record_form_process_page(session, distribute_form, str(project_name), str(version_name), staging=True)

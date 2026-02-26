@@ -14,11 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Literal
 
 import quart
 
 import atr.blueprints.post as post
 import atr.get as get
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
@@ -26,14 +28,19 @@ import atr.user as user
 import atr.web as web
 
 
-@post.committer("/vote/<project_name>/<version_name>")
-@post.form(shared.vote.CastVoteForm)
+@post.typed
 async def selected_post(
-    session: web.Committer, cast_vote_form: shared.vote.CastVoteForm, project_name: str, version_name: str
+    session: web.Committer,
+    _vote: Literal["vote"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    cast_vote_form: shared.vote.CastVoteForm,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project_name)
+    """
+    URL: /vote/<project_name>/<version_name>
+    """
 
-    release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_CANDIDATE)
+    release = await session.release(str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_CANDIDATE)
 
     if release.committee is None:
         raise ValueError("Release has no committee")
@@ -51,8 +58,8 @@ async def selected_post(
 
     if error_message:
         await quart.flash(error_message, "error")
-        return await session.redirect(get.vote.selected, project_name=project_name, version_name=version_name)
+        return await session.redirect(get.vote.selected, project_name=str(project_name), version_name=str(version_name))
 
     success_message = f"Sending your vote to {email_recipient}."
     await quart.flash(success_message, "success")
-    return await session.redirect(get.vote.selected, project_name=project_name, version_name=version_name)
+    return await session.redirect(get.vote.selected, project_name=str(project_name), version_name=str(version_name))

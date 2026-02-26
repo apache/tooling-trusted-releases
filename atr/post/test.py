@@ -14,29 +14,39 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Literal
 
 import quart
 
 import atr.blueprints.post as post
+import atr.form as form
 import atr.get as get
 import atr.log as log
 import atr.shared as shared
 import atr.web as web
 
 
-@post.public("/test/empty")
-@post.empty()
-async def test_empty(session: web.Public) -> web.WerkzeugResponse:
+@post.typed
+async def test_empty(
+    session: web.Public, _test_empty: Literal["test/empty"], _form: form.Empty
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/empty
+    """
     msg = "Empty form submitted successfully"
     log.info(msg)
     await quart.flash(msg, "success")
     return await web.redirect(get.test.test_empty)
 
 
-@post.public("/test/multiple")
-@post.form(shared.test.MultipleForm)
-async def test_multiple(session: web.Public, form: shared.test.MultipleForm) -> web.WerkzeugResponse:
-    match form:
+@post.typed
+async def test_multiple(
+    session: web.Public, _test_multiple: Literal["test/multiple"], multiple_form: shared.test.MultipleForm
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/multiple
+    """
+    match multiple_form:
         case shared.test.AppleForm() as apple:
             msg = f"Apple order received: variety={apple.variety}, quantity={apple.quantity}, organic={apple.organic}"
             log.info(msg)
@@ -50,24 +60,28 @@ async def test_multiple(session: web.Public, form: shared.test.MultipleForm) -> 
     return await web.redirect(get.test.test_multiple)
 
 
-@post.public("/test/single")
-@post.form(shared.test.SingleForm)
-async def test_single(session: web.Public, form: shared.test.SingleForm) -> web.WerkzeugResponse:
-    file_names = [f.filename for f in form.files] if form.files else []
-    compatibility_names = [f.value for f in form.compatibility] if form.compatibility else []
-    if (form.message == "Forbidden message!") and (session is not None):
+@post.typed
+async def test_single(
+    session: web.Public, _test_single: Literal["test/single"], single_form: shared.test.SingleForm
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/single
+    """
+    file_names = [f.filename for f in single_form.files] if single_form.files else []
+    compatibility_names = [f.value for f in single_form.compatibility] if single_form.compatibility else []
+    if (single_form.message == "Forbidden message!") and (session is not None):
         return await session.form_error(
             "message",
             "You are not permitted to submit the forbidden message",
         )
     msg = (
         f"Single form received:"
-        f" name={form.name},"
-        f" email={form.email},"
-        f" message={form.message},"
+        f" name={single_form.name},"
+        f" email={single_form.email},"
+        f" message={single_form.message},"
         f" files={file_names},"
         f" compatibility={compatibility_names},"
-        f" vote={form.vote}"
+        f" vote={single_form.vote}"
     )
     log.info(msg)
     await quart.flash(msg, "success")

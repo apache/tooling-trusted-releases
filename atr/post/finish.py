@@ -15,31 +15,40 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import quart
 
 import atr.blueprints.post as post
 import atr.log as log
+import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
 
 
-@post.committer("/finish/<project_name>/<version_name>")
-@post.form(shared.finish.FinishForm)
+@post.typed
 async def selected(
-    session: web.Committer, finish_form: shared.finish.FinishForm, project_name: str, version_name: str
+    session: web.Committer,
+    _finish: Literal["finish"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    finish_form: shared.finish.FinishForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
+    """
+    URL: /finish/<project_name>/<version_name>
+    """
     wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
-    respond = _respond_helper(session, project_name, version_name, wants_json)
+    respond = _respond_helper(session, str(project_name), str(version_name), wants_json)
 
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
-            return await _delete_empty_directory(delete_form, session, project_name, version_name, respond)
+            return await _delete_empty_directory(delete_form, session, str(project_name), str(version_name), respond)
         case shared.finish.MoveFileForm() as move_form:
-            return await _move_file_to_revision(move_form, session, project_name, version_name, respond)
+            return await _move_file_to_revision(move_form, session, str(project_name), str(version_name), respond)
         case shared.finish.RemoveRCTagsForm():
-            return await _remove_rc_tags(session, project_name, version_name, respond)
+            return await _remove_rc_tags(session, str(project_name), str(version_name), respond)
 
 
 async def _delete_empty_directory(

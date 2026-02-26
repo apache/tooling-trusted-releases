@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import asfquart.base as base
 import quart
@@ -27,6 +27,8 @@ import atr.db as db
 import atr.form as form
 import atr.get as get
 import atr.log as log
+import atr.models.safe as safe
+import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
@@ -36,12 +38,18 @@ if TYPE_CHECKING:
     import pathlib
 
 
-@post.committer("/sbom/report/<project>/<version>/<path:file_path>")
-@post.form(shared.sbom.SBOMForm)
+@post.typed
 async def report(
-    session: web.Committer, sbom_form: shared.sbom.SBOMForm, project: str, version: str, file_path: str
+    session: web.Committer,
+    _sbom_report: Literal["sbom/report"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    file_path: unsafe.Path,
+    sbom_form: shared.sbom.SBOMForm,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project)
+    """
+    URL: /sbom/report/<project_name>/<version_name>/<path:file_path>
+    """
 
     validated_path = form.to_relpath(file_path)
     if validated_path is None:
@@ -49,10 +57,10 @@ async def report(
 
     match sbom_form:
         case shared.sbom.AugmentSBOMForm():
-            return await _augment(session, project, version, validated_path)
+            return await _augment(session, str(project_name), str(version_name), validated_path)
 
         case shared.sbom.ScanSBOMForm():
-            return await _scan(session, project, version, validated_path)
+            return await _scan(session, str(project_name), str(version_name), validated_path)
 
 
 async def _augment(

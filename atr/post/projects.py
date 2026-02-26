@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import asfquart.base as base
 import quart
 
@@ -29,11 +31,16 @@ import atr.storage as storage
 import atr.web as web
 
 
-@post.committer("/project/add/<committee_name>")
-@post.form(shared.projects.AddProjectForm)
+@post.typed
 async def add_project(
-    session: web.Committer, project_form: shared.projects.AddProjectForm, committee_name: str
+    session: web.Committer,
+    _project_add: Literal["project/add"],
+    committee_name: str,
+    project_form: shared.projects.AddProjectForm,
 ) -> web.WerkzeugResponse:
+    """
+    URL: /project/add/<committee_name>
+    """
     display_name = project_form.display_name
     label = project_form.label
 
@@ -51,12 +58,16 @@ async def add_project(
     )
 
 
-@post.committer("/project/delete")
-@post.form(shared.projects.DeleteSelectedProject)
+@post.typed
 async def delete(
-    session: web.Committer, delete_selected_project_form: shared.projects.DeleteSelectedProject
+    session: web.Committer,
+    _project_delete: Literal["project/delete"],
+    delete_selected_project_form: shared.projects.DeleteSelectedProject,
 ) -> web.WerkzeugResponse:
-    """Delete a project created by the user."""
+    """
+    URL: /project/delete
+    Delete a project created by the user.
+    """
     project_name = delete_selected_project_form.project_name
 
     async with storage.write(session) as write:
@@ -71,11 +82,16 @@ async def delete(
     return await session.redirect(get.projects.projects, success=f"Project '{project_name}' deleted successfully.")
 
 
-@post.committer("/projects/<name>")
-@post.form(shared.projects.ProjectViewForm)
+@post.typed
 async def view(
-    session: web.Committer, project_form: shared.projects.ProjectViewForm, name: str
+    session: web.Committer,
+    _projects: Literal["projects"],
+    name: str,
+    project_form: shared.projects.ProjectViewForm,
 ) -> web.WerkzeugResponse:
+    """
+    URL: /projects/<name>
+    """
     match project_form:
         case shared.projects.AddCategoryForm() as add_category_form:
             return await _process_add_category(session, add_category_form)

@@ -15,10 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import atr.blueprints.post as post
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.form as form
 import atr.get as get
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
@@ -26,19 +30,21 @@ import atr.util as util
 import atr.web as web
 
 
-@post.committer("/manual/resolve/<project_name>/<version_name>")
-@post.form(shared.manual.ResolveVoteForm)
+@post.typed
 async def resolve_selected(
     session: web.Committer,
+    _manual_resolve: Literal["manual/resolve"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     resolve_vote_form: shared.manual.ResolveVoteForm,
-    project_name: str,
-    version_name: str,
 ) -> web.WerkzeugResponse | str:
-    """Post the manual vote resolution page."""
-    await session.check_access(project_name)
+    """
+    URL: /manual/resolve/<project_name>/<version_name>
+    Post the manual vote resolution page.
+    """
     release = await session.release(
-        project_name,
-        version_name,
+        str(project_name),
+        str(version_name),
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -51,8 +57,8 @@ async def resolve_selected(
     except RuntimeError as e:
         return await session.redirect(
             get.manual.resolve_selected,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
             error=str(e),
         )
 
@@ -64,31 +70,40 @@ async def resolve_selected(
             vote_result = "failed"
             destination = get.compose.selected
 
-    async with storage.write_as_project_committee_member(project_name) as wacm:
-        success_message = await wacm.vote.resolve_manually(project_name, release, vote_result)
+    async with storage.write_as_project_committee_member(str(project_name)) as wacm:
+        success_message = await wacm.vote.resolve_manually(str(project_name), release, vote_result)
 
     return await session.redirect(
-        destination, project_name=project_name, version_name=version_name, success=success_message
+        destination,
+        project_name=str(project_name),
+        version_name=str(version_name),
+        success=success_message,
     )
 
 
-@post.committer("/manual/start/<project_name>/<version_name>/<revision>")
-@post.empty()
+@post.typed
 async def start_selected_revision(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer,
+    _manual_start: Literal["manual/start"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: str,
+    _form: form.Empty,
 ) -> web.WerkzeugResponse | str:
-    await session.check_access(project_name)
+    """
+    URL: /manual/start/<project_name>/<version_name>/<revision>
+    """
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=True
+            session, str(project_name), str(version_name), revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
                     get.vote.selected,
                     error=error,
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                 )
             case (release, _committee):
                 pass
@@ -101,15 +116,15 @@ async def start_selected_revision(
             return await session.redirect(
                 get.vote.selected,
                 error=error,
-                project_name=project_name,
-                version_name=version_name,
+                project_name=str(project_name),
+                version_name=str(version_name),
             )
 
         return await session.redirect(
             get.vote.selected,
             success="The manual vote process has been started.",
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
 
 

@@ -15,12 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Literal
+
 import quart
 
 import atr.blueprints.post as post
 import atr.db.interaction as interaction
 import atr.form
 import atr.get as get
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
@@ -30,19 +33,23 @@ import atr.util as util
 import atr.web as web
 
 
-@post.committer("/resolve/<project_name>/<version_name>")
-@post.form(shared.resolve.ResolveForm)
+@post.typed
 async def selected(
-    session: web.Committer, resolve_form: shared.resolve.ResolveForm, project_name: str, version_name: str
+    session: web.Committer,
+    _resolve: Literal["resolve"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    resolve_form: shared.resolve.ResolveForm,
 ) -> web.WerkzeugResponse | str:
-    await session.check_access(project_name)
-
+    """
+    URL: /resolve/<project_name>/<version_name>
+    """
     match resolve_form:
         case shared.resolve.SubmitForm() as submit_form:
-            return await _submit(session, submit_form, project_name, version_name)
+            return await _submit(session, submit_form, str(project_name), str(version_name))
 
         case shared.resolve.TabulateForm():
-            return await _tabulate(session, project_name, version_name)
+            return await _tabulate(session, str(project_name), str(version_name))
 
 
 async def _submit(

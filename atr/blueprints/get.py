@@ -37,6 +37,13 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
+    import atr.get as get
+
+    app.register_blueprint(_BLUEPRINT)
+    return get, _routes
+
+
 @overload
 def typed[**P, R](func: Callable[Concatenate[web.Committer, P], Awaitable[R]]) -> web.RouteFunction[R]: ...
 
@@ -55,7 +62,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - str parameters pass through as-is
     - check_access is called automatically for committer routes with project_name
     """
-    path, validated_params, literal_params, public = common.build_path(func)
+    path, validated_params, literal_params, _, public = common.build_path(func)
     project_name_var = next((name for name, type_name in validated_params if type_name is safe.ProjectName), None)
     check_access = not public and (project_name_var is not None)
 
@@ -89,10 +96,3 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     common.register_route(func, "get", _routes)
 
     return decorated
-
-
-def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
-    import atr.get as get
-
-    app.register_blueprint(_BLUEPRINT)
-    return get, _routes

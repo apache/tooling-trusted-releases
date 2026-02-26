@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Literal
 
 import quart
 
@@ -24,9 +25,13 @@ import atr.util as util
 import atr.web as web
 
 
-@post.committer("/user/cache")
-@post.form(shared.user.UserCacheForm)
-async def session_post(session: web.Committer, user_cache_form: shared.user.UserCacheForm) -> web.WerkzeugResponse:
+@post.typed
+async def session_post(
+    session: web.Committer, _user_cache: Literal["user/cache"], user_cache_form: shared.user.UserCacheForm
+) -> web.WerkzeugResponse:
+    """
+    URL: /user/cache
+    """
     match user_cache_form:
         case shared.user.CacheUserForm():
             await _cache_session(session)

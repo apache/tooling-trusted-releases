@@ -17,7 +17,7 @@
 
 
 import asyncio
-from typing import Final
+from typing import Final, Literal
 
 import aiohttp
 import asfquart.base as base
@@ -25,9 +25,11 @@ import quart
 
 import atr.blueprints.post as post
 import atr.db as db
+import atr.form as form
 import atr.get as get
 import atr.htm as htm
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
@@ -39,10 +41,16 @@ import atr.web as web
 _KEYS_BASE_URL: Final[str] = "https://downloads.apache.org"
 
 
-@post.committer("/keys/add")
-@post.form(shared.keys.AddOpenPGPKeyForm)
-async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenPGPKeyForm) -> web.WerkzeugResponse:
-    """Add a new public signing key to the user's account."""
+@post.typed
+async def add(
+    session: web.Committer,
+    _keys_add: Literal["keys/add"],
+    add_openpgp_key_form: shared.keys.AddOpenPGPKeyForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /keys/add
+    Add a new public signing key to the user's account.
+    """
     try:
         key_text = add_openpgp_key_form.public_key
         selected_committee_names = add_openpgp_key_form.selected_committees
@@ -81,12 +89,17 @@ async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenP
     return await session.redirect(get.keys.keys)
 
 
-@post.committer("/keys/details/<fingerprint>")
-@post.form(shared.keys.UpdateKeyCommitteesForm)
+@post.typed
 async def details(
-    session: web.Committer, update_form: shared.keys.UpdateKeyCommitteesForm, fingerprint: str
+    session: web.Committer,
+    _keys_details: Literal["keys/details"],
+    fingerprint: str,
+    update_form: shared.keys.UpdateKeyCommitteesForm,
 ) -> web.WerkzeugResponse:
-    """Update committee associations for an OpenPGP key."""
+    """
+    URL: /keys/details/<fingerprint>
+    Update committee associations for an OpenPGP key.
+    """
     fingerprint = fingerprint.lower()
 
     try:
@@ -125,14 +138,20 @@ async def details(
     return await session.redirect(get.keys.details, fingerprint=fingerprint)
 
 
-@post.committer("/keys/import/<project_name>/<version_name>")
-@post.empty()
+@post.typed
 async def import_selected_revision(
-    session: web.Committer, project_name: str, version_name: str
+    session: web.Committer,
+    _keys_import: Literal["keys/import"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    _form: form.Empty,
 ) -> web.WerkzeugResponse:
+    """
+    URL: /keys/import/<project_name>/<version_name>
+    """
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(project_name)
-        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(project_name, version_name)
+        wacm = await write.as_project_committee_member(str(project_name))
+        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(str(project_name), str(version_name))
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
@@ -140,15 +159,21 @@ async def import_selected_revision(
     return await session.redirect(
         get.compose.selected,
         success=message,
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
     )
 
 
-@post.committer("/keys")
-@post.form(shared.keys.KeysForm)
-async def keys(session: web.Committer, keys_form: shared.keys.KeysForm) -> web.WerkzeugResponse:
-    """Handle forms on the keys management page."""
+@post.typed
+async def keys(
+    session: web.Committer,
+    _keys: Literal["keys"],
+    keys_form: shared.keys.KeysForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /keys
+    Handle forms on the keys management page.
+    """
     match keys_form:
         case shared.keys.DeleteOpenPGPKeyForm() as delete_openpgp_form:
             return await _delete_openpgp_key(session, delete_openpgp_form)
@@ -160,10 +185,16 @@ async def keys(session: web.Committer, keys_form: shared.keys.KeysForm) -> web.W
             return await _update_committee_keys(session, update_committee_form)
 
 
-@post.committer("/keys/ssh/add")
-@post.form(shared.keys.AddSSHKeyForm)
-async def ssh_add(session: web.Committer, add_ssh_key_form: shared.keys.AddSSHKeyForm) -> web.WerkzeugResponse:
-    """Add a new SSH key to the user's account."""
+@post.typed
+async def ssh_add(
+    session: web.Committer,
+    _keys_ssh_add: Literal["keys/ssh/add"],
+    add_ssh_key_form: shared.keys.AddSSHKeyForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /keys/ssh/add
+    Add a new SSH key to the user's account.
+    """
     try:
         async with storage.write(session) as write:
             wafc = write.as_foundation_committer()
@@ -179,10 +210,16 @@ async def ssh_add(session: web.Committer, add_ssh_key_form: shared.keys.AddSSHKe
     return await session.redirect(get.keys.keys)
 
 
-@post.committer("/keys/upload")
-@post.form(shared.keys.UploadKeysForm)
-async def upload(session: web.Committer, upload_form: shared.keys.UploadKeysForm) -> str:
-    """Upload or fetch a KEYS file containing multiple OpenPGP keys."""
+@post.typed
+async def upload(
+    session: web.Committer,
+    _keys_upload: Literal["keys/upload"],
+    upload_form: shared.keys.UploadKeysForm,
+) -> str:
+    """
+    URL: /keys/upload
+    Upload or fetch a KEYS file containing multiple OpenPGP keys.
+    """
     match upload_form:
         case shared.keys.UploadFileForm() as upload_file_form:
             return await _upload_file_keys(upload_file_form)

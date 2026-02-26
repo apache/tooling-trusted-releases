@@ -14,30 +14,36 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Literal
 
 import asfquart.base as base
 
 import atr.blueprints.post as post
 import atr.db as db
 import atr.get as get
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
 
 
-@post.committer("/revisions/<project_name>/<version_name>")
-@post.form(shared.revisions.RevisionForm)
+@post.typed
 async def selected_post(
-    session: web.Committer, revision_form: shared.revisions.RevisionForm, project_name: str, version_name: str
+    session: web.Committer,
+    _revisions: Literal["revisions"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision_form: shared.revisions.RevisionForm,
 ) -> web.WerkzeugResponse:
-    await session.check_access(project_name)
-
+    """
+    URL: /revisions/<project_name>/<version_name>
+    """
     match revision_form:
         case shared.revisions.SetRevisionForm():
-            return await _set_revision(session, revision_form, project_name, version_name)
+            return await _set_revision(session, revision_form, str(project_name), str(version_name))
         case shared.revisions.SetTagForm():
-            return await _set_tag(session, revision_form, project_name, version_name)
+            return await _set_tag(session, revision_form, str(project_name), str(version_name))
 
 
 async def _set_revision(
