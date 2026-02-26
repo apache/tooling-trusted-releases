@@ -55,10 +55,10 @@ import atr.log as log
 import atr.models.session
 import atr.models.sql as sql
 import atr.models.validation as validation
+import atr.paths as paths
 import atr.registry as registry
 import atr.tarzip as tarzip
 import atr.user as user
-from atr.paths import release_directory, release_directory_revision
 
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-source", "-src")
 DIRECTORY_PERMISSIONS: Final[int] = 0o755
@@ -522,7 +522,7 @@ async def get_asf_id_or_die() -> str:
 
 async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
     """Calculate file count, total byte size, and formatted size for a release."""
-    base_dir = release_directory(release)
+    base_dir = paths.release_directory(release)
     count = 0
     total_bytes = 0
     try:
@@ -567,7 +567,7 @@ async def get_urls_as_completed(urls: Sequence[str]) -> AsyncGenerator[tuple[str
 
 async def has_files(release: sql.Release) -> bool:
     """Check if a release has any files."""
-    base_dir = release_directory(release)
+    base_dir = paths.release_directory(release)
     try:
         async for rel_path in paths_recursive(base_dir):
             full_path = base_dir / rel_path
@@ -697,7 +697,7 @@ def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
 
 async def number_of_release_files(release: sql.Release) -> int:
     """Return the number of files in a release."""
-    if (path := release_directory_revision(release)) is None:
+    if (path := paths.release_directory_revision(release)) is None:
         return 0
     count = 0
     async for _ in paths_recursive(path):
