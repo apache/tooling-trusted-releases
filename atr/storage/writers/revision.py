@@ -45,6 +45,8 @@ import atr.util as util
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    import atr.models.attestable
+
 
 class SafeSession:
     def __init__(self, temp_dir: str):
@@ -62,6 +64,129 @@ class SafeSession:
     async def __aexit__(self, _exc_type, _exc, _tb):
         await self._stack.aclose()
         return False
+
+
+async def _finalise_revision(
+    data: db.Session,
+    *,
+    asf_uid: str,
+    base_hashes: dict[str, str],
+    base_inodes: dict[str, int],
+    description: str | None,
+    merge_enabled: bool,
+    n_inodes: dict[str, int],
+    old_revision: sql.Revision | None,
+    path_to_hash: dict[str, str],
+    path_to_size: dict[str, int],
+    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    project_name: str,
+    release: sql.Release,
+    release_name: str,
+    temp_dir: str,
+    temp_dir_path: pathlib.Path,
+    version_name: str,
+) -> sql.Revision:
+    try:
+        # This is the only place where models.Revision is constructed
+        # That makes models.populate_revision_sequence_and_name safe against races
+        # Because that event is called when data.add is called below
+        # And we have a write lock at that point through the use of data.begin_immediate
+        new_revision = sql.Revision(
+            release_name=release_name,
+            release=release,
+            asfuid=asf_uid,
+            created=datetime.datetime.now(datetime.UTC),
+            phase=release.phase,
+            description=description,
+        )
+
+        # Acquire the write lock and add the row
+        # We need this write lock for moving the directory below atomically
+        # But it also helps to make models.populate_revision_sequence_and_name safe against races
+        await data.begin_immediate()
+        data.add(new_revision)
+
+        # Flush but do not commit the new revision row to get its name and number
+        # The row will still be invisible to other sessions after flushing
+        await data.flush()
+
+        # Merge with the prior revision if there was an intervening change
+        prior_name = new_revision.parent_name
+        if (
+            merge_enabled
+            and (old_revision is not None)
+            and (prior_name is not None)
+            and (prior_name != old_revision.name)
+        ):
+            prior_number = prior_name.split()[-1]
+            prior_dir = paths.release_directory_base(release) / prior_number
+            await merge.merge(
+                base_inodes,
+                base_hashes,
+                prior_dir,
+                project_name,
+                version_name,
+                prior_number,
+                temp_dir_path,
+                n_inodes,
+                path_to_hash,
+                path_to_size,
+            )
+            previous_attestable = await attestable.load(project_name, version_name, prior_number)
+
+        # Rename the directory to the new revision number
+        await data.refresh(release)
+        new_revision_dir = paths.release_directory(release)
+
+        # Ensure that the parent directory exists
+        await aiofiles.os.makedirs(new_revision_dir.parent, exist_ok=True)
+
+        # Raise an error if the destination directory already exists
+        # This can happen for example if there was a previous failed cleanup
+        if await aiofiles.os.path.exists(new_revision_dir):
+            raise types.FailedError(f"Revision directory {new_revision_dir} already exists")
+
+        # Rename the temporary interim directory to the new revision number
+        await aiofiles.os.rename(temp_dir, new_revision_dir)
+    except Exception:
+        await aioshutil.rmtree(temp_dir)
+        raise
+
+    # Change permissions of all directories in the new revision directory to 555
+    # This prevents accidental modifications to any directory in the new revision
+    # This must be done after the rename, otherwise the rename will fail
+    # The ".." entry in a directory is modified when it is moved between parents
+    # (Additionally, on macOS a 555 directory cannot be renamed within the same parent)
+    await asyncio.to_thread(util.chmod_directories, new_revision_dir, 0o555)
+
+    policy = release.release_policy or release.project.release_policy
+
+    await attestable.write_files_data(
+        project_name,
+        version_name,
+        new_revision.number,
+        policy.model_dump() if policy else None,
+        asf_uid,
+        previous_attestable,
+        path_to_hash,
+        path_to_size,
+    )
+
+    # Commit to end the transaction started by data.begin_immediate
+    # We must commit the revision before starting the checks
+    # This also releases the write lock
+    await data.commit()
+
+    async with data.begin():
+        # Run checks if in DRAFT phase
+        # We could also run this outside the data Session
+        # But then it would create its own new Session
+        # It does, however, need a transaction to be created using data.begin()
+        if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            # Must use caller_data here because we acquired the write lock
+            await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.number, caller_data=data)
+
+    return new_revision
 
 
 class GeneralPublic:
@@ -201,107 +326,25 @@ class CommitteeParticipant(FoundationCommitter):
             raise
 
         async with SafeSession(temp_dir) as data:
-            try:
-                # This is the only place where models.Revision is constructed
-                # That makes models.populate_revision_sequence_and_name safe against races
-                # Because that event is called when data.add is called below
-                # And we have a write lock at that point through the use of data.begin_immediate
-                new_revision = sql.Revision(
-                    release_name=release_name,
-                    release=release,
-                    asfuid=asf_uid,
-                    created=datetime.datetime.now(datetime.UTC),
-                    phase=release.phase,
-                    description=description,
-                )
-
-                # Acquire the write lock and add the row
-                # We need this write lock for moving the directory below atomically
-                # But it also helps to make models.populate_revision_sequence_and_name safe against races
-                await data.begin_immediate()
-                data.add(new_revision)
-
-                # Flush but do not commit the new revision row to get its name and number
-                # The row will still be invisible to other sessions after flushing
-                await data.flush()
-
-                # Merge with the prior revision if there was an intervening change
-                prior_name = new_revision.parent_name
-                if (
-                    merge_enabled
-                    and (old_revision is not None)
-                    and (prior_name is not None)
-                    and (prior_name != old_revision.name)
-                ):
-                    prior_number = prior_name.split()[-1]
-                    prior_dir = paths.release_directory_base(release) / prior_number
-                    await merge.merge(
-                        base_inodes,
-                        base_hashes,
-                        prior_dir,
-                        project_name,
-                        version_name,
-                        prior_number,
-                        temp_dir_path,
-                        n_inodes,
-                        path_to_hash,
-                        path_to_size,
-                    )
-                    previous_attestable = await attestable.load(project_name, version_name, prior_number)
-
-                # Rename the directory to the new revision number
-                await data.refresh(release)
-                new_revision_dir = paths.release_directory(release)
-
-                # Ensure that the parent directory exists
-                await aiofiles.os.makedirs(new_revision_dir.parent, exist_ok=True)
-
-                # Raise an error if the destination directory already exists
-                # This can happen for example if there was a previous failed cleanup
-                if await aiofiles.os.path.exists(new_revision_dir):
-                    raise types.FailedError(f"Revision directory {new_revision_dir} already exists")
-
-                # Rename the temporary interim directory to the new revision number
-                await aiofiles.os.rename(temp_dir, new_revision_dir)
-            except Exception:
-                await aioshutil.rmtree(temp_dir)
-                raise
-
-            # Change permissions of all directories in the new revision directory to 555
-            # This prevents accidental modifications to any directory in the new revision
-            # This must be done after the rename, otherwise the rename will fail
-            # The ".." entry in a directory is modified when it is moved between parents
-            # (Additionally, on macOS a 555 directory cannot be renamed within the same parent)
-            await asyncio.to_thread(util.chmod_directories, new_revision_dir, 0o555)
-
-            policy = release.release_policy or release.project.release_policy
-
-            await attestable.write_files_data(
-                project_name,
-                version_name,
-                new_revision.number,
-                policy.model_dump() if policy else None,
-                asf_uid,
-                previous_attestable,
-                path_to_hash,
-                path_to_size,
+            return await _finalise_revision(
+                data,
+                asf_uid=asf_uid,
+                base_hashes=base_hashes,
+                base_inodes=base_inodes,
+                description=description,
+                merge_enabled=merge_enabled,
+                n_inodes=n_inodes,
+                old_revision=old_revision,
+                path_to_hash=path_to_hash,
+                path_to_size=path_to_size,
+                previous_attestable=previous_attestable,
+                project_name=project_name,
+                release=release,
+                release_name=release_name,
+                temp_dir=temp_dir,
+                temp_dir_path=temp_dir_path,
+                version_name=version_name,
             )
-
-            # Commit to end the transaction started by data.begin_immediate
-            # We must commit the revision before starting the checks
-            # This also releases the write lock
-            await data.commit()
-
-            async with data.begin():
-                # Run checks if in DRAFT phase
-                # We could also run this outside the data Session
-                # But then it would create its own new Session
-                # It does, however, need a transaction to be created using data.begin()
-                if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-                    # Must use caller_data here because we acquired the write lock
-                    await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.number, caller_data=data)
-
-        return new_revision
 
 
 class CommitteeMember(CommitteeParticipant):

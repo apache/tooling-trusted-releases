@@ -56,8 +56,9 @@ class FakeRevision:
 
 
 class MockSafeData:
-    def __init__(self, parent_name: str):
+    def __init__(self, parent_name: str, new_number: str = "00006"):
         self._new_revision: FakeRevision | None = None
+        self._new_number = new_number
         self._parent_name = parent_name
         self.add = mock.MagicMock(side_effect=self._add)
         self.begin = mock.MagicMock(return_value=AsyncContextManager())
@@ -72,8 +73,8 @@ class MockSafeData:
     async def _flush(self) -> None:
         if self._new_revision is None:
             raise RuntimeError("Expected data.add to set _new_revision before flush")
-        self._new_revision.name = f"{self._new_revision.release_name} 00006"
-        self._new_revision.number = "00006"
+        self._new_revision.name = f"{self._new_revision.release_name} {self._new_number}"
+        self._new_revision.number = self._new_number
         self._new_revision.parent_name = self._parent_name
 
 
@@ -169,6 +170,64 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         raise AssertionError("Expected hard-link clone to use do_not_create_dest_dir=True")
     if clone_destination != inodes_input:
         raise AssertionError("Expected inode scan to run only for the temporary working directory")
+
+
+@pytest.mark.asyncio
+async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_path: pathlib.Path):
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+    release.project = mock.MagicMock()
+    release.project.release_policy = None
+    release.release_policy = None
+    release_name = sql.release_name("proj", "1.0")
+
+    old_revision = mock.MagicMock()
+    old_revision.name = f"{release_name} 00005"
+    old_revision.number = "00005"
+
+    first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
+    second_attestable = mock.MagicMock(paths={"dist/b.tar.gz": "h2"})
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_name=f"{release_name} 00006", new_number="00007")
+    merge_mock = mock.AsyncMock()
+    load_mock = mock.AsyncMock(side_effect=[first_attestable, second_attestable])
+
+    with (
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "load", new=load_mock),
+        mock.patch.object(
+            revision.attestable, "paths_to_hashes_and_sizes", new_callable=mock.AsyncMock, return_value=({}, {})
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(
+            revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=old_revision
+        ),
+        mock.patch.object(revision.merge, "merge", new=merge_mock),
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision.tasks, "draft_checks", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00007"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
+    ):
+        created_revision = await participant.create_revision("proj", "1.0", "test")
+
+    assert isinstance(created_revision, FakeRevision)
+    assert merge_mock.await_count == 1
+    assert load_mock.await_count == 2
+
+    merge_await_args = merge_mock.await_args
+    assert merge_await_args is not None
+    assert merge_await_args.args[5] == "00006"
 
 
 @pytest.mark.asyncio
