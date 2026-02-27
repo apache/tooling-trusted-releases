@@ -53,7 +53,6 @@ import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
 import atr.storage.outcome as outcome
-import atr.storage.types as types
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -883,39 +882,6 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
         page.append(table.collect())
 
     return await template.blank(f"Recent Tasks ({minutes}m)", content=page.collect())
-
-
-@admin.get("/test")
-async def test(session: web.Committer) -> web.QuartResponse:
-    """Test the storage layer."""
-    import atr.storage as storage
-
-    async with util.create_secure_session() as aiohttp_client_session:
-        url = "https://downloads.apache.org/zeppelin/KEYS"
-        async with aiohttp_client_session.get(url) as response:
-            keys_file_text = await response.text()
-
-    async with storage.write(session) as write:
-        wacm = write.as_committee_member("tooling")
-        start = time.perf_counter_ns()
-        outcomes: outcome.List[types.Key] = await wacm.keys.ensure_stored(keys_file_text)
-        end = time.perf_counter_ns()
-        log.info(f"Upload of {util.plural(outcomes.result_count, 'key')} took {end - start} ns")
-    for ocr in outcomes.results():
-        log.info(f"Uploaded key: {type(ocr)} {ocr.key_model.fingerprint}")
-    for oce in outcomes.errors():
-        log.error(f"Error uploading key: {type(oce)} {oce}")
-    parsed_count = outcomes.result_predicate_count(lambda k: k.status == types.KeyStatus.PARSED)
-    inserted_count = outcomes.result_predicate_count(lambda k: k.status == types.KeyStatus.INSERTED)
-    linked_count = outcomes.result_predicate_count(lambda k: k.status == types.KeyStatus.LINKED)
-    inserted_and_linked_count = outcomes.result_predicate_count(
-        lambda k: k.status == types.KeyStatus.INSERTED_AND_LINKED
-    )
-    log.info(f"Parsed: {parsed_count}")
-    log.info(f"Inserted: {inserted_count}")
-    log.info(f"Linked: {linked_count}")
-    log.info(f"InsertedAndLinked: {inserted_and_linked_count}")
-    return web.TextResponse(str(wacm))
 
 
 @admin.get("/toggle-view")
