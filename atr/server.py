@@ -525,6 +525,18 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
         ]
     )
 
+    @app.before_request
+    async def validate_sec_fetch_headers() -> None:
+        if quart.request.path.startswith("/api"):
+            sec_fetch_dest = quart.request.headers.get("Sec-Fetch-Dest", "")
+            if sec_fetch_dest in ("document", "embed", "object", "frame", "iframe"):
+                raise base.ASFQuartException("Unauthorized", errorcode=403)
+
+        if quart.request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            sec_fetch_site = quart.request.headers.get("Sec-Fetch-Site", "")
+            if sec_fetch_site not in ("same-origin", "none", ""):
+                raise base.ASFQuartException("Unauthorized", errorcode=403)
+
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
     # HSTS is required by ASVS v5 9.2.1 (L1)
