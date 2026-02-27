@@ -618,11 +618,8 @@ def is_ldap_configured() -> bool:
     return ldap.get_bind_credentials() is not None
 
 
-def is_user_viewing_as_admin(uid: str | None) -> bool:
-    """Check whether a user is currently viewing the site with active admin privileges."""
-    if not user.is_admin(uid):
-        return False
-
+def is_user_session_downgraded() -> bool:
+    """Check whether a user session is downgraded from active admin privileges."""
     try:
         app = asfquart.APP
         if (not hasattr(app, "app_id")) or (not isinstance(app.app_id, str)):
@@ -631,11 +628,15 @@ def is_user_viewing_as_admin(uid: str | None) -> bool:
 
         cookie_id = app.app_id
         session_dict = quart.session.get(cookie_id, {})
-        is_downgraded = session_dict.get("downgrade_admin_to_user", False)
-        return not is_downgraded
+        return session_dict.get("downgrade_admin_to_user", False)
     except Exception:
-        log.exception(f"Error checking admin downgrade session status for {uid}")
+        log.exception("Error checking admin downgrade session status")
         return False
+
+
+def is_user_viewing_as_admin(uid: str | None) -> bool:
+    """Check whether a user is currently viewing the site with active admin privileges."""
+    return user.is_admin(uid)
 
 
 def json_for_script_element(value: Any) -> markupsafe.Markup:
