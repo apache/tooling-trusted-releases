@@ -18,6 +18,7 @@
 from typing import Literal
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -96,7 +97,7 @@ async def start_selected_revision(
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=True
+            session, str(project_name), str(version_name), revision, data, manual_vote=config.get().MANUAL_VOTE
         ):
             case str() as error:
                 return await session.redirect(
