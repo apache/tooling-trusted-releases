@@ -136,23 +136,30 @@ async def _committee_label(thread_id: str) -> str | None:
     return None
 
 
-async def _committees_check(vote_thread_url: str, vote_result_url: str) -> None:
-    vote_thread_id = vote_thread_url.removeprefix("https://lists.apache.org/thread/")
-    result_thread_id = vote_result_url.removeprefix("https://lists.apache.org/thread/")
+def _committee_thread(thread_url: str) -> str:
+    if thread_url.startswith("https://lists.apache.org/thread/"):
+        return thread_url.removeprefix("https://lists.apache.org/thread/")
+    elif thread_url.startswith("https:"):
+        raise RuntimeError("Invalid Thread")
+    return thread_url
 
+
+async def _committees_check(vote_thread_url: str, vote_result_url: str) -> None:
+    vote_thread_id = _committee_thread(vote_thread_url)
     try:
         vote_committee_label = await _committee_label(vote_thread_id)
     except util.FetchError as e:
         raise RuntimeError(f"Failed to fetch vote thread metadata from URL {e.url}: {e!s}")
+    if vote_committee_label is None:
+        raise RuntimeError("Vote committee not found")
+
+    result_thread_id = _committee_thread(vote_result_url)
     try:
         result_committee_label = await _committee_label(result_thread_id)
     except util.FetchError as e:
         raise RuntimeError(f"Failed to fetch vote thread metadata from URL {e.url}: {e!s}")
+    if result_committee_label is None:
+        raise RuntimeError("Result committee not found")
 
     if vote_committee_label != result_committee_label:
         raise RuntimeError("Vote committee and result committee do not match")
-
-    if vote_committee_label is None:
-        raise RuntimeError("Vote committee not found")
-    if result_committee_label is None:
-        raise RuntimeError("Result committee not found")
