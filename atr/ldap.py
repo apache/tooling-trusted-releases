@@ -161,7 +161,7 @@ async def fetch_admin_users() -> frozenset[str]:
     return await asyncio.to_thread(_query_ldap)
 
 
-async def fetch_tooling_users(extra: list[str]) -> list[str]:
+async def fetch_tooling_users(extra: set[str]) -> set[str]:
     import atr.log as log
 
     credentials = get_bind_credentials()
@@ -171,10 +171,10 @@ async def fetch_tooling_users(extra: list[str]) -> list[str]:
 
     bind_dn, bind_password = credentials
 
-    def _query_ldap() -> list[str]:
-        users: list[str] = list()
+    def _query_ldap() -> set[str]:
+        users: set[str] = set()
         with Search(bind_dn, bind_password) as ldap_search:
-            for base in (LDAP_TOOLING_BASE):
+            for base in LDAP_TOOLING_BASE:
                 try:
                     result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
                     if (not result) or (len(result) != 1):

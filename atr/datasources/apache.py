@@ -508,12 +508,12 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
 
     additional = config.get().TOOLING_USERS_ADDITIONAL
     if additional:
-        extra = list(additional.split(","))
+        extra = set(additional.split(","))
     else:
-        extra = list()
-    
+        extra = set()
+
     # Update Tooling PMC data
-    tooling_users = await ldap.fetch_tooling_users(extra)
+    tooling_users = list(await ldap.fetch_tooling_users(extra))
     tooling_committee.committee_members = tooling_users
     tooling_committee.committers = tooling_users
     tooling_committee.release_managers = tooling_users
