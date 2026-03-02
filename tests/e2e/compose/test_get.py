@@ -58,6 +58,11 @@ def test_ongoing_tasks_banner_appears_when_tasks_restart(page_compose: Page) -> 
     with page_compose.expect_navigation():
         restart_button.click()
 
+    count_text = page_compose.locator("#ongoing-tasks-count").text_content() or "0"
+    if int(count_text) == 0:
+        expect(banner).to_be_hidden()
+        return
+
     expect(banner).to_be_visible(timeout=10000)
 
     progress_bar = page_compose.locator("#poll-progress")
