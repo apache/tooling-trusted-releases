@@ -52,7 +52,7 @@ class H1Parser(HTMLParser):
 
 
 @get.typed
-async def index(_session: web.Public, _docs: Literal["docs"]) -> str:
+async def index(_session: web.Public, _docs: Literal["docs"], _: Literal[""]) -> str:
     return await _serve_docs_page("index")
 
 
