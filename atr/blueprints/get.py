@@ -26,7 +26,6 @@ import quart
 
 import atr.blueprints.common as common
 import atr.log as log
-import atr.models.safe as safe
 import atr.web as web
 
 _BLUEPRINT_NAME = "get_blueprint"
@@ -63,16 +62,11 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - check_access is called automatically for committer routes with project_name
     """
     path, validated_params, literal_params, _, public = common.build_path(func)
-    project_name_var = next((name for name, type_name in validated_params if type_name is safe.ProjectName), None)
-    check_access = not public and (project_name_var is not None)
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
         await common.run_validators(kwargs, validated_params)
         kwargs.update(literal_params)
-
-        if check_access and (enhanced_session is not None) and (project_name_var is not None):
-            await enhanced_session.check_access(str(kwargs[project_name_var]))
 
         start_time_ns = time.perf_counter_ns()
         response = await func(enhanced_session, **kwargs)

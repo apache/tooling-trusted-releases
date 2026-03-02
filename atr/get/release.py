@@ -89,12 +89,13 @@ async def releases(_session: web.Public, _releases: Literal["releases"]) -> str:
 
 @get.typed
 async def select(
-    _session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectName
+    session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectName
 ) -> str:
     """
     URL: /release/select/<project_name>
     Show releases in progress for a project.
     """
+    await session.check_access(project_name)
     async with db.session() as data:
         project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)

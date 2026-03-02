@@ -52,6 +52,7 @@ async def selected_revision(
     """
     URL: /voting/<project_name>/<version_name>/<revision>
     """
+    await session.check_access(project_name)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
             session, str(project_name), str(version_name), revision, data, manual_vote=False

@@ -47,6 +47,7 @@ async def selected(
     URL: /announce/<project_name>/<version_name>
     Allow the user to announce a release preview.
     """
+    await session.check_access(project_name)
     release = await _get_page_data(session, project_name, version_name)
 
     latest_revision_number = release.latest_revision_number
