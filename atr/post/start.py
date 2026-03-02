@@ -40,10 +40,10 @@ async def selected(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(str(project_name))
+            wacp = await write.as_project_committee_participant(project_name)
             new_release, _project = await wacp.release.start(
-                str(project_name),
-                start_release_form.version_name,
+                project_name,
+                safe.VersionName(start_release_form.version_name),
             )
 
         return await session.redirect(

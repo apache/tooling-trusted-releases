@@ -24,7 +24,7 @@
 import dataclasses
 import datetime
 import enum
-from typing import Any, Final, Literal, Optional, TypeVar
+from typing import Any, Final, Literal, Optional, TypeVar, overload
 
 import pydantic
 import sqlalchemy
@@ -34,7 +34,7 @@ import sqlalchemy.orm as orm
 import sqlalchemy.sql.expression as expression
 import sqlmodel
 
-from . import results, schema
+from . import results, safe, schema
 
 T = TypeVar("T")
 
@@ -549,7 +549,7 @@ def see_also(arg: Any) -> None:
 class Project(sqlmodel.SQLModel, table=True):
     # TODO: Consider using key or label for primary string keys
     # Then we can use simply "name" for full_name, and make it str rather than str | None
-    name: str = sqlmodel.Field(unique=True, primary_key=True, **example("example"))
+    name: str = sqlmodel.Field(primary_key=True, unique=True, **example("example"))
     # TODO: Ideally full_name would be unique for str only, but that's complex
     # We always include "Apache" in the full_name
     full_name: str | None = sqlmodel.Field(default=None, **example("Apache Example"))
@@ -598,10 +598,15 @@ class Project(sqlmodel.SQLModel, table=True):
     @property
     def display_name(self) -> str:
         """Get the display name for the Project."""
-        base = self.full_name or self.name
+        base = self.full_name or str(self.name)
         if self.committee and self.committee.is_podling:
             return f"{base} (Incubating)"
         return base
+
+    @property
+    def safe_name(self) -> safe.ProjectName:
+        """Get the typesafe validated name for the Project"""
+        return safe.ProjectName(self.name)
 
     @property
     def short_display_name(self) -> str:
@@ -918,6 +923,21 @@ class Release(sqlmodel.SQLModel, table=True):
         return project.committee
 
     @property
+    def safe_name(self) -> safe.ReleaseName:
+        """Get the typesafe validated name for the Release"""
+        return safe.ReleaseName(self.name)
+
+    @property
+    def safe_project_name(self) -> safe.ProjectName:
+        """Get the typesafe validated name for the release project"""
+        return safe.ProjectName(self.project_name)
+
+    @property
+    def safe_version_name(self) -> safe.VersionName:
+        """Get the typesafe validated name for the release version"""
+        return safe.VersionName(self.version)
+
+    @property
     def short_display_name(self) -> str:
         """Get the short display name for the release."""
         return f"{self.project.short_display_name} {self.version}"
@@ -1023,7 +1043,7 @@ class CheckResultIgnore(sqlmodel.SQLModel, table=True):
 
 # Distribution: Release
 class Distribution(sqlmodel.SQLModel, table=True):
-    release_name: str = sqlmodel.Field(primary_key=True, index=True, foreign_key="release.name", ondelete="CASCADE")
+    release_name: str = sqlmodel.Field(foreign_key="release.name", ondelete="CASCADE", primary_key=True, index=True)
     release: Release = sqlmodel.Relationship(back_populates="distributions")
     platform: DistributionPlatform = sqlmodel.Field(primary_key=True, index=True)
     owner_namespace: str = sqlmodel.Field(primary_key=True, index=True, default="")
@@ -1049,6 +1069,11 @@ class Distribution(sqlmodel.SQLModel, table=True):
         package = normal(self.package)
         version = normal(self.version)
         return f"{name}-{package}-{version}"
+
+    @property
+    def safe_release_name(self) -> safe.ReleaseName:
+        """Get the typesafe validated name for the distribution release"""
+        return safe.ReleaseName(self.release_name)
 
     @property
     def title(self) -> str:
@@ -1315,7 +1340,7 @@ class WorkflowStatus(sqlmodel.SQLModel, table=True):
     message: str | None = sqlmodel.Field(default=None)
 
 
-def revision_name(release_name: str, number: str) -> str:
+def revision_name(release_name: safe.ReleaseName | str, number: str) -> str:
     return f"{release_name} {number}"
 
 
@@ -1386,9 +1411,20 @@ def latest_revision_number_query(release_name: str | None = None) -> expression.
     )
 
 
-def release_name(project_name: str, version_name: str) -> str:
+@overload
+def release_name(project_name: safe.ProjectName, version_name: safe.VersionName) -> safe.ReleaseName: ...
+
+
+@overload
+def release_name(project_name: str, version_name: str) -> str: ...
+
+
+def release_name(project_name: safe.ProjectName | str, version_name: safe.VersionName | str) -> safe.ReleaseName | str:
     """Return the release name for a given project and version."""
-    return f"{project_name}-{version_name}"
+    name = f"{project_name}-{version_name}"
+    if isinstance(project_name, safe.ProjectName) and isinstance(version_name, safe.VersionName):
+        return safe.ReleaseName(name)
+    return name
 
 
 def validate_instrumented_attribute(obj: Any) -> orm.InstrumentedAttribute:

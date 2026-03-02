@@ -28,6 +28,7 @@ import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage as storage
@@ -141,6 +142,8 @@ async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
 @checks.with_model(DistributionWorkflow)
 async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
     unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
+    project = safe.ProjectName(args.project_name)
+    safe.VersionName(args.version_name)
     try:
         sql_platform = sql.DistributionPlatform[args.platform]
     except KeyError:
@@ -183,9 +186,7 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
             _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
         async with storage.write_as_committee_member(args.committee_name, args.asf_uid) as w:
             try:
-                await w.workflowstatus.add_workflow_status(
-                    workflow, run_id, args.project_name, task_id, status=run.get("status")
-                )
+                await w.workflowstatus.add_workflow_status(workflow, run_id, project, task_id, status=run.get("status"))
             except storage.AccessError as e:
                 _fail(f"Failed to record distribution: {e}")
         return results.DistributionWorkflow(

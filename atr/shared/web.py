@@ -24,6 +24,7 @@ import atr.form as form
 import atr.get as get
 import atr.htm as htm
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
@@ -38,157 +39,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-async def check(
-    session: web.Committer | None,
-    release: sql.Release,
-    task_mid: str | None = None,
-    vote_form: htm.Element | None = None,
-    resolve_form: htm.Element | None = None,
-    archive_url: str | None = None,
-    vote_task: sql.Task | None = None,
-    can_vote: bool = False,
-    can_resolve: bool = False,
-) -> web.WerkzeugResponse | str:
-    base_path = paths.release_directory(release)
-
-    # TODO: This takes 180ms for providers
-    # We could cache it
-    all_paths = [path async for path in util.paths_recursive(base_path)]
-    all_paths.sort()
-
-    async with storage.read(session) as read:
-        ragp = read.as_general_public()
-        info = await ragp.releases.path_info(release, all_paths)
-
-    user_ssh_keys: Sequence[sql.SSHKey] = []
-    asf_id: str | None = None
-    server_domain: str | None = None
-    server_host: str | None = None
-
-    if session is not None:
-        asf_id = session.uid
-        server_domain = session.app_host.split(":", 1)[0]
-        server_host = session.app_host
-        async with db.session() as data:
-            user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
-
-    async with db.session() as data:
-        quarantined_pending = await data.quarantined(
-            release_name=release.name, status=sql.QuarantineStatus.PENDING
-        ).all()
-        quarantined_failed = await data.quarantined(release_name=release.name, status=sql.QuarantineStatus.FAILED).all()
-
-    # Get the number of ongoing tasks for the current revision
-    ongoing_tasks_count = 0
-    match await interaction.latest_info(release.project.name, release.version):
-        case (revision_number, revision_editor, revision_timestamp):
-            ongoing_tasks_count = await interaction.tasks_ongoing(
-                release.project.name,
-                release.version,
-                revision_number,
-            )
-        case None:
-            revision_number = None
-            revision_editor = None
-            revision_timestamp = None
-
-    delete_form = form.render(
-        model_cls=form.Empty,
-        action=util.as_url(get.compose.selected, project_name=release.project.name, version_name=release.version),
-        submit_label="Delete this draft",
-        submit_classes="btn btn-danger",
-        empty=True,
-        confirm="Are you sure you want to delete this draft? This cannot be undone.",
-    )
-
-    delete_file_forms: dict[str, htm.Element] = {}
-    for path in all_paths:
-        delete_file_forms[str(path)] = form.render(
-            model_cls=draft.DeleteFileForm,
-            action=util.as_url(post.draft.delete_file, project_name=release.project.name, version_name=release.version),
-            form_classes=".d-inline-block.m-0",
-            submit_classes="btn-sm btn-outline-danger",
-            submit_label="Delete",
-            empty=True,
-            defaults={"file_path": str(path)},
-            # TODO: Add a static check for the confirm syntax
-            confirm=(
-                "Are you sure you want to delete this file? "
-                "This will also delete any associated metadata files. "
-                "This cannot be undone."
-            ),
-        )
-
-    recheck_form = form.render(
-        model_cls=form.Empty,
-        action=util.as_url(post.draft.recheck, project_name=release.project.name, version_name=release.version),
-        submit_label="Disable global cache",
-        submit_classes="btn btn-primary",
-        # confirm="Restart all checks without using cached results? This creates a new revision.",
-    )
-    cache_reset_form = form.render(
-        model_cls=form.Empty,
-        action=util.as_url(post.draft.cache_reset, project_name=release.project.name, version_name=release.version),
-        submit_label="Enable global cache",
-        submit_classes="btn btn-primary",
-        # confirm="Restart all checks without using cached results? This creates a new revision.",
-    )
-
-    vote_task_warnings = _warnings_from_vote_result(vote_task)
-    has_files = await util.has_files(release)
-
-    has_any_errors = any(info.errors.get(path, []) for path in all_paths) if info else False
-    strict_checking = release.project.policy_strict_checking
-    strict_checking_errors = strict_checking and has_any_errors
-    blocker_errors = False
-    if revision_number is not None:
-        blocker_errors = await interaction.has_blocker_checks(release, revision_number)
-
-    is_local_caching = release.check_cache_key is not None
-
-    checks_summary_html = render_checks_summary(info, release.project.name, release.version)
-
-    return await template.render(
-        "check-selected.html",
-        project_name=release.project.name,
-        version_name=release.version,
-        release=release,
-        paths=all_paths,
-        info=info,
-        revision_editor=revision_editor,
-        revision_time=revision_timestamp,
-        revision_number=revision_number,
-        ongoing_tasks_count=ongoing_tasks_count,
-        quarantined_pending=quarantined_pending,
-        quarantined_failed=quarantined_failed,
-        delete_form=delete_form,
-        delete_file_forms=delete_file_forms,
-        asf_id=asf_id,
-        server_domain=server_domain,
-        server_host=server_host,
-        user_ssh_keys=user_ssh_keys,
-        format_datetime=util.format_datetime,
-        models=sql,
-        task_mid=task_mid,
-        vote_form=vote_form,
-        vote_task=vote_task,
-        archive_url=archive_url,
-        vote_task_warnings=vote_task_warnings,
-        recheck_form=recheck_form,
-        cache_reset_form=cache_reset_form,
-        is_local_caching=is_local_caching,
-        csrf_input=str(form.csrf_input()),
-        resolve_form=resolve_form,
-        has_files=has_files,
-        strict_checking_errors=strict_checking_errors,
-        blocker_errors=blocker_errors,
-        can_vote=can_vote,
-        can_resolve=can_resolve,
-        checks_summary_html=checks_summary_html,
-    )
-
-
-def render_checks_summary(info: types.PathInfo | None, project_name: str, version_name: str) -> htm.Element | None:
+def render_checks_summary(
+    info: types.PathInfo | None, project_name: safe.ProjectName, version_name: safe.VersionName
+) -> htm.Element | None:
     if (info is None) or (not info.checker_stats):
         return None
 
@@ -237,6 +90,164 @@ def render_checks_summary(info: types.PathInfo | None, project_name: str, versio
 
     card.append(body.collect())
     return card.collect()
+
+
+async def check(
+    session: web.Committer | None,
+    release: sql.Release,
+    task_mid: str | None = None,
+    vote_form: htm.Element | None = None,
+    resolve_form: htm.Element | None = None,
+    archive_url: str | None = None,
+    vote_task: sql.Task | None = None,
+    can_vote: bool = False,
+    can_resolve: bool = False,
+) -> web.WerkzeugResponse | str:
+    base_path = paths.release_directory(release)
+
+    # TODO: This takes 180ms for providers
+    # We could cache it
+    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths.sort()
+
+    async with storage.read(session) as read:
+        ragp = read.as_general_public()
+        info = await ragp.releases.path_info(release, all_paths)
+
+    user_ssh_keys: Sequence[sql.SSHKey] = []
+    asf_id: str | None = None
+    server_domain: str | None = None
+    server_host: str | None = None
+
+    if session is not None:
+        asf_id = session.uid
+        server_domain = session.app_host.split(":", 1)[0]
+        server_host = session.app_host
+        async with db.session() as data:
+            user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
+
+    async with db.session() as data:
+        quarantined_pending = await data.quarantined(
+            release_name=release.name, status=sql.QuarantineStatus.PENDING
+        ).all()
+        quarantined_failed = await data.quarantined(release_name=release.name, status=sql.QuarantineStatus.FAILED).all()
+
+    # Get the number of ongoing tasks for the current revision
+    ongoing_tasks_count = 0
+    match await interaction.latest_info(release.safe_project_name, release.safe_version_name):
+        case (revision_number, revision_editor, revision_timestamp):
+            ongoing_tasks_count = await interaction.tasks_ongoing(
+                release.safe_project_name,
+                release.safe_version_name,
+                revision_number,
+            )
+        case None:
+            revision_number = None
+            revision_editor = None
+            revision_timestamp = None
+
+    delete_form = form.render(
+        model_cls=form.Empty,
+        action=util.as_url(
+            get.compose.selected, project_name=release.safe_project_name, version_name=release.safe_version_name
+        ),
+        submit_label="Delete this draft",
+        submit_classes="btn btn-danger",
+        empty=True,
+        confirm="Are you sure you want to delete this draft? This cannot be undone.",
+    )
+
+    delete_file_forms: dict[str, htm.Element] = {}
+    for path in all_paths:
+        delete_file_forms[str(path)] = form.render(
+            model_cls=draft.DeleteFileForm,
+            action=util.as_url(
+                post.draft.delete_file, project_name=release.safe_project_name, version_name=release.safe_version_name
+            ),
+            form_classes=".d-inline-block.m-0",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label="Delete",
+            empty=True,
+            defaults={"file_path": str(path)},
+            # TODO: Add a static check for the confirm syntax
+            confirm=(
+                "Are you sure you want to delete this file? "
+                "This will also delete any associated metadata files. "
+                "This cannot be undone."
+            ),
+        )
+
+    recheck_form = form.render(
+        model_cls=form.Empty,
+        action=util.as_url(
+            post.draft.recheck, project_name=release.safe_project_name, version_name=release.safe_version_name
+        ),
+        submit_label="Disable global cache",
+        submit_classes="btn btn-primary",
+        # confirm="Restart all checks without using cached results? This creates a new revision.",
+    )
+    cache_reset_form = form.render(
+        model_cls=form.Empty,
+        action=util.as_url(
+            post.draft.cache_reset, project_name=release.safe_project_name, version_name=release.safe_version_name
+        ),
+        submit_label="Enable global cache",
+        submit_classes="btn btn-primary",
+        # confirm="Restart all checks without using cached results? This creates a new revision.",
+    )
+
+    vote_task_warnings = _warnings_from_vote_result(vote_task)
+    has_files = await util.has_files(release)
+
+    has_any_errors = any(info.errors.get(path, []) for path in all_paths) if info else False
+    strict_checking = release.project.policy_strict_checking
+    strict_checking_errors = strict_checking and has_any_errors
+    blocker_errors = False
+    if revision_number is not None:
+        blocker_errors = await interaction.has_blocker_checks(release, revision_number)
+
+    is_local_caching = release.check_cache_key is not None
+
+    checks_summary_html = render_checks_summary(info, release.safe_project_name, release.safe_version_name)
+
+    return await template.render(
+        "check-selected.html",
+        project_name=release.project.name,
+        version_name=release.version,
+        release=release,
+        paths=all_paths,
+        info=info,
+        revision_editor=revision_editor,
+        revision_time=revision_timestamp,
+        revision_number=revision_number,
+        ongoing_tasks_count=ongoing_tasks_count,
+        quarantined_pending=quarantined_pending,
+        quarantined_failed=quarantined_failed,
+        delete_form=delete_form,
+        delete_file_forms=delete_file_forms,
+        asf_id=asf_id,
+        server_domain=server_domain,
+        server_host=server_host,
+        user_ssh_keys=user_ssh_keys,
+        format_datetime=util.format_datetime,
+        models=sql,
+        task_mid=task_mid,
+        vote_form=vote_form,
+        vote_task=vote_task,
+        archive_url=archive_url,
+        vote_task_warnings=vote_task_warnings,
+        recheck_form=recheck_form,
+        cache_reset_form=cache_reset_form,
+        is_local_caching=is_local_caching,
+        csrf_input=str(form.csrf_input()),
+        resolve_form=resolve_form,
+        has_files=has_files,
+        strict_checking_errors=strict_checking_errors,
+        blocker_errors=blocker_errors,
+        can_vote=can_vote,
+        can_resolve=can_resolve,
+        checks_summary_html=checks_summary_html,
+    )
 
 
 def _checker_display_name(checker: str) -> str:

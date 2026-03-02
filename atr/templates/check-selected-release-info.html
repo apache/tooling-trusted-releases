@@ -7,7 +7,7 @@
       <div class="col-md-6">
         <p>
           <strong>Project:</strong>
-          <a href="{{ as_url(get.projects.view, project_name=release.project.name) }}">{{ release.project.display_name }}</a>
+          <a href="{{ as_url(get.projects.view, project_name=(release.project.name)) }}">{{ release.project.display_name }}</a>
         </p>
         <p>
           <strong>Label:</strong> {{ release.name }}
@@ -25,7 +25,7 @@
         {% if (phase == "release_candidate_draft") and revision_time %}
           <p>
             <strong>Revision:</strong>
-            <a href="{{ as_url(get.revisions.selected, project_name=project_name, version_name=version_name) }}#{{ revision_number }}">
+            <a href="{{ as_url(get.revisions.selected, project_name=project_name|string, version_name=version_name|string) }}#{{ revision_number }}">
               {{ format_datetime(revision_time) }}
             </a>
             {% if revision_editor %}by {{ revision_editor }}{% endif %}

@@ -29,6 +29,7 @@ import atr.attestable as attestable
 import atr.db as db
 import atr.hashes as hashes
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
 import atr.tasks.checks as checks
@@ -131,32 +132,36 @@ async def distribution_status_check(
 
 
 async def draft_checks(
-    asf_uid: str, project_name: str, release_version: str, revision_number: str, caller_data: db.Session | None = None
+    asf_uid: str,
+    project_name: safe.ProjectName,
+    release_version: safe.VersionName,
+    revision_number: str,
+    caller_data: db.Session | None = None,
 ) -> int:
     """Core logic to analyse a draft revision and queue checks."""
     # Construct path to the specific revision
     # We don't have the release object here, so we can't use util.release_directory
-    revision_path = file_paths.get_unfinished_dir() / project_name / release_version / revision_number
+    revision_path = file_paths.get_unfinished_dir() / str(project_name) / str(release_version) / revision_number
     relative_paths = [path async for path in util.paths_recursive(revision_path)]
 
     async with db.ensure_session(caller_data) as data:
         release = await data.release(
-            name=sql.release_name(project_name, release_version),
+            name=sql.release_name(str(project_name), str(release_version)),
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
         ).demand(RuntimeError("Release not found"))
         other_releases = (
-            await data.release(project_name=project_name, phase=sql.ReleasePhase.RELEASE)
+            await data.release(project_name=str(project_name), phase=sql.ReleasePhase.RELEASE)
             .order_by(sql.Release.released)
             .all()
         )
         release_versions = sorted(
-            [v for v in other_releases], key=lambda v: util.version_sort_key(v.version), reverse=True
+            [v for v in other_releases], key=lambda v: util.version_sort_key(str(v.version)), reverse=True
         )
-        release_version_sortable = util.version_sort_key(release_version)
+        release_version_sortable = util.version_sort_key(str(release_version))
         previous_version = next(
-            (v for v in release_versions if util.version_sort_key(v.version) < release_version_sortable), None
+            (v for v in release_versions if util.version_sort_key(str(v.version)) < release_version_sortable), None
         )
         for path in relative_paths:
             await _draft_file_checks(
@@ -200,7 +205,11 @@ async def draft_checks(
 
 
 async def keys_import_file(
-    asf_uid: str, project_name: str, version_name: str, revision_number: str, caller_data: db.Session | None = None
+    asf_uid: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision_number: str,
+    caller_data: db.Session | None = None,
 ) -> None:
     """Import a KEYS file from a draft release candidate revision."""
     async with db.ensure_session(caller_data) as data:
@@ -210,12 +219,14 @@ async def keys_import_file(
                 task_type=sql.TaskType.KEYS_IMPORT_FILE,
                 task_args=keys.ImportFile(
                     asf_uid=asf_uid,
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                 ).model_dump(),
                 asf_uid=asf_uid,
                 revision_number=revision_number,
                 primary_rel_path=None,
+                project_name=str(project_name),
+                version_name=str(version_name),
             )
         )
         await data.commit()
@@ -239,6 +250,8 @@ async def metadata_update(
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
+            project_name=None,
+            version_name=None,
         )
         if schedule:
             task.scheduled = schedule
@@ -263,8 +276,8 @@ async def queued(
             raise ValueError("Cache key must contain a 'checker' key")
         hash_val = hashes.compute_dict_hash(check_cache_key)
         await attestable.write_checks_data(
-            release.project.name,
-            release.version,
+            release.safe_project_name,
+            release.safe_version_name,
             revision_number,
             primary_rel_path or "",
             {check_cache_key["checker"]: hash_val},
@@ -464,6 +477,8 @@ async def workflow_update(
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
+            project_name=None,
+            version_name=None,
         )
         if schedule:
             task.scheduled = schedule
@@ -574,9 +589,9 @@ async def _draft_file_checks(
     data: db.Session,
     path: pathlib.Path,
     previous_version: sql.Release | None,
-    project_name: str,
+    project_name: safe.ProjectName,
     release: sql.Release,
-    release_version: str,
+    release_version: safe.VersionName,
     revision_number: str,
 ):
     path_str = str(path)
@@ -600,8 +615,8 @@ async def _draft_file_checks(
             revision_number,
             path_str,
             extra_args={
-                "project_name": project_name,
-                "version_name": release_version,
+                "project_name": str(project_name),
+                "version_name": str(release_version),
                 "revision_number": revision_number,
                 "previous_release_version": previous_version.version if previous_version else None,
                 "file_path": path_str,

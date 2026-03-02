@@ -17,12 +17,15 @@
 
 import pathlib
 
-from atr import config as config
-from atr.models import sql as sql
+import atr.config as config
+import atr.models.safe as safe
+import atr.models.sql as sql
 
 
-def base_path_for_revision(project_name: str, version_name: str, revision: str) -> pathlib.Path:
-    return pathlib.Path(get_unfinished_dir(), project_name, version_name, revision)
+def base_path_for_revision(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision: str
+) -> pathlib.Path:
+    return pathlib.Path(get_unfinished_dir(), str(project_name), str(version_name), revision)
 
 
 def get_attestable_dir() -> pathlib.Path:
@@ -107,9 +110,9 @@ def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
         ):
             if (path_revision := release.latest_revision_number) is None:
                 return None
-            path = get_unfinished_dir() / path_project / path_version / path_revision
+            path = get_unfinished_dir() / str(path_project) / str(path_version) / path_revision
         case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
+            path = get_finished_dir() / str(path_project) / str(path_version)
         # Do not add "case _" here
     return path
 
@@ -124,12 +127,14 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
             | sql.ReleasePhase.RELEASE_CANDIDATE
             | sql.ReleasePhase.RELEASE_PREVIEW
         ):
-            path = get_unfinished_dir() / path_project / path_version
+            path = get_unfinished_dir() / str(path_project) / str(path_version)
         case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
+            path = get_finished_dir() / str(path_project) / str(path_version)
         # Do not add "case _" here
     return path
 
 
-def revision_path_for_file(project_name: str, version_name: str, revision: str, file_name: str) -> pathlib.Path:
+def revision_path_for_file(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision: str, file_name: str
+) -> pathlib.Path:
     return base_path_for_revision(project_name, version_name, revision) / file_name

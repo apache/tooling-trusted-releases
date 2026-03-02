@@ -22,6 +22,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
@@ -283,7 +284,9 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
         )
 
     assert result is None
-    mock_promote.assert_awaited_once_with(row, "proj", "1.0", row.release.name, str(quarantine_dir))
+    mock_promote.assert_awaited_once_with(
+        row, safe.ProjectName("proj"), safe.VersionName("1.0"), row.release.name, str(quarantine_dir)
+    )
     mock_mark.assert_not_awaited()
 
 
@@ -312,8 +315,12 @@ def _make_quarantined_row() -> mock.MagicMock:
     row.id = 1
     row.status = sql.QuarantineStatus.PENDING
     row.release = mock.MagicMock()
+    row.release.name = "proj-1.0"
+    row.release.safe_name = safe.ReleaseName(row.release.name)
     row.release.project_name = "proj"
+    row.release.safe_project_name = safe.ProjectName(row.release.project_name)
     row.release.version = "1.0"
+    row.release.safe_version_name = safe.VersionName(row.release.version)
     return row
 
 

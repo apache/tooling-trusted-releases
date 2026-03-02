@@ -27,6 +27,7 @@ import pydantic
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
+import atr.models.safe as safe
 import atr.paths as paths
 import atr.util as util
 
@@ -34,32 +35,40 @@ if TYPE_CHECKING:
     import pathlib
 
 
-def attestable_checks_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.checks.json"
+def attestable_checks_path(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+) -> pathlib.Path:
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.checks.json"
 
 
-def attestable_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.json"
+def attestable_path(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+) -> pathlib.Path:
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.json"
 
 
-def attestable_paths_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.paths.json"
+def attestable_paths_path(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+) -> pathlib.Path:
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.paths.json"
 
 
-def github_tp_payload_path(project_name: str, version_name: str, revision_number: str) -> pathlib.Path:
-    return paths.get_attestable_dir() / project_name / version_name / f"{revision_number}.github-tp.json"
+def github_tp_payload_path(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+) -> pathlib.Path:
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.github-tp.json"
 
 
 async def github_tp_payload_write(
-    project_name: str, version_name: str, revision_number: str, github_payload: dict[str, Any]
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str, github_payload: dict[str, Any]
 ) -> None:
     payload_path = github_tp_payload_path(project_name, version_name, revision_number)
     await util.atomic_write_file(payload_path, json.dumps(github_payload, indent=2))
 
 
 async def load(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
 ) -> models.AttestableV1 | None:
     file_path = attestable_path(project_name, version_name, revision_number)
@@ -75,8 +84,8 @@ async def load(
 
 
 async def load_checks(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
 ) -> dict[str, dict[str, str]]:
     file_path = attestable_checks_path(project_name, version_name, revision_number)
@@ -97,8 +106,8 @@ async def load_checks(
 
 
 async def load_paths(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
 ) -> dict[str, str] | None:
     file_path = attestable_paths_path(project_name, version_name, revision_number)
@@ -163,8 +172,8 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, 
 
 
 async def write_checks_data(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
     rel_path: str,
     checks: dict[str, str],
@@ -187,8 +196,8 @@ async def write_checks_data(
 
 
 async def write_files_data(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,

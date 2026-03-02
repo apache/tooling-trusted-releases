@@ -57,14 +57,14 @@ async def report(
 
     match sbom_form:
         case shared.sbom.AugmentSBOMForm():
-            return await _augment(session, str(project_name), str(version_name), validated_path)
+            return await _augment(session, project_name, version_name, validated_path)
 
         case shared.sbom.ScanSBOMForm():
-            return await _scan(session, str(project_name), str(version_name), validated_path)
+            return await _scan(session, project_name, version_name, validated_path)
 
 
 async def _augment(
-    session: web.Committer, project_name: str, version_name: str, rel_path: pathlib.Path
+    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Augment a CycloneDX SBOM file."""
     # Check that the file is a .cdx.json archive before creating a revision
@@ -73,7 +73,7 @@ async def _augment(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=project_name, version=version_name).demand(
+            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
             revision_number = release.latest_revision_number
@@ -108,7 +108,7 @@ async def _augment(
 
 
 async def _scan(
-    session: web.Committer, project_name: str, version_name: str, rel_path: pathlib.Path
+    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
     if not (rel_path.name.endswith(".cdx.json")):
@@ -116,7 +116,7 @@ async def _scan(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=project_name, version=version_name).demand(
+            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
                 RuntimeError("Release does not exist for OSV scan")
             )
             revision_number = release.latest_revision_number

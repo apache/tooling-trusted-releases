@@ -35,6 +35,7 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.detection as detection
 import atr.merge as merge
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -82,12 +83,12 @@ async def finalise_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.AttestableV1 | None,
-    project_name: str,
+    project_name: safe.ProjectName,
     release: sql.Release,
-    release_name: str,
+    release_name: safe.ReleaseName,
     temp_dir: str,
     temp_dir_path: pathlib.Path,
-    version_name: str,
+    version_name: safe.VersionName,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
@@ -121,7 +122,7 @@ async def finalise_revision(
         previous_attestable=previous_attestable,
         project_name=project_name,
         release=merged_release,
-        release_name=release_name,
+        release_name=str(release_name),
         temp_dir=temp_dir,
         version_name=version_name,
         was_quarantined=was_quarantined,
@@ -137,11 +138,11 @@ async def _commit_new_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.AttestableV1 | None,
-    project_name: str,
+    project_name: safe.ProjectName,
     release: sql.Release,
     release_name: str,
     temp_dir: str,
-    version_name: str,
+    version_name: safe.VersionName,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
@@ -241,11 +242,11 @@ async def _lock_and_merge(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.AttestableV1 | None,
-    project_name: str,
+    project_name: safe.ProjectName,
     release: sql.Release,
-    _release_name: str,
+    _release_name: safe.ReleaseName,
     temp_dir_path: pathlib.Path,
-    version_name: str,
+    version_name: safe.VersionName,
 ) -> tuple[atr.models.attestable.AttestableV1 | None, str | None, str | None, sql.Release]:
     # Acquire the write lock
     # We need this write lock for moving the directory afterwards atomically
@@ -330,8 +331,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def create_revision_with_quarantine(  # noqa: C901
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         asf_uid: str,
         description: str | None = None,
         set_local_cache: bool = False,
@@ -340,7 +341,7 @@ class CommitteeParticipant(FoundationCommitter):
         clone_from: str | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
-        release_name = sql.release_name(project_name, version_name)
+        release_name = sql.release_name(str(project_name), str(version_name))
         async with db.session() as data:
             release = await data.release(name=release_name, _release_policy=True, _project_release_policy=True).demand(
                 RuntimeError("Release does not exist for new revision creation")
@@ -439,7 +440,7 @@ class CommitteeParticipant(FoundationCommitter):
                     previous_attestable=previous_attestable,
                     project_name=project_name,
                     release=release,
-                    _release_name=release_name,
+                    _release_name=release.safe_name,
                     temp_dir_path=temp_dir_path,
                     version_name=version_name,
                 )
@@ -488,10 +489,10 @@ class CommitteeParticipant(FoundationCommitter):
         description: str | None,
         path_to_size: dict[str, int],
         prior_revision_name: str | None,
-        project_name: str,
+        project_name: safe.ProjectName,
         release_name: str,
         temp_dir: str,
-        version_name: str,
+        version_name: safe.VersionName,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -540,8 +541,8 @@ class CommitteeParticipant(FoundationCommitter):
                     ],
                 },
                 asf_uid=asf_uid,
-                project_name=project_name,
-                version_name=version_name,
+                project_name=str(project_name),
+                version_name=str(version_name),
                 revision_number=None,
                 primary_rel_path=None,
             )

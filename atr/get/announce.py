@@ -59,16 +59,16 @@ async def selected(
         )
 
     # Get the templates from the release policy
-    default_subject_template = await construct.announce_release_subject_default(str(project_name))
-    default_body_template = await construct.announce_release_default(str(project_name))
+    default_subject_template = await construct.announce_release_subject_default(project_name)
+    default_body_template = await construct.announce_release_default(project_name)
     subject_template_hash = construct.template_hash(default_subject_template)
 
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
         asfuid=session.uid,
         fullname=session.fullname,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_name=project_name,
+        version_name=version_name,
         revision_number=latest_revision_number,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
@@ -114,8 +114,8 @@ async def _get_page_data(
     session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName
 ) -> sql.Release:
     release = await session.release(
-        str(project_name),
-        str(version_name),
+        project_name,
+        version_name,
         with_committee=True,
         phase=sql.ReleasePhase.RELEASE_PREVIEW,
         with_distributions=True,

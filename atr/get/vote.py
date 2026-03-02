@@ -59,12 +59,12 @@ class UserCategory(enum.StrEnum):
 
 
 async def category_and_release(
-    session: web.Committer | None, project_name: str, version_name: str
+    session: web.Committer | None, project_name: safe.ProjectName, version_name: safe.VersionName
 ) -> tuple[UserCategory, sql.Release, sql.Task | None]:
     async with db.session() as data:
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
@@ -183,7 +183,7 @@ async def selected(
     URL: /vote/<project_name>/<version_name>
     Show voting options for a release candidate.
     """
-    user_category, release, latest_vote_task = await category_and_release(session, str(project_name), str(version_name))
+    user_category, release, latest_vote_task = await category_and_release(session, project_name, version_name)
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
         if session is None:

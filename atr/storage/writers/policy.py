@@ -129,7 +129,7 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.file_tag_mappings = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
 
-        await self.__commit_and_log(project_name)
+        await self.__commit_and_log(str(project_name))
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
         project_name = form.project_name
@@ -140,7 +140,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
         release_policy.preserve_download_files = form.preserve_download_files
 
-        await self.__commit_and_log(project_name)
+        await self.__commit_and_log(str(project_name))
 
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
         project_name = form.project_name
@@ -160,7 +160,7 @@ class CommitteeMember(CommitteeParticipant):
         elif project.committee and project.committee.is_podling:
             raise storage.AccessError("Manual voting is not allowed for podlings.")
 
-        await self.__commit_and_log(project_name)
+        await self.__commit_and_log(str(str(project_name)))
 
     async def __commit_and_log(self, project_name: str) -> None:
         await self.__data.commit()
@@ -169,9 +169,11 @@ class CommitteeMember(CommitteeParticipant):
             project_name=project_name,
         )
 
-    async def __get_or_create_policy(self, project_name: str) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
+    async def __get_or_create_policy(
+        self, project_name: models.safe.ProjectName
+    ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
         project = await self.__data.project(
-            name=project_name, status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
+            name=str(project_name), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
         ).demand(storage.AccessError(f"Project {project_name} not found"))
 
         release_policy = project.release_policy

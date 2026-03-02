@@ -53,8 +53,8 @@ async def selected(
 
     # Get the release to find the revision number
     release = await session.release(
-        str(project_name),
-        str(version_name),
+        project_name,
+        version_name,
         with_committee=True,
         phase=sql.ReleasePhase.RELEASE_PREVIEW,
         with_distributions=True,
@@ -92,7 +92,7 @@ async def selected(
             )
 
     # Validate that the subject template hasn't changed
-    subject_template = await construct.announce_release_subject_default(str(project_name))
+    subject_template = await construct.announce_release_subject_default(project_name)
     current_hash = construct.template_hash(subject_template)
     if current_hash != announce_form.subject_template_hash:
         return await session.form_error(
@@ -101,10 +101,10 @@ async def selected(
         )
 
     try:
-        async with storage.write_as_project_committee_member(str(project_name), session) as wacm:
+        async with storage.write_as_project_committee_member(project_name, session) as wacm:
             await wacm.announce.release(
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_name=project_name,
+                version_name=version_name,
                 preview_revision_number=preview_revision_number,
                 recipient=announce_form.mailing_list,
                 body=announce_form.body,

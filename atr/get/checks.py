@@ -92,7 +92,7 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
 
     _, totals = await _compute_stats(release, all_paths, match_ignore)
     return totals
@@ -123,7 +123,7 @@ async def selected(
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
 
     per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
 
@@ -169,9 +169,9 @@ async def selected_revision(
         ragp = read.as_general_public()
         info = await ragp.releases.path_info(release, all_paths)
 
-    ongoing_count = await interaction.tasks_ongoing(str(project_name), str(version_name), revision_number)
+    ongoing_count = await interaction.tasks_ongoing(project_name, version_name, revision_number)
 
-    checks_summary_elem = shared.web.render_checks_summary(info, str(project_name), str(version_name))
+    checks_summary_elem = shared.web.render_checks_summary(info, project_name, version_name)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
     delete_file_forms: dict[str, str] = {}

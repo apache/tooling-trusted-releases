@@ -212,7 +212,7 @@
       <p>No ignored checks found.</p>
     {% endif %}
     <p>
-      You can also <a href="{{ as_url(get.ignores.ignores, project_name=release.project_name) }}">manage which check results are ignored</a>.
+      You can also <a href="{{ as_url(get.ignores.ignores, project_name=release.project_name|string) }}">manage which check results are ignored</a>.
     </p>
 
     {% if is_viewing_as_admin_fn(current_user.uid) %}

@@ -67,7 +67,7 @@ async def selected(
     substituted_markdown = construct.checklist_body(
         checklist_markdown,
         project=project,
-        version_name=str(version_name),
+        version_name=version_name,
         committee=committee,
         revision=latest_revision,
     )

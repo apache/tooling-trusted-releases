@@ -40,7 +40,7 @@ async def selected_post(
     URL: /vote/<project_name>/<version_name>
     """
 
-    release = await session.release(str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_CANDIDATE)
+    release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_CANDIDATE)
 
     if release.committee is None:
         raise ValueError("Release has no committee")

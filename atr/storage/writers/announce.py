@@ -29,6 +29,7 @@ import sqlmodel
 
 import atr.construct as construct
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -103,8 +104,8 @@ class CommitteeMember(CommitteeParticipant):
 
     async def release(  # noqa: C901
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         preview_revision_number: str,
         recipient: str,
         body: str,
@@ -120,8 +121,8 @@ class CommitteeMember(CommitteeParticipant):
         finished_dir: str = ""
 
         release = await self.__data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
             latest_revision_number=preview_revision_number,
             _project_release_policy=True,
@@ -196,8 +197,8 @@ class CommitteeMember(CommitteeParticipant):
             await aioshutil.move(unfinished_dir, finished_dir)
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=project_name,
-                version_name=version_name,
+                project_name=str(project_name),
+                version_name=str(version_name),
                 revision_number=preview_revision_number,
                 source_directory=unfinished_dir,
                 target_directory=finished_dir,
@@ -235,8 +236,8 @@ class CommitteeMember(CommitteeParticipant):
                     in_reply_to=None,
                 ).model_dump(),
                 asf_uid=asf_uid,
-                project_name=project_name,
-                version_name=version_name,
+                project_name=str(project_name),
+                version_name=str(version_name),
             )
             self.__data.add(task)
 

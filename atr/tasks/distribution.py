@@ -63,13 +63,13 @@ async def status_check(args: DistributionStatusCheckArgs, *, task_id: int | None
             async with storage.write_as_committee_member(dist.release.project.committee_name, dist.created_by) as w:
                 if dist.retries >= _RETRY_LIMIT:
                     await w.distributions.delete_distribution(
-                        dist.release_name, dist.platform, dist.owner_namespace, dist.package, dist.version
+                        dist.safe_release_name, dist.platform, dist.owner_namespace, dist.package, dist.version
                     )
                     log.error(f"Distribution {name} failed {_RETRY_LIMIT} times, skipping")
                     continue
                 log.warning(f"Retrying distribution {name}")
                 await w.distributions.record_from_data(
-                    dist.release_name,
+                    dist.safe_release_name,
                     dist.staging,
                     dd,
                     allow_retries=True,

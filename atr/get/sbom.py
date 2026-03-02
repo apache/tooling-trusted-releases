@@ -58,10 +58,10 @@ async def report(
     """
     # If the draft is not found, we try to get the release candidate
     try:
-        release = await session.release(str(project_name), str(version_name), with_committee=True)
+        release = await session.release(project_name, version_name, with_committee=True)
     except base.ASFQuartException:
         release = await session.release(
-            str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
+            project_name, version_name, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
         )
 
     block = htm.Block()
@@ -95,9 +95,7 @@ async def report(
         raise base.ASFQuartException("Invalid file path", errorcode=400)
     validated_path_str = str(validated_path)
 
-    task, augment_tasks, osv_tasks = await _fetch_tasks(
-        validated_path_str, str(project_name), release, str(version_name)
-    )
+    task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project_name, release, version_name)
 
     task_status = await _report_task_results(block, task)
     if task_status:
@@ -247,15 +245,15 @@ def _extract_vulnerability_severity(vuln: results.VulnerabilityDetails) -> str:
 
 
 async def _fetch_tasks(
-    file_path: str, project: str, release: sql.Release, version: str
+    file_path: str, project: safe.ProjectName, release: sql.Release, version: safe.VersionName
 ) -> tuple[sql.Task | None, Sequence[sql.Task], Sequence[sql.Task]]:
     # TODO: Abstract this code and the sbomtool.MissingAdapter validators
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
         tasks = (
             await data.task(
-                project_name=project,
-                version_name=version,
+                project_name=str(project),
+                version_name=str(version),
                 revision_number=release.latest_revision_number,
                 task_type=sql.TaskType.SBOM_TOOL_SCORE,
                 primary_rel_path=file_path,
@@ -265,8 +263,8 @@ async def _fetch_tasks(
         )
         augment_tasks = (
             await data.task(
-                project_name=project,
-                version_name=version,
+                project_name=str(project),
+                version_name=str(version),
                 task_type=sql.TaskType.SBOM_AUGMENT,
                 primary_rel_path=file_path,
             )
@@ -276,8 +274,8 @@ async def _fetch_tasks(
         # Run or running scans for the current revision
         osv_tasks = (
             await data.task(
-                project_name=project,
-                version_name=version,
+                project_name=str(project),
+                version_name=str(version),
                 task_type=sql.TaskType.SBOM_OSV_SCAN,
                 primary_rel_path=file_path,
                 revision_number=release.latest_revision_number,

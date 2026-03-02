@@ -46,7 +46,7 @@ async def selected(
     URL: /file/<project_name>/<version_name>
     View all the files in a release (any phase).
     """
-    release = await session.release(str(project_name), str(version_name), phase=None)
+    release = await session.release(project_name, version_name, phase=None)
 
     revision_number = release.latest_revision_number
     file_stats = []
@@ -153,7 +153,7 @@ async def selected_path(
     if validated_path is None:
         raise web.FlashError("Invalid file path")
 
-    release = await session.release(str(project_name), str(version_name), phase=None)
+    release = await session.release(project_name, version_name, phase=None)
     _max_view_size = 512 * 1024
     full_path = paths.release_directory(release) / validated_path
     content_listing = await util.archive_listing(full_path)

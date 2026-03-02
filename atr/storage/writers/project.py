@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.registry as registry
 import atr.storage as storage
@@ -106,7 +107,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=project.name,
+                project_name=str(project.name),
                 category=new_category,
             )
             return True
@@ -125,7 +126,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=project.name,
+                project_name=str(project.name),
                 category=action_value,
             )
             return True
@@ -133,6 +134,8 @@ class CommitteeMember(CommitteeParticipant):
 
     async def create(self, committee_name: str, display_name: str, label: str) -> None:
         super_project = None
+        # Wrap the name in safe.ProjectName so we can create it in the database
+        # TODO: Do we need to do any additional validation on the string value?
         # Get the base project to derive from
         # We're allowing derivation from a retired project here
         # TODO: Should we disallow this instead?
@@ -140,8 +143,8 @@ class CommitteeMember(CommitteeParticipant):
             committee_name=committee_name, _committee=True, _release_policy=True
         ).all()
         for committee_project in committee_projects:
-            if label.startswith(committee_project.name + "-"):
-                if (super_project is None) or (len(super_project.name) < len(committee_project.name)):
+            if label.startswith(str(committee_project.name) + "-"):
+                if (super_project is None) or (len(str(super_project.name)) < len(str(committee_project.name))):
                     super_project = committee_project
 
         # Check whether the project already exists
@@ -173,9 +176,9 @@ class CommitteeMember(CommitteeParticipant):
             project_name=label,
         )
 
-    async def delete(self, project_name: str) -> None:
+    async def delete(self, project_name: safe.ProjectName) -> None:
         project = await self.__data.project(
-            name=project_name, status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
         ).get()
 
         if not project:
@@ -197,7 +200,7 @@ class CommitteeMember(CommitteeParticipant):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
+            project_name=str(project_name),
         )
         return None
 
@@ -216,7 +219,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=project.name,
+                project_name=str(project.name),
                 language=new_language,
             )
             return True
@@ -233,7 +236,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=project.name,
+                project_name=str(project.name),
                 language=action_value,
             )
             return True

@@ -39,6 +39,7 @@ import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.github as github_models
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
 import atr.util as util
@@ -50,8 +51,8 @@ import atr.util as util
 class FunctionArguments:
     recorder: Callable[[], Awaitable[Recorder]]
     asf_uid: str
-    project_name: str
-    version_name: str
+    project_name: safe.ProjectName
+    version_name: safe.VersionName
     revision_number: str
     primary_rel_path: str | None
     extra_args: dict[str, Any]
@@ -59,9 +60,9 @@ class FunctionArguments:
 
 class Recorder:
     checker: str
-    release_name: str
-    project_name: str
-    version_name: str
+    release_name: safe.ReleaseName
+    project_name: safe.ProjectName
+    version_name: safe.VersionName
     primary_rel_path: str | None
     member_rel_path: str | None
     revision_number: str
@@ -73,8 +74,8 @@ class Recorder:
         self,
         checker: str | Callable[..., Any],
         inputs_hash: str | None,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         revision_number: str,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,
@@ -99,8 +100,8 @@ class Recorder:
         cls,
         checker: str | Callable[..., Any],
         inputs_hash: str,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         revision_number: str,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,
@@ -144,7 +145,7 @@ class Recorder:
                 self.member_problems[status] = self.member_problems.get(status, 0) + 1
 
         result = sql.CheckResult(
-            release_name=self.release_name,
+            release_name=str(self.release_name),
             revision_number=self.revision_number,
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
@@ -184,8 +185,9 @@ class Recorder:
     async def project(self) -> sql.Project:
         # TODO: Cache project
         async with db.session() as data:
-            return await data.project(name=self.project_name, _release_policy=True).demand(
-                RuntimeError(f"Project {self.project_name} not found")
+            name_str = str(self.project_name)
+            return await data.project(name=name_str, _release_policy=True).demand(
+                RuntimeError(f"Project {name_str} not found")
             )
 
     async def primary_path_is_binary(self) -> bool:
@@ -325,7 +327,7 @@ async def resolve_cache_key(
         args = {}
     cache_key = {"checker": function_key(checker), "version": checker_version}
     file_hash = None
-    attestable_data = await attestable.load(release.project_name, release.version, revision)
+    attestable_data = await attestable.load(release.safe_project_name, release.safe_version_name, revision)
     if attestable_data:
         policy = sql.ReleasePolicy.model_validate(attestable_data.policy)
         if not ignore_path:
@@ -335,7 +337,9 @@ async def resolve_cache_key(
         policy = release.release_policy or release.project.release_policy
         if not ignore_path:
             if path is None:
-                path = file_paths.revision_path_for_file(release.project_name, release.version, revision, file or "")
+                path = file_paths.revision_path_for_file(
+                    release.safe_project_name, release.safe_version_name, revision, file or ""
+                )
             file_hash = await hashes.compute_file_hash(path)
     if file_hash:
         cache_key["file_hash"] = file_hash
@@ -380,7 +384,7 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
         return []
     if not (
         base_path := file_paths.base_path_for_revision(
-            release.project_name, release.version, release.latest_revision_number
+            release.safe_project_name, release.safe_version_name, release.latest_revision_number
         )
     ):
         return []
@@ -403,7 +407,7 @@ async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = No
     if not release.latest_revision_number:
         return ""
     payload_path = attestable.github_tp_payload_path(
-        release.project_name, release.version, release.latest_revision_number
+        release.safe_project_name, release.safe_version_name, release.latest_revision_number
     )
     if not await aiofiles.os.path.isfile(payload_path):
         return ""
@@ -431,7 +435,7 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
     if (not rel_path) or (not release.latest_revision_number):
         return ""
     abs_path = file_paths.revision_path_for_file(
-        release.project_name, release.version, release.latest_revision_number, rel_path
+        release.safe_project_name, release.safe_version_name, release.latest_revision_number, rel_path
     )
     plain_path = abs_path.with_suffix("")
     if await aiofiles.os.path.isfile(plain_path):

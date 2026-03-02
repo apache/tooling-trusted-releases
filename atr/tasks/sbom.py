@@ -28,6 +28,7 @@ import atr.archives as archives
 import atr.config as config
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
@@ -82,6 +83,9 @@ class ScoreArgs(FileArgs):
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
+    project = safe.ProjectName(args.project_name)
+    version = safe.VersionName(args.version_name)
+
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
@@ -99,7 +103,7 @@ async def augment(args: FileArgs) -> results.Results | None:
         new_version, merged = sbom.utilities.apply_patch("augment", args.revision_number, bundle, patch_ops)
         description = "SBOM augmentation through web interface"
         async with storage.write(args.asf_uid) as write:
-            wacp = await write.as_project_committee_participant(args.project_name)
+            wacp = await write.as_project_committee_participant(project)
 
             async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
                 nonlocal new_full_path, new_full_path_str
@@ -112,7 +116,7 @@ async def augment(args: FileArgs) -> results.Results | None:
                     await f.write(merged.dumps())
 
             await wacp.revision.create_revision_with_quarantine(
-                args.project_name, args.version_name, args.asf_uid or "unknown", description=description, modify=modify
+                project, version, args.asf_uid or "unknown", description=description, modify=modify
             )
 
     return results.SBOMAugment(
@@ -142,6 +146,9 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def osv_scan(args: FileArgs) -> results.Results | None:
+    project = safe.ProjectName(args.project_name)
+    version = safe.VersionName(args.version_name)
+
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
@@ -168,7 +175,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     new_version, merged = sbom.utilities.apply_patch("osv-scan", args.revision_number, bundle, patch_ops)
     description = "SBOM vulnerability scan through web interface"
     async with storage.write(args.asf_uid) as write:
-        wacp = await write.as_project_committee_participant(args.project_name)
+        wacp = await write.as_project_committee_participant(project)
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
             nonlocal new_full_path, new_full_path_str
@@ -181,7 +188,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
                 await f.write(merged.dumps())
 
         await wacp.revision.create_revision_with_quarantine(
-            args.project_name, args.version_name, args.asf_uid or "unknown", description=description, modify=modify
+            project, version, args.asf_uid or "unknown", description=description, modify=modify
         )
 
     return results.SBOMOSVScan(
@@ -199,6 +206,9 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def score_qs(args: FileArgs) -> results.Results | None:
+    safe.ProjectName(args.project_name)
+    safe.VersionName(args.version_name)
+
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
@@ -235,10 +245,13 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(ScoreArgs)
 async def score_tool(args: ScoreArgs) -> results.Results | None:
+    safe.ProjectName(args.project_name)
+    safe.VersionName(args.version_name)
+
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     previous_base_dir = None
     if args.previous_release_version is not None:
-        previous_base_dir = paths.get_finished_dir() / args.project_name / args.previous_release_version
+        previous_base_dir = paths.get_finished_dir() / args.project_name / str(args.previous_release_version)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path

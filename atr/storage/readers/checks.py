@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.types as types
@@ -54,7 +55,7 @@ class GeneralPublic:
         # Filter out any results that are ignored
         unignored_checks = []
         ignored_checks = []
-        match_ignore = await self.ignores_matcher(release.project_name)
+        match_ignore = await self.ignores_matcher(release.safe_project_name)
         for cr in all_check_results:
             if not match_ignore(cr):
                 unignored_checks.append(cr)
@@ -78,18 +79,18 @@ class GeneralPublic:
             member_results_list[member_rel_path].sort(key=lambda r: r.checker)
         return types.CheckResults(primary_results_list, member_results_list, ignored_checks)
 
-    async def ignores(self, project_name: str) -> list[sql.CheckResultIgnore]:
+    async def ignores(self, project_name: safe.ProjectName) -> list[sql.CheckResultIgnore]:
         results = await self.__data.check_result_ignore(
-            project_name=project_name,
+            project_name=str(project_name),
         ).all()
         return list(results)
 
     async def ignores_matcher(
         self,
-        project_name: str,
+        project_name: safe.ProjectName,
     ) -> Callable[[sql.CheckResult], bool]:
         ignores = await self.__data.check_result_ignore(
-            project_name=project_name,
+            project_name=str(project_name),
         ).all()
 
         def match(cr: sql.CheckResult) -> bool:
@@ -110,7 +111,7 @@ class GeneralPublic:
             # Blockers are never ignored
             return False
         if cri.release_glob is not None:
-            if not self.__check_ignore_match_pattern(cri.release_glob, cr.release_name):
+            if not self.__check_ignore_match_pattern(cri.release_glob, str(cr.release_name)):
                 return False
         if cri.revision_number is not None:
             if cri.revision_number != cr.revision_number:

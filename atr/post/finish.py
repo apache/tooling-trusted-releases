@@ -40,22 +40,22 @@ async def selected(
     URL: /finish/<project_name>/<version_name>
     """
     wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
-    respond = _respond_helper(session, str(project_name), str(version_name), wants_json)
+    respond = _respond_helper(session, project_name, version_name, wants_json)
 
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
-            return await _delete_empty_directory(delete_form, session, str(project_name), str(version_name), respond)
+            return await _delete_empty_directory(delete_form, session, project_name, version_name, respond)
         case shared.finish.MoveFileForm() as move_form:
-            return await _move_file_to_revision(move_form, session, str(project_name), str(version_name), respond)
+            return await _move_file_to_revision(move_form, session, project_name, version_name, respond)
         case shared.finish.RemoveRCTagsForm():
-            return await _remove_rc_tags(session, str(project_name), str(version_name), respond)
+            return await _remove_rc_tags(session, project_name, version_name, respond)
 
 
 async def _delete_empty_directory(
     delete_form: shared.finish.DeleteEmptyDirectoryForm,
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     dir_to_delete_rel = delete_form.directory_to_delete
@@ -77,8 +77,8 @@ async def _delete_empty_directory(
 async def _move_file_to_revision(
     move_form: shared.finish.MoveFileForm,
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     source_files_rel = move_form.source_files
@@ -122,8 +122,8 @@ async def _move_file_to_revision(
 
 async def _remove_rc_tags(
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
@@ -154,7 +154,7 @@ async def _remove_rc_tags(
 
 
 def _respond_helper(
-    session: web.Committer, project_name: str, version_name: str, wants_json: bool
+    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, wants_json: bool
 ) -> shared.finish.Respond:
     """Create a response helper function for the finish route."""
     import atr.get as get
@@ -167,6 +167,8 @@ def _respond_helper(
         if wants_json:
             return quart.jsonify(ok=ok, message=msg), http_status
         await quart.flash(msg, "success" if ok else "error")
-        return await session.redirect(get.finish.selected, project_name=project_name, version_name=version_name)
+        return await session.redirect(
+            get.finish.selected, project_name=str(project_name), version_name=str(version_name)
+        )
 
     return respond

@@ -50,14 +50,14 @@ async def body_preview(
     URL: /voting/body/preview/<project_name>/<version_name>/<revision_number>
     """
 
-    default_subject_template = await construct.start_vote_subject_default(str(project_name))
-    default_body_template = await construct.start_vote_default(str(project_name))
+    default_subject_template = await construct.start_vote_subject_default(project_name)
+    default_body_template = await construct.start_vote_default(project_name)
 
     options = construct.StartVoteOptions(
         asfuid=session.uid,
         fullname=session.fullname,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_name=project_name,
+        version_name=version_name,
         revision_number=revision_number,
         vote_duration=preview_form.vote_duration,
     )
@@ -81,7 +81,7 @@ async def selected_revision(
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=False
+            session, project_name, version_name, revision, data, manual_vote=False
         ):
             case str() as error:
                 return await session.redirect(
@@ -101,7 +101,7 @@ async def selected_revision(
                 f"Invalid mailing list selection: {start_voting_form.mailing_list}",
             )
 
-        subject_template = await construct.start_vote_subject_default(str(project_name))
+        subject_template = await construct.start_vote_subject_default(project_name)
         current_hash = construct.template_hash(subject_template)
         if current_hash != start_voting_form.subject_template_hash:
             return await session.form_error(
@@ -113,8 +113,8 @@ async def selected_revision(
         options = construct.StartVoteOptions(
             asfuid=session.uid,
             fullname=session.fullname,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_name=project_name,
+            version_name=version_name,
             revision_number=revision,
             vote_duration=start_voting_form.vote_duration,
         )
@@ -123,8 +123,8 @@ async def selected_revision(
         async with storage.write_as_committee_participant(committee.name) as wacp:
             _task = await wacp.vote.start(
                 start_voting_form.mailing_list,
-                str(project_name),
-                str(version_name),
+                project_name,
+                version_name,
                 revision,
                 start_voting_form.vote_duration,
                 subject,

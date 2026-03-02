@@ -40,6 +40,7 @@ import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -59,6 +60,12 @@ _ASYNCSSH_SUPPORTED_MAC: Final = {bytes(a) for a in mac.get_mac_algs()}
 _APPROVED_CIPHERS: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "ciphers", _ASYNCSSH_SUPPORTED_ENC)
 _APPROVED_KEX: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "kex", _ASYNCSSH_SUPPORTED_KEX)
 _APPROVED_MACS: Final = util.intersect_algs(_SSH_AUDIT_POLICY, "macs", _ASYNCSSH_SUPPORTED_MAC)
+
+
+_PATH_ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+# From a survey of version numbers we find that only . and - are used
+# We also allow + which is in common use
+_PATH_VERSION_CHARS: Final = _PATH_ALPHANUM | frozenset(".-+")
 
 
 class RsyncArgsError(Exception):
@@ -271,15 +278,15 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSH
         process, argv, is_read_request, server
     )
     # The release object is only present for read requests
-    release_name = sql.release_name(project_name, version_name)
 
     if release_obj is not None:
-        log.info(f"Processing READ request for {release_name}")
+        log.info(f"Processing READ request for {release_obj.name}")
         ####################################################
         ### Calls _step_07a_process_validated_rsync_read ###
         ####################################################
         await _step_07a_process_validated_rsync_read(process, argv, release_obj, file_patterns)
     else:
+        release_name = sql.release_name(str(project_name), str(version_name))
         _output_stderr(process, f"Received write command: {process.command}")
         log.info(f"Processing WRITE request for {release_name}")
         #####################################################
@@ -333,26 +340,24 @@ def _step_03_command_simple_validate(argv: list[str]) -> bool:
 
 async def _step_04_command_validate(
     process: asyncssh.SSHServerProcess, argv: list[str], is_read_request: bool, server: SSHServer
-) -> tuple[str, str, list[str] | None, sql.Release | None]:
+) -> tuple[safe.ProjectName, safe.VersionName, list[str] | None, sql.Release | None]:
     """Validate the path and user permissions for read or write."""
     ############################################
     ### Calls _step_05a/b_command_path_validate ###
     ############################################
     if is_read_request:
-        path_project, path_version, tag = _step_05a_command_path_validate_read(argv[-1])
+        project_name, version_name, tag = await _step_05a_command_path_validate_read(argv[-1])
     else:
-        path_project, path_version, tag = _step_05b_command_path_validate_write(argv[-1])
+        project_name, version_name, tag = await _step_05b_command_path_validate_write(argv[-1])
 
     ssh_uid = server._get_asf_uid(process)
-
     async with db.session() as data:
-        project = await data.project(name=path_project, status=sql.ProjectStatus.ACTIVE, _committee=True).get()
+        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _committee=True).get()
         if project is None:
-            # Projects are public, so existence information is public
-            raise RsyncArgsError(f"Project '{path_project}' does not exist")
+            raise RsyncArgsError(f"Project '{project_name}' does not exist")
 
         release = await data.release(
-            project_name=project.name, version=path_version, _project_release_policy=True
+            project_name=str(project_name), version=str(version_name), _project_release_policy=True
         ).get()
 
     if is_read_request:
@@ -360,115 +365,102 @@ async def _step_04_command_validate(
         ### Calls _step_06a_validate_read_permissions ###
         #################################################
         validated_release, file_patterns = await _step_06a_validate_read_permissions(
-            ssh_uid, project, release, path_project, path_version, tag
+            ssh_uid, project, release, project_name, version_name, tag
         )
-        return path_project, path_version, file_patterns, validated_release
+        return project_name, version_name, file_patterns, validated_release
 
     ##################################################
     ### Calls _step_06b_validate_write_permissions ###
     ##################################################
     await _step_06b_validate_write_permissions(ssh_uid, project, release)
-    # Return None for the tag and release objects for write requests
-    return path_project, path_version, None, None
+    return project_name, version_name, None, None
 
 
-def _step_05a_command_path_validate_read(path: str) -> tuple[str, str, str | None]:
-    """Validate the path argument for rsync commands."""
+async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectName, safe.VersionName, str | None]:
+    """Validate the path argument for rsync read commands, returning safe types."""
     # READ: rsync --server --sender -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
-    # WRITE: rsync --server -vlogDtpre.iLsfxCIvu . /proj/v1/
-    # Validating path: /proj/v1/
-
-    if not path.startswith("/"):
-        raise RsyncArgsError("The path argument should be an absolute path")
-
-    if not path.endswith("/"):
-        # Technically we could ignore this, because we rewrite the path anyway for writes
-        # But we should enforce good rsync usage practices
-        raise RsyncArgsError("The path argument should be a directory path, ending with a /")
-
-    if "//" in path:
-        raise RsyncArgsError("The path argument should not contain //")
-
+    _validate_path_common(path)
     if (path.count("/") < 3) or (path.count("/") > 4):
         raise RsyncArgsError("The path argument should be a /PROJECT/VERSION/(tag)/ directory path")
 
     path_project, path_version, *rest = path.strip("/").split("/", 2)
     tag = rest[0] if rest else None
-    alphanum = set(string.ascii_letters + string.digits + "-")
-    if not all(c in alphanum for c in path_project):
-        raise RsyncArgsError("The project name should contain only alphanumeric characters or hyphens")
+    try:
+        project_name = safe.ProjectName(path_project)
+    except ValueError:
+        raise RsyncArgsError("Project is invalid")
+    try:
+        version_name = safe.VersionName(path_version)
+    except ValueError:
+        raise RsyncArgsError("Version is invalid")
+    if tag:
+        _validate_tag_segment(tag)
 
-    if tag and (not all(c in alphanum for c in tag)):
-        raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
-
-    # From a survey of version numbers we find that only . and - are used
-    # We also allow + which is in common use
-    version_punctuation = set(".-+")
-    if path_version[0] not in alphanum:
-        # Must certainly not allow the directory to be called "." or ".."
-        # And we also want to avoid patterns like ".htaccess"
-        raise RsyncArgsError("The version should start with an alphanumeric character")
-    if path_version[-1] not in alphanum:
-        raise RsyncArgsError("The version should end with an alphanumeric character")
-    if not all(c in (alphanum | version_punctuation) for c in path_version):
-        raise RsyncArgsError("The version should contain only alphanumeric characters, dots, dashes, or pluses")
-
-    return path_project, path_version, tag
+    async with db.session() as data:
+        release = await data.release(
+            project_name=str(project_name),
+            version=str(version_name),
+        ).get()
+        if release is None:
+            raise RsyncArgsError(f"Release '{path_project}-{path_version}' does not exist")
+    return project_name, version_name, tag
 
 
-def _step_05b_command_path_validate_write(path: str) -> tuple[str, str, str | None]:
-    """Validate the path argument for rsync commands."""
-    # READ: rsync --server --sender -vlogDtpre.iLsfxCIvu . /proj/v1/
-    # Validating path: /proj/v1/
+async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectName, safe.VersionName, None]:
+    """Validate the path argument for rsync write commands, returning safe types."""
     # WRITE: rsync --server -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
-
-    if not path.startswith("/"):
-        raise RsyncArgsError("The path argument should be an absolute path")
-
-    if not path.endswith("/"):
-        # Technically we could ignore this, because we rewrite the path anyway for writes
-        # But we should enforce good rsync usage practices
-        raise RsyncArgsError("The path argument should be a directory path, ending with a /")
-
-    if "//" in path:
-        raise RsyncArgsError("The path argument should not contain //")
-
+    _validate_path_common(path)
     if path.count("/") != 3:
         raise RsyncArgsError("The path argument should be a /PROJECT/VERSION/ directory path")
 
     path_project, path_version = path.strip("/").split("/", 1)
-    alphanum = set(string.ascii_letters + string.digits + "-")
-    if not all(c in alphanum for c in path_project):
-        raise RsyncArgsError("The project name should contain only alphanumeric characters or hyphens")
+    try:
+        project_name = safe.ProjectName(path_project)
+    except ValueError:
+        raise RsyncArgsError("Project is invalid")
+    try:
+        version_name = safe.VersionName(path_version)
+    except ValueError:
+        raise RsyncArgsError("Version is invalid")
 
-    # From a survey of version numbers we find that only . and - are used
-    # We also allow + which is in common use
-    version_punctuation = set(".-+")
-    if path_version[0] not in alphanum:
-        # Must certainly not allow the directory to be called "." or ".."
-        # And we also want to avoid patterns like ".htaccess"
-        raise RsyncArgsError("The version should start with an alphanumeric character")
-    if path_version[-1] not in alphanum:
-        raise RsyncArgsError("The version should end with an alphanumeric character")
-    if not all(c in (alphanum | version_punctuation) for c in path_version):
-        raise RsyncArgsError("The version should contain only alphanumeric characters, dots, dashes, or pluses")
+    async with db.session() as data:
+        project = await data.project(name=str(project_name)).get()
+        if project is None:
+            raise RsyncArgsError(f"Project '{project_name}' does not exist")
 
-    return path_project, path_version, None
+    return project_name, version_name, None
+
+
+def _validate_path_common(path: str) -> None:
+    """Validate the common structural requirements for an rsync path argument."""
+    if not path.startswith("/"):
+        raise RsyncArgsError("The path argument should be an absolute path")
+    if not path.endswith("/"):
+        # Technically we could ignore this, because we rewrite the path anyway for writes
+        # But we should enforce good rsync usage practices
+        raise RsyncArgsError("The path argument should be a directory path, ending with a /")
+    if "//" in path:
+        raise RsyncArgsError("The path argument should not contain //")
+
+
+def _validate_tag_segment(segment: str) -> None:
+    if not all(c in _PATH_ALPHANUM for c in segment):
+        raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
 
 
 async def _step_06a_validate_read_permissions(
     ssh_uid: str,
     project: sql.Project,
     release: sql.Release | None,
-    path_project: str,
-    path_version: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     tag: str | None,
 ) -> tuple[sql.Release | None, list[str] | None]:
     """Validate permissions for a read request."""
     if release is None:
-        raise RsyncArgsError(f"Release '{path_project}-{path_version}' does not exist")
+        raise RsyncArgsError(f"Release '{project_name}-{version_name}' does not exist")
 
     allowed_read_phases = {
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
@@ -571,8 +563,8 @@ async def _step_07a_process_validated_rsync_read(
 async def _step_07b_process_validated_rsync_write(
     process: asyncssh.SSHServerProcess,
     argv: list[str],
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     server: SSHServer,
 ) -> None:
     """Handle a validated rsync write request."""
@@ -640,16 +632,18 @@ async def _step_07b_process_validated_rsync_write(
             process.exit(exit_status)
 
 
-async def _step_07c_ensure_release_object_for_write(project_name: str, version_name: str) -> None:
+async def _step_07c_ensure_release_object_for_write(
+    project_name: safe.ProjectName, version_name: safe.VersionName
+) -> None:
     """Ensure the release object exists or create it for a write operation."""
-    release_name = sql.release_name(project_name, version_name)
+    release_name = sql.release_name(str(project_name), str(version_name))
     async with db.session() as data:
-        release = await data.release(name=sql.release_name(project_name, version_name), _committee=True).get()
+        release = await data.release(name=release_name, _committee=True).get()
         if release is None:
-            project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
-                RuntimeError("Project not found after validation")
-            )
-            if version_name_error := util.version_name_error(version_name):
+            project = await data.project(
+                name=str(project_name), status=sql.ProjectStatus.ACTIVE, _committee=True
+            ).demand(RuntimeError("Project not found after validation"))
+            if version_name_error := util.version_name_error(str(version_name)):
                 # This should ideally be caught by path validation, but double check
                 raise RuntimeError(f'Invalid version name "{version_name}": {version_name_error}')
             # Create a new release object
@@ -657,7 +651,7 @@ async def _step_07c_ensure_release_object_for_write(project_name: str, version_n
             release = sql.Release(
                 project_name=project.name,
                 project=project,
-                version=version_name,
+                version=str(version_name),
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
                 created=datetime.datetime.now(datetime.UTC),
             )

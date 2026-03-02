@@ -21,7 +21,7 @@ from typing import Annotated, Any, Literal, TypeVar
 
 import pydantic
 
-from . import schema, sql, tabulate, validation
+from . import safe, schema, sql, tabulate, validation
 
 T = TypeVar("T")
 
@@ -73,14 +73,14 @@ class DistributeSshRegisterArgs(schema.Strict):
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
     phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
     asf_uid: str = schema.example("user")
-    project_name: str = schema.example("tooling")
-    version: str = schema.example("0.0.1")
+    project_name: safe.ProjectName = schema.example("tooling")
+    version: safe.VersionName = schema.example("0.0.1")
 
 
 class DistributeSshRegisterResults(schema.Strict):
     endpoint: Literal["/distribute/ssh/register"] = schema.alias("endpoint")
     fingerprint: str = schema.example("SHA256:0123456789abcdef0123456789abcdef01234567")
-    project: str = schema.example("example")
+    project: safe.ProjectName = schema.example("example")
     expires: int = schema.example(1713547200)
 
 
@@ -89,7 +89,7 @@ class DistributeStatusUpdateArgs(schema.Strict):
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     workflow: str = schema.description("Workflow name")
     run_id: str = schema.description("Workflow run ID")
-    project_name: str = schema.description("Project name in ATR")
+    project_name: safe.ProjectName = schema.description("Project name in ATR")
     status: str = schema.description("Workflow status")
     message: str = schema.description("Workflow message")
 
@@ -100,8 +100,8 @@ class DistributeStatusUpdateResults(schema.Strict):
 
 
 class DistributionRecordArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: str | None = schema.default_example(None, "example")
     distribution_package: str = schema.example("example")
@@ -128,8 +128,8 @@ class DistributionRecordFromWorkflowArgs(schema.Strict):
     asf_uid: str = schema.example("user")
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: str | None = schema.default_example(None, "example")
     distribution_package: str = schema.example("example")
@@ -164,7 +164,7 @@ class DistributionRecordResults(schema.Strict):
 
 
 class IgnoreAddArgs(schema.Strict):
-    project_name: str = schema.example("example")
+    project_name: safe.ProjectName = schema.example("example")
     release_glob: str | None = schema.default_example(None, "example-0.0.*")
     revision_number: str | None = schema.default_example(None, "00001")
     checker_glob: str | None = schema.default_example(None, "atr.tasks.checks.license.files")
@@ -194,7 +194,7 @@ class IgnoreAddResults(schema.Strict):
 
 
 class IgnoreDeleteArgs(schema.Strict):
-    project_name: str = schema.example("example")
+    project_name: safe.ProjectName = schema.example("example")
     id: int = schema.example(1)
 
 
@@ -289,7 +289,7 @@ class ProjectGetResults(schema.Strict):
 
 class ProjectPolicyResults(schema.Strict):
     endpoint: Literal["/project/policy"] = schema.alias("endpoint")
-    project_name: str
+    project_name: safe.ProjectName
     policy_announce_release_subject: str
     policy_announce_release_template: str
     policy_binary_artifact_paths: list[str]
@@ -325,7 +325,7 @@ class ProjectsListResults(schema.Strict):
 class PublisherDistributionRecordArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
-    version: str = schema.example("0.0.1")
+    version: safe.VersionName = schema.example("0.0.1")
     platform: sql.DistributionPlatform = schema.example(sql.DistributionPlatform.ARTIFACT_HUB)
     distribution_owner_namespace: str | None = schema.default_example(None, "example")
     distribution_package: str = schema.example("example")
@@ -356,7 +356,7 @@ class PublisherDistributionRecordResults(schema.Strict):
 class PublisherReleaseAnnounceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
-    version: str = schema.example("0.0.1")
+    version: safe.VersionName = schema.example("0.0.1")
     revision: str = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
@@ -377,14 +377,14 @@ class PublisherSshRegisterArgs(schema.Strict):
 class PublisherSshRegisterResults(schema.Strict):
     endpoint: Literal["/publisher/ssh/register"] = schema.alias("endpoint")
     fingerprint: str = schema.example("SHA256:0123456789abcdef0123456789abcdef01234567")
-    project: str = schema.example("example")
+    project: safe.ProjectName = schema.example("example")
     expires: int = schema.example(1713547200)
 
 
 class PublisherVoteResolveArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
-    version: str = schema.example("0.0.1")
+    version: safe.VersionName = schema.example("0.0.1")
     resolution: Literal["passed", "failed"] = schema.example("passed")
 
 
@@ -394,8 +394,8 @@ class PublisherVoteResolveResults(schema.Strict):
 
 
 class ReleaseAnnounceArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("1.0.0")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("1.0.0")
     revision: str = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
@@ -408,8 +408,8 @@ class ReleaseAnnounceResults(schema.Strict):
 
 
 class ReleaseDraftDeleteArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
 
 
 class ReleaseDraftDeleteResults(schema.Strict):
@@ -418,8 +418,8 @@ class ReleaseDraftDeleteResults(schema.Strict):
 
 
 class ReleaseCreateArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
 
 
 class ReleaseCreateResults(schema.Strict):
@@ -428,8 +428,8 @@ class ReleaseCreateResults(schema.Strict):
 
 
 class ReleaseDeleteArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
 
 
 class ReleaseDeleteResults(schema.Strict):
@@ -466,8 +466,8 @@ class ReleaseRevisionsResults(schema.Strict):
 
 
 class ReleaseUploadArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
     relpath: str = schema.example("example/0.0.1/example-0.0.1-bin.tar.gz")
     content: str = schema.example("This is the content of the file.")
 
@@ -568,8 +568,8 @@ class UsersListResults(schema.Strict):
 
 
 class VoteResolveArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
     resolution: Literal["passed", "failed"] = schema.example("passed")
 
 
@@ -579,8 +579,8 @@ class VoteResolveResults(schema.Strict):
 
 
 class VoteStartArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
     revision: str = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     vote_duration: int = schema.example(10)
@@ -594,8 +594,8 @@ class VoteStartResults(schema.Strict):
 
 
 class VoteTabulateArgs(schema.Strict):
-    project: str = schema.example("example")
-    version: str = schema.example("0.0.1")
+    project: safe.ProjectName = schema.example("example")
+    version: safe.VersionName = schema.example("0.0.1")
 
 
 class VoteTabulateResults(schema.Strict):

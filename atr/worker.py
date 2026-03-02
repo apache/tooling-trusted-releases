@@ -38,6 +38,7 @@ import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
@@ -118,12 +119,15 @@ async def _execute_check_task(
             f"Task {task_id} ({task_type}) has non-dict raw args {task_args} which should represent keyword_args"
         )
 
+    project_name = safe.ProjectName(task_obj.project_name)
+    version_name = safe.VersionName(task_obj.version_name)
+
     async def recorder_factory() -> checks.Recorder:
         return await checks.Recorder.create(
             checker=handler,
             inputs_hash=task_obj.inputs_hash or "",
-            project_name=task_obj.project_name or "",
-            version_name=task_obj.version_name or "",
+            project_name=project_name,
+            version_name=version_name,
             revision_number=task_obj.revision_number or "",
             primary_rel_path=task_obj.primary_rel_path,
         )
@@ -131,8 +135,8 @@ async def _execute_check_task(
     function_arguments = checks.FunctionArguments(
         recorder=recorder_factory,
         asf_uid=task_obj.asf_uid,
-        project_name=task_obj.project_name or "",
-        version_name=task_obj.version_name or "",
+        project_name=project_name,
+        version_name=version_name,
         revision_number=task_obj.revision_number,
         primary_rel_path=task_obj.primary_rel_path,
         extra_args=task_args,

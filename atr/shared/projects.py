@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.form as form
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.util as util
 
@@ -105,7 +106,7 @@ class AddProjectForm(form.Form):
 
 class ComposePolicyForm(form.Form):
     variant: COMPOSE = form.value(COMPOSE)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     source_artifact_paths: str = form.label(
         "Source artifact paths",
         "Paths to source artifacts to be included in the release.",
@@ -181,7 +182,7 @@ class ComposePolicyForm(form.Form):
 
 class VotePolicyForm(form.Form):
     variant: VOTE = form.value(VOTE)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     github_vote_workflow_path: str = form.label(
         "GitHub vote workflow paths",
         "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
@@ -243,7 +244,7 @@ class VotePolicyForm(form.Form):
 
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     github_finish_workflow_path: str = form.label(
         "GitHub finish workflow paths",
         "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
@@ -277,35 +278,35 @@ class FinishPolicyForm(form.Form):
 
 class AddCategoryForm(form.Form):
     variant: ADD_CATEGORY = form.value(ADD_CATEGORY)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     category_to_add: str = form.label("New category name")
 
 
 class RemoveCategoryForm(form.Form):
     variant: REMOVE_CATEGORY = form.value(REMOVE_CATEGORY)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     category_to_remove: str = form.label("Category to remove", widget=form.Widget.HIDDEN)
 
 
 class AddLanguageForm(form.Form):
     variant: ADD_LANGUAGE = form.value(ADD_LANGUAGE)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     language_to_add: str = form.label("New language name")
 
 
 class RemoveLanguageForm(form.Form):
     variant: REMOVE_LANGUAGE = form.value(REMOVE_LANGUAGE)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
     language_to_remove: str = form.label("Language to remove", widget=form.Widget.HIDDEN)
 
 
 class DeleteProjectForm(form.Form):
     variant: DELETE_PROJECT = form.value(DELETE_PROJECT)
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
 class DeleteSelectedProject(form.Form):
-    project_name: str = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_name: safe.ProjectName = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
 type ProjectViewForm = Annotated[

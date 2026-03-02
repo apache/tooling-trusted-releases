@@ -26,6 +26,7 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.message as message
@@ -136,8 +137,8 @@ class CommitteeParticipant(FoundationCommitter):
     async def start(
         self,
         email_to: str,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         selected_revision_number: str,
         vote_duration_choice: int,
         subject: str,
@@ -150,8 +151,8 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Task:
         if release is None:
             release = await self.__data.release(
-                project_name=project_name,
-                version=version_name,
+                project_name=str(project_name),
+                version=str(version_name),
                 _project=True,
                 _committee=True,
             ).demand(storage.AccessError("Release not found"))
@@ -170,7 +171,7 @@ class CommitteeParticipant(FoundationCommitter):
         if promote is True:
             # This verifies the state and sets the phase to RELEASE_CANDIDATE
             error = await self.__write_as.release.promote_to_candidate(
-                release.name, selected_revision_number, vote_manual=False
+                release.safe_name, selected_revision_number, vote_manual=False
             )
             if error:
                 raise storage.AccessError(error)
@@ -196,8 +197,8 @@ class CommitteeParticipant(FoundationCommitter):
                 body=body_data,
             ).model_dump(),
             asf_uid=asf_uid,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
         self.__data.add(task)
         await self.__data.commit()
@@ -228,14 +229,14 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve(
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         vote_result: Literal["passed", "failed"],
         asf_fullname: str,
         resolution_body: str,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
-            name=sql.release_name(project_name, version_name),
+            name=sql.release_name(str(project_name), str(version_name)),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -268,12 +269,12 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve_manually(
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         vote_result: Literal["passed", "failed"],
     ) -> str:
         release = await self.__data.release(
-            name=sql.release_name(project_name, version_name),
+            name=sql.release_name(str(project_name), str(version_name)),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -297,7 +298,7 @@ class CommitteeMember(CommitteeParticipant):
 
             description = "Create a preview revision from the last candidate draft"
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_name, release.version, self.__asf_uid, description=description
+                project_name, release.safe_version_name, self.__asf_uid, description=description
             )
         else:
             release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -309,15 +310,15 @@ class CommitteeMember(CommitteeParticipant):
 
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
             vote_result=vote_result,
         )
         return success_message
 
     async def resolve_release(
         self,
-        project_name: str,
+        project_name: safe.ProjectName,
         release: sql.Release,
         voting_round: int | None,
         vote_result: Literal["passed", "failed"],
@@ -350,13 +351,13 @@ class CommitteeMember(CommitteeParticipant):
             if revision_number is None:
                 raise ValueError("Release has no revision number - Invalid state")
             vote_duration = latest_vote_task.task_args["vote_duration"]
-            subject_template = await construct.start_vote_subject_default(release.project.name)
-            body_template = await construct.start_vote_default(release.project.name)
+            subject_template = await construct.start_vote_subject_default(release.safe_project_name)
+            body_template = await construct.start_vote_default(release.safe_project_name)
             options = construct.StartVoteOptions(
                 asfuid=self.__asf_uid,
                 fullname=asf_fullname,
-                project_name=release.project.name,
-                version_name=release.version,
+                project_name=release.safe_project_name,
+                version_name=release.safe_version_name,
                 revision_number=revision_number,
                 vote_duration=vote_duration,
             )
@@ -366,8 +367,8 @@ class CommitteeMember(CommitteeParticipant):
             await self.start(
                 email_to=incubator_vote_address,
                 permitted_recipients=[incubator_vote_address],
-                project_name=release.project.name,
-                version_name=release.version,
+                project_name=release.safe_project_name,
+                version_name=release.safe_version_name,
                 selected_revision_number=revision_number,
                 asf_uid=self.__asf_uid,
                 asf_fullname=asf_fullname,
@@ -387,7 +388,7 @@ class CommitteeMember(CommitteeParticipant):
 
             description = "Create a preview revision from the last candidate draft"
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_name, release.version, self.__asf_uid, description=description
+                project_name, release.safe_version_name, self.__asf_uid, description=description
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -414,7 +415,7 @@ class CommitteeMember(CommitteeParticipant):
         # TODO: Could move this up before send_resolution
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
+            project_name=str(project_name),
             version_name=release.version,
             vote_result=vote_result,
             voting_round=voting_round,

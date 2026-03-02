@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from . import api, basic, distribution, github, helpers, results, schema, session, sql, tabulate, validation
+from . import api, basic, distribution, github, helpers, results, safe, schema, session, sql, tabulate, validation
 
 # If we use .__name__, pyright gives a warning
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "github",
     "helpers",
     "results",
+    "safe",
     "schema",
     "session",
     "sql",

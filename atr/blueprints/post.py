@@ -66,6 +66,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     path, validated_params, literal_params, form_param, public = common.build_path(func)
     project_name_var = next((name for name, t in validated_params if t is safe.ProjectName), None)
     check_access = (not public) and (project_name_var is not None)
+    form_safe_params = common.safe_params_for_type(form_param[1]) if form_param is not None else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
@@ -95,6 +96,8 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
                 await quart.flash(summary, category="error")
                 await quart.flash(json.dumps(flash_data), category="form-error-data")
                 return quart.redirect(quart.request.path)
+            if form_safe_params:
+                await common.validate_safe_fields(kwargs[form_param_name], form_safe_params, kwargs)
 
         start_time_ns = time.perf_counter_ns()
         response = await func(enhanced_session, **kwargs)

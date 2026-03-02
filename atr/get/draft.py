@@ -52,7 +52,7 @@ async def tools(
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)
 
-    release = await session.release(str(project_name), str(version_name))
+    release = await session.release(project_name, version_name)
     full_path = str(paths.release_directory(release) / validated_path)
 
     # Check that the file exists
