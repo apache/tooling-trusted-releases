@@ -194,14 +194,10 @@ async def server_start() -> asyncssh.SSHAcceptor:
         server_instance = connection.get_owner()
         return asyncio.create_task(_step_01_handle_client(process, server_instance))
 
-    def error_handler(*args, **kwargs) -> None:
-        pass
-
     server = await asyncssh.create_server(
         SSHServer,
         server_host_keys=[key_path],
         process_factory=process_factory,
-        error_handler=error_handler,
         host=_CONFIG.SSH_HOST,
         port=_CONFIG.SSH_PORT,
         encoding=None,
