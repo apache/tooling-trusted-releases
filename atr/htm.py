@@ -61,6 +61,7 @@ thead = htpy.thead
 title = htpy.title
 tr = htpy.tr
 ul = htpy.ul
+ol = htpy.ol
 
 
 class BlockElementGetable:
