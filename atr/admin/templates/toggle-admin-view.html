@@ -8,8 +8,9 @@
   <h1>Toggle admin view</h1>
 
   <p class="mb-4">
-    Use this page to switch between viewing the site as an administrator or as a regular user.
-    This is helpful for testing permissions and user experience from different perspectives.
+    Use this page to drop your administrator permissions in this session viewing with normal user permissions.
+    This is helpful for testing permissions and user experience from different perspectives. You will need log out
+    and log in to restore your administrator privileges.
   </p>
 
   {% if current_user and is_admin_fn(current_user.uid) %}
@@ -26,9 +27,5 @@
       </strong>
     </div>
 
-  {% else %}
-    <div class="alert alert-warning" role="alert">
-      This function is only available to administrators.
-    </div>
   {% endif %}
 {% endblock content %}
