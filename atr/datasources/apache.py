@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 
 import sqlmodel
 
+import atr.config as config
 import atr.db as db
+import atr.ldap as ldap
 import atr.log as log
 import atr.models.helpers as helpers
 import atr.models.schema as schema
@@ -504,11 +506,17 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
     else:
         updated_count += 1
 
+    additional = config.get().TOOLING_USERS_ADDITIONAL
+    if additional:
+        extra = list(additional.split(","))
+    else:
+        extra = list()
+    
     # Update Tooling PMC data
-    # Could put this in the "if not tooling_committee" block, perhaps
-    tooling_committee.committee_members = ["wave", "sbp", "arm", "akm"]
-    tooling_committee.committers = ["wave", "sbp", "arm", "akm"]
-    tooling_committee.release_managers = ["wave"]
+    tooling_users = await ldap.fetch_tooling_users(extra)
+    tooling_committee.committee_members = tooling_users
+    tooling_committee.committers = tooling_users
+    tooling_committee.release_managers = tooling_users
     tooling_committee.is_podling = False
 
     return added_count, updated_count

@@ -161,6 +161,40 @@ async def fetch_admin_users() -> frozenset[str]:
     return await asyncio.to_thread(_query_ldap)
 
 
+async def fetch_tooling_users(extra: list[str]) -> list[str]:
+    import atr.log as log
+
+    credentials = get_bind_credentials()
+    if credentials is None:
+        log.warning("LDAP bind DN or password not configured, returning empty admin set")
+        return extra
+
+    bind_dn, bind_password = credentials
+
+    def _query_ldap() -> list[str]:
+        users: list[str] = list()
+        with Search(bind_dn, bind_password) as ldap_search:
+            for base in (LDAP_TOOLING_BASE):
+                try:
+                    result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
+                    if (not result) or (len(result) != 1):
+                        continue
+                    members = result[0].get("member", [])
+                    if not isinstance(members, list):
+                        continue
+                    for member_dn in members:
+                        parsed = parse_dn(member_dn)
+                        uids = parsed.get("uid", [])
+                        if uids:
+                            users.add(uids[0])
+                except Exception as e:
+                    log.warning(f"Failed to query LDAP group {base}: {e}")
+        return users
+
+    tooling = await asyncio.to_thread(_query_ldap)
+    return tooling | extra
+
+
 def get_bind_credentials() -> tuple[str, str] | None:
     import atr.config as config
 
