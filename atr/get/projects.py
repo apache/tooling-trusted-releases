@@ -39,7 +39,6 @@ import atr.post as post
 import atr.registry as registry
 import atr.shared as shared
 import atr.template as template
-import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -158,10 +157,8 @@ async def view(
         project = await data.project(
             name=str(project_name), _committee=True, _committee_public_signing_keys=True, _release_policy=True
         ).demand(base.ASFQuartException(f"Project {project_name} not found", errorcode=404))
-
-    is_committee_member = project.committee and (user.is_committee_member(project.committee, session.uid))
+    can_edit = await session.has_post_access(project_name)
     is_privileged = session.is_admin
-    can_edit = is_committee_member or is_privileged
 
     candidate_drafts = await interaction.candidate_drafts(project)
     candidates = await interaction.candidates(project)
@@ -209,7 +206,6 @@ async def view(
         page.append(_render_categories_section(project))
         page.append(_render_languages_section(project))
 
-    if is_committee_member or is_privileged:
         page.append(await _render_releases_sections(project, candidate_drafts, candidates, previews, full_releases))
 
         if project.created_by == session.uid:

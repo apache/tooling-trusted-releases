@@ -46,7 +46,8 @@ async def selected(
     URL: /file/<project_name>/<version_name>
     View all the files in a release (any phase).
     """
-    await session.check_access(project_name)
+    # has_post = await session.has_post_access(project_name)
+    # open page w/o a form
     release = await session.release(str(project_name), str(version_name), phase=None)
 
     revision_number = release.latest_revision_number
@@ -150,7 +151,8 @@ async def selected_path(
     URL: /file/<project_name>/<version_name>/<path:file_path>
     View the content of a specific file in a release (any phase).
     """
-    await session.check_access(project_name)
+    # has_post = await session.has_post_access(project_name)
+    # open page w/o a form
     validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise web.FlashError("Invalid file path")
