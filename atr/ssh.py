@@ -131,10 +131,12 @@ class SSHServer(asyncssh.SSHServer):
         return True
 
     async def validate_public_key(self, username: str, key: asyncssh.SSHKey) -> bool:
-        # This method is not called when username is not "github"
+        # This method is not called when username is not "github" - as long as the key was valid
         # Also, this SSHServer.validate_public_key method does not perform signature verification
         # The SSHServerConnection.validate_public_key method performs signature verification
         if username != "github":
+            # We log an authentication failure in here because if we're here with a different username the key failed
+            log.failed_authentication("public_key_invalid")
             return False
 
         fingerprint = key.get_fingerprint()
@@ -144,11 +146,15 @@ class SSHServer(asyncssh.SSHServer):
             if workflow_key is None:
                 return False
 
+            # In some cases this will be a service account
+            self._github_asf_uid = workflow_key.asf_uid
+            log.set_asf_uid(self._github_asf_uid)
+
             now = int(time.time())
             if workflow_key.expires < now:
+                log.failed_authentication("public_key_expired")
                 return False
 
-            self._github_asf_uid = workflow_key.asf_uid
             self._github_payload = workflow_key.github_payload
             return True
 
@@ -243,6 +249,7 @@ async def _step_01_handle_client(process: asyncssh.SSHServerProcess, server: SSH
 
 async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
     asf_uid = server._get_asf_uid(process)
+    log.set_asf_uid(asf_uid)
     log.info(f"Handling command for authenticated user: {asf_uid}")
 
     if not process.command:

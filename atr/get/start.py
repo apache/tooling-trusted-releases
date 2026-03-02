@@ -35,10 +35,11 @@ import atr.web as web
 
 
 @get.typed
-async def selected(_session: web.Committer, _start: Literal["start"], project_name: safe.ProjectName) -> str:
+async def selected(session: web.Committer, _start: Literal["start"], project_name: safe.ProjectName) -> str:
     """
     URL: /start/<project_name>
     """
+    await session.check_access(project_name)
     async with db.session() as data:
         project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)

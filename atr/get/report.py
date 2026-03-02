@@ -45,6 +45,7 @@ async def selected_path(
     URL: /report/<project_name>/<version_name>/<rel_path>
     Show the report for a specific file.
     """
+    await session.check_access(project_name)
     validated_path = form.to_relpath(rel_path)
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)

@@ -47,6 +47,7 @@ async def tools(
     URL: /draft/tools/<project_name>/<version_name>/<path:file_path>
     Show the tools for a specific file.
     """
+    await session.check_access(project_name)
     validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)

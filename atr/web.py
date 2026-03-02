@@ -32,6 +32,7 @@ import atr.config as config
 import atr.db as db
 import atr.form as form
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.user as user
 import atr.util as util
@@ -87,7 +88,7 @@ class Committer:
     def is_admin(self) -> bool:
         return user.is_admin(self.uid)
 
-    async def check_access(self, project_name: str) -> None:
+    async def check_access(self, project_name: str | safe.ProjectName) -> None:
         if not any((p.name == str(project_name)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects

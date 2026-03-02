@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 import enum
+import urllib.parse
 
 import aiohttp
 import pydantic
@@ -242,18 +243,20 @@ def distribution_web_url(  # noqa: C901
 
 def get_api_url(dd: distribution.Data, staging: bool | None = None):
     template_url = _template_url(dd, staging)
+    package = urllib.parse.quote(dd.package)
+    version = urllib.parse.quote(dd.version)
     api_url = template_url.format(
         owner_namespace=dd.owner_namespace,
-        package=dd.package,
-        version=dd.version,
+        package=package,
+        version=version,
     )
     if dd.platform == sql.DistributionPlatform.MAVEN:
         # We do this here because the CDNs break the namespace up into a / delimited URL
         owner = (dd.owner_namespace or "").replace(".", "/")
         api_url = template_url.format(
             owner_namespace=owner,
-            package=dd.package,
-            version=dd.version,
+            package=package,
+            version=version,
         )
     return api_url
 

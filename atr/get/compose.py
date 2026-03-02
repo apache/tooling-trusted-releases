@@ -39,6 +39,7 @@ async def selected(
     URL: /compose/<project_name>/<version_name>
     Show the contents of the release candidate draft.
     """
+    await session.check_access(project_name)
     async with db.session() as data:
         release = await data.release(
             project_name=str(project_name),

@@ -23,6 +23,7 @@ import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.models.sql as sql
+import atr.util as util
 
 
 async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = None) -> list[sql.Release]:
@@ -43,6 +44,8 @@ def is_admin(user_id: str | None) -> bool:
         return False
     if config.get().ALLOW_TESTS and (user_id == "test"):
         return True
+    if util.is_user_session_downgraded():
+        return False
     if user_id in _get_additional_admin_users():
         return True
     return user_id in cache.admins_get()
@@ -53,6 +56,8 @@ async def is_admin_async(user_id: str | None) -> bool:
         return False
     if config.get().ALLOW_TESTS and (user_id == "test"):
         return True
+    if util.is_user_session_downgraded():
+        return False
     if user_id in _get_additional_admin_users():
         return True
     return user_id in await cache.admins_get_async()

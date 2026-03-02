@@ -548,8 +548,12 @@ def _vulnerability_component_details_osv(
             ):
                 is_new = True
                 new = new + 1
-
-        vuln_header = [htm.a(href=vuln_primary_ref.get("url", ""), target="_blank")[htm.strong(".me-2")[vuln_id]]]
+        vulnerability_url = vuln_primary_ref.get("url", "")
+        # We only show the link if it's a valid web link
+        if vulnerability_url.startswith("http"):
+            vuln_header = [htm.a(href=vulnerability_url, target="_blank")[htm.strong(".me-2")[vuln_id]]]
+        else:
+            vuln_header = [htm.strong(".me-2")[vuln_id]]
         style = f".badge.me-2{_severity_to_style(vuln_severity)}"
         vuln_header.append(htm.span(style)[vuln_severity])
 

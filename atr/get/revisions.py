@@ -60,6 +60,7 @@ async def selected(
     URL: /revisions/<project_name>/<version_name>
     Show the revision history for a release candidate draft or release preview.
     """
+    await session.check_access(project_name)
     try:
         release = await session.release(str(project_name), str(version_name))
         phase_key = "draft"
