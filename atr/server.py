@@ -536,13 +536,13 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
                     "Forbibben: browser navigation to API endpoints is not permitted", errorcode=403
                 )
 
-        if quart.request.method in ("POST", "PUT", "DELETE", "PATCH"):
-            sec_fetch_mode = quart.request.headers.get("Sec-Fetch-Mode", "")
-            sec_fetch_site = quart.request.headers.get("Sec-Fetch-Site", "")
-            if not ((sec_fetch_mode == "navigate") or (sec_fetch_site in (None, "same=origin"))):
-                raise base.ASFQuartException(
-                    "Forbibben: non-GET navigation to this site is not permitted", errorcode=403
-                )
+    #    if quart.request.method in ("POST", "PUT", "DELETE", "PATCH"):
+    #        sec_fetch_mode = quart.request.headers.get("Sec-Fetch-Mode", "")
+    #        sec_fetch_site = quart.request.headers.get("Sec-Fetch-Site", "")
+    #        if not ((sec_fetch_mode == "navigate") or (sec_fetch_site in (None, "same=origin"))):
+    #            raise base.ASFQuartException(
+    #                "Forbibben: non-GET navigation to this site is not permitted", errorcode=403
+    #            )
 
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
