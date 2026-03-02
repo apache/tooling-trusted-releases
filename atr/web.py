@@ -141,7 +141,7 @@ class Committer:
             self.__form_data = await form.quart_request()
         return form.validate(form_cls, self.__form_data.copy(), context=context)
 
-    async def has_post_access(self, project_name: str) -> bool:
+    async def has_post_access(self, project_name: str | safe.ProjectName) -> bool:
         if not any((p.name == str(project_name)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Committers can view all projects. Admins can edit.
