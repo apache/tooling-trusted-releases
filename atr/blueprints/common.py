@@ -115,12 +115,14 @@ def register_route(func: Callable[..., Any], prefix: str, routes: list[str]) -> 
 
 async def run_validators(kwargs: dict[str, Any], validated_params: list[tuple[str, type]]) -> None:
     """Validate URL parameters in order, using the cache/DB validators."""
+    project_name_param = "project_name"
     for param_name, param_type in validated_params:
         raw = kwargs[param_name]
         if param_type is safe.ProjectName:
             kwargs[param_name] = await validate_project(raw)
+            project_name_param = param_name
         elif param_type is safe.VersionName:
-            project_name = kwargs.get("project_name", "")
+            project_name = kwargs.get(project_name_param, "")
             kwargs[param_name] = await validate_version(project_name, raw)
 
 

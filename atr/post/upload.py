@@ -141,8 +141,8 @@ async def selected(
 async def stage(
     _session: web.Committer,
     _upload_stage: Literal["upload/stage"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    _project_name: safe.ProjectName,
+    _version_name: safe.VersionName,
     upload_session: str,
 ) -> web.WerkzeugResponse:
     """
