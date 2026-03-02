@@ -67,6 +67,7 @@ class MockSafeData:
         self.begin_immediate = mock.AsyncMock()
         self.commit = mock.AsyncMock()
         self.flush = mock.AsyncMock(side_effect=self._flush)
+        self.merge = mock.AsyncMock(side_effect=self._merge)
         self.refresh = mock.AsyncMock()
 
     def _add(self, new_revision: "FakeRevision") -> None:
@@ -78,6 +79,9 @@ class MockSafeData:
         self._new_revision.name = f"{self._new_revision.release_name} {self._new_number}"
         self._new_revision.number = self._new_number
         self._new_revision.parent_name = self._parent_name
+
+    async def _merge(self, obj: object) -> object:
+        return obj
 
 
 class MockSafeSession:
@@ -187,6 +191,10 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     old_revision.name = f"{release_name} 00005"
     old_revision.number = "00005"
 
+    intervening_revision = mock.MagicMock()
+    intervening_revision.name = f"{release_name} 00006"
+    intervening_revision.number = "00006"
+
     first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
     second_attestable = mock.MagicMock(paths={"dist/b.tar.gz": "h2"})
 
@@ -207,7 +215,10 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),
         mock.patch.object(
-            revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=old_revision
+            revision.interaction,
+            "latest_revision",
+            new_callable=mock.AsyncMock,
+            side_effect=[old_revision, intervening_revision],
         ),
         mock.patch.object(revision.merge, "merge", new=merge_mock),
         mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),

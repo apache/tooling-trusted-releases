@@ -88,6 +88,58 @@ async def finalise_revision(
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
+        previous_attestable, _, merged_release = await _lock_and_merge(
+            data,
+            base_hashes=base_hashes,
+            base_inodes=base_inodes,
+            merge_enabled=merge_enabled,
+            n_inodes=n_inodes,
+            old_revision=old_revision,
+            path_to_hash=path_to_hash,
+            path_to_size=path_to_size,
+            previous_attestable=previous_attestable,
+            project_name=project_name,
+            release=release,
+            _release_name=release_name,
+            temp_dir_path=temp_dir_path,
+            version_name=version_name,
+        )
+    except Exception:
+        await aioshutil.rmtree(temp_dir)
+        raise
+
+    return await _commit_new_revision(
+        data,
+        asf_uid=asf_uid,
+        description=description,
+        path_to_hash=path_to_hash,
+        path_to_size=path_to_size,
+        previous_attestable=previous_attestable,
+        project_name=project_name,
+        release=merged_release,
+        release_name=release_name,
+        temp_dir=temp_dir,
+        version_name=version_name,
+        was_quarantined=was_quarantined,
+    )
+
+
+async def _commit_new_revision(
+    data: db.Session,
+    *,
+    asf_uid: str,
+    description: str | None,
+    path_to_hash: dict[str, str],
+    path_to_size: dict[str, int],
+    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    project_name: str,
+    release: sql.Release,
+    release_name: str,
+    temp_dir: str,
+    version_name: str,
+    was_quarantined: bool = False,
+) -> sql.Revision:
+    try:
         # This is the only place where models.Revision is constructed
         # That makes models.populate_revision_sequence_and_name safe against races
         # Because that event is called when data.add is called below
@@ -101,40 +153,11 @@ async def finalise_revision(
             description=description,
             was_quarantined=was_quarantined,
         )
-
-        # Acquire the write lock and add the row
-        # We need this write lock for moving the directory below atomically
-        # But it also helps to make models.populate_revision_sequence_and_name safe against races
-        await data.begin_immediate()
         data.add(new_revision)
 
         # Flush but do not commit the new revision row to get its name and number
         # The row will still be invisible to other sessions after flushing
         await data.flush()
-
-        # Merge with the prior revision if there was an intervening change
-        prior_name = new_revision.parent_name
-        if (
-            merge_enabled
-            and (old_revision is not None)
-            and (prior_name is not None)
-            and (prior_name != old_revision.name)
-        ):
-            prior_number = prior_name.split()[-1]
-            prior_dir = paths.release_directory_base(release) / prior_number
-            await merge.merge(
-                base_inodes,
-                base_hashes,
-                prior_dir,
-                project_name,
-                version_name,
-                prior_number,
-                temp_dir_path,
-                n_inodes,
-                path_to_hash,
-                path_to_size,
-            )
-            previous_attestable = await attestable.load(project_name, version_name, prior_number)
 
         # Rename the directory to the new revision number
         await data.refresh(release)
@@ -189,6 +212,59 @@ async def finalise_revision(
             await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.number, caller_data=data)
 
     return new_revision
+
+
+async def _lock_and_merge(
+    data: db.Session,
+    *,
+    base_hashes: dict[str, str],
+    base_inodes: dict[str, int],
+    merge_enabled: bool,
+    n_inodes: dict[str, int],
+    old_revision: sql.Revision | None,
+    path_to_hash: dict[str, str],
+    path_to_size: dict[str, int],
+    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    project_name: str,
+    release: sql.Release,
+    _release_name: str,
+    temp_dir_path: pathlib.Path,
+    version_name: str,
+) -> tuple[atr.models.attestable.AttestableV1 | None, str | None, sql.Release]:
+    # Acquire the write lock
+    # We need this write lock for moving the directory afterwards atomically
+    # But it also helps to make models.populate_revision_sequence_and_name safe against races
+    await data.begin_immediate()
+
+    merged_release: sql.Release = await data.merge(release)
+    await data.refresh(merged_release)
+    latest = await interaction.latest_revision(merged_release, caller_data=data)
+    prior_revision_name = latest.name if latest else None
+
+    # Merge with the prior revision if there was an intervening change
+    if (
+        merge_enabled
+        and (old_revision is not None)
+        and (prior_revision_name is not None)
+        and (prior_revision_name != old_revision.name)
+    ):
+        prior_number = prior_revision_name.split()[-1]
+        prior_dir = paths.release_directory_base(merged_release) / prior_number
+        await merge.merge(
+            base_inodes,
+            base_hashes,
+            prior_dir,
+            project_name,
+            version_name,
+            prior_number,
+            temp_dir_path,
+            n_inodes,
+            path_to_hash,
+            path_to_size,
+        )
+        previous_attestable = await attestable.load(project_name, version_name, prior_number)
+
+    return previous_attestable, prior_revision_name, merged_release
 
 
 class GeneralPublic:
