@@ -192,19 +192,19 @@ jobs:
         uses: apache/tooling-actions/upload-to-atr@04741906f3f38a64ed4489bb12ad78b99424a7a0
         with:
           project: {project_name!s}
-          version: ${{{{ github.ref_name }}}}
+          version: ${{{{github.ref_name}}}}
         """
     ]
     block.p[
-        "(assuming your  ",
-        htm.code["github.ref_name "],
-        " resolves to match your version - currently  ",
-        htm.code[f"{version_name!s} "],
-        " and  ",
-        htm.code["build.sh "],
+        "(assuming your",
+        htm.code[" github.ref_name "],
+        "resolves to match your version - currently",
+        htm.code[f" {version_name!s} "],
+        "and",
+        htm.code[" build.sh "],
         " produces the files you want to upload)",
     ]
-    block.p["You can also use the  ", htm.code["Upload to ATR "], " step directly in an existing workflow."]
+    block.p["You can also use the", htm.code[" Upload to ATR "], "step directly in an existing workflow."]
 
     return await template.blank(
         f"Upload files to {release.short_display_name}",
