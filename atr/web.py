@@ -108,27 +108,6 @@ class Committer:
                 return
             raise base.ASFQuartException("You do not have access to this committee", errorcode=403)
 
-    async def check_access_committee_get(self, committee_name: str) -> bool:
-        if committee_name not in self.committees:
-            if self.is_admin:
-                # Admins can view all committees
-                # But we must warn them when the committee is not one of their own
-                # TODO: As above, this code is difficult to test locally
-                return True
-            return False
-        return True
-
-    async def check_access_get(self, project_name: str) -> bool:
-        if not any((p.name == str(project_name)) for p in (await self.user_projects)):
-            if self.is_admin:
-                # Committers can view all projects. Admins can edit.
-                # But we must warn them when the project is not one of their own
-                # TODO: This code is difficult to test locally
-                # TODO: This flash sometimes displays after deleting a project, which is a bug
-                return True
-            return False
-        return True
-
     async def form_data(self) -> dict[str, Any]:
         if self.__form_data is None:
             self.__form_data = await form.quart_request()
@@ -160,6 +139,27 @@ class Committer:
         if self.__form_data is None:
             self.__form_data = await form.quart_request()
         return form.validate(form_cls, self.__form_data.copy(), context=context)
+
+    async def has_post_access(self, project_name: str) -> bool:
+        if not any((p.name == str(project_name)) for p in (await self.user_projects)):
+            if self.is_admin:
+                # Committers can view all projects. Admins can edit.
+                # But we must warn them when the project is not one of their own
+                # TODO: This code is difficult to test locally
+                # TODO: This flash sometimes displays after deleting a project, which is a bug
+                return True
+            return False
+        return True
+
+    async def has_post_access_committee(self, committee_name: str) -> bool:
+        if committee_name not in self.committees:
+            if self.is_admin:
+                # Admins can view all committees
+                # But we must warn them when the committee is not one of their own
+                # TODO: As above, this code is difficult to test locally
+                return True
+            return False
+        return True
 
     @property
     def host(self) -> str:
