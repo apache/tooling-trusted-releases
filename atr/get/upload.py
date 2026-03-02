@@ -154,7 +154,10 @@ async def selected(
     _render_ssh_keys_info(block, user_ssh_keys)
 
     block.h2(id="github-upload")["GitHub Workflow"]
-    block.p["Upload files into this draft from a GitHub repository using GitHub Actions."]
+    block.p[
+        "If your project is approved for reproducible builds, you can ",
+        "upload files into this draft from a GitHub repository using GitHub Actions.",
+    ]
     block.append(
         htm.ol[
             htm.li["Ensure GitHub Actions is enabled for your repository"],
@@ -193,15 +196,15 @@ jobs:
         """
     ]
     block.p[
-        "(assuming your ",
-        htm.code["github.ref_name"],
-        " resolves to match your version - currently ",
-        htm.code[str(version_name)],
-        " and ",
-        htm.code["build.sh"],
+        "(assuming your  ",
+        htm.code["github.ref_name "],
+        " resolves to match your version - currently  ",
+        htm.code[f"{version_name!s} "],
+        " and  ",
+        htm.code["build.sh "],
         " produces the files you want to upload)",
     ]
-    block.p["You can also use the ", htm.code["Upload to ATR"], " step directly in an existing workflow."]
+    block.p["You can also use the  ", htm.code["Upload to ATR "], " step directly in an existing workflow."]
 
     return await template.blank(
         f"Upload files to {release.short_display_name}",
