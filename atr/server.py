@@ -527,15 +527,22 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
 
     @app.before_request
     async def validate_sec_fetch_headers() -> None:
-        if quart.request.path.startswith("/api"):
+        if quart.request.path.startswith("/api") and (
+            not (quart.request.path.startswith("/api/docs") or quart.request.path.startswith("/api/openapi.json"))
+        ):
             sec_fetch_dest = quart.request.headers.get("Sec-Fetch-Dest", "")
             if sec_fetch_dest in ("document", "embed", "object", "frame", "iframe"):
-                raise base.ASFQuartException("Unauthorized", errorcode=403)
+                raise base.ASFQuartException(
+                    "Forbibben: browser navigation to API endpoints is not permitted", errorcode=403
+                )
 
         if quart.request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            sec_fetch_mode = quart.request.headers.get("Sec-Fetch-Mode", "")
             sec_fetch_site = quart.request.headers.get("Sec-Fetch-Site", "")
-            if sec_fetch_site not in ("same-origin", "none", ""):
-                raise base.ASFQuartException("Unauthorized", errorcode=403)
+            if not ((sec_fetch_mode == "navigate") or (sec_fetch_site in (None, "same=origin"))):
+                raise base.ASFQuartException(
+                    "Forbibben: non-GET navigation to this site is not permitted", errorcode=403
+                )
 
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
