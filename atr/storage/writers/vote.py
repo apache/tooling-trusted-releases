@@ -268,13 +268,24 @@ class CommitteeMember(CommitteeParticipant):
     async def resolve_manually(
         self,
         project_name: str,
-        release: sql.Release,
+        version_name: str,
         vote_result: Literal["passed", "failed"],
     ) -> str:
-        # Attach the existing release to the session
-        release = await self.__data.merge(release)
-        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
-            raise ValueError("Release is not in the candidate phase")
+        release = await self.__data.release(
+            name=sql.release_name(project_name, version_name),
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+            _project=True,
+            _committee=True,
+        ).demand(storage.AccessError("Release not found"))
+
+        if not release.vote_manual:
+            raise ValueError("Release is not configured for manual voting")
+
+        if release.vote_started is None:
+            raise ValueError("Vote has not been started")
+
+        if (release.project.committee is not None) and release.project.committee.is_podling:
+            raise ValueError("Podling releases require the standard two round vote process")
 
         if vote_result == "passed":
             release.phase = sql.ReleasePhase.RELEASE_PREVIEW
@@ -295,7 +306,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_name=project_name,
-            version_name=release.version,
+            version_name=version_name,
             vote_result=vote_result,
         )
         return success_message

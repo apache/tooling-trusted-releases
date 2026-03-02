@@ -71,7 +71,7 @@ async def resolve_selected(
             destination = get.compose.selected
 
     async with storage.write_as_project_committee_member(str(project_name)) as wacm:
-        success_message = await wacm.vote.resolve_manually(str(project_name), release, vote_result)
+        success_message = await wacm.vote.resolve_manually(str(project_name), str(version_name), vote_result)
 
     return await session.redirect(
         destination,
@@ -137,22 +137,24 @@ async def _committee_label(thread_id: str) -> str | None:
 
 
 async def _committees_check(vote_thread_url: str, vote_result_url: str) -> None:
-    vote_thread_id = vote_thread_url.removeprefix("https://lists.apache.org/thread/")
-    result_thread_id = vote_result_url.removeprefix("https://lists.apache.org/thread/")
-
+    # The two arguments to this function are guaranteed to begin with this prefix
+    # Validation was performed by the Pydantic field validator ResolveVoteForm.validate_urls
+    guaranteed_prefix = "https://lists.apache.org/thread/"
+    vote_thread_id = vote_thread_url.removeprefix(guaranteed_prefix)
     try:
         vote_committee_label = await _committee_label(vote_thread_id)
     except util.FetchError as e:
         raise RuntimeError(f"Failed to fetch vote thread metadata from URL {e.url}: {e!s}")
+    if vote_committee_label is None:
+        raise RuntimeError("Vote committee not found")
+
+    result_thread_id = vote_result_url.removeprefix(guaranteed_prefix)
     try:
         result_committee_label = await _committee_label(result_thread_id)
     except util.FetchError as e:
         raise RuntimeError(f"Failed to fetch vote thread metadata from URL {e.url}: {e!s}")
+    if result_committee_label is None:
+        raise RuntimeError("Result committee not found")
 
     if vote_committee_label != result_committee_label:
         raise RuntimeError("Vote committee and result committee do not match")
-
-    if vote_committee_label is None:
-        raise RuntimeError("Vote committee not found")
-    if result_committee_label is None:
-        raise RuntimeError("Result committee not found")
