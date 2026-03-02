@@ -83,6 +83,20 @@ def check_archive_safety(archive_path: str) -> list[str]:
     return errors
 
 
+def deduplicate_quarantine_archives(archive_paths: list[str], path_to_hash: dict[str, str]) -> list[tuple[str, str]]:
+    seen: dict[tuple[str, str], str] = {}
+    for rel_path in archive_paths:
+        content_hash = path_to_hash[rel_path]
+        basename = _path_basename(rel_path)
+        suffix = _quarantine_archive_suffix(basename)
+        if suffix is None:
+            continue
+        key = (content_hash, suffix)
+        if (key not in seen) or (rel_path < seen[key]):
+            seen[key] = rel_path
+    return [(rel_path, path_to_hash[rel_path]) for rel_path in sorted(seen.values())]
+
+
 def detect_archives_requiring_quarantine(
     path_to_hash: dict[str, str], previous_attestable: models.AttestableV1 | None
 ) -> list[str]:

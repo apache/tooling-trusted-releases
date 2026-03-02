@@ -150,6 +150,44 @@ def test_check_archive_safety_rejects_symlink_target_outside_root(tmp_path):
     assert any("escapes root" in error for error in errors)
 
 
+def test_deduplicate_quarantine_archives_different_extensions_kept_separately():
+    paths_list = ["a/src.tar.gz", "a/src.zip"]
+    path_to_hash = {"a/src.tar.gz": "h1", "a/src.zip": "h1"}
+
+    result = detection.deduplicate_quarantine_archives(paths_list, path_to_hash)
+
+    assert len(result) == 2
+
+
+def test_deduplicate_quarantine_archives_empty_input():
+    result = detection.deduplicate_quarantine_archives([], {})
+
+    assert result == []
+
+
+def test_deduplicate_quarantine_archives_keeps_smallest_rel_path_per_hash_suffix():
+    paths_list = ["b/archive.tar.gz", "a/archive.tar.gz", "c/other.zip"]
+    path_to_hash = {
+        "a/archive.tar.gz": "h1",
+        "b/archive.tar.gz": "h1",
+        "c/other.zip": "h2",
+    }
+
+    result = detection.deduplicate_quarantine_archives(paths_list, path_to_hash)
+
+    assert result == [("a/archive.tar.gz", "h1"), ("c/other.zip", "h2")]
+
+
+def test_deduplicate_quarantine_archives_tgz_normalises_to_tar_gz():
+    paths_list = ["a/src.tgz", "b/src.tar.gz"]
+    path_to_hash = {"a/src.tgz": "h1", "b/src.tar.gz": "h1"}
+
+    result = detection.deduplicate_quarantine_archives(paths_list, path_to_hash)
+
+    assert len(result) == 1
+    assert result[0][1] == "h1"
+
+
 def test_detect_archives_requiring_quarantine_known_hash_and_different_extension():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tgz": "h1"},

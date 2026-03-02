@@ -25,7 +25,7 @@ import pathlib
 import secrets
 import tempfile
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import aiofiles.os
 import aioshutil
@@ -46,6 +46,9 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     import atr.models.attestable
+
+_QUARANTINE_TOKEN_ALPHABET: Final[str] = "qpzry9x8gf2tvdw0s3jn54khce6mua7b"
+_QUARANTINE_TOKEN_LENGTH: Final[int] = 24
 
 
 class SafeSession:
@@ -199,7 +202,7 @@ async def _commit_new_revision(
 
     # Commit to end the transaction started by data.begin_immediate
     # We must commit the revision before starting the checks
-    # This also releases the write lock
+    # This also releases the write lock obtained in _lock_and_merge
     await data.commit()
 
     async with data.begin():
@@ -212,6 +215,16 @@ async def _commit_new_revision(
             await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.number, caller_data=data)
 
     return new_revision
+
+
+def _generate_quarantine_token() -> str:
+    value = int.from_bytes(secrets.token_bytes(15), "big")
+    alphabet = _QUARANTINE_TOKEN_ALPHABET
+    chars: list[str] = []
+    for _ in range(_QUARANTINE_TOKEN_LENGTH):
+        chars.append(alphabet[value & 0x1F])
+        value >>= 5
+    return "".join(chars)
 
 
 async def _lock_and_merge(
@@ -423,6 +436,223 @@ class CommitteeParticipant(FoundationCommitter):
                 temp_dir_path=temp_dir_path,
                 version_name=version_name,
             )
+
+    async def create_revision_with_quarantine(  # noqa: C901
+        self,
+        project_name: str,
+        version_name: str,
+        asf_uid: str,
+        description: str | None = None,
+        set_local_cache: bool = False,
+        reset_to_global_cache: bool = False,
+        modify: Callable[[pathlib.Path, sql.Revision | None], Awaitable[None]] | None = None,
+        clone_from: str | None = None,
+    ) -> sql.Revision | sql.Quarantined:
+        """Create a new revision, quarantining archives that require validation."""
+        release_name = sql.release_name(project_name, version_name)
+        async with db.session() as data:
+            release = await data.release(name=release_name, _release_policy=True, _project_release_policy=True).demand(
+                RuntimeError("Release does not exist for new revision creation")
+            )
+            if clone_from is not None:
+                old_revision = await data.revision(release_name=release_name, number=clone_from).demand(
+                    RuntimeError(f"Revision {clone_from} does not exist")
+                )
+            else:
+                old_revision = await interaction.latest_revision(release)
+            if set_local_cache:
+                release.check_cache_key = str(uuid.uuid4())
+            if reset_to_global_cache:
+                release.check_cache_key = None
+
+        if clone_from is not None:
+            old_release_dir = paths.release_directory_base(release) / clone_from
+        else:
+            old_release_dir = paths.release_directory(release)
+        merge_enabled = clone_from is None
+
+        # Create a temporary directory
+        # We ensure, below, that it's removed on any exception
+        # Use the tmp subdirectory of state, to ensure that it is on the same filesystem
+        prefix_token = secrets.token_hex(16)
+        temp_dir: str = await asyncio.to_thread(tempfile.mkdtemp, prefix=prefix_token + "-", dir=paths.get_tmp_dir())
+        temp_dir_path = pathlib.Path(temp_dir)
+
+        try:
+            # The directory was created by mkdtemp, but it's empty
+            if old_revision is not None:
+                # If this is not the first revision, hard link the previous revision
+                await util.create_hard_link_clone(old_release_dir, temp_dir_path, do_not_create_dest_dir=True)
+            # The directory is either empty or its files are hard linked to the previous revision
+            if modify is not None:
+                await modify(temp_dir_path, old_revision)
+        except types.FailedError:
+            await aioshutil.rmtree(temp_dir)
+            raise
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
+        validation_errors = await asyncio.to_thread(detection.validate_directory, temp_dir_path)
+        if validation_errors:
+            await aioshutil.rmtree(temp_dir)
+            raise types.FailedError("File validation failed:\n" + "\n".join(validation_errors))
+
+        # Ensure that the permissions of every directory are 755
+        try:
+            await asyncio.to_thread(util.chmod_directories, temp_dir_path)
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
+        # Make files read only to prevent them from being modified through hard links
+        try:
+            await asyncio.to_thread(util.chmod_files, temp_dir_path, 0o444)
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
+        try:
+            path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(temp_dir_path)
+            parent_revision_number = old_revision.number if old_revision else None
+            previous_attestable = None
+            if parent_revision_number is not None:
+                previous_attestable = await attestable.load(project_name, version_name, parent_revision_number)
+            base_inodes: dict[str, int] = {}
+            base_hashes: dict[str, str] = {}
+            if merge_enabled and (old_revision is not None):
+                base_dir = old_release_dir
+                base_inodes = await asyncio.to_thread(util.paths_to_inodes, base_dir)
+                base_hashes = dict(previous_attestable.paths) if (previous_attestable is not None) else {}
+            n_inodes = await asyncio.to_thread(util.paths_to_inodes, temp_dir_path)
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
+        async with SafeSession(temp_dir) as data:
+            try:
+                previous_attestable, prior_revision_name, merged_release = await _lock_and_merge(
+                    data,
+                    base_hashes=base_hashes,
+                    base_inodes=base_inodes,
+                    merge_enabled=merge_enabled,
+                    n_inodes=n_inodes,
+                    old_revision=old_revision,
+                    path_to_hash=path_to_hash,
+                    path_to_size=path_to_size,
+                    previous_attestable=previous_attestable,
+                    project_name=project_name,
+                    release=release,
+                    _release_name=release_name,
+                    temp_dir_path=temp_dir_path,
+                    version_name=version_name,
+                )
+            except Exception:
+                await aioshutil.rmtree(temp_dir)
+                raise
+
+            archive_paths = detection.detect_archives_requiring_quarantine(path_to_hash, previous_attestable)
+            if archive_paths:
+                deduped = detection.deduplicate_quarantine_archives(archive_paths, path_to_hash)
+                if deduped:
+                    return await self._quarantine_archives(
+                        data,
+                        asf_uid=asf_uid,
+                        deduped_archives=deduped,
+                        description=description,
+                        path_to_size=path_to_size,
+                        prior_revision_name=prior_revision_name,
+                        project_name=project_name,
+                        release_name=release_name,
+                        temp_dir=temp_dir,
+                        version_name=version_name,
+                    )
+
+            return await _commit_new_revision(
+                data,
+                asf_uid=asf_uid,
+                description=description,
+                path_to_hash=path_to_hash,
+                path_to_size=path_to_size,
+                previous_attestable=previous_attestable,
+                project_name=project_name,
+                release=merged_release,
+                release_name=release_name,
+                temp_dir=temp_dir,
+                version_name=version_name,
+            )
+
+    async def _quarantine_archives(
+        self,
+        data: db.Session,
+        *,
+        asf_uid: str,
+        deduped_archives: list[tuple[str, str]],
+        description: str | None,
+        path_to_size: dict[str, int],
+        prior_revision_name: str | None,
+        project_name: str,
+        release_name: str,
+        temp_dir: str,
+        version_name: str,
+    ) -> sql.Quarantined:
+        file_metadata = [
+            sql.QuarantineFileEntryV1(
+                rel_path=rel_path,
+                size_bytes=path_to_size[rel_path],
+                content_hash=content_hash,
+                errors=[],
+            )
+            for rel_path, content_hash in deduped_archives
+        ]
+
+        token = _generate_quarantine_token()
+        quarantined = sql.Quarantined(
+            release_name=release_name,
+            asf_uid=asf_uid,
+            prior_revision_name=prior_revision_name,
+            status=sql.QuarantineStatus.STAGING,
+            token=token,
+            created=datetime.datetime.now(datetime.UTC),
+            file_metadata=file_metadata,
+            description=description,
+        )
+
+        try:
+            data.add(quarantined)
+            await data.flush()
+
+            quarantine_dir = paths.quarantine_directory(quarantined)
+            await aiofiles.os.makedirs(quarantine_dir.parent, exist_ok=True)
+            await aiofiles.os.rename(temp_dir, quarantine_dir)
+        except Exception:
+            await aioshutil.rmtree(temp_dir)
+            raise
+
+        # Release the write lock obtained in _lock_and_merge
+        await data.commit()
+
+        data.add(
+            sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.QUARANTINE_VALIDATE,
+                task_args={
+                    "quarantined_id": quarantined.id,
+                    "archives": [
+                        {"rel_path": entry.rel_path, "content_hash": entry.content_hash} for entry in file_metadata
+                    ],
+                },
+                asf_uid=asf_uid,
+                project_name=project_name,
+                version_name=version_name,
+                revision_number=None,
+                primary_rel_path=None,
+            )
+        )
+        quarantined.status = sql.QuarantineStatus.PENDING
+        await data.commit()
+
+        return quarantined
 
 
 class CommitteeMember(CommitteeParticipant):

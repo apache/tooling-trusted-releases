@@ -165,6 +165,7 @@ class ProjectStatus(enum.StrEnum):
 
 
 class QuarantineStatus(enum.Enum):
+    STAGING = "STAGING"
     PENDING = "PENDING"
     FAILED = "FAILED"
 
