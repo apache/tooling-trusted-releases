@@ -87,7 +87,6 @@ class AppConfig:
     PUBSUB_PASSWORD = _config_secrets("PUBSUB_PASSWORD", STATE_DIR, default=None, cast=str)
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
-    MANUAL_VOTE = decouple.config("MANUAL_VOTE", default=True, cast=bool)
 
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False

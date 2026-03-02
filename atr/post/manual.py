@@ -18,7 +18,6 @@
 from typing import Literal
 
 import atr.blueprints.post as post
-import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -72,7 +71,7 @@ async def resolve_selected(
             destination = get.compose.selected
 
     async with storage.write_as_project_committee_member(str(project_name)) as wacm:
-        success_message = await wacm.vote.resolve_manually(str(project_name), release, vote_result)
+        success_message = await wacm.vote.resolve_manually(str(project_name), str(version_name), vote_result)
 
     return await session.redirect(
         destination,
@@ -97,7 +96,7 @@ async def start_selected_revision(
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=config.get().MANUAL_VOTE
+            session, str(project_name), str(version_name), revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
@@ -137,16 +136,11 @@ async def _committee_label(thread_id: str) -> str | None:
     return None
 
 
-def _committee_thread(thread_url: str) -> str:
-    if thread_url.startswith("https://lists.apache.org/thread/"):
-        return thread_url.removeprefix("https://lists.apache.org/thread/")
-    elif thread_url.startswith("https:"):
-        raise RuntimeError("Invalid Thread")
-    return thread_url
-
-
 async def _committees_check(vote_thread_url: str, vote_result_url: str) -> None:
-    vote_thread_id = _committee_thread(vote_thread_url)
+    # The two arguments to this function are guaranteed to begin with this prefix
+    # Validation was performed by the Pydantic field validator ResolveVoteForm.validate_urls
+    guaranteed_prefix = "https://lists.apache.org/thread/"
+    vote_thread_id = vote_thread_url.removeprefix(guaranteed_prefix)
     try:
         vote_committee_label = await _committee_label(vote_thread_id)
     except util.FetchError as e:
@@ -154,7 +148,7 @@ async def _committees_check(vote_thread_url: str, vote_result_url: str) -> None:
     if vote_committee_label is None:
         raise RuntimeError("Vote committee not found")
 
-    result_thread_id = _committee_thread(vote_result_url)
+    result_thread_id = vote_result_url.removeprefix(guaranteed_prefix)
     try:
         result_committee_label = await _committee_label(result_thread_id)
     except util.FetchError as e:
