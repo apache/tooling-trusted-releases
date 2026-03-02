@@ -119,6 +119,13 @@ def exception(msg: str, **kwargs) -> None:
     _event(logging.ERROR, msg, exc_info=True, **kwargs)
 
 
+def failed_authentication(reason: str) -> None:
+    warning(
+        "Authentication failed",
+        reason=reason,
+    )
+
+
 def get_context(arg) -> Any | None:
     """Get context from the request log"""
     return structlog.contextvars.get_contextvars().get(arg, None)
@@ -156,6 +163,10 @@ def performance_init() -> None:
 
 def python_repr(object_name: str) -> str:
     return f"<{object_name}>"
+
+
+def set_asf_uid(asfuid: str | None) -> None:
+    add_context(asfuid=asfuid)
 
 
 def warning(msg: str, **kwargs) -> None:

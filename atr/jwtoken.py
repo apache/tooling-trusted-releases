@@ -72,10 +72,13 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
         try:
             claims = await verify(token)
         except jwt.ExpiredSignatureError as exc:
+            log.failed_authentication("jwt_token_expired")
             raise base.ASFQuartException("Token has expired", errorcode=401) from exc
         except jwt.InvalidTokenError as exc:
+            log.failed_authentication("jwt_token_invalid")
             raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
         except jwt.PyJWTError as exc:
+            log.failed_authentication("jwt_token_invalid_2")
             raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
 
         quart.g.jwt_claims = claims
@@ -85,6 +88,10 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
 
 
 async def verify(token: str) -> dict[str, Any]:
+    # Grab the "supposed" asf UID from the token presented, to make sure we know who failed to authenticate on failure.
+    claims_unsafe = jwt.decode(token, verify=False)
+    asf_uid = claims_unsafe.get("sub")
+    log.set_asf_uid(asf_uid)
     claims = jwt.decode(
         token,
         _JWT_SECRET_KEY,
@@ -93,10 +100,12 @@ async def verify(token: str) -> dict[str, Any]:
         audience=_ATR_JWT_AUDIENCE,
         options={"require": ["sub", "iss", "aud", "iat", "exp", "jti"]},
     )
-    asf_uid = claims.get("sub")
+    log.debug(f"JWT claims: {claims}")
     if not isinstance(asf_uid, str):
+        log.failed_authentication("jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
     if not await ldap.is_active(asf_uid):
+        log.failed_authentication("account_deleted_or_banned")
         raise base.ASFQuartException("Account is disabled", errorcode=401)
     return claims
 

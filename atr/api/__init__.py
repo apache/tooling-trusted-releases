@@ -438,7 +438,7 @@ async def jwt_create(data: models.api.JwtCreateArgs) -> DictResponse:
     # Expects {"asfuid": "uid", "pat": "pat-token"}
     # Returns {"asfuid": "uid", "jwt": "jwt-token"}
     asf_uid = data.asfuid
-    log.add_context(user_id=asf_uid)
+    log.set_asf_uid(asf_uid)
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         jwt = await wafc.tokens.issue_jwt(data.pat)
