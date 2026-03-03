@@ -232,6 +232,7 @@ def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugRespon
 async def _svn_import(
     session: web.Committer, svn_form: shared.upload.SvnImportForm, project_name: str, version_name: str
 ) -> web.WerkzeugResponse:
+    # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
         target_subdirectory = str(svn_form.target_subdirectory) if svn_form.target_subdirectory else None
         svn_area = shared.upload.SvnArea.DEV

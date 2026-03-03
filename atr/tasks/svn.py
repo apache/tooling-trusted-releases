@@ -52,6 +52,7 @@ class SvnImportError(Exception):
 @checks.with_model(SvnImport)
 async def import_files(args: SvnImport) -> results.Results | None:
     """Import files from SVN into a draft release candidate revision."""
+    # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
         result_message = await _import_files_core(args)
         return results.SvnImportFiles(
