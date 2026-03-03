@@ -42,7 +42,9 @@ async def jwt_post(session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], _
     URL: /tokens/jwt
     """
     jwt_token = jwtoken.issue(session.uid)
-    return web.TextResponse(jwt_token)
+    response = web.TextResponse(jwt_token)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @post.typed

@@ -271,6 +271,7 @@ class RouteFunction(Protocol[R]):
 
 
 class ShellResponse(quart.Response):
+    # audit_guidance this is an intentional use of x-shellscript without Content-Disposition
     def __init__(self, text: str, status: int = 200) -> None:
         super().__init__(text, status=status, mimetype="text/x-shellscript")
 
