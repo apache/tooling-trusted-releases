@@ -32,13 +32,14 @@ import atr.web as web
 
 @get.typed
 async def ignores(
-    _session: web.Committer,
+    session: web.Committer,
     _ignores: Literal["ignores"],
     project_name: safe.ProjectName,
 ) -> str | web.WerkzeugResponse:
     """
     URL: /ignores/<project_name>
     """
+    await session.check_access(project_name)
     async with storage.read() as read:
         ragp = read.as_general_public()
         ignores = await ragp.checks.ignores(str(project_name))

@@ -119,6 +119,7 @@ async def automate_selected(
     """
     URL: /distribution/automate/<project_name>/<version_name>
     """
+    await session.check_access(project_name)
     return await automate_form_process_page(
         session, distribute_form, str(project_name), str(version_name), staging=False
     )
@@ -135,6 +136,7 @@ async def delete(
     """
     URL: /distribution/delete/<project_name>/<version_name>
     """
+    await session.check_access(project_name)
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
     # Validate the submitted data, and obtain the committee for its name
