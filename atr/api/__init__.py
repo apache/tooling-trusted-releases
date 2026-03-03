@@ -37,6 +37,7 @@ import atr.hashes as hashes
 import atr.jwtoken as jwtoken
 import atr.log as log
 import atr.models as models
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.principal as principal
@@ -59,10 +60,16 @@ type DictResponse = tuple[dict[str, Any], int]
 ROUTES_MODULE: Final[Literal[True]] = True
 
 
-@api.route("/checks/list/<project>/<version>")
+@api.typed
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
-async def checks_list(project: str, version: str) -> DictResponse:
+async def checks_list(
+    _checks_list: Literal["checks/list"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> DictResponse:
     """
+    URL: GET /checks/list/<project_name>/<version_name>
+
     List checks by project and version.
 
     Checks are only conducted during the compose a draft phase. This endpoint
@@ -74,10 +81,8 @@ async def checks_list(project: str, version: str) -> DictResponse:
     may potentially be thousands or results or more.
     """
     # TODO: We should perhaps paginate this
-    _simple_check(project, version)
-
     async with db.session() as data:
-        release_name = sql.release_name(project, version)
+        release_name = sql.release_name(str(project_name), str(version_name))
         release = await data.release(name=release_name).demand(exceptions.NotFound(f"Release {release_name} not found"))
         check_results = await interaction.checks_for(release, caller_data=data)
 
@@ -89,10 +94,17 @@ async def checks_list(project: str, version: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/checks/list/<project>/<version>/<revision>")
+@api.typed
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
-async def checks_list_revision(project: str, version: str, revision: str) -> DictResponse:
+async def checks_list_revision(
+    _checks_list: Literal["checks/list"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: str,
+) -> DictResponse:
     """
+    URL: GET /checks/list/<project_name>/<version_name>/<revision>
+
     List checks by project, version, and revision.
 
     Checks are only conducted during the compose a draft phase. This endpoint
@@ -103,20 +115,15 @@ async def checks_list_revision(project: str, version: str, revision: str) -> Dic
     Warning: the check results include results for archive members, so there
     may potentially be thousands or results or more.
     """
-    _simple_check(project, version, revision)
     async with db.session() as data:
-        project_result = await data.project(name=project).get()
-        if project_result is None:
-            raise exceptions.NotFound(f"Project '{project}' does not exist")
-
-        release_name = sql.release_name(project, version)
-        release_result = await data.release(name=release_name).get()
-        if release_result is None:
-            raise exceptions.NotFound(f"Release '{project}-{version}' does not exist")
+        release_name = sql.release_name(str(project_name), str(version_name))
+        release_result = await data.release(name=release_name).demand(
+            exceptions.NotFound(f"Release '{release_name}' does not exist")
+        )
 
         revision_result = await data.revision(release_name=release_name, number=revision).get()
         if revision_result is None:
-            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{project}-{version}'")
+            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_name}'")
 
         check_results = await interaction.checks_for(release_result, revision=revision, caller_data=data)
 
@@ -128,15 +135,17 @@ async def checks_list_revision(project: str, version: str, revision: str) -> Dic
     ).model_dump(), 200
 
 
-@api.route("/checks/ongoing/<project>/<version>", defaults={"revision": None})
-@api.route("/checks/ongoing/<project>/<version>/<revision>")
+@api.typed
 @quart_schema.validate_response(models.api.ChecksOngoingResults, 200)
 async def checks_ongoing(
-    project: str,
-    version: str,
+    _checks_ongoing: Literal["checks/ongoing"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision: str | None = None,
 ) -> DictResponse:
     """
+    URL: GET /checks/ongoing/<project_name>/<version_name>[/<revision>]
+
     Count ongoing checks by project, version, and optionally revision.
 
     Checks are only conducted during the compose a draft phase. This endpoint
@@ -144,8 +153,9 @@ async def checks_ongoing(
     present, or the most recent draft revision otherwise. A draft release
     cannot be promoted to the vote phase if checks are still ongoing.
     """
-    _simple_check(project, version, revision)
-    ongoing_tasks_count, _latest_revision = await interaction.tasks_ongoing_revision(project, version, revision)
+    ongoing_tasks_count, _latest_revision = await interaction.tasks_ongoing_revision(
+        str(project_name), str(version_name), revision
+    )
     # TODO: Is there a way to return just an int?
     # The ResponseReturnValue type in quart does not allow int
     # And if we use quart.jsonify, we must return web.QuartResponse which quart_schema tries to validate
@@ -165,10 +175,15 @@ async def checks_ongoing(
     ).model_dump(), 200
 
 
-@api.route("/committee/get/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.CommitteeGetResults, 200)
-async def committee_get(name: str) -> DictResponse:
+async def committee_get(
+    _committee_get: Literal["committee/get"],
+    name: str,
+) -> DictResponse:
     """
+    URL: GET /committee/get/<name>
+
     Get a committee by name.
 
     The name of the committee is the name without any prefixes or suffixes such
@@ -176,7 +191,6 @@ async def committee_get(name: str) -> DictResponse:
     The Apache Simple Example PMC, for example, would have the name
     "simple-example".
     """
-    _simple_check(name)
     async with db.session() as data:
         committee = await data.committee(name=name).demand(exceptions.NotFound(f"Committee '{name}' was not found"))
     return models.api.CommitteeGetResults(
@@ -185,10 +199,15 @@ async def committee_get(name: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/committee/keys/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.CommitteeKeysResults, 200)
-async def committee_keys(name: str) -> DictResponse:
+async def committee_keys(
+    _committee_keys: Literal["committee/keys"],
+    name: str,
+) -> DictResponse:
     """
+    URL: GET /committee/keys/<name>
+
     List public OpenPGP keys by committee name.
 
     The name of the committee is the name without any prefixes or suffixes such
@@ -196,7 +215,6 @@ async def committee_keys(name: str) -> DictResponse:
     The Apache Simple Example PMC, for example, would have the name
     "simple-example".
     """
-    _simple_check(name)
     async with db.session() as data:
         committee = await data.committee(name=name, _public_signing_keys=True).demand(
             exceptions.NotFound(f"Committee '{name}' was not found")
@@ -207,10 +225,15 @@ async def committee_keys(name: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/committee/projects/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.CommitteeProjectsResults, 200)
-async def committee_projects(name: str) -> DictResponse:
+async def committee_projects(
+    _committee_projects: Literal["committee/projects"],
+    name: str,
+) -> DictResponse:
     """
+    URL: GET /committee/projects/<name>
+
     List projects by committee name.
 
     The name of the committee is the name without any prefixes or suffixes such
@@ -218,7 +241,6 @@ async def committee_projects(name: str) -> DictResponse:
     The Apache Simple Example PMC, for example, would have the name
     "simple-example".
     """
-    _simple_check(name)
     async with db.session() as data:
         committee = await data.committee(name=name, _projects=True).demand(
             exceptions.NotFound(f"Committee '{name}' was not found")
@@ -229,10 +251,14 @@ async def committee_projects(name: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/committees/list")
+@api.typed
 @quart_schema.validate_response(models.api.CommitteesListResults, 200)
-async def committees_list() -> DictResponse:
+async def committees_list(
+    _committees_list: Literal["committees/list"],
+) -> DictResponse:
     """
+    URL: GET /committees/list
+
     List committees.
 
     The list of committees is returned in no particular order.
@@ -245,11 +271,15 @@ async def committees_list() -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/distribute/ssh/register", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@quart_schema.validate_request(models.api.DistributeSshRegisterArgs)
-async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) -> DictResponse:
+async def distribute_ssh_register(
+    _distribute_ssh_register: Literal["distribute/ssh/register"],
+    data: models.api.DistributeSshRegisterArgs,
+) -> DictResponse:
     """
+    URL: POST /distribute/ssh/register
+
     Register an SSH key sent with a corroborating Trusted Publisher JWT,
     validating the requested release is in the correct phase.
     """
@@ -278,13 +308,17 @@ async def distribute_ssh_register(data: models.api.DistributeSshRegisterArgs) ->
     ).model_dump(), 200
 
 
-@api.route("/distribution/record", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.DistributionRecordArgs)
 @quart_schema.validate_response(models.api.DistributionRecordResults, 200)
-async def distribution_record(data: models.api.DistributionRecordArgs) -> DictResponse:
+async def distribution_record(
+    _distribution_record: Literal["distribution/record"],
+    data: models.api.DistributionRecordArgs,
+) -> DictResponse:
     """
+    URL: POST /distribution/record
+
     Record a manual distribution.
     """
     asf_uid = _jwt_asf_uid()
@@ -319,10 +353,14 @@ async def distribution_record(data: models.api.DistributionRecordArgs) -> DictRe
     ).model_dump(), 200
 
 
-@api.route("/distribute/record_from_workflow", methods=["POST"])
-@quart_schema.validate_request(models.api.DistributionRecordFromWorkflowArgs)
-async def distribution_record_from_workflow(data: models.api.DistributionRecordFromWorkflowArgs) -> DictResponse:
+@api.typed
+async def distribution_record_from_workflow(
+    _distribute_record_from_workflow: Literal["distribute/record_from_workflow"],
+    data: models.api.DistributionRecordFromWorkflowArgs,
+) -> DictResponse:
     """
+    URL: POST /distribute/record_from_workflow
+
     Record the result of an automated distribution from the GH tooling-actions workflow.
     """
     _payload, asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
@@ -356,13 +394,17 @@ async def distribution_record_from_workflow(data: models.api.DistributionRecordF
     ).model_dump(), 200
 
 
-@api.route("/ignore/add", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.IgnoreAddArgs)
 @quart_schema.validate_response(models.api.IgnoreAddResults, 200)
-async def ignore_add(data: models.api.IgnoreAddArgs) -> DictResponse:
+async def ignore_add(
+    _ignore_add: Literal["ignore/add"],
+    data: models.api.IgnoreAddArgs,
+) -> DictResponse:
     """
+    URL: POST /ignore/add
+
     Add a check ignore.
     """
     asf_uid = _jwt_asf_uid()
@@ -386,13 +428,17 @@ async def ignore_add(data: models.api.IgnoreAddArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/ignore/delete", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.IgnoreDeleteArgs)
 @quart_schema.validate_response(models.api.IgnoreDeleteResults, 200)
-async def ignore_delete(data: models.api.IgnoreDeleteArgs) -> DictResponse:
+async def ignore_delete(
+    _ignore_delete: Literal["ignore/delete"],
+    data: models.api.IgnoreDeleteArgs,
+) -> DictResponse:
     """
+    URL: POST /ignore/delete
+
     Delete a check ignore.
     """
     asf_uid = _jwt_asf_uid()
@@ -410,27 +456,35 @@ async def ignore_delete(data: models.api.IgnoreDeleteArgs) -> DictResponse:
 
 
 # TODO: Rename to ignores
-@api.route("/ignore/list/<project_name>")
+@api.typed
 @quart_schema.validate_response(models.api.IgnoreListResults, 200)
-async def ignore_list(project_name: str) -> DictResponse:
+async def ignore_list(
+    _ignore_list: Literal["ignore/list"],
+    project_name: safe.ProjectName,
+) -> DictResponse:
     """
+    URL: GET /ignore/list/<project_name>
+
     List ignores by project name.
     """
-    _simple_check(project_name)
     async with db.session() as data:
-        await data.project(name=project_name).demand(exceptions.NotFound())
-        ignores = await data.check_result_ignore(project_name=project_name).all()
+        await data.project(name=str(project_name)).demand(exceptions.NotFound())
+        ignores = await data.check_result_ignore(project_name=str(project_name)).all()
     return models.api.IgnoreListResults(
         endpoint="/ignore/list",
         ignores=ignores,
     ).model_dump(), 200
 
 
-@api.route("/jwt/create", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@quart_schema.validate_request(models.api.JwtCreateArgs)
-async def jwt_create(data: models.api.JwtCreateArgs) -> DictResponse:
+async def jwt_create(
+    _jwt_create: Literal["jwt/create"],
+    data: models.api.JwtCreateArgs,
+) -> DictResponse:
     """
+    URL: POST /jwt/create
+
     Create a JWT.
 
     The payload must include a valid PAT.
@@ -450,14 +504,18 @@ async def jwt_create(data: models.api.JwtCreateArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/key/add", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.KeyAddArgs)
 @quart_schema.validate_response(models.api.KeyAddResults, 200)
-async def key_add(data: models.api.KeyAddArgs) -> DictResponse:
+async def key_add(
+    _key_add: Literal["key/add"],
+    data: models.api.KeyAddArgs,
+) -> DictResponse:
     """
+    URL: POST /key/add
+
     Add a public OpenPGP key.
 
     Once associated with the specified committees, the key will appear in the
@@ -484,13 +542,17 @@ async def key_add(data: models.api.KeyAddArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/key/delete", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.KeyDeleteArgs)
 @quart_schema.validate_response(models.api.KeyDeleteResults, 200)
-async def key_delete(data: models.api.KeyDeleteArgs) -> DictResponse:
+async def key_delete(
+    _key_delete: Literal["key/delete"],
+    data: models.api.KeyDeleteArgs,
+) -> DictResponse:
     """
+    URL: POST /key/delete
+
     Delete a public OpenPGP key.
 
     Warning: we plan to change how key deletion works.
@@ -517,16 +579,20 @@ async def key_delete(data: models.api.KeyDeleteArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/key/get/<fingerprint>")
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @quart_schema.validate_response(models.api.KeyGetResults, 200)
-async def key_get(fingerprint: str) -> DictResponse:
+async def key_get(
+    _key_get: Literal["key/get"],
+    fingerprint: str,
+) -> DictResponse:
     """
+    URL: GET /key/get/<fingerprint>
+
     Get a public OpenPGP key by fingerprint.
 
     All public OpenPGP keys stored within the database are accessible.
     """
-    _simple_check(fingerprint)
     async with db.session() as data:
         key = await data.public_signing_key(fingerprint=fingerprint.lower()).demand(
             exceptions.NotFound(f"Key '{fingerprint}' not found")
@@ -537,14 +603,18 @@ async def key_get(fingerprint: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/keys/upload", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.KeysUploadArgs)
 @quart_schema.validate_response(models.api.KeysUploadResults, 200)
-async def keys_upload(data: models.api.KeysUploadArgs) -> DictResponse:
+async def keys_upload(
+    _keys_upload: Literal["keys/upload"],
+    data: models.api.KeysUploadArgs,
+) -> DictResponse:
     """
+    URL: POST /keys/upload
+
     Upload a public OpenPGP KEYS file.
     """
     asf_uid = _jwt_asf_uid()
@@ -595,14 +665,18 @@ async def keys_upload(data: models.api.KeysUploadArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/keys/user/<asf_uid>")
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @quart_schema.validate_response(models.api.KeysUserResults, 200)
-async def keys_user(asf_uid: str) -> DictResponse:
+async def keys_user(
+    _keys_user: Literal["keys/user"],
+    asf_uid: str,
+) -> DictResponse:
     """
+    URL: GET /keys/user/<asf_uid>
+
     List public OpenPGP keys by the ASF UID of a user.
     """
-    _simple_check(asf_uid)
     async with db.session() as data:
         keys = await data.public_signing_key(apache_uid=asf_uid).all()
     return models.api.KeysUserResults(
@@ -611,33 +685,43 @@ async def keys_user(asf_uid: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/project/get/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
-async def project_get(name: str) -> DictResponse:
+async def project_get(
+    _project_get: Literal["project/get"],
+    project_name: safe.ProjectName,
+) -> DictResponse:
     """
+    URL: GET /project/get/<project_name>
+
     Get a project by name.
     """
-    _simple_check(name)
     async with db.session() as data:
-        project = await data.project(name=name).demand(exceptions.NotFound())
+        project = await data.project(name=str(project_name)).demand(exceptions.NotFound())
     return models.api.ProjectGetResults(
         endpoint="/project/get",
         project=project,
     ).model_dump(), 200
 
 
-@api.route("/project/policy/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.ProjectPolicyResults, 200)
-async def project_policy(name: str) -> DictResponse:
+async def project_policy(
+    _project_policy: Literal["project/policy"],
+    project_name: safe.ProjectName,
+) -> DictResponse:
     """
+    URL: GET /project/policy/<project_name>
+
     Get project policy by name.
 
     Returns the release policy settings for a project.
     If no policy has been configured, defaults are returned.
     """
-    _simple_check(name)
     async with db.session() as data:
-        project = await data.project(name=name, _release_policy=True, _committee=True).demand(exceptions.NotFound())
+        project = await data.project(name=str(project_name), _release_policy=True, _committee=True).demand(
+            exceptions.NotFound()
+        )
     return models.api.ProjectPolicyResults(
         endpoint="/project/policy",
         project_name=project.name,
@@ -664,26 +748,34 @@ async def project_policy(name: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/project/releases/<name>")
+@api.typed
 @quart_schema.validate_response(models.api.ProjectReleasesResults, 200)
-async def project_releases(name: str) -> DictResponse:
+async def project_releases(
+    _project_releases: Literal["project/releases"],
+    project_name: safe.ProjectName,
+) -> DictResponse:
     """
+    URL: GET /project/releases/<project_name>
+
     List releases by project name.
     """
-    _simple_check(name)
     async with db.session() as data:
-        await data.project(name=name).demand(exceptions.NotFound())
-        releases = await data.release(project_name=name).all()
+        await data.project(name=str(project_name)).demand(exceptions.NotFound())
+        releases = await data.release(project_name=str(project_name)).all()
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
         releases=releases,
     ).model_dump(), 200
 
 
-@api.route("/projects/list")
+@api.typed
 @quart_schema.validate_response(models.api.ProjectsListResults, 200)
-async def projects_list() -> DictResponse:
+async def projects_list(
+    _projects_list: Literal["projects/list"],
+) -> DictResponse:
     """
+    URL: GET /projects/list
+
     List projects.
     """
     # TODO: Add pagination?
@@ -695,10 +787,14 @@ async def projects_list() -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/publisher/distribution/record", methods=["POST"])
-@quart_schema.validate_request(models.api.PublisherDistributionRecordArgs)
-async def publisher_distribution_record(data: models.api.PublisherDistributionRecordArgs) -> DictResponse:
+@api.typed
+async def publisher_distribution_record(
+    _publisher_distribution_record: Literal["publisher/distribution/record"],
+    data: models.api.PublisherDistributionRecordArgs,
+) -> DictResponse:
     """
+    URL: POST /publisher/distribution/record
+
     Record a distribution with a corroborating Trusted Publisher JWT.
     """
     try:
@@ -743,10 +839,14 @@ async def publisher_distribution_record(data: models.api.PublisherDistributionRe
     ).model_dump(), 200
 
 
-@api.route("/publisher/release/announce", methods=["POST"])
-@quart_schema.validate_request(models.api.PublisherReleaseAnnounceArgs)
-async def publisher_release_announce(data: models.api.PublisherReleaseAnnounceArgs) -> DictResponse:
+@api.typed
+async def publisher_release_announce(
+    _publisher_release_announce: Literal["publisher/release/announce"],
+    data: models.api.PublisherReleaseAnnounceArgs,
+) -> DictResponse:
     """
+    URL: POST /publisher/release/announce
+
     Announce a release with a corroborating Trusted Publisher JWT.
     """
     _payload, asf_uid, project = await interaction.trusted_jwt(
@@ -777,11 +877,15 @@ async def publisher_release_announce(data: models.api.PublisherReleaseAnnounceAr
     ).model_dump(), 200
 
 
-@api.route("/publisher/ssh/register", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@quart_schema.validate_request(models.api.PublisherSshRegisterArgs)
-async def publisher_ssh_register(data: models.api.PublisherSshRegisterArgs) -> DictResponse:
+async def publisher_ssh_register(
+    _publisher_ssh_register: Literal["publisher/ssh/register"],
+    data: models.api.PublisherSshRegisterArgs,
+) -> DictResponse:
     """
+    URL: POST /publisher/ssh/register
+
     Register an SSH key sent with a corroborating Trusted Publisher JWT.
     """
     payload, asf_uid, project = await interaction.trusted_jwt(
@@ -804,10 +908,14 @@ async def publisher_ssh_register(data: models.api.PublisherSshRegisterArgs) -> D
     ).model_dump(), 200
 
 
-@api.route("/publisher/vote/resolve", methods=["POST"])
-@quart_schema.validate_request(models.api.PublisherVoteResolveArgs)
-async def publisher_vote_resolve(data: models.api.PublisherVoteResolveArgs) -> DictResponse:
+@api.typed
+async def publisher_vote_resolve(
+    _publisher_vote_resolve: Literal["publisher/vote/resolve"],
+    data: models.api.PublisherVoteResolveArgs,
+) -> DictResponse:
     """
+    URL: POST /publisher/vote/resolve
+
     Resolve a vote with a corroborating Trusted Publisher JWT.
     """
     # TODO: Need to be able to resolve and make the release immutable
@@ -833,13 +941,17 @@ async def publisher_vote_resolve(data: models.api.PublisherVoteResolveArgs) -> D
     ).model_dump(), 200
 
 
-@api.route("/release/announce", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.ReleaseAnnounceArgs)
 @quart_schema.validate_response(models.api.ReleaseAnnounceResults, 201)
-async def release_announce(data: models.api.ReleaseAnnounceArgs) -> DictResponse:
+async def release_announce(
+    _release_announce: Literal["release/announce"],
+    data: models.api.ReleaseAnnounceArgs,
+) -> DictResponse:
     """
+    URL: POST /release/announce
+
     Announce a release.
 
     After a vote on a release has passed, if everything is in order and all
@@ -871,13 +983,17 @@ async def release_announce(data: models.api.ReleaseAnnounceArgs) -> DictResponse
     ).model_dump(), 201
 
 
-@api.route("/release/create", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.ReleaseCreateArgs)
 @quart_schema.validate_response(models.api.ReleaseCreateResults, 201)
-async def release_create(data: models.api.ReleaseCreateArgs) -> DictResponse:
+async def release_create(
+    _release_create: Literal["release/create"],
+    data: models.api.ReleaseCreateArgs,
+) -> DictResponse:
     """
+    URL: POST /release/create
+
     Create a release.
 
     Release are created as a draft, which must be composed.
@@ -898,13 +1014,17 @@ async def release_create(data: models.api.ReleaseCreateArgs) -> DictResponse:
 
 
 # TODO: Duplicates the below
-@api.route("/release/delete", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.ReleaseDeleteArgs)
 @quart_schema.validate_response(models.api.ReleaseDeleteResults, 200)
-async def release_delete(data: models.api.ReleaseDeleteArgs) -> DictResponse:
+async def release_delete(
+    _release_delete: Literal["release/delete"],
+    data: models.api.ReleaseDeleteArgs,
+) -> DictResponse:
     """
+    URL: POST /release/delete
+
     Delete a release.
     """
     asf_uid = _jwt_asf_uid()
@@ -923,15 +1043,20 @@ async def release_delete(data: models.api.ReleaseDeleteArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/release/get/<project>/<version>")
+@api.typed
 @quart_schema.validate_response(models.api.ReleaseGetResults, 200)
-async def release_get(project: str, version: str) -> DictResponse:
+async def release_get(
+    _release_get: Literal["release/get"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> DictResponse:
     """
+    URL: GET /release/get/<project_name>/<version_name>
+
     Get a release by project and version.
     """
-    _simple_check(project, version)
     async with db.session() as data:
-        release_name = sql.release_name(project, version)
+        release_name = sql.release_name(str(project_name), str(version_name))
         release = await data.release(name=release_name).demand(exceptions.NotFound())
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
@@ -939,16 +1064,21 @@ async def release_get(project: str, version: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/release/paths/<project>/<version>")
-@api.route("/release/paths/<project>/<version>/<revision>")
+@api.typed
 @quart_schema.validate_response(models.api.ReleasePathsResults, 200)
-async def release_paths(project: str, version: str, revision: str | None = None) -> DictResponse:
+async def release_paths(
+    _release_paths: Literal["release/paths"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: str | None = None,
+) -> DictResponse:
     """
+    URL: GET /release/paths/<project_name>/<version_name>[/<revision>]
+
     List paths in a release by project and version.
     """
-    _simple_check(project, version, revision)
     async with db.session() as data:
-        release_name = sql.release_name(project, version)
+        release_name = sql.release_name(str(project_name), str(version_name))
         release = await data.release(name=release_name).demand(exceptions.NotFound())
         if revision is None:
             dir_path = paths.release_directory(release)
@@ -965,15 +1095,20 @@ async def release_paths(project: str, version: str, revision: str | None = None)
     ).model_dump(), 200
 
 
-@api.route("/release/revisions/<project>/<version>")
+@api.typed
 @quart_schema.validate_response(models.api.ReleaseRevisionsResults, 200)
-async def release_revisions(project: str, version: str) -> DictResponse:
+async def release_revisions(
+    _release_revisions: Literal["release/revisions"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+) -> DictResponse:
     """
+    URL: GET /release/revisions/<project_name>/<version_name>
+
     List revisions by project and version.
     """
-    _simple_check(project, version)
     async with db.session() as data:
-        release_name = sql.release_name(project, version)
+        release_name = sql.release_name(str(project_name), str(version_name))
         revisions = await data.revision(release_name=release_name).all()
     if not isinstance(revisions, list):
         revisions = list(revisions)
@@ -984,13 +1119,17 @@ async def release_revisions(project: str, version: str) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/release/upload", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.ReleaseUploadArgs)
 @quart_schema.validate_response(models.api.ReleaseUploadResults, 201)
-async def release_upload(data: models.api.ReleaseUploadArgs) -> DictResponse:
+async def release_upload(
+    _release_upload: Literal["release/upload"],
+    data: models.api.ReleaseUploadArgs,
+) -> DictResponse:
     """
+    URL: POST /release/upload
+
     Upload a file to a release.
     """
     asf_uid = _jwt_asf_uid()
@@ -1016,11 +1155,15 @@ async def release_upload(data: models.api.ReleaseUploadArgs) -> DictResponse:
     ).model_dump(), 201
 
 
-@api.route("/releases/list")
-@quart_schema.validate_querystring(models.api.ReleasesListQuery)
+@api.typed
 @quart_schema.validate_response(models.api.ReleasesListResults, 200)
-async def releases_list(query_args: models.api.ReleasesListQuery) -> DictResponse:
+async def releases_list(
+    _releases_list: Literal["releases/list"],
+    query_args: models.api.ReleasesListQuery,
+) -> DictResponse:
     """
+    URL: GET /releases/list
+
     List releases.
 
     The list of releases is paged and can be filtered by phase.
@@ -1058,13 +1201,17 @@ async def releases_list(query_args: models.api.ReleasesListQuery) -> DictRespons
     ).model_dump(), 200
 
 
-@api.route("/signature/provenance", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.SignatureProvenanceArgs)
 @quart_schema.validate_response(models.api.SignatureProvenanceResults, 200)
-async def signature_provenance(data: models.api.SignatureProvenanceArgs) -> DictResponse:
+async def signature_provenance(
+    _signature_provenance: Literal["signature/provenance"],
+    data: models.api.SignatureProvenanceArgs,
+) -> DictResponse:
     """
+    URL: POST /signature/provenance
+
     Get the provenance of a signature.
     """
     # POST because this uses significant computation and I/O
@@ -1121,14 +1268,18 @@ async def signature_provenance(data: models.api.SignatureProvenanceArgs) -> Dict
     ).model_dump(), 200
 
 
-@api.route("/ssh-key/add", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.SshKeyAddArgs)
 @quart_schema.validate_response(models.api.SshKeyAddResults, 201)
-async def ssh_key_add(data: models.api.SshKeyAddArgs) -> DictResponse:
+async def ssh_key_add(
+    _ssh_key_add: Literal["ssh-key/add"],
+    data: models.api.SshKeyAddArgs,
+) -> DictResponse:
     """
+    URL: POST /ssh-key/add
+
     Add an SSH key.
 
     An SSH key is associated with a single user.
@@ -1143,14 +1294,18 @@ async def ssh_key_add(data: models.api.SshKeyAddArgs) -> DictResponse:
     ).model_dump(), 201
 
 
-@api.route("/ssh-key/delete", methods=["POST"])
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.SshKeyDeleteArgs)
 @quart_schema.validate_response(models.api.SshKeyDeleteResults, 201)
-async def ssh_key_delete(data: models.api.SshKeyDeleteArgs) -> DictResponse:
+async def ssh_key_delete(
+    _ssh_key_delete: Literal["ssh-key/delete"],
+    data: models.api.SshKeyDeleteArgs,
+) -> DictResponse:
     """
+    URL: POST /ssh-key/delete
+
     Delete an SSH key.
 
     An SSH key can only be deleted by the user who owns it.
@@ -1165,14 +1320,18 @@ async def ssh_key_delete(data: models.api.SshKeyDeleteArgs) -> DictResponse:
     ).model_dump(), 201
 
 
-@api.route("/ssh-keys/list/<asf_uid>")
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@quart_schema.validate_querystring(models.api.SshKeysListQuery)
-async def ssh_keys_list(asf_uid: str, query_args: models.api.SshKeysListQuery) -> DictResponse:
+async def ssh_keys_list(
+    _ssh_keys_list: Literal["ssh-keys/list"],
+    asf_uid: str,
+    query_args: models.api.SshKeysListQuery,
+) -> DictResponse:
     """
+    URL: GET /ssh-keys/list/<asf_uid>
+
     List SSH keys by ASF UID.
     """
-    _simple_check(asf_uid)
     _pagination_args_validate(query_args)
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
@@ -1195,10 +1354,14 @@ async def ssh_keys_list(asf_uid: str, query_args: models.api.SshKeysListQuery) -
     ).model_dump(), 200
 
 
-@api.route("/tasks/list")
-@quart_schema.validate_querystring(models.api.TasksListQuery)
-async def tasks_list(query_args: models.api.TasksListQuery) -> DictResponse:
+@api.typed
+async def tasks_list(
+    _tasks_list: Literal["tasks/list"],
+    query_args: models.api.TasksListQuery,
+) -> DictResponse:
     """
+    URL: GET /tasks/list
+
     List tasks.
     """
     _pagination_args_validate(query_args)
@@ -1222,10 +1385,14 @@ async def tasks_list(query_args: models.api.TasksListQuery) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/distribute/task/status", methods=["POST"])
-@quart_schema.validate_request(models.api.DistributeStatusUpdateArgs)
-async def update_distribution_task_status(data: models.api.DistributeStatusUpdateArgs) -> DictResponse:
+@api.typed
+async def update_distribution_task_status(
+    _distribute_task_status: Literal["distribute/task/status"],
+    data: models.api.DistributeStatusUpdateArgs,
+) -> DictResponse:
     """
+    URL: POST /distribute/task/status
+
     Update the status of a distribution task
     """
     _payload, _asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
@@ -1244,13 +1411,17 @@ async def update_distribution_task_status(data: models.api.DistributeStatusUpdat
     ).model_dump(), 200
 
 
-@api.route("/user/info")
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.UserInfoResults, 200)
-async def user_info() -> DictResponse:
+async def user_info(
+    _user_info: Literal["user/info"],
+) -> DictResponse:
     """
+    URL: GET /user/info
+
     Get information about a user.
     """
     asf_uid = _jwt_asf_uid()
@@ -1264,11 +1435,15 @@ async def user_info() -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/users/list")
+@api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @quart_schema.validate_response(models.api.UsersListResults, 200)
-async def users_list() -> DictResponse:
+async def users_list(
+    _users_list: Literal["users/list"],
+) -> DictResponse:
     """
+    URL: GET /users/list
+
     List known users.
 
     This is not a list of all ASF users, but only those known to ATR.
@@ -1303,13 +1478,17 @@ async def users_list() -> DictResponse:
 
 
 # TODO: Add endpoints to allow users to vote
-@api.route("/vote/resolve", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.VoteResolveArgs)
 @quart_schema.validate_response(models.api.VoteResolveResults, 200)
-async def vote_resolve(data: models.api.VoteResolveArgs) -> DictResponse:
+async def vote_resolve(
+    _vote_resolve: Literal["vote/resolve"],
+    data: models.api.VoteResolveArgs,
+) -> DictResponse:
     """
+    URL: POST /vote/resolve
+
     Resolve a vote.
 
     A vote can be resolved by passing or failing.
@@ -1338,13 +1517,17 @@ async def vote_resolve(data: models.api.VoteResolveArgs) -> DictResponse:
     ).model_dump(), 200
 
 
-@api.route("/vote/start", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.VoteStartArgs)
 @quart_schema.validate_response(models.api.VoteStartResults, 201)
-async def vote_start(data: models.api.VoteStartArgs) -> DictResponse:
+async def vote_start(
+    _vote_start: Literal["vote/start"],
+    data: models.api.VoteStartArgs,
+) -> DictResponse:
     """
+    URL: POST /vote/start
+
     Start a vote.
     """
     asf_uid = _jwt_asf_uid()
@@ -1381,13 +1564,17 @@ async def vote_start(data: models.api.VoteStartArgs) -> DictResponse:
     ).model_dump(), 201
 
 
-@api.route("/vote/tabulate", methods=["POST"])
+@api.typed
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
-@quart_schema.validate_request(models.api.VoteTabulateArgs)
 @quart_schema.validate_response(models.api.VoteTabulateResults, 200)
-async def vote_tabulate(data: models.api.VoteTabulateArgs) -> DictResponse:
+async def vote_tabulate(
+    _vote_tabulate: Literal["vote/tabulate"],
+    data: models.api.VoteTabulateArgs,
+) -> DictResponse:
     """
+    URL: POST /vote/tabulate
+
     Tabulate a vote.
     """
     # asf_uid = _jwt_asf_uid()
@@ -1491,9 +1678,3 @@ def _pagination_args_validate(query_args: Any) -> None:
             raise exceptions.BadRequest("Maximum offset of 1000000 exceeded")
         elif offset < 0:
             raise exceptions.BadRequest("Minimum offset less than 0 is nonsense")
-
-
-def _simple_check(*args: str | None) -> None:
-    for arg in args:
-        if arg == "None":
-            raise exceptions.BadRequest("Argument cannot be the string 'None'")

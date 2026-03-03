@@ -15,12 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import dataclasses
 import inspect
+import types
+import typing
 from collections.abc import Callable
 from typing import Annotated, Any, Literal, TypeAliasType, get_args, get_origin, get_type_hints
 
 import asfquart.base as base
 import asfquart.session
+import pydantic
 
 import atr.cache as cache
 import atr.db as db
@@ -66,8 +70,11 @@ def build_path(
 ) -> tuple[str, list[tuple[str, type]], dict[str, str], tuple[str, type] | None, bool]:
     """Inspect a function's type hints to build a URL path and a validation plan.
 
+    Accepts URL path params for data, Literal strings for plain URL text, and Form params for POST bodies
+    Validates that the session param (web.Committer or web.Public) is first, and that only one Form param is allowed
+
     Returns (path, validated_params, literal_params, form_param, public) where:
-    - validated_params: (name, type) pairs for URL params validated via cache/DB
+    - validated_params: (name, type) pairs for URL params to be validated with cache/DB
     - literal_params: param name → literal string value for Literal["..."] params
     - form_param: (name, type) for the single form.Form subclass param, or None
     - public: True if the session type is web.Public
@@ -106,6 +113,76 @@ def build_path(
 
     path = "/" + "/".join(segments)
     return path, validated_params, literal_params, form_param, public
+
+
+def build_api_path(
+    func: Callable[..., Any],
+) -> tuple[
+    str,
+    list[tuple[str, type]],
+    dict[str, str],
+    tuple[str, type[pydantic.BaseModel]] | None,
+    tuple[str, type] | None,
+    list[str],
+]:
+    """Inspect a function's type hints to build a URL path for an API route.
+
+    Accepts URL path params for data, Literal strings for plain URL text, dataclasses for GET query params
+    and Pydantic model params for POST bodies
+
+    Returns (path, validated_params, literal_params, body_param, query_param,
+    optional_params) where:
+    - validated_params: (name, type) pairs for URL params to be validated with cache/DB
+    - literal_params: param name -> literal string value for Literal["..."] params
+    - body_param: (name, type) for the single BaseModel param, or None
+    - query_param: (name, type) for the single dataclass param, or None
+    - optional_params: param names whose type is T | None with a default of None
+    - return_type: the return type of the function
+    """
+    hints = get_type_hints(func, include_extras=True)
+    sig = inspect.signature(func)
+    params = list(sig.parameters.keys())
+    segments: list[str] = []
+    validated_params: list[tuple[str, type]] = []
+    literal_params: dict[str, str] = {}
+    body_param: tuple[str, type[pydantic.BaseModel]] | None = None
+    query_param: tuple[str, type] | None = None
+    optional_params: list[str] = []
+
+    for param_name in params:
+        hint = hints.get(param_name)
+        if hint is None:
+            raise TypeError(f"Parameter {param_name!r} in {func.__name__} has no type annotation")
+
+        if _is_body_type(hint):
+            if body_param is not None:
+                raise TypeError(f"Parameter {param_name!r} in {func.__name__}: only one body type is allowed")
+            body_param = (param_name, hint)
+            continue
+
+        if _is_query_type(hint):
+            if query_param is not None:
+                raise TypeError(f"Parameter {param_name!r} in {func.__name__}: only one query type is allowed")
+            query_param = (param_name, hint)
+            continue
+
+        inner, is_optional = _unwrap_optional(hint)
+        if is_optional:
+            segment = _param_to_segment(param_name, inner, func.__name__)
+            segments.append(segment)
+            optional_params.append(param_name)
+            # Note - this means that safe types which are optional will not get validated - no current use case for this
+            continue
+
+        segment = _param_to_segment(param_name, hint, func.__name__)
+        segments.append(segment)
+        if hint in VALIDATED_TYPES:
+            validated_params.append((param_name, hint))
+        elif get_origin(hint) is Literal:
+            literal_params[param_name] = str(get_args(hint)[0])
+
+    path = "/" + "/".join(segments)
+    return path, validated_params, literal_params, body_param, query_param, optional_params
 
 
 def register_route(func: Callable[..., Any], prefix: str, routes: list[str]) -> None:
@@ -151,6 +228,15 @@ async def validate_version(project_name: safe.ProjectName, raw: str) -> safe.Ver
     return safe.VersionName(release.version)
 
 
+def _is_body_type(hint: Any) -> bool:
+    """Check if a type hint is a pydantic BaseModel subclass (but not a Form)."""
+    if not isinstance(hint, type):
+        return False
+    if issubclass(hint, form.Form):
+        return False
+    return issubclass(hint, pydantic.BaseModel)
+
+
 def _is_form_type(hint: Any) -> bool:
     """Check if a type hint represents a form.Form subclass or Annotated discriminated union of forms."""
     if isinstance(hint, type) and issubclass(hint, form.Form):
@@ -164,6 +250,11 @@ def _is_form_type(hint: Any) -> bool:
     return False
 
 
+def _is_query_type(hint: Any) -> bool:
+    """Check if a type hint is a dataclass (used for query-string params)."""
+    return dataclasses.is_dataclass(hint) and isinstance(hint, type)
+
+
 def _param_to_segment(param_name: str, hint: Any, func_name: str) -> str:
     """Convert a single parameter's type hint into a URL path segment."""
     if get_origin(hint) is Literal:
@@ -175,3 +266,19 @@ def _param_to_segment(param_name: str, hint: Any, func_name: str) -> str:
     if hint is str:
         return f"<{param_name}>"
     raise TypeError(f"Parameter {param_name!r} in {func_name} has unsupported type {hint!r}")
+
+
+def _unwrap_optional(hint: Any) -> tuple[Any, bool]:
+    """If hint is T | None, return (T, True). Otherwise return (hint, False).
+
+    Handles both ``str | None`` (types.UnionType) and ``typing.Optional[str]``
+    (typing.Union).
+    """
+    origin = get_origin(hint)
+    if origin is not types.UnionType and origin is not typing.Union:
+        return hint, False
+    args = get_args(hint)
+    non_none = [a for a in args if a is not type(None)]
+    if len(non_none) == 1 and type(None) in args:
+        return non_none[0], True
+    return hint, False
