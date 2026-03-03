@@ -245,6 +245,8 @@ class HeaderValue:
                 raise ValueError(f"Header value cannot contain double quotes: {text}")
             if "\x00" in text:
                 raise ValueError(f"Header value cannot contain null bytes: {text}")
+            if ("\r" in text) or ("\n" in text):
+                raise ValueError(f"Header value cannot contain CR/LF characters: {text}")
 
         headers = werkzeug.datastructures.headers.Headers()
         headers.add("X-Header-Value", value, **kwargs)
