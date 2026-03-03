@@ -525,6 +525,23 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
         ]
     )
 
+    @app.before_request
+    async def validate_sec_fetch_headers() -> None:
+        if quart.request.method not in ("GET", "HEAD", "OPTIONS"):
+            sec_fetch_mode = quart.request.headers.get("Sec-Fetch-Mode")
+            sec_fetch_site = quart.request.headers.get("Sec-Fetch-Site")
+
+            # Apart from PAT hashes and PII, all data in ATR is public
+            # Therefore we are only concerned here with non-GET API requests
+            if (sec_fetch_mode == "navigate") and quart.request.path.startswith("/api/"):
+                raise base.ASFQuartException(
+                    "Forbidden: non-GET/HEAD/OPTIONS browser navigation to API endpoint", errorcode=403
+                )
+
+            # This is in addition to our existing CSRF protection
+            if sec_fetch_site == "cross-site":
+                raise base.ASFQuartException("Forbidden: cross-site non-GET/HEAD/OPTIONS request", errorcode=403)
+
     # X-Content-Type-Options: nosniff is required by ASVS v5 3.4.4 (L2)
     # A strict Referrer-Policy is required by ASVS v5 3.4.5 (L2)
     # HSTS is required by ASVS v5 9.2.1 (L1)
