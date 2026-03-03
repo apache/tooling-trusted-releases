@@ -510,6 +510,7 @@ def format_vote_email_body(
     Returns:
         The formatted email body text
     """
+    # audit_guidance all email is sent through `atr.mail` which handles validation
     if is_binding:
         body = [f"{vote} (binding) ({asf_uid}) {fullname}"]
     else:
