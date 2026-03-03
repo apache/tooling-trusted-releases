@@ -74,6 +74,9 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
         except jwt.ExpiredSignatureError as exc:
             log.failed_authentication("jwt_token_expired")
             raise base.ASFQuartException("Token has expired", errorcode=401) from exc
+        except jwt.InvalidSignatureError as exc:
+            log.failed_authentication("jwt_signature_invalid")
+            raise base.ASFQuartException("Token signature verification failed", errorcode=401) from exc
         except jwt.InvalidTokenError as exc:
             log.failed_authentication("jwt_token_invalid")
             raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
@@ -89,7 +92,7 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
 
 async def verify(token: str) -> dict[str, Any]:
     # Grab the "supposed" asf UID from the token presented, to make sure we know who failed to authenticate on failure.
-    claims_unsafe = jwt.decode(token, verify=False)
+    claims_unsafe = jwt.decode(token, options={"verify_signature": False}, algorithms=[_ALGORITHM])
     asf_uid = claims_unsafe.get("sub")
     log.set_asf_uid(asf_uid)
     claims = jwt.decode(
