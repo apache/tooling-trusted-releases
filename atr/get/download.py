@@ -225,7 +225,11 @@ async def _download_or_list(project_name: str, version_name: str, file_path: str
 
     # Send the file with original filename
     return await quart.send_file(
-        full_path, as_attachment=True, attachment_filename=validated_path.name, mimetype="application/octet-stream"
+        # audit_guidance using octet-stream for all files is intentional so files are downloaded and not rendered
+        full_path,
+        as_attachment=True,
+        attachment_filename=validated_path.name,
+        mimetype="application/octet-stream",
     )
 
 
