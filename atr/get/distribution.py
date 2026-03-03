@@ -37,7 +37,7 @@ from atr.tasks import gha
 
 @get.typed
 async def automate(
-    _session: web.Committer,
+    session: web.Committer,
     _distribution: Literal["distribution/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -45,6 +45,7 @@ async def automate(
     """
     URL: /distribution/automate/<project_name>/<version>
     """
+    await session.check_access(project_name)
     return await _automate_form_page(str(project_name), str(version_name), staging=False)
 
 
@@ -144,7 +145,7 @@ async def list_get(
 
 @get.typed
 async def record(
-    _session: web.Committer,
+    session: web.Committer,
     _distribution: Literal["distribution/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -152,12 +153,13 @@ async def record(
     """
     URL: /distribution/record/<project_name>/<version_name>
     """
+    await session.check_access(project_name)
     return await _record_form_page(str(project_name), str(version_name), staging=False)
 
 
 @get.typed
 async def stage_automate(
-    _session: web.Committer,
+    session: web.Committer,
     _distribution: Literal["distribution/stage/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -165,12 +167,13 @@ async def stage_automate(
     """
     URL: /distribution/stage/automate/<project_name>/<version_name>
     """
+    await session.check_access(project_name)
     return await _automate_form_page(str(project_name), str(version_name), staging=True)
 
 
 @get.typed
 async def stage_record(
-    _session: web.Committer,
+    session: web.Committer,
     _distribution: Literal["distribution/stage/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
@@ -178,6 +181,7 @@ async def stage_record(
     """
     URL: /distribution/stage/record/<project_name>/<version_name>
     """
+    await session.check_access(project_name)
     return await _record_form_page(str(project_name), str(version_name), staging=True)
 
 

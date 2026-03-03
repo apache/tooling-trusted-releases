@@ -69,6 +69,7 @@ async def selected(
     URL: /finish/<project_name>/<version_name>
     Finish a release preview.
     """
+    await session.check_access(project_name)
     try:
         (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
             str(project_name), str(version_name)
