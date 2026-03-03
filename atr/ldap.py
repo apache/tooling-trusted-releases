@@ -166,7 +166,7 @@ async def fetch_tooling_users(extra: set[str]) -> set[str]:
 
     credentials = get_bind_credentials()
     if credentials is None:
-        log.warning("LDAP bind DN or password not configured, returning empty admin set")
+        log.warning("LDAP bind DN or password not configured, returning extra tooling users only")
         return extra
 
     bind_dn, bind_password = credentials
@@ -174,7 +174,7 @@ async def fetch_tooling_users(extra: set[str]) -> set[str]:
     def _query_ldap() -> set[str]:
         users: set[str] = set()
         with Search(bind_dn, bind_password) as ldap_search:
-            for base in LDAP_TOOLING_BASE:
+            for base in (LDAP_TOOLING_BASE,):
                 try:
                     result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
                     if (not result) or (len(result) != 1):
