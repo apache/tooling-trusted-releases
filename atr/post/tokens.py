@@ -43,7 +43,7 @@ async def jwt_post(session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], _
     """
     jwt_token = jwtoken.issue(session.uid)
     response = web.TextResponse(jwt_token)
-    response.headers["Cache-Control"] = "no-store, no-cache"
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
