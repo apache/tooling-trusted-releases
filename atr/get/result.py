@@ -62,4 +62,5 @@ async def data(
 
     payload = check_result.model_dump(mode="json", exclude={"release"})
     body = json.dumps(payload, indent=2, sort_keys=True)
+    # audit_guidance TextResponse is being used intentionally because browsers display JSON well
     return web.TextResponse(f"{body}\n")
