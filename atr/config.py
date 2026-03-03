@@ -126,6 +126,7 @@ class AppConfig:
     SESSION_COOKIE_NAME = "__Host-session"
 
     ADMIN_USERS_ADDITIONAL = decouple.config("ADMIN_USERS_ADDITIONAL", default="", cast=str)
+    TOOLING_USERS_ADDITIONAL = decouple.config("TOOLING_USERS_ADDITIONAL", default="", cast=str)
 
 
 class DebugConfig(AppConfig):
