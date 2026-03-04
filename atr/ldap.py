@@ -25,11 +25,14 @@ import ldap3
 import ldap3.utils.conv as conv
 import ldap3.utils.dn as dn
 
+EMAIL_ATTRIBUTES = ["uid", "mail", "asf-altEmail", "asf-committer-email"]
+
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
 LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"
 LDAP_TOOLING_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
 
+SAFE_USER_ATTRIBUTES = ["uid", "cn", "mail", "asf-altEmail", "asf-committer-email", "asf-banned"]
 
 _tls_config = ldap3.Tls(
     validate=ssl.CERT_REQUIRED,
@@ -67,7 +70,7 @@ class Search:
         if not self._conn:
             raise RuntimeError("LDAP connection not available")
 
-        attributes = ldap_attrs if ldap_attrs else ldap3.ALL_ATTRIBUTES
+        attributes = ldap_attrs if ldap_attrs else SAFE_USER_ATTRIBUTES
         self._conn.search(
             search_base=ldap_base,
             search_filter=ldap_query,
@@ -322,8 +325,7 @@ def _search_core_2(params: SearchParameters, filters: list[str]) -> None:
         params.err_msg = "LDAP Connection object not established or auto_bind failed."
         return
 
-    email_attributes = ["uid", "mail", "asf-altEmail", "asf-committer-email"]
-    attributes = email_attributes if params.email_only else ldap3.ALL_ATTRIBUTES
+    attributes = EMAIL_ATTRIBUTES if params.email_only else SAFE_USER_ATTRIBUTES
     params.connection.search(
         search_base=LDAP_SEARCH_BASE,
         search_filter=search_filter,
