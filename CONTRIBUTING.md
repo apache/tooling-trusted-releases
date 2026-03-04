@@ -170,6 +170,15 @@ make check-light
 
 Run `uv run --frozen pre-commit clean` if `pip-audit` reports false positive CVEs during checks.
 
+## Vulnerability exceptions
+
+When temporarily ignoring a CVE in `pip-audit`:
+
+1. Add a TODO comment with expected resolution date.
+2. Document justification in the PR description.
+3. Create a tracking issue referencing the CVE.
+4. Review exceptions monthly.
+
 ## ASF requirements
 
 ### Contributor License Agreement
