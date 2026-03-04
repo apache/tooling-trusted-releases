@@ -238,10 +238,12 @@ def _construct_svn_url(committee_name: str, area: shared.upload.SvnArea, path: s
 
 
 def _json_error(message: str, status: int) -> web.WerkzeugResponse:
+    # audit_guidance The application/json media type is not defined to have a charset parameter
     return response.Response(json.dumps({"error": message}), status=status, mimetype="application/json")
 
 
 def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugResponse:
+    # audit_guidance The application/json media type is not defined to have a charset parameter
     return response.Response(json.dumps(data), status=status, mimetype="application/json")
 
 

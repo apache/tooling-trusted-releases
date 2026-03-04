@@ -138,6 +138,7 @@ async def test_merge(
         files.append(str(path))
 
     result = json.dumps({"files": sorted(files)})
+    # audit_guidance The application/json media type is not defined to have a charset parameter
     return response.Response(result, status=200, mimetype="application/json")
 
 

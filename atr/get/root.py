@@ -163,6 +163,7 @@ async def resolved_json(
     json_path = pathlib.Path(config.get().PROJECT_ROOT) / "atr" / "static" / "json" / "resolved.json"
     async with aiofiles.open(json_path) as f:
         content = await f.read()
+    # audit_guidance The application/json media type is not defined to have a charset parameter
     return quart_response.Response(content, mimetype="application/json")
 
 
