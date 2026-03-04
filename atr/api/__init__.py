@@ -1136,7 +1136,7 @@ async def ssh_key_add(data: models.api.SshKeyAddArgs) -> DictResponse:
     asf_uid = _jwt_asf_uid()
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
-        fingerprint = await wafc.ssh.add_key(data.text, asf_uid)
+        fingerprint = await wafc.ssh.add_key(data.text)
     return models.api.SshKeyAddResults(
         endpoint="/ssh-key/add",
         fingerprint=fingerprint,
