@@ -222,7 +222,9 @@ def _construct_svn_url(committee_name: str, area: shared.upload.SvnArea, path: s
 
 
 def _json_error(message: str, status: int) -> web.WerkzeugResponse:
-    return response.Response(json.dumps({"error": message}), status=status, content_type="application/json; charset=utf-8")
+    return response.Response(
+        json.dumps({"error": message}), status=status, content_type="application/json; charset=utf-8"
+    )
 
 
 def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugResponse:
