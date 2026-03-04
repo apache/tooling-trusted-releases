@@ -135,7 +135,9 @@ async def _send_via_relay(from_addr: str, to_addr: str, msg_bytes: bytes) -> Non
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
 
-    smtp = aiosmtplib.SMTP(hostname=_MAIL_RELAY, port=_SMTP_PORT, timeout=_SMTP_TIMEOUT, tls_context=context)
+    smtp = aiosmtplib.SMTP(
+        hostname=_MAIL_RELAY, port=_SMTP_PORT, timeout=_SMTP_TIMEOUT, tls_context=context, start_tls=True
+    )
     await smtp.connect()
     log.info(f"Connected to {smtp.hostname}:{smtp.port}")
     await smtp.ehlo()
