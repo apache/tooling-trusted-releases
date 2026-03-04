@@ -72,6 +72,12 @@ async def check(
         async with db.session() as data:
             user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
+    async with db.session() as data:
+        quarantined_pending = await data.quarantined(
+            release_name=release.name, status=sql.QuarantineStatus.PENDING
+        ).all()
+        quarantined_failed = await data.quarantined(release_name=release.name, status=sql.QuarantineStatus.FAILED).all()
+
     # Get the number of ongoing tasks for the current revision
     ongoing_tasks_count = 0
     match await interaction.latest_info(release.project.name, release.version):
@@ -153,6 +159,8 @@ async def check(
         revision_time=revision_timestamp,
         revision_number=revision_number,
         ongoing_tasks_count=ongoing_tasks_count,
+        quarantined_pending=quarantined_pending,
+        quarantined_failed=quarantined_failed,
         delete_form=delete_form,
         delete_file_forms=delete_file_forms,
         asf_id=asf_id,

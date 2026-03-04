@@ -48,6 +48,9 @@ def page_release_with_file(page: Page) -> Generator[Page]:
     )
     page.get_by_role("button", name="Add files").click()
     page.wait_for_url(f"**/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
-    helpers.visit(page, f"/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
-    page.wait_for_selector("#ongoing-tasks-banner", state="hidden")
+    helpers.wait_for_upload_and_tasks(
+        page,
+        f"/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}",
+        sbom_helpers.FILE_NAME,
+    )
     yield page

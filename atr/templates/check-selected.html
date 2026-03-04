@@ -81,6 +81,32 @@
 
   {% include "check-selected-release-info.html" %}
 
+  {% if quarantined_pending %}
+    <div class="alert alert-info" role="alert">
+      <i class="bi bi-hourglass-split me-2"></i>
+      Archive validation is in progress. Uploaded archives are being checked for safety before they become available.
+    </div>
+  {% endif %}
+
+  {% for quarantined in quarantined_failed %}
+    <div class="alert alert-danger" role="alert">
+      <i class="bi bi-exclamation-octagon me-2"></i>
+      <strong>Archive validation failed.</strong>
+      {% if quarantined.file_metadata %}
+        The following issues were found:
+        <ul class="mb-0 mt-2">
+          {% for entry in quarantined.file_metadata %}
+            {% if entry.errors %}
+              {% for error in entry.errors %}
+                <li><code>{{ entry.rel_path }}</code>: {{ error }}</li>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endfor %}
+
   <div id="ongoing-tasks-banner"
        class="alert alert-warning{% if ongoing_tasks_count == 0 %} d-none{% endif %}"
        role="alert"
