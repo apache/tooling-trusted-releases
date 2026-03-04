@@ -227,7 +227,7 @@ class Committer:
 
 class ElementResponse(quart.Response):
     def __init__(self, element: htm.Element, status: int = 200) -> None:
-        super().__init__(str(element), status=status, mimetype="text/html")
+        super().__init__(str(element), status=status, content_type="text/html; charset=utf-8")
 
 
 class FlashError(RuntimeError):
@@ -275,12 +275,12 @@ class RouteFunction(Protocol[R]):
 class ShellResponse(quart.Response):
     # audit_guidance this is an intentional use of x-shellscript without Content-Disposition
     def __init__(self, text: str, status: int = 200) -> None:
-        super().__init__(text, status=status, mimetype="text/x-shellscript")
+        super().__init__(text, status=status, content_type="text/x-shellscript; charset=utf-8")
 
 
 class TextResponse(quart.Response):
     def __init__(self, text: str, status: int = 200) -> None:
-        super().__init__(text, status=status, mimetype="text/plain")
+        super().__init__(text, status=status, content_type="text/plain; charset=utf-8")
 
 
 class ZipResponse(quart.Response):

@@ -163,7 +163,7 @@ async def resolved_json(
     json_path = pathlib.Path(config.get().PROJECT_ROOT) / "atr" / "static" / "json" / "resolved.json"
     async with aiofiles.open(json_path) as f:
         content = await f.read()
-    return quart_response.Response(content, mimetype="application/json")
+    return quart_response.Response(content, content_type="application/json; charset=utf-8")
 
 
 @get.typed

@@ -138,7 +138,7 @@ async def test_merge(
         files.append(str(path))
 
     result = json.dumps({"files": sorted(files)})
-    return response.Response(result, status=200, mimetype="application/json")
+    return response.Response(result, status=200, content_type="application/json; charset=utf-8")
 
 
 @get.typed
