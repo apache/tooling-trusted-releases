@@ -154,7 +154,7 @@ async def checks_ongoing(
     cannot be promoted to the vote phase if checks are still ongoing.
     """
     ongoing_tasks_count, _latest_revision = await interaction.tasks_ongoing_revision(
-        str(project_name), str(version_name), revision
+        project_name, version_name, revision
     )
     # TODO: Is there a way to return just an int?
     # The ResponseReturnValue type in quart does not allow int
@@ -295,7 +295,7 @@ async def distribute_ssh_register(
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload["actor"],
             payload["actor_id"],
-            release.project_name,
+            release.safe_project_name,
             data.ssh_key,
             payload,
         )
@@ -303,7 +303,7 @@ async def distribute_ssh_register(
     return models.api.DistributeSshRegisterResults(
         endpoint="/distribute/ssh/register",
         fingerprint=fingerprint,
-        project=release.project_name,
+        project=release.safe_project_name,
         expires=expires,
     ).model_dump(), 200
 
@@ -323,13 +323,12 @@ async def distribution_record(
     """
     asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
-        release_name = models.sql.release_name(data.project, data.version)
         release = await db_data.release(
-            project_name=data.project,
-            version=data.version,
-        ).demand(exceptions.NotFound(f"Release {release_name} not found"))
+            project_name=str(data.project),
+            version=str(data.version),
+        ).demand(exceptions.NotFound(f"Release {data.project!s} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release_name} has no committee")
+        raise exceptions.NotFound(f"Release {release.name} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -340,7 +339,7 @@ async def distribution_record(
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         _dist, _added, metadata = await wacm.distributions.record_from_data(
-            release.name,
+            release.safe_name,
             data.staging,
             dd,
         )
@@ -383,7 +382,7 @@ async def distribution_record_from_workflow(
     )
     async with storage.write_as_committee_member(release.committee.name, asf_uid) as wacm:
         _dist, _added, metadata = await wacm.distributions.record_from_data(
-            release.name, data.staging, dd, allow_retries=True
+            release.safe_name, data.staging, dd, allow_retries=True
         )
         if metadata is None:
             log.warning("Distribution could not be found, ATR will retry this automatically")
@@ -724,7 +723,7 @@ async def project_policy(
         )
     return models.api.ProjectPolicyResults(
         endpoint="/project/policy",
-        project_name=project.name,
+        project_name=project.safe_name,
         policy_announce_release_subject=project.policy_announce_release_subject,
         policy_announce_release_template=project.policy_announce_release_template,
         policy_binary_artifact_paths=project.policy_binary_artifact_paths,
@@ -811,13 +810,12 @@ async def publisher_distribution_record(
             interaction.TrustedProjectPhase.COMPOSE,
         )
     async with db.session() as db_data:
-        release_name = models.sql.release_name(project.name, data.version)
         release = await db_data.release(
             project_name=project.name,
-            version=data.version,
-        ).demand(exceptions.NotFound(f"Release {release_name} not found"))
+            version=str(data.version),
+        ).demand(exceptions.NotFound(f"Release {project.name} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release_name} has no committee")
+        raise exceptions.NotFound(f"Release {release.name} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -828,7 +826,7 @@ async def publisher_distribution_record(
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(release.committee.name)
         await wacm.distributions.record_from_data(
-            release.name,
+            release.safe_name,
             data.staging,
             dd,
         )
@@ -859,7 +857,7 @@ async def publisher_release_announce(
         committee = util.unwrap(project.committee)
         async with storage.write_as_committee_member(committee.name, asf_uid) as wacm:
             await wacm.announce.release(
-                project_name=project.name,
+                project_name=project.safe_name,
                 version_name=data.version,
                 preview_revision_number=data.revision,
                 recipient=data.email_to,
@@ -895,7 +893,7 @@ async def publisher_ssh_register(
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload["actor"],
             payload["actor_id"],
-            project.name,
+            project.safe_name,
             data.ssh_key,
             payload,
         )
@@ -903,7 +901,7 @@ async def publisher_ssh_register(
     return models.api.PublisherSshRegisterResults(
         endpoint="/publisher/ssh/register",
         fingerprint=fingerprint,
-        project=project.name,
+        project=project.safe_name,
         expires=expires,
     ).model_dump(), 200
 
@@ -924,11 +922,11 @@ async def publisher_vote_resolve(
         data.jwt,
         interaction.TrustedProjectPhase.VOTE,
     )
-    async with storage.write_as_project_committee_member(project.name, asf_uid) as wacm:
+    async with storage.write_as_project_committee_member(project.safe_name, asf_uid) as wacm:
         # TODO: Get fullname and use instead of asf_uid
         # TODO: Add resolution templating to atr.construct
         _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
-            project.name,
+            project.safe_name,
             data.version,
             data.resolution,
             asf_uid,
@@ -1399,7 +1397,7 @@ async def update_distribution_task_status(
     async with db.session() as db_data:
         status = await db_data.workflow_status(
             workflow_id=data.workflow,
-            project_name=data.project_name,
+            project_name=str(data.project_name),
             run_id=int(data.run_id),
         ).demand(exceptions.NotFound(f"Workflow {data.workflow} not found"))
         status.status = data.status
@@ -1580,7 +1578,7 @@ async def vote_tabulate(
     # asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
         release_name = sql.release_name(data.project, data.version)
-        release = await db_data.release(name=release_name, _project_release_policy=True).demand(
+        release = await db_data.release(name=str(release_name), _project_release_policy=True).demand(
             exceptions.NotFound(f"Release {release_name} not found"),
         )
 

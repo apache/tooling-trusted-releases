@@ -16,6 +16,7 @@
 # under the License.
 
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.storage as storage
 import atr.tasks.checks as checks
@@ -32,9 +33,11 @@ class ImportFile(schema.Strict):
 @checks.with_model(ImportFile)
 async def import_file(args: ImportFile) -> results.Results | None:
     """Import a KEYS file from a draft release candidate revision."""
+    project = safe.ProjectName(args.project_name)
+    version = safe.VersionName(args.version_name)
     async with storage.write(args.asf_uid) as write:
-        wacm = await write.as_project_committee_member(args.project_name)
-        outcomes = await wacm.keys.import_keys_file(args.project_name, args.version_name)
+        wacm = await write.as_project_committee_member(project)
+        outcomes = await wacm.keys.import_keys_file(project, version)
         if outcomes.any_error:
             # TODO: Log this? This code is unused anyway
             pass

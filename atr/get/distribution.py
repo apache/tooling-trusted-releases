@@ -46,7 +46,7 @@ async def automate(
     URL: /distribution/automate/<project_name>/<version>
     """
     await session.check_access(project_name)
-    return await _automate_form_page(str(project_name), str(version_name), staging=False)
+    return await _automate_form_page(project_name, version_name, staging=False)
 
 
 @get.typed
@@ -59,11 +59,11 @@ async def list_get(
     """
     URL: /distribution/list/<project_name>/<version_name>
     """
-    distributions, tasks = await _get_page_data(str(project_name), str(version_name))
+    distributions, tasks = await _get_page_data(project_name, version_name)
 
     block = htm.Block()
 
-    release = await shared.distribution.release_validated(str(project_name), str(version_name), staging=None)
+    release = await shared.distribution.release_validated(project_name, version_name, staging=None)
     staging = release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     render.html_nav_phase(block, str(project_name), str(version_name), staging)
 
@@ -80,7 +80,7 @@ async def list_get(
     block.h1["Distribution list for ", htm.em[f"{project_name!s}-{version_name!s}"]]
 
     if len(tasks) > 0:
-        _render_distribution_tasks(tasks, block, str(project_name), str(version_name))
+        _render_distribution_tasks(tasks, block, project_name, version_name)
 
     if not distributions:
         block.p["No distributions found."]
@@ -107,7 +107,7 @@ async def list_get(
             id=f"distribution-{dist.identifier}"
         )[dist.title, *title_extra]
         tbody = htm.tbody[
-            shared.distribution.html_tr("Release name", dist.release_name),
+            shared.distribution.html_tr("Release name", str(dist.release_name)),
             shared.distribution.html_tr("Platform", dist.platform.value.name),
             shared.distribution.html_tr("Owner or Namespace", dist.owner_namespace or "-"),
             shared.distribution.html_tr("Package", dist.package),
@@ -154,7 +154,7 @@ async def record(
     URL: /distribution/record/<project_name>/<version_name>
     """
     await session.check_access(project_name)
-    return await _record_form_page(str(project_name), str(version_name), staging=False)
+    return await _record_form_page(project_name, version_name, staging=False)
 
 
 @get.typed
@@ -168,7 +168,7 @@ async def stage_automate(
     URL: /distribution/stage/automate/<project_name>/<version_name>
     """
     await session.check_access(project_name)
-    return await _automate_form_page(str(project_name), str(version_name), staging=True)
+    return await _automate_form_page(project_name, version_name, staging=True)
 
 
 @get.typed
@@ -182,15 +182,15 @@ async def stage_record(
     URL: /distribution/stage/record/<project_name>/<version_name>
     """
     await session.check_access(project_name)
-    return await _record_form_page(str(project_name), str(version_name), staging=True)
+    return await _record_form_page(project_name, version_name, staging=True)
 
 
-async def _automate_form_page(project: str, version: str, staging: bool) -> str:
+async def _automate_form_page(project: safe.ProjectName, version: safe.VersionName, staging: bool) -> str:
     """Helper to render the distribution automation form page."""
     await shared.distribution.release_validated(project, version, staging=staging)
 
     block = htm.Block()
-    render.html_nav_phase(block, project, version, staging=staging)
+    render.html_nav_phase(block, str(project), str(version), staging=staging)
 
     title = "Create a staging distribution" if staging else "Create a distribution"
     block.h1[title]
@@ -202,15 +202,17 @@ async def _automate_form_page(project: str, version: str, staging: bool) -> str:
     ]
     block.p[
         "You can also ",
-        htm.a(href=util.as_url(list_get, project_name=project, version_name=version))["view the distribution list"],
+        htm.a(href=util.as_url(list_get, project_name=str(project), version_name=str(version)))[
+            "view the distribution list"
+        ],
         ".",
     ]
 
     # Determine the action based on staging
     action = (
-        util.as_url(post.distribution.stage_automate_selected, project_name=project, version_name=version)
+        util.as_url(post.distribution.stage_automate_selected, project_name=str(project), version_name=str(version))
         if staging
-        else util.as_url(post.distribution.automate_selected, project_name=project, version_name=version)
+        else util.as_url(post.distribution.automate_selected, project_name=str(project), version_name=str(version))
     )
 
     # TODO: Reuse the same form for now - maybe we can combine this and the function below adding an automate=True arg
@@ -219,31 +221,33 @@ async def _automate_form_page(project: str, version: str, staging: bool) -> str:
         model_cls=shared.distribution.DistributeForm,
         submit_label="Distribute",
         action=action,
-        defaults={"package": project, "version": version},
+        defaults={"package": str(project), "version": str(version)},
     )
     block.append(form_html)
 
     return await template.blank(title, content=block.collect())
 
 
-async def _get_page_data(project_name: str, version_name: str) -> tuple[Sequence[sql.Distribution], Sequence[sql.Task]]:
+async def _get_page_data(
+    project_name: safe.ProjectName, version_name: safe.VersionName
+) -> tuple[Sequence[sql.Distribution], Sequence[sql.Task]]:
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
         distributions = await data.distribution(
-            release_name=sql.release_name(project_name, version_name),
+            release_name=sql.release_name(str(project_name), str(version_name)),
         ).all()
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
         tasks = [
             t
             for t in (
                 await data.task(
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                     revision_number=release.latest_revision_number,
                     task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
                     _workflow=True,
@@ -258,12 +262,12 @@ async def _get_page_data(project_name: str, version_name: str) -> tuple[Sequence
     return distributions, tasks
 
 
-async def _record_form_page(project: str, version: str, staging: bool) -> str:
+async def _record_form_page(project: safe.ProjectName, version: safe.VersionName, staging: bool) -> str:
     """Helper to render the distribution recording form page."""
     await shared.distribution.release_validated(project, version, staging=staging)
 
     block = htm.Block()
-    render.html_nav_phase(block, project, version, staging=staging)
+    render.html_nav_phase(block, str(project), str(version), staging=staging)
 
     title = "Record a manual staging distribution" if staging else "Record a manual distribution"
     block.h1[title]
@@ -275,15 +279,17 @@ async def _record_form_page(project: str, version: str, staging: bool) -> str:
     ]
     block.p[
         "You can also ",
-        htm.a(href=util.as_url(list_get, project_name=project, version_name=version))["view the distribution list"],
+        htm.a(href=util.as_url(list_get, project_name=str(project), version_name=str(version)))[
+            "view the distribution list"
+        ],
         ".",
     ]
 
     # Determine the action based on staging
     action = (
-        util.as_url(post.distribution.stage_record_selected, project_name=project, version_name=version)
+        util.as_url(post.distribution.stage_record_selected, project_name=str(project), version_name=str(version))
         if staging
-        else util.as_url(post.distribution.record_selected, project_name=project, version_name=version)
+        else util.as_url(post.distribution.record_selected, project_name=str(project), version_name=str(version))
     )
 
     # Render the distribution form
@@ -291,14 +297,16 @@ async def _record_form_page(project: str, version: str, staging: bool) -> str:
         model_cls=shared.distribution.DistributeForm,
         submit_label="Record distribution",
         action=action,
-        defaults={"package": project, "version": version},
+        defaults={"package": str(project), "version": str(version)},
     )
     block.append(form_html)
 
     return await template.blank(title, content=block.collect())
 
 
-def _render_distribution_tasks(tasks: Sequence[sql.Task], block: htm.Block, project_name: str, version_name: str):
+def _render_distribution_tasks(
+    tasks: Sequence[sql.Task], block: htm.Block, project_name: safe.ProjectName, version_name: safe.VersionName
+):
     failed_tasks = [
         t for t in tasks if (t.status == sql.TaskStatus.FAILED) or (t.workflow and (t.workflow.status == "failed"))
     ]
@@ -329,8 +337,8 @@ def _render_distribution_tasks(tasks: Sequence[sql.Task], block: htm.Block, proj
                     ".btn.btn-success.mt-2",
                     href=util.as_url(
                         list_get,
-                        project_name=project_name,
-                        version_name=version_name,
+                        project_name=str(project_name),
+                        version_name=str(version_name),
                     ),
                 )["Refresh"],
             ]

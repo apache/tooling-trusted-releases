@@ -23,6 +23,7 @@ import datetime
 import sqlmodel
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.storage as storage
@@ -92,7 +93,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def ignore_add(
         self,
-        project_name: str,
+        project_name: safe.ProjectName,
         release_glob: str | None = None,
         revision_number: str | None = None,
         checker_glob: str | None = None,
@@ -101,7 +102,7 @@ class CommitteeMember(CommitteeParticipant):
         status: sql.CheckResultStatusIgnore | None = None,
         message_glob: str | None = None,
     ) -> None:
-        await self.__validate_project_in_committee(project_name)
+        await self.__validate_project_in_committee(str(project_name))
         _validate_ignore_patterns(
             release_glob,
             checker_glob,
@@ -112,7 +113,7 @@ class CommitteeMember(CommitteeParticipant):
         cri = sql.CheckResultIgnore(
             asf_uid=self.__asf_uid,
             created=datetime.datetime.now(datetime.UTC),
-            project_name=project_name,
+            project_name=str(project_name),
             release_glob=release_glob,
             revision_number=revision_number,
             checker_glob=checker_glob,

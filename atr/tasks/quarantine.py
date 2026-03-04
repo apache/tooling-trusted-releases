@@ -32,6 +32,7 @@ import atr.detection as detection
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
@@ -65,8 +66,8 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     release = quarantined.release
-    project_name = release.project_name
-    version_name = release.version
+    project_name = release.safe_project_name
+    version_name = release.safe_version_name
     quarantine_dir = paths.quarantine_directory(quarantined)
 
     if not await aiofiles.os.path.isdir(quarantine_dir):
@@ -81,7 +82,7 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives_to_cache(args.archives, quarantine_dir, project_name, version_name)
+        await _extract_archives_to_cache(args.archives, quarantine_dir, str(project_name), str(version_name))
     except Exception:
         await _mark_failed(quarantined, file_entries, "Archive extraction to cache failed")
         await aioshutil.rmtree(quarantine_dir)
@@ -157,8 +158,8 @@ async def _mark_failed(
 
 async def _promote(
     quarantined: sql.Quarantined,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     release_name: str,
     quarantine_dir: str,
 ) -> None:
@@ -204,7 +205,7 @@ async def _promote(
             previous_attestable=previous_attestable,
             project_name=project_name,
             release=release,
-            release_name=release_name,
+            release_name=release.safe_name,
             temp_dir=quarantine_dir,
             temp_dir_path=quarantine_dir_path,
             version_name=version_name,

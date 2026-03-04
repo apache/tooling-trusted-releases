@@ -80,7 +80,7 @@ if True:
                 yield from divergences_with_annotations(
                     components,
                     original.__name__,
-                    p.name,
+                    str(p.name),
                     original(p),
                 )
 
@@ -298,7 +298,7 @@ def release_components(
             yield from divergences_with_annotations(
                 components,
                 original.__name__,
-                r.name,
+                str(r.name),
                 original(r),
             )
 

@@ -25,6 +25,7 @@ import quart
 
 import atr.config as config
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
@@ -53,8 +54,8 @@ TEMPLATE_VARIABLES: list[tuple[str, str, set[Context]]] = [
 class AnnounceReleaseOptions:
     asfuid: str
     fullname: str
-    project_name: str
-    version_name: str
+    project_name: safe.ProjectName
+    version_name: safe.VersionName
     revision_number: str
 
 
@@ -62,17 +63,17 @@ class AnnounceReleaseOptions:
 class StartVoteOptions:
     asfuid: str
     fullname: str
-    project_name: str
-    version_name: str
+    project_name: safe.ProjectName
+    version_name: safe.VersionName
     revision_number: str
     vote_duration: int
 
 
-async def announce_release_default(project_name: str) -> str:
+async def announce_release_default(project_name: safe.ProjectName) -> str:
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-            RuntimeError(f"Project {project_name} not found")
-        )
+        project = await data.project(
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_name} not found"))
 
     return project.policy_announce_release_template
 
@@ -91,8 +92,8 @@ async def announce_release_subject_and_body(
 
     async with db.session() as data:
         release = await data.release(
-            project_name=options.project_name,
-            version=options.version_name,
+            project_name=str(options.project_name),
+            version=str(options.version_name),
             _project=True,
             _committee=True,
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
@@ -105,18 +106,18 @@ async def announce_release_subject_and_body(
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
-    project_display_name = release.project.short_display_name if release.project else options.project_name
+    project_display_name = release.project.short_display_name if release.project else str(options.project_name)
 
     routes_file_selected = get.file.selected
     download_path = util.as_url(
-        routes_file_selected, project_name=options.project_name, version_name=options.version_name
+        routes_file_selected, project_name=str(options.project_name), version_name=str(options.version_name)
     )
     # TODO: This download_url should probably be for the proxy download directory, not the ATR view
     download_url = f"https://{host}{download_path}"
 
     # Perform substitutions in the subject
     subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{VERSION}}", options.version_name)
+    subject = subject.replace("{{VERSION}}", str(options.version_name))
 
     # Perform substitutions in the body
     body = body.replace("{{COMMITTEE}}", committee.display_name)
@@ -124,18 +125,18 @@ async def announce_release_subject_and_body(
     body = body.replace("{{PROJECT}}", project_display_name)
     body = body.replace("{{REVISION}}", revision_number)
     body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
+    body = body.replace("{{VERSION}}", str(options.version_name))
     body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
     body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
 
-async def announce_release_subject_default(project_name: str) -> str:
+async def announce_release_subject_default(project_name: safe.ProjectName) -> str:
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-            RuntimeError(f"Project {project_name} not found")
-        )
+        project = await data.project(
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_name} not found"))
 
     return project.policy_announce_release_subject
 
@@ -151,7 +152,7 @@ def announce_template_variables() -> list[tuple[str, str]]:
 def checklist_body(
     markdown: str,
     project: sql.Project,
-    version_name: str,
+    version_name: safe.VersionName,
     committee: sql.Committee,
     revision: sql.Revision | None,
 ) -> str:
@@ -172,7 +173,7 @@ def checklist_body(
     markdown = markdown.replace("{{REVIEW_URL}}", review_url)
     markdown = markdown.replace("{{REVISION}}", revision_number)
     markdown = markdown.replace("{{TAG}}", revision_tag)
-    markdown = markdown.replace("{{VERSION}}", version_name)
+    markdown = markdown.replace("{{VERSION}}", str(version_name))
     return markdown
 
 
@@ -180,11 +181,11 @@ def checklist_template_variables() -> list[tuple[str, str]]:
     return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "checklist" in contexts]
 
 
-async def start_vote_default(project_name: str) -> str:
+async def start_vote_default(project_name: safe.ProjectName) -> str:
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-            RuntimeError(f"Project {project_name} not found")
-        )
+        project = await data.project(
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_name} not found"))
 
     return project.policy_start_vote_template
 
@@ -196,8 +197,8 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     async with db.session() as data:
         # Do not limit by phase, as it may be at RELEASE_CANDIDATE already
         release = await data.release(
-            project_name=options.project_name,
-            version=options.version_name,
+            project_name=str(options.project_name),
+            version=str(options.version_name),
             _project=True,
             _committee=True,
         ).demand(RuntimeError(f"Release {options.project_name} {options.version_name} not found"))
@@ -215,12 +216,14 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         host = config.get().APP_HOST
 
     checklist_path = util.as_url(
-        checklist.selected, project_name=options.project_name, version_name=options.version_name
+        checklist.selected, project_name=str(options.project_name), version_name=str(options.version_name)
     )
     checklist_url = f"https://{host}{checklist_path}"
-    review_path = util.as_url(vote.selected, project_name=options.project_name, version_name=options.version_name)
+    review_path = util.as_url(
+        vote.selected, project_name=str(options.project_name), version_name=str(options.version_name)
+    )
     review_url = f"https://{host}{review_path}"
-    project_display_name = release.project.short_display_name if release.project else options.project_name
+    project_display_name = release.project.short_display_name if release.project else str(options.project_name)
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
     vote_end_str = f"{vote_end.day} {vote_end.strftime('%b %H:%M')} UTC"
 
@@ -253,10 +256,10 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
 
     # Perform substitutions in the subject
     subject = subject.replace("{{COMMITTEE}}", committee.display_name)
-    subject = subject.replace("{{PROJECT}}", project_display_name)
+    subject = subject.replace("{{PROJECT}}", str(project_display_name))
     subject = subject.replace("{{REVISION}}", revision_number)
     subject = subject.replace("{{TAG}}", revision_tag)
-    subject = subject.replace("{{VERSION}}", options.version_name)
+    subject = subject.replace("{{VERSION}}", str(options.version_name))
     subject = subject.replace("{{VOTE_ENDS_UTC}}", vote_end_str)
 
     # Perform substitutions in the body
@@ -265,23 +268,23 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     body = body.replace("{{COMMITTEE}}", committee.display_name)
     body = body.replace("{{DURATION}}", str(options.vote_duration))
     body = body.replace("{{KEYS_FILE}}", keys_file or "(Sorry, the KEYS file is missing!)")
-    body = body.replace("{{PROJECT}}", project_display_name)
+    body = body.replace("{{PROJECT}}", str(project_display_name))
     body = body.replace("{{RELEASE_CHECKLIST}}", checklist_content)
     body = body.replace("{{REVIEW_URL}}", review_url)
     body = body.replace("{{REVISION}}", revision_number)
     body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", options.version_name)
+    body = body.replace("{{VERSION}}", str(options.version_name))
     body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
     body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
 
-async def start_vote_subject_default(project_name: str) -> str:
+async def start_vote_subject_default(project_name: safe.ProjectName) -> str:
     async with db.session() as data:
-        project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-            RuntimeError(f"Project {project_name} not found")
-        )
+        project = await data.project(
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_name} not found"))
 
     return project.policy_start_vote_subject
 

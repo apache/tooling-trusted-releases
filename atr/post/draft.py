@@ -57,10 +57,10 @@ async def cache_reset(
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(str(project_name))
+        wacp = await write.as_project_committee_participant(project_name)
         result = await wacp.revision.create_revision_with_quarantine(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             session.uid,
             description=description,
             reset_to_global_cache=True,
@@ -91,10 +91,10 @@ async def delete(
     """
     # Delete the metadata from the database
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(str(project_name))
+        wacp = await write.as_project_committee_participant(project_name)
         error = await wacp.release.delete(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             include_downloads=False,
         )
@@ -129,10 +129,8 @@ async def delete_file(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(str(project_name))
-            metadata_files_deleted = await wacp.release.delete_file(
-                str(project_name), str(version_name), rel_path_to_delete
-            )
+            wacp = await write.as_project_committee_participant(project_name)
+            metadata_files_deleted = await wacp.release.delete_file(project_name, version_name, rel_path_to_delete)
     except Exception as e:
         log.exception("Error deleting file:")
         await quart.flash(f"Error deleting file: {e!s}", "error")
@@ -170,8 +168,8 @@ async def hashgen(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(str(project_name))
-            await wacp.release.generate_hash_file(str(project_name), str(version_name), rel_path)
+            wacp = await write.as_project_committee_participant(project_name)
+            await wacp.release.generate_hash_file(project_name, version_name, rel_path)
 
     except Exception as e:
         log.exception("Error generating hash file:")
@@ -205,10 +203,10 @@ async def recheck(
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(str(project_name))
+        wacp = await write.as_project_committee_participant(project_name)
         result = await wacp.revision.create_revision_with_quarantine(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             session.uid,
             description=description,
             set_local_cache=True,
@@ -259,7 +257,7 @@ async def sbomgen(
     try:
         description = "SBOM generation through web interface"
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(str(project_name))
+            wacp = await write.as_project_committee_participant(project_name)
 
             async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
@@ -281,8 +279,8 @@ async def sbomgen(
 
                 # Create and queue the task, using paths within the new revision
                 sbom_task = await wacp.sbom.generate_cyclonedx(
-                    str(project_name),
-                    str(version_name),
+                    project_name,
+                    version_name,
                     old_rev.number,
                     path_in_new_revision,
                     sbom_path_in_new_revision,
@@ -292,7 +290,7 @@ async def sbomgen(
                     raise web.FlashError("Internal error: SBOM generation timed out")
 
             result = await wacp.revision.create_revision_with_quarantine(
-                str(project_name), str(version_name), session.uid, description=description, modify=modify
+                project_name, version_name, session.uid, description=description, modify=modify
             )
 
     except Exception as e:

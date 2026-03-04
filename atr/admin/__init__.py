@@ -50,6 +50,7 @@ import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.mapping as mapping
+import atr.models.safe as safe
 import atr.models.session
 import atr.models.sql as sql
 import atr.paths as paths
@@ -596,14 +597,18 @@ async def logs(session: web.Committer) -> web.QuartResponse:
 async def ongoing_tasks_get(
     session: web.Committer, project_name: str, version_name: str, revision: str
 ) -> web.QuartResponse:
-    return await _ongoing_tasks(session, project_name, version_name, revision)
+    project = safe.ProjectName(project_name)
+    version = safe.VersionName(version_name)
+    return await _ongoing_tasks(session, project, version, revision)
 
 
 @admin.post("/ongoing-tasks/<project_name>/<version_name>/<revision>")
 async def ongoing_tasks_post(
     session: web.Committer, project_name: str, version_name: str, revision: str
 ) -> web.QuartResponse:
-    return await _ongoing_tasks(session, project_name, version_name, revision)
+    project = safe.ProjectName(project_name)
+    version = safe.VersionName(version_name)
+    return await _ongoing_tasks(session, project, version, revision)
 
 
 @admin.get("/performance")
@@ -794,7 +799,9 @@ async def task_times(
     values = []
     async with db.session() as data:
         tasks = await data.task(
-            project_name=project_name, version_name=version_name, revision_number=revision_number
+            project_name=project_name,
+            version_name=version_name,
+            revision_number=revision_number,
         ).all()
         for task in tasks:
             if (task.started is None) or (task.completed is None):
@@ -1095,7 +1102,7 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
                     raise RuntimeError(f"Release {release_name} has no committee")
             async with storage.write(session) as write:
                 waca = write.as_committee_admin(release.committee.name)
-                error = await waca.release.delete(release.project.name, release.version)
+                error = await waca.release.delete(release.safe_project_name, release.safe_version_name)
                 # Ensure that deletion errors are reported to the user
                 if error is not None:
                     raise RuntimeError(error)
@@ -1165,13 +1172,13 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 
 async def _ongoing_tasks(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, revision: str
 ) -> web.QuartResponse:
     try:
         ongoing = await interaction.tasks_ongoing(project_name, version_name, revision)
         return web.TextResponse(str(ongoing))
     except Exception:
-        log.exception(f"Error fetching ongoing task count for {project_name} {version_name} rev {revision}:")
+        log.exception(f"Error fetching ongoing task count for {project_name!s} {version_name!s} rev {revision}:")
         return web.TextResponse("")
 
 

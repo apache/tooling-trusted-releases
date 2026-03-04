@@ -104,14 +104,14 @@ async def projects(_session: web.Public, _projects: Literal["projects"]) -> str:
 
     delete_forms: dict[str, htm.Element] = {}
     for project in projects:
-        delete_forms[project.name] = form.render(
+        delete_forms[str(project.name)] = form.render(
             model_cls=shared.projects.DeleteSelectedProject,
             action=util.as_url(post.projects.delete),
             form_classes=".d-inline-block.m-0",
             submit_classes="btn-sm btn-outline-danger",
             submit_label="Delete project",
             empty=True,
-            defaults={"project_name": project.name},
+            defaults={"project_name": str(project.name)},
             confirm="Are you sure you want to delete this project? This cannot be undone.",
         )
 
@@ -188,7 +188,7 @@ async def view(
     page.append(title_row)
 
     page.p(".mb-4")[
-        htm.a(".btn.btn-sm.btn-outline-primary", href=util.as_url(start.selected, project_name=project.name))[
+        htm.a(".btn.btn-sm.btn-outline-primary", href=util.as_url(start.selected, project_name=str(project.name)))[
             "Start a new release"
         ]
     ]
@@ -297,9 +297,9 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
     for cat in current_categories:
         remove_button = (
             # Manual form as badges are not handled by the form system
-            htm.form(".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=project.name))[
+            htm.form(".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=str(project.name)))[
                 form.csrf_input(),
-                htpy.input(type="hidden", name="project_name", value=project.name),
+                htpy.input(type="hidden", name="project_name", value=str(project.name)),
                 htpy.input(type="hidden", name="variant", value="remove_category"),
                 htpy.input(type="hidden", name="category_to_remove", value=cat),
                 htpy.button(
@@ -315,9 +315,9 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
         ]
         category_badges.append(badge)
 
-    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=project.name))[
+    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=str(project.name)))[
         form.csrf_input(),
-        htpy.input(type="hidden", name="project_name", value=project.name),
+        htpy.input(type="hidden", name="project_name", value=str(project.name)),
         htpy.input(type="hidden", name="variant", value="add_category"),
         htm.div(".d-flex.align-items-center")[
             htpy.input(
@@ -349,10 +349,10 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
         form.render_block(
             card_body,
             model_cls=shared.projects.ComposePolicyForm,
-            action=util.as_url(post.projects.view, name=project.name),
+            action=util.as_url(post.projects.view, name=str(project.name)),
             submit_label="Save",
             defaults={
-                "project_name": project.name,
+                "project_name": str(project.name),
                 "source_artifact_paths": "\n".join(project.policy_source_artifact_paths),
                 "license_check_mode": project.policy_license_check_mode,
                 "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
@@ -378,11 +378,11 @@ def _render_delete_section(project: sql.Project) -> htm.Element:
 
     delete_form = form.render(
         shared.projects.DeleteProjectForm,
-        action=util.as_url(post.projects.view, name=project.name),
+        action=util.as_url(post.projects.view, name=str(project.name)),
         form_classes="",
         submit_classes="btn-sm btn-outline-danger",
         submit_label="Delete project",
-        defaults={"project_name": project.name},
+        defaults={"project_name": str(project.name)},
         confirm="Are you sure you want to delete this project? This cannot be undone.",
         empty=True,
     )
@@ -423,7 +423,7 @@ def _render_finish_form(project: sql.Project) -> htm.Element:
         form.render_block(
             card_body,
             model_cls=shared.projects.FinishPolicyForm,
-            action=util.as_url(post.projects.view, name=project.name),
+            action=util.as_url(post.projects.view, name=str(project.name)),
             submit_label="Save",
             defaults={
                 "project_name": project.name,
@@ -453,10 +453,10 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     for lang in current_languages:
         # Manual form as badges are not handled by the form system
         remove_button = htm.form(
-            ".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=project.name)
+            ".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=str(project.name))
         )[
             form.csrf_input(),
-            htpy.input(type="hidden", name="project_name", value=project.name),
+            htpy.input(type="hidden", name="project_name", value=str(project.name)),
             htpy.input(type="hidden", name="variant", value="remove_language"),
             htpy.input(type="hidden", name="language_to_remove", value=lang),
             htpy.button(".btn-close.btn-close-white.ms-1.page-remove-tag", type="submit", aria_label=f"Remove {lang}"),
@@ -467,9 +467,9 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
         ]
         language_badges.append(badge)
 
-    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=project.name))[
+    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=str(project.name)))[
         form.csrf_input(),
-        htpy.input(type="hidden", name="project_name", value=project.name),
+        htpy.input(type="hidden", name="project_name", value=str(project.name)),
         htpy.input(type="hidden", name="variant", value="add_language"),
         htm.div(".d-flex.align-items-center")[
             htpy.input(
@@ -531,7 +531,7 @@ def _render_policy_readonly(project: sql.Project) -> htm.Element:
 def _render_project_label_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Project label"]]
-    card.div(".card-body")[htm.code(".fs-6")[project.name]]
+    card.div(".card-body")[htm.code(".fs-6")[str(project.name)]]
     return card.collect()
 
 
@@ -552,7 +552,7 @@ async def _render_releases_sections(
             draft_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-secondary.py-2.px-3",
-                    href=util.as_url(file.selected, project_name=project.name, version_name=drf.version),
+                    href=util.as_url(file.selected, project_name=str(project.name), version_name=str(drf.version)),
                     title=f"View draft {project.name} {drf.version}",
                 )[
                     f"{project.name} {drf.version} ",
@@ -569,7 +569,7 @@ async def _render_releases_sections(
             candidate_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-info.py-2.px-3",
-                    href=util.as_url(file.selected, project_name=project.name, version_name=cnd.version),
+                    href=util.as_url(file.selected, project_name=str(project.name), version_name=str(cnd.version)),
                     title=f"View candidate {project.name} {cnd.version}",
                 )[
                     f"{project.name} {cnd.version} ",
@@ -586,7 +586,7 @@ async def _render_releases_sections(
             preview_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-warning.py-2.px-3",
-                    href=util.as_url(file.selected, project_name=project.name, version_name=prv.version),
+                    href=util.as_url(file.selected, project_name=str(project.name), version_name=str(prv.version)),
                     title=f"View preview {project.name} {prv.version}",
                 )[
                     f"{project.name} {prv.version} ",
@@ -603,7 +603,7 @@ async def _render_releases_sections(
             release_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-success.py-2.px-3",
-                    href=util.as_url(file.selected, project_name=project.name, version_name=rel.version),
+                    href=util.as_url(file.selected, project_name=str(project.name), version_name=str(rel.version)),
                     title=f"View release {project.name} {rel.version}",
                 )[
                     f"{project.name} {rel.version} ",
@@ -622,7 +622,7 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
     ]
 
     defaults_dict = {
-        "project_name": project.name,
+        "project_name": str(project.name),
         "github_vote_workflow_path": "\n".join(project.policy_github_vote_workflow_path),
         "mailto_addresses": project.policy_mailto_addresses[0]
         if project.policy_mailto_addresses
@@ -665,7 +665,7 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
         form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
-            action=util.as_url(post.projects.view, name=project.name),
+            action=util.as_url(post.projects.view, name=str(project.name)),
             submit_label="Save",
             defaults=defaults_dict,
             form_classes=".atr-canary.py-4.px-5",

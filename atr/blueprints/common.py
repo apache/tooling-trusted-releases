@@ -26,12 +26,9 @@ import asfquart.base as base
 import asfquart.session
 import pydantic
 
-import atr.cache as cache
-import atr.db as db
 import atr.form as form
 import atr.ldap as ldap
 import atr.models.safe as safe
-import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.web as web
 
@@ -190,42 +187,50 @@ def register_route(func: Callable[..., Any], prefix: str, routes: list[str]) -> 
     routes.append(f"{prefix}.{module_name}.{func.__name__}")
 
 
+def safe_params_for_type(cls: type) -> list[tuple[str, type]]:
+    """Return (field_name, safe_type) pairs for fields typed as a validated safe type."""
+    try:
+        hints = get_type_hints(cls)
+    except Exception:
+        return []
+    return [(name, hint) for name, hint in hints.items() if hint in VALIDATED_TYPES]
+
+
 async def run_validators(kwargs: dict[str, Any], validated_params: list[tuple[str, type]]) -> None:
-    """Validate URL parameters in order, using the cache/DB validators."""
-    project_name_param = "project_name"
+    """Validate URL parameters in order, using the type-specific validators."""
     for param_name, param_type in validated_params:
         raw = kwargs[param_name]
         if param_type is safe.ProjectName:
-            kwargs[param_name] = await validate_project(raw)
-            project_name_param = param_name
+            try:
+                kwargs[param_name] = safe.ProjectName(raw)
+            except ValueError:
+                raise base.ASFQuartException(f"Project name {param_name!r} is invalid. ")
         elif param_type is safe.VersionName:
-            project_name = kwargs.get(project_name_param, "")
-            kwargs[param_name] = await validate_version(project_name, raw)
+            try:
+                kwargs[param_name] = safe.VersionName(raw)
+            except ValueError:
+                raise base.ASFQuartException(f"Version name {param_name!r} is invalid. ")
 
 
-async def validate_project(raw: str) -> safe.ProjectName:
-    if cache.project_version_has_project(raw):
-        return safe.ProjectName(raw)
-    async with db.session() as data:
-        project = await data.project(name=raw, status=sql.ProjectStatus.ACTIVE, _committee=False).get()
-    if project is None:
-        raise base.ASFQuartException(f"Project {raw!r} not found", errorcode=404)
-    return safe.ProjectName(project.name)
+async def validate_safe_fields(
+    instance: Any,
+    safe_params: list[tuple[str, type]],
+    context: dict[str, Any],
+) -> None:
+    """Validate safe-typed fields on a body, query, or form instance via cache/DB lookup.
 
-
-async def validate_version(project_name: safe.ProjectName, raw: str) -> safe.VersionName:
-    if cache.project_version_has_version(project_name, raw):
-        return safe.VersionName(raw)
-    async with db.session() as data:
-        release = await data.release(
-            project_name=str(project_name),
-            version=raw,
-            _project=False,
-            _committee=False,
-        ).get()
-    if release is None:
-        raise base.ASFQuartException(f"Version {raw!r} not found for project {project_name!s}", errorcode=404)
-    return safe.VersionName(release.version)
+    Context should contain any URL params already validated, so that validate_version
+    can find a project_name that lives in the URL rather than the instance.
+    """
+    temp = dict(context)
+    for name, _ in safe_params:
+        value = getattr(instance, name, None)
+        if value is not None:
+            temp[name] = str(value)
+    await run_validators(temp, [(n, t) for n, t in safe_params if n in temp])
+    for name, _ in safe_params:
+        if name in temp:
+            setattr(instance, name, temp[name])
 
 
 def _is_body_type(hint: Any) -> bool:

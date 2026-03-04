@@ -42,7 +42,7 @@ async def ignores(
     await session.check_access(project_name)
     async with storage.read() as read:
         ragp = read.as_general_public()
-        ignores = await ragp.checks.ignores(str(project_name))
+        ignores = await ragp.checks.ignores(project_name)
 
     content = htm.div[
         htm.h1["Ignored checks"],

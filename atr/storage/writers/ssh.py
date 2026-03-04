@@ -22,6 +22,7 @@ import time
 from typing import Any
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.util as util
@@ -85,7 +86,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_name = committee_name
 
     async def add_workflow_key(
-        self, github_uid: str, github_nid: int, project_name: str, key: str, github_payload: dict[str, Any]
+        self, github_uid: str, github_nid: int, project_name: safe.ProjectName, key: str, github_payload: dict[str, Any]
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files
@@ -95,7 +96,7 @@ class CommitteeParticipant(FoundationCommitter):
         wsk = sql.WorkflowSSHKey(
             fingerprint=fingerprint,
             key=key,
-            project_name=project_name,
+            project_name=str(project_name),
             asf_uid=self.__asf_uid,
             github_uid=github_uid,
             github_nid=github_nid,
@@ -107,7 +108,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             fingerprint=fingerprint,
-            project_name=project_name,
+            project_name=str(project_name),
             github_uid=github_uid,
             github_nid=github_nid,
             expires=expires,

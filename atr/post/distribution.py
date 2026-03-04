@@ -41,8 +41,8 @@ _AUTOMATED_PLATFORMS_STAGE: Final[tuple[shared.distribution.DistributionPlatform
 async def automate_form_process_page(
     session: web.Committer,
     form_data: shared.distribution.DistributeForm,
-    project: str,
-    version: str,
+    project: safe.ProjectName,
+    version: safe.VersionName,
     /,
     staging: bool = False,
 ) -> web.WerkzeugResponse:
@@ -51,8 +51,8 @@ async def automate_form_process_page(
         platform_str = form_data.platform.value
         return await session.redirect(
             get.distribution.stage_automate if staging else get.distribution.automate,
-            project_name=project,
-            version_name=version,
+            project_name=str(project),
+            version_name=str(version),
             error=f"Platform {platform_str} is not supported for automated distribution",
         )
     sql_platform = form_data.platform.to_sql()  # type: ignore[attr-defined]
@@ -77,7 +77,7 @@ async def automate_form_process_page(
     async with storage.write_as_committee_member(committee_name=committee.name) as w:
         try:
             await w.distributions.automate(
-                release.name,
+                release.safe_name,
                 dd.platform,
                 committee.name,
                 dd.owner_namespace,
@@ -120,9 +120,7 @@ async def automate_selected(
     URL: /distribution/automate/<project_name>/<version_name>
     """
     await session.check_access(project_name)
-    return await automate_form_process_page(
-        session, distribute_form, str(project_name), str(version_name), staging=False
-    )
+    return await automate_form_process_page(session, distribute_form, project_name, version_name, staging=False)
 
 
 @post.typed
@@ -141,7 +139,7 @@ async def delete(
 
     # Validate the submitted data, and obtain the committee for its name
     async with db.session() as data:
-        release = await data.release(name=delete_form.release_name).demand(
+        release = await data.release(name=str(delete_form.release_name)).demand(
             RuntimeError(f"Release {delete_form.release_name} not found")
         )
         committee = release.committee
@@ -168,8 +166,8 @@ async def delete(
 async def record_form_process_page(
     session: web.Committer,
     form_data: shared.distribution.DistributeForm,
-    project: str,
-    version: str,
+    project: safe.ProjectName,
+    version: safe.VersionName,
     /,
     staging: bool = False,
 ) -> web.WerkzeugResponse:
@@ -190,7 +188,7 @@ async def record_form_process_page(
     async with storage.write_as_committee_member(committee_name=committee.name) as w:
         try:
             _dist, added, _metadata = await w.distributions.record_from_data(
-                release_name=release.name,
+                release_name=release.safe_name,
                 staging=staging,
                 dd=dd,
                 allow_retries=False,
@@ -199,8 +197,8 @@ async def record_form_process_page(
             # Instead of calling record_form_page_new, redirect with error message
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
-                project_name=project,
-                version_name=version,
+                project_name=str(project),
+                version_name=str(version),
                 error=str(e),
             )
 
@@ -208,8 +206,8 @@ async def record_form_process_page(
     message = "Distribution recorded successfully." if added else "Distribution was already recorded."
     return await session.redirect(
         get.distribution.list_get,
-        project_name=project,
-        version_name=version,
+        project_name=str(project),
+        version_name=str(version),
         success=message,
     )
 
@@ -225,7 +223,7 @@ async def record_selected(
     """
     URL: /distribution/record/<project_name>/<version_name>
     """
-    return await record_form_process_page(session, distribute_form, str(project_name), str(version_name), staging=False)
+    return await record_form_process_page(session, distribute_form, project_name, version_name, staging=False)
 
 
 @post.typed
@@ -239,9 +237,7 @@ async def stage_automate_selected(
     """
     URL: /distribution/stage/automate/<project_name>/<version_name>
     """
-    return await automate_form_process_page(
-        session, distribute_form, str(project_name), str(version_name), staging=True
-    )
+    return await automate_form_process_page(session, distribute_form, project_name, version_name, staging=True)
 
 
 @post.typed
@@ -255,4 +251,4 @@ async def stage_record_selected(
     """
     URL: /distribution/stage/record/<project_name>/<version_name>
     """
-    return await record_form_process_page(session, distribute_form, str(project_name), str(version_name), staging=True)
+    return await record_form_process_page(session, distribute_form, project_name, version_name, staging=True)

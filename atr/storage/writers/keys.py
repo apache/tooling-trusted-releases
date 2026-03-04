@@ -40,6 +40,7 @@ import sqlmodel
 import atr.config as config
 import atr.db as db
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -465,10 +466,12 @@ class CommitteeParticipant(FoundationCommitter):
             await self.autogenerate_keys_file()
         return outcomes
 
-    async def import_keys_file(self, project_name: str, version_name: str) -> outcome.List[types.Key]:
+    async def import_keys_file(
+        self, project_name: safe.ProjectName, version_name: safe.VersionName
+    ) -> outcome.List[types.Key]:
         release = await self.__data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
         ).demand(storage.AccessError(f"Release not found: {project_name} {version_name}"))
         keys_path = paths.release_directory(release) / "KEYS"
@@ -478,7 +481,7 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("No committee found for release - Invalid state")
         if release.committee.name != self.__committee_name:
             raise storage.AccessError(
-                f"Release {project_name} {version_name} is not associated with committee {self.__committee_name}"
+                f"Release {project_name!s} {version_name!s} is not associated with committee {self.__committee_name}"
             )
 
         outcomes = await self.ensure_associated(keys_file_text)

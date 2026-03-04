@@ -98,30 +98,30 @@ async def test_merge(
         raise base.ASFQuartException("Test routes not enabled", errorcode=404)
 
     async with storage.write(session) as write_n:
-        wacp_n = await write_n.as_project_committee_participant(str(project_name))
+        wacp_n = await write_n.as_project_committee_participant(project_name)
 
         async def modify_new(path_new: pathlib.Path, _old_rev_new: sql.Revision | None) -> None:
             async with aiofiles.open(path_new / "from_new.txt", "w") as f:
                 await f.write("new content")
 
             async with storage.write(session) as write_p:
-                wacp_p = await write_p.as_project_committee_participant(str(project_name))
+                wacp_p = await write_p.as_project_committee_participant(project_name)
 
                 async def modify_prior(path_prior: pathlib.Path, _old_rev_prior: sql.Revision | None) -> None:
                     async with aiofiles.open(path_prior / "from_prior.txt", "w") as f:
                         await f.write("prior content")
 
                 await wacp_p.revision.create_revision_with_quarantine(
-                    str(project_name),
-                    str(version_name),
+                    project_name,
+                    version_name,
                     session.uid,
                     description="Test merge: prior revision",
                     modify=modify_prior,
                 )
 
         await wacp_n.revision.create_revision_with_quarantine(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             session.uid,
             description="Test merge: new revision",
             modify=modify_new,
@@ -129,8 +129,8 @@ async def test_merge(
 
     files: list[str] = []
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        release = await data.release(name=release_name, _project=True).demand(
+        release_name = sql.release_name(project_name, version_name)
+        release = await data.release(name=str(release_name), _project=True).demand(
             RuntimeError("Release not found after merge test")
         )
         release_dir = paths.release_directory(release)
@@ -232,7 +232,7 @@ async def test_vote(
     if (user_category != vote.UserCategory.UNAUTHENTICATED) and (session is None):
         raise base.ASFQuartException("You must be logged in to preview authenticated views", errorcode=401)
 
-    _, release, latest_vote_task = await vote.category_and_release(session, str(project_name), str(version_name))
+    _, release, latest_vote_task = await vote.category_and_release(session, project_name, version_name)
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
         raise base.ASFQuartException("Release is not a candidate", errorcode=404)

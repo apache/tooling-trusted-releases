@@ -25,6 +25,7 @@ import aiofiles.os
 
 import atr.attestable as attestable
 import atr.hashes as hashes
+import atr.models.safe as safe
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -35,8 +36,8 @@ async def merge(
     base_inodes: dict[str, int],
     base_hashes: dict[str, str],
     prior_dir: pathlib.Path,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     prior_revision_number: str,
     temp_dir: pathlib.Path,
     n_inodes: dict[str, int],
@@ -119,8 +120,8 @@ async def _add_from_prior(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     prior_revision_number: str,
 ) -> dict[str, str] | None:
     target = temp_dir / path
@@ -176,8 +177,8 @@ async def _merge_all_present(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     prior_revision_number: str,
 ) -> dict[str, str] | None:
     # Cases 6, 8: prior and new share an inode so they already agree
@@ -237,8 +238,8 @@ async def _replace_with_prior(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     prior_revision_number: str,
 ) -> dict[str, str] | None:
     await aiofiles.os.remove(temp_dir / path)

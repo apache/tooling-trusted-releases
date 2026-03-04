@@ -49,7 +49,7 @@ async def selected(
     """
     await session.check_access(project_name)
     async with db.session() as data:
-        release = await session.release(str(project_name), str(version_name), data=data)
+        release = await session.release(project_name, version_name, data=data)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
     block = htm.Block()

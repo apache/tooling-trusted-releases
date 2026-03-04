@@ -47,8 +47,8 @@ async def resolve_selected(
     """
     await session.check_access(project_name)
     release = await session.release(
-        str(project_name),
-        str(version_name),
+        project_name,
+        version_name,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -79,7 +79,7 @@ async def start_selected_revision(
     await session.check_access(project_name)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=True
+            session, project_name, version_name, revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(

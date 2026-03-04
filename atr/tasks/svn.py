@@ -24,6 +24,7 @@ import aioshutil
 
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage as storage
@@ -69,13 +70,17 @@ async def import_files(args: SvnImport) -> results.Results | None:
 
 async def _import_files_core(args: SvnImport) -> str:
     """Core logic to perform the SVN export."""
+
+    project = safe.ProjectName(args.project_name)
+    version = safe.VersionName(args.version_name)
+
     log.info(f"Starting SVN import for {args.project_name}-{args.version_name}")
     # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
     temp_export_dir_name = ".svn-export.tmp"
 
     description = "Import of files from subversion"
     async with storage.write(args.asf_uid) as write:
-        wacp = await write.as_project_committee_participant(args.project_name)
+        wacp = await write.as_project_committee_participant(project)
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
             log.debug(f"Created revision directory: {path}")
@@ -123,7 +128,7 @@ async def _import_files_core(args: SvnImport) -> str:
             log.info(f"Removed temporary export directory: {temp_export_path}")
 
         result = await wacp.revision.create_revision_with_quarantine(
-            args.project_name, args.version_name, args.asf_uid, description=description, modify=modify
+            project, version, args.asf_uid, description=description, modify=modify
         )
         if isinstance(result, sql.Quarantined):
             log.info(f"SVN import quarantined for {args.project_name}-{args.version_name}")

@@ -89,7 +89,7 @@ class Committer:
         return user.is_admin(self.uid)
 
     async def check_access(self, project_name: str | safe.ProjectName) -> None:
-        if not any((p.name == str(project_name)) for p in (await self.user_projects)):
+        if not any((str(p.name) == str(project_name)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
                 # But we must warn them when the project is not one of their own
@@ -162,8 +162,8 @@ class Committer:
 
     async def release(
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         phase: sql.ReleasePhase | db.NotSet | None = db.NOT_SET,
         latest_revision_number: str | db.NotSet | None = db.NOT_SET,
         data: db.Session | None = None,
@@ -182,11 +182,11 @@ class Committer:
             phase_value = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
         else:
             phase_value = phase
-        release_name = sql.release_name(str(project_name), str(version_name))
+        release_name = sql.release_name(project_name, version_name)
         if data is None:
             async with db.session() as data:
                 release = await data.release(
-                    name=release_name,
+                    name=str(release_name),
                     phase=phase_value,
                     latest_revision_number=latest_revision_number,
                     _committee=with_committee,
@@ -198,7 +198,7 @@ class Committer:
                 ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
         else:
             release = await data.release(
-                name=release_name,
+                name=str(release_name),
                 phase=phase_value,
                 latest_revision_number=latest_revision_number,
                 _committee=with_committee,

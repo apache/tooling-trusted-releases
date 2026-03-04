@@ -42,6 +42,7 @@ import atr.config as config
 import atr.log as log
 import atr.models.github as github_models
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.paths as paths
 import atr.tasks.checks as checks
 import atr.util as util
@@ -373,7 +374,7 @@ async def _find_archive_root(archive_path: pathlib.Path, extract_dir: pathlib.Pa
 
 
 async def _load_tp_payload(
-    project_name: str, version_name: str, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
 ) -> github_models.TrustedPublisherPayload | None:
     payload_path = attestable.github_tp_payload_path(project_name, version_name, revision_number)
     if not await aiofiles.os.path.isfile(payload_path):

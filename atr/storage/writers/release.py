@@ -35,6 +35,7 @@ import atr.db as db
 import atr.form as form
 import atr.log as log
 import atr.models.api as api
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -95,24 +96,24 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def delete(
         self,
-        project_name: str,
-        version: str,
+        project_name: safe.ProjectName,
+        version: safe.VersionName,
         phase: db.Opt[sql.ReleasePhase] = db.NOT_SET,
         include_downloads: bool = True,
     ) -> str | None:
         """Handle the deletion of database records and filesystem data for a release."""
         release = await self.__data.release(
-            project_name=project_name, version=version, phase=phase, _committee=True
-        ).demand(storage.AccessError(f"Release '{project_name} {version}' not found."))
+            project_name=str(project_name), version=str(version), phase=phase, _committee=True
+        ).demand(storage.AccessError(f"Release '{project_name!s} {version!s}' not found."))
         release_dirs = [
             paths.release_directory_base(release),
-            paths.get_attestable_dir() / project_name / version,
-            paths.get_cache_archives_dir() / project_name / version,
-            paths.get_quarantined_dir() / project_name / version,
+            paths.get_attestable_dir() / str(project_name) / str(version),
+            paths.get_cache_archives_dir() / str(project_name) / str(version),
+            paths.get_quarantined_dir() / str(project_name) / str(version),
         ]
 
         # Delete from the database using bulk SQL DELETE for efficiency
-        log.info(f"Deleting database records for release: {project_name} {version}")
+        log.info(f"Deleting database records for release: {project_name!s} {version!s}")
 
         # Bulk delete tasks
         # These is no cascade, so we must delete explicitly
@@ -123,11 +124,11 @@ class CommitteeParticipant(FoundationCommitter):
         )
         task_result = await self.__data.execute(task_delete_stmt)
         task_count = task_result.rowcount if isinstance(task_result, engine.CursorResult) else 0
-        log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_name} {version}")
+        log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_name!s} {version!s}")
 
         release_name = release.name
         await self.__data.delete(release)
-        log.info(f"Deleted release record: {project_name} {version}")
+        log.info(f"Deleted release record: {project_name!s} {version!s}")
 
         # In test mode, delete the counter for test committee releases
         # This allows revision numbers to be reused in testing
@@ -150,14 +151,14 @@ class CommitteeParticipant(FoundationCommitter):
 
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
-            version=version,
+            project_name=str(project_name),
+            version=str(version),
             error=error,
         )
         return error
 
     async def delete_empty_directory(
-        self, project_name: str, version_name: str, dir_to_delete_rel: pathlib.Path
+        self, project_name: safe.ProjectName, version_name: safe.VersionName, dir_to_delete_rel: pathlib.Path
     ) -> str | None:
         description = f"Delete empty directory {dir_to_delete_rel} via web interface"
 
@@ -179,7 +180,9 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e)
         return None
 
-    async def delete_file(self, project_name: str, version: str, rel_path_to_delete: pathlib.Path) -> int:
+    async def delete_file(
+        self, project_name: safe.ProjectName, version: safe.VersionName, rel_path_to_delete: pathlib.Path
+    ) -> int:
         metadata_files_deleted = 0
         description = "File deletion through web interface"
 
@@ -217,7 +220,9 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return metadata_files_deleted
 
-    async def generate_hash_file(self, project_name: str, version_name: str, rel_path: pathlib.Path) -> None:
+    async def generate_hash_file(
+        self, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
+    ) -> None:
         description = "Hash generation through web interface"
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
@@ -256,7 +261,12 @@ class CommitteeParticipant(FoundationCommitter):
         )
 
     async def import_from_svn(
-        self, project_name: str, version_name: str, svn_url: str, revision: str, target_subdirectory: str | None
+        self,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
+        svn_url: str,
+        revision: str,
+        target_subdirectory: str | None,
     ) -> sql.Task:
         task_args = {
             "svn_url": svn_url,
@@ -272,8 +282,8 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=sql.TaskStatus.QUEUED,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
         self.__data.add(svn_import_task)
         await self.__data.commit()
@@ -281,7 +291,11 @@ class CommitteeParticipant(FoundationCommitter):
         return svn_import_task
 
     async def move_file(
-        self, project_name: str, version_name: str, source_files_rel: list[pathlib.Path], target_dir_rel: pathlib.Path
+        self,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
+        source_files_rel: list[pathlib.Path],
+        target_dir_rel: pathlib.Path,
     ) -> tuple[str | None, list[str], list[str]]:
         description = "File move through web interface"
         moved_files_names: list[str] = []
@@ -306,16 +320,16 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def promote_to_candidate(
         self,
-        release_name: str,
+        release_name: safe.ReleaseName,
         selected_revision_number: str,
         vote_manual: bool = False,
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
-        release_for_pre_checks = await self.__data.release(name=release_name, _project=True).demand(
+        release_for_pre_checks = await self.__data.release(name=str(release_name), _project=True).demand(
             storage.AccessError("Release candidate draft not found")
         )
-        project_name = release_for_pre_checks.project.name
-        version_name = release_for_pre_checks.version
+        project_name = release_for_pre_checks.safe_project_name
+        version_name = release_for_pre_checks.safe_version_name
 
         # Check for ongoing tasks
         ongoing_tasks = await self.__tasks_ongoing(project_name, version_name, selected_revision_number)
@@ -340,7 +354,7 @@ class CommitteeParticipant(FoundationCommitter):
         stmt = (
             sqlmodel.update(sql.Release)
             .where(
-                via(sql.Release.name) == release_name,
+                via(sql.Release.name) == release_for_pre_checks.name,
                 via(sql.Release.phase) == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
                 sql.latest_revision_number_query() == selected_revision_number,
             )
@@ -362,13 +376,15 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            release_name=release_name,
+            release_name=str(release_name),
             selected_revision_number=selected_revision_number,
             vote_manual=vote_manual,
         )
         return None
 
-    async def remove_rc_tags(self, project_name: str, version_name: str) -> tuple[str | None, int, list[str]]:
+    async def remove_rc_tags(
+        self, project_name: safe.ProjectName, version_name: safe.VersionName
+    ) -> tuple[str | None, int, list[str]]:
         description = "Remove RC tags from paths via web interface"
         error_messages: list[str] = []
         renamed_count = 0
@@ -385,10 +401,12 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), renamed_count, error_messages
         return None, renamed_count, error_messages
 
-    async def start(self, project_name: str, version: str) -> tuple[sql.Release, sql.Project]:  # noqa: C901
+    async def start(self, project_name: safe.ProjectName, version: safe.VersionName) -> tuple[sql.Release, sql.Project]:  # noqa: C901
         """Creates the initial release draft record and revision directory."""
         # Get the project from the project name
-        project = await self.__data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _committee=True).get()
+        project = await self.__data.project(
+            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _committee=True
+        ).get()
         if not project:
             raise storage.AccessError(f"Project {project_name} not found")
 
@@ -415,7 +433,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         # TODO: Consider using Release.revision instead of ./latest
         # Check whether the release already exists
-        if release := await self.__data.release(project_name=project.name, version=version).get():
+        if release := await self.__data.release(project_name=project.name, version=str(version)).get():
             match release.phase:
                 case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
                     phase_desc = "A draft release (being composed)"
@@ -425,19 +443,18 @@ class CommitteeParticipant(FoundationCommitter):
                     phase_desc = "A release preview (being finished)"
                 case sql.ReleasePhase.RELEASE:
                     phase_desc = "A finished release"
-            raise storage.AccessError(f"{phase_desc} for {project_name} {version} already exists.")
+            raise storage.AccessError(f"{phase_desc} for {project_name!s} {version} already exists.")
 
         # Validate the version name
         # TODO: We should check that it's bigger than the current version
         # We have the packaging library as a dependency, but it is Python specific
-        if version_name_error := util.version_name_error(version):
-            raise storage.AccessError(f'Invalid version name "{version}": {version_name_error}')
-
+        if version_name_error := util.version_name_error(str(version)):
+            raise storage.AccessError(f'Invalid version name "{version!s}": {version_name_error}')
         release = sql.Release(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             project_name=project.name,
             project=project,
-            version=version,
+            version=str(version),
             created=datetime.datetime.now(datetime.UTC),
         )
         self.__data.add(release)
@@ -450,8 +467,8 @@ class CommitteeParticipant(FoundationCommitter):
         )
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
-            version=version,
+            project_name=project.name,
+            version=str(version),
             created=release.created.isoformat(),
         )
         return release, project
@@ -479,14 +496,14 @@ class CommitteeParticipant(FoundationCommitter):
         async with db.session() as data:
             release_name = sql.release_name(args.project, args.version)
             return await data.revision(
-                release_name=release_name,
+                release_name=str(release_name),
                 number=result.number,
             ).demand(storage.AccessError("Revision not found"))
 
     async def upload_files(
         self,
-        project_name: str,
-        version_name: str,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
         file_name: pathlib.Path | None,
         files: Sequence[datastructures.FileStorage],
     ) -> tuple[str | None, int, bool]:
@@ -558,7 +575,7 @@ class CommitteeParticipant(FoundationCommitter):
                         continue
 
     async def __delete_release_data_filesystem(
-        self, release_dirs: Sequence[pathlib.Path], project_name: str, version: str
+        self, release_dirs: Sequence[pathlib.Path], project_name: safe.ProjectName, version: safe.VersionName
     ) -> str | None:
         delete_errors: list[str] = []
         for release_dir in release_dirs:
@@ -566,7 +583,7 @@ class CommitteeParticipant(FoundationCommitter):
                 try:
                     log.info(f"Deleting filesystem directory: {release_dir}")
                     await util.delete_immutable_directory(
-                        release_dir, reason=f"user {self.__asf_uid} is deleting release {project_name} {version}"
+                        release_dir, reason=f"user {self.__asf_uid} is deleting release {project_name!s} {version!s}"
                     )
                     log.info(f"Successfully deleted directory: {release_dir}")
                 except Exception as e:
@@ -576,7 +593,7 @@ class CommitteeParticipant(FoundationCommitter):
                 log.warning(f"Filesystem directory not found, skipping deletion: {release_dir}")
         if delete_errors:
             return (
-                f"Database records for '{project_name} {version}' deleted,"
+                f"Database records for '{project_name!s} {version!s}' deleted,"
                 f" but failed to delete filesystem directories: {', '.join(delete_errors)}"
             )
         return None
@@ -747,11 +764,13 @@ class CommitteeParticipant(FoundationCommitter):
                 if f == source_file_rel:
                     moved_files_names.append(f.name)
 
-    async def __tasks_ongoing(self, project_name: str, version_name: str, revision_number: str | None = None) -> int:
+    async def __tasks_ongoing(
+        self, project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str | None = None
+    ) -> int:
         tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
         query = tasks.where(
-            sql.Task.project_name == project_name,
-            sql.Task.version_name == version_name,
+            sql.Task.project_name == str(project_name),
+            sql.Task.version_name == str(version_name),
             sql.Task.revision_number
             == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else revision_number),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),

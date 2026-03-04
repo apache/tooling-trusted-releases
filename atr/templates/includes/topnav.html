@@ -40,7 +40,7 @@
                   </li>
                   <li>
                     <a class="dropdown-item fw-bold"
-                       href="{{ as_url(get.projects.view, project_name=project_name) }}">{{ project_short_display_name }}</a>
+                       href="{{ as_url(get.projects.view, project_name=project_name|string) }}">{{ project_short_display_name }}</a>
                   </li>
                   {% for release in releases %}
                     <li>
@@ -61,7 +61,7 @@
                 {% for project_name, project_full_name in topnav_user_projects[:max_projects] %}
                   <li>
                     <a class="dropdown-item"
-                       href="{{ as_url(get.start.selected, project_name=project_name) }}"><i class="bi bi-plus-circle"></i>
+                       href="{{ as_url(get.start.selected, project_name=project_name|string) }}"><i class="bi bi-plus-circle"></i>
                       {{ project_full_name.removeprefix("Apache ").removesuffix(" (Incubating)") }}</a>
                   </li>
                 {% endfor %}

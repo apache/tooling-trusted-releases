@@ -62,10 +62,10 @@ async def selected(
     """
     await session.check_access(project_name)
     try:
-        release = await session.release(str(project_name), str(version_name))
+        release = await session.release(project_name, version_name)
         phase_key = "draft"
     except base.ASFQuartException:
-        release = await session.release(str(project_name), str(version_name), phase=sql.ReleasePhase.RELEASE_PREVIEW)
+        release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_PREVIEW)
         phase_key = "preview"
     release_dir = paths.release_directory_base(release)
 

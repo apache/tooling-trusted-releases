@@ -29,6 +29,7 @@ import atr.form as form
 import atr.htm as htm
 import atr.models.basic as basic
 import atr.models.distribution as distribution
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.util as util
 from atr.storage import outcome
@@ -114,7 +115,7 @@ class DistributionPlatform(enum.Enum):
 
 
 class DeleteForm(form.Form):
-    release_name: str = form.label("Release name", widget=form.Widget.HIDDEN)
+    release_name: safe.ReleaseName = form.label("Release name", widget=form.Widget.HIDDEN)
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
     owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
     package: str = form.label("Package", widget=form.Widget.HIDDEN)
@@ -363,7 +364,11 @@ async def json_from_maven_xml(api_url: str, version: str) -> outcome.Outcome[bas
 
 
 async def release_validated(
-    project: str, version: str, committee: bool = False, staging: bool | None = None, release_policy: bool = False
+    project: safe.ProjectName,
+    version: safe.VersionName,
+    committee: bool = False,
+    staging: bool | None = None,
+    release_policy: bool = False,
 ) -> sql.Release:
     match staging:
         case True:
@@ -374,20 +379,20 @@ async def release_validated(
             phase = {sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}
     async with db.session() as data:
         release = await data.release(
-            project_name=project,
-            version=version,
+            project_name=str(project),
+            version=str(version),
             _committee=committee,
             _release_policy=release_policy,
-        ).demand(RuntimeError(f"Release {project} {version} not found"))
+        ).demand(RuntimeError(f"Release {project!s} {version!s} not found"))
         if release.phase not in phase:
-            raise RuntimeError(f"Release {project} {version} is not in {phase}")
+            raise RuntimeError(f"Release {project!s} {version!s} is not in {phase}")
         # if release.project.status != sql.ProjectStatus.ACTIVE:
         #     raise RuntimeError(f"Project {project} is not active")
     return release
 
 
 async def release_validated_and_committee(
-    project: str, version: str, *, staging: bool | None = None, release_policy: bool = False
+    project: safe.ProjectName, version: safe.VersionName, *, staging: bool | None = None, release_policy: bool = False
 ) -> tuple[sql.Release, sql.Committee]:
     release = await release_validated(project, version, committee=True, staging=staging, release_policy=release_policy)
     committee = release.committee

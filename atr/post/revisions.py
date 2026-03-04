@@ -41,13 +41,16 @@ async def selected_post(
     """
     match revision_form:
         case shared.revisions.SetRevisionForm():
-            return await _set_revision(session, revision_form, str(project_name), str(version_name))
+            return await _set_revision(session, revision_form, project_name, version_name)
         case shared.revisions.SetTagForm():
-            return await _set_tag(session, revision_form, str(project_name), str(version_name))
+            return await _set_tag(session, revision_form, project_name, version_name)
 
 
 async def _set_revision(
-    session: web.Committer, set_revision_form: shared.revisions.SetRevisionForm, project_name: str, version_name: str
+    session: web.Committer,
+    set_revision_form: shared.revisions.SetRevisionForm,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     """Set a specific revision as the latest for a candidate draft or release preview."""
     selected_revision_number = set_revision_form.revision_number
@@ -80,13 +83,16 @@ async def _set_revision(
         return await session.redirect(
             get.revisions.selected,
             success=success,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
         )
 
 
 async def _set_tag(
-    session: web.Committer, set_tag_form: shared.revisions.SetTagForm, project_name: str, version_name: str
+    session: web.Committer,
+    set_tag_form: shared.revisions.SetTagForm,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     """Set a tag on a specific revision."""
     revision_number = set_tag_form.revision_number
@@ -106,6 +112,6 @@ async def _set_tag(
     return await session.redirect(
         get.revisions.selected,
         success=message,
-        project_name=project_name,
-        version_name=version_name,
+        project_name=str(project_name),
+        version_name=str(version_name),
     )

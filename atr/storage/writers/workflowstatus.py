@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 
@@ -103,7 +104,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         workflow_id: str,
         run_id: int,
-        project_name: str,
+        project_name: safe.ProjectName,
         task_id: int | None = None,
         status: str | None = None,
         message: str | None = None,
@@ -116,7 +117,7 @@ class CommitteeMember(CommitteeParticipant):
         ws = sql.WorkflowStatus(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=project_name,
+            project_name=str(project_name),
             task_id=task_id,
             status=status or "",
             message=message,
@@ -126,7 +127,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__write_as.append_to_audit_log(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=project_name,
+            project_name=str(project_name),
             task_id=task_id,
             status=status,
             message=message,

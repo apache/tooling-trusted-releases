@@ -15,17 +15,45 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
 
-class ProjectName:
-    """A project name that has been validated against the cache or database."""
+import string
+import unicodedata
+from typing import Any, Final
 
+_ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+_VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
+
+
+class Alphanumeric:
     __slots__ = ("_value",)
 
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        # default is the base set; subclasses can override this method
+        return _ALPHANUM
+
+    def _additional_validations(self, value: str):
+        pass
+
     def __init__(self, value: str) -> None:
+        if not value:
+            raise ValueError("Value cannot be empty")
+
+        _assert_standard_safe_syntax(value)
+
+        if not all(c in self._valid_chars() for c in value):
+            raise ValueError("Value contains invalid characters")
+
+        self._additional_validations(value)
+
         self._value = value
 
+    def __bool__(self) -> bool:
+        return True
+
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, ProjectName):
+        if isinstance(other, Alphanumeric):
             return self._value == other._value
         return NotImplemented
 
@@ -33,30 +61,55 @@ class ProjectName:
         return hash(self._value)
 
     def __repr__(self) -> str:
-        return f"ProjectName({self._value!r})"
+        return f"{self.__class__.__name__}({self._value!r})"
 
     def __str__(self) -> str:
         return self._value
 
+    @classmethod
+    def __get_pydantic_core_schema__(cls, _source_type: Any, _handler: Any) -> Any:
+        import pydantic_core.core_schema as core_schema
 
-class VersionName:
-    """A version name that has been validated against the cache or database."""
+        return core_schema.no_info_plain_validator_function(
+            lambda v: cls(v) if isinstance(v, str) else v,
+            serialization=core_schema.to_string_ser_schema(),
+        )
 
-    __slots__ = ("_value",)
 
-    def __init__(self, value: str) -> None:
-        self._value = value
+class ProjectName(Alphanumeric):
+    """A project name that has been validated for safety."""
 
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, VersionName):
-            return self._value == other._value
-        return NotImplemented
 
-    def __hash__(self) -> int:
-        return hash(self._value)
+class ReleaseName(Alphanumeric):
+    """A release name composed from a validated ProjectName and VersionName."""
 
-    def __repr__(self) -> str:
-        return f"VersionName({self._value!r})"
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _VERSION_CHARS
 
-    def __str__(self) -> str:
-        return self._value
+
+class VersionName(Alphanumeric):
+    """A version name that has been validated for safety"""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _VERSION_CHARS
+
+    def _additional_validations(self, value: str):
+        if value[0] not in _ALPHANUM:
+            raise ValueError("A version should start with an alphanumeric character")
+        if value[-1] not in _ALPHANUM:
+            raise ValueError("A version should end with an alphanumeric character")
+
+
+def _assert_standard_safe_syntax(value: str) -> None:
+    if unicodedata.normalize("NFC", value) != value:
+        raise ValueError("Value must be NFC-normalized")
+
+    for c in value:
+        cat = unicodedata.category(c)
+        if cat[0] == "C":
+            raise ValueError("Value contains disallowed control/format character")
+
+        if cat[0] == "M":
+            raise ValueError("Value contains disallowed combining mark")

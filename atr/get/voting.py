@@ -55,7 +55,7 @@ async def selected_revision(
     await session.check_access(project_name)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=False
+            session, project_name, version_name, revision, data, manual_vote=False
         ):
             case str() as error:
                 return await session.redirect(
@@ -74,15 +74,15 @@ async def selected_revision(
         if release.release_policy and (release.release_policy.min_hours is not None):
             min_hours = release.release_policy.min_hours
 
-        default_subject_template = await construct.start_vote_subject_default(str(project_name))
-        default_body_template = await construct.start_vote_default(str(project_name))
+        default_subject_template = await construct.start_vote_subject_default(project_name)
+        default_body_template = await construct.start_vote_default(project_name)
         subject_template_hash = construct.template_hash(default_subject_template)
 
         options = construct.StartVoteOptions(
             asfuid=session.uid,
             fullname=session.fullname,
-            project_name=str(project_name),
-            version_name=release.version,
+            project_name=project_name,
+            version_name=release.safe_version_name,
             revision_number=revision,
             vote_duration=min_hours,
         )

@@ -22,6 +22,7 @@ import atr.db.interaction as interaction
 import atr.log as log
 import atr.mail as mail
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.storage as storage
 import atr.tasks.checks as checks
@@ -61,6 +62,7 @@ async def initiate(args: Initiate) -> results.Results | None:
 async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     """Get arguments, create an email, and then send it to the recipient."""
     log.info("Starting initiate_core")
+    safe.ReleaseName(args.release_name)
 
     # Validate arguments
     if not (args.email_to.endswith("@apache.org") or args.email_to.endswith(".apache.org")):
@@ -69,15 +71,19 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
 
     async with db.session() as data:
         release = await data.release(name=args.release_name, _project=True, _committee=True).demand(
-            VoteInitiationError(f"Release {args.release_name} not found")
+            VoteInitiationError(f"Release {args.release_name!s} not found")
         )
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
-            raise VoteInitiationError(f"No revisions found for release {args.release_name}")
+            raise VoteInitiationError(f"No revisions found for release {args.release_name!s}")
 
-        ongoing_tasks = await interaction.tasks_ongoing(release.project.name, release.version, latest_revision_number)
+        ongoing_tasks = await interaction.tasks_ongoing(
+            release.safe_project_name, release.safe_version_name, latest_revision_number
+        )
         if ongoing_tasks > 0:
-            raise VoteInitiationError(f"Cannot start vote for {args.release_name} as {ongoing_tasks} are not complete")
+            raise VoteInitiationError(
+                f"Cannot start vote for {args.release_name!s} as {ongoing_tasks} are not complete"
+            )
 
     # Calculate vote end date
     vote_duration_hours = args.vote_duration

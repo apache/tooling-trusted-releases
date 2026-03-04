@@ -151,8 +151,8 @@ async def import_selected_revision(
     """
     await session.check_access(project_name)
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(str(project_name))
-        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(str(project_name), str(version_name))
+        wacm = await write.as_project_committee_member(project_name)
+        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(project_name, version_name)
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:

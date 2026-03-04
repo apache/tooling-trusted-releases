@@ -34,6 +34,7 @@ import sqlmodel.sql.expression as expression
 
 import atr.config as config
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.util as util
@@ -864,9 +865,9 @@ def ensure_session(caller_data: Session | None) -> Session | contextlib.nullcont
     return contextlib.nullcontext(caller_data)
 
 
-async def get_project_release_policy(data: Session, project_name: str) -> sql.ReleasePolicy | None:
+async def get_project_release_policy(data: Session, project_name: safe.ProjectName) -> sql.ReleasePolicy | None:
     """Fetch the ReleasePolicy for a project."""
-    project = await data.project(name=project_name, status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
+    project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
         RuntimeError(f"Project {project_name} not found")
     )
     return project.release_policy

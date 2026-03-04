@@ -32,6 +32,7 @@ import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.user as user
 import atr.util as util
@@ -170,7 +171,7 @@ async def checks_for(
     """Get the check results for a release, optionally for a specific revision and/or file path."""
     if revision is None:
         revision = release.unwrap_revision_number
-    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision)
+    file_path_checks = await attestable.load_checks(release.safe_project_name, release.safe_version_name, revision)
     if file_path_checks:
         if rel_path is not None:
             hashes = [
@@ -195,7 +196,9 @@ async def checks_for(
 async def count_checks_for_revision_by_status(
     status: sql.CheckResultStatus, release: sql.Release, revision_number: str, caller_data: db.Session | None = None
 ):
-    file_path_checks = await attestable.load_checks(release.project_name, release.version, revision_number)
+    file_path_checks = await attestable.load_checks(
+        release.safe_project_name, release.safe_version_name, revision_number
+    )
     check_hashes = [h for inner in file_path_checks.values() for h in inner.values()]
     if len(check_hashes) == 0:
         return 0
@@ -239,18 +242,20 @@ async def has_failing_checks(release: sql.Release, revision_number: str, caller_
     return count > 0
 
 
-async def latest_info(project_name: str, version_name: str) -> tuple[str, str, datetime.datetime] | None:
+async def latest_info(
+    project_name: safe.ProjectName, version_name: safe.VersionName
+) -> tuple[str, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
     release_name = sql.release_name(project_name, version_name)
     async with db.session() as data:
         # TODO: No need to get release here
         # Just use maximum seq from revisions
-        release = await data.release(name=release_name, _project=True).demand(
+        release = await data.release(name=str(release_name), _project=True).demand(
             RuntimeError(f"Release {release_name} does not exist")
         )
         if release.latest_revision_number is None:
             return None
-        revision = await data.revision(release_name=release_name, number=release.latest_revision_number).get()
+        revision = await data.revision(release_name=str(release_name), number=release.latest_revision_number).get()
         if not revision:
             return None
     return revision.number, revision.asfuid, revision.created
@@ -291,8 +296,8 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
 
 async def release_ready_for_vote(  # noqa: C901
     session: web.Committer,
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision: str,
     data: db.Session,
     manual_vote: bool = False,
@@ -391,12 +396,14 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
     return result.email_to
 
 
-async def tasks_ongoing(project_name: str, version_name: str, revision_number: str | None = None) -> int:
+async def tasks_ongoing(
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str | None = None
+) -> int:
     tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
     async with db.session() as data:
         query = tasks.where(
-            sql.Task.project_name == project_name,
-            sql.Task.version_name == version_name,
+            sql.Task.project_name == str(project_name),
+            sql.Task.version_name == str(version_name),
             sql.Task.revision_number
             == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else revision_number),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
@@ -406,15 +413,15 @@ async def tasks_ongoing(project_name: str, version_name: str, revision_number: s
 
 
 async def tasks_ongoing_revision(
-    project_name: str,
-    version_name: str,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
     revision_number: str | None = None,
 ) -> tuple[int, str | None]:
     via = sql.validate_instrumented_attribute
     subquery = (
         sqlalchemy.select(via(sql.Revision.number))
         .where(
-            via(sql.Revision.release_name) == sql.release_name(project_name, version_name),
+            via(sql.Revision.release_name) == sql.release_name(str(project_name), str(version_name)),
         )
         .order_by(via(sql.Revision.seq).desc())
         .limit(1)
@@ -429,8 +436,8 @@ async def tasks_ongoing_revision(
         )
         .select_from(sql.Task)
         .where(
-            sql.Task.project_name == project_name,
-            sql.Task.version_name == version_name,
+            sql.Task.project_name == str(project_name),
+            sql.Task.version_name == str(version_name),
             sql.Task.revision_number == (subquery if (revision_number is None) else revision_number),
             sql.validate_instrumented_attribute(sql.Task.status).in_(
                 [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
@@ -453,17 +460,22 @@ async def trusted_jwt(publisher: str, jwt: str, phase: TrustedProjectPhase) -> t
 
 
 async def trusted_jwt_for_dist(
-    publisher: str, jwt: str, asf_uid: str, phase: TrustedProjectPhase, project_name: str, version_name: str
+    publisher: str,
+    jwt: str,
+    asf_uid: str,
+    phase: TrustedProjectPhase,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> tuple[dict[str, Any], str, sql.Project, sql.Release]:
     payload, asf_uid_from_jwt = await validate_trusted_jwt(publisher, jwt)
     if asf_uid_from_jwt is not None:
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
     # payload, asf_uid, project = await trusted_jwt(publisher, jwt, phase)
     async with db.session() as db_data:
-        project = await db_data.project(name=project_name, _committee=True).demand(
+        project = await db_data.project(name=str(project_name), _committee=True).demand(
             InteractionError(f"Project {project_name} does not exist")
         )
-        release = await db_data.release(project_name=project_name, version=version_name).get()
+        release = await db_data.release(project_name=str(project_name), version=str(version_name)).get()
         if not release:
             raise InteractionError(f"Release {version_name} does not exist in project {project_name}")
         if (phase == TrustedProjectPhase.COMPOSE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
@@ -476,8 +488,8 @@ async def trusted_jwt_for_dist(
     return payload, asf_uid, project, release
 
 
-async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Release]]]:
-    releases: list[tuple[str, str, list[sql.Release]]] = []
+async def unfinished_releases(asfuid: str) -> list[tuple[str, safe.ProjectName, list[sql.Release]]]:
+    releases: list[tuple[str, safe.ProjectName, list[sql.Release]]] = []
     async with db.session() as data:
         user_projects = await user.projects(asfuid)
         user_projects.sort(key=lambda p: p.display_name)
@@ -501,7 +513,7 @@ async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Rele
             active_releases = list(result.scalars().all())
             if active_releases:
                 active_releases.sort(key=lambda r: r.created, reverse=True)
-                releases.append((project.short_display_name, project.name, active_releases))
+                releases.append((project.short_display_name, project.safe_name, active_releases))
 
     return releases
 
@@ -531,9 +543,9 @@ async def user_committees_participant(asf_uid: str, caller_data: db.Session | No
         return await data.committee(has_participant=asf_uid).all()
 
 
-async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[str, str]]:
+async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[safe.ProjectName, str]]:
     projects = await user.projects(asf_uid)
-    return [(p.name, p.display_name) for p in projects]
+    return [(p.safe_name, p.display_name) for p in projects]
 
 
 async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[dict[str, Any], str | None]:

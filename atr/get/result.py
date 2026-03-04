@@ -49,7 +49,7 @@ async def data(
         ).get()
 
         if release is None:
-            release = await session.release(str(project_name), str(version_name), with_committee=True)
+            release = await session.release(project_name, version_name, with_committee=True)
 
         if release.committee is None:
             raise base.ASFQuartException("Release has no committee", errorcode=500)

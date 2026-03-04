@@ -32,6 +32,7 @@ import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.helpers as helpers
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.util as util
@@ -194,7 +195,7 @@ class ProjectStatus(schema.Strict):
     programming_language: str | None = schema.alias_opt("programming-language")
     doap: str | None = None
     homepage: str
-    name: str
+    name: safe.ProjectName
     pmc: str | None
     shortdesc: str | None = None
     repository: list[str | dict] = schema.factory(list)
@@ -353,7 +354,7 @@ def _project_status(pmc: sql.Committee, project_name: str, project_status: Proje
     if pmc.name == "attic":
         # This must come first, because attic is also a standing committee
         return sql.ProjectStatus.RETIRED
-    elif ("_dormant_" in project_name) or project_status.name.endswith("(Dormant)"):
+    elif ("_dormant_" in project_name) or str(project_status.name).endswith("(Dormant)"):
         return sql.ProjectStatus.DORMANT
     elif util.committee_is_standing(pmc.name):
         return sql.ProjectStatus.STANDING
@@ -482,7 +483,9 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
             project_model.status = status
             updated_count += 1
 
-        project_model.full_name = project_status.name
+        # Pass the project name through the validator
+        safe.ProjectName(project_model.name)
+        project_model.full_name = str(project_status.name)
         project_model.category = project_status.category
         project_model.description = project_status.description
         project_model.programming_languages = project_status.programming_language

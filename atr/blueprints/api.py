@@ -69,6 +69,8 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     original = inspect.unwrap(func)
     path, validated_params, literal_params, body_param, query_param, optional_params = common.build_api_path(original)
     method = "POST" if body_param is not None else "GET"
+    body_safe_params = common.safe_params_for_type(body_param[1]) if body_param is not None else []
+    query_safe_params = common.safe_params_for_type(query_param[1]) if query_param is not None else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         await common.run_validators(kwargs, validated_params)
@@ -78,13 +80,19 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
             body_name, body_cls = body_param
             json_data = await quart.request.get_json()
             try:
-                kwargs[body_name] = body_cls.model_validate(json_data)
+                body_instance = body_cls.model_validate(json_data)
             except pydantic.ValidationError as e:
                 raise quart_schema.RequestSchemaValidationError(e) from e
+            if body_safe_params:
+                await common.validate_safe_fields(body_instance, body_safe_params, kwargs)
+            kwargs[body_name] = body_instance
 
         if query_param is not None:
             query_name, query_cls = query_param
-            kwargs[query_name] = _parse_query_args(query_cls, quart.request.args)
+            query_instance = _parse_query_args(query_cls, quart.request.args)
+            if query_safe_params:
+                await common.validate_safe_fields(query_instance, query_safe_params, kwargs)
+            kwargs[query_name] = query_instance
 
         start_time_ns = time.perf_counter_ns()
         response = await func(**kwargs)
@@ -107,15 +115,34 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     # Examine `func` for quart attributes and re-attach to the wrapped function
     # This makes sure the OpenAPI documentation is preserved
     # Note: we don't update querystring or request as they're processed above using our detected types
-    for attr in _QUART_ATTRIBUTES:
-        if hasattr(func, attr):
-            setattr(wrapper, attr, getattr(func, attr))
+    _copy_quart_attributes(func, wrapper)
 
     # If there are optional params, we need two routes, one with the optional params omitted
     # and one with them all present.
     # AM 26/03/03: This actually only handles the case where there's some required and a single optional, but
     # that's the only case that existed in the original code. Theoretically we could count the optional params and
     # generate the correct number of routes, but that's lot of effort for little gain right now
+    _add_url_rules(wrapper, path, endpoint, method, optional_params)
+
+    common.register_route(original, "api", _routes)
+    return wrapper
+
+
+@_BLUEPRINT.before_request
+@rate_limiter.rate_limit(500, datetime.timedelta(hours=1))
+async def _api_rate_limit() -> None:
+    """Set API-wide rate limit"""
+    pass
+
+
+def _add_url_rules(
+    wrapper: Callable[..., Any],
+    path: str,
+    endpoint: str,
+    method: str,
+    optional_params: list[str],
+) -> None:
+    """Register URL rules for the wrapper, handling optional path params with a default short route."""
     if optional_params:
         required_segments = [
             seg for seg in path.strip("/").split("/") if not any(seg == f"<{name}>" for name in optional_params)
@@ -127,15 +154,12 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     else:
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=[method])
 
-    common.register_route(original, "api", _routes)
-    return wrapper
 
-
-@_BLUEPRINT.before_request
-@rate_limiter.rate_limit(500, datetime.timedelta(hours=1))
-async def _api_rate_limit() -> None:
-    """Set API-wide rate limit"""
-    pass
+def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> None:
+    """Copy quart schema attributes from src to dst to preserve OpenAPI documentation."""
+    for attr in _QUART_ATTRIBUTES:
+        if hasattr(src, attr):
+            setattr(dst, attr, getattr(src, attr))
 
 
 def _exempt_blueprint(app: base.QuartApp) -> None:

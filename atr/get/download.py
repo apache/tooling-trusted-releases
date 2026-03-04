@@ -54,9 +54,7 @@ async def all_selected(
     import atr.get.root as root
 
     async with db.session() as data:
-        release = await session.release(
-            project_name=str(project_name), version_name=str(version_name), phase=None, data=data
-        )
+        release = await session.release(project_name=project_name, version_name=version_name, phase=None, data=data)
         if not release:
             return await session.redirect(root.index, error="Release not found")
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
@@ -92,7 +90,7 @@ async def path(
     URL: /download/path/<project_name>/<version_name>/<path:file_path>
     Download a file or list a directory from a release in any phase.
     """
-    return await _download_or_list(str(project_name), str(version_name), str(file_path))
+    return await _download_or_list(project_name, version_name, str(file_path))
 
 
 @get.typed
@@ -106,7 +104,7 @@ async def path_empty(
     URL: /download/path/<project_name>/<version_name>/
     List files at the root of a release directory for download.
     """
-    return await _download_or_list(str(project_name), str(version_name), ".")
+    return await _download_or_list(project_name, version_name, ".")
 
 
 @get.typed
@@ -168,7 +166,7 @@ async def zip_selected(
     URL: /download/zip/<project_name>/<version_name>
     """
     try:
-        release = await session.release(project_name=str(project_name), version_name=str(version_name), phase=None)
+        release = await session.release(project_name=project_name, version_name=version_name, phase=None)
     except ValueError as e:
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:
@@ -196,7 +194,9 @@ async def zip_selected(
     return web.ZipResponse(stream_zip(files_to_zip), headers=headers)
 
 
-async def _download_or_list(project_name: str, version_name: str, file_path: str) -> web.Response:
+async def _download_or_list(
+    project_name: safe.ProjectName, version_name: safe.VersionName, file_path: str
+) -> web.Response:
     """Download a file or list a directory from a release in any phase."""
     import atr.get.root as root
 
@@ -210,13 +210,13 @@ async def _download_or_list(project_name: str, version_name: str, file_path: str
 
     # We allow downloading files from any phase
     async with db.session() as data:
-        release = await data.release(project_name=project_name, version=version_name).demand(
+        release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
             base.ASFQuartException("Release does not exist", errorcode=404)
         )
     full_path = paths.release_directory(release) / validated_path
 
     if await aiofiles.os.path.isdir(full_path):
-        return await _list(validated_path, full_path, project_name, version_name, str(validated_path))
+        return await _list(validated_path, full_path, str(project_name), str(version_name), str(validated_path))
 
     # Check that the path is a regular file
     if not await aiofiles.os.path.isfile(full_path):

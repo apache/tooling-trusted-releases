@@ -87,7 +87,7 @@
         </h2>
 
         <p class="mb-3">
-          <a href="{{ as_url(get.projects.view, project_name=project.name) }}"
+          <a href="{{ as_url(get.projects.view, project_name=project.name )}}"
              class="text-decoration-none me-2">About this project</a>
           {% if project.committee.name in current_user.committees %}
             <span class="text-muted me-2">/</span>

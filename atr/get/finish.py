@@ -72,7 +72,7 @@ async def selected(
     await session.check_access(project_name)
     try:
         (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
-            str(project_name), str(version_name)
+            project_name, version_name
         )
     except ValueError:
         async with db.session() as data:
@@ -155,7 +155,7 @@ async def _deletable_choices(
 
 
 async def _get_page_data(
-    project_name: str, version_name: str
+    project_name: safe.ProjectName, version_name: safe.VersionName
 ) -> tuple[
     sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]
 ]:
@@ -163,8 +163,8 @@ async def _get_page_data(
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
         release = await data.release(
-            project_name=project_name,
-            version=version_name,
+            project_name=str(project_name),
+            version=str(version_name),
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
@@ -174,8 +174,8 @@ async def _get_page_data(
             t
             for t in (
                 await data.task(
-                    project_name=project_name,
-                    version_name=version_name,
+                    project_name=str(project_name),
+                    version_name=str(version_name),
                     revision_number=release.latest_revision_number,
                     task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
                     _workflow=True,

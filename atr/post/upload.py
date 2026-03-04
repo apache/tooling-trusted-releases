@@ -74,7 +74,7 @@ async def finalise(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(str(project_name))
+            wacp = await write.as_project_committee_participant(project_name)
             number_of_files = len(staged_files)
             description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
 
@@ -85,7 +85,7 @@ async def finalise(
                     await aioshutil.move(str(src), str(dst))
 
             result = await wacp.revision.create_revision_with_quarantine(
-                str(project_name), str(version_name), session.uid, description=description, modify=modify
+                project_name, version_name, session.uid, description=description, modify=modify
             )
 
         await aioshutil.rmtree(staging_dir)
@@ -131,10 +131,10 @@ async def selected(
 
     match upload_form:
         case shared.upload.AddFilesForm() as add_form:
-            return await _add_files(session, add_form, str(project_name), str(version_name))
+            return await _add_files(session, add_form, project_name, version_name)
 
         case shared.upload.SvnImportForm() as svn_form:
-            return await _svn_import(session, svn_form, str(project_name), str(version_name))
+            return await _svn_import(session, svn_form, project_name, version_name)
 
 
 @post.typed
@@ -187,7 +187,10 @@ async def stage(
 
 
 async def _add_files(
-    session: web.Committer, add_form: shared.upload.AddFilesForm, project_name: str, version_name: str
+    session: web.Committer,
+    add_form: shared.upload.AddFilesForm,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     try:
         file_name = add_form.file_name
@@ -248,7 +251,10 @@ def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugRespon
 
 
 async def _svn_import(
-    session: web.Committer, svn_form: shared.upload.SvnImportForm, project_name: str, version_name: str
+    session: web.Committer,
+    svn_form: shared.upload.SvnImportForm,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
@@ -259,7 +265,7 @@ async def _svn_import(
         async with db.session() as data:
             release = await session.release(project_name, version_name, data=data)
             is_podling = (release.project.committee is not None) and release.project.committee.is_podling
-            committee_name = release.project.committee_name or project_name
+            committee_name = release.project.committee_name or str(project_name)
 
         svn_url = _construct_svn_url(
             committee_name,

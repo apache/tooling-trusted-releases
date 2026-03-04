@@ -52,16 +52,16 @@ async def selected_path(
     # If the draft is not found, we try to get the release candidate
     try:
         release = await session.release(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             with_committee=True,
             with_release_policy=True,
             with_project_release_policy=True,
         )
     except base.ASFQuartException:
         release = await session.release(
-            str(project_name),
-            str(version_name),
+            project_name,
+            version_name,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             with_committee=True,
             with_release_policy=True,

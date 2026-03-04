@@ -43,8 +43,8 @@ async def resolve_selected(
     Post the manual vote resolution page.
     """
     release = await session.release(
-        str(project_name),
-        str(version_name),
+        project_name,
+        version_name,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -70,8 +70,8 @@ async def resolve_selected(
             vote_result = "failed"
             destination = get.compose.selected
 
-    async with storage.write_as_project_committee_member(str(project_name)) as wacm:
-        success_message = await wacm.vote.resolve_manually(str(project_name), str(version_name), vote_result)
+    async with storage.write_as_project_committee_member(project_name) as wacm:
+        success_message = await wacm.vote.resolve_manually(project_name, version_name, vote_result)
 
     return await session.redirect(
         destination,
@@ -96,7 +96,7 @@ async def start_selected_revision(
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, str(project_name), str(version_name), revision, data, manual_vote=True
+            session, project_name, version_name, revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
@@ -109,8 +109,8 @@ async def start_selected_revision(
                 pass
 
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(release.project_name)
-            error = await wacp.release.promote_to_candidate(release.name, revision, vote_manual=True)
+            wacp = await write.as_project_committee_participant(release.safe_project_name)
+            error = await wacp.release.promote_to_candidate(release.safe_name, revision, vote_manual=True)
 
         if error:
             return await session.redirect(

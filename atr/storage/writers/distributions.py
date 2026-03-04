@@ -94,12 +94,12 @@ class CommitteeMember(CommitteeParticipant):
 
     async def automate(
         self,
-        release_name: str,
+        release_name: models.safe.ReleaseName,
         platform: models.sql.DistributionPlatform,
         committee_name: str,
         owner_namespace: str | None,
-        project_name: str,
-        version_name: str,
+        project_name: models.safe.ProjectName,
+        version_name: models.safe.VersionName,
         phase: str,
         revision_number: str | None,
         package: str,
@@ -109,12 +109,12 @@ class CommitteeMember(CommitteeParticipant):
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=gha.DistributionWorkflow(
-                name=release_name,
+                name=str(release_name),
                 namespace=owner_namespace or "",
                 package=package,
                 version=version,
-                project_name=project_name,
-                version_name=version_name,
+                project_name=str(project_name),
+                version_name=str(version_name),
                 phase=phase,
                 platform=platform.name,
                 staging=staging,
@@ -125,8 +125,8 @@ class CommitteeMember(CommitteeParticipant):
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=models.sql.TaskStatus.QUEUED,
-            project_name=project_name,
-            version_name=version_name,
+            project_name=str(project_name),
+            version_name=str(version_name),
             revision_number=revision_number,
         )
         self.__data.add(dist_task)
@@ -136,7 +136,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record(
         self,
-        release_name: str,
+        release_name: models.safe.ReleaseName,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str | None,
         package: str,
@@ -147,10 +147,12 @@ class CommitteeMember(CommitteeParticipant):
         api_url: str | None = None,
         web_url: str | None = None,
     ) -> tuple[models.sql.Distribution, bool]:
-        existing = await self.__data.distribution(release_name, platform, owner_namespace or "", package, version).get()
+        existing = await self.__data.distribution(
+            str(release_name), platform, owner_namespace or "", package, version
+        ).get()
         dist = models.sql.Distribution(
             platform=platform,
-            release_name=release_name,
+            release_name=str(release_name),
             owner_namespace=owner_namespace or "",
             package=package,
             version=version,
@@ -194,7 +196,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record_from_data(
         self,
-        release_name: str,
+        release_name: models.safe.ReleaseName,
         staging: bool,
         dd: models.distribution.Data,
         allow_retries: bool = False,
@@ -250,7 +252,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def __upgrade_staging_to_final(
         self,
-        release_name: str,
+        release_name: models.safe.ReleaseName,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str | None,
         package: str,
@@ -262,7 +264,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> models.sql.Distribution | None:
         tag = f"{release_name} {platform} {owner_namespace or ''} {package} {version}"
         existing = await self.__data.distribution(
-            release_name=release_name,
+            release_name=str(release_name),
             platform=platform,
             owner_namespace=(owner_namespace or ""),
             package=package,
@@ -281,14 +283,14 @@ class CommitteeMember(CommitteeParticipant):
 
     async def delete_distribution(
         self,
-        release_name: str,
+        release_name: models.safe.ReleaseName,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str,
         package: str,
         version: str,
     ) -> None:
         distribution = await self.__data.distribution(
-            release_name=release_name,
+            release_name=str(release_name),
             platform=platform,
             owner_namespace=owner_namespace,
             package=package,

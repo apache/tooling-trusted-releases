@@ -46,14 +46,17 @@ async def selected(
     """
     match resolve_form:
         case shared.resolve.SubmitForm() as submit_form:
-            return await _submit(session, submit_form, str(project_name), str(version_name))
+            return await _submit(session, submit_form, project_name, version_name)
 
         case shared.resolve.TabulateForm():
-            return await _tabulate(session, str(project_name), str(version_name))
+            return await _tabulate(session, project_name, version_name)
 
 
 async def _submit(
-    session: web.Committer, submit_form: shared.resolve.SubmitForm, project_name: str, version_name: str
+    session: web.Committer,
+    submit_form: shared.resolve.SubmitForm,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     email_body = submit_form.email_body
     vote_result = submit_form.vote_result
@@ -78,11 +81,11 @@ async def _submit(
             destination = get.compose.selected
 
     return await session.redirect(
-        destination, project_name=project_name, version_name=version_name, success=success_message
+        destination, project_name=str(project_name), version_name=str(version_name), success=success_message
     )
 
 
-async def _tabulate(session: web.Committer, project_name: str, version_name: str) -> str:
+async def _tabulate(session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName) -> str:
     asf_uid = session.uid
     full_name = session.fullname
 
