@@ -1003,10 +1003,16 @@ async def release_upload(data: models.api.ReleaseUploadArgs) -> DictResponse:
 
     async with storage.write(asf_uid) as write:
         wacp = await write.as_project_committee_participant(data.project)
-        revision = await wacp.release.upload_file(data)
+        result = await wacp.release.upload_file(data)
+    if isinstance(result, sql.Quarantined):
+        return {
+            "endpoint": "/release/upload",
+            "quarantined": True,
+            "message": "Upload received. Archive validation in progress.",
+        }, 202
     return models.api.ReleaseUploadResults(
         endpoint="/release/upload",
-        revision=revision,
+        revision=result,
     ).model_dump(), 201
 
 

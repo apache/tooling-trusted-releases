@@ -84,11 +84,19 @@ async def finalise(
                     dst = path / filename
                     await aioshutil.move(str(src), str(dst))
 
-            await wacp.revision.create_revision(
+            result = await wacp.revision.create_revision_with_quarantine(
                 str(project_name), str(version_name), session.uid, description=description, modify=modify
             )
 
         await aioshutil.rmtree(staging_dir)
+
+        if isinstance(result, sql.Quarantined):
+            return await session.redirect(
+                get.compose.selected,
+                success="Upload received. Archive validation in progress.",
+                project_name=str(project_name),
+                version_name=str(version_name),
+            )
 
         return await session.redirect(
             get.compose.selected,
@@ -187,7 +195,7 @@ async def _add_files(
 
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_name)
-            creation_error, number_of_files = await wacp.release.upload_files(
+            creation_error, number_of_files, was_quarantined = await wacp.release.upload_files(
                 project_name, version_name, file_name, file_data
             )
 
@@ -195,6 +203,14 @@ async def _add_files(
             await quart.flash(creation_error, "error")
             return await session.redirect(
                 get.upload.selected,
+                project_name=project_name,
+                version_name=version_name,
+            )
+
+        if was_quarantined:
+            return await session.redirect(
+                get.compose.selected,
+                success="Upload received. Archive validation in progress.",
                 project_name=project_name,
                 version_name=version_name,
             )

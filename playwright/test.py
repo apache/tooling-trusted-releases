@@ -1154,17 +1154,22 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
         logging.error("rsync command not found. Is rsync installed in the container?")
         raise RuntimeError("rsync command not found")
 
-    logging.info(f"Navigating to compose page for {project_name}-{version_name}")
     compose_path = f"/compose/{project_name}/{version_name}"
-    go_to_path(page, compose_path)
-    logging.info(f"Checking for uploaded files on {compose_path}")
+    logging.info(f"Waiting for quarantine validation and files to appear on {compose_path}")
+    max_wait_seconds = 30
+    start_time = time.monotonic()
+    while True:
+        go_to_path(page, compose_path)
+        file1_locator = page.get_by_role("cell", name=file1, exact=True)
+        if file1_locator.count() > 0:
+            break
+        elapsed = time.monotonic() - start_time
+        if elapsed > max_wait_seconds:
+            raise TimeoutError(f"Files did not appear on {compose_path} within {max_wait_seconds} seconds")
+        time.sleep(1)
 
-    # Check for the existence of the files in the table using exact match
-    file1_locator = page.get_by_role("cell", name=file1, exact=True)
-    file2_locator = page.get_by_role("cell", name=file2, exact=True)
-
-    expect(file1_locator).to_be_visible()
     logging.info(f"Found file: {file1}")
+    file2_locator = page.get_by_role("cell", name=file2, exact=True)
     expect(file2_locator).to_be_visible()
     logging.info(f"Found file: {file2}")
     logging.info("rsync upload test completed successfully")

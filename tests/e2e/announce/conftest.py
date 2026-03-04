@@ -69,8 +69,7 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.get_by_role("button", name="Add files").click()
     page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
 
-    helpers.visit(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}")
-    _wait_for_tasks_banner_hidden(page, timeout=60000)
+    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}", FILE_NAME)
 
     page.locator('a[title="Start a vote on this draft"]').click()
     page.wait_for_load_state()
@@ -122,8 +121,3 @@ def _poll_for_vote_thread_link(page: Page, max_attempts: int = 30) -> None:
             return
         time.sleep(0.5)
         page.reload()
-
-
-def _wait_for_tasks_banner_hidden(page: Page, timeout: int = 30000) -> None:
-    """Wait for all background tasks to be completed."""
-    page.wait_for_selector("#ongoing-tasks-banner", state="hidden", timeout=timeout)

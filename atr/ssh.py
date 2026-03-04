@@ -615,18 +615,20 @@ async def _step_07b_process_validated_rsync_write(
                 raise types.FailedError(f"rsync upload failed with exit status {exit_status} for {for_revision}")
 
         try:
-            new_revision = await wacp.revision.create_revision(
+            result = await wacp.revision.create_revision_with_quarantine(
                 project_name, version_name, asf_uid, description=description, modify=modify
             )
-            github_payload = server._get_github_payload(process)
-            if github_payload is not None:
-                await attestable.github_tp_payload_write(
-                    project_name, version_name, new_revision.number, github_payload
-                )
-            log.info(f"rsync upload successful for revision {new_revision.number}")
-            host = config.get().APP_HOST
-            message = f"\nATR: Created revision {new_revision.number} of {project_name} {version_name}\n"
-            message += f"ATR: https://{host}/compose/{project_name}/{version_name}\n"
+            if isinstance(result, sql.Quarantined):
+                log.info(f"rsync upload quarantined for release {release_name}")
+                message = f"\nATR: Upload received for {project_name} {version_name}. Archive validation in progress.\n"
+            else:
+                github_payload = server._get_github_payload(process)
+                if github_payload is not None:
+                    await attestable.github_tp_payload_write(project_name, version_name, result.number, github_payload)
+                log.info(f"rsync upload successful for revision {result.number}")
+                host = config.get().APP_HOST
+                message = f"\nATR: Created revision {result.number} of {project_name} {version_name}\n"
+                message += f"ATR: https://{host}/compose/{project_name}/{version_name}\n"
             if not process.stderr.is_closing():
                 process.stderr.write(message.encode())
                 await process.stderr.drain()

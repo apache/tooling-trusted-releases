@@ -79,22 +79,27 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives_to_cache(args.archives, quarantine_dir)
+        await _extract_archives_to_cache(args.archives, quarantine_dir, project_name, version_name)
     except Exception:
         await _mark_failed(quarantined, file_entries, "Archive extraction to cache failed")
         await aioshutil.rmtree(quarantine_dir)
         return None
 
-    await _promote(quarantined, project_name, version_name, release, str(quarantine_dir))
+    await _promote(quarantined, project_name, version_name, release.name, str(quarantine_dir))
     return None
 
 
-async def _extract_archives_to_cache(archives: list[QuarantineArchiveEntry], quarantine_dir: pathlib.Path) -> None:
+async def _extract_archives_to_cache(
+    archives: list[QuarantineArchiveEntry],
+    quarantine_dir: pathlib.Path,
+    project_name: str,
+    version_name: str,
+) -> None:
     # Cannot import as archives because that shadows the parameter name
     import atr.archives
 
     conf = config.get()
-    cache_base = pathlib.Path(conf.STATE_DIR) / "cache" / "archives"
+    cache_base = paths.get_cache_archives_dir() / project_name / version_name
     await aiofiles.os.makedirs(cache_base, exist_ok=True)
 
     for archive in archives:
@@ -140,11 +145,15 @@ async def _promote(
     quarantined: sql.Quarantined,
     project_name: str,
     version_name: str,
-    release: sql.Release,
+    release_name: str,
     quarantine_dir: str,
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
-    release_name = release.name
+
+    async with db.session() as data:
+        release = await data.release(name=release_name, _release_policy=True, _project_release_policy=True).demand(
+            RuntimeError(f"Release {release_name} not found during quarantine promotion")
+        )
 
     path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(quarantine_dir_path)
 

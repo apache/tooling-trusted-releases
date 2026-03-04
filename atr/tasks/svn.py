@@ -122,10 +122,13 @@ async def _import_files_core(args: SvnImport) -> str:
             await aiofiles.os.rmdir(temp_export_path)
             log.info(f"Removed temporary export directory: {temp_export_path}")
 
-        new_revision = await wacp.revision.create_revision(
+        result = await wacp.revision.create_revision_with_quarantine(
             args.project_name, args.version_name, args.asf_uid, description=description, modify=modify
         )
-        return f"Successfully imported files from SVN into revision {new_revision.number}"
+        if isinstance(result, sql.Quarantined):
+            log.info(f"SVN import quarantined for {args.project_name}-{args.version_name}")
+            return f"SVN import received for {args.project_name}-{args.version_name}. Archive validation in progress."
+        return f"Successfully imported files from SVN into revision {result.number}"
 
 
 async def _import_files_core_run_svn_export(svn_command: list[str], temp_export_path: pathlib.Path) -> None:

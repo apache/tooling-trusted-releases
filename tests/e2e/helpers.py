@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import time
 from typing import Any, Final
 
 from playwright.sync_api import APIRequestContext, Page
@@ -48,3 +49,16 @@ def log_in(page: Page) -> None:
 def visit(page: Page, path: str) -> None:
     page.goto(f"{_ATR_BASE_URL}{path}")
     page.wait_for_load_state()
+
+
+def wait_for_upload_and_tasks(page: Page, compose_url: str, file_name: str, timeout: float = 60) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        visit(page, compose_url)
+        if page.get_by_role("cell", name=file_name, exact=True).count() > 0:
+            break
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"{file_name} did not appear on {compose_url} within {timeout}s")
+        time.sleep(1)
+    remaining_ms = max(int((deadline - time.monotonic()) * 1000), 1000)
+    page.wait_for_selector("#ongoing-tasks-banner", state="hidden", timeout=remaining_ms)

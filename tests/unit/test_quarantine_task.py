@@ -73,11 +73,23 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
     mock_safe_ctx.__aenter__ = mock.AsyncMock(return_value=mock.AsyncMock())
     mock_safe_ctx.__aexit__ = mock.AsyncMock(return_value=False)
 
+    mock_release_query = mock.MagicMock()
+    mock_release_query.demand = mock.AsyncMock(return_value=release)
+
+    mock_release_data = mock.AsyncMock()
+    mock_release_data.release = mock.MagicMock(return_value=mock_release_query)
+
+    mock_release_ctx = mock.AsyncMock()
+    mock_release_ctx.__aenter__ = mock.AsyncMock(return_value=mock_release_data)
+    mock_release_ctx.__aexit__ = mock.AsyncMock(return_value=False)
+
     mock_delete_data = mock.AsyncMock()
     mock_delete_data.delete = mock.AsyncMock()
     mock_delete_ctx = mock.AsyncMock()
     mock_delete_ctx.__aenter__ = mock.AsyncMock(return_value=mock_delete_data)
     mock_delete_ctx.__aexit__ = mock.AsyncMock(return_value=False)
+
+    session_calls = iter([mock_release_ctx, mock_delete_ctx])
 
     with (
         mock.patch.object(
@@ -89,10 +101,13 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
         mock.patch.object(quarantine.util, "paths_to_inodes", return_value={"file.txt": 12345}),
         mock.patch.object(quarantine.revision, "SafeSession", return_value=mock_safe_ctx),
         mock.patch.object(quarantine.revision, "finalise_revision", new_callable=mock.AsyncMock) as mock_finalise,
-        mock.patch.object(quarantine.db, "session", return_value=mock_delete_ctx),
+        mock.patch.object(quarantine.db, "session", side_effect=session_calls),
     ):
-        await quarantine._promote(quarantined_row, "proj", "1.0", release, quarantine_dir)
+        await quarantine._promote(quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir)
 
+    mock_release_data.release.assert_called_once_with(
+        name="proj-1.0", _release_policy=True, _project_release_policy=True
+    )
     mock_finalise.assert_awaited_once()
     call_kwargs = mock_finalise.call_args.kwargs
     assert call_kwargs["was_quarantined"] is True
@@ -268,7 +283,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
         )
 
     assert result is None
-    mock_promote.assert_awaited_once_with(row, "proj", "1.0", row.release, str(quarantine_dir))
+    mock_promote.assert_awaited_once_with(row, "proj", "1.0", row.release.name, str(quarantine_dir))
     mock_mark.assert_not_awaited()
 
 

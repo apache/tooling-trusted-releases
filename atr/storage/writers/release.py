@@ -107,6 +107,8 @@ class CommitteeParticipant(FoundationCommitter):
         release_dirs = [
             paths.release_directory_base(release),
             paths.get_attestable_dir() / project_name / version,
+            paths.get_cache_archives_dir() / project_name / version,
+            paths.get_quarantined_dir() / project_name / version,
         ]
 
         # Delete from the database using bulk SQL DELETE for efficiency
@@ -451,7 +453,7 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return release, project
 
-    async def upload_file(self, args: api.ReleaseUploadArgs) -> sql.Revision:
+    async def upload_file(self, args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
         file_bytes = base64.b64decode(args.content, validate=True)
         validated_path = form.to_relpath(args.relpath)
         if validated_path is None:
@@ -466,14 +468,16 @@ class CommitteeParticipant(FoundationCommitter):
             async with aiofiles.open(target_path, "wb") as f:
                 await f.write(file_bytes)
 
-        revision = await self.__write_as.revision.create_revision(
+        result = await self.__write_as.revision.create_revision_with_quarantine(
             args.project, args.version, self.__asf_uid, description=description, modify=modify
         )
+        if isinstance(result, sql.Quarantined):
+            return result
         async with db.session() as data:
             release_name = sql.release_name(args.project, args.version)
             return await data.revision(
                 release_name=release_name,
-                number=revision.number,
+                number=result.number,
             ).demand(storage.AccessError("Revision not found"))
 
     async def upload_files(
@@ -482,7 +486,7 @@ class CommitteeParticipant(FoundationCommitter):
         version_name: str,
         file_name: pathlib.Path | None,
         files: Sequence[datastructures.FileStorage],
-    ) -> tuple[str | None, int]:
+    ) -> tuple[str | None, int, bool]:
         """Process and save the uploaded files into a new draft revision."""
         number_of_files = len(files)
         description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
@@ -510,12 +514,12 @@ class CommitteeParticipant(FoundationCommitter):
                 await self.__save_file(file, target_path)
 
         try:
-            await self.__write_as.revision.create_revision(
+            result = await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, version_name, self.__asf_uid, description=description, modify=modify
             )
         except types.FailedError as e:
-            return str(e), len(files)
-        return None, len(files)
+            return str(e), len(files), False
+        return None, len(files), isinstance(result, sql.Quarantined)
 
     async def __current_paths(self, interim_path: pathlib.Path) -> list[pathlib.Path]:
         all_current_paths_interim: list[pathlib.Path] = []
