@@ -23,6 +23,7 @@ import pathlib
 
 import aiofiles.os
 import aioshutil
+import exarch
 
 import atr.attestable as attestable
 import atr.config as config
@@ -35,6 +36,7 @@ import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage.writers.revision as revision
+import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -95,12 +97,25 @@ async def _extract_archives_to_cache(
     project_name: str,
     version_name: str,
 ) -> None:
-    # Cannot import as archives because that shadows the parameter name
-    import atr.archives
-
     conf = config.get()
     cache_base = paths.get_cache_archives_dir() / project_name / version_name
     await aiofiles.os.makedirs(cache_base, exist_ok=True)
+
+    extraction_config = (
+        exarch.SecurityConfig()
+        .max_file_size(conf.MAX_EXTRACT_SIZE)
+        .max_total_size(conf.MAX_EXTRACT_SIZE)
+        .max_file_count(tarzip.MAX_ARCHIVE_MEMBERS)
+        .max_compression_ratio(100.0)
+        .max_path_depth(32)
+        # Escaping the root is still disallowed by exarch even when symlinks are allowed
+        .allow_symlinks(True)
+        .allow_hardlinks(False)
+        .allow_absolute_paths(False)
+        # Too many archives use this for us to disallow it
+        # We could set to 0o444 after extraction anyway
+        .allow_world_writable(True)
+    )
 
     for archive in archives:
         cache_dir = cache_base / hashes.filesystem_cache_archives_key(archive.content_hash)
@@ -111,11 +126,10 @@ async def _extract_archives_to_cache(
         await aiofiles.os.makedirs(extract_dir, exist_ok=True)
         try:
             await asyncio.to_thread(
-                atr.archives.extract,
+                exarch.extract_archive,
                 archive_path,
                 extract_dir,
-                max_size=conf.MAX_EXTRACT_SIZE,
-                chunk_size=conf.EXTRACT_CHUNK_SIZE,
+                extraction_config,
             )
         except Exception:
             log.exception(f"Failed to extract archive {archive.rel_path} to cache")
