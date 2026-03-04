@@ -347,6 +347,7 @@ class CommitteeParticipant(FoundationCommitter):
             .values(
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 vote_started=datetime.datetime.now(datetime.UTC),
+                vote_resolved=None,
                 vote_manual=vote_manual,
             )
         )

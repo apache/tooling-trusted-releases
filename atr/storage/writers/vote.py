@@ -18,6 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+import datetime
 from typing import Literal
 
 import atr.construct as construct
@@ -289,6 +290,7 @@ class CommitteeMember(CommitteeParticipant):
 
         if vote_result == "passed":
             release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+            release.vote_resolved = datetime.datetime.now(datetime.UTC)
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = "Vote marked as passed"
@@ -299,6 +301,8 @@ class CommitteeMember(CommitteeParticipant):
             )
         else:
             release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+            # The vote_resolved property refers to when the vote succeeded only
+            release.vote_resolved = None
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = "Vote marked as failed"
@@ -376,6 +380,7 @@ class CommitteeMember(CommitteeParticipant):
             success_message = "Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
         elif vote_result == "passed":
             release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+            release.vote_resolved = datetime.datetime.now(datetime.UTC)
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = "Vote marked as passed"
@@ -391,6 +396,8 @@ class CommitteeMember(CommitteeParticipant):
                 extra_destination = (round_one_email_address, round_one_message_id)
         else:
             release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+            # The vote_resolved property refers to when the vote succeeded only
+            release.vote_resolved = None
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = "Vote marked as failed"
