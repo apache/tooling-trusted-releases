@@ -620,3 +620,26 @@ td.atr-shrink {
 .atr-text-blocker {
     color: rgb(111 0 193) !important;
 }
+
+.atr-classification-badge {
+    border-width: 1.5px;
+    border-style: solid;
+    padding: 0 5px;
+    border-radius: 6px;
+    font-weight: 500;
+    min-width: 56px;
+    display: inline-block;
+    text-align: center;
+}
+
+.atr-text-blocker .atr-classification-badge {
+    background-color: #f8f3fd;
+}
+
+.text-success .atr-classification-badge {
+    background-color: #f3f9f6;
+}
+
+.text-danger .atr-classification-badge {
+    background-color: #fdf6f6;
+}

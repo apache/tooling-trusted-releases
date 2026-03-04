@@ -33,18 +33,18 @@
         {% endif %}
 
         <tr class="{{ row_bg_class }}">
-          <td class="text-center px-0 py-2 atr-sans {{ icon_class }}">
+          <td class="text-center px-0 py-0 atr-sans {{ icon_class }}">
             {% set file_type = info.file_types[path].value if (info and (path in info.file_types)) else None %}
 
             {% if file_type == "disallowed" %}
-              <span title="Disallowed file">Ⓧ</span>
+              <span class="atr-classification-badge" title="Disallowed file">bad</span>
             {% elif file_type == "source" %}
-              <span title="Source artifact">Ⓢ</span>
+              <span class="atr-classification-badge" title="Source artifact">src</span>
             {% elif file_type == "metadata" %}
-              <span title="Metadata file">Ⓜ</span>
+              <span class="atr-classification-badge" title="Metadata file">meta</span>
             {# elif file_type == "binary" #}
             {% else %}
-              <span title="Binary artifact">Ⓑ</span>
+              <span class="atr-classification-badge" title="Binary artifact">bin</span>
             {% endif %}
           </td>
           <td class="py-2">
