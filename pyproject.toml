@@ -29,6 +29,7 @@ dependencies = [
   "dulwich>=1.0.0",
   "dunamai>=1.23.0",
   "email-validator~=2.2.0",
+  "exarch>=0.2.5",
   "gitignore-parser (>=0.1.12,<0.2.0)",
   "greenlet>=3.1.1,<4.0.0",
   "htpy (>=25.7.0,<26.0.0)",

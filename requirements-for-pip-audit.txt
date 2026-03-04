@@ -108,6 +108,8 @@ editorconfig==0.17.1
     #   jsbeautifier
 email-validator==2.2.0
     # via tooling-trusted-releases
+exarch==0.2.6
+    # via tooling-trusted-releases
 ezt==1.1
     # via
     #   asfpy

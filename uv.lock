@@ -3,7 +3,7 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-03-04T16:01:16Z"
+exclude-newer = "2026-03-04T16:48:15Z"
 
 [[package]]
 name = "aiofiles"
@@ -581,6 +581,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/48/ce/13508a1ec3f8bb981ae4ca79ea40384becc868bfae97fd1c942bb3a001b1/email_validator-2.2.0.tar.gz", hash = "sha256:cb690f344c617a714f22e66ae771445a1ceb46821152df8e165c5f9a364582b7", size = 48967, upload-time = "2024-06-20T11:30:30.034Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/ee/bf0adb559ad3c786f12bcbc9296b3f5675f529199bef03e2df281fa1fadb/email_validator-2.2.0-py3-none-any.whl", hash = "sha256:561977c2d73ce3611850a06fa56b414621e0c8faa9d66f2611407d87465da631", size = 33521, upload-time = "2024-06-20T11:30:28.248Z" },
+]
+
+[[package]]
+name = "exarch"
+version = "0.2.6"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/a1/eaf0f8a8eba9bf1f002589d161d3bf266addb2bd73817d7e00c29fe2b47f/exarch-0.2.6-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:36a71e64879d0e34f3df29edfbe2e79eef5e24d741d6b0879f88c4e5e25b1fe2", size = 1232100, upload-time = "2026-03-04T16:09:34.332Z" },
+    { url = "https://files.pythonhosted.org/packages/83/24/5fee258374e8904dd30d5585b0564c05b42f37630496cb0c7ec794c31912/exarch-0.2.6-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:9d642eea6f2b2c13ecc2f1ec1dfd82f130bd6f40ef55fe004a3ca4bce3ce169a", size = 1082971, upload-time = "2026-03-04T16:09:35.721Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/0a/dbcc6408da957f52f8543ec7849b356da60e2cb30acc88f3ae33eb1fa61d/exarch-0.2.6-cp39-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:bb02e4772f1b866487f7acdc8a8a7d6e2b8a36594183f30eb919d29c44265419", size = 1294768, upload-time = "2026-03-04T16:09:36.972Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/ee/26b200b8c31f1095d294dad88edd3276aa19deb69c2b4af0a039dd088d57/exarch-0.2.6-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:28aa6466bd8f8bc350408f5783e1d0fec3d30059c576a7069d8405c861b110ab", size = 1387512, upload-time = "2026-03-04T16:09:38.24Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/e0/69fdd824ade71fb3938908d70172e55377d787ceb6bfd7a57444c6b79bc7/exarch-0.2.6-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:7a1ee985c62f6b81bb788f4aa812da6b0c67962269c69e2bc97b2d72010c2455", size = 1464286, upload-time = "2026-03-04T16:09:40.004Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/39/337c53ee4929ad1f24435dab9c20bdef18924d360619758e30c9f0b49d82/exarch-0.2.6-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b0aed7bd29d192293521966d29228d7882a3e828659d659b89a05524699fecb9", size = 1592097, upload-time = "2026-03-04T16:09:41.548Z" },
+    { url = "https://files.pythonhosted.org/packages/64/e2/16136c3cd9befb31917c515cbf08bcbc1b5bc215404f7e9154df5fc162ed/exarch-0.2.6-cp39-abi3-win_amd64.whl", hash = "sha256:5d925809139dd51e8db390c15d7daaa1185626816ee2ebd1029cd6c33acaa39b", size = 1060141, upload-time = "2026-03-04T16:09:43.061Z" },
 ]
 
 [[package]]
@@ -1924,6 +1938,7 @@ dependencies = [
     { name = "dulwich" },
     { name = "dunamai" },
     { name = "email-validator" },
+    { name = "exarch" },
     { name = "gitignore-parser" },
     { name = "greenlet" },
     { name = "htpy" },
@@ -1989,6 +2004,7 @@ requires-dist = [
     { name = "dulwich", specifier = ">=1.0.0" },
     { name = "dunamai", specifier = ">=1.23.0" },
     { name = "email-validator", specifier = "~=2.2.0" },
+    { name = "exarch", specifier = ">=0.2.5" },
     { name = "gitignore-parser", specifier = ">=0.1.12,<0.2.0" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
     { name = "htpy", specifier = ">=25.7.0,<26.0.0" },
