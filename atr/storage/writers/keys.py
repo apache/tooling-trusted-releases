@@ -655,7 +655,7 @@ class FoundationAdmin(CommitteeMember):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsFoundationAdmin,
+        write_as: storage.WriteAsCommitteeAdmin,
         data: db.Session,
         committee_name: str,
     ):

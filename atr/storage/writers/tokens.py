@@ -179,15 +179,14 @@ class CommitteeMember(CommitteeParticipant):
         self.__committee_name = committee_name
 
 
-class FoundationAdmin(CommitteeMember):
+class FoundationAdmin(FoundationCommitter):
     def __init__(
         self,
         write: storage.Write,
         write_as: storage.WriteAsFoundationAdmin,
         data: db.Session,
-        committee_name: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data)
         self.__write = write
         self.__write_as = write_as
         self.__data = data

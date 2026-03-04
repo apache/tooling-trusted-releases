@@ -220,13 +220,11 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
         return self.__committee_name
 
 
-class WriteAsFoundationAdmin(WriteAsCommitteeMember):
-    def __init__(self, write: Write, data: db.Session, committee_name: str):
+class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
+    def __init__(self, write: Write, data: db.Session):
         self.__asf_uid = write.authorisation.asf_uid
-        self.__committee_name = committee_name
-        self.keys = writers.keys.FoundationAdmin(write, self, data, committee_name)
-        self.release = writers.release.FoundationAdmin(write, self, data, committee_name)
-        self.tokens = writers.tokens.FoundationAdmin(write, self, data, committee_name)
+        self.release = writers.release.FoundationAdmin(write, self, data)
+        self.tokens = writers.tokens.FoundationAdmin(write, self, data)
 
     @property
     def asf_uid(self) -> str:
@@ -234,9 +232,11 @@ class WriteAsFoundationAdmin(WriteAsCommitteeMember):
             raise AccessError("Not authorized")
         return self.__asf_uid
 
-    @property
-    def committee_name(self) -> str:
-        return self.__committee_name
+
+class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
+    def __init__(self, write: Write, data: db.Session, committee_name: str):
+        super().__init__(write, data, committee_name)
+        self.keys = writers.keys.FoundationAdmin(write, self, data, committee_name)
 
 
 # TODO: Could name this WriteDispatcher
@@ -250,6 +250,20 @@ class Write:
     @property
     def authorisation(self) -> principal.Authorisation:
         return self.__authorisation
+
+    def as_committee_admin(self, committee_name: str) -> WriteAsCommitteeAdmin:
+        return self.as_committee_admin_outcome(committee_name).result_or_raise()
+
+    def as_committee_admin_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeAdmin]:
+        if self.__authorisation.asf_uid is None:
+            return outcome.Error(AccessError("Not authorized"))
+        if not user.is_admin(self.__authorisation.asf_uid):
+            return outcome.Error(AccessError("Not an admin"))
+        try:
+            waca = WriteAsCommitteeAdmin(self, self.__data, committee_name)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(waca)
 
     def as_committee_member(self, committee_name: str) -> WriteAsCommitteeMember:
         return self.as_committee_member_outcome(committee_name).result_or_raise()
@@ -291,16 +305,16 @@ class Write:
             return outcome.Error(e)
         return outcome.Result(wafm)
 
-    def as_foundation_admin(self, committee_name: str) -> WriteAsFoundationAdmin:
-        return self.as_foundation_admin_outcome(committee_name).result_or_raise()
+    def as_foundation_admin(self) -> WriteAsFoundationAdmin:
+        return self.as_foundation_admin_outcome().result_or_raise()
 
-    def as_foundation_admin_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsFoundationAdmin]:
+    def as_foundation_admin_outcome(self) -> outcome.Outcome[WriteAsFoundationAdmin]:
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
         if not user.is_admin(self.__authorisation.asf_uid):
             return outcome.Error(AccessError("Not an admin"))
         try:
-            wafa = WriteAsFoundationAdmin(self, self.__data, committee_name)
+            wafa = WriteAsFoundationAdmin(self, self.__data)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wafa)
@@ -317,6 +331,26 @@ class Write:
 
     # async def as_key_owner(self) -> types.Outcome[WriteAsKeyOwner]:
     #     ...
+
+    async def as_project_committee_admin(self, project_name: str) -> WriteAsCommitteeAdmin:
+        write_as_outcome = await self.as_project_committee_admin_outcome(project_name)
+        return write_as_outcome.result_or_raise()
+
+    async def as_project_committee_admin_outcome(self, project_name: str) -> outcome.Outcome[WriteAsCommitteeAdmin]:
+        project = await self.__data.project(project_name, _committee=True).demand(
+            AccessError(f"Project not found: {project_name}")
+        )
+        if project.committee is None:
+            return outcome.Error(AccessError("No committee found for project - Invalid state"))
+        if self.__authorisation.asf_uid is None:
+            return outcome.Error(AccessError("Not authorized"))
+        if not user.is_admin(self.__authorisation.asf_uid):
+            return outcome.Error(AccessError("Not an admin"))
+        try:
+            waca = WriteAsCommitteeAdmin(self, self.__data, project.committee.name)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(waca)
 
     async def as_project_committee_member(self, project_name: str) -> WriteAsCommitteeMember:
         write_as_outcome = await self.as_project_committee_member_outcome(project_name)

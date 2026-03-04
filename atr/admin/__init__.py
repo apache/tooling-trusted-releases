@@ -742,7 +742,7 @@ async def revoke_user_tokens_post(
     target_uid = revoke_form.asf_uid
 
     async with storage.write(session) as write:
-        wafa = write.as_foundation_admin(session.asf_uid)
+        wafa = write.as_foundation_admin()
         count = await wafa.tokens.revoke_all_user_tokens(target_uid)
 
     if count > 0:
@@ -1014,8 +1014,8 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
                 if release.committee is None:
                     raise RuntimeError(f"Release {release_name} has no committee")
             async with storage.write(session) as write:
-                wafa = write.as_foundation_admin(release.committee.name)
-                error = await wafa.release.delete(release.project.name, release.version)
+                waca = write.as_committee_admin(release.committee.name)
+                error = await waca.release.delete(release.project.name, release.version)
                 # Ensure that deletion errors are reported to the user
                 if error is not None:
                     raise RuntimeError(error)

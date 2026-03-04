@@ -912,8 +912,8 @@ async def release_delete(data: models.api.ReleaseDeleteArgs) -> DictResponse:
         raise exceptions.Forbidden("You do not have permission to delete a release")
 
     async with storage.write(asf_uid) as write:
-        wafa = write.as_foundation_admin(data.project)
-        error = await wafa.release.delete(data.project, data.version)
+        waca = await write.as_project_committee_admin(data.project)
+        error = await waca.release.delete(data.project, data.version)
         # Ensure that deletion errors are reported to the user
         if error is not None:
             raise RuntimeError(error)

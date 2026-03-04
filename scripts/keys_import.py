@@ -179,9 +179,9 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
         # Parse the KEYS file and add it to the database
         # We use a separate storage.write() context for each committee to avoid transaction conflicts
         async with storage.write(asf_uid) as write:
-            wafa = write.as_foundation_admin(committee_name)
+            waca = write.as_committee_admin(committee_name)
             keys_file_text = content.decode("utf-8", errors="replace")
-            outcomes = await wafa.keys.ensure_associated(keys_file_text)
+            outcomes = await waca.keys.ensure_associated(keys_file_text)
             log_outcome_errors(outcomes, committee_name)
             yes = outcomes.result_count
             no = outcomes.error_count

@@ -779,11 +779,9 @@ class CommitteeMember(CommitteeParticipant):
         self.__committee_name = committee_name
 
 
-class FoundationAdmin(CommitteeMember):
-    def __init__(
-        self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session, committee_name: str
-    ) -> None:
-        super().__init__(write, write_as, data, committee_name)
+class FoundationAdmin(FoundationCommitter):
+    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session) -> None:
+        super().__init__(write, write_as, data)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -791,4 +789,3 @@ class FoundationAdmin(CommitteeMember):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
