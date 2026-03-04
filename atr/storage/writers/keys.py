@@ -490,7 +490,7 @@ class CommitteeParticipant(FoundationCommitter):
                 path_in_new_revision = path / "KEYS"
                 await aiofiles.os.remove(path_in_new_revision)
 
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, version_name, self.__asf_uid, description=description, modify=modify
             )
         return outcomes

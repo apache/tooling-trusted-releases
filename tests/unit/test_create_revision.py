@@ -128,6 +128,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         ),
         mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
         mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),
         mock.patch.object(
             revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=latest_revision
@@ -146,7 +147,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00006"),
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
-        await participant.create_revision("proj", "1.0", "test", clone_from="00002")
+        await participant.create_revision_with_quarantine("proj", "1.0", "test", clone_from="00002")
 
     if merge_mock.called:
         raise AssertionError(
@@ -213,6 +214,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         ),
         mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
         mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),
         mock.patch.object(
             revision.interaction,
@@ -232,7 +234,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00007"),
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
-        created_revision = await participant.create_revision("proj", "1.0", "test")
+        created_revision = await participant.create_revision_with_quarantine("proj", "1.0", "test")
 
     assert isinstance(created_revision, FakeRevision)
     assert merge_mock.await_count == 1
@@ -262,7 +264,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
-            await participant.create_revision("proj", "1.0", "test", modify=modify)
+            await participant.create_revision_with_quarantine("proj", "1.0", "test", modify=modify)
 
     assert isinstance(received_args["path"], pathlib.Path)
     assert received_args["old_rev"] is None

@@ -111,7 +111,7 @@ async def test_merge(
                     async with aiofiles.open(path_prior / "from_prior.txt", "w") as f:
                         await f.write("prior content")
 
-                await wacp_p.revision.create_revision(
+                await wacp_p.revision.create_revision_with_quarantine(
                     str(project_name),
                     str(version_name),
                     session.uid,
@@ -119,7 +119,7 @@ async def test_merge(
                     modify=modify_prior,
                 )
 
-        await wacp_n.revision.create_revision(
+        await wacp_n.revision.create_revision_with_quarantine(
             str(project_name),
             str(version_name),
             session.uid,

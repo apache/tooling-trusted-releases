@@ -111,7 +111,7 @@ async def augment(args: FileArgs) -> results.Results | None:
                 async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
                     await f.write(merged.dumps())
 
-            await wacp.revision.create_revision(
+            await wacp.revision.create_revision_with_quarantine(
                 args.project_name, args.version_name, args.asf_uid or "unknown", description=description, modify=modify
             )
 
@@ -180,7 +180,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
             async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
                 await f.write(merged.dumps())
 
-        await wacp.revision.create_revision(
+        await wacp.revision.create_revision_with_quarantine(
             args.project_name, args.version_name, args.asf_uid or "unknown", description=description, modify=modify
         )
 

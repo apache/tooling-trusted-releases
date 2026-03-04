@@ -294,7 +294,7 @@ class CommitteeMember(CommitteeParticipant):
             success_message = "Vote marked as passed"
 
             description = "Create a preview revision from the last candidate draft"
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, release.version, self.__asf_uid, description=description
             )
         else:
@@ -381,7 +381,7 @@ class CommitteeMember(CommitteeParticipant):
             success_message = "Vote marked as passed"
 
             description = "Create a preview revision from the last candidate draft"
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, release.version, self.__asf_uid, description=description
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):

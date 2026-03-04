@@ -70,12 +70,16 @@ async def _set_revision(
     description = f"Copy of revision {selected_revision_number} through web interface"
     async with storage.write(session) as write:
         wacp = await write.as_project_committee_participant(project_name)
-        new_revision = await wacp.revision.create_revision(
+        result = await wacp.revision.create_revision_with_quarantine(
             project_name, version_name, session.uid, description=description, clone_from=selected_revision_number
         )
+        if isinstance(result, sql.Quarantined):
+            success = f"Revision copy from {selected_revision_number} received. Archive validation in progress."
+        else:
+            success = f"Copied revision {selected_revision_number} to new latest revision, {result.number}"
         return await session.redirect(
             get.revisions.selected,
-            success=f"Copied revision {selected_revision_number} to new latest revision, {new_revision.number}",
+            success=success,
             project_name=project_name,
             version_name=version_name,
         )

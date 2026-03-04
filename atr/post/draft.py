@@ -58,7 +58,7 @@ async def cache_reset(
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
         wacp = await write.as_project_committee_participant(str(project_name))
-        await wacp.revision.create_revision(
+        result = await wacp.revision.create_revision_with_quarantine(
             str(project_name),
             str(version_name),
             session.uid,
@@ -66,11 +66,14 @@ async def cache_reset(
             reset_to_global_cache=True,
         )
 
+    success = "Release set back to global caching"
+    if isinstance(result, sql.Quarantined):
+        success += ". Archive validation in progress."
     return await session.redirect(
         get.compose.selected,
         project_name=str(project_name),
         version_name=str(version_name),
-        success="Release set back to global caching",
+        success=success,
     )
 
 
@@ -203,7 +206,7 @@ async def recheck(
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
         wacp = await write.as_project_committee_participant(str(project_name))
-        await wacp.revision.create_revision(
+        result = await wacp.revision.create_revision_with_quarantine(
             str(project_name),
             str(version_name),
             session.uid,
@@ -211,11 +214,14 @@ async def recheck(
             set_local_cache=True,
         )
 
+    success = "All checks restarted with release-local cache"
+    if isinstance(result, sql.Quarantined):
+        success += ". Archive validation in progress."
     return await session.redirect(
         get.compose.selected,
         project_name=str(project_name),
         version_name=str(version_name),
-        success="All checks restarted with release-local cache",
+        success=success,
     )
 
 
@@ -285,7 +291,7 @@ async def sbomgen(
                 if not success:
                     raise web.FlashError("Internal error: SBOM generation timed out")
 
-            await wacp.revision.create_revision(
+            result = await wacp.revision.create_revision_with_quarantine(
                 str(project_name), str(version_name), session.uid, description=description, modify=modify
             )
 
@@ -296,9 +302,12 @@ async def sbomgen(
             get.compose.selected, project_name=str(project_name), version_name=str(version_name)
         )
 
+    success = f"SBOM generated for {rel_path.name}"
+    if isinstance(result, sql.Quarantined):
+        success += ". Archive validation in progress."
     return await session.redirect(
         get.compose.selected,
-        success=f"SBOM generated for {rel_path.name}",
+        success=success,
         project_name=str(project_name),
         version_name=str(version_name),
     )

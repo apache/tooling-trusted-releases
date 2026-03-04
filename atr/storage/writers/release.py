@@ -172,7 +172,7 @@ class CommitteeParticipant(FoundationCommitter):
             await aiofiles.os.rmdir(path_to_remove)
 
         try:
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, version_name, self.__asf_uid, description=description, modify=modify
             )
         except types.FailedError as e:
@@ -212,7 +212,7 @@ class CommitteeParticipant(FoundationCommitter):
             # Delete the file
             await aiofiles.os.remove(path_in_new_revision)
 
-        await self.__write_as.revision.create_revision(
+        await self.__write_as.revision.create_revision_with_quarantine(
             project_name, version, self.__asf_uid, description=description, modify=modify
         )
         return metadata_files_deleted
@@ -251,7 +251,7 @@ class CommitteeParticipant(FoundationCommitter):
             async with aiofiles.open(hash_path_in_new_revision, "w") as f:
                 await f.write(f"{hash_value}  {rel_path.name}\n")
 
-        await self.__write_as.revision.create_revision(
+        await self.__write_as.revision.create_revision_with_quarantine(
             project_name, version_name, self.__asf_uid, description=description, modify=modify
         )
 
@@ -297,7 +297,7 @@ class CommitteeParticipant(FoundationCommitter):
             )
 
         try:
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, version_name, self.__asf_uid, description=description, modify=modify
             )
         except types.FailedError as e:
@@ -377,7 +377,7 @@ class CommitteeParticipant(FoundationCommitter):
             renamed_count = await self.__remove_rc_tags_revision(path, error_messages)
 
         try:
-            await self.__write_as.revision.create_revision(
+            await self.__write_as.revision.create_revision_with_quarantine(
                 project_name, version_name, self.__asf_uid, description=description, modify=modify
             )
         except types.FailedError as e:
@@ -444,7 +444,9 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.refresh(release)
 
         description = "Creation of empty release candidate draft through web interface"
-        await self.__write_as.revision.create_revision(project_name, version, self.__asf_uid, description=description)
+        await self.__write_as.revision.create_revision_with_quarantine(
+            project_name, version, self.__asf_uid, description=description
+        )
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_name=project_name,
