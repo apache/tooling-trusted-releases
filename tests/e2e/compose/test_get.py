@@ -28,7 +28,7 @@ def test_file_type_badge_binary_for_artifact(page_compose: Page) -> None:
     # All non-metadata files are binary by default
     badge = row.locator('span[title="Binary artifact"]')
     expect(badge).to_be_visible()
-    expect(badge).to_have_text("Ⓑ")
+    expect(badge).to_have_text("bin")
 
 
 def test_file_type_badge_metadata_for_asc(page_compose: Page) -> None:
@@ -36,7 +36,7 @@ def test_file_type_badge_metadata_for_asc(page_compose: Page) -> None:
     row = page_compose.locator("tr").filter(has=page_compose.locator("code", has_text=re.compile(r"\.tar\.gz\.asc$")))
     badge = row.locator('span[title="Metadata file"]')
     expect(badge).to_be_visible()
-    expect(badge).to_have_text("Ⓜ")
+    expect(badge).to_have_text("meta")
 
 
 def test_file_type_badge_metadata_for_sha512(page_compose: Page) -> None:
@@ -46,7 +46,7 @@ def test_file_type_badge_metadata_for_sha512(page_compose: Page) -> None:
     )
     badge = row.locator('span[title="Metadata file"]')
     expect(badge).to_be_visible()
-    expect(badge).to_have_text("Ⓜ")
+    expect(badge).to_have_text("meta")
 
 
 def test_ongoing_tasks_banner_appears_when_tasks_restart(page_compose: Page) -> None:
