@@ -199,7 +199,7 @@ async def ssh_add(
     try:
         async with storage.write(session) as write:
             wafc = write.as_foundation_committer()
-            fingerprint = await wafc.ssh.add_key(add_ssh_key_form.key, session.uid)
+            fingerprint = await wafc.ssh.add_key(add_ssh_key_form.key)
 
         await quart.flash(f"SSH key added successfully: {fingerprint}", "success")
     except util.SshFingerprintError as e:

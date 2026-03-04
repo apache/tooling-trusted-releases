@@ -61,12 +61,12 @@ class FoundationCommitter(GeneralPublic):
         self.__asf_uid = asf_uid
 
     async def add_token(
-        self, uid: str, token_hash: str, created: datetime.datetime, expires: datetime.datetime, label: str | None
+        self, token_hash: str, created: datetime.datetime, expires: datetime.datetime, label: str | None
     ) -> sql.PersonalAccessToken:
         if not label:
             raise ValueError("Label is required")
         pat = sql.PersonalAccessToken(
-            asfuid=uid,
+            asfuid=self.__asf_uid,
             token_hash=token_hash,
             created=created,
             expires=expires,
@@ -76,7 +76,7 @@ class FoundationCommitter(GeneralPublic):
         await self.__data.commit()
         message = mail.Message(
             email_sender=NOREPLY_EMAIL_ADDRESS,
-            email_recipient=f"{uid}@apache.org",
+            email_recipient=f"{self.__asf_uid}@apache.org",
             subject="New API Token Created",
             body=f"A new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",

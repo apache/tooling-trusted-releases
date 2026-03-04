@@ -51,9 +51,9 @@ class FoundationCommitter(GeneralPublic):
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
-    async def add_key(self, key: str, asf_uid: str) -> str:
+    async def add_key(self, key: str) -> str:
         fingerprint = util.key_ssh_fingerprint(key)
-        self.__data.add(sql.SSHKey(fingerprint=fingerprint, key=key, asf_uid=asf_uid))
+        self.__data.add(sql.SSHKey(fingerprint=fingerprint, key=key, asf_uid=self.__asf_uid))
         await self.__data.commit()
         return fingerprint
 

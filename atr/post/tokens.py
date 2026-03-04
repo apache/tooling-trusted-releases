@@ -72,7 +72,6 @@ async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenFor
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
         await wafc.tokens.add_token(
-            session.uid,
             token_hash,
             created,
             expires,
