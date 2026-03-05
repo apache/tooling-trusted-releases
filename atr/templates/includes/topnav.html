@@ -95,9 +95,13 @@
                 Committees</a>
             </li>
             <li>
-  {# This path is handled by the frontend proxy server #}
-  {# https://djlint.com/docs/ignoring-code/ #}
-  {# djlint:off J018 #} <a class="dropdown-item" href="/downloads/"><i class="bi bi-download"></i> Downloads</a> {# djlint:on #}
+              {% if is_test_mode %}
+                <a class="dropdown-item" href="/published/"><i class="bi bi-download"></i> Downloads</a>
+              {% else %}
+		{# This path is handled by the frontend proxy server #}
+		{# https://djlint.com/docs/ignoring-code/ #}
+		{# djlint:off J018 #} <a class="dropdown-item" href="/downloads/"><i class="bi bi-download"></i> Downloads</a> {# djlint:on #}
+              {% endif %}
             </li>
           </ul>
         </li>
@@ -230,11 +234,13 @@
                    href="{{ as_url(admin.toggle_view_get) }}"
                    {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
               </li>
-              <li>
-                <a class="dropdown-item"
-                   href="{{ as_url(admin.validate_jwt_get) }}"
-                   {% if request.endpoint == 'atr_admin_validate_jwt_get' %}class="active"{% endif %}><i class="bi bi-check-circle"></i> Validate JWT</a>
-              </li>
+              {% if is_test_mode %}
+                <li>
+                  <a class="dropdown-item"
+                     href="{{ as_url(admin.validate_jwt_get) }}"
+                     {% if request.endpoint == 'atr_admin_validate_jwt_get' %}class="active"{% endif %}><i class="bi bi-check-circle"></i> Validate JWT</a>
+                </li>
+              {% endif %}
               <li>
                 <hr class="dropdown-divider" />
               </li>
