@@ -223,7 +223,7 @@ button, input, option, select, textarea {
 
 
 nav.navbar {
-    padding: 0rem 0rem 0.25rem 2rem;
+    padding: 0 0 0.25rem 2rem;
 }
 
 nav.navbar button, nav.navbar a.navbar-brand {
