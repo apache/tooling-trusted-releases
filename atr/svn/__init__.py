@@ -20,6 +20,7 @@ import datetime
 import pathlib
 from typing import Final, Self
 
+import defusedxml.ElementTree as ElementTree
 import pydantic
 import pydantic_xml
 
@@ -132,7 +133,8 @@ async def get_log(path: pathlib.Path) -> SvnLog:
         raise ValueError("SVN_TOKEN must be set")
     # TODO: Or omit username entirely?
     log_output = await _run_svn_command("log", str(path), "--xml", "--username", _ASF_TOOL, "--password", svn_token)
-    return SvnLog.from_xml(log_output)
+    root = ElementTree.fromstring(log_output)
+    return SvnLog.from_xml_tree(root)
 
 
 async def run_command(cmd: str, *args: str) -> str:

@@ -21,8 +21,9 @@ import pathlib
 import shlex
 import subprocess
 import tempfile
-import xml.etree.ElementTree as ElementTree
 from typing import Final
+
+import defusedxml.ElementTree as ElementTree
 
 import atr.archives as archives
 import atr.config as config
@@ -579,7 +580,6 @@ def _synchronous_extract_parse_output(xml_file: str, base_dir: str) -> checkdata
 def _synchronous_extract_parse_output_core(xml_file: str, base_dir: str) -> checkdata.Rat:
     """Parse the XML output from Apache RAT."""
     tree = ElementTree.parse(xml_file)
-    root = tree.getroot()
 
     total_files = 0
     approved_licenses = 0
@@ -590,7 +590,7 @@ def _synchronous_extract_parse_output_core(xml_file: str, base_dir: str) -> chec
     unknown_license_files: list[checkdata.RatFileEntry] = []
 
     # Process each resource
-    for resource in root.findall(".//resource"):
+    for resource in tree.findall(".//resource"):
         total_files += 1
 
         # Get the name attribute value

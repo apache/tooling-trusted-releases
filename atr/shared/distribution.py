@@ -300,7 +300,8 @@ async def json_from_distribution_platform(
 
 async def json_from_maven_xml(api_url: str, version: str) -> outcome.Outcome[basic.JSON]:
     import datetime
-    import xml.etree.ElementTree as ET
+
+    import defusedxml.ElementTree as ElementTree
 
     try:
         async with util.create_secure_session() as session:
@@ -309,7 +310,7 @@ async def json_from_maven_xml(api_url: str, version: str) -> outcome.Outcome[bas
                 xml_text = await response.text()
 
         # Parse the XML
-        root = ET.fromstring(xml_text)
+        root = ElementTree.fromstring(xml_text)
 
         # Extract versioning info
         group = root.find("groupId")
@@ -357,7 +358,7 @@ async def json_from_maven_xml(api_url: str, version: str) -> outcome.Outcome[bas
         return outcome.Result(result)
     except (aiohttp.ClientError, DistributionError) as e:
         return outcome.Error(e)
-    except ET.ParseError as e:
+    except ElementTree.ParseError as e:
         return outcome.Error(RuntimeError(f"Failed to parse Maven XML: {e}"))
 
 
