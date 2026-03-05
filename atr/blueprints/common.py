@@ -85,7 +85,7 @@ def build_path(
         if hint is None:
             raise TypeError(f"Parameter {param_name!r} in {func.__name__} has no type annotation")
 
-        if hint is web.Public or hint is web.Committer:
+        if (hint is web.Public) or (hint is web.Committer):
             if ix != 0:
                 raise TypeError(f"Parameter {param_name!r} in {func.__name__} must be first")
             public = hint is web.Public
@@ -158,7 +158,7 @@ def _is_form_type(hint: Any) -> bool:
         hint = hint.__value__
     if get_origin(hint) is Annotated:
         args = get_args(hint)
-        return len(args) >= 2 and form.DISCRIMINATOR in args[1:]
+        return (len(args) >= 2) and (form.DISCRIMINATOR in args[1:])
     return False
 
 

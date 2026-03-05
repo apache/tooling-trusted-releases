@@ -65,14 +65,14 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     """
     path, validated_params, literal_params, form_param, public = common.build_path(func)
     project_name_var = next((name for name, t in validated_params if t is safe.ProjectName), None)
-    check_access = not public and (project_name_var is not None)
+    check_access = (not public) and (project_name_var is not None)
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
         await common.run_validators(kwargs, validated_params)
         kwargs.update(literal_params)
 
-        if check_access and enhanced_session is not None and project_name_var is not None:
+        if check_access and (enhanced_session is not None) and (project_name_var is not None):
             await enhanced_session.check_access(str(kwargs[project_name_var]))
 
         if form_param is not None:
