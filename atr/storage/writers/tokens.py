@@ -79,8 +79,8 @@ class FoundationCommitter(GeneralPublic):
         message = mail.Message(
             email_sender=NOREPLY_EMAIL_ADDRESS,
             email_recipient=f"{self.__asf_uid}@apache.org",
-            subject="New API Token Created",
-            body=f"A new API token called '{label}' was created for your account. "
+            subject="ATR - New API Token Created",
+            body=f"In ATR a new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",
         )
         await self.__write_as.mail.send(message)
@@ -104,8 +104,8 @@ class FoundationCommitter(GeneralPublic):
             message = mail.Message(
                 email_sender=NOREPLY_EMAIL_ADDRESS,
                 email_recipient=f"{self.__asf_uid}@apache.org",
-                subject="Deleted API Token",
-                body=f"An API token called '{label}' was deleted from your account. "
+                subject="ATR - Deleted API Token",
+                body=f"In ATR an API token called '{label}' was deleted from your account. "
                 "If you did not delete this token, please check your account immediately.",
             )
             await self.__write_as.mail.send(message)
