@@ -398,7 +398,7 @@ span.warning {
 }
 
 
-@media (width <= 990px) {
+@media (width <= 760px) {
     .dropdown-menu {
         max-height: 40vh;
     }
