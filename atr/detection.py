@@ -60,6 +60,7 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 }
 
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
+# TODO: Widen the range of types checked here
 _QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
 _QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
 
