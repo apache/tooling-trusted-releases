@@ -70,7 +70,7 @@ html {
 }
 
 .asf-logo {
-    height: 64px;
+    height: 70px;
 }
 
 .trusted-releases {
@@ -78,6 +78,16 @@ html {
     top: -10px;
     margin-left: 10px;
     font-weight: 650 !important;
+}
+
+.navbar-atr {
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-right: var(--bs-navbar-brand-margin-end);
+    font-size: var(--bs-navbar-brand-font-size);
+    color: var(--bs-navbar-brand-color);
+    text-decoration: none;
+    white-space: nowrap;
 }
 
 .navbar-adp-offset {
@@ -213,7 +223,7 @@ button, input, option, select, textarea {
 
 
 nav.navbar {
-    padding: 0.5rem 2rem;
+    padding: 0rem 0rem 0.25rem 2rem;
 }
 
 nav.navbar button, nav.navbar a.navbar-brand {
