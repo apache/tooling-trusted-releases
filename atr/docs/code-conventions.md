@@ -4,7 +4,7 @@
 
 **Prev**: `3.8.` [Running and creating tests](running-and-creating-tests)
 
-**Next**: `3.10.` [How to contribute](how-to-contribute)
+**Next**: `3.10` [Code policies](code-policies)
 
 **Sections**:
 

@@ -1,8 +1,8 @@
-# 3.13. Input validation
+# 3.14. Input validation
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.12.` [Authorization security](authorization-security)
+**Prev**: `3.13.` [Authorization security](authorization-security)
 
 **Next**: (none)
 

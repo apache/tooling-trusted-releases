@@ -1,10 +1,10 @@
-# 3.11. Authentication security
+# 3.12. Authentication security
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.10.` [How to contribute](how-to-contribute)
+**Prev**: `3.11.` [How to contribute](how-to-contribute)
 
-**Next**: `3.12.` [Authorization security](authorization-security)
+**Next**: `3.13.` [Authorization security](authorization-security)
 
 **Sections**:
 

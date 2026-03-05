@@ -17,10 +17,11 @@
 * `3.7.` [Build processes](build-processes)
 * `3.8.` [Running and creating tests](running-and-creating-tests)
 * `3.9.` [Code conventions](code-conventions)
-* `3.10.` [How to contribute](how-to-contribute)
-* `3.11.` [Authentication security](authentication-security)
-* `3.12.` [Authorization security](authorization-security)
-* `3.13.` [Input validation](input-validation)
+* `3.10` [Code policies](code-policies)
+* `3.11.` [How to contribute](how-to-contribute)
+* `3.12.` [Authentication security](authentication-security)
+* `3.13.` [Authorization security](authorization-security)
+* `3.14.` [Input validation](input-validation)
 
 **Sections**:
 
