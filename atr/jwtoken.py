@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import datetime as datetime
 import functools
+import os
+import pathlib
 import secrets as secrets
 from typing import TYPE_CHECKING, Any, Final
 
 import aiohttp
+import asfquart
 import asfquart.base as base
 import jwt
 import quart
@@ -45,10 +48,20 @@ _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "runner_environment": "github-hosted",
 }
 _GITHUB_OIDC_ISSUER: Final[str] = "https://token.actions.githubusercontent.com"
-_JWT_SECRET_KEY: Final[str] = config.get().JWT_SECRET_KEY
+_JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
+_JWT_KEY_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt")
+_JWT_KEY_TMP_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt.tmp")
+_JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
+
+
+def activate_signing_key(key: str) -> None:
+    app = asfquart.APP
+    if app is None:
+        raise RuntimeError("Application is not initialised")
+    app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
 def issue(uid: str, *, ttl: int = _ATR_JWT_TTL) -> str:
@@ -62,7 +75,7 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL) -> str:
         "exp": now + datetime.timedelta(seconds=ttl),
         "jti": secrets.token_hex(128 // 8),
     }
-    return jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_ALGORITHM)
+    return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
 def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Awaitable[R]]:
@@ -90,14 +103,22 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
     return wrapper
 
 
+def setup_signing_key(app: base.QuartApp) -> None:
+    key = _read_signing_key()
+    if key is None:
+        key = write_new_signing_key()
+    app.extensions[_JWT_KEY_APP_EXTENSION] = key
+
+
 async def verify(token: str) -> dict[str, Any]:
     # Grab the "supposed" asf UID from the token presented, to make sure we know who failed to authenticate on failure.
+    jwt_secret_key = _signing_key()
     claims_unsafe = jwt.decode(token, options={"verify_signature": False}, algorithms=[_ALGORITHM])
     asf_uid = claims_unsafe.get("sub")
     log.set_asf_uid(asf_uid)
     claims = jwt.decode(
         token,
-        _JWT_SECRET_KEY,
+        jwt_secret_key,
         algorithms=[_ALGORITHM],
         issuer=_ATR_JWT_ISSUER,
         audience=_ATR_JWT_AUDIENCE,
@@ -167,6 +188,12 @@ async def verify_github_oidc(token: str) -> dict[str, Any]:
     return github.TrustedPublisherPayload.model_validate(payload).model_dump()
 
 
+def write_new_signing_key() -> str:
+    key = _new_signing_key()
+    _write_signing_key(key)
+    return key
+
+
 def _extract_bearer_token(request: quart.Request) -> str:
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
@@ -175,3 +202,47 @@ def _extract_bearer_token(request: quart.Request) -> str:
             "Authentication required. Please provide a valid Bearer token in the Authorization header", errorcode=401
         )
     return token
+
+
+def _new_signing_key() -> str:
+    return secrets.token_hex(256 // 8)
+
+
+def _read_signing_key() -> str | None:
+    if not _JWT_KEY_PATH.exists():
+        return None
+    key = _JWT_KEY_PATH.read_text(encoding="utf-8").strip()
+    if key == "":
+        raise RuntimeError(f"JWT signing key file is empty: {_JWT_KEY_PATH}")
+    if len(key) != _JWT_KEY_HEX_LENGTH:
+        raise RuntimeError("JWT signing key is not 256 bits")
+    return key
+
+
+def _signing_key() -> str:
+    app = asfquart.APP
+    if app is not None:
+        key = app.extensions.get(_JWT_KEY_APP_EXTENSION)
+        if isinstance(key, str) and key:
+            return key
+    key = _read_signing_key()
+    if key is not None:
+        return key
+    raise RuntimeError("JWT signing key is not initialised")
+
+
+def _write_signing_key(key: str) -> None:
+    if key == "":
+        raise ValueError("JWT signing key must not be empty")
+    if len(key) != _JWT_KEY_HEX_LENGTH:
+        raise ValueError("JWT signing key must be 256 bits")
+    _JWT_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if _JWT_KEY_TMP_PATH.exists():
+        _JWT_KEY_TMP_PATH.unlink()
+    temp_fd = os.open(_JWT_KEY_TMP_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(temp_fd, "w", encoding="utf-8") as file:
+        file.write(key)
+        file.flush()
+        os.fsync(file.fileno())
+    os.chmod(_JWT_KEY_TMP_PATH, 0o400)
+    os.replace(_JWT_KEY_TMP_PATH, _JWT_KEY_PATH)

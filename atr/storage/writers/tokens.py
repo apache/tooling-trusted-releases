@@ -18,6 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 from typing import Final
@@ -212,3 +213,11 @@ class FoundationAdmin(FoundationCommitter):
                 tokens_revoked=count,
             )
         return count
+
+    async def rotate_jwt_signing_key(self) -> None:
+        key = await asyncio.to_thread(jwtoken.write_new_signing_key)
+        jwtoken.activate_signing_key(key)
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            action="rotate_jwt_signing_key",
+        )

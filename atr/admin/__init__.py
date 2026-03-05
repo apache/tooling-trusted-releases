@@ -18,6 +18,7 @@
 import asyncio
 import collections
 import datetime
+import json
 import os
 import pathlib
 import statistics
@@ -31,6 +32,7 @@ import asfquart
 import asfquart.base as base
 import asfquart.session
 import htpy
+import jwt
 import pydantic
 import quart
 import sqlalchemy
@@ -44,6 +46,7 @@ import atr.db.interaction as interaction
 import atr.form as form
 import atr.get as get
 import atr.htm as htm
+import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.mapping as mapping
@@ -91,6 +94,22 @@ class LdapLookupForm(form.Form):
 class RevokeUserTokensForm(form.Form):
     asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose tokens should be revoked.")
     confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
+
+
+class RotateJwtKeyForm(form.Form):
+    confirm_rotate: Literal["ROTATE"] = form.label("Confirmation", "Type ROTATE to confirm.")
+
+
+class ValidateJwtForm(form.Form):
+    token: str = form.label("JWT", "Paste the JWT to validate.", widget=form.Widget.TEXTAREA)
+
+    @pydantic.field_validator("token")
+    @classmethod
+    def validate_token(cls, value: str) -> str:
+        token = value.strip()
+        if token == "":
+            raise ValueError("JWT is required")
+        return token
 
 
 class SessionDataCommon(NamedTuple):
@@ -566,10 +585,7 @@ async def ldap_post(session: web.Committer, lookup_form: LdapLookupForm) -> str:
 
 @admin.get("/logs")
 async def logs(session: web.Committer) -> web.QuartResponse:
-    conf = config.get()
-    debug_and_allow_tests = (config.get_mode() == config.Mode.Debug) and conf.ALLOW_TESTS
-    if not debug_and_allow_tests:
-        raise base.ASFQuartException("Not available without ALLOW_TESTS", errorcode=403)
+    _require_debug_and_allow_tests()
     recent_logs = log.get_recent_logs()
     if recent_logs is None:
         raise base.ASFQuartException("Debug logging not initialised", errorcode=404)
@@ -752,6 +768,25 @@ async def revoke_user_tokens_post(
     return await session.redirect(revoke_user_tokens_get)
 
 
+@admin.get("/rotate-jwt-key")
+async def rotate_jwt_key_get(session: web.Committer) -> str:
+    rendered_form = form.render(
+        model_cls=RotateJwtKeyForm,
+        submit_label="Rotate JWT key",
+    )
+    return await _rotate_jwt_key_page(rendered_form)
+
+
+@admin.post("/rotate-jwt-key")
+@admin.form(RotateJwtKeyForm)
+async def rotate_jwt_key_post(session: web.Committer, _rotate_form: RotateJwtKeyForm) -> str | web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.tokens.rotate_jwt_signing_key()
+    await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
+    return await session.redirect(rotate_jwt_key_get)
+
+
 @admin.get("/task-times/<project_name>/<version_name>/<revision_number>")
 async def task_times(
     session: web.Committer, project_name: str, version_name: str, revision_number: str
@@ -929,6 +964,52 @@ async def validate_(session: web.Committer) -> str:
     )
 
 
+@admin.get("/validate-jwt")
+async def validate_jwt_get(session: web.Committer) -> str:
+    _require_debug_and_allow_tests()
+    rendered_form = form.render(
+        model_cls=ValidateJwtForm,
+        submit_label="Validate JWT",
+        textarea_rows=8,
+    )
+    return await _validate_jwt_page(rendered_form, result=None)
+
+
+@admin.post("/validate-jwt")
+@admin.form(ValidateJwtForm)
+async def validate_jwt_post(session: web.Committer, validate_form: ValidateJwtForm) -> str:
+    _require_debug_and_allow_tests()
+    token = validate_form.token
+    result: dict[str, Any] = {"token_length": len(token), "valid": False}
+
+    try:
+        result["header"] = jwt.get_unverified_header(token)
+    except jwt.PyJWTError as exc:
+        result["header_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        result["claims_unverified"] = jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+    except jwt.PyJWTError as exc:
+        result["claims_unverified_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        result["claims_verified"] = await jwtoken.verify(token)
+        result["valid"] = True
+    except Exception as exc:
+        result["validation_error"] = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+        }
+
+    rendered_form = form.render(
+        model_cls=ValidateJwtForm,
+        submit_label="Validate JWT",
+        textarea_rows=8,
+        defaults={"token": token},
+    )
+    return await _validate_jwt_page(rendered_form, result=result)
+
+
 async def _check_keys(fix: bool = False) -> str:
     email_to_uid = await util.email_to_uid_map()
     bad_keys = []
@@ -1094,6 +1175,26 @@ async def _ongoing_tasks(
         return web.TextResponse("")
 
 
+def _require_debug_and_allow_tests() -> None:
+    conf = config.get()
+    debug_and_allow_tests = (config.get_mode() == config.Mode.Debug) and conf.ALLOW_TESTS
+    if not debug_and_allow_tests:
+        raise base.ASFQuartException("Not available without ALLOW_TESTS", errorcode=403)
+
+
+async def _rotate_jwt_key_page(rendered_form: htm.Element) -> str:
+    page = htm.Block()
+    page.h1["Rotate JWT key"]
+    page.p["Rotate the JWT signing key immediately. This will invalidate all currently usable JWTs."]
+
+    page.append(rendered_form)
+
+    return await template.blank(
+        title="Rotate JWT key",
+        content=page.collect(),
+    )
+
+
 async def _update_keys(asf_uid: str) -> int:
     async def _log_process(process: asyncio.subprocess.Process) -> None:
         try:
@@ -1129,3 +1230,21 @@ async def _update_keys(asf_uid: str) -> int:
     task.add_done_callback(app.background_tasks.discard)
 
     return process.pid
+
+
+async def _validate_jwt_page(rendered_form: htm.Element, result: dict[str, Any] | None) -> str:
+    page = htm.Block()
+    page.h1["Validate JWT"]
+    page.p["Paste a JWT below to inspect unverified details and full verification results."]
+
+    page.append(rendered_form)
+
+    if result is not None:
+        page.h2["Result"]
+        result_text = json.dumps(result, indent=2, sort_keys=True, default=str)
+        page.pre[htm.code[result_text]]
+
+    return await template.blank(
+        title="Validate JWT",
+        content=page.collect(),
+    )

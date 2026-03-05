@@ -222,8 +222,18 @@
               </li>
               <li>
                 <a class="dropdown-item"
+                   href="{{ as_url(admin.rotate_jwt_key_get) }}"
+                   {% if request.endpoint == 'atr_admin_rotate_jwt_key_get' %}class="active"{% endif %}><i class="bi bi-arrow-clockwise"></i> Rotate JWT key</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
                    href="{{ as_url(admin.toggle_view_get) }}"
                    {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
+              </li>
+              <li>
+                <a class="dropdown-item"
+                   href="{{ as_url(admin.validate_jwt_get) }}"
+                   {% if request.endpoint == 'atr_admin_validate_jwt_get' %}class="active"{% endif %}><i class="bi bi-check-circle"></i> Validate JWT</a>
               </li>
               <li>
                 <hr class="dropdown-divider" />

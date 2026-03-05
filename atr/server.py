@@ -53,6 +53,7 @@ import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.filters as filters
+import atr.jwtoken as jwtoken
 import atr.log as log
 import atr.manager as manager
 import atr.models.sql as sql
@@ -583,6 +584,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _validate_secrets_permissions(pathlib.Path(app_config.STATE_DIR))
     log.performance_init()
     app = _app_create_base(app_config)
+    jwtoken.setup_signing_key(app)
 
     _app_setup_api_docs(app)
     quart_wtf.CSRFProtect(app)
@@ -981,6 +983,14 @@ def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> No
         print("WARNING: SECRET_KEY is no longer supported", file=sys.stderr)
         print("Please unset SECRET_KEY", file=sys.stderr)
         print("We are considering making this mandatory", file=sys.stderr)
+        print("!!!", file=sys.stderr)
+        # sys.exit(1)
+
+    if (app_config.JWT_SECRET_KEY is not None) and (hot_reload is False):
+        print("!!!", file=sys.stderr)
+        print("WARNING: JWT_SECRET_KEY is no longer supported", file=sys.stderr)
+        print("Please remove JWT_SECRET_KEY from secrets and environment", file=sys.stderr)
+        print("ATR now uses secrets/generated/jwt_secret_key.txt", file=sys.stderr)
         print("!!!", file=sys.stderr)
         # sys.exit(1)
 

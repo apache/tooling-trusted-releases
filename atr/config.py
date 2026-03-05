@@ -17,7 +17,6 @@
 
 import enum
 import os
-import secrets
 from typing import Final
 
 import decouple
@@ -91,13 +90,13 @@ class AppConfig:
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False
     USE_BLOCKBUSTER = False
-    JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str) or secrets.token_hex(256 // 8)
-    # We no longer support SECRET_KEY
-    # We continue to read the value to print a migration warning
-    # We are now relying on apptoken.txt from ASFQuart instead
+    # We no longer support SECRET_KEY or JWT_SECRET_KEY
+    # We continue to read both values to print migration warnings
+    # For SECRET_KEY we are now relying on apptoken.txt from ASFQuart instead
     # By default, apptoken.txt is a 256 bit random value
     # ASFQuart generates it using secrets.token_hex()
     SECRET_KEY = _config_secrets("SECRET_KEY", STATE_DIR, default=None, cast=str)
+    JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str)
     DOWNLOADS_STORAGE_DIR = os.path.join(STATE_DIR, "downloads")
     FINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "finished")
     UNFINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "unfinished")
