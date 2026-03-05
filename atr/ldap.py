@@ -19,16 +19,45 @@ import asyncio
 import collections
 import dataclasses
 import ssl
-from typing import Any, Final, Literal
+from typing import Final, Literal
 
 import ldap3
 import ldap3.utils.conv as conv
 import ldap3.utils.dn as dn
 
+import atr.models.schema as schema
+
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
 LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"
 LDAP_TOOLING_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
+
+RESULT_ATTRIBUTES: Final[list[str]] = [
+    "asf-altEmail",
+    "asf-banned",
+    "asf-committer-email",
+    "cn",
+    "mail",
+    "member",
+    "memberUid",
+    "uid",
+]
+
+
+class Result(schema.Strict):
+    model_config = schema.pydantic.ConfigDict(
+        extra="forbid", strict=True, validate_assignment=True, populate_by_name=True
+    )
+
+    dn: str
+    asf_alt_email: list[str] = schema.Field(default_factory=list, alias="asf-altEmail")
+    asf_banned: list[str] = schema.Field(default_factory=list, alias="asf-banned")
+    asf_committer_email: list[str] = schema.Field(default_factory=list, alias="asf-committer-email")
+    cn: list[str] = schema.Field(default_factory=list)
+    mail: list[str] = schema.Field(default_factory=list)
+    member: list[str] = schema.Field(default_factory=list)
+    member_uid: list[str] = schema.Field(default_factory=list, alias="memberUid")
+    uid: list[str] = schema.Field(default_factory=list)
 
 
 _tls_config = ldap3.Tls(
@@ -63,22 +92,20 @@ class Search:
         ldap_scope: Literal["BASE", "LEVEL", "SUBTREE"],
         ldap_query: str = "(objectClass=*)",
         ldap_attrs: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[Result]:
         if not self._conn:
             raise RuntimeError("LDAP connection not available")
 
-        attributes = ldap_attrs if ldap_attrs else ldap3.ALL_ATTRIBUTES
+        attributes = ldap_attrs if ldap_attrs else RESULT_ATTRIBUTES
         self._conn.search(
             search_base=ldap_base,
             search_filter=ldap_query,
             search_scope=ldap_scope,
             attributes=attributes,
         )
-        results = []
+        results: list[Result] = []
         for entry in self._conn.entries:
-            result_item: dict[str, str | list[str]] = {"dn": entry.entry_dn}
-            result_item.update(entry.entry_attributes_as_dict)
-            results.append(result_item)
+            results.append(Result.model_validate({"dn": entry.entry_dn, **entry.entry_attributes_as_dict}))
         return results
 
 
@@ -95,19 +122,18 @@ class SearchParameters:
     github_nid_query: int | None = None
     bind_dn_from_config: str | None = None
     bind_password_from_config: str | None = None
-    results_list: list[dict[str, str | list[str]]] = dataclasses.field(default_factory=list)
+    results_list: list[Result] = dataclasses.field(default_factory=list)
     err_msg: str | None = None
     srv_info: str | None = None
     detail_err: str | None = None
     connection: ldap3.Connection | None = None
-    email_only: bool = False
 
 
-async def account_lookup(asf_uid: str) -> dict[str, str | list[str]] | None:
+async def account_lookup(asf_uid: str) -> Result | None:
     """
     Look up an account in LDAP by ASF UID.
 
-    Returns the account details dict if found, None if the account does not exist.
+    Returns the account details if found, None if the account does not exist.
     If LDAP is not configured, returns None to avoid breaking functionality.
     """
     credentials = get_bind_credentials()
@@ -146,10 +172,7 @@ async def fetch_admin_users() -> frozenset[str]:
                     result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
                     if (not result) or (len(result) != 1):
                         continue
-                    members = result[0].get("member", [])
-                    if not isinstance(members, list):
-                        continue
-                    for member_dn in members:
+                    for member_dn in result[0].member:
                         parsed = parse_dn(member_dn)
                         uids = parsed.get("uid", [])
                         if uids:
@@ -179,10 +202,7 @@ async def fetch_tooling_users(extra: set[str]) -> set[str]:
                     result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
                     if (not result) or (len(result) != 1):
                         continue
-                    members = result[0].get("member", [])
-                    if not isinstance(members, list):
-                        continue
-                    for member_dn in members:
+                    for member_dn in result[0].member:
                         parsed = parse_dn(member_dn)
                         uids = parsed.get("uid", [])
                         if uids:
@@ -217,10 +237,9 @@ async def github_to_apache(github_numeric_uid: int) -> str:
         github_nid_query=github_numeric_uid,
     )
     await asyncio.to_thread(search, ldap_params)
-    if not (ldap_params.results_list and ("uid" in ldap_params.results_list[0])):
+    if not (ldap_params.results_list and ldap_params.results_list[0].uid):
         raise LookupError(f"GitHub NID {github_numeric_uid} not registered with the ATR")
-    ldap_uid_val = ldap_params.results_list[0]["uid"]
-    return ldap_uid_val[0] if isinstance(ldap_uid_val, list) else ldap_uid_val
+    return ldap_params.results_list[0].uid[0]
 
 
 async def is_active(asf_uid: str) -> bool:
@@ -236,13 +255,10 @@ async def is_active(asf_uid: str) -> bool:
     return not is_banned(account)
 
 
-def is_banned(account: dict[str, str | list[str]]) -> bool:
-    banned_attr = account.get("asf-banned", "no")
-    # This is mostly for the type checker, but since asf-banned is missing from non-banned accounts,
-    # it should be safe to say if it has any value then the account is banned.
-    if not isinstance(banned_attr, str):
-        return True
-    return banned_attr.lower() == "yes"
+def is_banned(account: Result) -> bool:
+    # In ASF LDAP, non banned accounts do not carry this attribute
+    # Therefore, we treat any present value as banned
+    return bool(account.asf_banned)
 
 
 def parse_dn(dn_string: str) -> dict[str, list[str]]:
@@ -322,17 +338,13 @@ def _search_core_2(params: SearchParameters, filters: list[str]) -> None:
         params.err_msg = "LDAP Connection object not established or auto_bind failed."
         return
 
-    email_attributes = ["uid", "mail", "asf-altEmail", "asf-committer-email"]
-    attributes = email_attributes if params.email_only else ldap3.ALL_ATTRIBUTES
     params.connection.search(
         search_base=LDAP_SEARCH_BASE,
         search_filter=search_filter,
-        attributes=attributes,
+        attributes=RESULT_ATTRIBUTES,
     )
     for entry in params.connection.entries:
-        result_item: dict[str, str | list[str]] = {"dn": entry.entry_dn}
-        result_item.update(entry.entry_attributes_as_dict)
-        params.results_list.append(result_item)
+        params.results_list.append(Result.model_validate({"dn": entry.entry_dn, **entry.entry_attributes_as_dict}))
 
     if (not params.results_list) and (not params.err_msg):
         params.err_msg = "No results found for the given criteria."

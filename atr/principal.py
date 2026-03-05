@@ -92,7 +92,7 @@ class Committer:
             log.info(f"Took {finish - start:,} ns to get committer details")
 
             start = time.perf_counter_ns()
-            member_list = self._get_group_membership(ldap_search, LDAP_MEMBER_BASE, "memberUid", 100)
+            member_list = self._get_group_membership(ldap_search, LDAP_MEMBER_BASE, "member_uid", 100)
             self.isMember = self.user in member_list
             finish = time.perf_counter_ns()
             log.info(f"Took {finish - start:,} ns to get member list")
@@ -140,17 +140,16 @@ class Committer:
             raise CommitterError("An unknown error occurred while fetching user details.") from ex
 
         data = result[0]
-        if data.get("asf-banned"):
+        if data.asf_banned:
             raise CommitterError(
                 "This account has been administratively locked. Please contact root@apache.org for further details."
             )
 
-        fn = data.get("cn")
-        if not (isinstance(fn, list) and (len(fn) == 1)):
+        if not (len(data.cn) == 1):
             raise CommitterError("Common backend assertions failed, LDAP corruption?")
-        self.fullname = fn[0]
-        self.emails = attr_to_list(data.get("mail"))
-        self.altemails = attr_to_list(data.get("asf-altEmail"))
+        self.fullname = data.cn[0]
+        self.emails = list(set(data.mail))
+        self.altemails = list(set(data.asf_alt_email))
 
     def _get_group_membership(
         self, ldap_search: ldap.Search, ldap_base: str, attribute: str, min_members: int = 0
@@ -170,9 +169,7 @@ class Committer:
                 f"An unknown error occurred while fetching group memberships from {ldap_base}."
             ) from ex
 
-        members = result[0].get(attribute)
-        if not isinstance(members, list):
-            raise CommitterError("Common backend assertions failed, LDAP corruption?")
+        members = getattr(result[0], attribute)
         if len(members) < min_members:
             raise CommitterError("Common backend assertions failed, LDAP corruption?")
         return members
@@ -191,13 +188,10 @@ class Committer:
 
         committees_or_projects = []
         for hit in result:
-            if not isinstance(hit, dict):
+            if not (len(hit.cn) == 1):
                 raise CommitterError("Common backend assertions failed, LDAP corruption?")
-            cn = hit.get("cn")
-            if not (isinstance(cn, list) and (len(cn) == 1)):
-                raise CommitterError("Common backend assertions failed, LDAP corruption?")
-            committee_or_project_name = cn[0]
-            if not (committee_or_project_name and isinstance(committee_or_project_name, str)):
+            committee_or_project_name = hit.cn[0]
+            if not committee_or_project_name:
                 raise CommitterError("Common backend assertions failed, LDAP corruption?")
             committees_or_projects.append(committee_or_project_name)
         return committees_or_projects
@@ -402,11 +396,6 @@ class Authorisation(AsyncObject):
         if self.__asf_uid is None:
             return frozenset()
         return self.__authoriser.member_of(self.__asf_uid)
-
-
-def attr_to_list(attr):
-    """Converts a list of bytestring attribute values to a unique list of strings."""
-    return list(set([value for value in attr or []]))
 
 
 def get_ldap_bind_dn_and_password() -> tuple[str, str]:

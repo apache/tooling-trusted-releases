@@ -543,7 +543,6 @@ async def ldap_post(session: web.Committer, lookup_form: LdapLookupForm) -> str:
             email_query=email_query,
             bind_dn_from_config=bind_dn,
             bind_password_from_config=bind_password,
-            email_only=False,
         )
         await asyncio.to_thread(ldap.search, ldap_params)
         end = time.perf_counter_ns()

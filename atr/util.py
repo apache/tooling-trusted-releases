@@ -144,10 +144,9 @@ def as_url(func: Callable, **kwargs: Any) -> str:
 def asf_uid_from_email(email: str) -> str | None:
     ldap_params = ldap.SearchParameters(email_query=email)
     ldap.search(ldap_params)
-    if not (ldap_params.results_list and ("uid" in ldap_params.results_list[0])):
+    if not (ldap_params.results_list and ldap_params.results_list[0].uid):
         return None
-    ldap_uid_val = ldap_params.results_list[0]["uid"]
-    return ldap_uid_val[0] if isinstance(ldap_uid_val, list) else ldap_uid_val
+    return ldap_params.results_list[0].uid[0]
 
 
 async def asf_uid_from_uids(
@@ -402,14 +401,6 @@ async def email_mid_from_thread_id(thread_id: str) -> tuple[str, str]:
 
 
 async def email_to_uid_map() -> dict[str, str]:
-    def values(entry: dict, prop: str) -> list[str]:
-        raw_values = entry.get(prop, [])
-        if isinstance(raw_values, list):
-            return [v for v in raw_values if v]
-        if raw_values:
-            return [raw_values]
-        return []
-
     # Get all email addresses in LDAP
     conf = config.AppConfig()
     bind_dn = conf.LDAP_BIND_DN
@@ -418,20 +409,18 @@ async def email_to_uid_map() -> dict[str, str]:
         uid_query="*",
         bind_dn_from_config=bind_dn,
         bind_password_from_config=bind_password,
-        email_only=True,
     )
     await asyncio.to_thread(ldap.search, ldap_params)
 
     # Map the LDAP addresses to Apache UIDs
-    email_to_uid = {}
+    email_to_uid: dict[str, str] = {}
     for entry in ldap_params.results_list:
-        uid = entry.get("uid", [""])[0]
-        uid_lower = uid.lower()
-        for mail in values(entry, "mail"):
+        uid_lower = (entry.uid[0] if entry.uid else "").lower()
+        for mail in entry.mail:
             email_to_uid[mail.lower()] = uid_lower
-        for alt_email in values(entry, "asf-altEmail"):
+        for alt_email in entry.asf_alt_email:
             email_to_uid[alt_email.lower()] = uid_lower
-        for committer_email in values(entry, "asf-committer-email"):
+        for committer_email in entry.asf_committer_email:
             email_to_uid[committer_email.lower()] = uid_lower
     return email_to_uid
 

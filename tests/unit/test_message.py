@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import atr.ldap as ldap
 import atr.tasks.message as message
 
 if TYPE_CHECKING:
@@ -34,7 +35,14 @@ async def test_send_rejects_banned_asf_account(monkeypatch: "MonkeyPatch") -> No
     """Test that a banned ASF account raises SendError."""
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
-        mock.AsyncMock(return_value={"uid": "banneduser", "cn": "Banned User", "asf-banned": "yes"}),
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=banneduser,ou=people,dc=apache,dc=org",
+                uid=["banneduser"],
+                cn=["Banned User"],
+                asf_banned=["yes"],
+            )
+        ),
     )
 
     with pytest.raises(message.SendError, match=r"banned"):
@@ -66,7 +74,11 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
     # ldap.account_lookup returns a dict for a known UID
     monkeypatch.setattr(
         "atr.tasks.message.ldap.account_lookup",
-        mock.AsyncMock(return_value={"uid": "validuser", "cn": "Valid User"}),
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=validuser,ou=people,dc=apache,dc=org", uid=["validuser"], cn=["Valid User"]
+            )
+        ),
     )
 
     # Mock the storage.write async context manager chain:
