@@ -23,6 +23,7 @@ import sqlmodel
 import atr.db as db
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.storage.types as types
 
 
 class GeneralPublic:
@@ -40,7 +41,7 @@ class FoundationCommitter(GeneralPublic):
         self.__read_as = read_as
         self.__data = data
 
-    async def own_personal_access_tokens(self) -> list[sql.PersonalAccessToken]:
+    async def own_personal_access_tokens(self) -> list[types.PersonalAccessTokenSafe]:
         asf_uid = self.__read.authorisation.asf_uid
         if asf_uid is None:
             raise ValueError("Not authorized")
@@ -50,9 +51,10 @@ class FoundationCommitter(GeneralPublic):
             .where(sql.PersonalAccessToken.asfuid == asf_uid)
             .order_by(via(sql.PersonalAccessToken.created))
         )
-        return await self.__data.query_all(stmt)
+        tokens = await self.__data.query_all(stmt)
+        return [types.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
 
-    async def most_recent_jwt_pat(self) -> sql.PersonalAccessToken | None:
+    async def most_recent_jwt_pat(self) -> types.PersonalAccessTokenSafe | None:
         # , asf_uid: str | None = None
         # if asf_uid is None:
         asf_uid = self.__read.authorisation.asf_uid
@@ -66,4 +68,7 @@ class FoundationCommitter(GeneralPublic):
             .order_by(via(sql.PersonalAccessToken.last_used).desc())
             .limit(1)
         )
-        return await self.__data.query_one_or_none(stmt)
+        token = await self.__data.query_one_or_none(stmt)
+        if token is None:
+            return None
+        return types.PersonalAccessTokenSafe.from_sql(token)

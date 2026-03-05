@@ -20,10 +20,10 @@ from typing import Literal
 import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
-import atr.models.sql as sql
 import atr.post as post
 import atr.shared as shared
 import atr.storage as storage
+import atr.storage.types as types
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -91,7 +91,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     )
 
 
-def _build_tokens_table(page: htm.Block, tokens_list: list[sql.PersonalAccessToken]) -> None:
+def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalAccessTokenSafe]) -> None:
     if not tokens_list:
         page.p["No tokens found."]
         return

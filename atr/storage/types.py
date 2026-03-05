@@ -16,6 +16,7 @@
 # under the License.
 
 import dataclasses
+import datetime
 import enum
 import pathlib
 from collections.abc import Callable
@@ -71,6 +72,28 @@ class PathInfo(schema.Strict):
     ignored_warnings: list[sql.CheckResult] = schema.factory(list)
     successes: dict[pathlib.Path, list[sql.CheckResult]] = schema.factory(dict)
     warnings: dict[pathlib.Path, list[sql.CheckResult]] = schema.factory(dict)
+
+
+class PersonalAccessTokenSafe(schema.Strict):
+    asfuid: str
+    created: datetime.datetime
+    expires: datetime.datetime
+    id: int
+    label: str | None
+    last_used: datetime.datetime | None
+
+    @classmethod
+    def from_sql(cls, token: sql.PersonalAccessToken) -> "PersonalAccessTokenSafe":
+        if token.id is None:
+            raise ValueError("PAT must have an ID before being returned")
+        return cls(
+            id=token.id,
+            asfuid=token.asfuid,
+            created=token.created,
+            expires=token.expires,
+            label=token.label,
+            last_used=token.last_used,
+        )
 
 
 @dataclasses.dataclass

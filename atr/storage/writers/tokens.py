@@ -31,6 +31,7 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.storage.types as types
 
 # TODO: Check that this is known and that its emails are correctly discarded
 NOREPLY_EMAIL_ADDRESS: Final[str] = "noreply@apache.org"
@@ -62,7 +63,7 @@ class FoundationCommitter(GeneralPublic):
 
     async def add_token(
         self, token_hash: str, created: datetime.datetime, expires: datetime.datetime, label: str | None
-    ) -> sql.PersonalAccessToken:
+    ) -> types.PersonalAccessTokenSafe:
         if not label:
             raise ValueError("Label is required")
         pat = sql.PersonalAccessToken(
@@ -82,7 +83,7 @@ class FoundationCommitter(GeneralPublic):
             "If you did not create this token, please revoke it immediately.",
         )
         await self.__write_as.mail.send(message)
-        return pat
+        return types.PersonalAccessTokenSafe.from_sql(pat)
 
     async def delete_token(self, token_id: int) -> None:
         pat = await self.__data.query_one_or_none(
