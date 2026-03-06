@@ -91,7 +91,7 @@ async def finalise_revision(
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
-        previous_attestable, _, merged_release = await _lock_and_merge(
+        previous_attestable, merge_base_revision_name, _, merged_release = await _lock_and_merge(
             data,
             base_hashes=base_hashes,
             base_inodes=base_inodes,
@@ -115,6 +115,7 @@ async def finalise_revision(
         data,
         asf_uid=asf_uid,
         description=description,
+        merge_base_revision_name=merge_base_revision_name,
         path_to_hash=path_to_hash,
         path_to_size=path_to_size,
         previous_attestable=previous_attestable,
@@ -132,6 +133,7 @@ async def _commit_new_revision(
     *,
     asf_uid: str,
     description: str | None,
+    merge_base_revision_name: str | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.AttestableV1 | None,
@@ -154,6 +156,7 @@ async def _commit_new_revision(
             created=datetime.datetime.now(datetime.UTC),
             phase=release.phase,
             description=description,
+            merge_base_revision_name=merge_base_revision_name,
             was_quarantined=was_quarantined,
         )
         data.add(new_revision)
@@ -243,7 +246,7 @@ async def _lock_and_merge(
     _release_name: str,
     temp_dir_path: pathlib.Path,
     version_name: str,
-) -> tuple[atr.models.attestable.AttestableV1 | None, str | None, sql.Release]:
+) -> tuple[atr.models.attestable.AttestableV1 | None, str | None, str | None, sql.Release]:
     # Acquire the write lock
     # We need this write lock for moving the directory afterwards atomically
     # But it also helps to make models.populate_revision_sequence_and_name safe against races
@@ -255,12 +258,14 @@ async def _lock_and_merge(
     prior_revision_name = latest.name if latest else None
 
     # Merge with the prior revision if there was an intervening change
+    merge_base_revision_name: str | None = None
     if (
         merge_enabled
         and (old_revision is not None)
         and (prior_revision_name is not None)
         and (prior_revision_name != old_revision.name)
     ):
+        merge_base_revision_name = prior_revision_name
         prior_number = prior_revision_name.split()[-1]
         prior_dir = paths.release_directory_base(merged_release) / prior_number
         await merge.merge(
@@ -277,7 +282,7 @@ async def _lock_and_merge(
         )
         previous_attestable = await attestable.load(project_name, version_name, prior_number)
 
-    return previous_attestable, prior_revision_name, merged_release
+    return previous_attestable, merge_base_revision_name, prior_revision_name, merged_release
 
 
 class GeneralPublic:
@@ -417,7 +422,12 @@ class CommitteeParticipant(FoundationCommitter):
 
         async with SafeSession(temp_dir) as data:
             try:
-                previous_attestable, prior_revision_name, merged_release = await _lock_and_merge(
+                (
+                    previous_attestable,
+                    merge_base_revision_name,
+                    prior_revision_name,
+                    merged_release,
+                ) = await _lock_and_merge(
                     data,
                     base_hashes=base_hashes,
                     base_inodes=base_inodes,
@@ -458,6 +468,7 @@ class CommitteeParticipant(FoundationCommitter):
                 data,
                 asf_uid=asf_uid,
                 description=description,
+                merge_base_revision_name=merge_base_revision_name,
                 path_to_hash=path_to_hash,
                 path_to_size=path_to_size,
                 previous_attestable=previous_attestable,

@@ -1287,6 +1287,7 @@ class Revision(sqlmodel.SQLModel, table=True):
     child: Optional["Revision"] = sqlmodel.Relationship(back_populates="parent")
 
     description: str | None = sqlmodel.Field(default=None, **example("This is a description"))
+    merge_base_revision_name: str | None = sqlmodel.Field(default=None, **example("example-0.0.1 00001"))
     tag: str | None = sqlmodel.Field(default=None, **example("rc1"))
     was_quarantined: bool = sqlmodel.Field(default=False, **example(False))
 

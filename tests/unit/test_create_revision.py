@@ -43,11 +43,13 @@ class FakeRevision:
         created: object,
         phase: sql.ReleasePhase,
         description: str | None,
+        merge_base_revision_name: str | None = None,
         was_quarantined: bool = False,
     ):
         self.asfuid = asfuid
         self.created = created
         self.description = description
+        self.merge_base_revision_name = merge_base_revision_name
         self.name = ""
         self.number = ""
         self.parent_name: str | None = None

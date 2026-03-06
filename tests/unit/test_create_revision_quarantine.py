@@ -137,7 +137,9 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
         mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
         mock.patch.object(revision, "_commit_new_revision", new_callable=mock.AsyncMock, return_value=fake_revision),
-        mock.patch.object(revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, release)),
+        mock.patch.object(
+            revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, None, release)
+        ),
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(MockQuarantineData(None))),
         mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
         mock.patch.object(revision.util, "chmod_directories"),
