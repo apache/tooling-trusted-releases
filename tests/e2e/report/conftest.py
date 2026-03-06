@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import pathlib
+import time
 from typing import TYPE_CHECKING, Final
 
 import e2e.helpers as helpers
@@ -116,8 +117,8 @@ def report_context(browser: Browser, verify_license_check_mode: None) -> Generat
     page.get_by_role("button", name="Add files").click()
     page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
 
-    helpers.visit(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}")
-    _wait_for_tasks_banner_hidden(page, timeout=60000)
+    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}", FILE_NAME)
+    _poll_for_member_rows(page, REPORT_URL)
 
     page.close()
 
@@ -138,6 +139,11 @@ def verify_license_check_mode(browser: Browser) -> None:
         pytest.fail(f"Test project has policy_license_check_mode={mode}. Member results will not be produced.")
 
 
-def _wait_for_tasks_banner_hidden(page: Page, timeout: int = 30000) -> None:
-    """Wait for all background tasks to be completed."""
-    page.wait_for_selector("#ongoing-tasks-banner", state="hidden", timeout=timeout)
+def _poll_for_member_rows(page: Page, report_url: str, max_attempts: int = 30) -> None:
+    """Poll the report page until member rows are available."""
+    for _ in range(max_attempts):
+        helpers.visit(page, report_url)
+        if page.locator(".atr-result-member").count() > 0:
+            return
+        time.sleep(1)
+    pytest.fail("No member results found after waiting for report checks to complete")
