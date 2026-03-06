@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import errno
 import pathlib
+import uuid
 
 import aiofiles.os
 import aioshutil
@@ -100,7 +102,9 @@ async def _extract_archives_to_cache(
 ) -> None:
     conf = config.get()
     cache_base = paths.get_cache_archives_dir() / project_name / version_name
+    staging_base = paths.get_tmp_dir()
     await aiofiles.os.makedirs(cache_base, exist_ok=True)
+    await aiofiles.os.makedirs(staging_base, exist_ok=True)
 
     extraction_config = (
         exarch.SecurityConfig()
@@ -123,18 +127,25 @@ async def _extract_archives_to_cache(
         if await aiofiles.os.path.isdir(cache_dir):
             continue
         archive_path = str(quarantine_dir / archive.rel_path)
-        extract_dir = str(cache_dir)
-        await aiofiles.os.makedirs(extract_dir, exist_ok=True)
+        staging_dir = staging_base / f"archive-extract-{uuid.uuid4().hex}"
+        await aiofiles.os.makedirs(staging_dir, exist_ok=False)
         try:
             await asyncio.to_thread(
                 exarch.extract_archive,
                 archive_path,
-                extract_dir,
+                str(staging_dir),
                 extraction_config,
             )
+            try:
+                await aiofiles.os.rename(staging_dir, cache_dir)
+            except OSError as err:
+                if isinstance(err, FileExistsError) or err.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+                    await aioshutil.rmtree(staging_dir, ignore_errors=True)
+                else:
+                    raise
         except Exception:
             log.exception(f"Failed to extract archive {archive.rel_path} to cache")
-            await aioshutil.rmtree(cache_dir, ignore_errors=True)
+            await aioshutil.rmtree(staging_dir, ignore_errors=True)
             raise
 
 
