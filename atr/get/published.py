@@ -24,6 +24,7 @@ import aiofiles.os
 import quart
 
 import atr.blueprints.get as get
+import atr.config as config
 import atr.form as form
 import atr.htm as htm
 import atr.models.unsafe as unsafe
@@ -41,6 +42,8 @@ async def path(session: web.Committer, _published: Literal["published"], file_pa
     # This route is for debugging
     # When developing locally, there is no proxy to view the downloads directory
     # Therefore this path acts as a way to check the contents of that directory
+    if not config.get().ALLOW_TESTS:
+        return quart.abort(404)
     validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         return quart.abort(400)
@@ -52,6 +55,8 @@ async def root(session: web.Committer, _published: Literal["published/"]) -> web
     """
     URL: /published/
     """
+    if not config.get().ALLOW_TESTS:
+        return quart.abort(404)
     return await _path(session, "")
 
 
