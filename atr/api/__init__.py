@@ -91,7 +91,7 @@ async def checks_list(
         checks=check_results,
         checks_revision=release.unwrap_revision_number,
         current_phase=release.phase,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -132,7 +132,7 @@ async def checks_list_revision(
         checks=check_results,
         checks_revision=revision,
         current_phase=release_result.phase,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -172,7 +172,7 @@ async def checks_ongoing(
     return models.api.ChecksOngoingResults(
         endpoint="/checks/ongoing",
         ongoing=ongoing_tasks_count,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -196,7 +196,7 @@ async def committee_get(
     return models.api.CommitteeGetResults(
         endpoint="/committee/get",
         committee=committee,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -222,7 +222,7 @@ async def committee_keys(
     return models.api.CommitteeKeysResults(
         endpoint="/committee/keys",
         keys=committee.public_signing_keys,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -248,7 +248,7 @@ async def committee_projects(
     return models.api.CommitteeProjectsResults(
         endpoint="/committee/projects",
         projects=committee.projects,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -268,7 +268,7 @@ async def committees_list(
     return models.api.CommitteesListResults(
         endpoint="/committees/list",
         committees=committees,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -305,7 +305,7 @@ async def distribute_ssh_register(
         fingerprint=fingerprint,
         project=release.safe_project_name,
         expires=expires,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -349,7 +349,7 @@ async def distribution_record(
     return models.api.DistributionRecordResults(
         endpoint="/distribution/record",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -390,7 +390,7 @@ async def distribution_record_from_workflow(
     return models.api.DistributionRecordFromWorkflowResults(
         endpoint="/distribute/record_from_workflow",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -424,7 +424,7 @@ async def ignore_add(
     return models.api.IgnoreAddResults(
         endpoint="/ignore/add",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -451,7 +451,7 @@ async def ignore_delete(
     return models.api.IgnoreDeleteResults(
         endpoint="/ignore/delete",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 # TODO: Rename to ignores
@@ -472,7 +472,7 @@ async def ignore_list(
     return models.api.IgnoreListResults(
         endpoint="/ignore/list",
         ignores=ignores,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -500,7 +500,7 @@ async def jwt_create(
         endpoint="/jwt/create",
         asfuid=data.asfuid,
         jwt=jwt,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -538,7 +538,7 @@ async def key_add(
     return models.api.KeyAddResults(
         endpoint="/key/add",
         fingerprint=key.key_model.fingerprint.upper(),
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -575,7 +575,7 @@ async def key_delete(
     return models.api.KeyDeleteResults(
         endpoint="/key/delete",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -599,7 +599,7 @@ async def key_get(
     return models.api.KeyGetResults(
         endpoint="/key/get",
         key=key,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -661,7 +661,7 @@ async def keys_upload(
         success_count=outcomes.result_count,
         error_count=outcomes.error_count,
         submitted_committee=selected_committee_name,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -681,7 +681,7 @@ async def keys_user(
     return models.api.KeysUserResults(
         endpoint="/keys/user",
         keys=keys,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -700,7 +700,7 @@ async def project_get(
     return models.api.ProjectGetResults(
         endpoint="/project/get",
         project=project,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -744,7 +744,7 @@ async def project_policy(
         policy_start_vote_template=project.policy_start_vote_template,
         policy_strict_checking=project.policy_strict_checking,
         policy_vote_comment_template=project.policy_vote_comment_template,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -764,7 +764,7 @@ async def project_releases(
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
         releases=releases,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -783,7 +783,7 @@ async def projects_list(
     return models.api.ProjectsListResults(
         endpoint="/projects/list",
         projects=projects,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -834,7 +834,7 @@ async def publisher_distribution_record(
     return models.api.PublisherDistributionRecordResults(
         endpoint="/publisher/distribution/record",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -872,7 +872,7 @@ async def publisher_release_announce(
     return models.api.PublisherReleaseAnnounceResults(
         endpoint="/publisher/release/announce",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -903,7 +903,7 @@ async def publisher_ssh_register(
         fingerprint=fingerprint,
         project=project.safe_name,
         expires=expires,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -936,7 +936,7 @@ async def publisher_vote_resolve(
     return models.api.PublisherVoteResolveResults(
         endpoint="/publisher/vote/resolve",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -978,7 +978,7 @@ async def release_announce(
     return models.api.ReleaseAnnounceResults(
         endpoint="/release/announce",
         success=True,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 @api.typed
@@ -1008,7 +1008,7 @@ async def release_create(
     return models.api.ReleaseCreateResults(
         endpoint="/release/create",
         release=release,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 # TODO: Duplicates the below
@@ -1038,7 +1038,7 @@ async def release_delete(
     return models.api.ReleaseDeleteResults(
         endpoint="/release/delete",
         deleted=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1059,7 +1059,7 @@ async def release_get(
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
         release=release,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1090,7 +1090,7 @@ async def release_paths(
     return models.api.ReleasePathsResults(
         endpoint="/release/paths",
         rel_paths=files,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1114,7 +1114,7 @@ async def release_revisions(
     return models.api.ReleaseRevisionsResults(
         endpoint="/release/revisions",
         revisions=revisions,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1150,7 +1150,7 @@ async def release_upload(
     return models.api.ReleaseUploadResults(
         endpoint="/release/upload",
         revision=result,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 @api.typed
@@ -1196,7 +1196,7 @@ async def releases_list(
         endpoint="/releases/list",
         data=paged_releases,
         count=count,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1263,7 +1263,7 @@ async def signature_provenance(
         fingerprint=signer_fingerprint,
         key_asc_text=key.ascii_armored_key,
         committees_with_artifact=signing_keys,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1289,7 +1289,7 @@ async def ssh_key_add(
     return models.api.SshKeyAddResults(
         endpoint="/ssh-key/add",
         fingerprint=fingerprint,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 @api.typed
@@ -1315,7 +1315,7 @@ async def ssh_key_delete(
     return models.api.SshKeyDeleteResults(
         endpoint="/ssh-key/delete",
         success=True,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 @api.typed
@@ -1349,7 +1349,7 @@ async def ssh_keys_list(
         endpoint="/ssh-keys/list",
         data=paged_keys,
         count=count,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1380,7 +1380,7 @@ async def tasks_list(
         endpoint="/tasks/list",
         data=paged_tasks,
         count=count,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1406,7 +1406,7 @@ async def update_distribution_task_status(
     return models.api.DistributeStatusUpdateResults(
         endpoint="/distribute/task/status",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1430,7 +1430,7 @@ async def user_info(
         endpoint="/user/info",
         participant_of=list(participant_of),
         member_of=list(member_of),
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1472,7 +1472,7 @@ async def users_list(
     return models.api.UsersListResults(
         endpoint="/users/list",
         users=sorted(users),
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 # TODO: Add endpoints to allow users to vote
@@ -1512,7 +1512,7 @@ async def vote_resolve(
     return models.api.VoteResolveResults(
         endpoint="/vote/resolve",
         success=True,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 @api.typed
@@ -1559,7 +1559,7 @@ async def vote_start(
     return models.api.VoteStartResults(
         endpoint="/vote/start",
         task=task,
-    ).model_dump(), 201
+    ).model_dump(mode="json"), 201
 
 
 @api.typed
@@ -1600,7 +1600,7 @@ async def vote_tabulate(
     return models.api.VoteTabulateResults(
         endpoint="/vote/tabulate",
         details=details,
-    ).model_dump(), 200
+    ).model_dump(mode="json"), 200
 
 
 def _jwt_asf_uid() -> str:
