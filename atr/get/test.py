@@ -67,7 +67,7 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
     URL: /test/login
     """
     if not config.get().ALLOW_TESTS:
-        raise base.ASFQuartException("Test login not enabled", errorcode=404)
+        return await web.redirect(root.notfound)
 
     session_data = atr.models.session.CookieData(
         uid="test",

@@ -146,7 +146,16 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
 
 
 @get.typed
-async def policies(session: web.Public, _policies: Literal["policies"]) -> str:
+async def notfound(_session: web.Public, _about: Literal["notfound"]) -> str:
+    """
+    URL: /notfound
+    Not found page.
+    """
+    return await template.render("notfound.html", error="404 Not Found", status_code=404)
+
+
+@get.typed
+async def policies(_session: web.Public, _policies: Literal["policies"]) -> str:
     """
     URL: /policies
     """
@@ -155,7 +164,7 @@ async def policies(session: web.Public, _policies: Literal["policies"]) -> str:
 
 @get.typed
 async def resolved_json(
-    session: web.Public, _miscellaneous_resolved_json: Literal["miscellaneous/resolved.json"]
+    _session: web.Public, _miscellaneous_resolved_json: Literal["miscellaneous/resolved.json"]
 ) -> quart_response.Response:
     """
     URL: /miscellaneous/resolved.json
@@ -168,7 +177,7 @@ async def resolved_json(
 
 
 @get.typed
-async def tutorial(session: web.Committer, _tutorial: Literal["tutorial"]) -> str:
+async def tutorial(_session: web.Committer, _tutorial: Literal["tutorial"]) -> str:
     """
     URL: /tutorial
     Tutorial page.
