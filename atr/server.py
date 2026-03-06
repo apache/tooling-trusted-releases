@@ -251,6 +251,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "is_admin_fn": user.is_admin,
             "is_viewing_as_admin_fn": util.is_user_viewing_as_admin,
             "is_committee_member_fn": user.is_committee_member,
+            "is_test_mode": config.get().ALLOW_TESTS,
             "post": post,
             "static_url": util.static_url,
             "unfinished_releases_fn": interaction.unfinished_releases,
