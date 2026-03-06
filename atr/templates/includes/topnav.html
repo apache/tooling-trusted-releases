@@ -33,9 +33,8 @@
                 <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-play-circle"></i>
                   Candidates</a>
               </li>
-              {% set unfinished_releases = unfinished_releases_fn(current_user.uid) %}
-              {% if unfinished_releases %}
-                {% for project_short_display_name, project_name, releases in unfinished_releases %}
+              {% if topnav_unfinished_releases %}
+                {% for project_short_display_name, project_name, releases in topnav_unfinished_releases %}
                   <li>
                     <hr class="dropdown-divider" />
                   </li>
@@ -51,8 +50,7 @@
                   {% endfor %}
                 {% endfor %}
               {% endif %}
-              {% set user_projects = user_projects_fn(current_user.uid) %}
-              {% if user_projects %}
+              {% if topnav_user_projects %}
                 {% set max_projects = 8 %}
                 <li>
                   <hr class="dropdown-divider" />
@@ -60,16 +58,16 @@
                 <li>
                   <a class="dropdown-item fw-bold" href="{{ as_url(get.root.index) }}">Start a release</a>
                 </li>
-                {% for project_name, project_full_name in user_projects[:max_projects] %}
+                {% for project_name, project_full_name in topnav_user_projects[:max_projects] %}
                   <li>
                     <a class="dropdown-item"
                        href="{{ as_url(get.start.selected, project_name=project_name) }}"><i class="bi bi-plus-circle"></i>
                       {{ project_full_name.removeprefix("Apache ").removesuffix(" (Incubating)") }}</a>
                   </li>
                 {% endfor %}
-                {% if user_projects|length > max_projects %}
+                {% if topnav_user_projects|length > max_projects %}
                   <li>
-                    <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-three-dots"></i> {{ user_projects|length - max_projects }} more</a>
+                    <a class="dropdown-item" href="{{ as_url(get.root.index) }}"><i class="bi bi-three-dots"></i> {{ topnav_user_projects|length - max_projects }} more</a>
                   </li>
                 {% endif %}
               {% endif %}

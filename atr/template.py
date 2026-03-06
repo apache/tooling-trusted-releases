@@ -22,11 +22,20 @@ import jinja2
 import quart
 import quart.app as app
 import quart.signals as signals
+import quart.templating as templating
 
 import atr.htm as htm
 import atr.util as util
 
-render_async = quart.render_template
+
+class SyncEnvironment(templating.Environment):
+    """Quart Jinja environment with async template execution disabled."""
+
+    def __init__(self, app_instance: app.Quart, **options: Any) -> None:
+        if "loader" not in options:
+            options["loader"] = app_instance.create_global_jinja_loader()
+        options["enable_async"] = False
+        jinja2.Environment.__init__(self, **options)
 
 
 async def blank(
@@ -47,6 +56,13 @@ async def blank(
     )
 
 
+async def render_string_sync(source: str, **context_vars: Any) -> str:
+    app_instance = quart.current_app
+    await app_instance.update_template_context(context_vars)
+    template = app_instance.jinja_env.from_string(source)
+    return await _render_in_thread(template, context_vars, app_instance)
+
+
 async def render_sync(
     template_name_or_list: str | jinja2.Template | list[str | jinja2.Template],
     **context_vars: Any,
@@ -58,8 +74,6 @@ async def render_sync(
 
 
 async def _render_in_thread(template: jinja2.Template, context: dict, app: app.Quart) -> str:
-    if template.environment.is_async is False:
-        raise RuntimeError("Template environment is not async")
     await signals.before_render_template.send_async(
         app,
         _sync_wrapper=app.ensure_async,  # pyright: ignore[reportArgumentType]
@@ -76,4 +90,6 @@ async def _render_in_thread(template: jinja2.Template, context: dict, app: app.Q
     return rendered_template
 
 
+render_async = render_sync
 render = render_sync
+render_string = render_string_sync

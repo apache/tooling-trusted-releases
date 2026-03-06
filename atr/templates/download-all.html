@@ -42,7 +42,6 @@
 
   <p class="border rounded p-3 mb-3">
     <i class="bi bi-info-circle me-1"></i>
-    {% set file_count, total_bytes, formatted_size = get_release_stats(release) %}
     This release consists of
     {% if file_count == 1 %}
       <code>{{ file_count }}</code> file

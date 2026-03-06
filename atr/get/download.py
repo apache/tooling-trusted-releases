@@ -62,6 +62,7 @@ async def all_selected(
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
     back_url = mapping.release_as_url(release)
+    file_count, total_bytes, formatted_size = await util.get_release_stats(release)
 
     return await template.render(
         "download-all.html",
@@ -73,7 +74,9 @@ async def all_selected(
         server_host=session.app_host,
         user_ssh_keys=user_ssh_keys,
         back_url=back_url,
-        get_release_stats=util.get_release_stats,
+        file_count=file_count,
+        total_bytes=total_bytes,
+        formatted_size=formatted_size,
     )
 
 

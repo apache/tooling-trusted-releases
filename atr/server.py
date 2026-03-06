@@ -142,6 +142,7 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     if asfquart.construct is ...:
         raise ValueError("asfquart.construct is not set")
     app = asfquart.construct(__name__, token_file="secrets/generated/apptoken.txt")
+    app.jinja_environment = template.SyncEnvironment
     # ASFQuart sets secret_key from apptoken.txt, or generates a new one
     # We must preserve this because from_object will overwrite it
     # Our AppConfig.SECRET_KEY is None since we no longer support that setting
@@ -221,7 +222,7 @@ def _app_setup_api_docs(app: base.QuartApp) -> None:
     @app.route("/api/docs")
     @quart_schema.hide
     async def swagger_ui() -> str:
-        return await quart.render_template_string(
+        return await template.render_string(
             _SWAGGER_UI_TEMPLATE,
             title="ATR API",
             swagger_js_url=app.config["QUART_SCHEMA_SWAGGER_JS_URL"],
@@ -242,11 +243,19 @@ def _app_setup_context(app: base.QuartApp) -> None:
         import atr.metadata as metadata
         import atr.post as post
 
+        current_user = await asfquart.session.read()
+        topnav_unfinished_releases: list[tuple[str, str, list[sql.Release]]] = []
+        topnav_user_projects: list[tuple[str, str]] = []
+        current_uid = current_user.uid if current_user else None
+        if isinstance(current_uid, str):
+            topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
+            topnav_user_projects = await interaction.user_projects(current_uid)
+
         return {
             "admin": admin,
             "as_url": util.as_url,
             "commit": metadata.commit,
-            "current_user": await asfquart.session.read(),
+            "current_user": current_user,
             "get": get,
             "is_admin_fn": user.is_admin,
             "is_viewing_as_admin_fn": util.is_user_viewing_as_admin,
@@ -254,9 +263,8 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "is_test_mode": config.get().ALLOW_TESTS,
             "post": post,
             "static_url": util.static_url,
-            "unfinished_releases_fn": interaction.unfinished_releases,
-            # "user_committees_fn": interaction.user_committees,
-            "user_projects_fn": interaction.user_projects,
+            "topnav_unfinished_releases": topnav_unfinished_releases,
+            "topnav_user_projects": topnav_user_projects,
             "release_as_url": mapping.release_as_url,
             "version": metadata.version,
         }
