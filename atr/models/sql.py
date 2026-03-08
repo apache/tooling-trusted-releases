@@ -168,6 +168,7 @@ class QuarantineStatus(enum.Enum):
     STAGING = "STAGING"
     PENDING = "PENDING"
     FAILED = "FAILED"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
 
 
 class ReleasePhase(enum.StrEnum):

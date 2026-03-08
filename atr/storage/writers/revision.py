@@ -329,6 +329,27 @@ class CommitteeParticipant(FoundationCommitter):
         self.__asf_uid = asf_uid
         self.__committee_name = committee_name
 
+    async def clear_quarantine(
+        self,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
+        quarantined_id: int,
+    ) -> None:
+        release_name = sql.release_name(str(project_name), str(version_name))
+        quarantined = await self.__data.quarantined(
+            id=quarantined_id, release_name=release_name, status=sql.QuarantineStatus.FAILED
+        ).get()
+        if quarantined is None:
+            raise RuntimeError("Quarantine failure not found or not in FAILED state")
+        quarantined.status = sql.QuarantineStatus.ACKNOWLEDGED
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_name=str(project_name),
+            version_name=str(version_name),
+            quarantined_id=quarantined_id,
+        )
+
     async def create_revision_with_quarantine(  # noqa: C901
         self,
         project_name: safe.ProjectName,

@@ -39,59 +39,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-def render_checks_summary(
-    info: types.PathInfo | None, project_name: safe.ProjectName, version_name: safe.VersionName
-) -> htm.Element | None:
-    if (info is None) or (not info.checker_stats):
-        return None
-
-    card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header")[htpy.h5(".mb-0")["Checks summary"]]
-
-    body = htm.Block(htm.div, classes=".card-body")
-    for i, stat in enumerate(info.checker_stats):
-        stripe_class = ".atr-stripe-odd" if ((i % 2) == 0) else ".atr-stripe-even"
-        details = htm.Block(htm.details, classes=f".mb-0.p-2{stripe_class}")
-
-        summary_content: list[htm.Element | str] = []
-        if stat.warning_count > 0:
-            summary_content.append(htpy.span(".badge.bg-warning.text-dark.me-2")[str(stat.warning_count)])
-        if stat.failure_count > 0:
-            summary_content.append(htpy.span(".badge.bg-danger.me-2")[str(stat.failure_count)])
-        if stat.blocker_count > 0:
-            summary_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[str(stat.blocker_count)])
-        summary_content.append(htpy.strong[_checker_display_name(stat.checker)])
-
-        details.summary[*summary_content]
-
-        files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
-        all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
-        for file_path in sorted(all_files):
-            report_url = f"/report/{project_name!s}/{version_name!s}/{file_path}"
-            error_count = stat.failure_files.get(file_path, 0)
-            blocker_count = stat.blocker_files.get(file_path, 0)
-            warning_count = stat.warning_files.get(file_path, 0)
-
-            file_content: list[htm.Element | str] = []
-            if error_count > 0:
-                file_content.append(htpy.span(".badge.bg-danger.me-2")[util.plural(error_count, "error")])
-            if blocker_count > 0:
-                file_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[util.plural(blocker_count, "blocker")])
-            if warning_count > 0:
-                file_content.append(
-                    htpy.span(".badge.bg-warning.text-dark.me-2")[util.plural(warning_count, "warning")]
-                )
-            file_content.append(htpy.a(href=report_url)[htpy.strong[htpy.code[file_path]]])
-
-            files_div.div[*file_content]
-
-        details.append(files_div.collect())
-        body.append(details.collect())
-
-    card.append(body.collect())
-    return card.collect()
-
-
 async def check(
     session: web.Committer | None,
     release: sql.Release,
@@ -131,6 +78,25 @@ async def check(
             release_name=release.name, status=sql.QuarantineStatus.PENDING
         ).all()
         quarantined_failed = await data.quarantined(release_name=release.name, status=sql.QuarantineStatus.FAILED).all()
+
+    clear_quarantine_forms: dict[int, htm.Element] = {}
+    if session is not None:
+        for q in quarantined_failed:
+            if q.id is None:
+                continue
+            clear_quarantine_forms[q.id] = form.render(
+                model_cls=draft.ClearQuarantineForm,
+                action=util.as_url(
+                    post.draft.quarantine_clear,
+                    project_name=release.safe_project_name,
+                    version_name=release.safe_version_name,
+                ),
+                form_classes=".d-inline-block.m-0",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Dismiss",
+                empty=True,
+                defaults={"quarantined_id": str(q.id)},
+            )
 
     # Get the number of ongoing tasks for the current revision
     ongoing_tasks_count = 0
@@ -223,6 +189,7 @@ async def check(
         ongoing_tasks_count=ongoing_tasks_count,
         quarantined_pending=quarantined_pending,
         quarantined_failed=quarantined_failed,
+        clear_quarantine_forms=clear_quarantine_forms,
         delete_form=delete_form,
         delete_file_forms=delete_file_forms,
         asf_id=asf_id,
@@ -248,6 +215,59 @@ async def check(
         can_resolve=can_resolve,
         checks_summary_html=checks_summary_html,
     )
+
+
+def render_checks_summary(
+    info: types.PathInfo | None, project_name: safe.ProjectName, version_name: safe.VersionName
+) -> htm.Element | None:
+    if (info is None) or (not info.checker_stats):
+        return None
+
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header")[htpy.h5(".mb-0")["Checks summary"]]
+
+    body = htm.Block(htm.div, classes=".card-body")
+    for i, stat in enumerate(info.checker_stats):
+        stripe_class = ".atr-stripe-odd" if ((i % 2) == 0) else ".atr-stripe-even"
+        details = htm.Block(htm.details, classes=f".mb-0.p-2{stripe_class}")
+
+        summary_content: list[htm.Element | str] = []
+        if stat.warning_count > 0:
+            summary_content.append(htpy.span(".badge.bg-warning.text-dark.me-2")[str(stat.warning_count)])
+        if stat.failure_count > 0:
+            summary_content.append(htpy.span(".badge.bg-danger.me-2")[str(stat.failure_count)])
+        if stat.blocker_count > 0:
+            summary_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[str(stat.blocker_count)])
+        summary_content.append(htpy.strong[_checker_display_name(stat.checker)])
+
+        details.summary[*summary_content]
+
+        files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
+        all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
+        for file_path in sorted(all_files):
+            report_url = f"/report/{project_name!s}/{version_name!s}/{file_path}"
+            error_count = stat.failure_files.get(file_path, 0)
+            blocker_count = stat.blocker_files.get(file_path, 0)
+            warning_count = stat.warning_files.get(file_path, 0)
+
+            file_content: list[htm.Element | str] = []
+            if error_count > 0:
+                file_content.append(htpy.span(".badge.bg-danger.me-2")[util.plural(error_count, "error")])
+            if blocker_count > 0:
+                file_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[util.plural(blocker_count, "blocker")])
+            if warning_count > 0:
+                file_content.append(
+                    htpy.span(".badge.bg-warning.text-dark.me-2")[util.plural(warning_count, "warning")]
+                )
+            file_content.append(htpy.a(href=report_url)[htpy.strong[htpy.code[file_path]]])
+
+            files_div.div[*file_content]
+
+        details.append(files_div.collect())
+        body.append(details.collect())
+
+    card.append(body.collect())
+    return card.collect()
 
 
 def _checker_display_name(checker: str) -> str:

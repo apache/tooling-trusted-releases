@@ -187,6 +187,27 @@ async def hashgen(
 
 
 @post.typed
+async def quarantine_clear(
+    session: web.Committer,
+    _draft_quarantine_clear: Literal["draft/quarantine/clear"],
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    clear_form: shared.draft.ClearQuarantineForm,
+) -> web.WerkzeugResponse:
+    """URL: /draft/quarantine/clear/<project_name>/<version_name>"""
+    async with storage.write(session) as write:
+        wacp = await write.as_project_committee_participant(project_name)
+        await wacp.revision.clear_quarantine(project_name, version_name, clear_form.quarantined_id)
+
+    return await session.redirect(
+        get.compose.selected,
+        project_name=str(project_name),
+        version_name=str(version_name),
+        success="Quarantine failure dismissed",
+    )
+
+
+@post.typed
 async def recheck(
     session: web.Committer,
     _draft_recheck: Literal["draft/recheck"],

@@ -26,8 +26,43 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage as storage
+import atr.storage.writers.revision as revision
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
+
+
+@pytest.mark.asyncio
+async def test_clear_quarantine_raises_when_not_found():
+    mock_data = mock.AsyncMock()
+    mock_query = mock.MagicMock()
+    mock_query.get = mock.AsyncMock(return_value=None)
+    mock_data.quarantined = mock.MagicMock(return_value=mock_query)
+
+    writer = _make_revision_writer(mock_data)
+    with pytest.raises(RuntimeError, match="not found"):
+        await writer.clear_quarantine(safe.ProjectName("proj"), safe.VersionName("1.0"), 999)
+
+    mock_data.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clear_quarantine_transitions_failed_to_acknowledged():
+    quarantined_row = mock.MagicMock(spec=sql.Quarantined)
+    quarantined_row.id = 7
+    quarantined_row.status = sql.QuarantineStatus.FAILED
+
+    mock_data = mock.AsyncMock()
+    mock_query = mock.MagicMock()
+    mock_query.get = mock.AsyncMock(return_value=quarantined_row)
+    mock_data.quarantined = mock.MagicMock(return_value=mock_query)
+
+    writer = _make_revision_writer(mock_data)
+    await writer.clear_quarantine(safe.ProjectName("proj"), safe.VersionName("1.0"), 7)
+
+    assert quarantined_row.status == sql.QuarantineStatus.ACKNOWLEDGED
+    mock_data.commit.assert_awaited_once()
+    mock_data.quarantined.assert_called_once_with(id=7, release_name="proj-1.0", status=sql.QuarantineStatus.FAILED)
 
 
 @pytest.mark.asyncio
@@ -492,6 +527,13 @@ def _make_quarantined_row() -> mock.MagicMock:
     row.release.version = "1.0"
     row.release.safe_version_name = safe.VersionName(row.release.version)
     return row
+
+
+def _make_revision_writer(mock_data: mock.AsyncMock) -> revision.CommitteeParticipant:
+    mock_write = mock.MagicMock(spec=storage.Write)
+    mock_write.authorisation.asf_uid = "testuser"
+    mock_write_as = mock.MagicMock(spec=storage.WriteAsCommitteeParticipant)
+    return revision.CommitteeParticipant(mock_write, mock_write_as, mock_data, "committee")
 
 
 def _make_session_returning(quarantined_row: mock.MagicMock) -> mock.AsyncMock:

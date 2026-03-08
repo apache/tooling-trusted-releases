@@ -18,6 +18,10 @@
 import atr.form as form
 
 
+class ClearQuarantineForm(form.Form):
+    quarantined_id: form.Int = form.label("Quarantine ID", widget=form.Widget.HIDDEN)
+
+
 class DeleteFileForm(form.Form):
     file_path: form.RelPath = form.label("File path", widget=form.Widget.HIDDEN)
 
