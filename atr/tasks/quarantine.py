@@ -58,8 +58,14 @@ class QuarantineValidate(schema.Strict):
 
 
 def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
+    done_file = _backfill_done_file()
+    if done_file.exists():
+        return []
+
     unfinished_dir = paths.get_unfinished_dir()
     if not unfinished_dir.is_dir():
+        done_file.parent.mkdir(parents=True, exist_ok=True)
+        done_file.touch()
         return []
 
     cache_archives_dir = paths.get_cache_archives_dir()
@@ -89,6 +95,8 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
                     results_list,
                 )
 
+    done_file.parent.mkdir(parents=True, exist_ok=True)
+    done_file.touch()
     return results_list
 
 
@@ -132,6 +140,10 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
 
     await _promote(quarantined, project_name, version_name, release.name, str(quarantine_dir))
     return None
+
+
+def _backfill_done_file() -> pathlib.Path:
+    return paths.get_cache_archives_dir().parent / "archive-backfill.done"
 
 
 def _backfill_extract_archive(

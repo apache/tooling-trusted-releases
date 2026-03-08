@@ -91,6 +91,7 @@ def test_backfill_empty_unfinished_dir(monkeypatch: pytest.MonkeyPatch, tmp_path
     result = quarantine.backfill_archive_cache()
 
     assert result == []
+    assert (tmp_path / "cache" / "archive-backfill.done").is_file()
 
 
 def test_backfill_extracts_same_content_into_different_namespaces(
@@ -135,6 +136,7 @@ def test_backfill_extracts_uncached_archive(monkeypatch: pytest.MonkeyPatch, tmp
     assert result_cache_dir.is_dir()
     assert (result_cache_dir / "README.txt").read_text() == "Hello"
     assert duration >= 0
+    assert (tmp_path / "cache" / "archive-backfill.done").is_file()
 
 
 def test_backfill_skips_non_archive_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -145,6 +147,23 @@ def test_backfill_skips_non_archive_files(monkeypatch: pytest.MonkeyPatch, tmp_p
     revision_dir.mkdir(parents=True)
     (revision_dir / "artifact.tar.gz.sha512").write_text("somehash  artifact.tar.gz")
     (revision_dir / "artifact.tar.gz.asc").write_bytes(b"signature")
+
+    result = quarantine.backfill_archive_cache()
+
+    assert result == []
+
+
+def test_backfill_skips_scan_when_done_file_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    done_file = tmp_path / "cache" / "archive-backfill.done"
+    done_file.touch()
+
+    def fail_if_called(*args, **kwargs) -> None:
+        raise AssertionError("backfill scan should be skipped when the done file exists")
+
+    monkeypatch.setattr(quarantine, "_backfill_revision", fail_if_called)
 
     result = quarantine.backfill_archive_cache()
 
