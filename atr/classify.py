@@ -23,7 +23,7 @@ from typing import Final
 
 import atr.analysis as analysis
 
-_SOURCE_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](source-release|sources|source|src)$")
+_SOURCE_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](source-release|sources|source|src)(?=[-_]|$)")
 
 
 class FileType(enum.Enum):
