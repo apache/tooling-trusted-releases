@@ -42,6 +42,15 @@ async def compute_file_hash(path: str | pathlib.Path) -> str:
     return f"blake3:{hasher.hexdigest()}"
 
 
+def compute_file_hash_sync(path: str | pathlib.Path) -> str:
+    path = pathlib.Path(path)
+    hasher = blake3.blake3()
+    with open(path, "rb") as f:
+        while chunk := f.read(_HASH_CHUNK_SIZE):
+            hasher.update(chunk)
+    return f"blake3:{hasher.hexdigest()}"
+
+
 def compute_sha3_256(file_data: bytes) -> str:
     """Compute SHA3-256 hash of file data."""
     return hashlib.sha3_256(file_data).hexdigest()

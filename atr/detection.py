@@ -25,6 +25,9 @@ import puremagic
 import atr.models.attestable as models
 import atr.tarzip as tarzip
 
+# TODO: Widen the range of types checked here
+QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
+
 _BZIP2_TYPES: Final[set[str]] = {"application/x-bzip2"}
 _DEB_TYPES: Final[set[str]] = {"application/vnd.debian.binary-package", "application/x-archive"}
 _EXE_TYPES: Final[set[str]] = {"application/vnd.microsoft.portable-executable", "application/octet-stream"}
@@ -60,8 +63,6 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 }
 
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
-# TODO: Widen the range of types checked here
-_QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
 _QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
 
 
@@ -174,7 +175,7 @@ def _path_basename(path_key: str) -> str:
 
 def _quarantine_archive_suffix(filename: str) -> str | None:
     lower_name = filename.lower()
-    for suffix in _QUARANTINE_ARCHIVE_SUFFIXES:
+    for suffix in QUARANTINE_ARCHIVE_SUFFIXES:
         if lower_name.endswith(suffix):
             return _QUARANTINE_NORMALISED_SUFFIXES.get(suffix, suffix)
     return None

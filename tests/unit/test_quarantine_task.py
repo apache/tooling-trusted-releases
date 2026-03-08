@@ -21,7 +21,6 @@ import pathlib
 import tarfile
 import unittest.mock as mock
 
-import aiofiles
 import pytest
 
 import atr.models.safe as safe
@@ -82,17 +81,16 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
         recorded["staging_dir"] = staging_dir
         (staging_dir / "content.txt").write_text("staged")
 
-    async def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
+    def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
         dst_path = pathlib.Path(dst)
-        await aiofiles.os.makedirs(dst_path, exist_ok=True)
-        async with aiofiles.open(dst_path / "winner.txt", "w") as f:
-            await f.write("winner")
+        dst_path.mkdir(parents=True, exist_ok=True)
+        (dst_path / "winner.txt").write_text("winner")
         raise OSError(errno.ENOTEMPTY, "Directory not empty", str(dst_path))
 
     monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
-    monkeypatch.setattr(quarantine.aiofiles.os, "rename", rename)
+    monkeypatch.setattr(quarantine.os, "rename", rename)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:ghi", errors=[])]
 
@@ -128,17 +126,16 @@ async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_
         recorded["staging_dir"] = staging_dir
         (staging_dir / "content.txt").write_text("staged")
 
-    async def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
+    def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
         dst_path = pathlib.Path(dst)
-        await aiofiles.os.makedirs(dst_path, exist_ok=True)
-        async with aiofiles.open(dst_path / "winner.txt", "w") as f:
-            await f.write("winner")
+        dst_path.mkdir(parents=True, exist_ok=True)
+        (dst_path / "winner.txt").write_text("winner")
         raise FileExistsError(dst)
 
     monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
-    monkeypatch.setattr(quarantine.aiofiles.os, "rename", rename)
+    monkeypatch.setattr(quarantine.os, "rename", rename)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:def", errors=[])]
 

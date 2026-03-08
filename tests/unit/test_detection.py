@@ -52,6 +52,28 @@ def test_check_archive_safety_accepts_safe_zip(tmp_path):
     assert detection.check_archive_safety(str(archive_path)) == []
 
 
+def test_check_archive_safety_accepts_dotenv_anywhere_in_tar_and_zip(tmp_path):
+    tar_path = tmp_path / "safe-dotenv.tar.gz"
+    _write_tar_gz(
+        tar_path,
+        [
+            _tar_regular_file(".env", b"ATR_STATUS=ALPHA\n"),
+            _tar_regular_file("config/.env", b"SECRET=value\n"),
+        ],
+    )
+    zip_path = tmp_path / "safe-dotenv.zip"
+    _write_zip(
+        zip_path,
+        [
+            (".env", b"ATR_STATUS=ALPHA\n"),
+            ("config/.env", b"SECRET=value\n"),
+        ],
+    )
+
+    assert detection.check_archive_safety(str(tar_path)) == []
+    assert detection.check_archive_safety(str(zip_path)) == []
+
+
 def test_check_archive_safety_rejects_absolute_paths_in_tar_and_zip(tmp_path):
     tar_path = tmp_path / "unsafe-absolute.tar.gz"
     _write_tar_gz(

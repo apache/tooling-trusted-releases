@@ -62,6 +62,7 @@ import atr.preload as preload
 import atr.ssh as ssh
 import atr.svn.pubsub as pubsub
 import atr.tasks as tasks
+import atr.tasks.quarantine as quarantine
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -282,6 +283,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         migrated = await asyncio.to_thread(attestable.migrate_to_paths_files)
         if migrated > 0:
             log.info(f"Migrated {migrated} attestable files to paths format")
+
+        await _backfill_archive_cache()
 
         await cache.admins_startup_load()
         admins_task = asyncio.create_task(cache.admins_refresh_loop())
@@ -577,6 +580,15 @@ async def _app_shutdown_log_listeners(app):
         request_listener.stop()
     if listener := app.extensions.get("logging_listener"):
         listener.stop()
+
+
+async def _backfill_archive_cache() -> None:
+    backfill_results = await asyncio.to_thread(quarantine.backfill_archive_cache)
+    if backfill_results:
+        total_duration = sum(d for _, _, d in backfill_results)
+        log.info(f"Backfilled {len(backfill_results)} archive cache entries in {total_duration:.1f}s")
+        for archive_path, cache_dir, duration in backfill_results:
+            log.info(f"  {cache_dir} ({duration:.1f}s) from {archive_path}")
 
 
 def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:

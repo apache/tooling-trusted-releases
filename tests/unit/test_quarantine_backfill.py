@@ -1,0 +1,181 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import io
+import pathlib
+import tarfile
+
+import pytest
+
+import atr.hashes as hashes
+import atr.tasks.quarantine as quarantine
+
+
+def test_backfill_already_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_dir = unfinished_dir / "proj" / "1.0" / "00001"
+    revision_dir.mkdir(parents=True)
+    archive_path = revision_dir / "artifact.tar.gz"
+    _create_tar_gz(archive_path)
+
+    content_hash = hashes.compute_file_hash_sync(archive_path)
+    cache_key = hashes.filesystem_cache_archives_key(content_hash)
+    existing_cache = cache_dir / "proj" / "1.0" / cache_key
+    existing_cache.mkdir(parents=True)
+
+    result = quarantine.backfill_archive_cache()
+
+    assert result == []
+
+
+def test_backfill_continues_after_extraction_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_dir = unfinished_dir / "proj" / "1.0" / "00001"
+    revision_dir.mkdir(parents=True)
+    (revision_dir / "bad.tar.gz").write_bytes(b"not a valid archive")
+    _create_tar_gz(revision_dir / "good.tar.gz")
+
+    result = quarantine.backfill_archive_cache()
+
+    assert len(result) == 1
+    assert "good.tar.gz" in result[0][0]
+
+    good_hash = hashes.compute_file_hash_sync(revision_dir / "good.tar.gz")
+    good_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_cache_archives_key(good_hash)
+    assert good_cache.is_dir()
+
+    bad_hash = hashes.compute_file_hash_sync(revision_dir / "bad.tar.gz")
+    bad_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_cache_archives_key(bad_hash)
+    assert not bad_cache.exists()
+
+
+def test_backfill_deduplicates_within_same_version(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_1 = unfinished_dir / "proj" / "1.0" / "00001"
+    revision_1.mkdir(parents=True)
+    _create_tar_gz(revision_1 / "artifact.tar.gz")
+
+    revision_2 = unfinished_dir / "proj" / "1.0" / "00002"
+    revision_2.mkdir(parents=True)
+    (revision_2 / "artifact.tar.gz").write_bytes((revision_1 / "artifact.tar.gz").read_bytes())
+
+    result = quarantine.backfill_archive_cache()
+
+    assert len(result) == 1
+
+
+def test_backfill_empty_unfinished_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    result = quarantine.backfill_archive_cache()
+
+    assert result == []
+
+
+def test_backfill_extracts_same_content_into_different_namespaces(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_a = unfinished_dir / "projA" / "1.0" / "00001"
+    revision_a.mkdir(parents=True)
+    _create_tar_gz(revision_a / "artifact.tar.gz")
+
+    revision_b = unfinished_dir / "projB" / "2.0" / "00001"
+    revision_b.mkdir(parents=True)
+    (revision_b / "artifact.tar.gz").write_bytes((revision_a / "artifact.tar.gz").read_bytes())
+
+    result = quarantine.backfill_archive_cache()
+
+    assert len(result) == 2
+
+    content_hash = hashes.compute_file_hash_sync(revision_a / "artifact.tar.gz")
+    cache_key = hashes.filesystem_cache_archives_key(content_hash)
+    assert (cache_dir / "projA" / "1.0" / cache_key).is_dir()
+    assert (cache_dir / "projB" / "2.0" / cache_key).is_dir()
+
+
+def test_backfill_extracts_uncached_archive(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_dir = unfinished_dir / "proj" / "1.0" / "00001"
+    revision_dir.mkdir(parents=True)
+    archive_path = revision_dir / "artifact.tar.gz"
+    _create_tar_gz(archive_path)
+    (revision_dir / "artifact.tar.gz.sha512").write_text("somehash  artifact.tar.gz")
+
+    result = quarantine.backfill_archive_cache()
+
+    assert len(result) == 1
+    archive_path_str, result_cache_dir, duration = result[0]
+    assert archive_path_str == str(archive_path)
+    assert result_cache_dir.is_dir()
+    assert (result_cache_dir / "README.txt").read_text() == "Hello"
+    assert duration >= 0
+
+
+def test_backfill_skips_non_archive_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    unfinished_dir, cache_dir = _setup_dirs(tmp_path)
+    _patch_paths(monkeypatch, tmp_path, unfinished_dir, cache_dir)
+
+    revision_dir = unfinished_dir / "proj" / "1.0" / "00001"
+    revision_dir.mkdir(parents=True)
+    (revision_dir / "artifact.tar.gz.sha512").write_text("somehash  artifact.tar.gz")
+    (revision_dir / "artifact.tar.gz.asc").write_bytes(b"signature")
+
+    result = quarantine.backfill_archive_cache()
+
+    assert result == []
+
+
+def _create_tar_gz(path: pathlib.Path) -> None:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo(name="README.txt")
+        content = b"Hello"
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+    path.write_bytes(buf.getvalue())
+
+
+def _patch_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    unfinished_dir: pathlib.Path,
+    cache_dir: pathlib.Path,
+) -> None:
+    monkeypatch.setattr(quarantine.paths, "get_unfinished_dir", lambda: unfinished_dir)
+    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_dir)
+    monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_path / "temporary")
+
+
+def _setup_dirs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    unfinished_dir = tmp_path / "unfinished"
+    cache_dir = tmp_path / "cache" / "archives"
+    staging_dir = tmp_path / "temporary"
+    for d in [unfinished_dir, cache_dir, staging_dir]:
+        d.mkdir(parents=True)
+    return unfinished_dir, cache_dir
