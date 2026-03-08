@@ -19,8 +19,11 @@ import enum
 import pathlib
 import re
 from collections.abc import Callable
+from typing import Final
 
 import atr.analysis as analysis
+
+_SOURCE_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](source-release|sources|source|src)$")
 
 
 class FileType(enum.Enum):
@@ -47,8 +50,12 @@ def classify(
     if any(path_str.endswith(s) for s in analysis.STANDALONE_METADATA_SUFFIXES):
         return FileType.METADATA
 
-    if search and search.group("artifact") and (source_matcher is not None) and (base_path is not None):
-        if source_matcher(str(base_path / path)):
+    if search and search.group("artifact"):
+        stem = path_str[: search.start()]
+        if _SOURCE_STEM.search(stem):
             return FileType.SOURCE
+        if (source_matcher is not None) and (base_path is not None):
+            if source_matcher(str(base_path / path)):
+                return FileType.SOURCE
 
     return FileType.BINARY
