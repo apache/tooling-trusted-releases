@@ -84,9 +84,11 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives_to_cache(args.archives, quarantine_dir, str(project_name), str(version_name))
-    except Exception:
-        await _mark_failed(quarantined, file_entries, "Archive extraction to cache failed")
+        await _extract_archives_to_cache(
+            args.archives, quarantine_dir, str(project_name), str(version_name), file_entries
+        )
+    except Exception as exc:
+        await _mark_failed(quarantined, file_entries, f"Archive extraction to cache failed: {exc}")
         await aioshutil.rmtree(quarantine_dir)
         return None
 
@@ -99,6 +101,7 @@ async def _extract_archives_to_cache(
     quarantine_dir: pathlib.Path,
     project_name: str,
     version_name: str,
+    file_entries: list[sql.QuarantineFileEntryV1],
 ) -> None:
     conf = config.get()
     cache_base = paths.get_cache_archives_dir() / project_name / version_name
@@ -143,9 +146,13 @@ async def _extract_archives_to_cache(
                     await aioshutil.rmtree(staging_dir, ignore_errors=True)
                 else:
                     raise
-        except Exception:
+        except Exception as exc:
             log.exception(f"Failed to extract archive {archive.rel_path} to cache")
             await aioshutil.rmtree(staging_dir, ignore_errors=True)
+            for entry in file_entries:
+                if entry.rel_path == archive.rel_path:
+                    entry.errors.append(f"Extraction failed: {exc}")
+                    break
             raise
 
 

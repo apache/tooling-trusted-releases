@@ -31,49 +31,6 @@ import atr.tasks.quarantine as quarantine
 
 
 @pytest.mark.asyncio
-async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_wins(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
-    archive_rel_path = "artifact.tar.gz"
-    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
-    cache_root = tmp_path / "cache"
-    tmp_root = tmp_path / "temporary"
-    recorded: dict[str, pathlib.Path] = {}
-
-    def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
-        staging_dir = pathlib.Path(extract_dir)
-        recorded["staging_dir"] = staging_dir
-        (staging_dir / "content.txt").write_text("staged")
-
-    async def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
-        dst_path = pathlib.Path(dst)
-        await aiofiles.os.makedirs(dst_path, exist_ok=True)
-        async with aiofiles.open(dst_path / "winner.txt", "w") as f:
-            await f.write("winner")
-        raise FileExistsError(dst)
-
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
-    monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
-    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
-    monkeypatch.setattr(quarantine.aiofiles.os, "rename", rename)
-
-    await quarantine._extract_archives_to_cache(
-        [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
-        quarantine_dir,
-        "proj",
-        "1.0",
-    )
-
-    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:def")
-
-    assert cache_dir.is_dir()
-    assert (cache_dir / "winner.txt").read_text() == "winner"
-    assert not recorded["staging_dir"].exists()
-
-
-@pytest.mark.asyncio
 async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_collision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -102,11 +59,14 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
     monkeypatch.setattr(quarantine.aiofiles.os, "rename", rename)
 
+    entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:ghi", errors=[])]
+
     await quarantine._extract_archives_to_cache(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:ghi")],
         quarantine_dir,
         "proj",
         "1.0",
+        entries,
     )
 
     cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:ghi")
@@ -114,6 +74,85 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
     assert cache_dir.is_dir()
     assert (cache_dir / "winner.txt").read_text() == "winner"
     assert not recorded["staging_dir"].exists()
+
+
+@pytest.mark.asyncio
+async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_wins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    quarantine_dir = tmp_path / "quarantine"
+    quarantine_dir.mkdir()
+    archive_rel_path = "artifact.tar.gz"
+    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
+    cache_root = tmp_path / "cache"
+    tmp_root = tmp_path / "temporary"
+    recorded: dict[str, pathlib.Path] = {}
+
+    def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
+        staging_dir = pathlib.Path(extract_dir)
+        recorded["staging_dir"] = staging_dir
+        (staging_dir / "content.txt").write_text("staged")
+
+    async def rename(src: pathlib.Path | str, dst: pathlib.Path | str) -> None:
+        dst_path = pathlib.Path(dst)
+        await aiofiles.os.makedirs(dst_path, exist_ok=True)
+        async with aiofiles.open(dst_path / "winner.txt", "w") as f:
+            await f.write("winner")
+        raise FileExistsError(dst)
+
+    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
+    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+    monkeypatch.setattr(quarantine.aiofiles.os, "rename", rename)
+
+    entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:def", errors=[])]
+
+    await quarantine._extract_archives_to_cache(
+        [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
+        quarantine_dir,
+        "proj",
+        "1.0",
+        entries,
+    )
+
+    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:def")
+
+    assert cache_dir.is_dir()
+    assert (cache_dir / "winner.txt").read_text() == "winner"
+    assert not recorded["staging_dir"].exists()
+
+
+@pytest.mark.asyncio
+async def test_extract_archives_to_cache_propagates_exarch_error_to_file_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    quarantine_dir = tmp_path / "quarantine"
+    quarantine_dir.mkdir()
+    archive_rel_path = "artifact.tar.gz"
+    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
+    cache_root = tmp_path / "cache"
+    tmp_root = tmp_path / "temporary"
+
+    def extract_archive(_archive_path: str, _extract_dir: str, _config: object) -> None:
+        raise RuntimeError("unsafe zip detected")
+
+    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
+    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+
+    entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:bad", errors=[])]
+
+    with pytest.raises(RuntimeError, match="unsafe zip detected"):
+        await quarantine._extract_archives_to_cache(
+            [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:bad")],
+            quarantine_dir,
+            "proj",
+            "1.0",
+            entries,
+        )
+
+    assert len(entries[0].errors) == 1
+    assert "unsafe zip detected" in entries[0].errors[0]
 
 
 @pytest.mark.asyncio
@@ -138,11 +177,14 @@ async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
 
+    entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:abc", errors=[])]
+
     await quarantine._extract_archives_to_cache(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:abc")],
         quarantine_dir,
         "proj",
         "1.0",
+        entries,
     )
 
     cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:abc")
@@ -312,7 +354,7 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         )
 
     assert result is None
-    mock_mark.assert_awaited_once_with(row, ok_entries, "Archive extraction to cache failed")
+    mock_mark.assert_awaited_once_with(row, ok_entries, "Archive extraction to cache failed: Extraction failure")
     mock_rmtree.assert_awaited_once_with(quarantine_dir)
 
 
