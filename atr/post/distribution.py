@@ -137,6 +137,10 @@ async def delete(
     await session.check_access(project_name)
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
+    url_release = sql.release_name(project_name, version_name)
+    if url_release != delete_form.release_name:
+        raise RuntimeError("Release name mismatch")
+
     # Validate the submitted data, and obtain the committee for its name
     async with db.session() as data:
         release = await data.release(name=str(delete_form.release_name)).demand(
