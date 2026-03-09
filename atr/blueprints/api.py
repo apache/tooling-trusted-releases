@@ -73,7 +73,7 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     query_safe_params = common.safe_params_for_type(query_param[1]) if query_param is not None else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
-        await common.run_validators(kwargs, validated_params)
+        await common.validate_params(kwargs, validated_params)
         kwargs.update(literal_params)
 
         if body_param is not None:

@@ -71,7 +71,7 @@ async def start_selected_revision(
     _manual_start: Literal["manual/start"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
     URL: /manual/start/<project_name>/<version_name>/<revision>
@@ -87,12 +87,12 @@ async def start_selected_revision(
                     error=error,
                     project_name=str(project_name),
                     version_name=str(version_name),
-                    revision=revision,
+                    revision=str(revision),
                 )
             case (release, _committee):
                 pass
 
-        content = await _render_page(release=release, revision=revision)
+        content = await _render_page(release=release, revision=str(revision))
 
         return await template.blank(
             title=f"Start manual vote on {release.project.short_display_name} {release.version}", content=content

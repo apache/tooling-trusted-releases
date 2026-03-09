@@ -374,7 +374,7 @@ async def _find_archive_root(archive_path: pathlib.Path, extract_dir: pathlib.Pa
 
 
 async def _load_tp_payload(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
 ) -> github_models.TrustedPublisherPayload | None:
     payload_path = attestable.github_tp_payload_path(project_name, version_name, revision_number)
     if not await aiofiles.os.path.isfile(payload_path):

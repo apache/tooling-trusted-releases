@@ -166,7 +166,7 @@ class DistributionRecordResults(schema.Strict):
 class IgnoreAddArgs(schema.Strict):
     project_name: safe.ProjectName = schema.example("example")
     release_glob: str | None = schema.default_example(None, "example-0.0.*")
-    revision_number: str | None = schema.default_example(None, "00001")
+    revision_number: safe.RevisionNumber | None = schema.default_example(None, "00001")
     checker_glob: str | None = schema.default_example(None, "atr.tasks.checks.license.files")
     primary_rel_path_glob: str | None = schema.default_example(None, "apache-example-0.0.1-*.tar.gz")
     member_rel_path_glob: str | None = schema.default_example(None, "apache-example-0.0.1/*.xml")
@@ -357,7 +357,7 @@ class PublisherReleaseAnnounceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     version: safe.VersionName = schema.example("0.0.1")
-    revision: str = schema.example("00005")
+    revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: str = schema.example("example/1.0.0")
@@ -396,7 +396,7 @@ class PublisherVoteResolveResults(schema.Strict):
 class ReleaseAnnounceArgs(schema.Strict):
     project: safe.ProjectName = schema.example("example")
     version: safe.VersionName = schema.example("1.0.0")
-    revision: str = schema.example("00005")
+    revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: str = schema.example("example/1.0.0")
@@ -581,7 +581,7 @@ class VoteResolveResults(schema.Strict):
 class VoteStartArgs(schema.Strict):
     project: safe.ProjectName = schema.example("example")
     version: safe.VersionName = schema.example("0.0.1")
-    revision: str = schema.example("00005")
+    revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     vote_duration: int = schema.example(10)
     subject: str = schema.example("[VOTE] Apache Example 0.0.1 release")

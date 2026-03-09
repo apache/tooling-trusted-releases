@@ -257,7 +257,8 @@ async def sbomgen(
     URL: /draft/sbomgen/<project_name>/<version_name>/<file_path>
     Generate a CycloneDX SBOM file for a candidate draft file, creating a new revision.
     """
-    rel_path = form.to_relpath(file_path)
+    path = str(file_path)
+    rel_path = form.to_relpath(path)
     if rel_path is None:
         await quart.flash("Invalid file path", "error")
         return await session.redirect(
@@ -265,14 +266,9 @@ async def sbomgen(
         )
 
     # Check that the file is a .tar.gz archive before creating a revision
-    if not (
-        file_path.endswith(".tar.gz")
-        or file_path.endswith(".tgz")
-        or file_path.endswith(".zip")
-        or file_path.endswith(".jar")
-    ):
+    if not (path.endswith(".tar.gz") or path.endswith(".tgz") or path.endswith(".zip") or path.endswith(".jar")):
         raise base.ASFQuartException(
-            f"SBOM generation requires .tar.gz, .tgz, .zip or .jar files. Received: {file_path}", errorcode=400
+            f"SBOM generation requires .tar.gz, .tgz, .zip or .jar files. Received: {path}", errorcode=400
         )
 
     try:

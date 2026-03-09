@@ -164,13 +164,13 @@ async def candidates(project: sql.Project) -> list[sql.Release]:
 
 async def checks_for(
     release: sql.Release,
-    revision: str | None = None,
+    revision: safe.RevisionNumber | None = None,
     rel_path: str | None = None,
     caller_data: db.Session | None = None,
 ) -> list[sql.CheckResult]:
     """Get the check results for a release, optionally for a specific revision and/or file path."""
     if revision is None:
-        revision = release.unwrap_revision_number
+        revision = release.safe_latest_revision_number
     file_path_checks = await attestable.load_checks(release.safe_project_name, release.safe_version_name, revision)
     if file_path_checks:
         if rel_path is not None:
@@ -194,7 +194,10 @@ async def checks_for(
 
 
 async def count_checks_for_revision_by_status(
-    status: sql.CheckResultStatus, release: sql.Release, revision_number: str, caller_data: db.Session | None = None
+    status: sql.CheckResultStatus,
+    release: sql.Release,
+    revision_number: safe.RevisionNumber,
+    caller_data: db.Session | None = None,
 ):
     file_path_checks = await attestable.load_checks(
         release.safe_project_name, release.safe_version_name, revision_number
@@ -228,14 +231,18 @@ async def full_releases(project: sql.Project) -> list[sql.Release]:
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE)
 
 
-async def has_blocker_checks(release: sql.Release, revision_number: str, caller_data: db.Session | None = None) -> bool:
+async def has_blocker_checks(
+    release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
+) -> bool:
     count = await count_checks_for_revision_by_status(
         sql.CheckResultStatus.BLOCKER, release, revision_number, caller_data
     )
     return count > 0
 
 
-async def has_failing_checks(release: sql.Release, revision_number: str, caller_data: db.Session | None = None) -> bool:
+async def has_failing_checks(
+    release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
+) -> bool:
     count = await count_checks_for_revision_by_status(
         sql.CheckResultStatus.FAILURE, release, revision_number, caller_data
     )
@@ -244,7 +251,7 @@ async def has_failing_checks(release: sql.Release, revision_number: str, caller_
 
 async def latest_info(
     project_name: safe.ProjectName, version_name: safe.VersionName
-) -> tuple[str, str, datetime.datetime] | None:
+) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
     release_name = sql.release_name(project_name, version_name)
     async with db.session() as data:
@@ -258,7 +265,7 @@ async def latest_info(
         revision = await data.revision(release_name=str(release_name), number=release.latest_revision_number).get()
         if not revision:
             return None
-    return revision.number, revision.asfuid, revision.created
+    return revision.safe_number, revision.asfuid, revision.created
 
 
 async def latest_revision(release: sql.Release, caller_data: db.Session | None = None) -> sql.Revision | None:
@@ -298,7 +305,7 @@ async def release_ready_for_vote(  # noqa: C901
     session: web.Committer,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
     data: db.Session,
     manual_vote: bool = False,
 ) -> tuple[sql.Release, sql.Committee] | str:
@@ -315,7 +322,7 @@ async def release_ready_for_vote(  # noqa: C901
     if selected_revision_number is None:
         return "No revision found for this release"
 
-    if selected_revision_number != revision:
+    if release.safe_latest_revision_number != revision:
         return "This revision does not match the revision you are voting on"
 
     committee = release.committee
@@ -397,7 +404,7 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
 
 
 async def tasks_ongoing(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str | None = None
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber | None = None
 ) -> int:
     tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
     async with db.session() as data:
@@ -405,7 +412,7 @@ async def tasks_ongoing(
             sql.Task.project_name == str(project_name),
             sql.Task.version_name == str(version_name),
             sql.Task.revision_number
-            == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else revision_number),
+            == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
         )
         result = await data.execute(query)
@@ -415,7 +422,7 @@ async def tasks_ongoing(
 async def tasks_ongoing_revision(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str | None = None,
+    revision_number: safe.RevisionNumber | None = None,
 ) -> tuple[int, str | None]:
     via = sql.validate_instrumented_attribute
     subquery = (
@@ -438,7 +445,7 @@ async def tasks_ongoing_revision(
         .where(
             sql.Task.project_name == str(project_name),
             sql.Task.version_name == str(version_name),
-            sql.Task.revision_number == (subquery if (revision_number is None) else revision_number),
+            sql.Task.revision_number == (subquery if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_(
                 [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
             ),

@@ -33,6 +33,7 @@ import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
@@ -49,14 +50,14 @@ async def finalise(
     _upload_finalise: Literal["upload/finalise"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    upload_session: str,
+    upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
     URL: /upload/finalise/<project_name>/<version_name>/<upload_session>
     """
 
     try:
-        staging_dir = paths.get_upload_staging_dir(upload_session)
+        staging_dir = paths.get_upload_staging_dir(str(upload_session))
     except ValueError:
         return _json_error("Invalid session token", 400)
 
@@ -143,14 +144,14 @@ async def stage(
     _upload_stage: Literal["upload/stage"],
     _project_name: safe.ProjectName,
     _version_name: safe.VersionName,
-    upload_session: str,
+    upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
     URL: /upload/stage/<project_name>/<version_name>/<upload_session>
     """
 
     try:
-        staging_dir = paths.get_upload_staging_dir(upload_session)
+        staging_dir = paths.get_upload_staging_dir(str(upload_session))
     except ValueError:
         return _json_error("Invalid session token", 400)
 

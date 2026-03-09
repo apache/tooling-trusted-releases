@@ -320,7 +320,7 @@ async def _promote(
 
     previous_attestable = None
     if old_revision is not None:
-        previous_attestable = await attestable.load(project_name, version_name, old_revision.number)
+        previous_attestable = await attestable.load(project_name, version_name, old_revision.safe_number)
 
     base_inodes: dict[str, int] = {}
     base_hashes: dict[str, str] = {}

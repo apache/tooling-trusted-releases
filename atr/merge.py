@@ -38,7 +38,7 @@ async def merge(
     prior_dir: pathlib.Path,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    prior_revision_number: str,
+    prior_revision_number: safe.RevisionNumber,
     temp_dir: pathlib.Path,
     n_inodes: dict[str, int],
     n_hashes: dict[str, str],
@@ -122,7 +122,7 @@ async def _add_from_prior(
     prior_hashes: dict[str, str] | None,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    prior_revision_number: str,
+    prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     target = temp_dir / path
     await asyncio.to_thread(_makedirs_with_permissions, target.parent, temp_dir)
@@ -179,7 +179,7 @@ async def _merge_all_present(
     prior_hashes: dict[str, str] | None,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    prior_revision_number: str,
+    prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     # Cases 6, 8: prior and new share an inode so they already agree
     if p_ino == n_ino:
@@ -240,7 +240,7 @@ async def _replace_with_prior(
     prior_hashes: dict[str, str] | None,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    prior_revision_number: str,
+    prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     await aiofiles.os.remove(temp_dir / path)
     await aiofiles.os.link(prior_dir / path, temp_dir / path)

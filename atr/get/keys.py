@@ -27,6 +27,7 @@ import atr.db as db
 import atr.form as form
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.post as post
 import atr.shared as shared
 import atr.storage as storage
@@ -72,14 +73,14 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
 
 
 @get.typed
-async def details(session: web.Committer, _keys_details: Literal["keys/details"], fingerprint: str) -> str:
+async def details(session: web.Committer, _keys_details: Literal["keys/details"], fingerprint: unsafe.UnsafeStr) -> str:
     """
     URL: /keys/details/<fingerprint>
     Display details for a specific OpenPGP key.
     """
-    fingerprint = fingerprint.lower()
+    key_fingerprint = str(fingerprint).lower()
     async with db.session() as data:
-        key, is_owner = await _key_and_is_owner(data, session, fingerprint)
+        key, is_owner = await _key_and_is_owner(data, session, key_fingerprint)
         user_committees = []
         if is_owner:
             project_list = session.committees + session.projects
@@ -154,7 +155,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         checkboxes = _render_committee_checkboxes(committee_choices, current_committee_names)
         pmc_div.form(
             method="post",
-            action=util.as_url(post.keys.details, fingerprint=fingerprint),
+            action=util.as_url(post.keys.details, fingerprint=key_fingerprint),
         )[
             form.csrf_input(),
             checkboxes,
@@ -182,7 +183,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
 @get.typed
 async def export(
-    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: str
+    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: unsafe.UnsafeStr
 ) -> web.TextResponse:
     """
     URL: /keys/export/<committee_name>
@@ -190,7 +191,7 @@ async def export(
     """
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
-        keys_file_text = await wafc.keys.keys_file_text(committee_name)
+        keys_file_text = await wafc.keys.keys_file_text(str(committee_name))
 
     return web.TextResponse(keys_file_text)
 

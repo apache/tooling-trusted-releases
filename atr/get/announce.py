@@ -69,7 +69,7 @@ async def selected(
         fullname=session.fullname,
         project_name=project_name,
         version_name=version_name,
-        revision_number=latest_revision_number,
+        revision_number=release.safe_latest_revision_number,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
         default_subject_template, default_body_template, options

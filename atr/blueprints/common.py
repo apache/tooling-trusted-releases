@@ -38,7 +38,7 @@ QUART_CONVERTERS: dict[Any, str] = {
     unsafe.Path: "path",
 }
 
-VALIDATED_TYPES: set[Any] = {safe.ProjectName, safe.VersionName}
+VALIDATED_TYPES: set[Any] = {safe.ProjectName, safe.RevisionNumber, safe.VersionName, unsafe.UnsafeStr}
 
 
 async def authenticate() -> web.Committer:
@@ -101,12 +101,7 @@ def build_path(
             form_param = (param_name, hint)
             continue
 
-        segment = _param_to_segment(param_name, hint, func.__name__)
-        segments.append(segment)
-        if hint in VALIDATED_TYPES:
-            validated_params.append((param_name, hint))
-        elif get_origin(hint) is Literal:
-            literal_params[param_name] = str(get_args(hint)[0])
+        _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
 
     path = "/" + "/".join(segments)
     return path, validated_params, literal_params, form_param, public
@@ -165,18 +160,12 @@ def build_api_path(
 
         inner, is_optional = _unwrap_optional(hint)
         if is_optional:
-            segment = _param_to_segment(param_name, inner, func.__name__)
-            segments.append(segment)
+            segments.append(_param_to_segment(param_name, inner, func.__name__))
             optional_params.append(param_name)
             # Note - this means that safe types which are optional will not get validated - no current use case for this
             continue
 
-        segment = _param_to_segment(param_name, hint, func.__name__)
-        segments.append(segment)
-        if hint in VALIDATED_TYPES:
-            validated_params.append((param_name, hint))
-        elif get_origin(hint) is Literal:
-            literal_params[param_name] = str(get_args(hint)[0])
+        _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
 
     path = "/" + "/".join(segments)
     return path, validated_params, literal_params, body_param, query_param, optional_params
@@ -196,9 +185,9 @@ def safe_params_for_type(cls: type) -> list[tuple[str, type]]:
     return [(name, hint) for name, hint in hints.items() if hint in VALIDATED_TYPES]
 
 
-async def run_validators(kwargs: dict[str, Any], validated_params: list[tuple[str, type]]) -> None:
+async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, type]]) -> None:
     """Validate URL parameters in order, using the type-specific validators."""
-    for param_name, param_type in validated_params:
+    for param_name, param_type in known_params:
         raw = kwargs[param_name]
         if param_type is safe.ProjectName:
             try:
@@ -210,6 +199,13 @@ async def run_validators(kwargs: dict[str, Any], validated_params: list[tuple[st
                 kwargs[param_name] = safe.VersionName(raw)
             except ValueError:
                 raise base.ASFQuartException(f"Version name {param_name!r} is invalid. ")
+        elif param_type is safe.RevisionNumber:
+            try:
+                kwargs[param_name] = safe.RevisionNumber(raw)
+            except ValueError:
+                raise base.ASFQuartException(f"Revision number {param_name!r} is invalid. ")
+        elif param_type is unsafe.UnsafeStr:
+            kwargs[param_name] = unsafe.UnsafeStr(raw)
 
 
 async def validate_safe_fields(
@@ -227,10 +223,29 @@ async def validate_safe_fields(
         value = getattr(instance, name, None)
         if value is not None:
             temp[name] = str(value)
-    await run_validators(temp, [(n, t) for n, t in safe_params if n in temp])
+    await validate_params(temp, [(n, t) for n, t in safe_params if n in temp])
     for name, _ in safe_params:
         if name in temp:
             setattr(instance, name, temp[name])
+
+
+def _classify_url_param(
+    param_name: str,
+    hint: Any,
+    func_name: str,
+    segments: list[str],
+    validated_params: list[tuple[str, type]],
+    literal_params: dict[str, str],
+) -> None:
+    """Build a URL segment for a parameter and classify it as validated or literal."""
+    segment = _param_to_segment(param_name, hint, func_name)
+    segments.append(segment)
+    if hint in VALIDATED_TYPES:
+        validated_params.append((param_name, hint))
+    elif get_origin(hint) is Literal:
+        literal_params[param_name] = str(get_args(hint)[0])
+    elif hint is str:
+        raise TypeError(f"Parameter {param_name!r} in {func_name} is unguarded str")
 
 
 def _is_body_type(hint: Any) -> bool:

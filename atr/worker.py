@@ -121,6 +121,7 @@ async def _execute_check_task(
 
     project_name = safe.ProjectName(task_obj.project_name)
     version_name = safe.VersionName(task_obj.version_name)
+    revision_number = safe.RevisionNumber(task_obj.revision_number)
 
     async def recorder_factory() -> checks.Recorder:
         return await checks.Recorder.create(
@@ -128,7 +129,7 @@ async def _execute_check_task(
             inputs_hash=task_obj.inputs_hash or "",
             project_name=project_name,
             version_name=version_name,
-            revision_number=task_obj.revision_number or "",
+            revision_number=revision_number,
             primary_rel_path=task_obj.primary_rel_path,
         )
 
@@ -137,7 +138,7 @@ async def _execute_check_task(
         asf_uid=task_obj.asf_uid,
         project_name=project_name,
         version_name=version_name,
-        revision_number=task_obj.revision_number,
+        revision_number=revision_number,
         primary_rel_path=task_obj.primary_rel_path,
         extra_args=task_args,
     )

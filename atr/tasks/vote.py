@@ -78,7 +78,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
             raise VoteInitiationError(f"No revisions found for release {args.release_name!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
-            release.safe_project_name, release.safe_version_name, latest_revision_number
+            release.safe_project_name, release.safe_version_name, release.safe_latest_revision_number
         )
         if ongoing_tasks > 0:
             raise VoteInitiationError(

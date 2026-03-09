@@ -146,7 +146,7 @@ async def selected_revision(
     _checks: Literal["checks"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ) -> web.QuartResponse:
     """
     URL: /checks/<project_name>/<version_name>/<revision_number>

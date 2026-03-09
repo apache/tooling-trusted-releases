@@ -61,14 +61,14 @@ async def selected(
         with_release_policy=True,
         with_project_release_policy=True,
     )
-    preview_revision_number = release.unwrap_revision_number
+    preview_revision_number = release.safe_latest_revision_number
 
     # Validate that the revision number matches
-    if announce_form.revision_number != preview_revision_number:
+    if announce_form.revision_number != str(preview_revision_number):
         return await session.redirect(
             get.announce.selected,
             error=f"The release has been updated since you loaded the form. "
-            f"Please review the current revision ({preview_revision_number}) and submit the form again.",
+            f"Please review the current revision ({preview_revision_number!s}) and submit the form again.",
             project_name=str(project_name),
             version_name=str(version_name),
         )

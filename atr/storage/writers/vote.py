@@ -139,7 +139,7 @@ class CommitteeParticipant(FoundationCommitter):
         email_to: str,
         project_name: safe.ProjectName,
         version_name: safe.VersionName,
-        selected_revision_number: str,
+        selected_revision_number: safe.RevisionNumber,
         vote_duration_choice: int,
         subject: str,
         body_data: str,
@@ -358,7 +358,7 @@ class CommitteeMember(CommitteeParticipant):
                 fullname=asf_fullname,
                 project_name=release.safe_project_name,
                 version_name=release.safe_version_name,
-                revision_number=revision_number,
+                revision_number=release.safe_latest_revision_number,
                 vote_duration=vote_duration,
             )
             subject_data, body_data = await construct.start_vote_subject_and_body(
@@ -369,7 +369,7 @@ class CommitteeMember(CommitteeParticipant):
                 permitted_recipients=[incubator_vote_address],
                 project_name=release.safe_project_name,
                 version_name=release.safe_version_name,
-                selected_revision_number=revision_number,
+                selected_revision_number=release.safe_latest_revision_number,
                 asf_uid=self.__asf_uid,
                 asf_fullname=asf_fullname,
                 vote_duration_choice=vote_duration,

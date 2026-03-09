@@ -60,7 +60,7 @@ async def _set_revision(
         if release.phase not in {sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}:
             raise base.ASFQuartException("Cannot set revision for non-draft or preview release", errorcode=400)
 
-        selected_revision = await data.revision(release_name=release.name, number=selected_revision_number).demand(
+        selected_revision = await data.revision(release_name=release.name, number=str(selected_revision_number)).demand(
             base.ASFQuartException(f"Revision {selected_revision_number} not found", errorcode=404)
         )
         if (release.phase == sql.ReleasePhase.RELEASE_PREVIEW) and (

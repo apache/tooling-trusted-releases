@@ -33,6 +33,7 @@ import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.session
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
@@ -204,7 +205,7 @@ async def test_single(session: web.Public, _test_single: Literal["test/single"])
 async def test_vote(
     session: web.Public,
     _test_vote: Literal["test/vote"],
-    category: str,
+    category: unsafe.UnsafeStr,
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
 ) -> str:
@@ -222,10 +223,10 @@ async def test_vote(
         "pmc_member_rm": vote.UserCategory.PMC_MEMBER_RM,
     }
 
-    user_category = category_map.get(category.lower())
+    user_category = category_map.get(str(category).lower())
     if user_category is None:
         raise base.ASFQuartException(
-            f"Invalid category: {category}. Valid options: {', '.join(category_map.keys())}",
+            f"Invalid category: {category!s}. Valid options: {', '.join(category_map.keys())}",
             errorcode=400,
         )
 

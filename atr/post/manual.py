@@ -87,7 +87,7 @@ async def start_selected_revision(
     _manual_start: Literal["manual/start"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
     _form: form.Empty,
 ) -> web.WerkzeugResponse | str:
     """

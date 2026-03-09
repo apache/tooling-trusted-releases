@@ -27,6 +27,7 @@ import atr.db as db
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
@@ -36,7 +37,7 @@ import atr.web as web
 async def add_project(
     session: web.Committer,
     _project_add: Literal["project/add"],
-    committee_name: str,
+    committee_name: unsafe.UnsafeStr,
     project_form: shared.projects.AddProjectForm,
 ) -> web.WerkzeugResponse:
     """
@@ -47,12 +48,12 @@ async def add_project(
 
     # TODO: Is this right? Name is unvalidated
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(safe.ProjectName(committee_name))
+        wacm = await write.as_project_committee_member(safe.ProjectName(str(committee_name)))
         try:
-            await wacm.project.create(committee_name, display_name, label)
+            await wacm.project.create(str(committee_name), display_name, label)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.add_project, committee_name=committee_name, error=f"Error adding project: {e}"
+                get.projects.add_project, committee_name=str(committee_name), error=f"Error adding project: {e}"
             )
 
     return await session.redirect(
@@ -88,7 +89,7 @@ async def delete(
 async def view(
     session: web.Committer,
     _projects: Literal["projects"],
-    name: str,
+    name: unsafe.UnsafeStr,
     project_form: shared.projects.ProjectViewForm,
 ) -> web.WerkzeugResponse:
     """

@@ -617,7 +617,9 @@ async def _step_07b_process_validated_rsync_write(
             else:
                 github_payload = server._get_github_payload(process)
                 if github_payload is not None:
-                    await attestable.github_tp_payload_write(project_name, version_name, result.number, github_payload)
+                    await attestable.github_tp_payload_write(
+                        project_name, version_name, result.safe_number, github_payload
+                    )
                 log.info(f"rsync upload successful for revision {result.number}")
                 host = config.get().APP_HOST
                 message = f"\nATR: Created revision {result.number} of {project_name} {version_name}\n"

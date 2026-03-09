@@ -599,7 +599,8 @@ async def ongoing_tasks_get(
 ) -> web.QuartResponse:
     project = safe.ProjectName(project_name)
     version = safe.VersionName(version_name)
-    return await _ongoing_tasks(session, project, version, revision)
+    revision_number = safe.RevisionNumber(revision)
+    return await _ongoing_tasks(session, project, version, revision_number)
 
 
 @admin.post("/ongoing-tasks/<project_name>/<version_name>/<revision>")
@@ -608,7 +609,8 @@ async def ongoing_tasks_post(
 ) -> web.QuartResponse:
     project = safe.ProjectName(project_name)
     version = safe.VersionName(version_name)
-    return await _ongoing_tasks(session, project, version, revision)
+    revision_number = safe.RevisionNumber(revision)
+    return await _ongoing_tasks(session, project, version, revision_number)
 
 
 @admin.get("/performance")
@@ -1172,13 +1174,16 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 
 async def _ongoing_tasks(
-    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, revision: str
+    session: web.Committer,
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision: safe.RevisionNumber,
 ) -> web.QuartResponse:
     try:
         ongoing = await interaction.tasks_ongoing(project_name, version_name, revision)
         return web.TextResponse(str(ongoing))
     except Exception:
-        log.exception(f"Error fetching ongoing task count for {project_name!s} {version_name!s} rev {revision}:")
+        log.exception(f"Error fetching ongoing task count for {project_name!s} {version_name!s} rev {revision!s}:")
         return web.TextResponse("")
 
 

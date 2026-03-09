@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.form as form
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
 
@@ -43,7 +44,7 @@ class IgnoreStatus(enum.Enum):
 class AddIgnoreForm(form.Form):
     variant: ADD = form.value(ADD)
     release_glob: str = form.label("Release pattern", default="")
-    revision_number: str = form.label("Revision number (literal)", default="")
+    revision_number: safe.RevisionNumber = form.label("Revision number (literal)", default="")
     checker_glob: str = form.label("Checker pattern", default="")
     primary_rel_path_glob: str = form.label("Primary rel path pattern", default="")
     member_rel_path_glob: str = form.label("Member rel path pattern", default="")

@@ -196,7 +196,7 @@ async def _commit_new_revision(
     await attestable.write_files_data(
         project_name,
         version_name,
-        new_revision.number,
+        new_revision.safe_number,
         policy.model_dump() if policy else None,
         asf_uid,
         previous_attestable,
@@ -216,7 +216,7 @@ async def _commit_new_revision(
         # It does, however, need a transaction to be created using data.begin()
         if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             # Must use caller_data here because we acquired the write lock
-            await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.number, caller_data=data)
+            await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.safe_number, caller_data=data)
 
     return new_revision
 
@@ -263,12 +263,14 @@ async def _lock_and_merge(
     if (
         merge_enabled
         and (old_revision is not None)
+        and (latest is not None)
         and (prior_revision_name is not None)
         and (prior_revision_name != old_revision.name)
     ):
         merge_base_revision_name = prior_revision_name
-        prior_number = prior_revision_name.split()[-1]
-        prior_dir = paths.release_directory_base(merged_release) / prior_number
+        # This won't be None because prior_revision_name is not None here
+        prior_number = latest.safe_number
+        prior_dir = paths.release_directory_base(merged_release) / str(prior_number)
         await merge.merge(
             base_inodes,
             base_hashes,
@@ -359,7 +361,7 @@ class CommitteeParticipant(FoundationCommitter):
         set_local_cache: bool = False,
         reset_to_global_cache: bool = False,
         modify: Callable[[pathlib.Path, sql.Revision | None], Awaitable[None]] | None = None,
-        clone_from: str | None = None,
+        clone_from: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
         release_name = sql.release_name(str(project_name), str(version_name))
@@ -368,7 +370,7 @@ class CommitteeParticipant(FoundationCommitter):
                 RuntimeError("Release does not exist for new revision creation")
             )
             if clone_from is not None:
-                old_revision = await data.revision(release_name=release_name, number=clone_from).demand(
+                old_revision = await data.revision(release_name=release_name, number=str(clone_from)).demand(
                     RuntimeError(f"Revision {clone_from} does not exist")
                 )
             else:
@@ -379,7 +381,7 @@ class CommitteeParticipant(FoundationCommitter):
                 release.check_cache_key = None
 
         if clone_from is not None:
-            old_release_dir = paths.release_directory_base(release) / clone_from
+            old_release_dir = paths.release_directory_base(release) / str(clone_from)
         else:
             old_release_dir = paths.release_directory(release)
         merge_enabled = clone_from is None
@@ -427,7 +429,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         try:
             path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(temp_dir_path)
-            parent_revision_number = old_revision.number if old_revision else None
+            parent_revision_number = old_revision.safe_number if old_revision else None
             previous_attestable = None
             if parent_revision_number is not None:
                 previous_attestable = await attestable.load(project_name, version_name, parent_revision_number)

@@ -21,6 +21,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.types as types
 import atr.storage.writers.revision as revision
@@ -57,6 +58,10 @@ class FakeRevision:
         self.release = release
         self.release_name = release_name
         self.was_quarantined = was_quarantined
+
+    @property
+    def safe_number(self) -> safe.RevisionNumber:
+        return safe.RevisionNumber(self.number)
 
 
 class MockSafeData:
@@ -109,10 +114,12 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     latest_revision = mock.MagicMock()
     latest_revision.name = f"{release_name} 00005"
     latest_revision.number = "00005"
+    latest_revision.safe_number = safe.RevisionNumber("00005")
 
     selected_revision = mock.MagicMock()
     selected_revision.name = f"{release_name} 00002"
     selected_revision.number = "00002"
+    selected_revision.safe_number = safe.RevisionNumber("00002")
 
     mock_session = _mock_db_session(release, selected_revision=selected_revision)
     participant = _make_participant()
@@ -149,7 +156,9 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00006"),
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
-        await participant.create_revision_with_quarantine("proj", "1.0", "test", clone_from="00002")
+        await participant.create_revision_with_quarantine(
+            safe.ProjectName("proj"), safe.VersionName("1.0"), "test", clone_from=safe.RevisionNumber("00002")
+        )
 
     if merge_mock.called:
         raise AssertionError(
@@ -193,10 +202,12 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     old_revision = mock.MagicMock()
     old_revision.name = f"{release_name} 00005"
     old_revision.number = "00005"
+    old_revision.safe_number = safe.RevisionNumber("00005")
 
     intervening_revision = mock.MagicMock()
     intervening_revision.name = f"{release_name} 00006"
     intervening_revision.number = "00006"
+    intervening_revision.safe_number = safe.RevisionNumber("00006")
 
     first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
     second_attestable = mock.MagicMock(paths={"dist/b.tar.gz": "h2"})
@@ -244,7 +255,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
 
     merge_await_args = merge_mock.await_args
     assert merge_await_args is not None
-    assert merge_await_args.args[5] == "00006"
+    assert merge_await_args.args[5] == safe.RevisionNumber("00006")
 
 
 @pytest.mark.asyncio

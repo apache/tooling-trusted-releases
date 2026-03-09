@@ -31,6 +31,7 @@ import atr.htm as htm
 import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.storage.outcome as outcome
@@ -93,18 +94,18 @@ async def add(
 async def details(
     session: web.Committer,
     _keys_details: Literal["keys/details"],
-    fingerprint: str,
+    fingerprint: unsafe.UnsafeStr,
     update_form: shared.keys.UpdateKeyCommitteesForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /keys/details/<fingerprint>
     Update committee associations for an OpenPGP key.
     """
-    fingerprint = fingerprint.lower()
+    key_fingerprint = str(fingerprint).lower()
 
     try:
         async with db.session() as data:
-            key = await data.public_signing_key(fingerprint=fingerprint, _committees=True).get()
+            key = await data.public_signing_key(fingerprint=key_fingerprint, _committees=True).get()
             if not key:
                 await quart.flash("OpenPGP key not found", "error")
                 return await session.redirect(get.keys.keys)
@@ -135,7 +136,7 @@ async def details(
         log.exception("Error updating key committee associations:")
         await quart.flash(f"An unexpected error occurred: {e!s}", "error")
 
-    return await session.redirect(get.keys.details, fingerprint=fingerprint)
+    return await session.redirect(get.keys.details, fingerprint=key_fingerprint)
 
 
 @post.typed

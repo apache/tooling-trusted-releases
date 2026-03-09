@@ -28,5 +28,8 @@ class UnsafeStr:
     def __repr__(self) -> str:
         return f"UnsafeStr({self._value!r})"
 
+    def __str__(self) -> str:
+        return self._value
 
-Path = NewType("Path", str)
+
+Path = NewType("Path", UnsafeStr)

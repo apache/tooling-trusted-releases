@@ -39,6 +39,7 @@ import atr.log as log
 import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
@@ -100,7 +101,7 @@ async def checks_list_revision(
     _checks_list: Literal["checks/list"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
 ) -> DictResponse:
     """
     URL: GET /checks/list/<project_name>/<version_name>/<revision>
@@ -121,7 +122,7 @@ async def checks_list_revision(
             exceptions.NotFound(f"Release '{release_name}' does not exist")
         )
 
-        revision_result = await data.revision(release_name=release_name, number=revision).get()
+        revision_result = await data.revision(release_name=release_name, number=str(revision)).get()
         if revision_result is None:
             raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_name}'")
 
@@ -130,7 +131,7 @@ async def checks_list_revision(
     return models.api.ChecksListResults(
         endpoint="/checks/list",
         checks=check_results,
-        checks_revision=revision,
+        checks_revision=str(revision),
         current_phase=release_result.phase,
     ).model_dump(mode="json"), 200
 
@@ -141,7 +142,7 @@ async def checks_ongoing(
     _checks_ongoing: Literal["checks/ongoing"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str | None = None,
+    revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
     URL: GET /checks/ongoing/<project_name>/<version_name>[/<revision>]
@@ -179,7 +180,7 @@ async def checks_ongoing(
 @quart_schema.validate_response(models.api.CommitteeGetResults, 200)
 async def committee_get(
     _committee_get: Literal["committee/get"],
-    name: str,
+    name: unsafe.UnsafeStr,
 ) -> DictResponse:
     """
     URL: GET /committee/get/<name>
@@ -192,7 +193,9 @@ async def committee_get(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=name).demand(exceptions.NotFound(f"Committee '{name}' was not found"))
+        committee = await data.committee(name=str(name)).demand(
+            exceptions.NotFound(f"Committee '{name!s}' was not found")
+        )
     return models.api.CommitteeGetResults(
         endpoint="/committee/get",
         committee=committee,
@@ -203,7 +206,7 @@ async def committee_get(
 @quart_schema.validate_response(models.api.CommitteeKeysResults, 200)
 async def committee_keys(
     _committee_keys: Literal["committee/keys"],
-    name: str,
+    name: unsafe.UnsafeStr,
 ) -> DictResponse:
     """
     URL: GET /committee/keys/<name>
@@ -216,8 +219,8 @@ async def committee_keys(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=name, _public_signing_keys=True).demand(
-            exceptions.NotFound(f"Committee '{name}' was not found")
+        committee = await data.committee(name=str(name), _public_signing_keys=True).demand(
+            exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeKeysResults(
         endpoint="/committee/keys",
@@ -229,7 +232,7 @@ async def committee_keys(
 @quart_schema.validate_response(models.api.CommitteeProjectsResults, 200)
 async def committee_projects(
     _committee_projects: Literal["committee/projects"],
-    name: str,
+    name: unsafe.UnsafeStr,
 ) -> DictResponse:
     """
     URL: GET /committee/projects/<name>
@@ -242,8 +245,8 @@ async def committee_projects(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=name, _projects=True).demand(
-            exceptions.NotFound(f"Committee '{name}' was not found")
+        committee = await data.committee(name=str(name), _projects=True).demand(
+            exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeProjectsResults(
         endpoint="/committee/projects",
@@ -584,7 +587,7 @@ async def key_delete(
 @quart_schema.validate_response(models.api.KeyGetResults, 200)
 async def key_get(
     _key_get: Literal["key/get"],
-    fingerprint: str,
+    fingerprint: unsafe.UnsafeStr,
 ) -> DictResponse:
     """
     URL: GET /key/get/<fingerprint>
@@ -594,8 +597,8 @@ async def key_get(
     All public OpenPGP keys stored within the database are accessible.
     """
     async with db.session() as data:
-        key = await data.public_signing_key(fingerprint=fingerprint.lower()).demand(
-            exceptions.NotFound(f"Key '{fingerprint}' not found")
+        key = await data.public_signing_key(fingerprint=str(fingerprint).lower()).demand(
+            exceptions.NotFound(f"Key '{fingerprint!s}' not found")
         )
     return models.api.KeyGetResults(
         endpoint="/key/get",
@@ -670,7 +673,7 @@ async def keys_upload(
 @quart_schema.validate_response(models.api.KeysUserResults, 200)
 async def keys_user(
     _keys_user: Literal["keys/user"],
-    asf_uid: str,
+    asf_uid: unsafe.UnsafeStr,
 ) -> DictResponse:
     """
     URL: GET /keys/user/<asf_uid>
@@ -678,7 +681,7 @@ async def keys_user(
     List public OpenPGP keys by the ASF UID of a user.
     """
     async with db.session() as data:
-        keys = await data.public_signing_key(apache_uid=asf_uid).all()
+        keys = await data.public_signing_key(apache_uid=str(asf_uid)).all()
     return models.api.KeysUserResults(
         endpoint="/keys/user",
         keys=keys,
@@ -1069,7 +1072,7 @@ async def release_paths(
     _release_paths: Literal["release/paths"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str | None = None,
+    revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
     URL: GET /release/paths/<project_name>/<version_name>[/<revision>]
@@ -1082,8 +1085,8 @@ async def release_paths(
         if revision is None:
             dir_path = paths.release_directory(release)
         else:
-            await data.revision(release_name=release_name, number=revision).demand(exceptions.NotFound())
-            dir_path = paths.release_directory_version(release) / revision
+            await data.revision(release_name=release_name, number=str(revision)).demand(exceptions.NotFound())
+            dir_path = paths.release_directory_version(release) / str(revision)
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
     files: list[str] = [str(path) for path in [p async for p in util.paths_recursive(dir_path)]]
@@ -1323,7 +1326,7 @@ async def ssh_key_delete(
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 async def ssh_keys_list(
     _ssh_keys_list: Literal["ssh-keys/list"],
-    asf_uid: str,
+    asf_uid: unsafe.UnsafeStr,
     query_args: models.api.SshKeysListQuery,
 ) -> DictResponse:
     """
@@ -1336,7 +1339,7 @@ async def ssh_keys_list(
     async with db.session() as data:
         statement = (
             sqlmodel.select(sql.SSHKey)
-            .where(sql.SSHKey.asf_uid == asf_uid)
+            .where(sql.SSHKey.asf_uid == str(asf_uid))
             .limit(query_args.limit)
             .offset(query_args.offset)
             .order_by(via(sql.SSHKey.fingerprint).asc())

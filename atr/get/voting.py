@@ -47,7 +47,7 @@ async def selected_revision(
     _voting: Literal["voting"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
     URL: /voting/<project_name>/<version_name>/<revision>
@@ -63,7 +63,7 @@ async def selected_revision(
                     error=error,
                     project_name=str(project_name),
                     version_name=str(version_name),
-                    revision=revision,
+                    revision=str(revision),
                 )
             case (release, committee):
                 pass
@@ -94,7 +94,7 @@ async def selected_revision(
 
         content = await _render_page(
             release=release,
-            revision_number=revision,
+            revision_number=str(revision),
             permitted_recipients=permitted_recipients,
             default_subject=default_subject,
             subject_template_hash=subject_template_hash,

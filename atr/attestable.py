@@ -36,31 +36,34 @@ if TYPE_CHECKING:
 
 
 def attestable_checks_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.checks.json"
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.checks.json"
 
 
 def attestable_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.json"
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.json"
 
 
 def attestable_paths_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.paths.json"
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.paths.json"
 
 
 def github_tp_payload_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str
+    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number}.github-tp.json"
+    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.github-tp.json"
 
 
 async def github_tp_payload_write(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str, github_payload: dict[str, Any]
+    project_name: safe.ProjectName,
+    version_name: safe.VersionName,
+    revision_number: safe.RevisionNumber,
+    github_payload: dict[str, Any],
 ) -> None:
     payload_path = github_tp_payload_path(project_name, version_name, revision_number)
     await util.atomic_write_file(payload_path, json.dumps(github_payload, indent=2))
@@ -69,7 +72,7 @@ async def github_tp_payload_write(
 async def load(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ) -> models.AttestableV1 | None:
     file_path = attestable_path(project_name, version_name, revision_number)
     if not await aiofiles.os.path.isfile(file_path):
@@ -86,7 +89,7 @@ async def load(
 async def load_checks(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ) -> dict[str, dict[str, str]]:
     file_path = attestable_checks_path(project_name, version_name, revision_number)
     # TODO: Once we're sure everyone is on V2, we should be strict about failures here,
@@ -108,7 +111,7 @@ async def load_checks(
 async def load_paths(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     file_path = attestable_paths_path(project_name, version_name, revision_number)
     if await aiofiles.os.path.isfile(file_path):
@@ -174,7 +177,7 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, 
 async def write_checks_data(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     rel_path: str,
     checks: dict[str, str],
 ) -> None:
@@ -198,7 +201,7 @@ async def write_checks_data(
 async def write_files_data(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
     previous: models.AttestableV1 | None,
@@ -222,7 +225,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
     path_to_size: dict[str, int],
     previous: models.AttestableV1 | None,
     uploader_uid: str,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ) -> dict[str, models.HashEntry]:
     previous_hash_to_paths: dict[str, set[str]] = {}
     if previous is not None:
@@ -243,7 +246,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
         if hash_ref not in new_hashes:
             new_hashes[hash_ref] = models.HashEntry(
                 size=file_size,
-                uploaders=[(uploader_uid, revision_number)],
+                uploaders=[(uploader_uid, str(revision_number))],
                 basenames=sorted(current_basenames),
             )
             continue
@@ -256,8 +259,8 @@ def _compute_hashes_with_attribution(  # noqa: C901
 
         if len(current_paths) > len(previous_paths):
             existing_entries = set(new_hashes[hash_ref].uploaders)
-            if (uploader_uid, revision_number) not in existing_entries:
-                new_hashes[hash_ref].uploaders.append((uploader_uid, revision_number))
+            if (uploader_uid, str(revision_number)) not in existing_entries:
+                new_hashes[hash_ref].uploaders.append((uploader_uid, str(revision_number)))
 
     return new_hashes
 
@@ -265,7 +268,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
 def _generate_files_data(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
     previous: models.AttestableV1 | None,

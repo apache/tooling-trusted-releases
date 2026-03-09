@@ -43,7 +43,7 @@ async def body_preview(
     _voting_body_preview: Literal["voting/body/preview"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     preview_form: BodyPreviewForm,
 ) -> web.QuartResponse:
     """
@@ -72,7 +72,7 @@ async def selected_revision(
     _voting: Literal["voting"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    revision: str,
+    revision: safe.RevisionNumber,
     start_voting_form: shared.voting.StartVotingForm,
 ) -> web.WerkzeugResponse | str:
     """
@@ -89,7 +89,7 @@ async def selected_revision(
                     error=error,
                     project_name=str(project_name),
                     version_name=str(version_name),
-                    revision=revision,
+                    revision=str(revision),
                 )
             case (release, committee):
                 pass

@@ -106,7 +106,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         project_name: safe.ProjectName,
         version_name: safe.VersionName,
-        preview_revision_number: str,
+        preview_revision_number: safe.RevisionNumber,
         recipient: str,
         body: str,
         download_path_suffix: str,
@@ -124,14 +124,14 @@ class CommitteeMember(CommitteeParticipant):
             project_name=str(project_name),
             version=str(version_name),
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
-            latest_revision_number=preview_revision_number,
+            latest_revision_number=str(preview_revision_number),
             _project_release_policy=True,
             _revisions=True,
             _distributions=True,
             _release_policy=True,
         ).demand(
             storage.AccessError(
-                f"Release {project_name} {version_name} {preview_revision_number} does not exist",
+                f"Release {project_name!s} {version_name!s} {preview_revision_number!s} does not exist",
             )
         )
         if (committee := release.project.committee) is None:
@@ -199,7 +199,7 @@ class CommitteeMember(CommitteeParticipant):
                 asf_uid=self.__asf_uid,
                 project_name=str(project_name),
                 version_name=str(version_name),
-                revision_number=preview_revision_number,
+                revision_number=str(preview_revision_number),
                 source_directory=unfinished_dir,
                 target_directory=finished_dir,
                 email_recipient=recipient,
@@ -282,7 +282,7 @@ class CommitteeMember(CommitteeParticipant):
         return predicted_finished_release
 
     async def __promote_in_database(
-        self, release: sql.Release, preview_revision_number: str, release_date: datetime.datetime
+        self, release: sql.Release, preview_revision_number: safe.RevisionNumber, release_date: datetime.datetime
     ) -> None:
         """Promote a release preview to a release and delete its old revisions."""
         via = sql.validate_instrumented_attribute
@@ -292,7 +292,7 @@ class CommitteeMember(CommitteeParticipant):
             .where(
                 via(sql.Release.name) == release.name,
                 via(sql.Release.phase) == sql.ReleasePhase.RELEASE_PREVIEW,
-                sql.latest_revision_number_query() == preview_revision_number,
+                sql.latest_revision_number_query() == str(preview_revision_number),
             )
             .values(
                 phase=sql.ReleasePhase.RELEASE,

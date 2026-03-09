@@ -321,7 +321,7 @@ class CommitteeParticipant(FoundationCommitter):
     async def promote_to_candidate(
         self,
         release_name: safe.ReleaseName,
-        selected_revision_number: str,
+        selected_revision_number: safe.RevisionNumber,
         vote_manual: bool = False,
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
@@ -330,6 +330,7 @@ class CommitteeParticipant(FoundationCommitter):
         )
         project_name = release_for_pre_checks.safe_project_name
         version_name = release_for_pre_checks.safe_version_name
+        revision_number = release_for_pre_checks.safe_latest_revision_number
 
         # Check for ongoing tasks
         ongoing_tasks = await self.__tasks_ongoing(project_name, version_name, selected_revision_number)
@@ -341,7 +342,7 @@ class CommitteeParticipant(FoundationCommitter):
             return "This release is not in the candidate draft phase"
 
         # Check that the revision number is the latest
-        if release_for_pre_checks.latest_revision_number != selected_revision_number:
+        if revision_number != selected_revision_number:
             return "The selected revision number does not match the latest revision number"
 
         # Check that there is at least one file in the draft
@@ -356,7 +357,7 @@ class CommitteeParticipant(FoundationCommitter):
             .where(
                 via(sql.Release.name) == release_for_pre_checks.name,
                 via(sql.Release.phase) == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                sql.latest_revision_number_query() == selected_revision_number,
+                sql.latest_revision_number_query() == str(selected_revision_number),
             )
             .values(
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -377,7 +378,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             release_name=str(release_name),
-            selected_revision_number=selected_revision_number,
+            selected_revision_number=str(selected_revision_number),
             vote_manual=vote_manual,
         )
         return None
@@ -765,14 +766,17 @@ class CommitteeParticipant(FoundationCommitter):
                     moved_files_names.append(f.name)
 
     async def __tasks_ongoing(
-        self, project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: str | None = None
+        self,
+        project_name: safe.ProjectName,
+        version_name: safe.VersionName,
+        revision_number: safe.RevisionNumber | None = None,
     ) -> int:
         tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
         query = tasks.where(
             sql.Task.project_name == str(project_name),
             sql.Task.version_name == str(version_name),
             sql.Task.revision_number
-            == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else revision_number),
+            == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
         )
         result = await self.__data.execute(query)

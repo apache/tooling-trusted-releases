@@ -54,7 +54,7 @@ import atr.util as util
 
 
 async def asc_checks(
-    asf_uid: str, release: sql.Release, revision: str, signature_path: str, data: db.Session
+    asf_uid: str, release: sql.Release, revision: safe.RevisionNumber, signature_path: str, data: db.Session
 ) -> list[sql.Task | None]:
     """Create signature check task for a .asc file."""
     tasks = []
@@ -135,13 +135,13 @@ async def draft_checks(
     asf_uid: str,
     project_name: safe.ProjectName,
     release_version: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     caller_data: db.Session | None = None,
 ) -> int:
     """Core logic to analyse a draft revision and queue checks."""
     # Construct path to the specific revision
     # We don't have the release object here, so we can't use util.release_directory
-    revision_path = file_paths.get_unfinished_dir() / str(project_name) / str(release_version) / revision_number
+    revision_path = file_paths.get_unfinished_dir() / str(project_name) / str(release_version) / str(revision_number)
     relative_paths = [path async for path in util.paths_recursive(revision_path)]
 
     async with db.ensure_session(caller_data) as data:
@@ -265,7 +265,7 @@ async def queued(
     asf_uid: str,
     task_type: sql.TaskType,
     release: sql.Release,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
     primary_rel_path: str | None = None,
     extra_args: dict[str, Any] | None = None,
     check_cache_key: dict[str, Any] | None = None,
@@ -289,7 +289,7 @@ async def queued(
         asf_uid=asf_uid,
         project_name=release.project.name,
         version_name=release.version,
-        revision_number=revision_number,
+        revision_number=str(revision_number),
         primary_rel_path=primary_rel_path,
         inputs_hash=hash_val,
     )
@@ -352,7 +352,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
 
 
 async def sha_checks(
-    asf_uid: str, release: sql.Release, revision: str, hash_file: str, data: db.Session
+    asf_uid: str, release: sql.Release, revision: safe.RevisionNumber, hash_file: str, data: db.Session
 ) -> list[sql.Task | None]:
     """Create hash check task for a .sha256 or .sha512 file."""
     tasks = []
@@ -380,7 +380,7 @@ async def sha_checks(
 
 
 async def tar_gz_checks(
-    asf_uid: str, release: sql.Release, revision: str, path: str, data: db.Session
+    asf_uid: str, release: sql.Release, revision: safe.RevisionNumber, path: str, data: db.Session
 ) -> list[sql.Task | None]:
     """Create check tasks for a .tar.gz or .tgz file."""
     # This release has committee, as guaranteed in draft_checks
@@ -489,7 +489,7 @@ async def workflow_update(
 
 
 async def zip_checks(
-    asf_uid: str, release: sql.Release, revision: str, path: str, data: db.Session
+    asf_uid: str, release: sql.Release, revision: safe.RevisionNumber, path: str, data: db.Session
 ) -> list[sql.Task | None]:
     """Create check tasks for a .zip file."""
     # This release has committee, as guaranteed in draft_checks
@@ -592,7 +592,7 @@ async def _draft_file_checks(
     project_name: safe.ProjectName,
     release: sql.Release,
     release_version: safe.VersionName,
-    revision_number: str,
+    revision_number: safe.RevisionNumber,
 ):
     path_str = str(path)
     task_function: Callable[[str, sql.Release, str, str, db.Session], Awaitable[list[sql.Task | None]]] | None = None
@@ -603,7 +603,7 @@ async def _draft_file_checks(
     if task_function:
         for task in await task_function(asf_uid, release, revision_number, path_str, data):
             if task:
-                task.revision_number = revision_number
+                task.revision_number = str(revision_number)
                 await _add_task(data, task)
     # TODO: Should we check .json files for their content?
     # Ideally we would not have to do that
@@ -617,7 +617,7 @@ async def _draft_file_checks(
             extra_args={
                 "project_name": str(project_name),
                 "version_name": str(release_version),
-                "revision_number": revision_number,
+                "revision_number": str(revision_number),
                 "previous_release_version": previous_version.version if previous_version else None,
                 "file_path": path_str,
                 "asf_uid": asf_uid,

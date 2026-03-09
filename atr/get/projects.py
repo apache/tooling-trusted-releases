@@ -35,6 +35,7 @@ import atr.get.start as start
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.post as post
 import atr.registry as registry
 import atr.shared as shared
@@ -46,33 +47,33 @@ import atr.web as web
 
 @get.typed
 async def add_project(
-    session: web.Committer, _project_add: Literal["project/add"], committee_name: str
+    session: web.Committer, _project_add: Literal["project/add"], committee_name: unsafe.UnsafeStr
 ) -> web.WerkzeugResponse | str:
     """
     URL: /project/add/<committee_name>
     """
-    await session.check_access_committee(committee_name)
+    await session.check_access_committee(str(committee_name))
 
     async with db.session() as data:
-        committee = await data.committee(name=committee_name).demand(
-            base.ASFQuartException(f"Committee {committee_name} not found", errorcode=404)
+        committee = await data.committee(name=str(committee_name)).demand(
+            base.ASFQuartException(f"Committee {committee_name!s} not found", errorcode=404)
         )
 
     page = htm.Block()
-    page.p[htm.a(".atr-back-link", href=util.as_url(committees.view, name=committee_name))["← Back to committee"]]
+    page.p[htm.a(".atr-back-link", href=util.as_url(committees.view, name=str(committee_name)))["← Back to committee"]]
     page.h1["Add project"]
     page.p[f"Add a new project to the {committee.display_name} committee."]
 
-    committee_display_name = committee.full_name or committee_name.title()
+    committee_display_name = committee.full_name or str(committee_name).title()
 
     form.render_block(
         page,
         model_cls=shared.projects.AddProjectForm,
-        action=util.as_url(post.projects.add_project, committee_name=committee_name),
+        action=util.as_url(post.projects.add_project, committee_name=str(committee_name)),
         submit_label="Add project",
-        cancel_url=util.as_url(committees.view, name=committee_name),
+        cancel_url=util.as_url(committees.view, name=str(committee_name)),
         defaults={
-            "committee_name": committee_name,
+            "committee_name": str(committee_name),
         },
     )
 
@@ -80,7 +81,7 @@ async def add_project(
     page.append(
         htpy.div(
             "#projects-add-config.d-none",
-            data_committee_name=committee_name,
+            data_committee_name=str(committee_name),
             data_committee_display_name=committee_display_name,
         )
     )

@@ -24,6 +24,7 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.post as post
 import atr.shared as shared
 import atr.template as template
@@ -48,17 +49,17 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
 
 
 @get.typed
-async def view(_session: web.Public, _committees: Literal["committees"], name: str) -> str:
+async def view(_session: web.Public, _committees: Literal["committees"], name: unsafe.UnsafeStr) -> str:
     """
     URL: /committees/<name>
     """
     # TODO: Could also import this from keys.py
     async with db.session() as data:
         committee = await data.committee(
-            name=name,
+            name=str(name),
             _projects=True,
             _public_signing_keys=True,
-        ).demand(base.ASFQuartException(f"Committee {name} not found", errorcode=404))
+        ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
     project_list = list(committee.projects)
     for project in project_list:
         # Workaround for the usual loading problem
@@ -74,8 +75,8 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
             submit_label="Regenerate KEYS file",
-            defaults={"committee_name": name},
+            defaults={"committee_name": str(name)},
             empty=True,
         ),
-        is_standing=util.committee_is_standing(name),
+        is_standing=util.committee_is_standing(str(name)),
     )

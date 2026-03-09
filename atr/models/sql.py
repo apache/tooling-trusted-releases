@@ -924,6 +924,11 @@ class Release(sqlmodel.SQLModel, table=True):
         return project.committee
 
     @property
+    def safe_latest_revision_number(self) -> safe.RevisionNumber:
+        """Get the typesafe validated name for the Release"""
+        return safe.RevisionNumber(self.unwrap_revision_number)
+
+    @property
     def safe_name(self) -> safe.ReleaseName:
         """Get the typesafe validated name for the Release"""
         return safe.ReleaseName(self.name)
@@ -1316,6 +1321,11 @@ class Revision(sqlmodel.SQLModel, table=True):
     merge_base_revision_name: str | None = sqlmodel.Field(default=None, **example("example-0.0.1 00001"))
     tag: str | None = sqlmodel.Field(default=None, **example("rc1"))
     was_quarantined: bool = sqlmodel.Field(default=False, **example(False))
+
+    @property
+    def safe_number(self) -> safe.RevisionNumber:
+        """Get the typesafe validated number for the revision"""
+        return safe.RevisionNumber(self.number)
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):

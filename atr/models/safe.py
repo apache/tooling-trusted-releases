@@ -22,16 +22,17 @@ import unicodedata
 from typing import Any, Final
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+_NUMERIC: Final = frozenset(string.digits)
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
 
 
-class Alphanumeric:
+class SafeType:
     __slots__ = ("_value",)
 
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:
         # default is the base set; subclasses can override this method
-        return _ALPHANUM
+        return frozenset()
 
     def _additional_validations(self, value: str):
         pass
@@ -53,7 +54,7 @@ class Alphanumeric:
         return True
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, Alphanumeric):
+        if isinstance(other, self.__class__):
             return self._value == other._value
         return NotImplemented
 
@@ -76,6 +77,20 @@ class Alphanumeric:
         )
 
 
+class Alphanumeric(SafeType):
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        # default is the base set; subclasses can override this method
+        return _ALPHANUM
+
+
+class Numeric(SafeType):
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        # default is the base set; subclasses can override this method
+        return _NUMERIC
+
+
 class ProjectName(Alphanumeric):
     """A project name that has been validated for safety."""
 
@@ -86,6 +101,10 @@ class ReleaseName(Alphanumeric):
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:
         return _VERSION_CHARS
+
+
+class RevisionNumber(Numeric):
+    """A revision number that has been validated for safety."""
 
 
 class VersionName(Alphanumeric):

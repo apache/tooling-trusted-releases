@@ -41,9 +41,10 @@ async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.P
     Resolve a code reference to a GitHub permalink.
     """
     project_root = pathlib.Path(config.get().PROJECT_ROOT)
+    path = str(ref_path)
 
-    if ":" in ref_path:
-        file_path_str, symbol = ref_path.rsplit(":", 1)
+    if ":" in path:
+        file_path_str, symbol = path.rsplit(":", 1)
         resolved_file, validated_path_str = _validate_and_resolve_path(file_path_str, project_root)
 
         if (not await aiofiles.os.path.exists(resolved_file)) or (not await aiofiles.os.path.isfile(resolved_file)):
@@ -57,8 +58,8 @@ async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.P
         github_url = f"https://github.com/apache/tooling-trusted-releases/blob/main/{validated_path_str}#L{line_number}"
         return quart.redirect(github_url, code=303)
 
-    is_directory = ref_path.endswith("/")
-    path_str = ref_path.rstrip("/")
+    is_directory = path.endswith("/")
+    path_str = path.rstrip("/")
     resolved_path, validated_path_str = _validate_and_resolve_path(path_str, project_root)
 
     if not await aiofiles.os.path.exists(resolved_path):

@@ -165,7 +165,7 @@ class Committer:
         project_name: safe.ProjectName,
         version_name: safe.VersionName,
         phase: sql.ReleasePhase | db.NotSet | None = db.NOT_SET,
-        latest_revision_number: str | db.NotSet | None = db.NOT_SET,
+        latest_revision_number: safe.RevisionNumber | db.NotSet | None = db.NOT_SET,
         data: db.Session | None = None,
         with_committee: bool = True,
         with_project: bool = True,
@@ -182,13 +182,14 @@ class Committer:
             phase_value = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
         else:
             phase_value = phase
+        revision = db.NOT_SET if latest_revision_number == db.NOT_SET else str(latest_revision_number)
         release_name = sql.release_name(project_name, version_name)
         if data is None:
             async with db.session() as data:
                 release = await data.release(
                     name=str(release_name),
                     phase=phase_value,
-                    latest_revision_number=latest_revision_number,
+                    latest_revision_number=revision,
                     _committee=with_committee,
                     _project=with_project,
                     _release_policy=with_release_policy,
@@ -200,7 +201,7 @@ class Committer:
             release = await data.release(
                 name=str(release_name),
                 phase=phase_value,
-                latest_revision_number=latest_revision_number,
+                latest_revision_number=revision,
                 _committee=with_committee,
                 _project=with_project,
                 _release_policy=with_release_policy,

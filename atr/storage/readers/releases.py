@@ -24,6 +24,7 @@ import pathlib
 import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
@@ -60,7 +61,7 @@ class GeneralPublic:
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             return None
-        await self.__successes_errors_warnings(release, latest_revision_number, info)
+        await self.__successes_errors_warnings(release, release.safe_latest_revision_number, info)
         base_path = paths.release_directory(release)
         source_matcher = None
         source_artifact_paths = release.project.policy_source_artifact_paths
@@ -121,7 +122,7 @@ class GeneralPublic:
             )
 
     async def __successes_errors_warnings(
-        self, release: sql.Release, latest_revision_number: str, info: types.PathInfo
+        self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: types.PathInfo
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_name)
         attestable_checks = await interaction.checks_for(

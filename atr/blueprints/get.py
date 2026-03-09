@@ -65,7 +65,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
-        await common.run_validators(kwargs, validated_params)
+        await common.validate_params(kwargs, validated_params)
         kwargs.update(literal_params)
 
         start_time_ns = time.perf_counter_ns()

@@ -56,7 +56,7 @@ class AnnounceReleaseOptions:
     fullname: str
     project_name: safe.ProjectName
     version_name: safe.VersionName
-    revision_number: str
+    revision_number: safe.RevisionNumber
 
 
 @dataclasses.dataclass
@@ -65,7 +65,7 @@ class StartVoteOptions:
     fullname: str
     project_name: safe.ProjectName
     version_name: safe.VersionName
-    revision_number: str
+    revision_number: safe.RevisionNumber
     vote_duration: int
 
 
@@ -102,7 +102,7 @@ async def announce_release_subject_and_body(
             raise RuntimeError(f"Release {options.project_name} {options.version_name} has no committee")
         committee = release.committee
 
-        revision = await data.revision(release_name=release.name, number=options.revision_number).get()
+        revision = await data.revision(release_name=release.name, number=str(options.revision_number)).get()
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
@@ -206,7 +206,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
             raise RuntimeError(f"Release {options.project_name} {options.version_name} has no committee")
         committee = release.committee
 
-        revision = await data.revision(release_name=release.name, number=options.revision_number).get()
+        revision = await data.revision(release_name=release.name, number=str(options.revision_number)).get()
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 

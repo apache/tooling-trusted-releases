@@ -21,6 +21,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.form as form
+import atr.models.safe as safe
 
 SET_REVISION = Literal["set_revision"]
 SET_TAG = Literal["set_tag"]
@@ -28,7 +29,7 @@ SET_TAG = Literal["set_tag"]
 
 class SetRevisionForm(form.Form):
     variant: SET_REVISION = form.value(SET_REVISION)
-    revision_number: str = form.label("Revision number", widget=form.Widget.HIDDEN)
+    revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)
 
 
 class SetTagForm(form.Form):
