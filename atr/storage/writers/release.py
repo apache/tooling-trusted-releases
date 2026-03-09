@@ -272,8 +272,8 @@ class CommitteeParticipant(FoundationCommitter):
             "svn_url": svn_url,
             "revision": revision,
             "target_subdirectory": target_subdirectory,
-            "project_name": project_name,
-            "version_name": version_name,
+            "project_name": str(project_name),
+            "version_name": str(version_name),
             "asf_uid": self.__asf_uid,
         }
         svn_import_task = sql.Task(
