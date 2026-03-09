@@ -56,6 +56,7 @@ async def send(args: Send) -> results.Results | None:
 
     recipient_domain = args.email_recipient.split("@")[-1]
     sending_to_self = recipient_domain == f"{sender_asf_uid}@apache.org"
+    # audit_guidance this application intentionally allows users to send messages to committees they are not a part of
     sending_to_committee = recipient_domain.endswith(".apache.org")
     if not (sending_to_self or sending_to_committee):
         raise SendError(f"You are not permitted to send emails to {args.email_recipient}")
