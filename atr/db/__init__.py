@@ -372,6 +372,11 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         if commit is True:
             await self.commit()
 
+    def personal_access_token(self, token_hash: str) -> Query[sql.PersonalAccessToken]:
+        query = sqlmodel.select(sql.PersonalAccessToken)
+        query = query.where(sql.PersonalAccessToken.token_hash == token_hash)
+        return Query(self, query)
+
     def project(
         self,
         name: Opt[str] = NOT_SET,

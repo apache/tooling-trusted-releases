@@ -31,6 +31,7 @@ import jwt
 import quart
 
 import atr.config as config
+import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
@@ -64,7 +65,7 @@ def activate_signing_key(key: str) -> None:
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
-def issue(uid: str, *, ttl: int = _ATR_JWT_TTL) -> str:
+def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None) -> str:
     now = datetime.datetime.now(tz=datetime.UTC)
     payload = {
         "sub": uid,
@@ -75,6 +76,8 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL) -> str:
         "exp": now + datetime.timedelta(seconds=ttl),
         "jti": secrets.token_hex(128 // 8),
     }
+    if pat_hash:
+        payload["atr_th"] = pat_hash
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
@@ -131,6 +134,18 @@ async def verify(token: str) -> dict[str, Any]:
     if not await ldap.is_active(asf_uid):
         log.failed_authentication("account_deleted_or_banned")
         raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+    pat_hash = claims.get("atr_th")
+    # We don't fail on missing hash because not all JWTs come from PATs
+    if pat_hash:
+        async with db.session() as data:
+            pat = await data.personal_access_token(pat_hash).get()
+            if not pat:
+                log.failed_authentication("pat_hash_invalid")
+                raise base.ASFQuartException("Personal Access Token invalid")
+            if pat.expires < datetime.datetime.now(datetime.UTC):
+                log.failed_authentication("pat_expired")
+                raise base.ASFQuartException("Personal Access Token expired")
     return claims
 
 

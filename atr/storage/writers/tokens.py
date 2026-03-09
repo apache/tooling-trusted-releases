@@ -133,7 +133,7 @@ class FoundationCommitter(GeneralPublic):
             log.failed_authentication("account_deleted_or_banned")
             raise storage.AccessError("Authentication failed")
 
-        issued_jwt = jwtoken.issue(self.__asf_uid)
+        issued_jwt = jwtoken.issue(self.__asf_uid, pat_hash=pat_hash)
         pat.last_used = datetime.datetime.now(datetime.UTC)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
