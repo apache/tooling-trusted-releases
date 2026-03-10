@@ -72,7 +72,10 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
         form_classes="#issue-jwt-form",
         submit_label="Generate JWT",
     )
-    jwt_section.pre(id="jwt-output", class_="d-none mt-2 p-3 atr-word-wrap border rounded w-50")
+    jwt_section.div(id="jwt-container", class_="d-none")[
+        htm.p["Copy the below value. It will be cleared in ", htm.span(id="time-remaining")],
+        htm.pre(id="jwt-output", class_="mt-2 p-3 atr-word-wrap border rounded w-50"),
+    ]
     if most_recent_pat and most_recent_pat.last_used:
         jwt_section.p(".mt-3")[
             "You most recently used a PAT to issue a JWT at ",

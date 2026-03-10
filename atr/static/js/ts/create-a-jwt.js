@@ -1,3 +1,4 @@
+"use strict";
 /*
  *  Licensed to the Apache Software Foundation (ASF) under one
  *  or more contributor license agreements.  See the NOTICE file
@@ -18,8 +19,11 @@
 */
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("issue-jwt-form");
+    const outputContainer = document.getElementById("jwt-container");
     const output = document.getElementById("jwt-output");
-    if (!form || !output) {
+    const timeField = document.getElementById("time-remaining");
+    let timeoutObj, intervalObj;
+    if (!form || !output || !outputContainer || !timeField) {
         return;
     }
     form.addEventListener("submit", async (e) => {
@@ -30,8 +34,20 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (resp.ok) {
             const token = await resp.text();
-            output.classList.remove("d-none");
+            let time = 60;
+            clearTimeout(timeoutObj);
+            clearInterval(intervalObj);
+            timeField.textContent = time + "s";
+            outputContainer.classList.remove("d-none");
             output.textContent = token;
+            timeoutObj = setTimeout(() => {
+                output.textContent = "";
+                outputContainer.classList.add("d-none");
+            }, 60000);
+            intervalObj = setInterval(() => {
+                time = time - 1;
+                timeField.textContent = time + "s";
+            }, 1000);
         }
         else {
             alert("Failed to fetch JWT");
