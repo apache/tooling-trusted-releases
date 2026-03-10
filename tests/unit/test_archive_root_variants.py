@@ -18,7 +18,6 @@
 import json
 import pathlib
 import unittest.mock as mock
-import zipfile
 
 import pytest
 
@@ -159,6 +158,19 @@ async def test_targz_structure_rejects_src_root_when_filename_has_source_suffix(
 
 
 @pytest.mark.asyncio
+async def test_targz_structure_rejects_symlink_root(tmp_path: pathlib.Path) -> None:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "apache-example-1.2.3").symlink_to(cache_dir / "missing-target")
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
+
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
+
+    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
 async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.Path) -> None:
     cache_dir = _make_cache_tree_with_contents(
         tmp_path,
@@ -177,54 +189,48 @@ async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.
 
 
 def test_zipformat_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.zip"
-    _make_zip_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/package.json": json.dumps({"name": "example", "version": "1.2.3"}),
             "package/README.txt": "hello",
         },
     )
 
-    result = zipformat._structure_check_core_logic(str(archive_path))
+    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
 
     assert result.get("error") is None
-    assert result.get("warning") is None
     assert result.get("root_dir") == "package"
 
 
 def test_zipformat_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-src.zip"
-    _make_zip(archive_path, ["apache-example-1.2.3/README.txt"])
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
 
-    result = zipformat._structure_check_core_logic(str(archive_path))
+    result = zipformat._structure_check_core_logic(cache_dir, "apache-example-1.2.3-src.zip")
 
     assert result.get("error") is None
-    assert result.get("warning") is None
     assert result.get("root_dir") == "apache-example-1.2.3"
 
 
 def test_zipformat_structure_rejects_dated_src_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-src-20251202.zip"
-    _make_zip(archive_path, ["apache-example-1.2.3/README.txt"])
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
 
-    result = zipformat._structure_check_core_logic(str(archive_path))
+    result = zipformat._structure_check_core_logic(cache_dir, "apache-example-1.2.3-src-20251202.zip")
 
     assert "error" in result
     assert "Root directory mismatch" in result["error"]
 
 
 def test_zipformat_structure_rejects_npm_pack_filename_mismatch(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.zip"
-    _make_zip_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/package.json": json.dumps({"name": "different", "version": "1.2.3"}),
             "package/README.txt": "hello",
         },
     )
 
-    result = zipformat._structure_check_core_logic(str(archive_path))
+    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
 
     assert result.get("error") is not None
     assert "npm pack layout detected" in result["error"]
@@ -232,18 +238,27 @@ def test_zipformat_structure_rejects_npm_pack_filename_mismatch(tmp_path: pathli
 
 
 def test_zipformat_structure_rejects_package_root_without_package_json(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.zip"
-    _make_zip_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/README.txt": "hello",
         },
     )
 
-    result = zipformat._structure_check_core_logic(str(archive_path))
+    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
 
     assert result.get("error") is not None
     assert "Root directory mismatch" in result["error"]
+
+
+def test_zipformat_structure_rejects_top_level_symlink(tmp_path: pathlib.Path) -> None:
+    cache_dir = _make_cache_tree(tmp_path, ["example-1.2.3/README.txt"])
+    (cache_dir / "link").symlink_to(cache_dir / "missing-target")
+
+    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
+
+    assert result.get("error") is not None
+    assert "Files found directly in root" in result["error"]
 
 
 def _make_cache_tree(base: pathlib.Path, members: list[str]) -> pathlib.Path:
@@ -266,18 +281,6 @@ def _make_cache_tree_with_contents(base: pathlib.Path, members: dict[str, str]) 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     return cache_dir
-
-
-def _make_zip(path: pathlib.Path, members: list[str]) -> None:
-    with zipfile.ZipFile(path, "w") as zf:
-        for name in members:
-            zf.writestr(name, f"data-{name}")
-
-
-def _make_zip_with_contents(path: pathlib.Path, members: dict[str, str]) -> None:
-    with zipfile.ZipFile(path, "w") as zf:
-        for name, content in members.items():
-            zf.writestr(name, content)
 
 
 async def _targz_structure_args(

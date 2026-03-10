@@ -32,7 +32,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 class RootDirectoryError(Exception):
@@ -71,6 +71,14 @@ def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:
         raise RootDirectoryError(f"Multiple root directories found: {entries[0]}, {entries[1]}")
 
     root = entries[0]
+    root_path = cache_dir / root
+    try:
+        root_stat = root_path.lstat()
+    except OSError as e:
+        raise RootDirectoryError(f"Unable to inspect root entry '{root}': {e}") from e
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise RootDirectoryError(f"Root entry is not a directory: {root}")
+
     package_json: bytes | None = None
 
     if root == "package":

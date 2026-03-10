@@ -157,21 +157,6 @@ def test_zipformat_integrity_reports_member_limit(tmp_path, monkeypatch):
     assert "too many members" in result.get("error", "").lower()
 
 
-def test_zipformat_structure_reports_member_limit(tmp_path, monkeypatch):
-    archive_path = tmp_path / "sample.zip"
-    _make_zip(archive_path, ["a.txt", "b.txt", "c.txt"])
-
-    original_open = tarzip.open_archive
-
-    def limited_open(path: str, *args, **kwargs):
-        return original_open(path, max_members=2)
-
-    monkeypatch.setattr(tarzip, "open_archive", limited_open)
-
-    result = zipformat._structure_check_core_logic(str(archive_path))
-    assert "too many members" in result.get("error", "").lower()
-
-
 async def _args_for(recorder: recorders.RecorderStub) -> checks.FunctionArguments:
     return checks.FunctionArguments(
         recorder=recorders.get_recorder(recorder),
