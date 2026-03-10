@@ -16,6 +16,10 @@
 # under the License.
 
 import asyncio
+import contextlib
+import os
+import pathlib
+import stat
 from typing import Final
 
 import atr.archives as archives
@@ -28,7 +32,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 class RootDirectoryError(Exception):
@@ -56,48 +60,46 @@ async def integrity(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-def root_directory(tgz_path: str) -> tuple[str, bytes | None]:  # noqa: C901
-    """Find root directory and extract package/package.json if found."""
-    root = None
+def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:
+    """Find root directory and read package/package.json from the extracted tree."""
+    # The ._ prefix is a metadata convention
+    entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
+
+    if not entries:
+        raise RootDirectoryError("No root directory found in archive")
+    if len(entries) > 1:
+        raise RootDirectoryError(f"Multiple root directories found: {entries[0]}, {entries[1]}")
+
+    root = entries[0]
     package_json: bytes | None = None
 
-    with tarzip.open_archive(tgz_path) as archive:
-        for member in archive:
-            if member.name and member.name.split("/")[-1].startswith("._"):
-                # Metadata convention
-                continue
-
-            parts = member.name.split("/", 1)
-            if len(parts) >= 1:
-                if root is None:
-                    root = parts[0]
-                elif parts[0] != root:
-                    raise RootDirectoryError(f"Multiple root directories found: {root}, {parts[0]}")
-
-            if (root == "package") and (package_json is None):
-                member_name = member.name.lstrip("./")
-                if (member_name == "package/package.json") and member.isfile():
-                    size = member.size if hasattr(member, "size") else 0
-                    if (size > 0) and (size <= util.NPM_PACKAGE_JSON_MAX_SIZE):
-                        f = archive.extractfile(member)
-                        if f is not None:
-                            try:
-                                package_json = f.read()
-                            finally:
-                                f.close()
-
-    if not root:
-        raise RootDirectoryError("No root directory found in archive")
+    if root == "package":
+        package_json_path = cache_dir / "package" / "package.json"
+        with contextlib.suppress(FileNotFoundError, OSError):
+            package_json_stat = package_json_path.lstat()
+            # We do this to avoid allowing package.json to be a symlink
+            if stat.S_ISREG(package_json_stat.st_mode):
+                size = package_json_stat.st_size
+                if (size > 0) and (size <= util.NPM_PACKAGE_JSON_MAX_SIZE):
+                    package_json = package_json_path.read_bytes()
 
     return root, package_json
 
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:  # noqa: C901
-    """Check the structure of a .tar.gz file."""
+    """Check the structure of a .tar.gz file using the extracted tree."""
     recorder = await args.recorder()
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
     if await recorder.primary_path_is_binary():
+        return None
+
+    cache_dir = await checks.resolve_cache_dir(args)
+    if cache_dir is None:
+        await recorder.failure(
+            "Extracted archive tree is not available",
+            {"rel_path": args.primary_rel_path},
+        )
         return None
 
     filename = artifact_abs_path.name
@@ -112,7 +114,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
     )
 
     try:
-        root, package_json = await asyncio.to_thread(root_directory, str(artifact_abs_path))
+        root, package_json = await asyncio.to_thread(root_directory, cache_dir)
         data: dict[str, object] = {
             "root": root,
             "basename_from_filename": basename_from_filename,
@@ -149,8 +151,6 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
             await recorder.failure(
                 f"Root directory '{root}' does not match expected names '{expected_roots_display}'", data
             )
-    except tarzip.ArchiveMemberLimitExceededError as e:
-        await recorder.failure(f"Archive has too many members: {e}", {"error": str(e)})
     except RootDirectoryError as e:
         await recorder.failure("Could not get the root directory of the archive", {"error": str(e)})
     except Exception as e:

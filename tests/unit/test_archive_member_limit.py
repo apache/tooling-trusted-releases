@@ -142,26 +142,6 @@ async def test_targz_integrity_reports_member_limit(tmp_path, monkeypatch):
     assert any("too many members" in message.lower() for _, message, _ in recorder.messages)
 
 
-@pytest.mark.asyncio
-async def test_targz_structure_reports_member_limit(tmp_path, monkeypatch):
-    archive_path = tmp_path / "sample.tar"
-    # Must include the root directory here
-    _make_tar(archive_path, ["sample/a.txt", "sample/b.txt", "sample/c.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_member_limit")
-
-    original_open = tarzip.open_archive
-
-    def limited_open(path: str, *args, **kwargs):
-        return original_open(path, max_members=2)
-
-    monkeypatch.setattr(tarzip, "open_archive", limited_open)
-
-    args = await _args_for(recorder)
-    await targz.structure(args)
-
-    assert any("too many members" in message.lower() for _, message, _ in recorder.messages)
-
-
 def test_zipformat_integrity_reports_member_limit(tmp_path, monkeypatch):
     archive_path = tmp_path / "sample.zip"
     _make_zip(archive_path, ["a.txt", "b.txt", "c.txt"])

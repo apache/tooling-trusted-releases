@@ -15,10 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import io
 import json
 import pathlib
-import tarfile
+import unittest.mock as mock
 import zipfile
 
 import pytest
@@ -32,26 +31,17 @@ import tests.unit.recorders as recorders
 
 @pytest.mark.asyncio
 async def test_targz_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.tgz"
-    _make_tar_gz_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/package.json": json.dumps({"name": "example", "version": "1.2.3"}),
             "package/README.txt": "hello",
         },
     )
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
     assert not any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -59,66 +49,50 @@ async def test_targz_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> 
 
 @pytest.mark.asyncio
 async def test_targz_structure_accepts_source_suffix_variant(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-source.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_targz_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-src.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-src.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
+async def test_targz_structure_fails_when_cache_unavailable(tmp_path: pathlib.Path) -> None:
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
+
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=None)):
+        await targz.structure(args)
+
+    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any("extracted archive tree is not available" in message.lower() for _, message, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
 async def test_targz_structure_rejects_npm_pack_filename_mismatch(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.tgz"
-    _make_tar_gz_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/package.json": json.dumps({"name": "different", "version": "1.2.3"}),
             "package/README.txt": "hello",
         },
     )
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
     assert any("npm pack layout detected" in message for _, message, _ in recorder.messages)
@@ -126,105 +100,78 @@ async def test_targz_structure_rejects_npm_pack_filename_mismatch(tmp_path: path
 
 @pytest.mark.asyncio
 async def test_targz_structure_rejects_package_root_without_package_json(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "example-1.2.3.tgz"
-    _make_tar_gz_with_contents(
-        archive_path,
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
         {
             "package/README.txt": "hello",
         },
     )
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_targz_structure_rejects_source_root_when_filename_has_no_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3-source/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-source/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_targz_structure_rejects_source_root_when_filename_has_src_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-src.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3-source/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-source/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-src.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_targz_structure_rejects_src_root_when_filename_has_no_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3-src/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-src/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_targz_structure_rejects_src_root_when_filename_has_source_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "apache-example-1.2.3-source.tar.gz"
-    _make_tar_gz(archive_path, ["apache-example-1.2.3-src/README.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
-    args = checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-src/README.txt"])
+    recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
 
-    await targz.structure(args)
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
+
+    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.Path) -> None:
+    cache_dir = _make_cache_tree_with_contents(
+        tmp_path,
+        {
+            "package/README.txt": "hello",
+            "metadata.json": json.dumps({"name": "example", "version": "1.2.3"}),
+        },
+    )
+    (cache_dir / "package" / "package.json").symlink_to(cache_dir / "metadata.json")
+    recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
+
+    with mock.patch.object(checks, "resolve_cache_dir", new=mock.AsyncMock(return_value=cache_dir)):
+        await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
 
@@ -299,22 +246,26 @@ def test_zipformat_structure_rejects_package_root_without_package_json(tmp_path:
     assert "Root directory mismatch" in result["error"]
 
 
-def _make_tar_gz(path: pathlib.Path, members: list[str]) -> None:
-    with tarfile.open(path, "w:gz") as tf:
-        for name in members:
-            data = f"data-{name}".encode()
-            info = tarfile.TarInfo(name=name)
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
+def _make_cache_tree(base: pathlib.Path, members: list[str]) -> pathlib.Path:
+    """Create a directory tree simulating the quarantine extraction cache."""
+    cache_dir = base / "cache"
+    cache_dir.mkdir()
+    for name in members:
+        path = cache_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"data-{name}")
+    return cache_dir
 
 
-def _make_tar_gz_with_contents(path: pathlib.Path, members: dict[str, str]) -> None:
-    with tarfile.open(path, "w:gz") as tf:
-        for name, content in members.items():
-            data = content.encode()
-            info = tarfile.TarInfo(name=name)
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
+def _make_cache_tree_with_contents(base: pathlib.Path, members: dict[str, str]) -> pathlib.Path:
+    """Create a directory tree with specific file contents."""
+    cache_dir = base / "cache"
+    cache_dir.mkdir()
+    for name, content in members.items():
+        path = cache_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    return cache_dir
 
 
 def _make_zip(path: pathlib.Path, members: list[str]) -> None:
@@ -327,3 +278,20 @@ def _make_zip_with_contents(path: pathlib.Path, members: dict[str, str]) -> None
     with zipfile.ZipFile(path, "w") as zf:
         for name, content in members.items():
             zf.writestr(name, content)
+
+
+async def _targz_structure_args(
+    tmp_path: pathlib.Path, archive_filename: str
+) -> tuple[recorders.RecorderStub, checks.FunctionArguments]:
+    archive_path = tmp_path / archive_filename
+    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="",
+        project_name="test",
+        version_name="test",
+        revision_number="00001",
+        primary_rel_path=archive_filename,
+        extra_args={},
+    )
+    return recorder, args
