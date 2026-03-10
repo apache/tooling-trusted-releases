@@ -505,7 +505,7 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_name: safe.ProjectName,
         version_name: safe.VersionName,
-        file_name: pathlib.Path | None,
+        # file_name: pathlib.Path | None,
         files: Sequence[datastructures.FileStorage],
     ) -> tuple[str | None, int, bool]:
         """Process and save the uploaded files into a new draft revision."""
@@ -517,16 +517,16 @@ class CommitteeParticipant(FoundationCommitter):
             for file in files:
                 # Determine the target path within the new revision directory
                 relative_file_path: pathlib.Path
-                if not file_name:
-                    if not file.filename:
-                        raise storage.AccessError("No filename provided")
-                    # Validate the filename from multipart upload
-                    validated_path = form.to_relpath(file.filename)
-                    if validated_path is None:
-                        raise storage.AccessError("Invalid filename")
-                    relative_file_path = validated_path
-                else:
-                    relative_file_path = file_name
+                # if not file_name:
+                if not file.filename:
+                    raise storage.AccessError("No filename provided")
+                # Validate the filename from multipart upload
+                validated_path = form.to_relpath(file.filename)
+                if validated_path is None:
+                    raise storage.AccessError("Invalid filename")
+                relative_file_path = validated_path
+                # else:
+                #    relative_file_path = file_name
 
                 # Construct path inside the new revision directory
                 target_path = path / relative_file_path

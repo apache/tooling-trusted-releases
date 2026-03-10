@@ -34,13 +34,13 @@ class SvnArea(enum.Enum):
 class AddFilesForm(form.Form):
     variant: ADD_FILES = form.value(ADD_FILES)
     file_data: form.FileList = form.label("Files", "Select the files to upload.")
-    file_name: form.Filename = form.label(
-        "File name",
-        "Optional: Enter a file name to use when saving the file in the release candidate. "
-        "Only available when uploading a single file.",
-    )
+    # file_name: form.Filename = form.label(
+    #     "File name",
+    #     "Optional: Enter a file name to use when saving the file in the release candidate. "
+    #     "Only available when uploading a single file.",
+    # )
 
-    @pydantic.field_validator("file_name", mode="after")
+    # @pydantic.field_validator("file_name", mode="after")
     @classmethod
     def validate_file_name_with_files(cls, value: form.Filename, info: pydantic.ValidationInfo) -> form.Filename:
         # We can only get file_data if it comes before this field
