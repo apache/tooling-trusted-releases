@@ -143,6 +143,9 @@ async def verify(token: str) -> dict[str, Any]:
             if not pat:
                 log.failed_authentication("pat_hash_invalid")
                 raise base.ASFQuartException("Personal Access Token invalid")
+            if pat.asfuid != claims.get("sub"):
+                log.failed_authentication("pat_user_mismatch")
+                raise base.ASFQuartException("Personal Access Token invalid")
             if pat.expires < datetime.datetime.now(datetime.UTC):
                 log.failed_authentication("pat_expired")
                 raise base.ASFQuartException("Personal Access Token expired")
