@@ -17,5 +17,6 @@
 
 from typing import Final
 
+# audit_guidance atr/version.py is created via make generate-version using atr/metadata.py
 ATR_VERSION: Final[str] = "?"
 ATR_COMMIT: Final[str] = "?"
