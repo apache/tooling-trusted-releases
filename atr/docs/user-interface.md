@@ -83,6 +83,8 @@ Fields use Pydantic type annotations to define their data type:
 * `form.StrList` - multiple checkboxes that collect strings
 * `form.File` - single file upload
 * `form.FileList` - multiple file upload
+* `form.RelPath` - validated relative file path (rejects path traversal such as `..` and absolute paths via `to_relpath()`)
+* `form.RelPathList` - list of validated relative file paths
 * `form.Enum[EnumType]` - dropdown select from enum values
 * `form.Set[EnumType]` - multiple checkboxes from enum values
 
