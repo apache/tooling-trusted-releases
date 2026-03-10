@@ -160,9 +160,10 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
             "distribution-owner-namespace": args.namespace,
             "distribution-package": args.package,
             "distribution-version": args.version,
-            **args.arguments,
+            # **args.arguments,
         },
     }
+
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
     log.info(
         f"Triggering Github workflow apache/tooling-actions/{workflow} with args: {
