@@ -22,6 +22,7 @@
 * `3.12.` [Authentication security](authentication-security)
 * `3.13.` [Authorization security](authorization-security)
 * `3.14.` [Input validation](input-validation)
+* `3.15.` [TLS Security Configuration](tls-security-configuration)
 
 **Sections**:
 
