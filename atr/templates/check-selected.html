@@ -163,16 +163,16 @@
   {% if phase == "release_candidate_draft" %}
     <h3 id="distribution" class="mt-4">Distribution</h3>
     <p>
-      While this release is in draft, you can create a staging distribution. Use the buttons below to either create one automatically (where supported) or record a manual distribution performed outside of ATR.
+      While this release is in draft, you can create a staging distribution. Use the button below to record a manual distribution performed outside of ATR.
     </p>
-    <div class="alert alert-warning mb-4">
-      <p class="fw-semibold mb-1">NOTE:</p>
-      <p>At present, automated distributions are being developed. Please use the manual record button if you need to record a distribution.</p>
-    </div>
+{#    <div class="alert alert-warning mb-4">#}
+{#      <p class="fw-semibold mb-1">NOTE:</p>#}
+{#      <p>At present, automated distributions are being developed. Please use the manual record button if you need to record a distribution.</p>#}
+{#    </div>#}
     <p>
+{#      <a class="btn btn-primary"#}
+{#         href="{{ as_url(get.distribution.stage_automate, project_name=release.project.name, version_name=release.version) }}">Distribute</a>#}
       <a class="btn btn-primary"
-         href="{{ as_url(get.distribution.stage_automate, project_name=release.project.name, version_name=release.version) }}">Distribute</a>
-      <a class="btn btn-secondary"
          href="{{ as_url(get.distribution.stage_record, project_name=release.project.name, version_name=release.version) }}">Record a manual distribution</a>
     </p>
     <h2 id="more-actions">More actions</h2>
@@ -189,9 +189,7 @@
           <thead class="table-light">
             <tr>
               <th scope="col">
-                Check
-                <br />
-                Path
+                Check Path
               </th>
               <th scope="col">Message</th>
               <th scope="col">Status</th>

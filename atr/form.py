@@ -149,13 +149,15 @@ def json_suitable(field_value: Any) -> Any:
 
 
 def label(
-    description: str, documentation: str | None = None, *, default: Any = ..., widget: Widget | None = None
+    description: str, documentation: str | None = None, *, default: Any = ..., widget: Widget | None = None, **kwargs
 ) -> Any:
     extra: dict[str, Any] = {}
     if widget is not None:
         extra["widget"] = widget.value
     if documentation is not None:
         extra["documentation"] = documentation
+    if len(kwargs) > 0:
+        extra.update(kwargs)
     return pydantic.Field(default, description=description, json_schema_extra=extra)
 
 
@@ -616,6 +618,7 @@ def widget(widget_type: Widget) -> Any:
 def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]:  # noqa: C901
     annotation = field_info.annotation
     origin = get_origin(annotation)
+    json_schema_extra = field_info.json_schema_extra or {}
 
     if origin is Literal:
         return [(v, v) for v in get_args(annotation)]
@@ -627,6 +630,9 @@ def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]
             inner_type = args[0]
             if isinstance(inner_type, type) and issubclass(inner_type, enum.Enum):
                 # This is an enum type wrapped in Annotated, from Enum[T] or Set[T]
+                if isinstance(json_schema_extra, dict):
+                    if filter_keys := json_schema_extra.get("enum_filter_include", None):
+                        return [(member.value, member.value) for member in inner_type if member.value in filter_keys]
                 return [(member.value, member.value) for member in inner_type]
 
     if origin is set:
@@ -634,6 +640,9 @@ def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]
         if args:
             enum_class = args[0]
             if isinstance(enum_class, type) and issubclass(enum_class, enum.Enum):
+                if isinstance(json_schema_extra, dict):
+                    if filter_keys := json_schema_extra.get("enum_filter_include", None):
+                        return [(member.value, member.value) for member in enum_class if member.value in filter_keys]
                 return [(member.value, member.value) for member in enum_class]
 
     if origin is list:
@@ -643,6 +652,9 @@ def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]
 
     # Check for plain enum types, e.g. when Pydantic unwraps form.Enum[T]
     if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+        if isinstance(json_schema_extra, dict):
+            if filter_keys := json_schema_extra.get("enum_filter_include", None):
+                return [(member.value, member.value) for member in annotation if member.value in filter_keys]
         return [(member.value, member.value) for member in annotation]
 
     return []

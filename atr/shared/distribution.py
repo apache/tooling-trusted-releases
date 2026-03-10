@@ -122,7 +122,42 @@ class DeleteForm(form.Form):
     version: str = form.label("Version", widget=form.Widget.HIDDEN)
 
 
-class DistributeForm(form.Form):
+class DistributionAutomateForm(form.Form):
+    platform: form.Enum[DistributionPlatform] = form.label(
+        "Platform", widget=form.Widget.SELECT, enum_filter_include=[DistributionPlatform.MAVEN.value]
+    )
+    owner_namespace: str = form.label(
+        "Owner or Namespace",
+        "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
+        "GitHub owner, ArtifactHub repo). Leave blank if not used.",
+    )
+    package: str = form.label("Package")
+    version: str = form.label("Version")
+    details: form.Bool = form.label(
+        "Include details",
+        "Include the details of the distribution in the response",
+    )
+
+    @pydantic.model_validator(mode="after")
+    def validate_owner_namespace(self) -> DistributionAutomateForm:
+        platform_name: str = self.platform.name  # type: ignore[attr-defined]
+        sql_platform = self.platform.to_sql()  # type: ignore[attr-defined]
+        default_owner_namespace = sql_platform.value.default_owner_namespace
+        requires_owner_namespace = sql_platform.value.requires_owner_namespace
+
+        if default_owner_namespace and (not self.owner_namespace):
+            self.owner_namespace = default_owner_namespace
+
+        if requires_owner_namespace and (not self.owner_namespace):
+            raise ValueError(f'Platform "{platform_name}" requires an owner or namespace.')
+
+        if (not requires_owner_namespace) and (not default_owner_namespace) and self.owner_namespace:
+            raise ValueError(f'Platform "{platform_name}" does not require an owner or namespace.')
+
+        return self
+
+
+class DistributionRecordForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
     owner_namespace: str = form.label(
         "Owner or Namespace",
@@ -137,7 +172,7 @@ class DistributeForm(form.Form):
     )
 
     @pydantic.model_validator(mode="after")
-    def validate_owner_namespace(self) -> DistributeForm:
+    def validate_owner_namespace(self) -> DistributionRecordForm:
         platform_name: str = self.platform.name  # type: ignore[attr-defined]
         sql_platform = self.platform.to_sql()  # type: ignore[attr-defined]
         default_owner_namespace = sql_platform.value.default_owner_namespace

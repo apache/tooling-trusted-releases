@@ -215,10 +215,9 @@ async def _automate_form_page(project: safe.ProjectName, version: safe.VersionNa
         else util.as_url(post.distribution.automate_selected, project_name=str(project), version_name=str(version))
     )
 
-    # TODO: Reuse the same form for now - maybe we can combine this and the function below adding an automate=True arg
     # Render the distribution form
     form_html = form.render(
-        model_cls=shared.distribution.DistributeForm,
+        model_cls=shared.distribution.DistributionAutomateForm,
         submit_label="Distribute",
         action=action,
         defaults={"package": str(project), "version": str(version)},
@@ -294,7 +293,7 @@ async def _record_form_page(project: safe.ProjectName, version: safe.VersionName
 
     # Render the distribution form
     form_html = form.render(
-        model_cls=shared.distribution.DistributeForm,
+        model_cls=shared.distribution.DistributionRecordForm,
         submit_label="Record distribution",
         action=action,
         defaults={"package": str(project), "version": str(version)},

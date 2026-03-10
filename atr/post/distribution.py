@@ -40,7 +40,7 @@ _AUTOMATED_PLATFORMS_STAGE: Final[tuple[shared.distribution.DistributionPlatform
 
 async def automate_form_process_page(
     session: web.Committer,
-    form_data: shared.distribution.DistributeForm,
+    form_data: shared.distribution.DistributionAutomateForm,
     project: safe.ProjectName,
     version: safe.VersionName,
     /,
@@ -114,7 +114,7 @@ async def automate_selected(
     _distribution_automate: Literal["distribution/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    distribute_form: shared.distribution.DistributeForm,
+    distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /distribution/automate/<project_name>/<version_name>
@@ -169,7 +169,7 @@ async def delete(
 
 async def record_form_process_page(
     session: web.Committer,
-    form_data: shared.distribution.DistributeForm,
+    form_data: shared.distribution.DistributionRecordForm,
     project: safe.ProjectName,
     version: safe.VersionName,
     /,
@@ -222,7 +222,7 @@ async def record_selected(
     _distribution_record: Literal["distribution/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    distribute_form: shared.distribution.DistributeForm,
+    distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /distribution/record/<project_name>/<version_name>
@@ -236,7 +236,7 @@ async def stage_automate_selected(
     _distribution_stage_automate: Literal["distribution/stage/automate"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    distribute_form: shared.distribution.DistributeForm,
+    distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /distribution/stage/automate/<project_name>/<version_name>
@@ -250,7 +250,7 @@ async def stage_record_selected(
     _distribution_stage_record: Literal["distribution/stage/record"],
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
-    distribute_form: shared.distribution.DistributeForm,
+    distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /distribution/stage/record/<project_name>/<version_name>
