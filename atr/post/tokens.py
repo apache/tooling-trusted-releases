@@ -90,6 +90,7 @@ async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenFor
 
 
 async def _delete_token(session: web.Committer, delete_form: shared.tokens.DeleteTokenForm) -> web.WerkzeugResponse:
+    # audit_guidance token ownership verified in storage layer via authenticated user's asfuid
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
         await wafc.tokens.delete_token(delete_form.token_id)
