@@ -203,7 +203,14 @@ The cache is per-user and in-memory. It does not persist across server restarts.
 
 ### Test mode
 
-When `ALLOW_TESTS` is enabled in the configuration, a special "test" user and "test" committee are available. All authenticated users are automatically added to the test committee for testing purposes. This should never be enabled in production.
+When `ALLOW_TESTS` is enabled in the configuration, a special "test" user and "test" committee are available. **This should never be enabled in production.** The security implications are significant:
+
+1. All authenticated users (not just the test user) are granted membership in the "test" committee and project [`principal`](/ref/atr/principal.py).
+2. Authorization checks in the storage layer are completely skipped for the test committee [`release`](/ref/atr/storage/writers/release.py).
+3. Rate limiting is disabled [`server`](/ref/atr/server.py).
+4. A hardcoded "test" user bypasses LDAP verification.
+
+If `ALLOW_TESTS` is accidentally left enabled in production, every authenticated user gains unauthorized access to the test committee and its resources. This flag is intended for use only in development and test environments where `DEBUG_MODE` is also set.
 
 ## Implementation references
 

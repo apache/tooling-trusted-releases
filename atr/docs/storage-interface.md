@@ -26,6 +26,8 @@ The storage interface recognizes several permission levels: general public (unau
 
 The storage interface does not make it impossible to bypass authorization, because you can always import `db` directly and write to the database. But it makes bypassing authorization an explicit choice that requires deliberate action, and it makes the safer path the easier path. This is a pragmatic approach to security: we cannot prevent all mistakes, but we can make it harder to make them accidentally.
 
+**Note:** When `ALLOW_TESTS` is enabled, authorization checks in the storage layer are completely skipped for the test committee [`release`](/ref/atr/storage/writers/release.py). This is an intentional exception for development and test environments only. See [Authorization security](authorization-security#test-mode) for the full security implications of this flag.
+
 ## How do we read from storage?
 
 Reading from storage is a work in progress. There are some existing methods, but most of the functionality is currently in `db` or `db.interaction`, and much work is required to migrate this to the storage interface. We have given this less priority because reads are generally safe, with the exception of a few components such as user tokens, which should be given greater migration priority.
