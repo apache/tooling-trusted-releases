@@ -72,6 +72,14 @@ Release operations have the following access requirements:
 **View release information** (public pages, download links):
 
 * Allowed for: Everyone, including unauthenticated users
+* This includes the following API endpoints, which are intentionally unauthenticated because they serve the same public information available on the website:
+  * `/api/checks/list/<project>/<version>` — check results for a release
+  * `/api/checks/ongoing/<project>/<version>` — count of ongoing checks
+  * `/api/release/paths/<project>/<version>` — file paths in a release
+  * `/api/release/revisions/<project>/<version>` — revision history of a release
+  * `/api/ssh-keys/list/<asf_uid>` — enumerates SSH key fingerprints for any user
+  * `/api/keys/user/<asf_uid>` — enumerates OpenPGP keys for any user
+* Rationale: ASF release artifacts, their check results, and their metadata are public by design. The release process is transparent and these endpoints support tooling that consumes public release data.
 
 **Start a new release**:
 
