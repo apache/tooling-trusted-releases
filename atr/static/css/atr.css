@@ -278,6 +278,8 @@ li ol {
 
 table th {
     text-align: left;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
 }
 
 table td {
@@ -285,6 +287,8 @@ table td {
     font-family: ui-monospace, "SFMono-Regular", "Menlo", "Monaco", "Consolas", monospace;
     word-break: break-all;
     font-size: 0.9em;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
 }
 
 table tr {
