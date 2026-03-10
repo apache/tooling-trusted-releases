@@ -562,6 +562,7 @@ async def key_delete(
     outcomes = outcome.List[str]()
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
+        # audit_guidance fingerprint ownership verified in storage layer via authenticated user's asfuid
         oc: outcome.Outcome[sql.PublicSigningKey] = await wafc.keys.delete_key(fingerprint)
         key = oc.result_or_raise()
 
