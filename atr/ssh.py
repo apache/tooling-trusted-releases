@@ -158,6 +158,7 @@ class SSHServer(asyncssh.SSHServer):
             log.set_asf_uid(self._github_asf_uid)
 
             now = int(time.time())
+            # audit_guidance this application is not concerned with checking for a not_before flag on the workflow_key
             if workflow_key.expires < now:
                 log.failed_authentication("public_key_expired")
                 return False
