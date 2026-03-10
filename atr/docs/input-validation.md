@@ -274,6 +274,10 @@ Path traversal is prevented by:
 * Validating that paths remain within expected directories
 * Rejecting file names containing path separators
 
+For form fields that accept file or directory paths, always use `form.RelPath` (or `form.RelPathList` for multiple paths). These types automatically call [`to_relpath()`](/ref/atr/form.py:to_relpath), which rejects path traversal sequences, absolute paths, and empty values at the Pydantic validation layer. This is the preferred approach because it prevents path traversal before the handler code runs.
+
+For cases outside of form validation (e.g., URL route parameters), use [`form.to_relpath()`](/ref/atr/form.py:to_relpath) directly, or validate manually:
+
 ```python
 import pathlib
 
