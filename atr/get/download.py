@@ -51,6 +51,7 @@ async def all_selected(
     URL: /download/all/<project_name>/<version_name>
     Display download commands for a release.
     """
+    # audit_guidance this application intentionally allows release files to be downloaded without authentication
     import atr.get.root as root
 
     async with db.session() as data:
