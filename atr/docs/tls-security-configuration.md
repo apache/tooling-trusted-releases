@@ -1,4 +1,4 @@
-# 3.15. TLS Security Configuration
+# 3.15. TLS security configuration
 
 **Up**: `3.` [Developer guide](developer-guide)
 
@@ -9,13 +9,13 @@
 **Sections**:
 
 * [Overview](#overview)
-* [Supported TLS Versions](#supported-tls-versions)
-* [Elliptic Curve Selection](#elliptic-curve-selection)
-* [Cipher Suites (TLS 1.2)](#cipher-suites-tls-12)
-* [Cipher Ordering](#cipher-ordering)
-* [Session Security](#session-security)
-* [OCSP Stapling](#ocsp-stapling)
-* [Security Properties of This Configuration](#security-properties-of-this-configuration)
+* [Supported TLS versions](#supported-tls-versions)
+* [Elliptic curve selection](#elliptic-curve-selection)
+* [Cipher suites (TLS 1.2)](#cipher-suites-tls-12)
+* [Cipher ordering](#cipher-ordering)
+* [Session security](#session-security)
+* [OCSP stapling](#ocsp-stapling)
+* [Security properties of this configuration](#security-properties-of-this-configuration)
 * [Summary](#summary)
 
 ## Overview
@@ -47,7 +47,7 @@ SSLStaplingCache    shmcb:/var/run/ocsp(128000)
 
 ---
 
-## Supported TLS Versions
+## Supported TLS versions
 
 ```apache
 SSLProtocol -all +TLSv1.2 +TLSv1.3
@@ -67,7 +67,7 @@ TLS 1.3 cipher suites are negotiated automatically by OpenSSL and are not contro
 
 ---
 
-## Elliptic Curve Selection
+## Elliptic curve selection
 
 ```apache
 SSLOpenSSLConfCmd Curves X25519:prime256v1:secp384r1
@@ -85,7 +85,7 @@ The server and client negotiate the first mutually supported curve.
 
 ---
 
-## Cipher Suites (TLS 1.2)
+## Cipher suites (TLS 1.2)
 
 ```apache
 SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:...
@@ -99,7 +99,7 @@ All selected suites provide:
 * **Authenticated encryption (AEAD)**
 * **Modern key exchange mechanisms**
 
-### ECDHE Cipher Suites
+### ECDHE cipher suites
 
 Most connections will use **ECDHE (Elliptic Curve Diffie-Hellman Ephemeral)** for key exchange.
 
@@ -117,7 +117,7 @@ AES128 / AES256 / CHACHA20 | Symmetric encryption algorithm
 GCM / POLY1305             | Authenticated encryption mode
 SHA256 / SHA384            | Handshake hash algorithm
 
-#### AES-GCM Suites
+#### AES-GCM suites
 
 * ECDHE-ECDSA-AES128-GCM-SHA256
 * ECDHE-RSA-AES128-GCM-SHA256
@@ -126,7 +126,7 @@ SHA256 / SHA384            | Handshake hash algorithm
 
 These provide high-performance AES encryption using **Galois/Counter Mode (GCM)**.
 
-#### ChaCha20 Suites
+#### ChaCha20 suites
 
 * ECDHE-ECDSA-CHACHA20-POLY1305
 * ECDHE-RSA-CHACHA20-POLY1305
@@ -135,7 +135,7 @@ ChaCha20 performs better than AES on systems without AES hardware acceleration (
 
 ---
 
-### DHE Fallback Suites
+### DHE fallback suites
 
 * DHE-RSA-AES128-GCM-SHA256
 * DHE-RSA-AES256-GCM-SHA384
@@ -145,7 +145,7 @@ These use **finite-field Diffie-Hellman** rather than elliptic curves and exist 
 
 ---
 
-## Cipher Ordering
+## Cipher ordering
 
 ```apache
 SSLHonorCipherOrder off
@@ -157,7 +157,7 @@ This behavior is recommended when supporting modern clients because browsers typ
 
 ---
 
-## Session Security
+## Session security
 
 ### Disable TLS Session Tickets
 
@@ -171,7 +171,7 @@ Session resumption still works using **session IDs**.
 
 ---
 
-### Disable TLS Compression
+### Disable TLS compression
 
 ```apache
 SSLCompression off
@@ -181,7 +181,7 @@ TLS compression is disabled to prevent attacks such as **CRIME**, which exploit 
 
 ---
 
-## OCSP Stapling
+## OCSP stapling
 
 ```apache
 SSLUseStapling on
@@ -204,7 +204,7 @@ The stapling response is cached in shared memory:
 
 ---
 
-## Security Properties of This Configuration
+## Security properties of this configuration
 
 This TLS configuration provides the following protections:
 

@@ -4,7 +4,7 @@
 
 **Prev**: `3.13.` [Authorization security](authorization-security)
 
-**Next**: `3.15.` [TLS Security Configuration](tls-security-configuration)
+**Next**: `3.15.` [TLS security configuration](tls-security-configuration)
 
 **Sections**:
 
