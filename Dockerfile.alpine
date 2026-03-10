@@ -8,7 +8,6 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
 
 RUN apk update && \
     apk add --no-cache \
-      cmark \
       git \
       make \
       patch
