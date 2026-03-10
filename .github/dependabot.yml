@@ -7,3 +7,19 @@ updates:
       day: "monday"
     cooldown:
       default-days: 7
+  - package-ecosystem: "poetry"
+    directory: "/"             # location of pyproject.toml
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    allow:
+      - dependency-type: "direct"
+    cooldown:
+      default-days: 7
+  - package-ecosystem: "docker"
+    directory: "/"             # location of Dockerfile(s)
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
