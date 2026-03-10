@@ -1,8 +1,8 @@
-# 3.15 TLS Security Configuration
+# 3.15. TLS Security Configuration
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.14.` [Input Validation](input-validation)
+**Prev**: `3.14.` [Input validation](input-validation)
 
 **Next**: (none)
 
@@ -11,7 +11,7 @@
 * [Overview](#overview)
 * [Supported TLS Versions](#supported-tls-versions)
 * [Elliptic Curve Selection](#elliptic-curve-selection)
-* [Cipher Suites (TLS 1.2)](#cipher-suites-tls-1.2)
+* [Cipher Suites (TLS 1.2)](#cipher-suites-tls-12)
 * [Cipher Ordering](#cipher-ordering)
 * [Session Security](#session-security)
 * [OCSP Stapling](#ocsp-stapling)
@@ -56,12 +56,12 @@ SSLProxyProtocol -all +TLSv1.2 +TLSv1.3
 
 These directives restrict both client connections and upstream proxy connections to **TLS 1.2 and TLS 1.3 only**.
 
-| Version       | Status   | Reason                                                     |
-| ------------- | -------- | ---------------------------------------------------------- |
-| TLS 1.3       | Enabled  | Latest TLS standard with improved security and performance |
-| TLS 1.2       | Enabled  | Widely supported secure protocol                           |
-| TLS 1.1 / 1.0 | Disabled | Deprecated and vulnerable to known attacks                 |
-| SSLv3 / SSLv2 | Disabled | Insecure and obsolete                                      |
+Version       | Status   | Reason
+--------------|----------|-----------------------------------------------------------
+TLS 1.3       | Enabled  | Latest TLS standard with improved security and performance
+TLS 1.2       | Enabled  | Widely supported secure protocol
+TLS 1.1 / 1.0 | Disabled | Deprecated and vulnerable to known attacks
+SSLv3 / SSLv2 | Disabled | Insecure and obsolete
 
 TLS 1.3 cipher suites are negotiated automatically by OpenSSL and are not controlled by the `SSLCipherSuite` directive.
 
@@ -75,11 +75,11 @@ SSLOpenSSLConfCmd Curves X25519:prime256v1:secp384r1
 
 Defines the allowed curves for elliptic curve cryptography during TLS key exchange.
 
-| Curve                  | Description                                                 |
-| ---------------------- | ----------------------------------------------------------- |
-| **X25519**             | Modern high-performance curve preferred by most TLS clients |
-| **prime256v1 (P-256)** | Widely supported NIST curve                                 |
-| **secp384r1 (P-384)**  | Higher strength NIST curve                                  |
+Curve                  | Description
+-----------------------|------------------------------------------------------------
+**X25519**             | Modern high-performance curve preferred by most TLS clients
+**prime256v1 (P-256)** | Widely supported NIST curve
+**secp384r1 (P-384)**  | Higher strength NIST curve
 
 The server and client negotiate the first mutually supported curve.
 
@@ -105,17 +105,17 @@ Most connections will use **ECDHE (Elliptic Curve Diffie-Hellman Ephemeral)** fo
 
 Example:
 
-```
+```apache
 ECDHE-RSA-AES128-GCM-SHA256
 ```
 
-| Component                  | Meaning                               |
-| -------------------------- | ------------------------------------- |
-| ECDHE                      | Ephemeral elliptic curve key exchange |
-| RSA / ECDSA                | Certificate authentication method     |
-| AES128 / AES256 / CHACHA20 | Symmetric encryption algorithm        |
-| GCM / POLY1305             | Authenticated encryption mode         |
-| SHA256 / SHA384            | Handshake hash algorithm              |
+Component                  | Meaning
+---------------------------|--------------------------------------
+ECDHE                      | Ephemeral elliptic curve key exchange
+RSA / ECDSA                | Certificate authentication method
+AES128 / AES256 / CHACHA20 | Symmetric encryption algorithm
+GCM / POLY1305             | Authenticated encryption mode
+SHA256 / SHA384            | Handshake hash algorithm
 
 #### AES-GCM Suites
 
@@ -198,7 +198,7 @@ Benefits include:
 
 The stapling response is cached in shared memory:
 
-```
+```bash
 /var/run/ocsp
 ```
 
@@ -208,15 +208,15 @@ The stapling response is cached in shared memory:
 
 This TLS configuration provides the following protections:
 
-| Property                      | Description                            |
-| ----------------------------- | -------------------------------------- |
-| Modern TLS versions           | Only TLS 1.2 and TLS 1.3 permitted     |
-| Forward secrecy               | Provided by ECDHE and DHE key exchange |
-| AEAD encryption               | AES-GCM and ChaCha20-Poly1305 only     |
-| No legacy algorithms          | CBC, RC4, and 3DES excluded            |
-| Secure curves                 | X25519 and modern NIST curves only     |
-| Compression attacks prevented | TLS compression disabled               |
-| Revocation checking           | OCSP stapling enabled                  |
+Property                      | Description
+------------------------------|---------------------------------------
+Modern TLS versions           | Only TLS 1.2 and TLS 1.3 permitted
+Forward secrecy               | Provided by ECDHE and DHE key exchange
+AEAD encryption               | AES-GCM and ChaCha20-Poly1305 only
+No legacy algorithms          | CBC, RC4, and 3DES excluded
+Secure curves                 | X25519 and modern NIST curves only
+Compression attacks prevented | TLS compression disabled
+Revocation checking           | OCSP stapling enabled
 
 ---
 
