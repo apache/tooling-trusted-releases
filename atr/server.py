@@ -565,7 +565,7 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
     async def add_security_headers(response: quart.Response) -> quart.Response:
         response.headers["Content-Security-Policy"] = csp_header
         response.headers["Permissions-Policy"] = permissions_policy
-        response.headers["Referrer-Policy"] = "same-origin"
+        # audit_guidance we set Referrer-Policy: same-origin in our frontend proxy
         # audit_guidance we set X-Content-Type-Options: nosniff in our frontend proxy
         # audit_guidance we set X-Frame-Options: DENY in our frontend proxy
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
