@@ -54,6 +54,7 @@ class Form(schema.Form):
 
 
 class Empty(Form):
+    # audit_guidance not really empty, as schema.Form has a mandatory CSRF field
     pass
 
 
