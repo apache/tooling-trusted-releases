@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import string
 import unicodedata
-from typing import Any, Final
+from typing import Annotated, Any, Final
+
+import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
 _NUMERIC: Final = frozenset(string.digits)
@@ -119,6 +121,18 @@ class VersionName(Alphanumeric):
             raise ValueError("A version should start with an alphanumeric character")
         if value[-1] not in _ALPHANUM:
             raise ValueError("A version should end with an alphanumeric character")
+
+
+def _empty_to_none(v: object) -> object:
+    if isinstance(v, str) and (not v):
+        return None
+    return v
+
+
+type OptionalRevisionNumber = Annotated[
+    RevisionNumber | None,
+    pydantic.BeforeValidator(_empty_to_none),
+]
 
 
 def _assert_standard_safe_syntax(value: str) -> None:
