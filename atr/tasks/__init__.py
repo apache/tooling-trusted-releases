@@ -396,7 +396,7 @@ async def tar_gz_checks(
     )
     license_h_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_HEADERS),
-        license.CHECK_VERSION,
+        license.CHECK_VERSION_HEADERS,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -405,7 +405,7 @@ async def tar_gz_checks(
     )
     license_f_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_FILES),
-        license.CHECK_VERSION,
+        license.CHECK_VERSION_FILES,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -423,7 +423,7 @@ async def tar_gz_checks(
     )
     targz_i_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.TARGZ_INTEGRITY),
-        targz.CHECK_VERSION,
+        targz.CHECK_VERSION_INTEGRITY,
         targz.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -432,7 +432,7 @@ async def tar_gz_checks(
     )
     targz_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.TARGZ_STRUCTURE),
-        targz.CHECK_VERSION,
+        targz.CHECK_VERSION_STRUCTURE,
         targz.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -505,7 +505,7 @@ async def zip_checks(
     )
     license_h_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_HEADERS),
-        license.CHECK_VERSION,
+        license.CHECK_VERSION_HEADERS,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -514,7 +514,7 @@ async def zip_checks(
     )
     license_f_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.LICENSE_FILES),
-        license.CHECK_VERSION,
+        license.CHECK_VERSION_FILES,
         license.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -532,7 +532,7 @@ async def zip_checks(
     )
     zip_i_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.ZIPFORMAT_INTEGRITY),
-        zipformat.CHECK_VERSION,
+        zipformat.CHECK_VERSION_INTEGRITY,
         zipformat.INPUT_POLICY_KEYS,
         release,
         revision,
@@ -541,7 +541,7 @@ async def zip_checks(
     )
     zip_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.ZIPFORMAT_STRUCTURE),
-        zipformat.CHECK_VERSION,
+        zipformat.CHECK_VERSION_STRUCTURE,
         zipformat.INPUT_POLICY_KEYS,
         release,
         revision,

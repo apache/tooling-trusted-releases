@@ -81,7 +81,8 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION_FILES: Final[str] = "3"
+CHECK_VERSION_HEADERS: Final[str] = "3"
 
 # Types
 
