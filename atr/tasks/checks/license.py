@@ -84,6 +84,8 @@ INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
 CHECK_VERSION_FILES: Final[str] = "3"
 CHECK_VERSION_HEADERS: Final[str] = "3"
 
+_MAX_LICENSE_NOTICE_SIZE: Final[int] = 1024 * 1024
+
 # Types
 
 
@@ -298,7 +300,11 @@ def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterat
 
 def _files_check_core_logic_license(file_path: pathlib.Path) -> str | None:
     """Verify that the start of the LICENSE file matches the Apache 2.0 license."""
-    package_license_bytes = file_path.read_bytes()
+    with open(file_path, "rb") as f:
+        package_license_bytes = f.read(_MAX_LICENSE_NOTICE_SIZE + 1)
+    if len(package_license_bytes) > _MAX_LICENSE_NOTICE_SIZE:
+        log.warning(f"LICENSE file exceeds {_MAX_LICENSE_NOTICE_SIZE} byte limit: {file_path}")
+        package_license_bytes = package_license_bytes[:_MAX_LICENSE_NOTICE_SIZE]
 
     sha3e = hashlib.sha3_256()
     sha3e.update(constants.APACHE_LICENSE_2_0.encode("utf-8"))
@@ -331,7 +337,12 @@ def _files_check_core_logic_license(file_path: pathlib.Path) -> str | None:
 def _files_check_core_logic_notice(file_path: pathlib.Path) -> tuple[bool, list[str], str]:
     """Verify that the NOTICE file follows the required format."""
     try:
-        content = file_path.read_bytes().decode("utf-8")
+        with open(file_path, "rb") as f:
+            raw = f.read(_MAX_LICENSE_NOTICE_SIZE + 1)
+        if len(raw) > _MAX_LICENSE_NOTICE_SIZE:
+            log.warning(f"NOTICE file exceeds {_MAX_LICENSE_NOTICE_SIZE} byte limit: {file_path}")
+            raw = raw[:_MAX_LICENSE_NOTICE_SIZE]
+        content = raw.decode("utf-8")
     except UnicodeDecodeError:
         return False, ["the NOTICE file is not valid UTF-8"], ""
     preamble = "".join(content.splitlines(keepends=True)[:3])

@@ -41,6 +41,9 @@ import atr.web as web
 
 _KEYS_BASE_URL: Final[str] = "https://downloads.apache.org"
 
+# The Apache Subversion KEYS file is largest at 3732091 bytes
+_MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
+
 
 @post.typed
 async def add(
@@ -273,7 +276,23 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
         async with util.create_secure_session(timeout=timeout) as session:
             async with session.get(keys_url, allow_redirects=True) as response:
                 response.raise_for_status()
-                return await response.text()
+                content_length = response.content_length
+                if (content_length is not None) and (content_length > _MAX_KEYS_SIZE):
+                    raise base.ASFQuartException(
+                        f"KEYS file too large ({content_length} bytes, limit {_MAX_KEYS_SIZE})",
+                        errorcode=502,
+                    )
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.content.iter_chunked(65536):
+                    size += len(chunk)
+                    if size > _MAX_KEYS_SIZE:
+                        raise base.ASFQuartException(
+                            f"KEYS file too large (limit {_MAX_KEYS_SIZE} bytes)",
+                            errorcode=502,
+                        )
+                    chunks.append(chunk)
+                return b"".join(chunks).decode("utf-8")
     except aiohttp.ClientResponseError as e:
         raise base.ASFQuartException(f"Unable to fetch keys from remote server: {e.status} {e.message}", errorcode=502)
     except aiohttp.ClientError as e:
