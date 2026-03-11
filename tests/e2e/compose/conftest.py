@@ -76,6 +76,7 @@ def page_compose(compose_context: BrowserContext) -> Generator[Page]:
     """Navigate to the compose page with a fresh page for each test."""
     page = compose_context.new_page()
     helpers.visit(page, COMPOSE_URL)
+    _wait_for_tasks_banner_hidden(page, timeout=60000)
     yield page
     page.close()
 
