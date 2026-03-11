@@ -79,42 +79,12 @@ class CompareRecorder:
         return atr.tasks.checks.compare.TreeComparisonResult(set(self.invalid), set(self.repo_only))
 
 
-class DecompressRecorder:
-    def __init__(self, return_value: bool = True) -> None:
-        self.archive_path: pathlib.Path | None = None
-        self.extract_dir: pathlib.Path | None = None
-        self.max_extract_size: int | None = None
-        self.chunk_size: int | None = None
-        self.return_value = return_value
+class CacheDirResolver:
+    def __init__(self, cache_dir: pathlib.Path | None) -> None:
+        self.cache_dir = cache_dir
 
-    async def __call__(
-        self,
-        archive_path: pathlib.Path,
-        extract_dir: pathlib.Path,
-        max_extract_size: int,
-        chunk_size: int,
-    ) -> bool:
-        self.archive_path = archive_path
-        self.extract_dir = extract_dir
-        self.max_extract_size = max_extract_size
-        self.chunk_size = chunk_size
-        assert await aiofiles.os.path.exists(extract_dir)
-        return self.return_value
-
-
-class ExtractErrorRaiser:
-    def __call__(self, *args: object, **kwargs: object) -> tuple[int, list[str]]:
-        raise atr.tasks.checks.compare.archives.ExtractionError("Extraction error")
-
-
-class ExtractRecorder:
-    def __init__(self, extracted_size: int = 123) -> None:
-        self.calls: list[tuple[str, str, int, int]] = []
-        self.extracted_size = extracted_size
-
-    def __call__(self, archive_path: str, extract_dir: str, max_size: int, chunk_size: int) -> tuple[int, list[str]]:
-        self.calls.append((archive_path, extract_dir, max_size, chunk_size))
-        return self.extracted_size, []
+    async def __call__(self, args: object) -> pathlib.Path | None:
+        return self.cache_dir
 
 
 class FindArchiveRootRecorder:
@@ -529,36 +499,6 @@ def test_compare_trees_rsync_trees_match(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_decompress_archive_calls_extract(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "artifact.tar.gz"
-    extract_dir = tmp_path / "extracted"
-    extract_dir.mkdir()
-    extract_recorder = ExtractRecorder()
-
-    monkeypatch.setattr(atr.tasks.checks.compare.archives, "extract", extract_recorder)
-
-    result = await atr.tasks.checks.compare._decompress_archive(archive_path, extract_dir, 10, 20)
-
-    assert result is True
-    assert extract_recorder.calls == [(str(archive_path), str(extract_dir), 10, 20)]
-
-
-@pytest.mark.asyncio
-async def test_decompress_archive_handles_extraction_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    archive_path = tmp_path / "artifact.tar.gz"
-    extract_dir = tmp_path / "extracted"
-    extract_dir.mkdir()
-
-    monkeypatch.setattr(atr.tasks.checks.compare.archives, "extract", ExtractErrorRaiser())
-
-    result = await atr.tasks.checks.compare._decompress_archive(archive_path, extract_dir, 10, 20)
-
-    assert result is False
-
-
-@pytest.mark.asyncio
 async def test_find_archive_root_accepts_any_single_directory(tmp_path: pathlib.Path) -> None:
     archive_path = tmp_path / "my-project-1.0.0.tar.gz"
     extract_dir = tmp_path / "extracted"
@@ -674,14 +614,15 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    decompress = DecompressRecorder()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(repo_only={"extra1.txt", "extra2.txt"})
     tmp_root = tmp_path / "temporary-root"
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -691,8 +632,6 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     assert checkout.checkout_dir is not None
     checkout_dir = checkout.checkout_dir
     assert checkout_dir.name == "github"
-    assert decompress.extract_dir is not None
-    assert decompress.extract_dir.name == "archive"
     assert checkout_dir.parent.parent == tmp_root
     assert checkout_dir.parent.name.startswith("trees-")
     assert await aiofiles.os.path.exists(tmp_root)
@@ -716,11 +655,7 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
         "_checkout_github_source",
         RaiseAsync("_checkout_github_source should not be called"),
     )
-    monkeypatch.setattr(
-        atr.tasks.checks.compare,
-        "_decompress_archive",
-        RaiseAsync("_decompress_archive should not be called"),
-    )
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", RaiseAsync("resolve_cache_dir should not be called"))
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
     await atr.tasks.checks.compare.source_trees(args)
@@ -734,24 +669,16 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
+    cache_dir = tmp_path / "cache"
+    (cache_dir / "artifact").mkdir(parents=True)
+    (cache_dir / "artifact" / "pyproject.toml").write_text("[project]\nname = 'test'\n")
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(invalid={"PKG-INFO"})
     tmp_root = tmp_path / "temporary-root"
 
-    async def decompress_with_pyproject(
-        archive_path: pathlib.Path,
-        extract_dir: pathlib.Path,
-        max_extract_size: int,
-        chunk_size: int,
-    ) -> bool:
-        archive_content = extract_dir / "artifact"
-        archive_content.mkdir(parents=True, exist_ok=True)
-        (archive_content / "pyproject.toml").write_text("[project]\nname = 'test'\n")
-        return True
-
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress_with_pyproject)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -770,14 +697,15 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    decompress = DecompressRecorder()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(invalid={"bad1.txt", "bad2.txt"}, repo_only={"ok.txt"})
     tmp_root = tmp_path / "temporary-root"
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -801,13 +729,14 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    decompress = DecompressRecorder()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
     find_root = FindArchiveRootRecorder(root=None)
     tmp_root = tmp_path / "temporary-root"
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
@@ -820,29 +749,28 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
 
 
 @pytest.mark.asyncio
-async def test_source_trees_records_failure_when_decompress_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+async def test_source_trees_records_failure_when_cache_dir_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
-    checkout = CheckoutRecorder()
-    decompress = DecompressRecorder(return_value=False)
-    tmp_root = tmp_path / "temporary-root"
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
-    monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
-    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(None))
+    monkeypatch.setattr(
+        atr.tasks.checks.compare,
+        "_checkout_github_source",
+        RaiseAsync("_checkout_github_source should not be called"),
+    )
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
     await atr.tasks.checks.compare.source_trees(args)
 
     assert len(recorder.failure_calls) == 1
     message, data = recorder.failure_calls[0]
-    assert message == "Failed to extract source archive for comparison"
+    assert message == "Extracted archive tree is not available"
     assert isinstance(data, dict)
-    assert data["archive_path"] == str(await recorder.abs_path())
-    assert data["extract_dir"] == str(decompress.extract_dir)
 
 
 @pytest.mark.asyncio
@@ -853,13 +781,14 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    decompress = DecompressRecorder()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
     find_root = FindArchiveRootRecorder(root="artifact", extra_entries=["README.txt", "extra.txt"])
     tmp_root = tmp_path / "temporary-root"
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
@@ -881,7 +810,8 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    decompress = DecompressRecorder()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     repo_only_files = {f"file{i}.txt" for i in range(10)}
     compare = CompareRecorder(repo_only=repo_only_files)
@@ -889,7 +819,7 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks.compare, "_decompress_archive", decompress)
+    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))

@@ -36,7 +36,6 @@ import dulwich.porcelain
 import dulwich.refs
 import pydantic
 
-import atr.archives as archives
 import atr.attestable as attestable
 import atr.config as config
 import atr.log as log
@@ -56,7 +55,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 @dataclasses.dataclass
@@ -102,15 +101,18 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
     if payload is not None:
         if not (primary_abs_path := await recorder.abs_path()):
             return None
-        max_extract_size = args.extra_args.get("max_extract_size", _CONFIG.MAX_EXTRACT_SIZE)
-        chunk_size = args.extra_args.get("chunk_size", _CONFIG.EXTRACT_CHUNK_SIZE)
+        cache_dir = await checks.resolve_cache_dir(args)
+        if cache_dir is None:
+            await recorder.failure(
+                "Extracted archive tree is not available",
+                {"rel_path": args.primary_rel_path},
+            )
+            return None
         tmp_dir = paths.get_tmp_dir()
         await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
         async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
             github_dir = temp_dir / "github"
-            archive_dir_path = temp_dir / "archive"
             await aiofiles.os.makedirs(github_dir, exist_ok=True)
-            await aiofiles.os.makedirs(archive_dir_path, exist_ok=True)
             checkout_dir = await _checkout_github_source(payload, github_dir)
             if checkout_dir is None:
                 await recorder.failure(
@@ -118,17 +120,11 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     {"repo_url": f"https://github.com/{payload.repository}.git", "sha": payload.sha},
                 )
                 return None
-            if not await _decompress_archive(primary_abs_path, archive_dir_path, max_extract_size, chunk_size):
-                await recorder.failure(
-                    "Failed to extract source archive for comparison",
-                    {"archive_path": str(primary_abs_path), "extract_dir": str(archive_dir_path)},
-                )
-                return None
-            archive_root_result = await _find_archive_root(primary_abs_path, archive_dir_path)
+            archive_root_result = await _find_archive_root(primary_abs_path, cache_dir)
             if archive_root_result.root is None:
                 await recorder.failure(
                     "Could not determine archive root directory for comparison",
-                    {"archive_path": str(primary_abs_path), "extract_dir": str(archive_dir_path)},
+                    {"archive_path": str(primary_abs_path), "extract_dir": str(cache_dir)},
                 )
                 return None
             if archive_root_result.extra_entries:
@@ -141,7 +137,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     },
                 )
                 return None
-            archive_content_dir = archive_dir_path / archive_root_result.root
+            archive_content_dir = cache_dir / archive_root_result.root
             archive_dir = str(archive_content_dir)
             try:
                 comparison = await _compare_trees(github_dir, archive_content_dir)
@@ -302,41 +298,6 @@ def _compare_trees_rsync(repo_dir: pathlib.Path, archive_dir: pathlib.Path) -> T
             elif is_content_diff:
                 invalid.add(rel_path)
     return TreeComparisonResult(invalid, repo_only)
-
-
-async def _decompress_archive(
-    archive_path: pathlib.Path,
-    extract_dir: pathlib.Path,
-    max_extract_size: int,
-    chunk_size: int,
-) -> bool:
-    started_ns = time.perf_counter_ns()
-    try:
-        extracted_size, _extracted_paths = await asyncio.to_thread(
-            archives.extract,
-            str(archive_path),
-            str(extract_dir),
-            max_size=max_extract_size,
-            chunk_size=chunk_size,
-        )
-    except (archives.ExtractionError, OSError):
-        elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
-        log.exception(
-            "Failed to extract source archive for compare.source_trees",
-            archive_path=str(archive_path),
-            extract_dir=str(extract_dir),
-            extract_ms=elapsed_ms,
-        )
-        return False
-    elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
-    log.debug(
-        "Extracted source archive for compare.source_trees",
-        archive_path=str(archive_path),
-        extract_dir=str(extract_dir),
-        extracted_bytes=extracted_size,
-        extract_ms=elapsed_ms,
-    )
-    return True
 
 
 def _ensure_clone_identity_env() -> None:
