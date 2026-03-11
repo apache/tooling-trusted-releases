@@ -504,6 +504,18 @@ Bool = Annotated[
 Email = pydantic.EmailStr
 
 
+def _empty_to_none(v: object) -> object:
+    if isinstance(v, str) and (not v):
+        return None
+    return v
+
+
+OptionalEmail = Annotated[
+    pydantic.EmailStr | None,
+    functional_validators.BeforeValidator(_empty_to_none),
+]
+
+
 class Enum[EnumType: enum.Enum]:
     # These exist for type checkers - at runtime, the actual type is the enum
     name: str

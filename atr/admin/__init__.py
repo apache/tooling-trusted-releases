@@ -89,7 +89,9 @@ class DeleteReleaseForm(form.Form):
 
 class LdapLookupForm(form.Form):
     uid: str = form.label("ASF UID (optional)", "Enter ASF UID, e.g. johnsmith, or * for all")
-    email: str = form.label("Email address (optional)", "Enter email address, e.g. user@example.org")
+    email: form.OptionalEmail = form.label(
+        "Email address (optional)", "Enter email address, e.g. user@example.org", widget=form.Widget.EMAIL
+    )
 
 
 class RevokeUserTokensForm(form.Form):

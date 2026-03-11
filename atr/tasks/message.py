@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pydantic
+
 import atr.ldap as ldap
 import atr.log as log
 import atr.mail as mail
@@ -27,8 +29,8 @@ import atr.tasks.checks as checks
 class Send(schema.Strict):
     """Arguments for the task to send an email."""
 
-    email_sender: str = schema.description("The email address of the sender")
-    email_recipient: str = schema.description("The email address of the recipient")
+    email_sender: pydantic.EmailStr = schema.description("The email address of the sender")
+    email_recipient: pydantic.EmailStr = schema.description("The email address of the recipient")
     subject: str = schema.description("The subject of the email")
     body: str = schema.description("The body of the email")
     in_reply_to: str | None = schema.description("The message ID of the email to reply to")
@@ -55,7 +57,7 @@ async def send(args: Send) -> results.Results | None:
         raise SendError(f"Email account {args.email_sender} is banned")
 
     recipient_domain = args.email_recipient.split("@")[-1]
-    sending_to_self = recipient_domain == f"{sender_asf_uid}@apache.org"
+    sending_to_self = args.email_recipient == f"{sender_asf_uid}@apache.org"
     # audit_guidance this application intentionally allows users to send messages to committees they are not a part of
     sending_to_committee = recipient_domain.endswith(".apache.org")
     if not (sending_to_self or sending_to_committee):

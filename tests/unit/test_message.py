@@ -21,6 +21,7 @@ import contextlib
 import unittest.mock as mock
 from typing import TYPE_CHECKING
 
+import pydantic
 import pytest
 
 import atr.ldap as ldap
@@ -54,7 +55,7 @@ async def test_send_rejects_bare_invalid_asf_id(monkeypatch: "MonkeyPatch") -> N
     """Test that a bare ASF UID (no @) not found in LDAP raises SendError."""
     monkeypatch.setattr("atr.tasks.message.ldap.account_lookup", mock.AsyncMock(return_value=None))
 
-    with pytest.raises(message.SendError, match=r"Invalid email account"):
+    with pytest.raises(pydantic.ValidationError, match=r"not a valid email address"):
         await message.send(_send_args(email_sender="nosuchuser"))
 
 
