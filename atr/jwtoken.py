@@ -22,8 +22,8 @@ import functools
 import os
 import pathlib
 import secrets as secrets
+import urllib.parse as parse
 from typing import TYPE_CHECKING, Any, Final
-from urllib.parse import urlparse
 
 import aiohttp
 import asfquart
@@ -189,9 +189,15 @@ async def verify_github_oidc(token: str) -> dict[str, Any]:
         log.warning(f"Failed to fetch OIDC config: {exc}")
         jwks_uri = f"{_GITHUB_OIDC_ISSUER}/.well-known/jwks"
 
-    if urlparse(jwks_uri).hostname not in _GITHUB_TRUSTED_DOMAINS:
+    url = parse.urlparse(jwks_uri)
+
+    if url.hostname not in _GITHUB_TRUSTED_DOMAINS:
         log.error(f"Untrusted domain in GitHub OIDC endpoint: {jwks_uri}")
         raise base.ASFQuartException("Untrusted domain in GitHub OIDC endpoint", 502)
+
+    if url.scheme != "https":
+        log.error(f"Github OIDC returned insecure URI: {jwks_uri}")
+        raise base.ASFQuartException("Github OIDC returned insecure URI", 502)
 
     jwks_client = jwt.PyJWKClient(jwks_uri)
     signing_key = jwks_client.get_signing_key_from_jwt(token)
