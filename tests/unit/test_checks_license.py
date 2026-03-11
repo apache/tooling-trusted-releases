@@ -16,12 +16,14 @@
 # under the License.
 
 import pathlib
+import tarfile
 
 import atr.constants as constants
 import atr.models.sql as sql
 import atr.tasks.checks.license as license
 
 TEST_ARCHIVE = pathlib.Path(__file__).parent.parent / "e2e" / "test_files" / "apache-test-0.2.tar.gz"
+TEST_ARCHIVE_BASENAME: str = TEST_ARCHIVE.name
 
 NOTICE_VALID: str = (
     "Apache Test\n"
@@ -91,8 +93,9 @@ def test_files_valid_license_and_notice(tmp_path):
     assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
 
 
-def test_headers_check_data_fields_match_model():
-    results = list(license._headers_check_core_logic(str(TEST_ARCHIVE), [], "none"))
+def test_headers_check_data_fields_match_model(tmp_path):
+    cache_dir = _extract_test_archive(tmp_path)
+    results = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     final_result = artifact_results[-1]
     expected_fields = set(license.ArtifactData.model_fields.keys())
@@ -100,9 +103,12 @@ def test_headers_check_data_fields_match_model():
     assert actual_fields == expected_fields
 
 
-def test_headers_check_excludes_matching_files():
-    results_without_excludes = list(license._headers_check_core_logic(str(TEST_ARCHIVE), [], "none"))
-    results_with_excludes = list(license._headers_check_core_logic(str(TEST_ARCHIVE), ["*.py"], "policy"))
+def test_headers_check_excludes_matching_files(tmp_path):
+    cache_dir = _extract_test_archive(tmp_path)
+    results_without_excludes = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
+    results_with_excludes = list(
+        license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, ["*.py"], "policy")
+    )
 
     def get_files_checked(results: list) -> int:
         for r in results:
@@ -115,16 +121,18 @@ def test_headers_check_excludes_matching_files():
     assert with_excludes < without_excludes
 
 
-def test_headers_check_includes_excludes_source_none():
-    results = list(license._headers_check_core_logic(str(TEST_ARCHIVE), [], "none"))
+def test_headers_check_includes_excludes_source_none(tmp_path):
+    cache_dir = _extract_test_archive(tmp_path)
+    results = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     assert len(artifact_results) > 0
     final_result = artifact_results[-1]
     assert final_result.data["excludes_source"] == "none"
 
 
-def test_headers_check_includes_excludes_source_policy():
-    results = list(license._headers_check_core_logic(str(TEST_ARCHIVE), [], "policy"))
+def test_headers_check_includes_excludes_source_policy(tmp_path):
+    cache_dir = _extract_test_archive(tmp_path)
+    results = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "policy"))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     final_result = artifact_results[-1]
     assert final_result.data["excludes_source"] == "policy"
@@ -135,4 +143,12 @@ def _cache_with_root(tmp_path: pathlib.Path) -> pathlib.Path:
     cache_dir.mkdir()
     root = cache_dir / "apache-test-0.2"
     root.mkdir()
+    return cache_dir
+
+
+def _extract_test_archive(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache_dir = tmp_path / "headers_cache"
+    cache_dir.mkdir()
+    with tarfile.open(TEST_ARCHIVE) as tf:
+        tf.extractall(cache_dir, filter="data")
     return cache_dir

@@ -24,7 +24,6 @@ import pytest
 import atr.archives as archives
 import atr.tarzip as tarzip
 import atr.tasks.checks as checks
-import atr.tasks.checks.license as license_checks
 import atr.tasks.checks.targz as targz
 import atr.tasks.checks.zipformat as zipformat
 import tests.unit.recorders as recorders
@@ -47,24 +46,6 @@ def test_extract_wraps_member_limit(tmp_path, monkeypatch):
         archives.extract(str(archive_path), str(extract_dir), max_size=1024 * 1024, chunk_size=1024)
 
     assert "too many members" in str(excinfo.value).lower()
-
-
-def test_license_headers_reports_member_limit(tmp_path, monkeypatch):
-    archive_path = tmp_path / "sample.tar"
-    _make_tar(archive_path, ["main.py", "README.txt", "extra.txt"])
-
-    original_open = tarzip.open_archive
-
-    def limited_open(path: str, *args, **kwargs):
-        return original_open(path, max_members=2)
-
-    monkeypatch.setattr(tarzip, "open_archive", limited_open)
-
-    results = list(license_checks._headers_check_core_logic(str(archive_path), [], "none"))
-    assert any(
-        isinstance(result, license_checks.ArtifactResult) and ("too many members" in result.message.lower())
-        for result in results
-    )
 
 
 def test_open_archive_disables_member_limit_for_negative(tmp_path):
