@@ -45,7 +45,7 @@ class Form(pydantic.BaseModel):
         str_strip_whitespace=True,
     )
 
-    csrf_token: str | None = None
+    csrf_token: str
 
 
 def alias(alias_name: str) -> Any:
