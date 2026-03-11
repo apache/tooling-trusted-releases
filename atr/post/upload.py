@@ -194,13 +194,12 @@ async def _add_files(
     version_name: safe.VersionName,
 ) -> web.WerkzeugResponse:
     try:
-        file_name = add_form.file_name
         file_data = add_form.file_data
 
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_name)
             creation_error, number_of_files, was_quarantined = await wacp.release.upload_files(
-                project_name, version_name, file_name, file_data
+                project_name, version_name, file_data
             )
 
         if creation_error is not None:
