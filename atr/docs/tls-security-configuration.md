@@ -14,7 +14,6 @@
 * [Cipher suites (TLS 1.2)](#cipher-suites-tls-12)
 * [Cipher ordering](#cipher-ordering)
 * [Session security](#session-security)
-* [OCSP stapling](#ocsp-stapling)
 * [Security properties of this configuration](#security-properties-of-this-configuration)
 * [Summary](#summary)
 
@@ -178,29 +177,6 @@ SSLCompression off
 ```
 
 TLS compression is disabled to prevent attacks such as **CRIME**, which exploit compression side channels.
-
----
-
-## OCSP stapling
-
-```apache
-SSLUseStapling on
-SSLStaplingCache shmcb:/var/run/ocsp(128000)
-```
-
-OCSP stapling allows the server to provide certificate revocation status directly during the TLS handshake.
-
-Benefits include:
-
-* Faster TLS connections
-* Reduced load on certificate authority OCSP servers
-* Improved privacy (clients do not contact the CA directly)
-
-The stapling response is cached in shared memory:
-
-```bash
-/var/run/ocsp
-```
 
 ---
 
