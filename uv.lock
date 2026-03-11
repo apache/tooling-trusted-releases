@@ -2,9 +2,6 @@ version = 1
 revision = 3
 requires-python = "==3.13.*"
 
-[options]
-exclude-newer = "2026-03-11T17:02:21Z"
-
 [[package]]
 name = "aiofiles"
 version = "24.1.0"
@@ -937,15 +934,15 @@ wheels = [
 
 [[package]]
 name = "ldap3"
-version = "2.10.2rc2"
+version = "2.10.2rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyasn1" },
     { name = "pycryptodomex" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/1a/694130c1a07b5069184044c3ca3bcd97ad9dc984694c1e0112c998c84126/ldap3-2.10.2rc2.tar.gz", hash = "sha256:0c4304f6d86ef2a5600e7f2258fa833049b77d812ec7de7da15e50531c852ec0", size = 451969, upload-time = "2025-04-19T19:25:57.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/e5/fc54401b5e79f3363f1b000e2b4e0200ceca1a3701a173ec44b65122421c/ldap3-2.10.2rc3.tar.gz", hash = "sha256:96b5130e56ee5a34d7e7144f1109c6297ba486b187f9b3c4119716d071dcd1e3", size = 452131, upload-time = "2025-11-09T11:34:24.351Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/85/d48f33b0b41aecd6cab6d88f806f83b06f38a7334fefa1d4bd2101a6a36c/ldap3-2.10.2rc2-py3-none-any.whl", hash = "sha256:6986d0484c926daca557b4ad1dc08d3a9a776cf949591d485b6346a83efc0e69", size = 488198, upload-time = "2025-04-19T19:25:55.492Z" },
+    { url = "https://files.pythonhosted.org/packages/83/b7/65e91c7d1121c9be48eeaf30814803b84c6640cafdbdabdce012c4b747bf/ldap3-2.10.2rc3-py3-none-any.whl", hash = "sha256:64d2ebe48f83392502a4b3a0d80127799d693c7a74f2fe6f844c4ff56c6d7347", size = 488231, upload-time = "2025-11-09T11:34:22.565Z" },
 ]
 
 [[package]]
@@ -2010,7 +2007,7 @@ requires-dist = [
     { name = "htpy", specifier = ">=25.7.0,<26.0.0" },
     { name = "hypercorn", extras = ["uvloop"], specifier = "~=0.17" },
     { name = "hyperscan", specifier = ">=0.8.0" },
-    { name = "ldap3", specifier = "==2.10.2rc2" },
+    { name = "ldap3", specifier = "==2.10.2rc3" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pgpy", specifier = ">=0.6.0" },
     { name = "psutil", specifier = ">=7.2.1" },
