@@ -106,7 +106,7 @@ editorconfig==0.17.1
     # via
     #   cssbeautifier
     #   jsbeautifier
-email-validator==2.2.0
+email-validator==2.3.0
     # via tooling-trusted-releases
 exarch==0.2.7
     # via tooling-trusted-releases
