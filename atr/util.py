@@ -60,7 +60,7 @@ import atr.registry as registry
 import atr.tarzip as tarzip
 import atr.user as user
 
-ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-source", "-src")
+ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-binary-assembly", "-binary", "-bin", "-source", "-src")
 DIRECTORY_PERMISSIONS: Final[int] = 0o755
 DEV_TEST_MID: Final[str] = "CAH5JyZo8QnWmg9CwRSwWY=GivhXW4NiLyeNJO71FKdK81J5-Uw@mail.gmail.com"
 DEV_THREAD_URLS: Final[dict[str, str]] = {
