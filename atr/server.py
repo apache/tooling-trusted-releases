@@ -566,10 +566,10 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
         response.headers["Content-Security-Policy"] = csp_header
         response.headers["Permissions-Policy"] = permissions_policy
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # audit_guidance we set X-Content-Type-Options: nosniff in our frontend proxy
+        # audit_guidance we set X-Frame-Options: DENY in our frontend proxy
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # audit_guidance we set Strict-Transport-Security: max-age=63072000; includeSubDomains in our frontend proxy
         return response
 
 
