@@ -7,8 +7,8 @@ updates:
       day: "monday"
     cooldown:
       default-days: 7
-  - package-ecosystem: "poetry"
-    directory: "/"             # location of pyproject.toml
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
