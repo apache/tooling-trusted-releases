@@ -17,6 +17,7 @@
 
 import pathlib
 import shlex
+import tarfile
 
 import pytest
 
@@ -41,9 +42,10 @@ def rat_available() -> tuple[bool, bool]:
     return (java_ok, jar_ok)
 
 
-def test_check_includes_command(rat_available: tuple[bool, bool]):
+def test_check_includes_command(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE), [])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE)
+    result = rat._synchronous(str(cache_dir), [])
     command = _command_args(result.command)
     assert len(command) > 0
     assert "java" in command
@@ -53,32 +55,36 @@ def test_check_includes_command(rat_available: tuple[bool, bool]):
     assert result.directory == "."
 
 
-def test_check_includes_excludes_source_none(rat_available: tuple[bool, bool]):
+def test_check_includes_excludes_source_none(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE), [])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE)
+    result = rat._synchronous(str(cache_dir), [])
     assert result.excludes_source == "none"
 
 
-def test_check_includes_excludes_source_policy(rat_available: tuple[bool, bool]):
+def test_check_includes_excludes_source_policy(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE), ["*.py"])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE)
+    result = rat._synchronous(str(cache_dir), ["*.py"])
     assert result.excludes_source == "policy"
 
 
-def test_excludes_archive_ignores_policy_when_file_exists(rat_available: tuple[bool, bool]):
+def test_excludes_archive_ignores_policy_when_file_exists(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     """When archive has .rat-excludes, ignore policy patterns even if provided."""
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE_WITH_RAT_EXCLUDES), ["*.py", "*.txt"])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE_WITH_RAT_EXCLUDES)
+    result = rat._synchronous(str(cache_dir), ["*.py", "*.txt"])
     assert result.excludes_source == "archive"
     # Should NOT use the RAT policy file
     command = _command_args(result.command)
     assert rat._POLICY_EXCLUDES_FILENAME not in command
 
 
-def test_excludes_archive_uses_rat_excludes_file(rat_available: tuple[bool, bool]):
+def test_excludes_archive_uses_rat_excludes_file(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     """When archive has .rat-excludes, use it and set source to archive."""
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE_WITH_RAT_EXCLUDES), [])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE_WITH_RAT_EXCLUDES)
+    result = rat._synchronous(str(cache_dir), [])
     assert result.excludes_source == "archive"
     command = _command_args(result.command)
     assert "--input-exclude-file" in command
@@ -88,10 +94,11 @@ def test_excludes_archive_uses_rat_excludes_file(rat_available: tuple[bool, bool
     assert result.directory == "apache-test-0.2"
 
 
-def test_excludes_none_has_no_exclude_file(rat_available: tuple[bool, bool]):
+def test_excludes_none_has_no_exclude_file(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     """When neither archive nor policy, no exclude file should be used."""
     _skip_if_unavailable(rat_available)
-    result = rat._synchronous(str(TEST_ARCHIVE), [])
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE)
+    result = rat._synchronous(str(cache_dir), [])
     assert result.excludes_source == "none"
     command = _command_args(result.command)
     assert "--input-exclude-file" not in command
@@ -100,11 +107,12 @@ def test_excludes_none_has_no_exclude_file(rat_available: tuple[bool, bool]):
     assert rat._POLICY_EXCLUDES_FILENAME not in command
 
 
-def test_excludes_policy_uses_atr_rat_excludes(rat_available: tuple[bool, bool]):
+def test_excludes_policy_uses_atr_rat_excludes(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
     """When no archive .rat-excludes but policy exists, use policy file."""
     _skip_if_unavailable(rat_available)
+    cache_dir = _extract_test_archive(tmp_path, TEST_ARCHIVE)
     # The second argument to rat._synchronous is a list of exclusions from policy
-    result = rat._synchronous(str(TEST_ARCHIVE), ["*.py"])
+    result = rat._synchronous(str(cache_dir), ["*.py"])
     assert result.excludes_source == "policy"
     command = _command_args(result.command)
     assert "--input-exclude-file" in command
@@ -124,6 +132,10 @@ def test_sanitise_command_replaces_absolute_paths():
         "/fake/path/rat_verify_abc123/rat-report.xml",
         "--input-exclude",
         ".rat-excludes",
+        "--input-exclude",
+        "/fake/rat_scratch_abc/.atr-policy-rat-excludes",
+        "--input-exclude-file",
+        "/fake/rat_scratch_abc/.atr-policy-rat-excludes",
         "--",
         ".",
     ]
@@ -131,10 +143,20 @@ def test_sanitise_command_replaces_absolute_paths():
     assert result[2] == "apache-rat-0.17.jar"
     assert result[4] == "rat-report.xml"
     assert result[6] == ".rat-excludes"
+    assert result[8] == ".atr-policy-rat-excludes"
+    assert result[10] == ".atr-policy-rat-excludes"
 
 
 def _command_args(command: str) -> list[str]:
     return shlex.split(command)
+
+
+def _extract_test_archive(tmp_path: pathlib.Path, archive: pathlib.Path) -> pathlib.Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    with tarfile.open(archive) as tf:
+        tf.extractall(cache_dir, filter="data")
+    return cache_dir
 
 
 def _skip_if_unavailable(rat_available: tuple[bool, bool]) -> None:
