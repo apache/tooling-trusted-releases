@@ -82,7 +82,7 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 # Types
 
@@ -141,10 +141,18 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     is_podling = args.extra_args.get("is_podling", False)
 
+    cache_dir = await checks.resolve_cache_dir(args)
+    if cache_dir is None:
+        await recorder.failure(
+            "Extracted archive tree is not available",
+            {"rel_path": args.primary_rel_path},
+        )
+        return None
+
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     try:
-        for result in await asyncio.to_thread(_files_check_core_logic, str(artifact_abs_path), is_podling):
+        for result in await asyncio.to_thread(_files_check_core_logic, cache_dir, is_podling):
             match result:
                 case ArtifactResult():
                     await _record_artifact(recorder, result)
@@ -220,42 +228,44 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
     return False, "Could not find Apache License header"
 
 
-def _files_check_core_logic(artifact_path: str, is_podling: bool) -> Iterator[Result]:
+def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterator[Result]:
     """Verify that LICENSE and NOTICE files exist and are placed and formatted correctly."""
     license_results: dict[str, str | None] = {}
     notice_results: dict[str, tuple[bool, list[str], str]] = {}
     disclaimer_found = False
 
     # Check for license files in the root directory
-    try:
-        with tarzip.open_archive(artifact_path) as archive:
-            for member in archive:
-                if member.name and member.name.split("/")[-1].startswith("._"):
-                    # Metadata convention
-                    continue
-
-                if member.name.count("/") > 1:
-                    # Skip files in subdirectories
-                    continue
-
-                filename = os.path.basename(member.name)
-                if filename == "LICENSE":
-                    # TODO: Check length, should be 11,358 bytes
-                    license_diff = _files_check_core_logic_license(archive, member)
-                    license_results[filename] = license_diff
-                elif filename == "NOTICE":
-                    # TODO: Check length doesn't exceed some preset
-                    notice_ok, notice_issues, notice_preamble = _files_check_core_logic_notice(archive, member)
-                    notice_results[filename] = (notice_ok, notice_issues, notice_preamble)
-                elif filename in {"DISCLAIMER", "DISCLAIMER-WIP"}:
-                    disclaimer_found = True
-    except tarzip.ArchiveMemberLimitExceededError as e:
+    top_entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
+    root_dirs = [e for e in top_entries if (cache_dir / e).is_dir()]
+    if len(root_dirs) != 1:
         yield ArtifactResult(
             status=sql.CheckResultStatus.FAILURE,
-            message=f"Archive has too many members: {e}",
-            data={"error": str(e)},
+            message=f"Expected single root directory, found {len(root_dirs)}",
+            data=None,
         )
         return
+    root_path = cache_dir / root_dirs[0]
+
+    for entry in sorted(os.listdir(root_path)):
+        if entry.startswith("._"):
+            # Metadata convention
+            continue
+
+        entry_path = root_path / entry
+        if not entry_path.is_file():
+            # Skip subdirectories
+            continue
+
+        if entry == "LICENSE":
+            # TODO: Check length, should be 11,358 bytes
+            license_diff = _files_check_core_logic_license(entry_path)
+            license_results[entry] = license_diff
+        elif entry == "NOTICE":
+            # TODO: Check length doesn't exceed some preset
+            notice_ok, notice_issues, notice_preamble = _files_check_core_logic_notice(entry_path)
+            notice_results[entry] = (notice_ok, notice_issues, notice_preamble)
+        elif entry in {"DISCLAIMER", "DISCLAIMER-WIP"}:
+            disclaimer_found = True
 
     yield from _license_results(license_results)
     yield from _notice_results(notice_results)
@@ -267,11 +277,9 @@ def _files_check_core_logic(artifact_path: str, is_podling: bool) -> Iterator[Re
         )
 
 
-def _files_check_core_logic_license(archive: tarzip.Archive, member: tarzip.Member) -> str | None:
+def _files_check_core_logic_license(file_path: pathlib.Path) -> str | None:
     """Verify that the start of the LICENSE file matches the Apache 2.0 license."""
-    f = archive.extractfile(member)
-    if not f:
-        return None
+    package_license_bytes = file_path.read_bytes()
 
     sha3e = hashlib.sha3_256()
     sha3e.update(constants.APACHE_LICENSE_2_0.encode("utf-8"))
@@ -280,7 +288,6 @@ def _files_check_core_logic_license(archive: tarzip.Archive, member: tarzip.Memb
     if sha3_expected != "5efa4839f385df309ffc022ca5ce9763c4bc709dab862ca77d9a894db6598456":
         log.error("SHA3 expected value is incorrect, please update the static.LICENSE constant")
 
-    package_license_bytes = f.read()
     package_license = package_license_bytes.decode("utf-8", errors="replace")
 
     # Some whitespace variations are permitted:
@@ -302,14 +309,10 @@ def _files_check_core_logic_license(archive: tarzip.Archive, member: tarzip.Memb
     return None
 
 
-def _files_check_core_logic_notice(archive: tarzip.Archive, member: tarzip.Member) -> tuple[bool, list[str], str]:
+def _files_check_core_logic_notice(file_path: pathlib.Path) -> tuple[bool, list[str], str]:
     """Verify that the NOTICE file follows the required format."""
-    f = archive.extractfile(member)
-    if not f:
-        return False, ["the NOTICE file is missing or could not be read"], ""
-
     try:
-        content = f.read().decode("utf-8")
+        content = file_path.read_bytes().decode("utf-8")
     except UnicodeDecodeError:
         return False, ["the NOTICE file is not valid UTF-8"], ""
     preamble = "".join(content.splitlines(keepends=True)[:3])
