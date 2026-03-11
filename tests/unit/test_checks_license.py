@@ -17,9 +17,78 @@
 
 import pathlib
 
+import atr.constants as constants
+import atr.models.sql as sql
 import atr.tasks.checks.license as license
 
 TEST_ARCHIVE = pathlib.Path(__file__).parent.parent / "e2e" / "test_files" / "apache-test-0.2.tar.gz"
+
+NOTICE_VALID: str = (
+    "Apache Test\n"
+    "Copyright 2024 The Apache Software Foundation\n"
+    "\n"
+    "This product includes software developed at\n"
+    "The Apache Software Foundation (http://www.apache.org/).\n"
+)
+
+
+def test_files_missing_cache_dir():
+    results = list(license._files_check_core_logic(pathlib.Path("/nonexistent"), is_podling=False))
+    assert len(results) == 1
+    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert "not available" in results[0].message.lower()
+
+
+def test_files_multiple_root_dirs(tmp_path):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "root-a").mkdir()
+    (cache_dir / "root-b").mkdir()
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    assert len(results) >= 1
+    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert "root directory" in results[0].message.lower()
+
+
+def test_files_no_root_dirs(tmp_path):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "LICENSE").write_text("stray file")
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    assert len(results) >= 1
+    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert "0" in results[0].message
+
+
+def test_files_podling_without_disclaimer(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=True))
+    assert any(isinstance(r, license.ArtifactResult) and (r.status == sql.CheckResultStatus.BLOCKER) for r in results)
+
+
+def test_files_single_root_with_stray_top_level_file(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    root.mkdir(exist_ok=True)
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    (cache_dir / "stray.txt").write_text("ignored")
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
+    assert sql.CheckResultStatus.SUCCESS in statuses
+
+
+def test_files_valid_license_and_notice(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
 
 
 def test_headers_check_data_fields_match_model():
@@ -59,3 +128,11 @@ def test_headers_check_includes_excludes_source_policy():
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     final_result = artifact_results[-1]
     assert final_result.data["excludes_source"] == "policy"
+
+
+def _cache_with_root(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    root = cache_dir / "apache-test-0.2"
+    root.mkdir()
+    return cache_dir

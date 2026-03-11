@@ -234,6 +234,16 @@ def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterat
     notice_results: dict[str, tuple[bool, list[str], str]] = {}
     disclaimer_found = False
 
+    if not cache_dir.is_dir():
+        # Already protected by the caller
+        # We add it here again to make unit testing cleaner
+        yield ArtifactResult(
+            status=sql.CheckResultStatus.FAILURE,
+            message="Cache directory is not available",
+            data=None,
+        )
+        return
+
     # Check for license files in the root directory
     top_entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
     root_dirs = [e for e in top_entries if (cache_dir / e).is_dir()]
