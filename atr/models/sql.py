@@ -121,7 +121,7 @@ class DistributionPlatform(enum.Enum):
     # )
     MAVEN = DistributionPlatformValue(
         name="Maven Central",
-        gh_slug="maven",
+        gh_slug="mavencentral",
         template_url="https://repo1.maven.org/maven2/{owner_namespace}/{package}/maven-metadata.xml",
         # Below is the old template using the maven search API - but the index isn't updated quickly enough for us
         # template_url="https://search.maven.org/solrsearch/select?q=g:{owner_namespace}+AND+a:{package}+AND+v:{version}&core=gav&rows=20&wt=json",
