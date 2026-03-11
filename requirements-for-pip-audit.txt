@@ -14,7 +14,7 @@ aioshutil==1.6
     # via tooling-trusted-releases
 aiosignal==1.4.0
     # via aiohttp
-aiosmtplib==4.0.2
+aiosmtplib==5.1.0
     # via tooling-trusted-releases
 aiosqlite==0.21.0
     # via tooling-trusted-releases
