@@ -733,14 +733,6 @@ def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
 
     ensure_success_results_are_visible(page, "primary")
 
-    logging.info("Verifying Targz Integrity status")
-    integrity_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Integrity'))")
-    expect(integrity_row_locator).to_be_visible()
-    logging.info("Located Targz Integrity row")
-    integrity_success_badge = integrity_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(integrity_success_badge).to_be_visible()
-    logging.info("Targz Integrity status verified as Success")
-
     logging.info("Verifying Targz Structure status")
     structure_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Structure'))")
     expect(structure_row_locator).to_be_visible()
@@ -785,12 +777,12 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
 
     ensure_success_results_are_visible(page, "primary")
 
-    logging.info("Verifying Targz Integrity status exists")
-    integrity_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Integrity'))")
-    expect(integrity_row_locator).to_be_visible()
+    logging.info("Verifying Targz Structure status exists")
+    structure_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Structure'))")
+    expect(structure_row_locator).to_be_visible()
 
-    logging.info("Verifying Targz Integrity result is from previous revision")
-    check_link_locator = integrity_row_locator.locator("th:has-text('Targz Integrity') a")
+    logging.info("Verifying Targz Structure result is from previous revision")
+    check_link_locator = structure_row_locator.locator("th:has-text('Targz Structure') a")
     check_link_url = (check_link_locator.get_attribute("href") or "").replace(ATR_BASE_URL, "")
     check_link_locator.click()
     logging.info(f"Waiting for raw check result to load: {check_link_url}")

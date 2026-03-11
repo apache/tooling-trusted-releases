@@ -336,7 +336,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         case sql.TaskType.SVN_IMPORT_FILES:
             return svn.import_files
         case sql.TaskType.TARGZ_INTEGRITY:
-            return targz.integrity
+            raise ValueError("TARGZ_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.TARGZ_STRUCTURE:
             return targz.structure
         case sql.TaskType.VOTE_INITIATE:
@@ -344,7 +344,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         case sql.TaskType.WORKFLOW_STATUS:
             return gha.status_check
         case sql.TaskType.ZIPFORMAT_INTEGRITY:
-            return zipformat.integrity
+            raise ValueError("ZIPFORMAT_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.ZIPFORMAT_STRUCTURE:
             return zipformat.structure
         # NOTE: Do NOT add "case _" here
@@ -421,15 +421,6 @@ async def tar_gz_checks(
         await checks.resolve_extra_args(rat.INPUT_EXTRA_ARGS, release),
         file=path,
     )
-    targz_i_ck = await checks.resolve_cache_key(
-        resolve(sql.TaskType.TARGZ_INTEGRITY),
-        targz.CHECK_VERSION_INTEGRITY,
-        targz.INPUT_POLICY_KEYS,
-        release,
-        revision,
-        await checks.resolve_extra_args(targz.INPUT_EXTRA_ARGS, release),
-        file=path,
-    )
     targz_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.TARGZ_STRUCTURE),
         targz.CHECK_VERSION_STRUCTURE,
@@ -452,7 +443,6 @@ async def tar_gz_checks(
         ),
         queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, path, check_cache_key=license_h_ck),
         queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, path, check_cache_key=rat_ck),
-        queued(asf_uid, sql.TaskType.TARGZ_INTEGRITY, release, revision, path, check_cache_key=targz_i_ck),
         queued(asf_uid, sql.TaskType.TARGZ_STRUCTURE, release, revision, path, check_cache_key=targz_s_ck),
     ]
 
@@ -530,15 +520,6 @@ async def zip_checks(
         await checks.resolve_extra_args(rat.INPUT_EXTRA_ARGS, release),
         file=path,
     )
-    zip_i_ck = await checks.resolve_cache_key(
-        resolve(sql.TaskType.ZIPFORMAT_INTEGRITY),
-        zipformat.CHECK_VERSION_INTEGRITY,
-        zipformat.INPUT_POLICY_KEYS,
-        release,
-        revision,
-        await checks.resolve_extra_args(zipformat.INPUT_EXTRA_ARGS, release),
-        file=path,
-    )
     zip_s_ck = await checks.resolve_cache_key(
         resolve(sql.TaskType.ZIPFORMAT_STRUCTURE),
         zipformat.CHECK_VERSION_STRUCTURE,
@@ -562,7 +543,6 @@ async def zip_checks(
         ),
         queued(asf_uid, sql.TaskType.LICENSE_HEADERS, release, revision, path, check_cache_key=license_h_ck),
         queued(asf_uid, sql.TaskType.RAT_CHECK, release, revision, path, check_cache_key=rat_ck),
-        queued(asf_uid, sql.TaskType.ZIPFORMAT_INTEGRITY, release, revision, path, check_cache_key=zip_i_ck),
         queued(asf_uid, sql.TaskType.ZIPFORMAT_STRUCTURE, release, revision, path, check_cache_key=zip_s_ck),
     ]
     return await asyncio.gather(*tasks)

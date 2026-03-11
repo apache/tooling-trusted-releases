@@ -22,17 +22,14 @@ import pathlib
 import stat
 from typing import Final
 
-import atr.archives as archives
 import atr.log as log
 import atr.models.results as results
-import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_INTEGRITY: Final[str] = "3"
 CHECK_VERSION_STRUCTURE: Final[str] = "3"
 
 
@@ -40,25 +37,6 @@ class RootDirectoryError(Exception):
     """Exception raised when a root directory is not found in an archive."""
 
     ...
-
-
-async def integrity(args: checks.FunctionArguments) -> results.Results | None:
-    """Check the integrity of a .tar.gz file."""
-    recorder = await args.recorder()
-    if not (artifact_abs_path := await recorder.abs_path()):
-        return None
-
-    log.info(f"Checking integrity for {artifact_abs_path} (rel: {args.primary_rel_path})")
-
-    chunk_size = 4096
-    try:
-        size = await asyncio.to_thread(archives.total_size, str(artifact_abs_path), chunk_size)
-        await recorder.success("Able to read all entries of the archive using tarfile", {"size": size})
-    except tarzip.ArchiveMemberLimitExceededError as e:
-        await recorder.failure(f"Archive has too many members: {e}", {"error": str(e)})
-    except Exception as e:
-        await recorder.failure("Unable to read all entries of the archive using tarfile", {"error": str(e)})
-    return None
 
 
 def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:

@@ -23,10 +23,6 @@ import pytest
 
 import atr.archives as archives
 import atr.tarzip as tarzip
-import atr.tasks.checks as checks
-import atr.tasks.checks.targz as targz
-import atr.tasks.checks.zipformat as zipformat
-import tests.unit.recorders as recorders
 
 
 def test_extract_wraps_member_limit(tmp_path, monkeypatch):
@@ -84,52 +80,6 @@ def test_open_archive_enforces_member_limit_zip(tmp_path):
     with tarzip.open_archive(str(archive_path), max_members=2) as archive:
         with pytest.raises(tarzip.ArchiveMemberLimitExceededError):
             list(archive)
-
-
-@pytest.mark.asyncio
-async def test_targz_integrity_reports_member_limit(tmp_path, monkeypatch):
-    archive_path = tmp_path / "sample.tar"
-    _make_tar(archive_path, ["a.txt", "b.txt", "c.txt"])
-    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_member_limit")
-
-    original_open = tarzip.open_archive
-
-    def limited_open(path: str, *args, **kwargs):
-        return original_open(path, max_members=2)
-
-    monkeypatch.setattr(tarzip, "open_archive", limited_open)
-
-    args = await _args_for(recorder)
-    await targz.integrity(args)
-
-    assert any("too many members" in message.lower() for _, message, _ in recorder.messages)
-
-
-def test_zipformat_integrity_reports_member_limit(tmp_path, monkeypatch):
-    archive_path = tmp_path / "sample.zip"
-    _make_zip(archive_path, ["a.txt", "b.txt", "c.txt"])
-
-    original_open = tarzip.open_archive
-
-    def limited_open(path: str, *args, **kwargs):
-        return original_open(path, max_members=2)
-
-    monkeypatch.setattr(tarzip, "open_archive", limited_open)
-
-    result = zipformat._integrity_check_core_logic(str(archive_path))
-    assert "too many members" in result.get("error", "").lower()
-
-
-async def _args_for(recorder: recorders.RecorderStub) -> checks.FunctionArguments:
-    return checks.FunctionArguments(
-        recorder=recorders.get_recorder(recorder),
-        asf_uid="",
-        project_name="test",
-        version_name="test",
-        revision_number="00001",
-        primary_rel_path=None,
-        extra_args={},
-    )
 
 
 def _make_tar(path, members: list[str]) -> None:
