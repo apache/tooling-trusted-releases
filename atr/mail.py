@@ -53,6 +53,13 @@ class Message:
 async def send(msg_data: Message) -> tuple[str, list[str]]:
     """Send an email notification about an artifact or a vote."""
     log.info(f"Sending email for event: {msg_data}")
+    _reject_null_bytes(
+        msg_data.email_sender,
+        msg_data.email_recipient,
+        msg_data.subject,
+        msg_data.body,
+        msg_data.in_reply_to,
+    )
     from_addr = msg_data.email_sender
     if not from_addr.endswith(f"@{global_domain}"):
         raise ValueError(f"from_addr must end with @{global_domain}, got {from_addr}")
@@ -105,6 +112,12 @@ async def send(msg_data: Message) -> tuple[str, list[str]]:
     return mid, errors
 
 
+def _reject_null_bytes(*values: str | None) -> None:
+    for value in values:
+        if (value is not None) and ("\x00" in value):
+            raise ValueError("Email content cannot contain null bytes")
+
+
 async def _send_many(from_addr: str, to_addrs: list[str], msg_text: str) -> list[str]:
     """Send an email to multiple recipients."""
     message_bytes = bytes(msg_text, "utf-8")
@@ -147,6 +160,10 @@ async def _send_via_relay(from_addr: str, to_addr: str, msg_bytes: bytes) -> Non
 
 def _split_address(addr: str) -> tuple[str, str]:
     """Split an email address into local and domain parts."""
+    if "\x00" in addr:
+        raise ValueError("Email address cannot contain null bytes")
+    if ("\r" in addr) or ("\n" in addr):
+        raise ValueError("Email address cannot contain CR/LF characters")
     parts = addr.split("@", 1)
     if len(parts) != 2:
         raise ValueError("Invalid mail address")

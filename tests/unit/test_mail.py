@@ -321,7 +321,7 @@ async def test_send_rejects_crlf_in_to_address(monkeypatch: "MonkeyPatch") -> No
     )
 
     # Call send and expect it to raise ValueError due to invalid recipient format
-    with pytest.raises(ValueError, match=r"Email recipient must be @apache.org"):
+    with pytest.raises(ValueError, match=r"CR/LF"):
         await mail.send(malicious_message)
 
     # Assert that _send_many was never called
@@ -350,6 +350,102 @@ async def test_send_rejects_lf_only_injection(monkeypatch: "MonkeyPatch") -> Non
     assert "CRLF injection detected" in errors[0]
 
     # Assert that _send_many was never called
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_body(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in body field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="Normal start\x00injected content",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_from_address(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in from address field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender\x00evil@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_reply_to(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in in_reply_to field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+        in_reply_to="valid-id\x00injected@apache.org",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_subject(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in subject field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Legitimate Subject\x00Bcc: evil@example.com",
+        body="This is a test message",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_to_address(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in to address field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient\x00evil@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message)
+
     mock_send_many.assert_not_called()
 
 
@@ -383,3 +479,21 @@ def test_smtp_policy_vs_smtputf8() -> None:
     # SMTPUTF8 preserves the character directly
     assert "Test avec é" in smtputf8_str
     assert "=?utf-8?" not in smtputf8_str
+
+
+def test_split_address_rejects_cr() -> None:
+    """Test that _split_address rejects addresses containing CR."""
+    with pytest.raises(ValueError, match=r"CR/LF"):
+        mail._split_address("user\r@apache.org")
+
+
+def test_split_address_rejects_lf() -> None:
+    """Test that _split_address rejects addresses containing LF."""
+    with pytest.raises(ValueError, match=r"CR/LF"):
+        mail._split_address("user\n@apache.org")
+
+
+def test_split_address_rejects_null_byte() -> None:
+    """Test that _split_address rejects addresses containing null bytes."""
+    with pytest.raises(ValueError, match=r"null bytes"):
+        mail._split_address("user\x00@apache.org")
