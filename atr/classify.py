@@ -23,6 +23,7 @@ from typing import Final
 
 import atr.analysis as analysis
 
+_BINARY_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](binary-assembly|binary|bin)(?=[-_]|$)")
 _SOURCE_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](source-release|sources|source|src)(?=[-_]|$)")
 
 
@@ -54,6 +55,8 @@ def classify(
         stem = path_str[: search.start()]
         if _SOURCE_STEM.search(stem):
             return FileType.SOURCE
+        if _BINARY_STEM.search(stem):
+            return FileType.BINARY
         if (source_matcher is not None) and (base_path is not None):
             if source_matcher(str(base_path / path)):
                 return FileType.SOURCE
