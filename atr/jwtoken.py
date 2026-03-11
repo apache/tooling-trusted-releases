@@ -23,6 +23,7 @@ import os
 import pathlib
 import secrets as secrets
 from typing import TYPE_CHECKING, Any, Final
+from urllib.parse import urlparse
 
 import aiohttp
 import asfquart
@@ -49,6 +50,7 @@ _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "runner_environment": "github-hosted",
 }
 _GITHUB_OIDC_ISSUER: Final[str] = "https://token.actions.githubusercontent.com"
+_GITHUB_TRUSTED_DOMAINS: Final[list[str]] = ["token.actions.githubusercontent.com"]
 _JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
 _JWT_KEY_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt")
 _JWT_KEY_TMP_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt.tmp")
@@ -186,6 +188,10 @@ async def verify_github_oidc(token: str) -> dict[str, Any]:
     except (aiohttp.ServerTimeoutError, aiohttp.ClientError) as exc:
         log.warning(f"Failed to fetch OIDC config: {exc}")
         jwks_uri = f"{_GITHUB_OIDC_ISSUER}/.well-known/jwks"
+
+    if urlparse(jwks_uri).hostname not in _GITHUB_TRUSTED_DOMAINS:
+        log.error(f"Untrusted domain in GitHub OIDC endpoint: {jwks_uri}")
+        raise base.ASFQuartException("Untrusted domain in GitHub OIDC endpoint", 502)
 
     jwks_client = jwt.PyJWKClient(jwks_uri)
     signing_key = jwks_client.get_signing_key_from_jwt(token)
