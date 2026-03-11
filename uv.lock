@@ -3,15 +3,15 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-03-11T17:02:21Z"
+exclude-newer = "2026-03-11T18:47:01Z"
 
 [[package]]
 name = "aiofiles"
-version = "24.1.0"
+version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0b/03/a88171e277e8caa88a4c77808c20ebb04ba74cc4681bf1e9416c862de237/aiofiles-24.1.0.tar.gz", hash = "sha256:22a075c9e5a3810f0c2e48f3008c94d68c65d763b9b03857924c99e57355166c", size = 30247, upload-time = "2024-06-24T11:02:03.584Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/c3/534eac40372d8ee36ef40df62ec129bee4fdb5ad9706e58a29be53b2c970/aiofiles-25.1.0.tar.gz", hash = "sha256:a8d728f0a29de45dc521f18f07297428d56992a742f0cd2701ba86e44d23d5b2", size = 46354, upload-time = "2025-10-09T20:51:04.358Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/45/30bb92d442636f570cb5651bc661f52b610e2eec3f891a5dc3a4c3667db0/aiofiles-24.1.0-py3-none-any.whl", hash = "sha256:b4ec55f4195e3eb5d7abd1bf7e061763e864dd4954231fb8539a0ef8bb8260e5", size = 15896, upload-time = "2024-06-24T11:02:01.529Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/8a/340a1555ae33d7354dbca4faa54948d76d89a27ceef032c8c3bc661d003e/aiofiles-25.1.0-py3-none-any.whl", hash = "sha256:abe311e527c862958650f9438e859c1fa7568a141b22abcd015e120e86a85695", size = 14668, upload-time = "2025-10-09T20:51:03.174Z" },
 ]
 
 [[package]]
@@ -80,11 +80,11 @@ wheels = [
 
 [[package]]
 name = "aiosmtplib"
-version = "4.0.2"
+version = "5.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0f/e1/cc58e0be242f0b410707e001ed22c689435964fcaab42108887426e44fff/aiosmtplib-4.0.2.tar.gz", hash = "sha256:f0b4933e7270a8be2b588761e5b12b7334c11890ee91987c2fb057e72f566da6", size = 61052, upload-time = "2025-08-25T02:39:07.249Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/ad/240a7ce4e50713b111dff8b781a898d8d4770e5d6ad4899103f84c86005c/aiosmtplib-5.1.0.tar.gz", hash = "sha256:2504a23b2b63c9de6bc4ea719559a38996dba68f73f6af4eb97be20ee4c5e6c4", size = 66176, upload-time = "2026-01-25T01:51:11.408Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/2f/db9414bbeacee48ab0c7421a0319b361b7c15b5c3feebcd38684f5d5f849/aiosmtplib-4.0.2-py3-none-any.whl", hash = "sha256:72491f96e6de035c28d29870186782eccb2f651db9c5f8a32c9db689327f5742", size = 27048, upload-time = "2025-08-25T02:39:06.089Z" },
+    { url = "https://files.pythonhosted.org/packages/37/82/70f2c452acd7ed18c558c8ace9a8cf4fdcc70eae9a41749b5bdc53eb6f45/aiosmtplib-5.1.0-py3-none-any.whl", hash = "sha256:368029440645b486b69db7029208a7a78c6691b90d24a5332ddba35d9109d55b", size = 27778, upload-time = "2026-01-25T01:51:10.026Z" },
 ]
 
 [[package]]
@@ -572,15 +572,15 @@ wheels = [
 
 [[package]]
 name = "email-validator"
-version = "2.2.0"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dnspython" },
     { name = "idna" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/ce/13508a1ec3f8bb981ae4ca79ea40384becc868bfae97fd1c942bb3a001b1/email_validator-2.2.0.tar.gz", hash = "sha256:cb690f344c617a714f22e66ae771445a1ceb46821152df8e165c5f9a364582b7", size = 48967, upload-time = "2024-06-20T11:30:30.034Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/ee/bf0adb559ad3c786f12bcbc9296b3f5675f529199bef03e2df281fa1fadb/email_validator-2.2.0-py3-none-any.whl", hash = "sha256:561977c2d73ce3611850a06fa56b414621e0c8faa9d66f2611407d87465da631", size = 33521, upload-time = "2024-06-20T11:30:28.248Z" },
+    { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
 ]
 
 [[package]]
@@ -937,15 +937,15 @@ wheels = [
 
 [[package]]
 name = "ldap3"
-version = "2.10.2rc2"
+version = "2.10.2rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyasn1" },
     { name = "pycryptodomex" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/1a/694130c1a07b5069184044c3ca3bcd97ad9dc984694c1e0112c998c84126/ldap3-2.10.2rc2.tar.gz", hash = "sha256:0c4304f6d86ef2a5600e7f2258fa833049b77d812ec7de7da15e50531c852ec0", size = 451969, upload-time = "2025-04-19T19:25:57.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/e5/fc54401b5e79f3363f1b000e2b4e0200ceca1a3701a173ec44b65122421c/ldap3-2.10.2rc3.tar.gz", hash = "sha256:96b5130e56ee5a34d7e7144f1109c6297ba486b187f9b3c4119716d071dcd1e3", size = 452131, upload-time = "2025-11-09T11:34:24.351Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/85/d48f33b0b41aecd6cab6d88f806f83b06f38a7334fefa1d4bd2101a6a36c/ldap3-2.10.2rc2-py3-none-any.whl", hash = "sha256:6986d0484c926daca557b4ad1dc08d3a9a776cf949591d485b6346a83efc0e69", size = 488198, upload-time = "2025-04-19T19:25:55.492Z" },
+    { url = "https://files.pythonhosted.org/packages/83/b7/65e91c7d1121c9be48eeaf30814803b84c6640cafdbdabdce012c4b747bf/ldap3-2.10.2rc3-py3-none-any.whl", hash = "sha256:64d2ebe48f83392502a4b3a0d80127799d693c7a74f2fe6f844c4ff56c6d7347", size = 488231, upload-time = "2025-11-09T11:34:22.565Z" },
 ]
 
 [[package]]
@@ -1727,15 +1727,15 @@ wheels = [
 
 [[package]]
 name = "rich"
-version = "14.0.0"
+version = "14.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a1/53/830aa4c3066a8ab0ae9a9955976fb770fe9c6102117c8ec4ab3ea62d89e8/rich-14.0.0.tar.gz", hash = "sha256:82f1bc23a6a21ebca4ae0c45af9bdbc492ed20231dcb63f297d6d1021a9d5725", size = 224078, upload-time = "2025-03-30T14:15:14.23Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/c6/f3b320c27991c46f43ee9d856302c70dc2d0fb2dba4842ff739d5f46b393/rich-14.3.3.tar.gz", hash = "sha256:b8daa0b9e4eef54dd8cf7c86c03713f53241884e814f4e2f5fb342fe520f639b", size = 230582, upload-time = "2026-02-19T17:23:12.474Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/9b/63f4c7ebc259242c89b3acafdb37b41d1185c07ff0011164674e9076b491/rich-14.0.0-py3-none-any.whl", hash = "sha256:1c9491e1951aac09caffd42f448ee3d04e58923ffe14993f6e83068dc395d7e0", size = 243229, upload-time = "2025-03-30T14:15:12.283Z" },
+    { url = "https://files.pythonhosted.org/packages/14/25/b208c5683343959b670dc001595f2f3737e051da617f66c31f7c4fa93abc/rich-14.3.3-py3-none-any.whl", hash = "sha256:793431c1f8619afa7d3b52b2cdec859562b950ea0d4b6b505397612db8d5362d", size = 310458, upload-time = "2026-02-19T17:23:13.732Z" },
 ]
 
 [[package]]
@@ -1985,10 +1985,10 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiofiles", specifier = ">=24.1.0,<25.0.0" },
+    { name = "aiofiles", specifier = ">=24.1.0,<26.0.0" },
     { name = "aiohttp", specifier = ">=3.11.14" },
     { name = "aioshutil", specifier = ">=1.5,<2.0" },
-    { name = "aiosmtplib", specifier = ">=4.0.0,<5.0.0" },
+    { name = "aiosmtplib", specifier = ">=4.0.0,<6.0.0" },
     { name = "aiosqlite", specifier = ">=0.21.0,<0.22.0" },
     { name = "aiozipstream", specifier = ">=0.4,<0.5" },
     { name = "alembic", specifier = "~=1.14" },
@@ -2003,14 +2003,14 @@ requires-dist = [
     { name = "dnspython", specifier = ">=2.7.0,<3.0.0" },
     { name = "dulwich", specifier = ">=1.0.0" },
     { name = "dunamai", specifier = ">=1.23.0" },
-    { name = "email-validator", specifier = "~=2.2.0" },
+    { name = "email-validator", specifier = ">=2.2.0,<3.0.0" },
     { name = "exarch", specifier = ">=0.2.7" },
     { name = "gitignore-parser", specifier = ">=0.1.12,<0.2.0" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
     { name = "htpy", specifier = ">=25.7.0,<26.0.0" },
     { name = "hypercorn", extras = ["uvloop"], specifier = "~=0.17" },
     { name = "hyperscan", specifier = ">=0.8.0" },
-    { name = "ldap3", specifier = "==2.10.2rc2" },
+    { name = "ldap3", specifier = "==2.10.2rc3" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pgpy", specifier = ">=0.6.0" },
     { name = "psutil", specifier = ">=7.2.1" },
@@ -2022,7 +2022,7 @@ requires-dist = [
     { name = "quart-rate-limiter", specifier = ">=0.12.1" },
     { name = "quart-schema", extras = ["pydantic"], specifier = "~=0.21" },
     { name = "quart-wtforms", specifier = "~=1.0.3" },
-    { name = "rich", specifier = "~=14.0.0" },
+    { name = "rich", specifier = ">=14.0.0,<15.0.0" },
     { name = "semver", specifier = ">=3.0.4" },
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "ssh-audit", specifier = ">=3.3.0" },
@@ -2039,7 +2039,7 @@ dev = [
     { name = "pre-commit", specifier = ">=2.20.0" },
     { name = "pyright", specifier = ">=1.1.393" },
     { name = "ruff", specifier = ">=0.9.4" },
-    { name = "types-aiofiles", specifier = ">=24.1.0.20241221,<25.0.0.0" },
+    { name = "types-aiofiles", specifier = ">=24.1.0.20241221,<26.0.0.0" },
 ]
 test = [
     { name = "netifaces", specifier = ">=0.11.0" },
@@ -2063,11 +2063,11 @@ wheels = [
 
 [[package]]
 name = "types-aiofiles"
-version = "24.1.0.20250822"
+version = "25.1.0.20251011"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/19/48/c64471adac9206cc844afb33ed311ac5a65d2f59df3d861e0f2d0cad7414/types_aiofiles-24.1.0.20250822.tar.gz", hash = "sha256:9ab90d8e0c307fe97a7cf09338301e3f01a163e39f3b529ace82466355c84a7b", size = 14484, upload-time = "2025-08-22T03:02:23.039Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/6c/6d23908a8217e36704aa9c79d99a620f2fdd388b66a4b7f72fbc6b6ff6c6/types_aiofiles-25.1.0.20251011.tar.gz", hash = "sha256:1c2b8ab260cb3cd40c15f9d10efdc05a6e1e6b02899304d80dfa0410e028d3ff", size = 14535, upload-time = "2025-10-11T02:44:51.237Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/8e/5e6d2215e1d8f7c2a94c6e9d0059ae8109ce0f5681956d11bb0a228cef04/types_aiofiles-24.1.0.20250822-py3-none-any.whl", hash = "sha256:0ec8f8909e1a85a5a79aed0573af7901f53120dd2a29771dd0b3ef48e12328b0", size = 14322, upload-time = "2025-08-22T03:02:21.918Z" },
+    { url = "https://files.pythonhosted.org/packages/71/0f/76917bab27e270bb6c32addd5968d69e558e5b6f7fb4ac4cbfa282996a96/types_aiofiles-25.1.0.20251011-py3-none-any.whl", hash = "sha256:8ff8de7f9d42739d8f0dadcceeb781ce27cd8d8c4152d4a7c52f6b20edb8149c", size = 14338, upload-time = "2025-10-11T02:44:50.054Z" },
 ]
 
 [[package]]

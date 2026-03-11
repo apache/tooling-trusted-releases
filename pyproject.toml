@@ -9,10 +9,10 @@ license = "Apache-2.0"
 readme = "README.md"
 requires-python = "~=3.13.0"
 dependencies = [
-  "aiofiles>=24.1.0,<25.0.0",
+  "aiofiles>=24.1.0,<26.0.0",
   "aiohttp>=3.11.14",
   "aioshutil (>=1.5,<2.0)",
-  "aiosmtplib (>=4.0.0,<5.0.0)",
+  "aiosmtplib (>=4.0.0,<6.0.0)",
   "aiosqlite>=0.21.0,<0.22.0",
   "aiozipstream (>=0.4,<0.5)",
   "alembic~=1.14",
@@ -28,14 +28,14 @@ dependencies = [
   "dnspython>=2.7.0,<3.0.0",
   "dulwich>=1.0.0",
   "dunamai>=1.23.0",
-  "email-validator~=2.2.0",
+  "email-validator>=2.2.0,<3.0.0",
   "exarch>=0.2.7",
   "gitignore-parser (>=0.1.12,<0.2.0)",
   "greenlet>=3.1.1,<4.0.0",
   "htpy (>=25.7.0,<26.0.0)",
   "hypercorn[uvloop]~=0.17",
   "hyperscan>=0.8.0",
-  "ldap3 (==2.10.2rc2)",
+  "ldap3 (==2.10.2rc3)",
   "packaging>=25.0",
   "pgpy>=0.6.0",
   "psutil>=7.2.1",
@@ -48,7 +48,7 @@ dependencies = [
   "quart-rate-limiter>=0.12.1",
   "quart-schema[pydantic]~=0.21",
   "quart-wtforms~=1.0.3",
-  "rich~=14.0.0",
+  "rich>=14.0.0,<15.0.0",
   "semver>=3.0.4",
   "sqlmodel~=0.0.24",
   "ssh-audit>=3.3.0",
@@ -65,7 +65,7 @@ dev = [
   "pre-commit>=2.20.0",
   "pyright>=1.1.393",
   "ruff>=0.9.4",
-  "types-aiofiles>=24.1.0.20241221,<25.0.0.0",
+  "types-aiofiles>=24.1.0.20241221,<26.0.0.0",
 ]
 test = [
   "netifaces>=0.11.0",
