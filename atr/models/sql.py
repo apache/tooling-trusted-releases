@@ -366,9 +366,10 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
     asfuid: str = sqlmodel.Field(index=True)
     token_hash: str = sqlmodel.Field(unique=True)
     created: datetime.datetime = sqlmodel.Field(
-        default_factory=lambda: datetime.datetime.now(datetime.UTC), sa_column=sqlalchemy.Column(UTCDateTime)
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
     )
-    expires: datetime.datetime = sqlmodel.Field(sa_column=sqlalchemy.Column(UTCDateTime))
+    expires: datetime.datetime = sqlmodel.Field(sa_column=sqlalchemy.Column(UTCDateTime, nullable=False))
     last_used: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     label: str | None = None
 
@@ -403,7 +404,7 @@ class Task(sqlmodel.SQLModel, table=True):
     asf_uid: str
     added: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
-        sa_column=sqlalchemy.Column(UTCDateTime, index=True),
+        sa_column=sqlalchemy.Column(UTCDateTime, index=True, nullable=False),
     )
     scheduled: datetime.datetime | None = sqlmodel.Field(
         default=None,
@@ -598,7 +599,7 @@ class Project(sqlmodel.SQLModel, table=True):
 
     created: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
-        sa_column=sqlalchemy.Column(UTCDateTime),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     created_by: str | None = sqlmodel.Field(default=None, **example("user"))
@@ -847,7 +848,8 @@ class Release(sqlmodel.SQLModel, table=True):
     name: str = sqlmodel.Field(default="", primary_key=True, unique=True, **example("example-0.0.1"))
     phase: ReleasePhase = sqlmodel.Field(**example(ReleasePhase.RELEASE_CANDIDATE_DRAFT))
     created: datetime.datetime = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(UTCDateTime), **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC))
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     released: datetime.datetime | None = sqlmodel.Field(
         default=None,
@@ -1022,7 +1024,7 @@ class CheckResult(sqlmodel.SQLModel, table=True):
     )
     member_rel_path: str | None = sqlmodel.Field(default=None, index=True, **example("apache-example-0.0.1/pom.xml"))
     created: datetime.datetime = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(UTCDateTime),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     status: CheckResultStatus = sqlmodel.Field(default=CheckResultStatus.SUCCESS, **example(CheckResultStatus.SUCCESS))
@@ -1038,7 +1040,7 @@ class CheckResultIgnore(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True, **example(123))
     asf_uid: str = sqlmodel.Field(**example("user"))
     created: datetime.datetime = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(UTCDateTime),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     project_name: str = sqlmodel.Field(foreign_key="project.name", **example("example"))
@@ -1138,7 +1140,8 @@ class PublicSigningKey(sqlmodel.SQLModel, table=True):
     length: int = sqlmodel.Field(**example(4096))
     # Creation date
     created: datetime.datetime = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(UTCDateTime), **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC))
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     # Latest self signature
     latest_self_signature: datetime.datetime | None = sqlmodel.Field(
@@ -1321,7 +1324,7 @@ class Revision(sqlmodel.SQLModel, table=True):
     asfuid: str = sqlmodel.Field(**example("user"))
     created: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
-        sa_column=sqlalchemy.Column(UTCDateTime),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     phase: ReleasePhase = sqlmodel.Field(**example(ReleasePhase.RELEASE_CANDIDATE_DRAFT))
