@@ -38,7 +38,13 @@ QUART_CONVERTERS: dict[Any, str] = {
     unsafe.Path: "path",
 }
 
-VALIDATED_TYPES: set[Any] = {safe.ProjectName, safe.RevisionNumber, safe.VersionName, unsafe.UnsafeStr}
+VALIDATED_TYPES: set[Any] = {
+    safe.Alphanumeric,
+    safe.ProjectName,
+    safe.RevisionNumber,
+    safe.VersionName,
+    unsafe.UnsafeStr,
+}
 
 
 async def authenticate() -> web.Committer:

@@ -19,7 +19,7 @@ import datetime
 
 import pydantic
 
-from . import basic, schema, sql
+from . import basic, safe, schema, sql
 
 
 class ArtifactHubAvailableVersion(schema.Subset):
@@ -93,9 +93,9 @@ class PyPIResponse(schema.Subset):
 # Including all of the enum properties
 class Data(schema.Subset):
     platform: sql.DistributionPlatform
-    owner_namespace: str | None = None
-    package: str
-    version: str
+    owner_namespace: safe.Alphanumeric | None = None
+    package: safe.Alphanumeric
+    version: safe.VersionName
     details: bool
 
     @pydantic.field_validator("owner_namespace", mode="before")

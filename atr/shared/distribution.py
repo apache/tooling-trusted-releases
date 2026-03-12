@@ -126,13 +126,13 @@ class DistributionAutomateForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label(
         "Platform", widget=form.Widget.SELECT, enum_filter_include=[DistributionPlatform.MAVEN.value]
     )
-    owner_namespace: str = form.label(
+    owner_namespace: safe.Alphanumeric = form.label(
         "Owner or Namespace",
         "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
     )
-    package: str = form.label("Package")
-    version: str = form.label("Version")
+    package: safe.Alphanumeric = form.label("Package")
+    version: safe.VersionName = form.label("Version")
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
@@ -159,13 +159,13 @@ class DistributionAutomateForm(form.Form):
 
 class DistributionRecordForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
-    owner_namespace: str = form.label(
+    owner_namespace: safe.Alphanumeric = form.label(
         "Owner or Namespace",
         "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
     )
-    package: str = form.label("Package")
-    version: str = form.label("Version")
+    package: safe.Alphanumeric = form.label("Package")
+    version: safe.VersionName = form.label("Version")
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
@@ -193,8 +193,9 @@ class DistributionRecordForm(form.Form):
 def distribution_upload_date(  # noqa: C901
     platform: sql.DistributionPlatform,
     data: basic.JSON,
-    version: str,
+    version_name: safe.VersionName,
 ) -> datetime.datetime | None:
+    version = str(version_name)
     match platform:
         case sql.DistributionPlatform.ARTIFACT_HUB:
             if not (versions := distribution.ArtifactHubResponse.model_validate(data).available_versions):
@@ -236,7 +237,7 @@ def distribution_upload_date(  # noqa: C901
 def distribution_web_url(  # noqa: C901
     platform: sql.DistributionPlatform,
     data: basic.JSON,
-    version: str,
+    version: safe.VersionName,
 ) -> str | None:
     match platform:
         case sql.DistributionPlatform.ARTIFACT_HUB:
@@ -247,7 +248,7 @@ def distribution_web_url(  # noqa: C901
             if repo_name and pkg_name:
                 if ver:
                     return f"https://artifacthub.io/packages/helm/{repo_name}/{pkg_name}/{ver}"
-                return f"https://artifacthub.io/packages/helm/{repo_name}/{pkg_name}/{version}"
+                return f"https://artifacthub.io/packages/helm/{repo_name}/{pkg_name}/{version!s}"
             if ah.home_url:
                 return ah.home_url
             for link in ah.links:
@@ -266,7 +267,7 @@ def distribution_web_url(  # noqa: C901
         case sql.DistributionPlatform.NPM:
             nr = distribution.NpmResponse.model_validate(data)
             # return nr.homepage
-            return f"https://www.npmjs.com/package/{nr.name}/v/{version}"
+            return f"https://www.npmjs.com/package/{nr.name}/v/{version!s}"
         case sql.DistributionPlatform.NPM_SCOPED:
             nr = distribution.NpmResponse.model_validate(data)
             # TODO: This is not correct
@@ -278,17 +279,18 @@ def distribution_web_url(  # noqa: C901
 
 
 def get_api_url(dd: distribution.Data, staging: bool | None = None):
+    namespace = str(dd.owner_namespace) if dd.owner_namespace else None
     template_url = _template_url(dd, staging)
-    package = urllib.parse.quote(dd.package)
-    version = urllib.parse.quote(dd.version)
+    package = urllib.parse.quote(str(dd.package))
+    version = urllib.parse.quote(str(dd.version))
     api_url = template_url.format(
-        owner_namespace=dd.owner_namespace,
+        owner_namespace=namespace,
         package=package,
         version=version,
     )
     if dd.platform == sql.DistributionPlatform.MAVEN:
         # We do this here because the CDNs break the namespace up into a / delimited URL
-        owner = (dd.owner_namespace or "").replace(".", "/")
+        owner = (namespace or "").replace(".", "/")
         api_url = template_url.format(
             owner_namespace=owner,
             package=package,
@@ -298,11 +300,12 @@ def get_api_url(dd: distribution.Data, staging: bool | None = None):
 
 
 def html_submitted_values_table(block: htm.Block, dd: distribution.Data) -> None:
+    namespace = str(dd.owner_namespace) if dd.owner_namespace else "-"
     tbody = htm.tbody[
         html_tr("Platform", dd.platform.name),
-        html_tr("Owner or Namespace", dd.owner_namespace or "-"),
-        html_tr("Package", dd.package),
-        html_tr("Version", dd.version),
+        html_tr("Owner or Namespace", namespace),
+        html_tr("Package", str(dd.package)),
+        html_tr("Version", str(dd.version)),
     ]
     block.table(".table.table-striped.table-bordered")[tbody]
 
@@ -316,8 +319,9 @@ def html_tr_a(label: str, value: str | None) -> htm.Element:
 
 
 async def json_from_distribution_platform(
-    api_url: str, platform: sql.DistributionPlatform, version: str
+    api_url: str, platform: sql.DistributionPlatform, version_name: safe.VersionName
 ) -> outcome.Outcome[basic.JSON]:
+    version = str(version_name)
     try:
         async with util.create_secure_session() as session:
             async with session.get(api_url) as response:
@@ -334,11 +338,12 @@ async def json_from_distribution_platform(
     return outcome.Result(result)
 
 
-async def json_from_maven_xml(api_url: str, version: str) -> outcome.Outcome[basic.JSON]:
+async def json_from_maven_xml(api_url: str, version_name: safe.VersionName) -> outcome.Outcome[basic.JSON]:
     import datetime
 
     import defusedxml.ElementTree as ElementTree
 
+    version = str(version_name)
     try:
         async with util.create_secure_session() as session:
             async with session.get(api_url) as response:

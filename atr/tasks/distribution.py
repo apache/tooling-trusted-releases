@@ -20,7 +20,6 @@ import pydantic
 
 import atr.db as db
 import atr.log as log
-import atr.models as models
 import atr.models.results as results
 import atr.models.schema as schema
 import atr.shared.distribution as distribution
@@ -46,13 +45,7 @@ async def status_check(args: DistributionStatusCheckArgs, *, task_id: int | None
         dists = await data.distribution(pending=True, _with_release=True, _with_release_project=True).all()
     for dist in dists:
         name = f"{dist.platform} {dist.owner_namespace} {dist.package} {dist.version}"
-        dd = models.distribution.Data(
-            platform=dist.platform,
-            owner_namespace=dist.owner_namespace,
-            package=dist.package,
-            version=dist.version,
-            details=False,
-        )
+        dd = dist.distribution_data()
         if not dist.created_by:
             log.warning(f"Distribution {name} has no creator, skipping")
             continue

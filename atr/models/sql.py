@@ -24,7 +24,7 @@
 import dataclasses
 import datetime
 import enum
-from typing import Any, Final, Literal, Optional, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, overload
 
 import pydantic
 import sqlalchemy
@@ -35,6 +35,9 @@ import sqlalchemy.sql.expression as expression
 import sqlmodel
 
 from . import results, safe, schema
+
+if TYPE_CHECKING:
+    from . import distribution
 
 T = TypeVar("T")
 
@@ -1065,6 +1068,18 @@ class Distribution(sqlmodel.SQLModel, table=True):
     # The API response can be huge, e.g. from npm
     # So we do not store it in the database
     # api_response: Any = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+
+    def distribution_data(self, details: bool = False) -> "distribution.Data":
+        """Get a distribution data object"""
+        from . import distribution
+
+        return distribution.Data(
+            platform=self.platform,
+            owner_namespace=safe.Alphanumeric(self.owner_namespace),
+            package=safe.Alphanumeric(self.package),
+            version=safe.VersionName(self.version),
+            details=details,
+        )
 
     @property
     def identifier(self) -> str:
