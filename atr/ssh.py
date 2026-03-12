@@ -26,7 +26,7 @@ import pathlib
 import stat
 import string
 import time
-from typing import Any, Final
+from typing import Final
 
 import aiofiles
 import aiofiles.os
@@ -40,6 +40,7 @@ import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
 import atr.log as log
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -82,7 +83,7 @@ class SSHServer(asyncssh.SSHServer):
         # Store connection for use in begin_auth
         self._conn = conn
         self._github_asf_uid: str | None = None
-        self._github_payload: dict[str, Any] | None = None
+        self._github_payload: github.TrustedPublisherPayload | None = None
         peer_addr = conn.get_extra_info("peername")[0]
         log.info(f"SSH connection received from {peer_addr}")
 
@@ -163,7 +164,7 @@ class SSHServer(asyncssh.SSHServer):
                 log.failed_authentication("public_key_expired")
                 return False
 
-            self._github_payload = workflow_key.github_payload
+            self._github_payload = github.TrustedPublisherPayload.model_validate(workflow_key.github_payload)
             return True
 
     def _get_asf_uid(self, process: asyncssh.SSHServerProcess) -> str:
@@ -174,7 +175,7 @@ class SSHServer(asyncssh.SSHServer):
             return self._github_asf_uid
         return username
 
-    def _get_github_payload(self, process: asyncssh.SSHServerProcess) -> dict[str, Any] | None:
+    def _get_github_payload(self, process: asyncssh.SSHServerProcess) -> github.TrustedPublisherPayload | None:
         username = process.get_extra_info("username")
         if username != "github":
             return None

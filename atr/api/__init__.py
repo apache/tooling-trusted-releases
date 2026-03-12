@@ -294,8 +294,8 @@ async def distribute_ssh_register(
     )
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
-            payload["actor"],
-            payload["actor_id"],
+            payload.actor,
+            payload.actor_id,
             release.safe_project_key,
             data.ssh_key,
             payload,
@@ -893,8 +893,8 @@ async def publisher_ssh_register(
     )
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
-            payload["actor"],
-            payload["actor_id"],
+            payload.actor,
+            payload.actor_id,
             project.safe_key,
             data.ssh_key,
             payload,

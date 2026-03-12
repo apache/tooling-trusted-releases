@@ -20,13 +20,11 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import functools
-import json
 import pathlib
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles
 import aiofiles.os
-import pydantic
 import sqlmodel
 
 if TYPE_CHECKING:
@@ -39,7 +37,6 @@ import atr.classify as classify
 import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
-import atr.models.github as github_models
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
@@ -473,25 +470,12 @@ async def _resolve_committee_key(release: sql.Release, rel_path: str | None = No
 async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
     if not release.latest_revision_number:
         return ""
-    payload_path = attestable.github_tp_payload_path(
+    payload = await attestable.github_tp_payload_read(
         release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
     )
-    if not await aiofiles.os.path.isfile(payload_path):
+    if not payload:
         return ""
-    try:
-        async with aiofiles.open(payload_path, encoding="utf-8") as f:
-            data = json.loads(await f.read())
-        if not isinstance(data, dict):
-            log.warning(f"TP payload was not a JSON object in {payload_path}")
-            return ""
-        tp_data = github_models.TrustedPublisherPayload.model_validate(data)
-        return tp_data.sha
-    except (OSError, json.JSONDecodeError) as e:
-        log.warning(f"Failed to read TP payload from {payload_path}: {e}")
-        return ""
-    except pydantic.ValidationError as e:
-        log.warning(f"Failed to validate TP payload from {payload_path}: {e}")
-        return ""
+    return payload.sha
 
 
 async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None) -> bool:

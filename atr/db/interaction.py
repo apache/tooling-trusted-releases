@@ -19,7 +19,7 @@ import contextlib
 import datetime
 import enum
 from collections.abc import AsyncGenerator, Sequence
-from typing import Any, Final
+from typing import Final
 
 import packaging.version as version
 import sqlalchemy
@@ -31,6 +31,7 @@ import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.github as github
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -455,12 +456,14 @@ async def tasks_ongoing_revision(
         return task_count, latest_revision
 
 
-async def trusted_jwt(publisher: str, jwt: str, phase: TrustedProjectPhase) -> tuple[dict[str, Any], str, sql.Project]:
+async def trusted_jwt(
+    publisher: str, jwt: str, phase: TrustedProjectPhase
+) -> tuple[github.TrustedPublisherPayload, str, sql.Project]:
     payload, asf_uid = await validate_trusted_jwt(publisher, jwt)
     # JWT could be for an ASF user or the trusted role, but we need a user here.
     if asf_uid is None:
         raise InteractionError("ASF user not found")
-    project = await _trusted_project(payload["repository"], payload["workflow_ref"], phase)
+    project = await _trusted_project(payload.repository, payload.workflow_ref, phase)
     return payload, asf_uid, project
 
 
@@ -471,7 +474,7 @@ async def trusted_jwt_for_dist(
     phase: TrustedProjectPhase,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-) -> tuple[dict[str, Any], str, sql.Project, sql.Release]:
+) -> tuple[github.TrustedPublisherPayload, str, sql.Project, sql.Release]:
     payload, asf_uid_from_jwt = await validate_trusted_jwt(publisher, jwt)
     if asf_uid_from_jwt is not None:
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
@@ -553,12 +556,12 @@ async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> 
     return [(p.key, p.display_name) for p in projects]
 
 
-async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[dict[str, Any], str | None]:
+async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.TrustedPublisherPayload, str | None]:
     if publisher != "github":
         raise InteractionError(f"Publisher {publisher} not supported")
     payload = await jwtoken.verify_github_oidc(jwt)
-    if int(payload["actor_id"]) != _GITHUB_TRUSTED_ROLE_NID:
-        asf_uid = await ldap.github_to_apache(payload["actor_id"])
+    if payload.actor_id != _GITHUB_TRUSTED_ROLE_NID:
+        asf_uid = await ldap.github_to_apache(payload.actor_id)
     else:
         asf_uid = None
     return payload, asf_uid
