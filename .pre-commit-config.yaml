@@ -199,6 +199,13 @@ repos:
       pass_filenames: false
       files: ^atr/models/.*\.py$
 
+    - id: check-nullable-fields
+      name: check SQL model nullability
+      description: Ensure non-optional SQLModel fields declare nullable=False
+      entry: uv run --frozen python scripts/check_nullable_fields.py
+      language: system
+      files: ^atr/models/sql\.py$
+
     - id: template-usage-linter
       name: check template usage
       description: Ensure that all templates are used and available w/o duplicates
