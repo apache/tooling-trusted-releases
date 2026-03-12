@@ -74,5 +74,5 @@ async def file_sha3(path: str) -> str:
     return sha3.hexdigest()
 
 
-def filesystem_cache_archives_key(content_hash: str) -> str:
+def filesystem_archives_key(content_hash: str) -> str:
     return content_hash.replace(":", "_")

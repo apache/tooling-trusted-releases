@@ -79,7 +79,7 @@ class CompareRecorder:
         return atr.tasks.checks.compare.TreeComparisonResult(set(self.invalid), set(self.repo_only))
 
 
-class CacheDirResolver:
+class ArchiveDirResolver:
     def __init__(self, cache_dir: pathlib.Path | None) -> None:
         self.cache_dir = cache_dir
 
@@ -622,7 +622,7 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -655,7 +655,7 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
         "_checkout_github_source",
         RaiseAsync("_checkout_github_source should not be called"),
     )
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", RaiseAsync("resolve_cache_dir should not be called"))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", RaiseAsync("resolve_archive_dir should not be called"))
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
     await atr.tasks.checks.compare.source_trees(args)
@@ -678,7 +678,7 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -705,7 +705,7 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
@@ -736,7 +736,7 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
@@ -757,7 +757,7 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
     payload = _make_payload()
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(None))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(None))
     monkeypatch.setattr(
         atr.tasks.checks.compare,
         "_checkout_github_source",
@@ -788,7 +788,7 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
@@ -819,7 +819,7 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
-    monkeypatch.setattr(atr.tasks.checks, "resolve_cache_dir", CacheDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
     monkeypatch.setattr(atr.tasks.checks.compare, "_compare_trees", compare)
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))

@@ -312,8 +312,8 @@ def function_key(func: Callable[..., Any] | str) -> str:
     return func.__module__ + "." + func.__name__ if callable(func) else func
 
 
-async def resolve_cache_dir(args: FunctionArguments) -> pathlib.Path | None:
-    """Resolve the quarantine extraction cache directory for the primary archive."""
+async def resolve_archive_dir(args: FunctionArguments) -> pathlib.Path | None:
+    """Resolve the extracted archive directory for the primary archive."""
     if args.primary_rel_path is None:
         return None
     paths_data = await attestable.load_paths(args.project_name, args.version_name, args.revision_number)
@@ -322,10 +322,10 @@ async def resolve_cache_dir(args: FunctionArguments) -> pathlib.Path | None:
     content_hash = paths_data.get(args.primary_rel_path)
     if content_hash is None:
         return None
-    cache_key = hashes.filesystem_cache_archives_key(content_hash)
-    cache_dir = file_paths.get_archives_dir() / str(args.project_name) / str(args.version_name) / cache_key
-    if await aiofiles.os.path.isdir(cache_dir):
-        return cache_dir
+    archive_key = hashes.filesystem_archives_key(content_hash)
+    archive_dir = file_paths.get_archives_dir() / str(args.project_name) / str(args.version_name) / archive_key
+    if await aiofiles.os.path.isdir(archive_dir):
+        return archive_dir
     return None
 
 

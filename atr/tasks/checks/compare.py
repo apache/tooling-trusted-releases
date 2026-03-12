@@ -101,8 +101,8 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
     if payload is not None:
         if not (primary_abs_path := await recorder.abs_path()):
             return None
-        cache_dir = await checks.resolve_cache_dir(args)
-        if cache_dir is None:
+        extracted_dir = await checks.resolve_archive_dir(args)
+        if extracted_dir is None:
             await recorder.failure(
                 "Extracted archive tree is not available",
                 {"rel_path": args.primary_rel_path},
@@ -120,11 +120,11 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     {"repo_url": f"https://github.com/{payload.repository}.git", "sha": payload.sha},
                 )
                 return None
-            archive_root_result = await _find_archive_root(primary_abs_path, cache_dir)
+            archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
             if archive_root_result.root is None:
                 await recorder.failure(
                     "Could not determine archive root directory for comparison",
-                    {"archive_path": str(primary_abs_path), "extract_dir": str(cache_dir)},
+                    {"archive_path": str(primary_abs_path), "extract_dir": str(extracted_dir)},
                 )
                 return None
             if archive_root_result.extra_entries:
@@ -137,7 +137,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     },
                 )
                 return None
-            archive_content_dir = cache_dir / archive_root_result.root
+            archive_content_dir = extracted_dir / archive_root_result.root
             archive_dir = str(archive_content_dir)
             try:
                 comparison = await _compare_trees(github_dir, archive_content_dir)

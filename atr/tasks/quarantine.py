@@ -68,11 +68,11 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
         done_file.touch()
         return []
 
-    cache_archives_dir = paths.get_archives_dir()
+    archives_dir = paths.get_archives_dir()
     staging_base = paths.get_tmp_dir()
     staging_base.mkdir(parents=True, exist_ok=True)
     extraction_cfg = _extraction_config()
-    seen_cache_keys: set[str] = set()
+    seen_archive_keys: set[str] = set()
     results_list: list[tuple[str, pathlib.Path, float]] = []
 
     for project_dir in sorted(unfinished_dir.iterdir()):
@@ -88,10 +88,10 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
                     revision_dir,
                     project_dir.name,
                     version_dir.name,
-                    cache_archives_dir,
+                    archives_dir,
                     staging_base,
                     extraction_cfg,
-                    seen_cache_keys,
+                    seen_archive_keys,
                     results_list,
                 )
 
@@ -130,11 +130,9 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives_to_cache(
-            args.archives, quarantine_dir, str(project_name), str(version_name), file_entries
-        )
+        await _extract_archives(args.archives, quarantine_dir, str(project_name), str(version_name), file_entries)
     except Exception as exc:
-        await _mark_failed(quarantined, file_entries, f"Archive extraction to cache failed: {exc}")
+        await _mark_failed(quarantined, file_entries, f"Archive extraction failed: {exc}")
         await aioshutil.rmtree(quarantine_dir)
         return None
 
@@ -148,14 +146,14 @@ def _backfill_done_file() -> pathlib.Path:
 
 def _backfill_extract_archive(
     archive_path: pathlib.Path,
-    cache_dir: pathlib.Path,
+    archive_dir: pathlib.Path,
     staging_base: pathlib.Path,
     extraction_cfg: exarch.SecurityConfig,
     results_list: list[tuple[str, pathlib.Path, float]],
 ) -> None:
     try:
-        elapsed = _extract_archive_to_cache_dir(archive_path, cache_dir, staging_base, extraction_cfg)
-        results_list.append((str(archive_path), cache_dir, elapsed))
+        elapsed = _extract_archive_to_dir(archive_path, archive_dir, staging_base, extraction_cfg)
+        results_list.append((str(archive_path), archive_dir, elapsed))
     except Exception as exc:
         log.warning(f"Backfill: failed to extract {archive_path}: {exc}")
 
@@ -164,33 +162,33 @@ def _backfill_revision(
     revision_dir: pathlib.Path,
     project_name: str,
     version_name: str,
-    cache_archives_dir: pathlib.Path,
+    archives_dir: pathlib.Path,
     staging_base: pathlib.Path,
     extraction_cfg: exarch.SecurityConfig,
-    seen_cache_keys: set[str],
+    seen_archive_keys: set[str],
     results_list: list[tuple[str, pathlib.Path, float]],
 ) -> None:
-    cache_base = cache_archives_dir / project_name / version_name
+    archives_base = archives_dir / project_name / version_name
     for archive_path in sorted(revision_dir.rglob("*")):
         if not archive_path.is_file():
             continue
         if not _is_archive_suffix(archive_path.name):
             continue
         content_hash = hashes.compute_file_hash_sync(archive_path)
-        cache_key = hashes.filesystem_cache_archives_key(content_hash)
-        dedupe_key = f"{project_name}/{version_name}/{cache_key}"
-        if dedupe_key in seen_cache_keys:
+        archive_key = hashes.filesystem_archives_key(content_hash)
+        dedupe_key = f"{project_name}/{version_name}/{archive_key}"
+        if dedupe_key in seen_archive_keys:
             continue
-        seen_cache_keys.add(dedupe_key)
-        cache_dir = cache_base / cache_key
-        if cache_dir.is_dir():
+        seen_archive_keys.add(dedupe_key)
+        archive_dir = archives_base / archive_key
+        if archive_dir.is_dir():
             continue
-        _backfill_extract_archive(archive_path, cache_dir, staging_base, extraction_cfg, results_list)
+        _backfill_extract_archive(archive_path, archive_dir, staging_base, extraction_cfg, results_list)
 
 
-def _extract_archive_to_cache_dir(
+def _extract_archive_to_dir(
     archive_path: pathlib.Path,
-    cache_dir: pathlib.Path,
+    archive_dir: pathlib.Path,
     staging_base: pathlib.Path,
     extraction_cfg: exarch.SecurityConfig,
 ) -> float:
@@ -199,50 +197,50 @@ def _extract_archive_to_cache_dir(
         staging_dir.mkdir(parents=False, exist_ok=False)
         start = time.monotonic()
         exarch.extract_archive(str(archive_path), str(staging_dir), extraction_cfg)
-        cache_dir.parent.mkdir(parents=True, exist_ok=True)
+        archive_dir.parent.mkdir(parents=True, exist_ok=True)
         try:
-            os.rename(staging_dir, cache_dir)
+            os.rename(staging_dir, archive_dir)
         except OSError as err:
             if isinstance(err, FileExistsError) or err.errno in {errno.EEXIST, errno.ENOTEMPTY}:
                 shutil.rmtree(staging_dir, ignore_errors=True)
             else:
                 raise
-        _set_archive_permissions(cache_dir)
+        _set_archive_permissions(archive_dir)
         return time.monotonic() - start
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
 
 
-async def _extract_archives_to_cache(
+async def _extract_archives(
     archives: list[QuarantineArchiveEntry],
     quarantine_dir: pathlib.Path,
     project_name: str,
     version_name: str,
     file_entries: list[sql.QuarantineFileEntryV1],
 ) -> None:
-    cache_base = paths.get_archives_dir() / project_name / version_name
+    archives_base = paths.get_archives_dir() / project_name / version_name
     staging_base = paths.get_tmp_dir()
-    await aiofiles.os.makedirs(cache_base, exist_ok=True)
+    await aiofiles.os.makedirs(archives_base, exist_ok=True)
     await aiofiles.os.makedirs(staging_base, exist_ok=True)
 
     extraction_config = _extraction_config()
 
     for archive in archives:
-        cache_dir = cache_base / hashes.filesystem_cache_archives_key(archive.content_hash)
-        if await aiofiles.os.path.isdir(cache_dir):
+        archive_dir = archives_base / hashes.filesystem_archives_key(archive.content_hash)
+        if await aiofiles.os.path.isdir(archive_dir):
             continue
         archive_path = quarantine_dir / archive.rel_path
         try:
             await asyncio.to_thread(
-                _extract_archive_to_cache_dir,
+                _extract_archive_to_dir,
                 archive_path,
-                cache_dir,
+                archive_dir,
                 staging_base,
                 extraction_config,
             )
         except Exception as exc:
-            log.exception(f"Failed to extract archive {archive.rel_path} to cache")
+            log.exception(f"Failed to extract archive {archive.rel_path}")
             for entry in file_entries:
                 if entry.rel_path == archive.rel_path:
                     entry.errors.append(f"Extraction failed: {exc}")

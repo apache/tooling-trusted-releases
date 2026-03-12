@@ -36,7 +36,7 @@ def test_backfill_already_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: path
     _create_tar_gz(archive_path)
 
     content_hash = hashes.compute_file_hash_sync(archive_path)
-    cache_key = hashes.filesystem_cache_archives_key(content_hash)
+    cache_key = hashes.filesystem_archives_key(content_hash)
     existing_cache = cache_dir / "proj" / "1.0" / cache_key
     existing_cache.mkdir(parents=True)
 
@@ -60,11 +60,11 @@ def test_backfill_continues_after_extraction_failure(monkeypatch: pytest.MonkeyP
     assert "good.tar.gz" in result[0][0]
 
     good_hash = hashes.compute_file_hash_sync(revision_dir / "good.tar.gz")
-    good_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_cache_archives_key(good_hash)
+    good_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_archives_key(good_hash)
     assert good_cache.is_dir()
 
     bad_hash = hashes.compute_file_hash_sync(revision_dir / "bad.tar.gz")
-    bad_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_cache_archives_key(bad_hash)
+    bad_cache = cache_dir / "proj" / "1.0" / hashes.filesystem_archives_key(bad_hash)
     assert not bad_cache.exists()
 
 
@@ -114,7 +114,7 @@ def test_backfill_extracts_same_content_into_different_namespaces(
     assert len(result) == 2
 
     content_hash = hashes.compute_file_hash_sync(revision_a / "artifact.tar.gz")
-    cache_key = hashes.filesystem_cache_archives_key(content_hash)
+    cache_key = hashes.filesystem_archives_key(content_hash)
     assert (cache_dir / "projA" / "1.0" / cache_key).is_dir()
     assert (cache_dir / "projB" / "2.0" / cache_key).is_dir()
 

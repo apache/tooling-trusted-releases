@@ -143,8 +143,8 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     is_podling = args.extra_args.get("is_podling", False)
 
-    cache_dir = await checks.resolve_cache_dir(args)
-    if cache_dir is None:
+    archive_dir = await checks.resolve_archive_dir(args)
+    if archive_dir is None:
         await recorder.failure(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
@@ -154,7 +154,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     try:
-        for result in await asyncio.to_thread(_files_check_core_logic, cache_dir, is_podling):
+        for result in await asyncio.to_thread(_files_check_core_logic, archive_dir, is_podling):
             match result:
                 case ArtifactResult():
                     await _record_artifact(recorder, result)
@@ -186,8 +186,8 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
     #     log.info(f"Using cached license headers result for {artifact_abs_path} (rel: {args.primary_rel_path})")
     #     return None
 
-    cache_dir = await checks.resolve_cache_dir(args)
-    if cache_dir is None:
+    archive_dir = await checks.resolve_archive_dir(args)
+    if archive_dir is None:
         await recorder.failure(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
@@ -208,7 +208,7 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
         excludes_source = "none"
 
     artifact_basename = os.path.basename(str(artifact_abs_path))
-    return await _headers_core(recorder, cache_dir, artifact_basename, ignore_lines, excludes_source)
+    return await _headers_core(recorder, archive_dir, artifact_basename, ignore_lines, excludes_source)
 
 
 def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
@@ -239,13 +239,13 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
     return False, "Could not find Apache License header"
 
 
-def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterator[Result]:
+def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool) -> Iterator[Result]:
     """Verify that LICENSE and NOTICE files exist and are placed and formatted correctly."""
     license_results: dict[str, str | None] = {}
     notice_results: dict[str, tuple[bool, list[str], str]] = {}
     disclaimer_found = False
 
-    if not cache_dir.is_dir():
+    if not archive_dir.is_dir():
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
         yield ArtifactResult(
@@ -256,8 +256,8 @@ def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterat
         return
 
     # Check for license files in the root directory
-    top_entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
-    root_dirs = [e for e in top_entries if (cache_dir / e).is_dir()]
+    top_entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
+    root_dirs = [e for e in top_entries if (archive_dir / e).is_dir()]
     if len(root_dirs) != 1:
         yield ArtifactResult(
             status=sql.CheckResultStatus.FAILURE,
@@ -265,7 +265,7 @@ def _files_check_core_logic(cache_dir: pathlib.Path, is_podling: bool) -> Iterat
             data=None,
         )
         return
-    root_path = cache_dir / root_dirs[0]
+    root_path = archive_dir / root_dirs[0]
 
     for entry in sorted(os.listdir(root_path)):
         if entry.startswith("._"):
@@ -368,7 +368,7 @@ def _get_file_extension(filename: str) -> str | None:
 
 
 def _headers_check_core_logic(  # noqa: C901
-    cache_dir: pathlib.Path, artifact_basename: str, ignore_lines: list[str], excludes_source: str
+    archive_dir: pathlib.Path, artifact_basename: str, ignore_lines: list[str], excludes_source: str
 ) -> Iterator[Result]:
     """Verify Apache License headers in source files within an extracted cache tree."""
     # We could modify @Lucas-C/pre-commit-hooks instead for this
@@ -386,7 +386,7 @@ def _headers_check_core_logic(  # noqa: C901
     #         data=None,
     #     )
 
-    if not cache_dir.is_dir():
+    if not archive_dir.is_dir():
         yield ArtifactResult(
             status=sql.CheckResultStatus.FAILURE,
             message="Cache directory is not available",
@@ -396,7 +396,7 @@ def _headers_check_core_logic(  # noqa: C901
 
     # log.info(f"Ignore lines: {ignore_lines}")
 
-    for dirpath, dirnames, filenames in os.walk(cache_dir):
+    for dirpath, dirnames, filenames in os.walk(archive_dir):
         dirnames.sort()
         for filename in sorted(filenames):
             if filename.startswith("._"):
@@ -404,7 +404,7 @@ def _headers_check_core_logic(  # noqa: C901
                 continue
 
             file_path = pathlib.Path(dirpath) / filename
-            rel_path = str(file_path.relative_to(cache_dir))
+            rel_path = str(file_path.relative_to(archive_dir))
 
             ignore_path = "/" + artifact_basename + "/" + rel_path
             matcher = util.create_path_matcher(ignore_lines, pathlib.Path(ignore_path), pathlib.Path("/"))
@@ -508,14 +508,14 @@ def _headers_check_core_logic_should_check(filepath: str) -> bool:
 
 async def _headers_core(
     recorder: checks.Recorder,
-    cache_dir: pathlib.Path,
+    archive_dir: pathlib.Path,
     artifact_basename: str,
     ignore_lines: list[str],
     excludes_source: str,
 ) -> None:
     try:
         for result in await asyncio.to_thread(
-            _headers_check_core_logic, cache_dir, artifact_basename, ignore_lines, excludes_source
+            _headers_check_core_logic, archive_dir, artifact_basename, ignore_lines, excludes_source
         ):
             match result:
                 case ArtifactResult():

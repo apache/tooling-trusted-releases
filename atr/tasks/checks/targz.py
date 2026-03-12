@@ -39,10 +39,10 @@ class RootDirectoryError(Exception):
     ...
 
 
-def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:
+def root_directory(archive_dir: pathlib.Path) -> tuple[str, bytes | None]:
     """Find root directory and read package/package.json from the extracted tree."""
     # The ._ prefix is a metadata convention
-    entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
+    entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
 
     if not entries:
         raise RootDirectoryError("No root directory found in archive")
@@ -50,7 +50,7 @@ def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:
         raise RootDirectoryError(f"Multiple root directories found: {entries[0]}, {entries[1]}")
 
     root = entries[0]
-    root_path = cache_dir / root
+    root_path = archive_dir / root
     try:
         root_stat = root_path.lstat()
     except OSError as e:
@@ -61,7 +61,7 @@ def root_directory(cache_dir: pathlib.Path) -> tuple[str, bytes | None]:
     package_json: bytes | None = None
 
     if root == "package":
-        package_json_path = cache_dir / "package" / "package.json"
+        package_json_path = archive_dir / "package" / "package.json"
         with contextlib.suppress(FileNotFoundError, OSError):
             package_json_stat = package_json_path.lstat()
             # We do this to avoid allowing package.json to be a symlink
@@ -81,8 +81,8 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
     if await recorder.primary_path_is_binary():
         return None
 
-    cache_dir = await checks.resolve_cache_dir(args)
-    if cache_dir is None:
+    archive_dir = await checks.resolve_archive_dir(args)
+    if archive_dir is None:
         await recorder.failure(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
@@ -101,7 +101,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
     )
 
     try:
-        root, package_json = await asyncio.to_thread(root_directory, cache_dir)
+        root, package_json = await asyncio.to_thread(root_directory, archive_dir)
         data: dict[str, object] = {
             "root": root,
             "basename_from_filename": basename_from_filename,

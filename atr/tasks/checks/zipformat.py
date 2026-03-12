@@ -44,8 +44,8 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     if await recorder.primary_path_is_binary():
         return None
 
-    cache_dir = await checks.resolve_cache_dir(args)
-    if cache_dir is None:
+    archive_dir = await checks.resolve_archive_dir(args)
+    if archive_dir is None:
         await recorder.failure(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
@@ -55,7 +55,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     log.info(f"Checking zip structure for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     try:
-        result_data = await asyncio.to_thread(_structure_check_core_logic, cache_dir, str(artifact_abs_path))
+        result_data = await asyncio.to_thread(_structure_check_core_logic, archive_dir, str(artifact_abs_path))
 
         if result_data.get("error"):
             await recorder.failure(result_data["error"], result_data)
@@ -67,10 +67,10 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-def _structure_check_core_logic(cache_dir: pathlib.Path, artifact_path: str) -> dict[str, Any]:
+def _structure_check_core_logic(archive_dir: pathlib.Path, artifact_path: str) -> dict[str, Any]:
     """Verify the internal structure of the zip archive."""
     # The ._ prefix is a metadata convention
-    entries = sorted(e for e in os.listdir(cache_dir) if not e.startswith("._"))
+    entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
     if not entries:
         return {"error": "Archive is empty"}
 
@@ -81,7 +81,7 @@ def _structure_check_core_logic(cache_dir: pathlib.Path, artifact_path: str) -> 
     root_dirs: list[str] = []
     non_rooted_entries: list[str] = []
     for entry in entries:
-        entry_path = cache_dir / entry
+        entry_path = archive_dir / entry
         try:
             entry_stat = entry_path.lstat()
         except OSError as e:
@@ -105,7 +105,7 @@ def _structure_check_core_logic(cache_dir: pathlib.Path, artifact_path: str) -> 
         return {"root_dir": actual_root, "expected_roots": expected_roots}
 
     if (actual_root == "package") and (
-        npm_result := _structure_npm_result(cache_dir, basename_from_filename, actual_root, expected_roots)
+        npm_result := _structure_npm_result(archive_dir, basename_from_filename, actual_root, expected_roots)
     ):
         return npm_result
 
@@ -117,9 +117,9 @@ def _structure_check_core_logic(cache_dir: pathlib.Path, artifact_path: str) -> 
 
 
 def _structure_npm_result(
-    cache_dir: pathlib.Path, basename_from_filename: str, actual_root: str, expected_roots: list[str]
+    archive_dir: pathlib.Path, basename_from_filename: str, actual_root: str, expected_roots: list[str]
 ) -> dict[str, Any] | None:
-    package_json_path = cache_dir / "package" / "package.json"
+    package_json_path = archive_dir / "package" / "package.json"
     try:
         package_json_stat = package_json_path.lstat()
     except (FileNotFoundError, OSError):

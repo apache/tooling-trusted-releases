@@ -89,8 +89,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         log.info(f"Skipping RAT check for {artifact_abs_path} (mode is LIGHTWEIGHT)")
         return None
 
-    cache_dir = await checks.resolve_cache_dir(args)
-    if cache_dir is None:
+    archive_dir = await checks.resolve_archive_dir(args)
+    if archive_dir is None:
         await recorder.failure(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
@@ -103,7 +103,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     policy_excludes = project.policy_source_excludes_rat if is_source else []
 
     try:
-        await _check_core(args, recorder, cache_dir, policy_excludes)
+        await _check_core(args, recorder, archive_dir, policy_excludes)
     except Exception as e:
         # TODO: Or bubble for task failure?
         await recorder.failure("Error running Apache RAT check", {"error": str(e)})
@@ -161,12 +161,12 @@ def _build_rat_command(
 async def _check_core(
     args: checks.FunctionArguments,
     recorder: checks.Recorder,
-    cache_dir: pathlib.Path,
+    archive_dir: pathlib.Path,
     policy_excludes: list[str],
 ) -> None:
     result = await asyncio.to_thread(
         _synchronous,
-        cache_dir=str(cache_dir),
+        archive_dir=str(archive_dir),
         policy_excludes=policy_excludes,
         rat_jar_path=args.extra_args.get("rat_jar_path", _CONFIG.APACHE_RAT_JAR_PATH),
     )
@@ -347,12 +347,12 @@ def _summary_message(valid: bool, unapproved_licenses: int, unknown_licenses: in
 
 
 def _synchronous(
-    cache_dir: str,
+    archive_dir: str,
     policy_excludes: list[str],
     rat_jar_path: str = _CONFIG.APACHE_RAT_JAR_PATH,
 ) -> checkdata.Rat:
     """Verify license headers using Apache RAT."""
-    log.info(f"Verifying licenses with Apache RAT for {cache_dir}")
+    log.info(f"Verifying licenses with Apache RAT for {archive_dir}")
     log.info(f"PATH environment variable: {os.environ.get('PATH', 'PATH not found')}")
 
     java_check = _synchronous_check_java_installed()
@@ -367,7 +367,7 @@ def _synchronous(
     try:
         with tempfile.TemporaryDirectory(prefix="rat_scratch_") as scratch_dir:
             log.info(f"Created scratch directory: {scratch_dir}")
-            return _synchronous_core(cache_dir, scratch_dir, policy_excludes, rat_jar_path)
+            return _synchronous_core(archive_dir, scratch_dir, policy_excludes, rat_jar_path)
     except Exception as e:
         import traceback
 
@@ -459,16 +459,16 @@ def _synchronous_check_java_installed() -> checkdata.Rat | None:
 
 
 def _synchronous_core(  # noqa: C901
-    cache_dir: str,
+    archive_dir: str,
     scratch_dir: str,
     policy_excludes: list[str],
     rat_jar_path: str,
 ) -> checkdata.Rat:
     exclude_file_paths: list[str] = []
-    for dirpath, _dirnames, filenames in os.walk(cache_dir):
+    for dirpath, _dirnames, filenames in os.walk(archive_dir):
         for filename in filenames:
             if filename == _RAT_EXCLUDES_FILENAME:
-                exclude_file_paths.append(os.path.relpath(os.path.join(dirpath, filename), cache_dir))
+                exclude_file_paths.append(os.path.relpath(os.path.join(dirpath, filename), archive_dir))
     log.info(f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} file(s): {exclude_file_paths}")
 
     # Validate that we found at most one exclusion file
@@ -483,11 +483,11 @@ def _synchronous_core(  # noqa: C901
     archive_excludes_path: str | None = exclude_file_paths[0] if exclude_file_paths else None
 
     excludes_source, effective_excludes_path = _synchronous_core_excludes_source(
-        archive_excludes_path, policy_excludes, cache_dir, scratch_dir
+        archive_excludes_path, policy_excludes, archive_dir, scratch_dir
     )
 
     try:
-        scan_root = _synchronous_core_scan_root(archive_excludes_path, cache_dir)
+        scan_root = _synchronous_core_scan_root(archive_excludes_path, archive_dir)
     except RatError as e:
         return checkdata.Rat(
             message=f"Failed to determine scan root: {e}",
@@ -522,7 +522,7 @@ def _synchronous_core(  # noqa: C901
 
     # The unknown_license_files and unapproved_files contain FileEntry objects
     # The path is relative to scan_root, so we prepend the scan_root relative path
-    scan_root_rel = os.path.relpath(scan_root, cache_dir)
+    scan_root_rel = os.path.relpath(scan_root, archive_dir)
     result.directory = scan_root_rel
     if scan_root_rel != ".":
         for file in result.unknown_license_files:
@@ -537,7 +537,7 @@ def _synchronous_core(  # noqa: C901
 
 
 def _synchronous_core_excludes_source(
-    archive_excludes_path: str | None, policy_excludes: list[str], cache_dir: str, scratch_dir: str
+    archive_excludes_path: str | None, policy_excludes: list[str], archive_dir: str, scratch_dir: str
 ) -> tuple[str, str | None]:
     # Determine excludes_source and effective excludes file
     excludes_source: str
@@ -545,7 +545,7 @@ def _synchronous_core_excludes_source(
 
     if archive_excludes_path is not None:
         excludes_source = "archive"
-        effective_excludes_path = os.path.join(cache_dir, archive_excludes_path)
+        effective_excludes_path = os.path.join(archive_dir, archive_excludes_path)
         log.info(f"Using archive {_RAT_EXCLUDES_FILENAME}: {archive_excludes_path}")
     elif policy_excludes:
         excludes_source = "policy"
@@ -642,27 +642,27 @@ def _synchronous_core_parse_output_core(xml_file: str, base_dir: str) -> checkda
     )
 
 
-def _synchronous_core_scan_root(archive_excludes_path: str | None, cache_dir: str) -> str:
+def _synchronous_core_scan_root(archive_excludes_path: str | None, archive_dir: str) -> str:
     # Determine scan root based on archive .rat-excludes location
     if archive_excludes_path is not None:
-        scan_root = os.path.dirname(os.path.join(cache_dir, archive_excludes_path))
+        scan_root = os.path.dirname(os.path.join(archive_dir, archive_excludes_path))
 
-        # Verify that scan_root is inside cache_dir
+        # Verify that scan_root is inside archive_dir
         abs_scan_root = os.path.abspath(scan_root)
-        abs_cache_dir = os.path.abspath(cache_dir)
-        scan_root_is_inside = (abs_scan_root == abs_cache_dir) or abs_scan_root.startswith(abs_cache_dir + os.sep)
+        abs_archive_dir = os.path.abspath(archive_dir)
+        scan_root_is_inside = (abs_scan_root == abs_archive_dir) or abs_scan_root.startswith(abs_archive_dir + os.sep)
         if not scan_root_is_inside:
-            log.error(f"Scan root {scan_root} is outside cache_dir {cache_dir}")
+            log.error(f"Scan root {scan_root} is outside archive_dir {archive_dir}")
             raise RatError("Invalid archive structure: exclusion file path escapes extraction directory")
 
         log.info(f"Using {_RAT_EXCLUDES_FILENAME} directory as scan root: {scan_root}")
 
-        untracked_count = _count_files_outside_directory(cache_dir, scan_root)
+        untracked_count = _count_files_outside_directory(archive_dir, scan_root)
         if untracked_count > 0:
             log.error(f"Found {untracked_count} file(s) outside {_RAT_EXCLUDES_FILENAME} directory")
             raise RatError(f"Files exist outside {_RAT_EXCLUDES_FILENAME} directory ({untracked_count} found)")
     else:
-        scan_root = cache_dir
-        log.info(f"No archive {_RAT_EXCLUDES_FILENAME} found, using cache_dir as scan root: {scan_root}")
+        scan_root = archive_dir
+        log.info(f"No archive {_RAT_EXCLUDES_FILENAME} found, using archive_dir as scan root: {scan_root}")
 
     return scan_root

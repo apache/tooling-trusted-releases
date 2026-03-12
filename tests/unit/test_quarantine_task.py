@@ -66,7 +66,7 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
 
 
 @pytest.mark.asyncio
-async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_collision(
+async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     quarantine_dir = tmp_path / "quarantine"
@@ -95,7 +95,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:ghi", errors=[])]
 
-    await quarantine._extract_archives_to_cache(
+    await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:ghi")],
         quarantine_dir,
         "proj",
@@ -103,7 +103,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
         entries,
     )
 
-    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:ghi")
+    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_archives_key("blake3:ghi")
 
     assert cache_dir.is_dir()
     assert (cache_dir / "winner.txt").read_text() == "winner"
@@ -111,7 +111,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
 
 
 @pytest.mark.asyncio
-async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_wins(
+async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     quarantine_dir = tmp_path / "quarantine"
@@ -140,7 +140,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:def", errors=[])]
 
-    await quarantine._extract_archives_to_cache(
+    await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
         quarantine_dir,
         "proj",
@@ -148,7 +148,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_
         entries,
     )
 
-    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:def")
+    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_archives_key("blake3:def")
 
     assert cache_dir.is_dir()
     assert (cache_dir / "winner.txt").read_text() == "winner"
@@ -156,7 +156,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_
 
 
 @pytest.mark.asyncio
-async def test_extract_archives_to_cache_propagates_exarch_error_to_file_entry(
+async def test_extract_archives_propagates_exarch_error_to_file_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     quarantine_dir = tmp_path / "quarantine"
@@ -176,7 +176,7 @@ async def test_extract_archives_to_cache_propagates_exarch_error_to_file_entry(
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:bad", errors=[])]
 
     with pytest.raises(RuntimeError, match="unsafe zip detected"):
-        await quarantine._extract_archives_to_cache(
+        await quarantine._extract_archives(
             [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:bad")],
             quarantine_dir,
             "proj",
@@ -189,7 +189,7 @@ async def test_extract_archives_to_cache_propagates_exarch_error_to_file_entry(
 
 
 @pytest.mark.asyncio
-async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
+async def test_extract_archives_stages_in_temporary_then_promotes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     quarantine_dir = tmp_path / "quarantine"
@@ -212,7 +212,7 @@ async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:abc", errors=[])]
 
-    await quarantine._extract_archives_to_cache(
+    await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:abc")],
         quarantine_dir,
         "proj",
@@ -220,7 +220,7 @@ async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
         entries,
     )
 
-    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_cache_archives_key("blake3:abc")
+    cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_archives_key("blake3:abc")
     staging_base = tmp_root
 
     assert recorded["archive_path"] == str(quarantine_dir / archive_rel_path)
@@ -377,7 +377,7 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         ),
         mock.patch.object(
             quarantine,
-            "_extract_archives_to_cache",
+            "_extract_archives",
             new_callable=mock.AsyncMock,
             side_effect=RuntimeError("Extraction failure"),
         ),
@@ -389,7 +389,7 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         )
 
     assert result is None
-    mock_mark.assert_awaited_once_with(row, ok_entries, "Archive extraction to cache failed: Extraction failure")
+    mock_mark.assert_awaited_once_with(row, ok_entries, "Archive extraction failed: Extraction failure")
     mock_rmtree.assert_awaited_once_with(quarantine_dir)
 
 
@@ -480,7 +480,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
             new_callable=mock.AsyncMock,
             return_value=(ok_entries, False),
         ),
-        mock.patch.object(quarantine, "_extract_archives_to_cache", new_callable=mock.AsyncMock),
+        mock.patch.object(quarantine, "_extract_archives", new_callable=mock.AsyncMock),
         mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
         mock.patch.object(quarantine, "_mark_failed", new_callable=mock.AsyncMock) as mock_mark,
     ):
