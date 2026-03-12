@@ -346,7 +346,8 @@ async def resolve_cache_key(
     file_hash = None
     attestable_data = await attestable.load(release.safe_project_name, release.safe_version_name, revision)
     if attestable_data:
-        policy = sql.ReleasePolicy.model_validate(attestable_data.policy)
+        policy_dict = _coerce_policy_nulls(attestable_data.policy)
+        policy = sql.ReleasePolicy.model_validate(policy_dict)
         if not ignore_path:
             file_hash = attestable_data.paths.get(file) if file else None
     else:
@@ -394,6 +395,19 @@ def with_model(cls: type[schema.Strict]) -> Callable[[Callable[..., Any]], Calla
         return wrapper
 
     return decorator
+
+
+def _coerce_policy_nulls(policy: dict[str, Any]) -> dict[str, Any]:
+    # This is a shim for a bug in the models persisted in attestable data
+    # The bug is linted by scripts/check_nullable_fields.py
+    result = dict(policy)
+    for key, value in result.items():
+        if (value is not None) or (key not in sql.ReleasePolicy.model_fields):
+            continue
+        field = sql.ReleasePolicy.model_fields[key]
+        if (field.default_factory is not None) and (field.default_factory is list):
+            result[key] = []
+    return result
 
 
 async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) -> list[str]:
