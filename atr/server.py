@@ -185,15 +185,17 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         paths.get_tmp_dir(),
         paths.get_unfinished_dir(),
     ]
+    archives_dir = paths.get_archives_dir()
     unfinished_dir = paths.get_unfinished_dir()
     for directory in directories_to_ensure:
         directory.mkdir(parents=True, exist_ok=True)
-        if directory != unfinished_dir:
-            util.chmod_directories(directory, permissions=0o755)
-        else:
-            # Revision directories and descendants must be 555
-            # Therefore we handle those separately
+        # Some directories need custom permissions
+        if directory == archives_dir:
+            _enforce_archives_permissions(archives_dir)
+        elif directory == unfinished_dir:
             _enforce_unfinished_permissions(unfinished_dir)
+        else:
+            util.chmod_directories(directory, permissions=0o755)
 
 
 def _app_setup_api_docs(app: base.QuartApp) -> None:
@@ -649,6 +651,40 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
             log.info("Blockbuster deactivated")
 
     return app
+
+
+def _enforce_archives_permissions(archives_dir: pathlib.Path) -> None:
+    if not archives_dir.exists():
+        return
+    fixed_files = 0
+    fixed_dirs = 0
+
+    # Set ancestor directories of archive files to 755
+    for dirpath, _, _ in os.walk(archives_dir, topdown=True):
+        path = pathlib.Path(dirpath)
+        depth = len(path.relative_to(archives_dir).parts)
+        if depth < 3:
+            os.chmod(path, 0o755)
+
+    # Set archive files to 444
+    for file_path in archives_dir.rglob("*"):
+        if not file_path.is_file():
+            continue
+        depth = len(file_path.relative_to(archives_dir).parts)
+        if (depth >= 3) and (stat.S_IMODE(file_path.stat().st_mode) != 0o444):
+            os.chmod(file_path, 0o444)
+            fixed_files += 1
+
+    # Set archive directories to 555
+    for dirpath, _, _ in os.walk(archives_dir, topdown=False):
+        path = pathlib.Path(dirpath)
+        depth = len(path.relative_to(archives_dir).parts)
+        if (depth >= 3) and (stat.S_IMODE(path.stat().st_mode) != 0o555):
+            os.chmod(path, 0o555)
+            fixed_dirs += 1
+
+    if (fixed_files > 0) or (fixed_dirs > 0):
+        log.info(f"Fixed archive permissions: {fixed_files} files to 0o444, {fixed_dirs} directories to 0o555")
 
 
 def _enforce_unfinished_permissions(unfinished_dir: pathlib.Path) -> None:

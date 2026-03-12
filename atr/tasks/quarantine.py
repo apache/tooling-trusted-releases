@@ -207,6 +207,7 @@ def _extract_archive_to_cache_dir(
                 shutil.rmtree(staging_dir, ignore_errors=True)
             else:
                 raise
+        _set_archive_permissions(cache_dir)
         return time.monotonic() - start
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
@@ -376,3 +377,8 @@ async def _run_safety_checks(
         if errors:
             any_failed = True
     return file_entries, any_failed
+
+
+def _set_archive_permissions(archive_dir: pathlib.Path) -> None:
+    util.chmod_files(archive_dir, 0o444)
+    util.chmod_directories(archive_dir, 0o555)

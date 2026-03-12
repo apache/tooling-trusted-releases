@@ -17,6 +17,7 @@
 
 import io
 import pathlib
+import stat
 import tarfile
 
 import pytest
@@ -137,6 +138,8 @@ def test_backfill_extracts_uncached_archive(monkeypatch: pytest.MonkeyPatch, tmp
     assert (result_cache_dir / "README.txt").read_text() == "Hello"
     assert duration >= 0
     assert (tmp_path / "cache" / "archive-backfill.done").is_file()
+    assert stat.S_IMODE(result_cache_dir.stat().st_mode) == 0o555
+    assert stat.S_IMODE((result_cache_dir / "README.txt").stat().st_mode) == 0o444
 
 
 def test_backfill_skips_non_archive_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

@@ -18,6 +18,7 @@
 import errno
 import io
 import pathlib
+import stat
 import tarfile
 import unittest.mock as mock
 
@@ -228,6 +229,8 @@ async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
     assert cache_dir.is_dir()
     assert (cache_dir / "content.txt").read_text() == "cached"
     assert list(staging_base.iterdir()) == []
+    assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o555
+    assert stat.S_IMODE((cache_dir / "content.txt").stat().st_mode) == 0o444
 
 
 @pytest.mark.asyncio
