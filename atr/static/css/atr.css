@@ -221,18 +221,9 @@ button, input, option, select, textarea {
     font-weight: 425;
 }
 
-
 nav.navbar {
     padding: 0 0 0.25rem 2rem;
 }
-
-nav.navbar button, nav.navbar a.navbar-brand {
-    color: #000000 !important;
-}
-
-/* nav.navbar button.navbar-toggler {
-    background-color: #000000 !important;
-} */
 
 label[for] {
     font-weight: 450;
