@@ -90,6 +90,11 @@ class Alphanumeric(SafeType):
         return _ALPHANUM
 
 
+class CommitteeKey(Alphanumeric):
+    def _additional_validations(self, value: str):
+        pass
+
+
 class Numeric(SafeType):
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:

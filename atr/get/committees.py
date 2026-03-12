@@ -23,8 +23,8 @@ import asfquart.base as base
 import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
+import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.post as post
 import atr.shared as shared
 import atr.template as template
@@ -49,7 +49,7 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
 
 
 @get.typed
-async def view(_session: web.Public, _committees: Literal["committees"], name: unsafe.UnsafeStr) -> str:
+async def view(_session: web.Public, _committees: Literal["committees"], name: safe.CommitteeKey) -> str:
     """
     URL: /committees/<name>
     """
@@ -75,8 +75,8 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: u
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
             submit_label="Regenerate KEYS file",
-            defaults={"committee_name": str(name)},
+            defaults={"committee_name": committee.name},
             empty=True,
         ),
-        is_standing=util.committee_is_standing(str(name)),
+        is_standing=util.committee_is_standing(committee.name),
     )

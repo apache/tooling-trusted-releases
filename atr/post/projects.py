@@ -37,7 +37,7 @@ import atr.web as web
 async def add_project(
     session: web.Committer,
     _project_add: Literal["project/add"],
-    committee_name: unsafe.UnsafeStr,
+    committee_name: safe.CommitteeKey,
     project_form: shared.projects.AddProjectForm,
 ) -> web.WerkzeugResponse:
     """
@@ -46,11 +46,10 @@ async def add_project(
     display_name = project_form.display_name
     label = project_form.label
 
-    # TODO: Is this right? Name is unvalidated
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(safe.ProjectName(str(committee_name)))
         try:
-            await wacm.project.create(str(committee_name), display_name, label)
+            await wacm.project.create(committee_name, display_name, label)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.add_project, committee_name=str(committee_name), error=f"Error adding project: {e}"

@@ -132,15 +132,14 @@ class CommitteeMember(CommitteeParticipant):
             return True
         return False
 
-    async def create(self, committee_name: str, display_name: str, label: str) -> None:
+    async def create(self, committee_name: safe.CommitteeKey, display_name: str, label: str) -> None:
         super_project = None
-        # Wrap the name in safe.ProjectName so we can create it in the database
         # TODO: Do we need to do any additional validation on the string value?
         # Get the base project to derive from
         # We're allowing derivation from a retired project here
         # TODO: Should we disallow this instead?
         committee_projects = await self.__data.project(
-            committee_name=committee_name, _committee=True, _release_policy=True
+            committee_name=str(committee_name), _committee=True, _release_policy=True
         ).all()
         for committee_project in committee_projects:
             if label.startswith(str(committee_project.name) + "-"):
@@ -160,7 +159,7 @@ class CommitteeMember(CommitteeParticipant):
             description=super_project.description if super_project else None,
             category=super_project.category if super_project else None,
             programming_languages=super_project.programming_languages if super_project else None,
-            committee_name=committee_name,
+            committee_name=str(committee_name),
             created=datetime.datetime.now(datetime.UTC),
             created_by=self.__asf_uid,
         )
@@ -172,7 +171,7 @@ class CommitteeMember(CommitteeParticipant):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            committee_name=committee_name,
+            committee_name=str(committee_name),
             project_name=label,
         )
 

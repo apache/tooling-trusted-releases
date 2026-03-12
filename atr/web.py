@@ -99,8 +99,8 @@ class Committer:
                 return
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 
-    async def check_access_committee(self, committee_name: str) -> None:
-        if committee_name not in self.committees:
+    async def check_access_committee(self, committee_name: safe.CommitteeKey) -> None:
+        if str(committee_name) not in self.committees:
             if self.is_admin:
                 # Admins can view all committees
                 # But we must warn them when the committee is not one of their own

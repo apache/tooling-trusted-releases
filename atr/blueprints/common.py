@@ -40,6 +40,7 @@ QUART_CONVERTERS: dict[Any, str] = {
 
 VALIDATED_TYPES: set[Any] = {
     safe.Alphanumeric,
+    safe.CommitteeKey,
     safe.ProjectName,
     safe.RevisionNumber,
     safe.VersionName,

@@ -180,7 +180,7 @@ async def checks_ongoing(
 @quart_schema.validate_response(models.api.CommitteeGetResults, 200)
 async def committee_get(
     _committee_get: Literal["committee/get"],
-    name: unsafe.UnsafeStr,
+    name: safe.CommitteeKey,
 ) -> DictResponse:
     """
     URL: GET /committee/get/<name>
@@ -206,7 +206,7 @@ async def committee_get(
 @quart_schema.validate_response(models.api.CommitteeKeysResults, 200)
 async def committee_keys(
     _committee_keys: Literal["committee/keys"],
-    name: unsafe.UnsafeStr,
+    name: safe.CommitteeKey,
 ) -> DictResponse:
     """
     URL: GET /committee/keys/<name>
@@ -232,7 +232,7 @@ async def committee_keys(
 @quart_schema.validate_response(models.api.CommitteeProjectsResults, 200)
 async def committee_projects(
     _committee_projects: Literal["committee/projects"],
-    name: unsafe.UnsafeStr,
+    name: safe.CommitteeKey,
 ) -> DictResponse:
     """
     URL: GET /committee/projects/<name>

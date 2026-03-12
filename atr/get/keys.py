@@ -26,6 +26,7 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.post as post
@@ -183,7 +184,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
 @get.typed
 async def export(
-    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: unsafe.UnsafeStr
+    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: safe.CommitteeKey
 ) -> web.TextResponse:
     """
     URL: /keys/export/<committee_name>
