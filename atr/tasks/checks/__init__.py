@@ -323,7 +323,7 @@ async def resolve_cache_dir(args: FunctionArguments) -> pathlib.Path | None:
     if content_hash is None:
         return None
     cache_key = hashes.filesystem_cache_archives_key(content_hash)
-    cache_dir = file_paths.get_cache_archives_dir() / str(args.project_name) / str(args.version_name) / cache_key
+    cache_dir = file_paths.get_archives_dir() / str(args.project_name) / str(args.version_name) / cache_key
     if await aiofiles.os.path.isdir(cache_dir):
         return cache_dir
     return None

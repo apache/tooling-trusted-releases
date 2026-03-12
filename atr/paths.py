@@ -32,8 +32,8 @@ def get_attestable_dir() -> pathlib.Path:
     return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
 
 
-def get_cache_archives_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().STATE_DIR) / "cache" / "archives"
+def get_archives_dir() -> pathlib.Path:
+    return pathlib.Path(config.get().ARCHIVES_STORAGE_DIR)
 
 
 def get_downloads_dir() -> pathlib.Path:

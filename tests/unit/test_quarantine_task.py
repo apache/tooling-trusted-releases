@@ -87,7 +87,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_on_enotempty_colli
         (dst_path / "winner.txt").write_text("winner")
         raise OSError(errno.ENOTEMPTY, "Directory not empty", str(dst_path))
 
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
     monkeypatch.setattr(quarantine.os, "rename", rename)
@@ -132,7 +132,7 @@ async def test_extract_archives_to_cache_discards_staging_dir_when_other_worker_
         (dst_path / "winner.txt").write_text("winner")
         raise FileExistsError(dst)
 
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
     monkeypatch.setattr(quarantine.os, "rename", rename)
@@ -168,7 +168,7 @@ async def test_extract_archives_to_cache_propagates_exarch_error_to_file_entry(
     def extract_archive(_archive_path: str, _extract_dir: str, _config: object) -> None:
         raise RuntimeError("unsafe zip detected")
 
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
 
@@ -205,7 +205,7 @@ async def test_extract_archives_to_cache_stages_in_temporary_then_promotes(
         extract_path = pathlib.Path(extract_dir)
         (extract_path / "content.txt").write_text("cached")
 
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_root)
+    monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
     monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
 

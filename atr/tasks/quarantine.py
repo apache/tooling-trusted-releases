@@ -68,7 +68,7 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
         done_file.touch()
         return []
 
-    cache_archives_dir = paths.get_cache_archives_dir()
+    cache_archives_dir = paths.get_archives_dir()
     staging_base = paths.get_tmp_dir()
     staging_base.mkdir(parents=True, exist_ok=True)
     extraction_cfg = _extraction_config()
@@ -143,7 +143,7 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
 
 
 def _backfill_done_file() -> pathlib.Path:
-    return paths.get_cache_archives_dir().parent / "archive-backfill.done"
+    return pathlib.Path(config.get().STATE_DIR) / "cache" / "archive-backfill.done"
 
 
 def _backfill_extract_archive(
@@ -220,7 +220,7 @@ async def _extract_archives_to_cache(
     version_name: str,
     file_entries: list[sql.QuarantineFileEntryV1],
 ) -> None:
-    cache_base = paths.get_cache_archives_dir() / project_name / version_name
+    cache_base = paths.get_archives_dir() / project_name / version_name
     staging_base = paths.get_tmp_dir()
     await aiofiles.os.makedirs(cache_base, exist_ok=True)
     await aiofiles.os.makedirs(staging_base, exist_ok=True)

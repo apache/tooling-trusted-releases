@@ -103,6 +103,7 @@ class AppConfig:
     # TODO: By convention this is at /x1/, but we can symlink it here perhaps?
     # TODO: We need to get Puppet to check SVN out initially, or do it manually
     SVN_STORAGE_DIR = os.path.join(STATE_DIR, "subversion")
+    ARCHIVES_STORAGE_DIR = os.path.join(STATE_DIR, "archives")
     ATTESTABLE_STORAGE_DIR = os.path.join(STATE_DIR, "attestable")
     SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="database/atr.db")
     STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
@@ -177,6 +178,7 @@ def get() -> type[AppConfig]:
         (config.FINISHED_STORAGE_DIR, "FINISHED_STORAGE_DIR"),
         (config.UNFINISHED_STORAGE_DIR, "UNFINISHED_STORAGE_DIR"),
         (config.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),
+        (config.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
         (config.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),
         (config.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
         (config.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),

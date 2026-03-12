@@ -73,6 +73,8 @@ app: base.QuartApp | None = None
 
 # The order of these migrations must be checked carefully to avoid conflicts
 _MIGRATIONS: Final[list[tuple[str, str]]] = [
+    # Archives
+    ("cache/archives", "archives"),
     # Audit
     ("storage-audit.log", "audit/storage-audit.log"),
     # Cache
@@ -176,6 +178,7 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "runtime",
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
+        paths.get_archives_dir(),
         paths.get_downloads_dir(),
         paths.get_finished_dir(),
         paths.get_quarantined_dir(),

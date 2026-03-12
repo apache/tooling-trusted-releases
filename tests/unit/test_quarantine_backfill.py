@@ -184,17 +184,19 @@ def _patch_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     unfinished_dir: pathlib.Path,
-    cache_dir: pathlib.Path,
+    archives_dir: pathlib.Path,
 ) -> None:
     monkeypatch.setattr(quarantine.paths, "get_unfinished_dir", lambda: unfinished_dir)
-    monkeypatch.setattr(quarantine.paths, "get_cache_archives_dir", lambda: cache_dir)
+    monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: archives_dir)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_path / "temporary")
+    monkeypatch.setattr(quarantine, "_backfill_done_file", lambda: tmp_path / "cache" / "archive-backfill.done")
 
 
 def _setup_dirs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     unfinished_dir = tmp_path / "unfinished"
-    cache_dir = tmp_path / "cache" / "archives"
+    archives_dir = tmp_path / "archives"
+    cache_dir = tmp_path / "cache"
     staging_dir = tmp_path / "temporary"
-    for d in [unfinished_dir, cache_dir, staging_dir]:
+    for d in [unfinished_dir, archives_dir, cache_dir, staging_dir]:
         d.mkdir(parents=True)
-    return unfinished_dir, cache_dir
+    return unfinished_dir, archives_dir

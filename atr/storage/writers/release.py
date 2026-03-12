@@ -108,7 +108,7 @@ class CommitteeParticipant(FoundationCommitter):
         release_dirs = [
             paths.release_directory_base(release),
             paths.get_attestable_dir() / str(project_name) / str(version),
-            paths.get_cache_archives_dir() / str(project_name) / str(version),
+            paths.get_archives_dir() / str(project_name) / str(version),
             paths.get_quarantined_dir() / str(project_name) / str(version),
         ]
 
