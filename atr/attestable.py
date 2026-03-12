@@ -29,6 +29,7 @@ import atr.classify as classify
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -128,14 +129,44 @@ def github_tp_payload_path(
     return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.github-tp.json"
 
 
+async def github_tp_payload_read(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
+) -> github.TrustedPublisherPayload | None:
+    payload_path = github_tp_payload_path(project_key, version_key, revision_number)
+    if not await aiofiles.os.path.isfile(payload_path):
+        return None
+    try:
+        async with aiofiles.open(payload_path, encoding="utf-8") as f:
+            data = json.loads(await f.read())
+        if not isinstance(data, dict):
+            log.warning(f"TP payload was not a JSON object in {payload_path}")
+            return None
+        # Remove exp and nbf if they're stored - as of 2026-03-18 they're validated and then removed before storage
+        # but we might have older data
+        if "exp" in data:
+            del data["exp"]
+        if "nbf" in data:
+            del data["nbf"]
+        return github.TrustedPublisherPayload.model_validate(data)
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning(f"Failed to read TP payload from {payload_path}: {e}")
+        return None
+    except pydantic.ValidationError as e:
+        log.warning(f"Failed to validate TP payload from {payload_path}: {e}")
+        return None
+
+
 async def github_tp_payload_write(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
-    github_payload: dict[str, Any],
+    github_payload: github.TrustedPublisherPayload,
 ) -> None:
     payload_path = github_tp_payload_path(project_key, version_key, revision_number)
-    await util.atomic_write_file(payload_path, json.dumps(github_payload, indent=2))
+    # Dump the workflow payload, excluding exp and nbf - which shouldn't have made it this far. If they do,
+    # it's safe to remove them as they've been validated by the model already, and we should never store
+    # stale dates
+    await util.atomic_write_file(payload_path, json.dumps(github_payload.model_dump(exclude={"exp", "nbf"}), indent=2))
 
 
 async def load(

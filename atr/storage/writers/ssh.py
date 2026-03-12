@@ -19,9 +19,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
 import atr.db as db
+import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
@@ -86,13 +86,20 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
     async def add_workflow_key(
-        self, github_uid: str, github_nid: int, project_key: safe.ProjectKey, key: str, github_payload: dict[str, Any]
+        self,
+        github_uid: str,
+        github_nid: int,
+        project_key: safe.ProjectKey,
+        key: str,
+        github_payload: github.TrustedPublisherPayload,
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files
         ttl = 20 * 60
         expires = now + ttl
         fingerprint = util.key_ssh_fingerprint(key)
+        # Exclude nbf and exp as we've already validated this key - now protected by workflowkey "expires"
+        json_payload = github_payload.model_dump(exclude={"exp", "nbf"})
         wsk = sql.WorkflowSSHKey(
             fingerprint=fingerprint,
             key=key,
@@ -100,7 +107,7 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=self.__asf_uid,
             github_uid=github_uid,
             github_nid=github_nid,
-            github_payload=github_payload,
+            github_payload=json_payload,
             expires=expires,
         )
         self.__data.add(wsk)

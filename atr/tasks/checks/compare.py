@@ -18,7 +18,6 @@
 import asyncio
 import contextlib
 import dataclasses
-import json
 import os
 import pathlib
 import shutil
@@ -34,14 +33,12 @@ import dulwich.objects
 import dulwich.objectspec
 import dulwich.porcelain
 import dulwich.refs
-import pydantic
 
 import atr.attestable as attestable
 import atr.config as config
 import atr.log as log
 import atr.models.github as github_models
 import atr.models.results as results
-import atr.models.safe as safe
 import atr.paths as paths
 import atr.tasks.checks as checks
 import atr.util as util
@@ -95,7 +92,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         )
         return None
 
-    payload = await _load_tp_payload(args.project_key, args.version_key, args.revision_number)
+    payload = await attestable.github_tp_payload_read(args.project_key, args.version_key, args.revision_number)
     checkout_dir: str | None = None
     archive_dir: str | None = None
     if payload is not None:
@@ -332,27 +329,6 @@ async def _find_archive_root(archive_path: pathlib.Path, extract_dir: pathlib.Pa
         extra_entries=extra_entries,
     )
     return ArchiveRootResult(root=found_root, extra_entries=extra_entries)
-
-
-async def _load_tp_payload(
-    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
-) -> github_models.TrustedPublisherPayload | None:
-    payload_path = attestable.github_tp_payload_path(project_key, version_key, revision_number)
-    if not await aiofiles.os.path.isfile(payload_path):
-        return None
-    try:
-        async with aiofiles.open(payload_path, encoding="utf-8") as f:
-            data = json.loads(await f.read())
-        if not isinstance(data, dict):
-            log.warning(f"TP payload was not a JSON object in {payload_path}")
-            return None
-        return github_models.TrustedPublisherPayload.model_validate(data)
-    except (OSError, json.JSONDecodeError) as e:
-        log.warning(f"Failed to read TP payload from {payload_path}: {e}")
-        return None
-    except pydantic.ValidationError as e:
-        log.warning(f"Failed to validate TP payload from {payload_path}: {e}")
-        return None
 
 
 def _payload_summary(payload: github_models.TrustedPublisherPayload | None) -> dict[str, Any]:

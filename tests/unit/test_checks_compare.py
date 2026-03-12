@@ -26,6 +26,7 @@ import dulwich.objects
 import dulwich.refs
 import pytest
 
+import atr.attestable
 import atr.models.github
 import atr.models.safe
 import atr.models.sql
@@ -624,7 +625,7 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     compare = CompareRecorder(repo_only={"extra1.txt", "extra2.txt"})
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -653,7 +654,7 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
     recorder = RecorderStub(True)
     args = _make_args(recorder)
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(None))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(None))
     monkeypatch.setattr(
         atr.tasks.checks.compare,
         "_checkout_github_source",
@@ -680,7 +681,7 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
     compare = CompareRecorder(invalid={"PKG-INFO"})
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -707,7 +708,7 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
     compare = CompareRecorder(invalid={"bad1.txt", "bad2.txt"}, repo_only={"ok.txt"})
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -738,7 +739,7 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
     find_root = FindArchiveRootRecorder(root=None)
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -760,7 +761,7 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
     args = _make_args(recorder)
     payload = _make_payload()
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(None))
     monkeypatch.setattr(
         atr.tasks.checks.compare,
@@ -790,7 +791,7 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
     find_root = FindArchiveRootRecorder(root="artifact", extra_entries=["README.txt", "extra.txt"])
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -821,7 +822,7 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
     compare = CompareRecorder(repo_only=repo_only_files)
     tmp_root = tmp_path / "temporary-root"
 
-    monkeypatch.setattr(atr.tasks.checks.compare, "_load_tp_payload", PayloadLoader(payload))
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare, "_find_archive_root", find_root)
@@ -843,7 +844,7 @@ async def test_source_trees_skips_when_not_source(monkeypatch: pytest.MonkeyPatc
     args = _make_args(recorder)
 
     monkeypatch.setattr(
-        atr.tasks.checks.compare, "_load_tp_payload", RaiseAsync("_load_tp_payload should not be called")
+        atr.attestable, "github_tp_payload_read", RaiseAsync("github_tp_payload_read should not be called")
     )
 
     await atr.tasks.checks.compare.source_trees(args)
@@ -875,7 +876,7 @@ def _make_payload(
         "enterprise": "",
         "enterprise_id": "",
         "event_name": "push",
-        "exp": 1,
+        "exp": 99999999999,
         "head_ref": "",
         "iat": 1,
         "iss": "issuer",

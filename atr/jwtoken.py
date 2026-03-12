@@ -154,7 +154,7 @@ async def verify(token: str) -> dict[str, Any]:
     return claims
 
 
-async def verify_github_oidc(token: str) -> dict[str, Any]:
+async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
     header = jwt.get_unverified_header(token)
     dangerous_headers = {"jku", "x5u", "jwk"}
     if dangerous_headers.intersection(header.keys()):
@@ -215,7 +215,7 @@ async def verify_github_oidc(token: str) -> dict[str, Any]:
                 f"GitHub OIDC payload mismatch: {key} = {payload[key]} != {value}",
                 errorcode=401,
             )
-    return github.TrustedPublisherPayload.model_validate(payload).model_dump()
+    return github.TrustedPublisherPayload.model_validate(payload)
 
 
 def write_new_signing_key() -> str:

@@ -17,19 +17,23 @@
 
 from __future__ import annotations
 
+import time
+
+import pydantic
+
 from . import schema
 
 
 class TrustedPublisherPayload(schema.Subset):
     actor: str
-    actor_id: str
+    actor_id: int
     aud: str
     base_ref: str
     check_run_id: str
     enterprise: str
     enterprise_id: str
     event_name: str
-    exp: int
+    exp: int | None = None
     head_ref: str
     iat: int
     iss: str
@@ -51,3 +55,19 @@ class TrustedPublisherPayload(schema.Subset):
     workflow: str
     workflow_ref: str
     workflow_sha: str
+
+    @pydantic.field_validator("exp")
+    @classmethod
+    def _validate_exp(cls, value: int) -> int:
+        now = int(time.time())
+        if now > value:
+            raise ValueError("Token has expired")
+        return value
+
+    @pydantic.field_validator("nbf")
+    @classmethod
+    def _validate_nbf(cls, value: int | None) -> int | None:
+        now = int(time.time())
+        if value and now < value:
+            raise ValueError("Token not yet valid")
+        return value
