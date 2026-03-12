@@ -61,8 +61,7 @@ def compose_context(browser: Browser) -> Generator[BrowserContext]:
     page.get_by_role("button", name="Add files").click()
     page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
 
-    helpers.visit(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}")
-    _wait_for_tasks_banner_hidden(page, timeout=60000)
+    helpers.wait_for_upload_and_tasks(page, COMPOSE_URL, FILE_NAME)
 
     page.close()
 
@@ -76,11 +75,6 @@ def page_compose(compose_context: BrowserContext) -> Generator[Page]:
     """Navigate to the compose page with a fresh page for each test."""
     page = compose_context.new_page()
     helpers.visit(page, COMPOSE_URL)
-    _wait_for_tasks_banner_hidden(page, timeout=60000)
+    page.get_by_role("cell", name=FILE_NAME, exact=True).wait_for(timeout=60000)
     yield page
     page.close()
-
-
-def _wait_for_tasks_banner_hidden(page: Page, timeout: int = 30000) -> None:
-    """Wait for all background tasks to be completed."""
-    page.wait_for_selector("#ongoing-tasks-banner", state="hidden", timeout=timeout)
