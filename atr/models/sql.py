@@ -523,13 +523,17 @@ class Committee(sqlmodel.SQLModel, table=True):
     projects: list["Project"] = sqlmodel.Relationship(back_populates="committee")
 
     committee_members: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example(["sbp", "tn", "wave"])
+        default_factory=list,
+        sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
+        **example(["sbp", "tn", "wave"]),
     )
     committers: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example(["sbp", "tn", "wave"])
+        default_factory=list,
+        sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
+        **example(["sbp", "tn", "wave"]),
     )
     release_managers: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example(["wave"])
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example(["wave"])
     )
 
     # M-M: Committee -> [PublicSigningKey]
@@ -860,14 +864,16 @@ class Release(sqlmodel.SQLModel, table=True):
     see_also(Project.releases)
 
     package_managers: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example([])
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example([])
     )
     # TODO: Not all releases have a version
     # We could either make this str | None, or we could require version to be set on packages only
     # For example, Apache Airflow Providers do not have an overall version
     # They have one version per package, i.e. per provider
     version: str = sqlmodel.Field(**example("0.0.1"))
-    sboms: list[str] = sqlmodel.Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example([]))
+    sboms: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example([])
+    )
 
     # 1-1: Release -C-> ReleasePolicy
     # 1-1: ReleasePolicy -> Release
@@ -877,7 +883,9 @@ class Release(sqlmodel.SQLModel, table=True):
     )
 
     # VoteEntry is a Pydantic model, not a SQL model
-    votes: list[VoteEntry] = sqlmodel.Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    votes: list[VoteEntry] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
     vote_manual: bool = sqlmodel.Field(default=False, **example(False))
     vote_started: datetime.datetime | None = sqlmodel.Field(
         default=None,
@@ -1142,7 +1150,9 @@ class PublicSigningKey(sqlmodel.SQLModel, table=True):
     primary_declared_uid: str | None = sqlmodel.Field(**example("User <user@example.org>"))
     # The secondary UIDs declared in the key
     secondary_declared_uids: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example(["User <user@example.net>"])
+        default_factory=list,
+        sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
+        **example(["User <user@example.net>"]),
     )
     # The UID used by Apache, if available
     apache_uid: str | None = sqlmodel.Field(**example("user"))
@@ -1216,7 +1226,9 @@ class Quarantined(sqlmodel.SQLModel, table=True):
 # ReleasePolicy: Project
 class ReleasePolicy(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True)
-    mailto_addresses: list[str] = sqlmodel.Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    mailto_addresses: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
     manual_vote: bool = sqlmodel.Field(default=False)
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
@@ -1227,10 +1239,10 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     announce_release_subject: str = sqlmodel.Field(default="")
     announce_release_template: str = sqlmodel.Field(default="")
     binary_artifact_paths: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON)
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     source_artifact_paths: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON)
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     license_check_mode: LicenseCheckMode = sqlmodel.Field(default=LicenseCheckMode.BOTH)
     source_excludes_lightweight: list[str] = sqlmodel.Field(
