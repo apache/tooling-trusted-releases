@@ -230,21 +230,9 @@
 
     {% if is_viewing_as_admin_fn(current_user.uid) %}
       <h3 id="cache-control" class="mt-4">Check cache control</h3>
-
-      {% if not is_local_caching %}
-        <div class="mb-2">
-          <p>Click the button below to opt this release out of the global check cache</p>
-          <p>This will create a new revision and restart all checks.</p>
-        </div>
-        <div class="mb-2">{{ recheck_form|safe }}</div>
-      {% else %}
-        <div class="mb-2">
-          <p>This release is using a local check cache.</p>
-          <p>Click the button below to reset back to using the default global cache</p>
-          <p>This will create a new revision and update check results from the cache or new checks as appropriate</p>
-        </div>
-        <div class="mb-2">{{ cache_reset_form |safe }}</div>
-      {% endif %}
+      <p>Each button creates a new revision and restarts all checks.</p>
+      <div class="mb-2">{{ recheck_form|safe }}</div>
+      <div class="mb-2">{{ cache_reset_form|safe }}</div>
     {% endif %}
 
     <h3 id="delete-draft" class="mt-4">Delete this draft</h3>

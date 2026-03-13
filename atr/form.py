@@ -264,6 +264,7 @@ def render(  # noqa: C901
     wider_widgets: bool = False,
     skip: list[str] | None = None,
     confirm: str | None = None,
+    submit_disabled: bool = False,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -307,7 +308,10 @@ def render(  # noqa: C901
 
     form_children: list[htm.Element | htm.VoidElement | markupsafe.Markup] = hidden_fields + field_rows
 
-    submit_button = htpy.button(type="submit", class_=f"btn {submit_classes}")[submit_label]
+    submit_attrs: dict[str, Any] = {"type": "submit", "class_": f"btn {submit_classes}"}
+    if submit_disabled:
+        submit_attrs["disabled"] = True
+    submit_button = htpy.button(**submit_attrs)[submit_label]
     submit_div_contents: list[htm.Element | htm.VoidElement] = [submit_button]
     if cancel_url:
         cancel_link = htpy.a(href=cancel_url, class_="btn btn-link text-secondary")["Cancel"]
