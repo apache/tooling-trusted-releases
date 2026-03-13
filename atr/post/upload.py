@@ -18,7 +18,7 @@
 import asyncio
 import json
 import pathlib
-from typing import Final, Literal
+from typing import Literal
 
 import aiofiles
 import aiofiles.os
@@ -40,8 +40,6 @@ import atr.storage as storage
 import atr.storage.types as types
 import atr.util as util
 import atr.web as web
-
-_SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
 
 @post.typed
@@ -236,8 +234,8 @@ async def _add_files(
 
 def _construct_svn_url(committee_name: str, area: shared.upload.SvnArea, path: str, *, is_podling: bool) -> str:
     if is_podling:
-        return f"{_SVN_BASE_URL}/{area.value}/incubator/{committee_name}/{path}"
-    return f"{_SVN_BASE_URL}/{area.value}/{committee_name}/{path}"
+        return f"{area.value}/incubator/{committee_name}/{path}"
+    return f"{area.value}/{committee_name}/{path}"
 
 
 def _json_error(message: str, status: int) -> web.WerkzeugResponse:

@@ -17,7 +17,7 @@
 
 import asyncio
 import pathlib
-from typing import Any
+from typing import Any, Final
 
 import aiofiles.os
 import aioshutil
@@ -29,6 +29,8 @@ import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.checks as checks
+
+_SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
 
 class SvnImport(schema.Strict):
@@ -107,7 +109,7 @@ async def _import_files_core(args: SvnImport) -> str:
                 "-r",
                 args.revision,
                 "--",
-                args.svn_url,
+                f"{_SVN_BASE_URL}/{args.svn_url}",
                 str(temp_export_path),
             ]
 

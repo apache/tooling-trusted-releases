@@ -32,4 +32,5 @@ class UnsafeStr:
         return self._value
 
 
+# The Path type exists so we can give Quart a hint for type conversions
 Path = NewType("Path", UnsafeStr)
