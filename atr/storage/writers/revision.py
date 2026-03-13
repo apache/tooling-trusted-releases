@@ -375,10 +375,6 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             else:
                 old_revision = await interaction.latest_revision(release)
-            if set_local_cache:
-                release.check_cache_key = str(uuid.uuid4())
-            if reset_to_global_cache:
-                release.check_cache_key = None
 
         if clone_from is not None:
             old_release_dir = paths.release_directory_base(release) / str(clone_from)
@@ -470,6 +466,11 @@ class CommitteeParticipant(FoundationCommitter):
             except Exception:
                 await aioshutil.rmtree(temp_dir)
                 raise
+
+            if set_local_cache:
+                merged_release.check_cache_key = str(uuid.uuid4())
+            if reset_to_global_cache:
+                merged_release.check_cache_key = None
 
             archive_paths = detection.detect_archives_requiring_quarantine(path_to_hash, previous_attestable)
             if archive_paths:
