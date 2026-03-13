@@ -37,6 +37,7 @@ class VoteStatus(enum.Enum):
 
 
 class VoteEmail(schema.Strict):
+    name: str = schema.example("Example User")
     asf_uid_or_email: str = schema.example("user")
     from_email: str = schema.example("user@example.org")
     status: VoteStatus = schema.example(VoteStatus.BINDING)
@@ -62,6 +63,7 @@ class VoteDetails(schema.Strict):
     votes: dict[str, VoteEmail] = schema.example(
         {
             "user": VoteEmail(
+                name="Example User",
                 asf_uid_or_email="user",
                 from_email="user@example.org",
                 status=VoteStatus.BINDING,

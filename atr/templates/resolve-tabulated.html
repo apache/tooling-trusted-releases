@@ -27,6 +27,7 @@
       <thead>
         <tr>
           <th>ASF UID or email</th>
+          <th>Name</th>
           <th class="text-center">Vote</th>
           <th class="text-center">Status</th>
           <th class="text-center">Link</th>
@@ -34,20 +35,21 @@
         </tr>
       </thead>
       <tbody>
-        {% for asf_uid, vote_email in tabulated_votes.items() %}
+        {% for asf_uid, vote_detail in tabulated_votes.items() %}
           <tr>
-            <td class="atr-nowrap">{{ vote_email.asf_uid_or_email }}</td>
-            <td class="atr-nowrap text-center {% if vote_email.status.value == 'Binding' %}fw-bold{% endif %} {% if vote_email.vote.value == 'Yes' %}atr-green{% elif vote_email.vote.value == 'No' %}atr-red{% endif %}">
-              {{ vote_email.vote.value }}
+            <td class="atr-nowrap">{{ vote_detail.asf_uid_or_email }}</td>
+            <td class="atr-nowrap">{{ vote_detail.name }}</td>
+            <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %} {% if vote_detail.vote.value == 'Yes' %}atr-green{% elif vote_detail.vote.value == 'No' %}atr-red{% endif %}">
+              {{ vote_detail.vote.value }}
             </td>
-            <td class="atr-nowrap text-center {% if vote_email.status.value == 'Binding' %}fw-bold{% endif %}">
-              {{ vote_email.status.value }}
+            <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %}">
+              {{ vote_detail.status.value }}
             </td>
             <td class="atr-nowrap text-center">
-              <a href="https://lists.apache.org/thread/{{ vote_email.asf_eid }}"
+              <a href="https://lists.apache.org/thread/{{ vote_detail.asf_eid }}"
                  target="_blank">Email</a>
             </td>
-            <td>{{ vote_email.quotation }}</td>
+            <td>{{ vote_detail.quotation }}</td>
           </tr>
         {% endfor %}
       </tbody>

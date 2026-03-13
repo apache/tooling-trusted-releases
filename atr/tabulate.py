@@ -155,18 +155,19 @@ async def votes(  # noqa: C901
     tabulated_votes = {}
     start_unixtime = None
     message_count = 0
-    async for _mid, msg in util.thread_messages(thread_id):
+    async for mid, msg in util.thread_messages(thread_id):
         message_count += 1
         if message_count > MAX_THREAD_MESSAGES:
             raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
         from_raw = msg.get("from_raw", "")
-        ok, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid)
+        list_raw = msg.get("list_raw", "")
+        cc = msg.get("cc", "").split(",\n")
+        ok, name, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid, list_raw, cc)
         if not ok:
             continue
 
         if asf_uid is not None:
             asf_uid_or_email = asf_uid
-            list_raw = msg.get("list_raw", "")
             status = await _vote_status(asf_uid, list_raw, committee)
         else:
             asf_uid_or_email = from_email_lower
@@ -196,6 +197,7 @@ async def votes(  # noqa: C901
         quotation = " // ".join([c[1] for c in castings])
 
         vote_email = models.tabulate.VoteEmail(
+            name=name,
             asf_uid_or_email=asf_uid_or_email,
             from_email=from_email_lower,
             status=status,
@@ -289,17 +291,28 @@ def _vote_continue(line: str) -> bool:
     return False
 
 
-def _vote_identity(from_raw: str, email_to_uid: dict[str, str]) -> tuple[bool, str, str | None]:
+def _vote_identity(
+    from_raw: str, email_to_uid: dict[str, str], list_email: str, cc: list[str]
+) -> tuple[bool, str, str, str | None]:
     from_email_lower = util.email_from_uid(from_raw)
     if not from_email_lower:
-        return False, "", None
+        return False, "", "", None
+    name = ""
     from_email_lower = from_email_lower.removesuffix(".invalid")
     asf_uid = None
     if from_email_lower.endswith("@apache.org"):
+        name = "-"
         asf_uid = from_email_lower.split("@")[0]
-    elif from_email_lower in email_to_uid:
-        asf_uid = email_to_uid[from_email_lower]
-    return True, from_email_lower, asf_uid
+    else:
+        if "via" in from_raw and from_email_lower.replace("@", ".") in list_email:
+            # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
+            name = from_raw[: from_raw.index("via") - 1]
+            if cc:
+                from_email_lower = util.email_from_uid(cc[-1]) or from_email_lower
+        if from_email_lower in email_to_uid:
+            asf_uid = email_to_uid[from_email_lower]
+
+    return True, name, from_email_lower, asf_uid
 
 
 def _vote_outcome_format(
