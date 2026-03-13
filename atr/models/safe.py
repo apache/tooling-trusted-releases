@@ -78,6 +78,10 @@ class SafeType:
             serialization=core_schema.to_string_ser_schema(),
         )
 
+    @classmethod
+    def __get_pydantic_json_schema__(cls, _core_schema: Any, _handler: Any) -> dict[str, Any]:
+        return {"type": "string"}
+
 
 class Alphanumeric(SafeType):
     @classmethod
