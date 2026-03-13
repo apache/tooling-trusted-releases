@@ -31,6 +31,7 @@ import ssl
 import tarfile
 import tempfile
 import unicodedata
+import urllib.parse
 import uuid
 import zipfile
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
@@ -640,6 +641,28 @@ def key_ssh_fingerprint(ssh_key_string: str) -> str:
         raise SshFingerprintError(str(e)) from e
 
 
+def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
+
+    if pattern == "!":
+        # Special case, "!" matches None
+        return value is None
+    if (pattern is None) or (value is None):
+        return False
+    negate = False
+    raw_pattern = pattern
+    if raw_pattern.startswith("!"):
+        raw_pattern = raw_pattern[1:]
+        negate = True
+    try:
+        regex = validation.compile_ignore_pattern(raw_pattern)
+    except ValueError:
+        return False
+    matched = regex.search(value) is not None
+    if negate:
+        return not matched
+    return matched
+
+
 def key_ssh_fingerprint_core(ssh_key_string: str) -> str:
     # The format should be as in *.pub or authorized_keys files
     # I.e. TYPE DATA COMMENT
@@ -662,27 +685,6 @@ def key_ssh_fingerprint_core(ssh_key_string: str) -> str:
         return f"SHA256:{fingerprint_b64}"
 
     raise ValueError("Invalid SSH key format")
-
-
-def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
-    if pattern == "!":
-        # Special case, "!" matches None
-        return value is None
-    if (pattern is None) or (value is None):
-        return False
-    negate = False
-    raw_pattern = pattern
-    if raw_pattern.startswith("!"):
-        raw_pattern = raw_pattern[1:]
-        negate = True
-    try:
-        regex = validation.compile_ignore_pattern(raw_pattern)
-    except ValueError:
-        return False
-    matched = regex.search(value) is not None
-    if negate:
-        return not matched
-    return matched
 
 
 async def number_of_release_files(release: sql.Release) -> int:
@@ -988,8 +990,8 @@ async def task_archive_url(task_mid: str, recipient: str | None = None) -> str |
         return DEV_THREAD_URLS[task_mid]
 
     recipient_address = recipient or USER_TESTS_ADDRESS
-    lid = recipient_address.replace("@", ".")
-    url = f"https://lists.apache.org/api/email.json?id=%3C{task_mid}%3E&listid=%3C{lid}%3E"
+    lid = urllib.parse.quote(recipient_address.replace("@", "."))
+    url = f"https://lists.apache.org/api/email.json?id=%3C{urllib.parse.quote(task_mid)}%3E&listid=%3C{lid}%3E"
     try:
         async with create_secure_session() as session:
             async with session.get(url) as response:
@@ -999,7 +1001,7 @@ async def task_archive_url(task_mid: str, recipient: str | None = None) -> str |
         mid = email_data["mid"]
         if not isinstance(mid, str):
             return None
-        return "https://lists.apache.org/thread/" + mid
+        return "https://lists.apache.org/thread/" + urllib.parse.quote(mid)
     except Exception:
         log.exception(f"Failed to get archive URL for task {task_mid}")
         return None
@@ -1010,7 +1012,7 @@ async def thread_messages(
 ) -> AsyncGenerator[tuple[str, dict[str, Any]]]:
     """Iterate over mailing list thread messages in chronological order."""
 
-    thread_url = f"https://lists.apache.org/api/thread.json?id={thread_id}"
+    thread_url = f"https://lists.apache.org/api/thread.json?id={urllib.parse.quote(thread_id)}"
 
     try:
         async with create_secure_session() as session:
@@ -1031,7 +1033,7 @@ async def thread_messages(
     if not message_ids:
         return
 
-    email_urls = [f"https://lists.apache.org/api/email.json?id={mid}" for mid in message_ids]
+    email_urls = [f"https://lists.apache.org/api/email.json?id={urllib.parse.quote(mid)}" for mid in message_ids]
 
     messages: list[dict[str, Any]] = []
 
