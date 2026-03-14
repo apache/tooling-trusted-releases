@@ -262,7 +262,7 @@ pygments==2.19.2
     # via rich
 pyhumps==3.8.0
     # via quart-schema
-pyjwt==2.11.0
+pyjwt==2.12.0
     # via tooling-trusted-releases
 pyright==1.1.408
 python-dateutil==2.9.0.post0
