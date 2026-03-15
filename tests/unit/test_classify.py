@@ -20,6 +20,21 @@ import pathlib
 import atr.classify as classify
 
 
+def test_archive_defaults_to_source():
+    path = pathlib.Path("apache-widget-1.0.tar.gz")
+    assert classify.classify(path) == classify.FileType.SOURCE
+
+
+def test_archive_tgz_defaults_to_source():
+    path = pathlib.Path("apache-widget-1.0.tgz")
+    assert classify.classify(path) == classify.FileType.SOURCE
+
+
+def test_archive_zip_defaults_to_source():
+    path = pathlib.Path("apache-widget-1.0.zip")
+    assert classify.classify(path) == classify.FileType.SOURCE
+
+
 def test_binary_matcher_classifies_as_binary(tmp_path):
     path = pathlib.Path("maven-mvnd-1.0.4-windows-amd64.zip")
     result = classify.classify(path, base_path=tmp_path, binary_matcher=_matches_windows)
@@ -46,6 +61,11 @@ def test_binary_stem_heuristic():
 def test_disallowed_files_detected():
     path = pathlib.Path(".DS_Store")
     assert classify.classify(path) == classify.FileType.DISALLOWED
+
+
+def test_jar_defaults_to_binary():
+    path = pathlib.Path("apache-widget-1.0.jar")
+    assert classify.classify(path) == classify.FileType.BINARY
 
 
 def test_matchers_from_policy_builds_both(tmp_path):
