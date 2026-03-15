@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@c7163bef6f5340d7a8f365497a1cb2ac7161ffa6
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@12284bdf253362b539e87129c457965794103028
     # via tooling-trusted-releases
 asyncssh==2.22.0
     # via tooling-trusted-releases
@@ -108,13 +108,13 @@ editorconfig==0.17.1
     #   jsbeautifier
 email-validator==2.3.0
     # via tooling-trusted-releases
-exarch==0.2.7
+exarch==0.2.8
     # via tooling-trusted-releases
 ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.25.1
+filelock==3.25.2
     # via
     #   python-discovery
     #   virtualenv
@@ -235,7 +235,7 @@ propcache==0.4.1
     #   yarl
 psutil==7.2.2
     # via tooling-trusted-releases
-puremagic==2.0.2
+puremagic==2.1.0
     # via tooling-trusted-releases
 py-serializable==2.1.0
     # via cyclonedx-python-lib
@@ -262,7 +262,7 @@ pygments==2.19.2
     # via rich
 pyhumps==3.8.0
     # via quart-schema
-pyjwt==2.11.0
+pyjwt==2.12.1
     # via tooling-trusted-releases
 pyright==1.1.408
 python-dateutil==2.9.0.post0
@@ -317,7 +317,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-ruff==0.15.5
+ruff==0.15.6
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
