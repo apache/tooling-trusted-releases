@@ -526,12 +526,12 @@ class Committee(sqlmodel.SQLModel, table=True):
     committee_members: list[str] = sqlmodel.Field(
         default_factory=list,
         sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
-        **example(["sbp", "tn", "wave"]),
+        **example(["sbp", "arm", "wave"]),
     )
     committers: list[str] = sqlmodel.Field(
         default_factory=list,
         sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
-        **example(["sbp", "tn", "wave"]),
+        **example(["sbp", "arm", "wave"]),
     )
     release_managers: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example(["wave"])
@@ -547,7 +547,7 @@ class Committee(sqlmodel.SQLModel, table=True):
     def display_name(self) -> str:
         """Get the display name for the committee."""
         name = self.full_name or self.name.title()
-        return f"{name} (PPMC)" if self.is_podling else name
+        return f"{name} (Incubating)" if self.is_podling else name
 
 
 def see_also(arg: Any) -> None:
