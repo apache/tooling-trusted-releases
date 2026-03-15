@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Final
 
 import atr.analysis as analysis
+import atr.detection as detection
 import atr.util as util
 
 _BINARY_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](binary-assembly|binary|bin)(?=[-_]|$)")
@@ -64,6 +65,8 @@ def classify(
             return FileType.SOURCE
         if _BINARY_STEM.search(stem):
             return FileType.BINARY
+        if any(path_str.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
+            return FileType.SOURCE
 
     return FileType.BINARY
 

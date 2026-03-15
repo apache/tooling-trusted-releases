@@ -21,6 +21,7 @@ import dataclasses
 import datetime
 import functools
 import json
+import pathlib
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles
@@ -29,12 +30,12 @@ import pydantic
 import sqlmodel
 
 if TYPE_CHECKING:
-    import pathlib
     from collections.abc import Awaitable, Callable
 
     import atr.models.schema as schema
 
 import atr.attestable as attestable
+import atr.classify as classify
 import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
@@ -193,22 +194,29 @@ class Recorder:
     async def primary_path_is_binary(self) -> bool:
         if self.primary_rel_path is None:
             return False
-        project = await self.project()
-        if not project.policy_binary_artifact_paths:
-            return False
-        matches = util.create_path_matcher(project.policy_binary_artifact_paths, None, self.abs_path_base())
-        abs_path = await self.abs_path()
-        return matches(str(abs_path))
+        return (await self._classify_primary_path()) == classify.FileType.BINARY
 
     async def primary_path_is_source(self) -> bool:
         if self.primary_rel_path is None:
             return False
+        return (await self._classify_primary_path()) == classify.FileType.SOURCE
+
+    async def _classify_primary_path(self) -> classify.FileType:
+        if self.primary_rel_path is None:
+            return classify.FileType.BINARY
         project = await self.project()
-        if not project.policy_source_artifact_paths:
-            return False
-        matches = util.create_path_matcher(project.policy_source_artifact_paths, None, self.abs_path_base())
-        abs_path = await self.abs_path()
-        return matches(str(abs_path))
+        base_path = self.abs_path_base()
+        source_matcher, binary_matcher = classify.matchers_from_policy(
+            project.policy_source_artifact_paths,
+            project.policy_binary_artifact_paths,
+            base_path,
+        )
+        return classify.classify(
+            pathlib.Path(self.primary_rel_path),
+            base_path=base_path,
+            source_matcher=source_matcher,
+            binary_matcher=binary_matcher,
+        )
 
     @property
     def cached(self) -> bool:
