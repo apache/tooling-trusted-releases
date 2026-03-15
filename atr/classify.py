@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Final
 
 import atr.analysis as analysis
+import atr.util as util
 
 _BINARY_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](binary-assembly|binary|bin)(?=[-_]|$)")
 _SOURCE_STEM: Final[re.Pattern[str]] = re.compile(r"[-_](source-release|sources|source|src)(?=[-_]|$)")
@@ -38,6 +39,7 @@ def classify(
     path: pathlib.Path,
     base_path: pathlib.Path | None = None,
     source_matcher: Callable[[str], bool] | None = None,
+    binary_matcher: Callable[[str], bool] | None = None,
 ) -> FileType:
     if (path.name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
         return FileType.DISALLOWED
@@ -52,13 +54,27 @@ def classify(
         return FileType.METADATA
 
     if search and search.group("artifact"):
+        abs_str = str(base_path / path) if (base_path is not None) else None
+        if (source_matcher is not None) and (abs_str is not None) and source_matcher(abs_str):
+            return FileType.SOURCE
+        if (binary_matcher is not None) and (abs_str is not None) and binary_matcher(abs_str):
+            return FileType.BINARY
         stem = path_str[: search.start()]
         if _SOURCE_STEM.search(stem):
             return FileType.SOURCE
         if _BINARY_STEM.search(stem):
             return FileType.BINARY
-        if (source_matcher is not None) and (base_path is not None):
-            if source_matcher(str(base_path / path)):
-                return FileType.SOURCE
 
     return FileType.BINARY
+
+
+def matchers_from_policy(
+    source_artifact_paths: list[str],
+    binary_artifact_paths: list[str],
+    base_path: pathlib.Path,
+) -> tuple[Callable[[str], bool] | None, Callable[[str], bool] | None]:
+    # TODO: Arguably this should just go into classify(...)
+    # Then it could take a release policy or None
+    source_matcher = util.create_path_matcher(source_artifact_paths, None, base_path) if source_artifact_paths else None
+    binary_matcher = util.create_path_matcher(binary_artifact_paths, None, base_path) if binary_artifact_paths else None
+    return source_matcher, binary_matcher
