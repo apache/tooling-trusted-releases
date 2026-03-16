@@ -38,26 +38,26 @@ class AsyncContextManager:
 class FakeRevision:
     def __init__(
         self,
-        release_name: str,
+        release_key: str,
         release: object,
         asfuid: str,
         created: object,
         phase: sql.ReleasePhase,
         description: str | None,
-        merge_base_revision_name: str | None = None,
+        merge_base_revision_key: str | None = None,
         was_quarantined: bool = False,
     ):
         self.asfuid = asfuid
         self.created = created
         self.description = description
-        self.merge_base_revision_name = merge_base_revision_name
-        self.name = ""
+        self.merge_base_revision_key = merge_base_revision_key
+        self.key = ""
         self.number = ""
-        self.parent_name: str | None = None
+        self.parent_key: str | None = None
         self.seq: int = 0
         self.phase = phase
         self.release = release
-        self.release_name = release_name
+        self.release_key = release_key
         self.was_quarantined = was_quarantined
 
     @property
@@ -66,10 +66,10 @@ class FakeRevision:
 
 
 class MockSafeData:
-    def __init__(self, parent_name: str, new_number: str = "00006"):
+    def __init__(self, parent_key: str, new_number: str = "00006"):
         self._new_revision: FakeRevision | None = None
         self._new_number = new_number
-        self._parent_name = parent_name
+        self._parent_key = parent_key
         self.add = mock.MagicMock(side_effect=self._add)
         self.begin = mock.MagicMock(return_value=AsyncContextManager())
         self.begin_immediate = mock.AsyncMock()
@@ -84,10 +84,10 @@ class MockSafeData:
     async def _flush(self) -> None:
         if self._new_revision is None:
             raise RuntimeError("Expected data.add to set _new_revision before flush")
-        self._new_revision.name = f"{self._new_revision.release_name} {self._new_number}"
+        self._new_revision.key = f"{self._new_revision.release_key} {self._new_number}"
         self._new_revision.number = self._new_number
         self._new_revision.seq = int(self._new_number)
-        self._new_revision.parent_name = self._parent_name
+        self._new_revision.parent_key = self._parent_key
 
     async def _merge(self, obj: object) -> object:
         return obj
@@ -111,21 +111,21 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     release.project = mock.MagicMock()
     release.project.release_policy = None
     release.release_policy = None
-    release_name = sql.release_name("proj", "1.0")
+    release_key = sql.release_key("proj", "1.0")
 
     latest_revision = mock.MagicMock()
-    latest_revision.name = f"{release_name} 00005"
+    latest_revision.key = f"{release_key} 00005"
     latest_revision.number = "00005"
     latest_revision.safe_number = safe.RevisionNumber("00005")
 
     selected_revision = mock.MagicMock()
-    selected_revision.name = f"{release_name} 00002"
+    selected_revision.key = f"{release_key} 00002"
     selected_revision.number = "00002"
     selected_revision.safe_number = safe.RevisionNumber("00002")
 
     mock_session = _mock_db_session(release, selected_revision=selected_revision)
     participant = _make_participant()
-    safe_data = MockSafeData(parent_name=latest_revision.name)
+    safe_data = MockSafeData(parent_key=latest_revision.key)
     merge_mock = mock.AsyncMock()
 
     with (
@@ -199,15 +199,15 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     release.project = mock.MagicMock()
     release.project.release_policy = None
     release.release_policy = None
-    release_name = sql.release_name("proj", "1.0")
+    release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
-    old_revision.name = f"{release_name} 00005"
+    old_revision.key = f"{release_key} 00005"
     old_revision.number = "00005"
     old_revision.safe_number = safe.RevisionNumber("00005")
 
     intervening_revision = mock.MagicMock()
-    intervening_revision.name = f"{release_name} 00006"
+    intervening_revision.key = f"{release_key} 00006"
     intervening_revision.number = "00006"
     intervening_revision.safe_number = safe.RevisionNumber("00006")
 
@@ -216,7 +216,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockSafeData(parent_name=f"{release_name} 00006", new_number="00007")
+    safe_data = MockSafeData(parent_key=f"{release_key} 00006", new_number="00007")
     merge_mock = mock.AsyncMock()
     load_mock = mock.AsyncMock(side_effect=[first_attestable, second_attestable])
 
@@ -249,7 +249,9 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00007"),
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
-        created_revision = await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        created_revision = await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test"
+        )
 
     assert isinstance(created_revision, FakeRevision)
     assert merge_mock.await_count == 1
@@ -279,7 +281,9 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
-            await participant.create_revision_with_quarantine("proj", "1.0", "test", modify=modify)
+            await participant.create_revision_with_quarantine(
+                safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", modify=modify
+            )
 
     assert isinstance(received_args["path"], pathlib.Path)
     assert received_args["old_rev"] is None
@@ -293,10 +297,10 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     release.project = mock.MagicMock()
     release.project.release_policy = None
     release.release_policy = None
-    release_name = sql.release_name("proj", "1.0")
+    release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
-    old_revision.name = f"{release_name} 00001"
+    old_revision.name = f"{release_key} 00001"
     old_revision.number = "00001"
     old_revision.safe_number = safe.RevisionNumber("00001")
 
@@ -308,7 +312,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockSafeData(parent_name=old_revision.name, new_number="00002")
+    safe_data = MockSafeData(parent_key=old_revision.name, new_number="00002")
 
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),

@@ -22,17 +22,17 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 
 
-def test_check_result_ignore_has_project_name_field() -> None:
+def test_check_result_ignore_has_project_key_field() -> None:
     cri = sql.CheckResultIgnore(
-        project_name="test",
+        project_key="test",
         release_glob="test-1.0.*",
     )  # pyright: ignore[reportCallIssue]
-    assert cri.project_name == "test"
+    assert cri.project_key == "test"
 
 
 def test_ignore_add_args_accepts_all_fields() -> None:
     args = api.IgnoreAddArgs(
-        project_name=safe.ProjectKey("example"),
+        project_key=safe.ProjectKey("example"),
         release_glob="example-1.0.*",
         revision_number="00001",
         checker_glob="atr.tasks.checks.rat.*",
@@ -41,22 +41,22 @@ def test_ignore_add_args_accepts_all_fields() -> None:
         status=sql.CheckResultStatusIgnore.WARNING,
         message_glob="*warning*",
     )
-    assert args.project_name == safe.ProjectKey("example")
+    assert args.project_key == safe.ProjectKey("example")
     assert args.release_glob == "example-1.0.*"
     assert args.status == sql.CheckResultStatusIgnore.WARNING
 
 
 def test_ignore_add_args_rejects_invalid_pattern() -> None:
     with pytest.raises(ValueError):
-        api.IgnoreAddArgs(project_name=safe.ProjectKey("test"), checker_glob="^(?=lookahead)$")
+        api.IgnoreAddArgs(project_key=safe.ProjectKey("test"), checker_glob="^(?=lookahead)$")
 
 
-def test_ignore_add_args_requires_project_name() -> None:
-    args = api.IgnoreAddArgs(project_name=safe.ProjectKey("test"), checker_glob="atr.tasks.*")
-    assert str(args.project_name) == "test"
+def test_ignore_add_args_requires_project_key() -> None:
+    args = api.IgnoreAddArgs(project_key=safe.ProjectKey("test"), checker_glob="atr.tasks.*")
+    assert str(args.project_key) == "test"
 
 
-def test_ignore_delete_args_requires_project_name() -> None:
-    args = api.IgnoreDeleteArgs(project_name=safe.ProjectKey("test"), id=1)
-    assert str(args.project_name) == "test"
+def test_ignore_delete_args_requires_project_key() -> None:
+    args = api.IgnoreDeleteArgs(project_key=safe.ProjectKey("test"), id=1)
+    assert str(args.project_key) == "test"
     assert args.id == 1

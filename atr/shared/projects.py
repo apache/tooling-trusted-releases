@@ -38,7 +38,7 @@ type DELETE_PROJECT = Literal["delete_project"]
 
 
 class AddProjectForm(form.Form):
-    committee_name: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
     display_name: str = form.label(
         "Display name",
         'For example, "Apache Example" or "Apache Example Components". '
@@ -52,7 +52,7 @@ class AddProjectForm(form.Form):
 
     @pydantic.model_validator(mode="after")
     def validate_fields(self) -> AddProjectForm:
-        committee_name = self.committee_name
+        committee_key = self.committee_key
         display_name = self.display_name.strip()
         label = self.label.strip()
 
@@ -90,8 +90,8 @@ class AddProjectForm(form.Form):
             raise ValueError("Display name must be alphanumeric and may include spaces or dots or plus signs.")
 
         # Validate label starts with committee name
-        if not (label.startswith(committee_name + "-") or (label == committee_name)):
-            raise ValueError(f"Label must be '{committee_name}' or start with '{committee_name}-'.")
+        if not (label.startswith(committee_key + "-") or (label == committee_key)):
+            raise ValueError(f"Label must be '{committee_key}' or start with '{committee_key}-'.")
 
         # Validate label is lowercase
         if not label.islower():
@@ -106,7 +106,7 @@ class AddProjectForm(form.Form):
 
 class ComposePolicyForm(form.Form):
     variant: COMPOSE = form.value(COMPOSE)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     source_artifact_paths: str = form.label(
         "Source artifact paths",
         "Paths to source artifacts to be included in the release.",
@@ -182,7 +182,7 @@ class ComposePolicyForm(form.Form):
 
 class VotePolicyForm(form.Form):
     variant: VOTE = form.value(VOTE)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     github_vote_workflow_path: str = form.label(
         "GitHub vote workflow paths",
         "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
@@ -244,7 +244,7 @@ class VotePolicyForm(form.Form):
 
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     github_finish_workflow_path: str = form.label(
         "GitHub finish workflow paths",
         "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
@@ -278,35 +278,35 @@ class FinishPolicyForm(form.Form):
 
 class AddCategoryForm(form.Form):
     variant: ADD_CATEGORY = form.value(ADD_CATEGORY)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     category_to_add: str = form.label("New category name")
 
 
 class RemoveCategoryForm(form.Form):
     variant: REMOVE_CATEGORY = form.value(REMOVE_CATEGORY)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     category_to_remove: str = form.label("Category to remove", widget=form.Widget.HIDDEN)
 
 
 class AddLanguageForm(form.Form):
     variant: ADD_LANGUAGE = form.value(ADD_LANGUAGE)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     language_to_add: str = form.label("New language name")
 
 
 class RemoveLanguageForm(form.Form):
     variant: REMOVE_LANGUAGE = form.value(REMOVE_LANGUAGE)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
     language_to_remove: str = form.label("Language to remove", widget=form.Widget.HIDDEN)
 
 
 class DeleteProjectForm(form.Form):
     variant: DELETE_PROJECT = form.value(DELETE_PROJECT)
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
 class DeleteSelectedProject(form.Form):
-    project_name: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
 type ProjectViewForm = Annotated[

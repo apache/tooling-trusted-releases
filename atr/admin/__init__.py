@@ -71,7 +71,7 @@ class BrowseAsUserForm(form.Form):
 
 
 class DeleteCommitteeKeysForm(form.Form):
-    committee_name: str = form.label("Committee", widget=form.Widget.SELECT)
+    committee_key: str = form.label("Committee", widget=form.Widget.SELECT)
     confirm_delete: Literal["DELETE KEYS"] = form.label("Confirmation", "Type DELETE KEYS to confirm.")
 
 
@@ -130,7 +130,7 @@ class SessionDataCommon(NamedTuple):
 async def all_releases(session: web.Committer) -> str:
     """Display a list of all releases across all phases."""
     async with db.session() as data:
-        releases = await data.release(_project=True, _committee=True).order_by(sql.Release.name).all()
+        releases = await data.release(_project=True, _committee=True).order_by(sql.Release.key).all()
     return await template.render("all-releases.html", releases=releases, release_as_url=mapping.release_as_url)
 
 
@@ -278,15 +278,15 @@ async def data_model(session: web.Committer, model: str = "Committee") -> str:
 async def delete_committee_keys_get(session: web.Committer) -> str | web.WerkzeugResponse:
     """Display the form to delete committee keys."""
     async with db.session() as data:
-        all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.name).all()
+        all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.key).all()
         committees_with_keys = [c for c in all_committees if c.public_signing_keys]
 
-    committee_choices = [(c.name, c.display_name) for c in committees_with_keys]
+    committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
 
     rendered_form = form.render(
         model_cls=DeleteCommitteeKeysForm,
         submit_label="Delete all keys for selected committee",
-        defaults={"committee_name": committee_choices},
+        defaults={"committee_key": committee_choices},
     )
     return await template.render("delete-committee-keys.html", form=rendered_form)
 
@@ -297,10 +297,10 @@ async def delete_committee_keys_post(
     session: web.Committer, delete_form: DeleteCommitteeKeysForm
 ) -> str | web.WerkzeugResponse:
     """Delete all keys for selected committee."""
-    committee_name = delete_form.committee_name
+    committee_key = delete_form.committee_key
 
     async with db.session() as data:
-        committee_query = data.committee(name=committee_name)
+        committee_query = data.committee(key=committee_key)
         via = sql.validate_instrumented_attribute
         committee_query.query = committee_query.query.options(
             orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
@@ -308,12 +308,12 @@ async def delete_committee_keys_post(
         committee = await committee_query.get()
 
         if not committee:
-            await quart.flash(f"Committee '{committee_name}' not found.", "error")
+            await quart.flash(f"Committee '{committee_key}' not found.", "error")
             return await session.redirect(delete_committee_keys_get)
 
         keys_to_check = list(committee.public_signing_keys)
         if not keys_to_check:
-            await quart.flash(f"Committee '{committee_name}' has no keys.", "info")
+            await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
             return await session.redirect(delete_committee_keys_get)
 
         num_removed = len(committee.public_signing_keys)
@@ -328,7 +328,7 @@ async def delete_committee_keys_post(
 
         await data.commit()
         await quart.flash(
-            f"Removed {util.plural(num_removed, 'key link')} for '{committee_name}'. "
+            f"Removed {util.plural(num_removed, 'key link')} for '{committee_key}'. "
             f"Deleted {util.plural(unused_deleted, 'unused key')}.",
             "success",
         )
@@ -340,7 +340,7 @@ async def delete_committee_keys_post(
 async def delete_release_get(session: web.Committer) -> str | web.WerkzeugResponse:
     """Display the form to delete releases."""
     async with db.session() as data:
-        releases = await data.release(_project=True).order_by(sql.Release.name).all()
+        releases = await data.release(_project=True).order_by(sql.Release.key).all()
 
     if releases:
         releases_widget = htpy.div[
@@ -350,11 +350,11 @@ async def delete_release_get(session: web.Committer) -> str | web.WerkzeugRespon
                         class_="form-check-input",
                         type="checkbox",
                         name="releases_to_delete",
-                        value=release.name,
-                        id=f"release_{release.name}",
+                        value=release.key,
+                        id=f"release_{release.key}",
                     ),
-                    htpy.label(".form-check-label", for_=f"release_{release.name}")[
-                        htpy.strong[release.name],
+                    htpy.label(".form-check-label", for_=f"release_{release.key}")[
+                        htpy.strong[release.key],
                         f" ({release.project.display_name}, {release.phase.value.upper()})",
                     ],
                 ]
@@ -473,12 +473,12 @@ async def keys_regenerate_all_get(session: web.Committer) -> web.QuartResponse:
 async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
     """Regenerate the KEYS file for all committees."""
     async with db.session() as data:
-        committee_names = [c.name for c in await data.committee().all()]
+        committee_keys = [c.key for c in await data.committee().all()]
 
     outcomes = outcome.List[str]()
     async with storage.write() as write:
-        for committee_name in committee_names:
-            wacm_outcome = write.as_committee_member_outcome(committee_name)
+        for committee_key in committee_keys:
+            wacm_outcome = write.as_committee_member_outcome(committee_key)
             wacm = wacm_outcome.result_or_none()
             if wacm is None:
                 continue
@@ -595,22 +595,22 @@ async def logs(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(recent_logs))
 
 
-@admin.get("/ongoing-tasks/<project_name>/<version_name>/<revision>")
+@admin.get("/ongoing-tasks/<project_key>/<version_key>/<revision>")
 async def ongoing_tasks_get(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer, project_key: str, version_key: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_name)
-    version = safe.VersionKey(version_name)
+    project = safe.ProjectKey(project_key)
+    version = safe.VersionKey(version_key)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
 
-@admin.post("/ongoing-tasks/<project_name>/<version_name>/<revision>")
+@admin.post("/ongoing-tasks/<project_key>/<version_key>/<revision>")
 async def ongoing_tasks_post(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer, project_key: str, version_key: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_name)
-    version = safe.VersionKey(version_name)
+    project = safe.ProjectKey(project_key)
+    version = safe.VersionKey(version_key)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
@@ -796,15 +796,15 @@ async def rotate_jwt_key_post(session: web.Committer, _rotate_form: RotateJwtKey
     return await session.redirect(rotate_jwt_key_get)
 
 
-@admin.get("/task-times/<project_name>/<version_name>/<revision_number>")
+@admin.get("/task-times/<project_key>/<version_key>/<revision_number>")
 async def task_times(
-    session: web.Committer, project_name: str, version_name: str, revision_number: str
+    session: web.Committer, project_key: str, version_key: str, revision_number: str
 ) -> web.QuartResponse:
     values = []
     async with db.session() as data:
         tasks = await data.task(
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             revision_number=revision_number,
         ).all()
         for task in tasks:
@@ -885,8 +885,8 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
                     htpy.td[task.status.value],
                     htpy.td[task.added.strftime("%H:%M:%S") if task.added else ""],
                     htpy.td[took_text],
-                    htpy.td[task.project_name or ""],
-                    htpy.td[task.version_name or ""],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
                     htpy.td[task.revision_number or ""],
                     htpy.td[error_text],
                 ]
@@ -918,8 +918,8 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
                     htpy.td[task.task_type.value],
                     htpy.td[task.added.strftime("%Y-%m-%d %H:%M:%S") if task.added else ""],
                     htpy.td[task.scheduled.strftime("%Y-%m-%d %H:%M:%S") if task.scheduled else ""],
-                    htpy.td[task.project_name or ""],
-                    htpy.td[task.version_name or ""],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
                     htpy.td[task.revision_number or ""],
                 ]
             )
@@ -1096,29 +1096,29 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
     fail_count = 0
     error_messages = []
 
-    for release_name in releases_to_delete:
+    for release_key in releases_to_delete:
         try:
             async with db.session() as data:
-                release = await data.release(name=release_name, _committee=True, _project=True).demand(
-                    RuntimeError(f"Release {release_name} not found")
+                release = await data.release(key=release_key, _committee=True, _project=True).demand(
+                    RuntimeError(f"Release {release_key} not found")
                 )
                 if release.committee is None:
-                    raise RuntimeError(f"Release {release_name} has no committee")
+                    raise RuntimeError(f"Release {release_key} has no committee")
             async with storage.write(session) as write:
-                waca = write.as_committee_admin(release.committee.name)
-                error = await waca.release.delete(release.safe_project_name, release.safe_version_name)
+                waca = write.as_committee_admin(release.committee.key)
+                error = await waca.release.delete(release.safe_project_key, release.safe_version_key)
                 # Ensure that deletion errors are reported to the user
                 if error is not None:
                     raise RuntimeError(error)
             success_count += 1
         except base.ASFQuartException as e:
-            log.error(f"Error deleting release {release_name}: {e}")
+            log.error(f"Error deleting release {release_key}: {e}")
             fail_count += 1
-            error_messages.append(f"{release_name}: {e}")
+            error_messages.append(f"{release_key}: {e}")
         except Exception as e:
-            log.exception(f"Unexpected error deleting release {release_name}:")
+            log.exception(f"Unexpected error deleting release {release_key}:")
             fail_count += 1
-            error_messages.append(f"{release_name}: Unexpected error ({e})")
+            error_messages.append(f"{release_key}: Unexpected error ({e})")
 
     if success_count > 0:
         await quart.flash(f"Successfully deleted {util.plural(success_count, 'release')}.", "success")
@@ -1177,15 +1177,15 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 async def _ongoing_tasks(
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.QuartResponse:
     try:
-        ongoing = await interaction.tasks_ongoing(project_name, version_name, revision)
+        ongoing = await interaction.tasks_ongoing(project_key, version_key, revision)
         return web.TextResponse(str(ongoing))
     except Exception:
-        log.exception(f"Error fetching ongoing task count for {project_name!s} {version_name!s} rev {revision!s}:")
+        log.exception(f"Error fetching ongoing task count for {project_key!s} {version_key!s} rev {revision!s}:")
         return web.TextResponse("")
 
 

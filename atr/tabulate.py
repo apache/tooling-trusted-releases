@@ -38,7 +38,7 @@ async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee 
             list_raw = msg.get("list_raw", "")
             committee_label = list_raw.split(".apache.org", 1)[0].split(".", 1)[-1]
             async with db.session() as data:
-                committee = await data.committee(name=committee_label).get()
+                committee = await data.committee(key=committee_label).get()
             break
     return committee
 
@@ -348,13 +348,13 @@ def _vote_resolution_body(
     asf_uid: str,
     thread_id: str,
 ) -> Generator[str]:
-    committee_name = committee.display_name
+    committee_key = committee.display_name
     if release.podling_thread_id:
-        committee_name = "Incubator"
-    yield f"Dear {committee_name} participants,"
+        committee_key = "Incubator"
+    yield f"Dear {committee_key} participants,"
     yield ""
     outcome = "passed" if passed else "failed"
-    yield f"The vote on {release.project.name} {release.version} {outcome}."
+    yield f"The vote on {release.project.key} {release.version} {outcome}."
     yield ""
 
     if release.podling_thread_id:
@@ -434,7 +434,7 @@ async def _vote_status(asf_uid: str, list_raw: str, committee: sql.Committee | N
     if util.is_dev_environment():
         committee_label = list_raw.split(".apache.org", 1)[0].split(".", 1)[-1]
         async with db.session() as data:
-            committee = await data.committee(name=committee_label).get()
+            committee = await data.committee(key=committee_label).get()
     if committee is not None:
         if asf_uid in committee.committee_members:
             status = models.tabulate.VoteStatus.BINDING

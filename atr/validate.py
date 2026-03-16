@@ -62,7 +62,7 @@ if True:
                 yield from divergences_with_annotations(
                     components,
                     original.__name__,
-                    c.name,
+                    c.key,
                     original(c),
                 )
 
@@ -80,7 +80,7 @@ if True:
                 yield from divergences_with_annotations(
                     components,
                     original.__name__,
-                    str(p.name),
+                    str(p.key),
                     original(p),
                 )
 
@@ -105,11 +105,11 @@ def committee_child_committees(c: sql.Committee) -> Divergences:
     yield from divergences(expected, actual)
 
 
-@committee_components("Committee.full_name")
+@committee_components("Committee.name")
 def committee_full_name(c: sql.Committee) -> Divergences:
-    """Validate the Committee.full_name value."""
+    """Validate the Committee.name value."""
 
-    full_name = c.full_name
+    full_name = c.name
 
     def present(fn: str | None) -> bool:
         return bool(fn)
@@ -170,9 +170,9 @@ def divergences_with_annotations(
 
 async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     """Yield divergences for all projects and releases in the DB."""
-    committees_sorted = await data.committee(_child_committees=True).order_by(sql.Committee.name).all()
-    projects_sorted = await data.project(_distribution_channels=True).order_by(sql.Project.name).all()
-    releases_sorted = await data.release().order_by(sql.Release.name).all()
+    committees_sorted = await data.committee(_child_committees=True).order_by(sql.Committee.key).all()
+    projects_sorted = await data.project(_distribution_channels=True).order_by(sql.Project.key).all()
+    releases_sorted = await data.release().order_by(sql.Release.key).all()
 
     for c in await asyncio.to_thread(committees, committees_sorted):
         yield c
@@ -211,15 +211,15 @@ def project_category(p: sql.Project) -> Divergences:
     yield from divergences_predicate(okay, expected, p.category)
 
 
-@project_components("Project.committee_name")
+@project_components("Project.committee_key")
 def project_committee(p: sql.Project) -> Divergences:
     """Check that the project is linked to a committee."""
 
     def okay(cn: str | None) -> bool:
         return cn is not None
 
-    expected = "committee_name to be set"
-    yield from divergences_predicate(okay, expected, p.committee_name)
+    expected = "committee_key to be set"
+    yield from divergences_predicate(okay, expected, p.committee_key)
 
 
 @project_components("Project.created")
@@ -234,7 +234,7 @@ def project_created(p: sql.Project) -> Divergences:
     yield from divergences_predicate(predicate, expected, p.created)
 
 
-@project_components("Project.full_name")
+@project_components("Project.name")
 def project_full_name(p: sql.Project) -> Divergences:
     """Check that the project full_name is present and starts with 'Apache '."""
 
@@ -242,7 +242,7 @@ def project_full_name(p: sql.Project) -> Divergences:
         return (fn is not None) and fn.startswith("Apache ")
 
     expected = "full_name to be set and start with 'Apache '"
-    yield from divergences_predicate(okay, expected, p.full_name)
+    yield from divergences_predicate(okay, expected, p.name)
 
 
 @project_components("Project.programming_languages")
@@ -279,7 +279,7 @@ def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
 def release(r: sql.Release) -> AnnotatedDivergences:
     """Check that a release is valid."""
     yield from release_created(r)
-    yield from release_name(r)
+    yield from release_key(r)
     yield from release_on_disk(r)
     yield from release_package_managers(r)
     yield from release_released(r)
@@ -298,7 +298,7 @@ def release_components(
             yield from divergences_with_annotations(
                 components,
                 original.__name__,
-                str(r.name),
+                str(r.key),
                 original(r),
             )
 
@@ -319,11 +319,11 @@ def release_created(r: sql.Release) -> Divergences:
     yield from divergences_predicate(predicate, expected, r.created)
 
 
-@release_components("Release.name")
-def release_name(r: sql.Release) -> Divergences:
+@release_components("Release.key")
+def release_key(r: sql.Release) -> Divergences:
     """Check that the release name is valid."""
-    expected = sql.release_name(r.project_name, r.version)
-    actual = r.name
+    expected = sql.release_key(r.project_key, r.version)
+    actual = r.key
     yield from divergences(expected, actual)
 
 

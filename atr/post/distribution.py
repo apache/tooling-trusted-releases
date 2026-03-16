@@ -51,8 +51,8 @@ async def automate_form_process_page(
         platform_str = form_data.platform.value
         return await session.redirect(
             get.distribution.stage_automate if staging else get.distribution.automate,
-            project_name=str(project),
-            version_name=str(version),
+            project_key=str(project),
+            version_key=str(version),
             error=f"Platform {platform_str} is not supported for automated distribution",
         )
     sql_platform = form_data.platform.to_sql()  # type: ignore[attr-defined]
@@ -74,12 +74,12 @@ async def automate_form_process_page(
             phase = interaction.TrustedProjectPhase.VOTE
         case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             phase = interaction.TrustedProjectPhase.COMPOSE
-    async with storage.write_as_committee_member(committee_name=committee.name) as w:
+    async with storage.write_as_committee_member(committee_key=committee.key) as w:
         try:
             await w.distributions.automate(
-                release.safe_name,
+                release.safe_key,
                 dd.platform,
-                committee.name,
+                committee.key,
                 dd.owner_namespace,
                 project,
                 version,
@@ -93,8 +93,8 @@ async def automate_form_process_page(
             # Instead of calling record_form_page_new, redirect with error message
             return await session.redirect(
                 get.distribution.stage_automate if staging else get.distribution.automate,
-                project_name=project,
-                version_name=version,
+                project_key=project,
+                version_key=version,
                 error=str(e),
             )
 
@@ -102,8 +102,8 @@ async def automate_form_process_page(
     message = "Distribution queued successfully."
     return await session.redirect(
         get.distribution.list_get if staging else get.finish.selected,
-        project_name=project,
-        version_name=version,
+        project_key=project,
+        version_key=version,
         success=message,
     )
 
@@ -112,48 +112,48 @@ async def automate_form_process_page(
 async def automate_selected(
     session: web.Committer,
     _distribution_automate: Literal["distribution/automate"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /distribution/automate/<project_name>/<version_name>
+    URL: /distribution/automate/<project_key>/<version_key>
     """
-    await session.check_access(project_name)
-    return await automate_form_process_page(session, distribute_form, project_name, version_name, staging=False)
+    await session.check_access(project_key)
+    return await automate_form_process_page(session, distribute_form, project_key, version_key, staging=False)
 
 
 @post.typed
 async def delete(
     session: web.Committer,
     _distribution_delete: Literal["distribution/delete"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     delete_form: shared.distribution.DeleteForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /distribution/delete/<project_name>/<version_name>
+    URL: /distribution/delete/<project_key>/<version_key>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
-    url_release = sql.release_name(project_name, version_name)
-    if url_release != delete_form.release_name:
+    url_release = sql.release_key(project_key, version_key)
+    if url_release != delete_form.release_key:
         raise RuntimeError("Release name mismatch")
 
     # Validate the submitted data, and obtain the committee for its name
     async with db.session() as data:
-        release = await data.release(name=str(delete_form.release_name)).demand(
-            RuntimeError(f"Release {delete_form.release_name} not found")
+        release = await data.release(key=str(delete_form.release_key)).demand(
+            RuntimeError(f"Release {delete_form.release_key} not found")
         )
         committee = release.committee
         if committee is None:
-            raise RuntimeError(f"Release {delete_form.release_name} has no committee")
+            raise RuntimeError(f"Release {delete_form.release_key} has no committee")
 
     # Delete the distribution
-    async with storage.write_as_committee_member(committee_name=committee.name) as wacm:
+    async with storage.write_as_committee_member(committee_key=committee.key) as wacm:
         await wacm.distributions.delete_distribution(
-            release_name=delete_form.release_name,
+            release_key=delete_form.release_key,
             platform=sql_platform,
             owner_namespace=delete_form.owner_namespace,
             package=delete_form.package,
@@ -161,8 +161,8 @@ async def delete(
         )
     return await session.redirect(
         get.distribution.list_get,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         success="Distribution deleted",
     )
 
@@ -189,10 +189,10 @@ async def record_form_process_page(
         staging=staging,
     )
 
-    async with storage.write_as_committee_member(committee_name=committee.name) as w:
+    async with storage.write_as_committee_member(committee_key=committee.key) as w:
         try:
             _dist, added, _metadata = await w.distributions.record_from_data(
-                release_name=release.safe_name,
+                release_key=release.safe_key,
                 staging=staging,
                 dd=dd,
                 allow_retries=False,
@@ -201,8 +201,8 @@ async def record_form_process_page(
             # Instead of calling record_form_page_new, redirect with error message
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
-                project_name=str(project),
-                version_name=str(version),
+                project_key=str(project),
+                version_key=str(version),
                 error=str(e),
             )
 
@@ -210,8 +210,8 @@ async def record_form_process_page(
     message = "Distribution recorded successfully." if added else "Distribution was already recorded."
     return await session.redirect(
         get.distribution.list_get,
-        project_name=str(project),
-        version_name=str(version),
+        project_key=str(project),
+        version_key=str(version),
         success=message,
     )
 
@@ -220,39 +220,39 @@ async def record_form_process_page(
 async def record_selected(
     session: web.Committer,
     _distribution_record: Literal["distribution/record"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /distribution/record/<project_name>/<version_name>
+    URL: /distribution/record/<project_key>/<version_key>
     """
-    return await record_form_process_page(session, distribute_form, project_name, version_name, staging=False)
+    return await record_form_process_page(session, distribute_form, project_key, version_key, staging=False)
 
 
 @post.typed
 async def stage_automate_selected(
     session: web.Committer,
     _distribution_stage_automate: Literal["distribution/stage/automate"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /distribution/stage/automate/<project_name>/<version_name>
+    URL: /distribution/stage/automate/<project_key>/<version_key>
     """
-    return await automate_form_process_page(session, distribute_form, project_name, version_name, staging=True)
+    return await automate_form_process_page(session, distribute_form, project_key, version_key, staging=True)
 
 
 @post.typed
 async def stage_record_selected(
     session: web.Committer,
     _distribution_stage_record: Literal["distribution/stage/record"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /distribution/stage/record/<project_name>/<version_name>
+    URL: /distribution/stage/record/<project_key>/<version_key>
     """
-    return await record_form_process_page(session, distribute_form, project_name, version_name, staging=True)
+    return await record_form_process_page(session, distribute_form, project_key, version_key, staging=True)

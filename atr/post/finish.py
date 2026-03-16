@@ -32,30 +32,30 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _finish: Literal["finish"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     finish_form: shared.finish.FinishForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
-    URL: /finish/<project_name>/<version_name>
+    URL: /finish/<project_key>/<version_key>
     """
     wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
-    respond = _respond_helper(session, project_name, version_name, wants_json)
+    respond = _respond_helper(session, project_key, version_key, wants_json)
 
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
-            return await _delete_empty_directory(delete_form, session, project_name, version_name, respond)
+            return await _delete_empty_directory(delete_form, session, project_key, version_key, respond)
         case shared.finish.MoveFileForm() as move_form:
-            return await _move_file_to_revision(move_form, session, project_name, version_name, respond)
+            return await _move_file_to_revision(move_form, session, project_key, version_key, respond)
         case shared.finish.RemoveRCTagsForm():
-            return await _remove_rc_tags(session, project_name, version_name, respond)
+            return await _remove_rc_tags(session, project_key, version_key, respond)
 
 
 async def _delete_empty_directory(
     delete_form: shared.finish.DeleteEmptyDirectoryForm,
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     dir_to_delete_rel = delete_form.directory_to_delete
@@ -63,10 +63,10 @@ async def _delete_empty_directory(
         return await respond(400, "No directory specified.")
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_name)
-            creation_error = await wacp.release.delete_empty_directory(project_name, version_name, dir_to_delete_rel)
+            wacp = await write.as_project_committee_member(project_key)
+            creation_error = await wacp.release.delete_empty_directory(project_key, version_key, dir_to_delete_rel)
     except Exception:
-        log.exception(f"Unexpected error deleting directory {dir_to_delete_rel} for {project_name}/{version_name}")
+        log.exception(f"Unexpected error deleting directory {dir_to_delete_rel} for {project_key}/{version_key}")
         return await respond(500, "An unexpected error occurred.")
 
     if creation_error is not None:
@@ -77,8 +77,8 @@ async def _delete_empty_directory(
 async def _move_file_to_revision(
     move_form: shared.finish.MoveFileForm,
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     source_files_rel = move_form.source_files
@@ -87,9 +87,9 @@ async def _move_file_to_revision(
         return await respond(400, "No target directory specified.")
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_name)
+            wacp = await write.as_project_committee_member(project_key)
             creation_error, moved_files_names, skipped_files_names = await wacp.release.move_file(
-                project_name, version_name, source_files_rel, target_dir_rel
+                project_key, version_key, source_files_rel, target_dir_rel
             )
 
         if creation_error is not None:
@@ -122,16 +122,14 @@ async def _move_file_to_revision(
 
 async def _remove_rc_tags(
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_name)
-            creation_error, renamed_count, error_messages = await wacp.release.remove_rc_tags(
-                project_name, version_name
-            )
+            wacp = await write.as_project_committee_member(project_key)
+            creation_error, renamed_count, error_messages = await wacp.release.remove_rc_tags(project_key, version_key)
 
         if creation_error is not None:
             return await respond(409, creation_error)
@@ -154,7 +152,7 @@ async def _remove_rc_tags(
 
 
 def _respond_helper(
-    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, wants_json: bool
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, wants_json: bool
 ) -> shared.finish.Respond:
     """Create a response helper function for the finish route."""
     import atr.get as get
@@ -167,8 +165,6 @@ def _respond_helper(
         if wants_json:
             return quart.jsonify(ok=ok, message=msg), http_status
         await quart.flash(msg, "success" if ok else "error")
-        return await session.redirect(
-            get.finish.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.finish.selected, project_key=str(project_key), version_key=str(version_key))
 
     return respond

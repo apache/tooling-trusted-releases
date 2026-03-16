@@ -59,12 +59,12 @@ class UserCategory(enum.StrEnum):
 
 
 async def category_and_release(
-    session: web.Committer | None, project_name: safe.ProjectKey, version_name: safe.VersionKey
+    session: web.Committer | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[UserCategory, sql.Release, sql.Task | None]:
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             _committee=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
@@ -156,7 +156,7 @@ async def render_vote_closed_page(release: sql.Release) -> str:
 
     page.p["If you are an ASF committer, you can log in to view the current status of this release."]
 
-    redirect_url = util.as_url(selected, project_name=release.project.name, version_name=release.version)
+    redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
     login_url = f"/auth?login={urllib.parse.quote(redirect_url, safe='')}"
     page.div(".mb-3")[
         htpy.a(".btn.btn-outline-primary", href=login_url)[
@@ -176,14 +176,14 @@ async def render_vote_closed_page(release: sql.Release) -> str:
 async def selected(
     session: web.Public,
     _vote: Literal["vote"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /vote/<project_name>/<version_name>
+    URL: /vote/<project_key>/<version_key>
     Show voting options for a release candidate.
     """
-    user_category, release, latest_vote_task = await category_and_release(session, project_name, version_name)
+    user_category, release, latest_vote_task = await category_and_release(session, project_key, version_key)
 
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
         if session is None:
@@ -196,8 +196,8 @@ async def selected(
 def _download_browse(release: sql.Release) -> htm.Element:
     browse_url = util.as_url(
         download.path_empty,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     return htm.div(".d-flex.align-items-center.gap-2")[
         htpy.a(".btn.btn-outline-primary", href=browse_url)[
@@ -211,8 +211,8 @@ def _download_curl(release: sql.Release) -> htm.Element:
     app_host = config.get().APP_HOST
     script_url = util.as_url(
         download.sh_selected,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     curl_command = f"curl -s https://{app_host}{script_url} | sh"
 
@@ -238,7 +238,7 @@ def _download_rsync(release: sql.Release, session: web.Committer) -> htm.Element
         raise ValueError("Invalid UID")
 
     rsync_command = (
-        f"rsync -av -e 'ssh -p 2222' {session.uid}@{server_domain}:/{release.project.name}/{release.version}/ ./"
+        f"rsync -av -e 'ssh -p 2222' {session.uid}@{server_domain}:/{release.project.key}/{release.version}/ ./"
     )
 
     return htm.div(".mb-3")[
@@ -264,8 +264,8 @@ def _download_rsync(release: sql.Release, session: web.Committer) -> htm.Element
 def _download_zip(release: sql.Release) -> htm.Element:
     zip_url = util.as_url(
         download.zip_selected,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     return htm.div(".d-flex.align-items-center.gap-2")[
         htpy.a(".btn.btn-primary", href=zip_url)[
@@ -297,7 +297,7 @@ def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
 
     body = htm.Block(htm.div, classes=".card-body")
     body.p(".mb-3")["The release manager has provided a checklist of steps to verify this release candidate."]
-    checklist_url = util.as_url(checklist.selected, project_name=release.project.name, version_name=release.version)
+    checklist_url = util.as_url(checklist.selected, project_key=release.project.key, version_key=release.version)
     body.div[
         htpy.a(
             ".btn.btn-outline-primary",
@@ -398,7 +398,7 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
     body.div[
         htpy.a(
             ".btn.btn-outline-primary",
-            href=util.as_url(checks.selected, project_name=release.project.name, version_name=release.version),
+            href=util.as_url(checks.selected, project_key=release.project.key, version_key=release.version),
         )["→ View detailed results"],
     ]
 
@@ -434,7 +434,7 @@ def _render_section_download(
 
     if not is_authenticated:
         page.div(".mb-2")[htm.strong["Use alternatives:"]]
-        redirect_url = util.as_url(selected, project_name=release.project.name, version_name=release.version)
+        redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
         login_url = f"/auth?login={urllib.parse.quote(redirect_url, safe='')}"
         page.div(".mt-3")[
             htpy.a(".btn.btn-outline-secondary", href=login_url)[
@@ -449,7 +449,7 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
 
     if user_category == UserCategory.UNAUTHENTICATED:
         page.p["If you are the release manager, log in to access vote tallying and resolution tools."]
-        redirect_url = util.as_url(selected, project_name=release.project.name, version_name=release.version)
+        redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
         login_url = f"/auth?login={urllib.parse.quote(redirect_url, safe='')}"
         page.div[
             htpy.a(".btn.btn-outline-secondary", href=login_url)[
@@ -463,8 +463,8 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
         # POST form for resolve button
         resolve_url = util.as_url(
             post.resolve.selected,
-            project_name=release.project.name,
-            version_name=release.version,
+            project_key=release.project.key,
+            version_key=release.version,
         )
         page.form(".mb-0", method="post", action=resolve_url)[
             form.csrf_input(),
@@ -525,7 +525,7 @@ async def _render_vote_authenticated(
         ]
 
     # Note about where vote goes, with link to thread if available
-    mailing_list = f"dev@{release.committee.name}.apache.org"
+    mailing_list = f"dev@{release.committee.key}.apache.org"
     if archive_url:
         page.p[
             "Your vote will be sent to ",
@@ -550,8 +550,8 @@ async def _render_vote_authenticated(
     # Render the form
     vote_action_url = util.as_url(
         post.vote.selected_post,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     vote_comment_template = release.project.policy_vote_comment_template
     cast_vote_form = form.render(
@@ -568,7 +568,7 @@ async def _render_vote_authenticated(
 def _render_vote_unauthenticated(page: htm.Block, release: sql.Release, archive_url: str | None) -> None:
     page.p["Once you have reviewed the release, you can cast your vote."]
 
-    redirect_url = util.as_url(selected, project_name=release.project.name, version_name=release.version)
+    redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
     login_url = f"/auth?login={urllib.parse.quote(redirect_url, safe='')}"
 
     # ASF Committers box
@@ -604,10 +604,10 @@ def _render_vote_unauthenticated(page: htm.Block, release: sql.Release, archive_
             ],
         ]
     else:
-        committee_name = release.committee.name if release.committee else "unknown"
+        committee_key = release.committee.key if release.committee else "unknown"
         email_body.p(".text-muted.mb-0")[
             "The vote thread archive is not yet available. ",
-            f"Check the dev@{committee_name}.apache.org mailing list.",
+            f"Check the dev@{committee_key}.apache.org mailing list.",
         ]
     email_box.append(email_body.collect())
     page.append(email_box.collect())

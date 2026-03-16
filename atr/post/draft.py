@@ -44,12 +44,12 @@ if TYPE_CHECKING:
 async def cache_reset(
     session: web.Committer,
     _draft_reset: Literal["draft/reset"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /draft/reset/<project_name>/<version_name>
+    URL: /draft/reset/<project_key>/<version_key>
     Start a new draft revision and switch this release to global caching.
     """
     if not session.is_admin:
@@ -57,10 +57,10 @@ async def cache_reset(
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
+        wacp = await write.as_project_committee_participant(project_key)
         result = await wacp.revision.create_revision_with_quarantine(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             session.uid,
             description=description,
             reset_to_global_cache=True,
@@ -71,8 +71,8 @@ async def cache_reset(
         success += ". Archive validation in progress."
     return await session.redirect(
         get.compose.selected,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         success=success,
     )
 
@@ -81,20 +81,20 @@ async def cache_reset(
 async def delete(
     session: web.Committer,
     _compose: Literal["compose"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /compose/<project_name>/<version_name>
+    URL: /compose/<project_key>/<version_key>
     Delete a candidate draft and all its associated files.
     """
     # Delete the metadata from the database
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
+        wacp = await write.as_project_committee_participant(project_key)
         error = await wacp.release.delete(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             include_downloads=False,
         )
@@ -102,7 +102,7 @@ async def delete(
         if error is not None:
             await quart.flash(f"Error deleting candidate draft: {error}", "error")
             return await session.redirect(
-                get.compose.selected, project_name=str(project_name), version_name=str(version_name)
+                get.compose.selected, project_key=str(project_key), version_key=str(version_key)
             )
 
     return await session.redirect(get.root.index, success="Candidate draft deleted successfully")
@@ -112,37 +112,33 @@ async def delete(
 async def delete_file(
     session: web.Committer,
     _draft_delete_file: Literal["draft/delete-file"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     delete_file_form: shared.draft.DeleteFileForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /draft/delete-file/<project_name>/<version_name>
+    URL: /draft/delete-file/<project_key>/<version_key>
     Delete a specific file from the release candidate, creating a new revision.
     """
     rel_path_to_delete = delete_file_form.file_path
     if rel_path_to_delete is None:
         await quart.flash("No file path specified", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
-            metadata_files_deleted = await wacp.release.delete_file(project_name, version_name, rel_path_to_delete)
+            wacp = await write.as_project_committee_participant(project_key)
+            metadata_files_deleted = await wacp.release.delete_file(project_key, version_key, rel_path_to_delete)
     except Exception as e:
         log.exception("Error deleting file:")
         await quart.flash(f"Error deleting file: {e!s}", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     success_message = f"File '{rel_path_to_delete.name}' deleted successfully"
     if metadata_files_deleted:
         success_message += f", and {util.plural(metadata_files_deleted, 'associated metadata file')} deleted"
     return await session.redirect(
-        get.compose.selected, success=success_message, project_name=str(project_name), version_name=str(version_name)
+        get.compose.selected, success=success_message, project_key=str(project_key), version_key=str(version_key)
     )
 
 
@@ -150,39 +146,35 @@ async def delete_file(
 async def hashgen(
     session: web.Committer,
     _draft_hashgen: Literal["draft/hashgen"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /draft/hashgen/<project_name>/<version_name>/<file_path>
+    URL: /draft/hashgen/<project_key>/<version_key>/<file_path>
     Generate an sha512 hash file for a candidate draft file, creating a new revision.
     """
     rel_path = form.to_relpath(file_path)
     if rel_path is None:
         await quart.flash("Invalid file path", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
-            await wacp.release.generate_hash_file(project_name, version_name, rel_path)
+            wacp = await write.as_project_committee_participant(project_key)
+            await wacp.release.generate_hash_file(project_key, version_key, rel_path)
 
     except Exception as e:
         log.exception("Error generating hash file:")
         await quart.flash(f"Error generating hash file: {e!s}", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     return await session.redirect(
         get.compose.selected,
         success="SHA512 file generated successfully",
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
     )
 
 
@@ -190,19 +182,19 @@ async def hashgen(
 async def quarantine_clear(
     session: web.Committer,
     _draft_quarantine_clear: Literal["draft/quarantine/clear"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     clear_form: shared.draft.ClearQuarantineForm,
 ) -> web.WerkzeugResponse:
-    """URL: /draft/quarantine/clear/<project_name>/<version_name>"""
+    """URL: /draft/quarantine/clear/<project_key>/<version_key>"""
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
-        await wacp.revision.clear_quarantine(project_name, version_name, clear_form.quarantined_id)
+        wacp = await write.as_project_committee_participant(project_key)
+        await wacp.revision.clear_quarantine(project_key, version_key, clear_form.quarantined_id)
 
     return await session.redirect(
         get.compose.selected,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         success="Quarantine failure dismissed",
     )
 
@@ -211,12 +203,12 @@ async def quarantine_clear(
 async def recheck(
     session: web.Committer,
     _draft_recheck: Literal["draft/recheck"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /draft/recheck/<project_name>/<version_name>
+    URL: /draft/recheck/<project_key>/<version_key>
     Start a new draft revision and switch this release to release-local caching.
     """
     if not session.is_admin:
@@ -224,10 +216,10 @@ async def recheck(
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
     async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_name)
+        wacp = await write.as_project_committee_participant(project_key)
         result = await wacp.revision.create_revision_with_quarantine(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             session.uid,
             description=description,
             set_local_cache=True,
@@ -238,8 +230,8 @@ async def recheck(
         success += ". Archive validation in progress."
     return await session.redirect(
         get.compose.selected,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         success=success,
     )
 
@@ -248,22 +240,20 @@ async def recheck(
 async def sbomgen(
     session: web.Committer,
     _draft_sbomgen: Literal["draft/sbomgen"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /draft/sbomgen/<project_name>/<version_name>/<file_path>
+    URL: /draft/sbomgen/<project_key>/<version_key>/<file_path>
     Generate a CycloneDX SBOM file for a candidate draft file, creating a new revision.
     """
     path = str(file_path)
     rel_path = form.to_relpath(path)
     if rel_path is None:
         await quart.flash("Invalid file path", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     # Check that the file is a .tar.gz archive before creating a revision
     if not (path.endswith(".tar.gz") or path.endswith(".tgz") or path.endswith(".zip") or path.endswith(".jar")):
@@ -274,7 +264,7 @@ async def sbomgen(
     try:
         description = "SBOM generation through web interface"
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(project_key)
 
             async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
@@ -296,8 +286,8 @@ async def sbomgen(
 
                 # Create and queue the task, using paths within the new revision
                 sbom_task = await wacp.sbom.generate_cyclonedx(
-                    project_name,
-                    version_name,
+                    project_key,
+                    version_key,
                     old_rev.number,
                     path_in_new_revision,
                     sbom_path_in_new_revision,
@@ -307,15 +297,13 @@ async def sbomgen(
                     raise web.FlashError("Internal error: SBOM generation timed out")
 
             result = await wacp.revision.create_revision_with_quarantine(
-                project_name, version_name, session.uid, description=description, modify=modify
+                project_key, version_key, session.uid, description=description, modify=modify
             )
 
     except Exception as e:
         log.exception("Error generating SBOM:")
         await quart.flash(f"Error generating SBOM: {e!s}", "error")
-        return await session.redirect(
-            get.compose.selected, project_name=str(project_name), version_name=str(version_name)
-        )
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     success = f"SBOM generated for {rel_path.name}"
     if isinstance(result, sql.Quarantined):
@@ -323,6 +311,6 @@ async def sbomgen(
     return await session.redirect(
         get.compose.selected,
         success=success,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
     )

@@ -31,8 +31,8 @@ async def release_as_redirect(
 ) -> response.Response:
     route = release_as_route(release)
     if route is get.release.finished:
-        return await session.redirect(route, project_name=release.project.name)
-    return await session.redirect(route, project_name=release.project.name, version_name=release.version)
+        return await session.redirect(route, project_key=release.project.key)
+    return await session.redirect(route, project_key=release.project.key, version_key=release.version)
 
 
 def release_as_route(release: sql.Release) -> Callable:
@@ -50,5 +50,5 @@ def release_as_route(release: sql.Release) -> Callable:
 def release_as_url(release: sql.Release) -> str:
     route = release_as_route(release)
     if route is get.release.finished:
-        return util.as_url(route, project_name=release.project.name)
-    return util.as_url(route, project_name=release.project.name, version_name=release.version)
+        return util.as_url(route, project_key=release.project.key)
+    return util.as_url(route, project_key=release.project.key, version_key=release.version)

@@ -65,11 +65,11 @@ ROUTES_MODULE: Final[Literal[True]] = True
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list(
     _checks_list: Literal["checks/list"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> DictResponse:
     """
-    URL: GET /checks/list/<project_name>/<version_name>
+    URL: GET /checks/list/<project_key>/<version_key>
 
     List checks by project and version.
 
@@ -83,8 +83,8 @@ async def checks_list(
     """
     # TODO: We should perhaps paginate this
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        release = await data.release(name=release_name).demand(exceptions.NotFound(f"Release {release_name} not found"))
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound(f"Release {release_key} not found"))
         check_results = await interaction.checks_for(release, caller_data=data)
 
     return models.api.ChecksListResults(
@@ -99,12 +99,12 @@ async def checks_list(
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list_revision(
     _checks_list: Literal["checks/list"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> DictResponse:
     """
-    URL: GET /checks/list/<project_name>/<version_name>/<revision>
+    URL: GET /checks/list/<project_key>/<version_key>/<revision>
 
     List checks by project, version, and revision.
 
@@ -117,14 +117,14 @@ async def checks_list_revision(
     may potentially be thousands or results or more.
     """
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        release_result = await data.release(name=release_name).demand(
-            exceptions.NotFound(f"Release '{release_name}' does not exist")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release_result = await data.release(key=release_key).demand(
+            exceptions.NotFound(f"Release '{release_key}' does not exist")
         )
 
-        revision_result = await data.revision(release_name=release_name, number=str(revision)).get()
+        revision_result = await data.revision(release_key=release_key, number=str(revision)).get()
         if revision_result is None:
-            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_name}'")
+            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_key}'")
 
         check_results = await interaction.checks_for(release_result, revision=revision, caller_data=data)
 
@@ -140,12 +140,12 @@ async def checks_list_revision(
 @quart_schema.validate_response(models.api.ChecksOngoingResults, 200)
 async def checks_ongoing(
     _checks_ongoing: Literal["checks/ongoing"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
-    URL: GET /checks/ongoing/<project_name>/<version_name>[/<revision>]
+    URL: GET /checks/ongoing/<project_key>/<version_key>[/<revision>]
 
     Count ongoing checks by project, version, and optionally revision.
 
@@ -154,9 +154,7 @@ async def checks_ongoing(
     present, or the most recent draft revision otherwise. A draft release
     cannot be promoted to the vote phase if checks are still ongoing.
     """
-    ongoing_tasks_count, _latest_revision = await interaction.tasks_ongoing_revision(
-        project_name, version_name, revision
-    )
+    ongoing_tasks_count, _latest_revision = await interaction.tasks_ongoing_revision(project_key, version_key, revision)
     # TODO: Is there a way to return just an int?
     # The ResponseReturnValue type in quart does not allow int
     # And if we use quart.jsonify, we must return web.QuartResponse which quart_schema tries to validate
@@ -193,7 +191,7 @@ async def committee_get(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=str(name)).demand(
+        committee = await data.committee(key=str(name)).demand(
             exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeGetResults(
@@ -219,7 +217,7 @@ async def committee_keys(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=str(name), _public_signing_keys=True).demand(
+        committee = await data.committee(key=str(name), _public_signing_keys=True).demand(
             exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeKeysResults(
@@ -245,7 +243,7 @@ async def committee_projects(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(name=str(name), _projects=True).demand(
+        committee = await data.committee(key=str(name), _projects=True).demand(
             exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeProjectsResults(
@@ -291,14 +289,14 @@ async def distribute_ssh_register(
         data.jwt,
         data.asf_uid,
         interaction.TrustedProjectPhase(data.phase),
-        data.project_name,
+        data.project_key,
         data.version,
     )
-    async with storage.write_as_committee_member(util.unwrap(project.committee).name, asf_uid) as wacm:
+    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload["actor"],
             payload["actor_id"],
-            release.safe_project_name,
+            release.safe_project_key,
             data.ssh_key,
             payload,
         )
@@ -306,7 +304,7 @@ async def distribute_ssh_register(
     return models.api.DistributeSshRegisterResults(
         endpoint="/distribute/ssh/register",
         fingerprint=fingerprint,
-        project=release.safe_project_name,
+        project=release.safe_project_key,
         expires=expires,
     ).model_dump(mode="json"), 200
 
@@ -327,11 +325,11 @@ async def distribution_record(
     asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
         release = await db_data.release(
-            project_name=str(data.project),
+            project_key=str(data.project),
             version=str(data.version),
         ).demand(exceptions.NotFound(f"Release {data.project!s} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.name} has no committee")
+        raise exceptions.NotFound(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -340,9 +338,9 @@ async def distribution_record(
         details=data.details,
     )
     async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(release.committee.name)
+        wacm = write.as_committee_member(release.committee.key)
         _dist, _added, metadata = await wacm.distributions.record_from_data(
-            release.safe_name,
+            release.safe_key,
             data.staging,
             dd,
         )
@@ -375,7 +373,7 @@ async def distribution_record_from_workflow(
     )
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.name} has no committee")
+        raise exceptions.NotFound(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -383,9 +381,9 @@ async def distribution_record_from_workflow(
         version=data.distribution_version,
         details=data.details,
     )
-    async with storage.write_as_committee_member(release.committee.name, asf_uid) as wacm:
+    async with storage.write_as_committee_member(release.committee.key, asf_uid) as wacm:
         _dist, _added, metadata = await wacm.distributions.record_from_data(
-            release.safe_name, data.staging, dd, allow_retries=True
+            release.safe_key, data.staging, dd, allow_retries=True
         )
         if metadata is None:
             log.warning("Distribution could not be found, ATR will retry this automatically")
@@ -413,9 +411,9 @@ async def ignore_add(
     if not any(data.model_dump().values()):
         raise exceptions.BadRequest("At least one field must be provided")
     async with storage.write(asf_uid) as write:
-        wacm = await write.as_project_committee_member(data.project_name)
+        wacm = await write.as_project_committee_member(data.project_key)
         await wacm.checks.ignore_add(
-            data.project_name,
+            data.project_key,
             data.release_glob,
             data.revision_number,
             data.checker_glob,
@@ -447,7 +445,7 @@ async def ignore_delete(
     if not any(data.model_dump().values()):
         raise exceptions.BadRequest("At least one field must be provided")
     async with storage.write(asf_uid) as write:
-        wacm = await write.as_project_committee_member(data.project_name)
+        wacm = await write.as_project_committee_member(data.project_key)
         # TODO: This is more like discard
         # Should potentially check for rowcount, and raise an error if it's 0
         await wacm.checks.ignore_delete(data.id)
@@ -462,16 +460,16 @@ async def ignore_delete(
 @quart_schema.validate_response(models.api.IgnoreListResults, 200)
 async def ignore_list(
     _ignore_list: Literal["ignore/list"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
 ) -> DictResponse:
     """
-    URL: GET /ignore/list/<project_name>
+    URL: GET /ignore/list/<project_key>
 
     List ignores by project name.
     """
     async with db.session() as data:
-        await data.project(name=str(project_name)).demand(exceptions.NotFound())
-        ignores = await data.check_result_ignore(project_name=str(project_name)).all()
+        await data.project(key=str(project_key)).demand(exceptions.NotFound())
+        ignores = await data.check_result_ignore(project_key=str(project_key)).all()
     return models.api.IgnoreListResults(
         endpoint="/ignore/list",
         ignores=ignores,
@@ -524,15 +522,15 @@ async def key_add(
     automatically generated KEYS file for each committee.
     """
     asf_uid = _jwt_asf_uid()
-    selected_committee_names = data.committees
+    selected_committee_keys = data.committees
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(data.key)
         key = ocr.result_or_raise()
 
-        for selected_committee_name in selected_committee_names:
-            wacm = write.as_committee_member(selected_committee_name)
+        for selected_committee_key in selected_committee_keys:
+            wacm = write.as_committee_member(selected_committee_key)
             oc: outcome.Outcome[types.LinkedCommittee] = await wacm.keys.associate_fingerprint(
                 key.key_model.fingerprint
             )
@@ -570,7 +568,7 @@ async def key_delete(
         key = oc.result_or_raise()
 
         for committee in key.committees:
-            wacm = write.as_committee_member_outcome(committee.name).result_or_none()
+            wacm = write.as_committee_member_outcome(committee.key).result_or_none()
             if wacm is None:
                 continue
             outcomes.append(await wacm.keys.autogenerate_keys_file())
@@ -622,9 +620,9 @@ async def keys_upload(
     """
     asf_uid = _jwt_asf_uid()
     filetext = data.filetext
-    selected_committee_name = data.committee
+    selected_committee_key = data.committee
     async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(selected_committee_name)
+        wacm = write.as_committee_member(selected_committee_key)
         outcomes: outcome.List[types.Key] = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
@@ -664,7 +662,7 @@ async def keys_upload(
         results=api_outcomes,
         success_count=outcomes.result_count,
         error_count=outcomes.error_count,
-        submitted_committee=selected_committee_name,
+        submitted_committee=selected_committee_key,
     ).model_dump(mode="json"), 200
 
 
@@ -692,15 +690,15 @@ async def keys_user(
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
 async def project_get(
     _project_get: Literal["project/get"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
 ) -> DictResponse:
     """
-    URL: GET /project/get/<project_name>
+    URL: GET /project/get/<project_key>
 
     Get a project by name.
     """
     async with db.session() as data:
-        project = await data.project(name=str(project_name)).demand(exceptions.NotFound())
+        project = await data.project(key=str(project_key)).demand(exceptions.NotFound())
     return models.api.ProjectGetResults(
         endpoint="/project/get",
         project=project,
@@ -711,10 +709,10 @@ async def project_get(
 @quart_schema.validate_response(models.api.ProjectPolicyResults, 200)
 async def project_policy(
     _project_policy: Literal["project/policy"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
 ) -> DictResponse:
     """
-    URL: GET /project/policy/<project_name>
+    URL: GET /project/policy/<project_key>
 
     Get project policy by name.
 
@@ -722,12 +720,12 @@ async def project_policy(
     If no policy has been configured, defaults are returned.
     """
     async with db.session() as data:
-        project = await data.project(name=str(project_name), _release_policy=True, _committee=True).demand(
+        project = await data.project(key=str(project_key), _release_policy=True, _committee=True).demand(
             exceptions.NotFound()
         )
     return models.api.ProjectPolicyResults(
         endpoint="/project/policy",
-        project_name=project.safe_name,
+        project_key=project.safe_key,
         policy_announce_release_subject=project.policy_announce_release_subject,
         policy_announce_release_template=project.policy_announce_release_template,
         policy_binary_artifact_paths=project.policy_binary_artifact_paths,
@@ -755,16 +753,16 @@ async def project_policy(
 @quart_schema.validate_response(models.api.ProjectReleasesResults, 200)
 async def project_releases(
     _project_releases: Literal["project/releases"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
 ) -> DictResponse:
     """
-    URL: GET /project/releases/<project_name>
+    URL: GET /project/releases/<project_key>
 
     List releases by project name.
     """
     async with db.session() as data:
-        await data.project(name=str(project_name)).demand(exceptions.NotFound())
-        releases = await data.release(project_name=str(project_name)).all()
+        await data.project(key=str(project_key)).demand(exceptions.NotFound())
+        releases = await data.release(project_key=str(project_key)).all()
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
         releases=releases,
@@ -815,11 +813,11 @@ async def publisher_distribution_record(
         )
     async with db.session() as db_data:
         release = await db_data.release(
-            project_name=project.name,
+            project_key=project.key,
             version=str(data.version),
-        ).demand(exceptions.NotFound(f"Release {project.name} {data.version!s} not found"))
+        ).demand(exceptions.NotFound(f"Release {project.key} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.name} has no committee")
+        raise exceptions.NotFound(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -828,9 +826,9 @@ async def publisher_distribution_record(
         details=data.details,
     )
     async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(release.committee.name)
+        wacm = write.as_committee_member(release.committee.key)
         await wacm.distributions.record_from_data(
-            release.safe_name,
+            release.safe_key,
             data.staging,
             dd,
         )
@@ -859,10 +857,10 @@ async def publisher_release_announce(
     try:
         # TODO: Add defaults
         committee = util.unwrap(project.committee)
-        async with storage.write_as_committee_member(committee.name, asf_uid) as wacm:
+        async with storage.write_as_committee_member(committee.key, asf_uid) as wacm:
             await wacm.announce.release(
-                project_name=project.safe_name,
-                version_name=data.version,
+                project_key=project.safe_key,
+                version_key=data.version,
                 preview_revision_number=data.revision,
                 recipient=data.email_to,
                 body=data.body,
@@ -893,11 +891,11 @@ async def publisher_ssh_register(
     payload, asf_uid, project = await interaction.trusted_jwt(
         data.publisher, data.jwt, interaction.TrustedProjectPhase.COMPOSE
     )
-    async with storage.write_as_committee_member(util.unwrap(project.committee).name, asf_uid) as wacm:
+    async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload["actor"],
             payload["actor_id"],
-            project.safe_name,
+            project.safe_key,
             data.ssh_key,
             payload,
         )
@@ -905,7 +903,7 @@ async def publisher_ssh_register(
     return models.api.PublisherSshRegisterResults(
         endpoint="/publisher/ssh/register",
         fingerprint=fingerprint,
-        project=project.safe_name,
+        project=project.safe_key,
         expires=expires,
     ).model_dump(mode="json"), 200
 
@@ -926,11 +924,11 @@ async def publisher_vote_resolve(
         data.jwt,
         interaction.TrustedProjectPhase.VOTE,
     )
-    async with storage.write_as_project_committee_member(project.safe_name, asf_uid) as wacm:
+    async with storage.write_as_project_committee_member(project.safe_key, asf_uid) as wacm:
         # TODO: Get fullname and use instead of asf_uid
         # TODO: Add resolution templating to atr.construct
         _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
-            project.safe_name,
+            project.safe_key,
             data.version,
             data.resolution,
             asf_uid,
@@ -967,8 +965,8 @@ async def release_announce(
         async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
             # TODO: Get fullname and use it instead of asf_uid
             await wacm.announce.release(
-                project_name=data.project,
-                version_name=data.version,
+                project_key=data.project,
+                version_key=data.version,
                 preview_revision_number=data.revision,
                 recipient=data.email_to,
                 body=data.body,
@@ -1049,17 +1047,17 @@ async def release_delete(
 @quart_schema.validate_response(models.api.ReleaseGetResults, 200)
 async def release_get(
     _release_get: Literal["release/get"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> DictResponse:
     """
-    URL: GET /release/get/<project_name>/<version_name>
+    URL: GET /release/get/<project_key>/<version_key>
 
     Get a release by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        release = await data.release(name=release_name).demand(exceptions.NotFound())
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound())
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
         release=release,
@@ -1070,22 +1068,22 @@ async def release_get(
 @quart_schema.validate_response(models.api.ReleasePathsResults, 200)
 async def release_paths(
     _release_paths: Literal["release/paths"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
-    URL: GET /release/paths/<project_name>/<version_name>[/<revision>]
+    URL: GET /release/paths/<project_key>/<version_key>[/<revision>]
 
     List paths in a release by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        release = await data.release(name=release_name).demand(exceptions.NotFound())
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound())
         if revision is None:
             dir_path = paths.release_directory(release)
         else:
-            await data.revision(release_name=release_name, number=str(revision)).demand(exceptions.NotFound())
+            await data.revision(release_key=release_key, number=str(revision)).demand(exceptions.NotFound())
             dir_path = paths.release_directory_version(release) / str(revision)
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
@@ -1101,17 +1099,17 @@ async def release_paths(
 @quart_schema.validate_response(models.api.ReleaseRevisionsResults, 200)
 async def release_revisions(
     _release_revisions: Literal["release/revisions"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> DictResponse:
     """
-    URL: GET /release/revisions/<project_name>/<version_name>
+    URL: GET /release/revisions/<project_key>/<version_key>
 
     List revisions by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_name(str(project_name), str(version_name))
-        revisions = await data.revision(release_name=release_name).all()
+        release_key = sql.release_key(str(project_key), str(version_key))
+        revisions = await data.revision(release_key=release_key).all()
     if not isinstance(revisions, list):
         revisions = list(revisions)
     revisions.sort(key=lambda rev: rev.number)
@@ -1188,7 +1186,7 @@ async def releases_list(
 
         paged_releases = (await data.execute(statement)).scalars().all()
 
-        count_stmt = sqlalchemy.select(sqlalchemy.func.count(via(sql.Release.name)))
+        count_stmt = sqlalchemy.select(sqlalchemy.func.count(via(sql.Release.key)))
         if query_args.phase:
             phase_value = sql.ReleasePhase(query_args.phase) if query_args.phase else None
             if phase_value is not None:
@@ -1244,17 +1242,17 @@ async def signature_provenance(
         )
 
     downloads_dir = paths.get_downloads_dir()
-    matched_committee_names = await _match_committee_names(key.committees, paths.get_finished_dir(), data)
+    matched_committee_keys = await _match_committee_keys(key.committees, paths.get_finished_dir(), data)
 
-    for matched_committee_name in matched_committee_names:
-        keys_file_path = downloads_dir / matched_committee_name / "KEYS"
+    for matched_committee_key in matched_committee_keys:
+        keys_file_path = downloads_dir / matched_committee_key / "KEYS"
         async with aiofiles.open(keys_file_path, "rb") as f:
             keys_file_data = await f.read()
         keys_file_sha3_256 = hashes.compute_sha3_256(keys_file_data)
         signing_keys.append(
             models.api.SignatureProvenanceKey(
-                committee=matched_committee_name,
-                keys_file_url=f"https://{host}/downloads/{matched_committee_name}/KEYS",
+                committee=matched_committee_key,
+                keys_file_url=f"https://{host}/downloads/{matched_committee_key}/KEYS",
                 keys_file_sha3_256=keys_file_sha3_256,
             )
         )
@@ -1401,7 +1399,7 @@ async def update_distribution_task_status(
     async with db.session() as db_data:
         status = await db_data.workflow_status(
             workflow_id=data.workflow,
-            project_name=str(data.project_name),
+            project_key=str(data.project_key),
             run_id=int(data.run_id),
         ).demand(exceptions.NotFound(f"Workflow {data.workflow} not found"))
         status.status = data.status
@@ -1537,7 +1535,7 @@ async def vote_start(
     try:
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(data.project)
-            permitted_recipients = util.permitted_voting_recipients(asf_uid, wacp.committee_name)
+            permitted_recipients = util.permitted_voting_recipients(asf_uid, wacp.committee_key)
             if data.email_to not in permitted_recipients:
                 raise exceptions.Forbidden("Invalid mailing list choice")
             # TODO: Get fullname and use instead of asf_uid
@@ -1581,9 +1579,9 @@ async def vote_tabulate(
     """
     # asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
-        release_name = sql.release_name(data.project, data.version)
-        release = await db_data.release(name=str(release_name), _project_release_policy=True).demand(
-            exceptions.NotFound(f"Release {release_name} not found"),
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(key=str(release_key), _project_release_policy=True).demand(
+            exceptions.NotFound(f"Release {release_key} not found"),
         )
 
     latest_vote_task = await interaction.release_latest_vote_task(release)
@@ -1615,16 +1613,16 @@ def _jwt_asf_uid() -> str:
     return asf_uid
 
 
-async def _match_committee_names(
+async def _match_committee_keys(
     key_committees: list[sql.Committee], finished_dir: pathlib.Path, data: models.api.SignatureProvenanceArgs
 ) -> set[str]:
-    key_committee_names = set(committee.name for committee in key_committees)
+    key_committee_keys = set(committee.key for committee in key_committees)
     finished_dir = paths.get_finished_dir()
-    matched_committee_names = set()
+    matched_committee_keys = set()
 
     # Check for finished files
-    for key_committee_name in key_committee_names:
-        key_committee_finished_dir = finished_dir / key_committee_name
+    for key_committee_key in key_committee_keys:
+        key_committee_finished_dir = finished_dir / key_committee_key
         async for rel_path in util.paths_recursive(key_committee_finished_dir):
             if rel_path.name == data.signature_file_name:
                 abs_path = finished_dir / rel_path
@@ -1633,22 +1631,22 @@ async def _match_committee_names(
                 rel_path_sha3_256 = hashlib.sha3_256(rel_path_data).hexdigest()
                 if rel_path_sha3_256 == data.signature_sha3_256:
                     # We got a match
-                    matched_committee_names.add(key_committee_name)
+                    matched_committee_keys.add(key_committee_key)
                     break
 
     # Check for unfinished files
     async with db.session() as db_data:
-        for key_committee_name in key_committee_names:
+        for key_committee_key in key_committee_keys:
             release_directories = []
-            projects = await db_data.project(committee_name=key_committee_name).all()
+            projects = await db_data.project(committee_key=key_committee_key).all()
             for project in projects:
-                releases = await db_data.release(project_name=project.name).all()
+                releases = await db_data.release(project_key=project.key).all()
                 release_directories.extend(paths.release_directory(release) for release in releases)
             for release_directory in release_directories:
                 if await _match_unfinished(release_directory, data):
-                    matched_committee_names.add(key_committee_name)
+                    matched_committee_keys.add(key_committee_key)
                     break
-    return matched_committee_names
+    return matched_committee_keys
 
 
 async def _match_unfinished(release_directory: pathlib.Path, data: models.api.SignatureProvenanceArgs) -> bool:

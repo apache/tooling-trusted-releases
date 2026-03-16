@@ -291,8 +291,8 @@ async def _targz_structure_args(
     args = checks.FunctionArguments(
         recorder=recorders.get_recorder(recorder),
         asf_uid="",
-        project_name="test",
-        version_name="test",
+        project_key="test",
+        version_key="test",
         revision_number="00001",
         primary_rel_path=archive_filename,
         extra_args={},

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 def test_merge_interleaved_revisions(merge_context: BrowserContext) -> None:
     result = helpers.api_get(
         merge_context.request,
-        f"/test/merge/{merge_helpers.PROJECT_NAME}/{merge_helpers.VERSION_NAME}",
+        f"/test/merge/{merge_helpers.PROJECT_KEY}/{merge_helpers.VERSION_KEY}",
     )
     files = result["files"]
     assert "from_new.txt" in files

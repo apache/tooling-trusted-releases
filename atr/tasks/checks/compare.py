@@ -88,14 +88,14 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
     if not is_source:
         log.info(
             "Skipping compare.source_trees because the input is not a source artifact",
-            project=args.project_name,
-            version=args.version_name,
+            project=args.project_key,
+            version=args.version_key,
             revision=args.revision_number,
             path=args.primary_rel_path,
         )
         return None
 
-    payload = await _load_tp_payload(args.project_name, args.version_name, args.revision_number)
+    payload = await _load_tp_payload(args.project_key, args.version_key, args.revision_number)
     checkout_dir: str | None = None
     archive_dir: str | None = None
     if payload is not None:
@@ -172,8 +172,8 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
     payload_summary = _payload_summary(payload)
     log.info(
         "Ran compare.source_trees successfully",
-        project=args.project_name,
-        version=args.version_name,
+        project=args.project_key,
+        version=args.version_key,
         revision=args.revision_number,
         path=args.primary_rel_path,
         github_payload=payload_summary,
@@ -335,9 +335,9 @@ async def _find_archive_root(archive_path: pathlib.Path, extract_dir: pathlib.Pa
 
 
 async def _load_tp_payload(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> github_models.TrustedPublisherPayload | None:
-    payload_path = attestable.github_tp_payload_path(project_name, version_name, revision_number)
+    payload_path = attestable.github_tp_payload_path(project_key, version_key, revision_number)
     if not await aiofiles.os.path.isfile(payload_path):
         return None
     try:

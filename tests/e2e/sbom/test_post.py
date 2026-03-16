@@ -28,13 +28,13 @@ def test_sbom_generate(page_release_with_file: Page) -> None:
     # Generate an SBOM for the file
     helpers.visit(
         page_release_with_file,
-        f"/draft/tools/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}/{sbom_helpers.FILE_NAME}",
+        f"/draft/tools/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}/{sbom_helpers.FILE_NAME}",
     )
     generate_button = page_release_with_file.get_by_role("button", name="SBOM")
     generate_button.click()
 
     # Check that the generated SBOM exists now
-    helpers.visit(page_release_with_file, f"/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
+    helpers.visit(page_release_with_file, f"/compose/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}")
     page_release_with_file.wait_for_selector("#ongoing-tasks-banner", state="hidden")
     page_release_with_file.reload()
 

@@ -107,10 +107,10 @@ async def _execute_check_task(
         task_obj = await data.task(id=task_id).demand(ValueError(f"Task {task_id} disappeared during processing"))
 
     # Validate required fields from the Task object itself
-    if task_obj.project_name is None:
-        raise ValueError(f"Task {task_id} is missing required project_name")
-    if task_obj.version_name is None:
-        raise ValueError(f"Task {task_id} is missing required version_name")
+    if task_obj.project_key is None:
+        raise ValueError(f"Task {task_id} is missing required project_key")
+    if task_obj.version_key is None:
+        raise ValueError(f"Task {task_id} is missing required version_key")
     if task_obj.revision_number is None:
         raise ValueError(f"Task {task_id} is missing required revision_number")
 
@@ -119,16 +119,16 @@ async def _execute_check_task(
             f"Task {task_id} ({task_type}) has non-dict raw args {task_args} which should represent keyword_args"
         )
 
-    project_name = safe.ProjectKey(task_obj.project_name)
-    version_name = safe.VersionKey(task_obj.version_name)
+    project_key = safe.ProjectKey(task_obj.project_key)
+    version_key = safe.VersionKey(task_obj.version_key)
     revision_number = safe.RevisionNumber(task_obj.revision_number)
 
     async def recorder_factory() -> checks.Recorder:
         return await checks.Recorder.create(
             checker=handler,
             inputs_hash=task_obj.inputs_hash or "",
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             revision_number=revision_number,
             primary_rel_path=task_obj.primary_rel_path,
         )
@@ -136,8 +136,8 @@ async def _execute_check_task(
     function_arguments = checks.FunctionArguments(
         recorder=recorder_factory,
         asf_uid=task_obj.asf_uid,
-        project_name=project_name,
-        version_name=version_name,
+        project_key=project_key,
+        version_key=version_key,
         revision_number=revision_number,
         primary_rel_path=task_obj.primary_rel_path,
         extra_args=task_args,

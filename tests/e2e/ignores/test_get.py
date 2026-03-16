@@ -31,8 +31,8 @@ def test_ignores_page_has_heading(page_ignores: Page) -> None:
     expect(heading).to_contain_text("Ignored checks")
 
 
-def test_ignores_page_shows_project_name(page_ignores: Page) -> None:
-    expect(page_ignores.locator("body")).to_contain_text(f"project {helpers.PROJECT_NAME}")
+def test_ignores_page_shows_project_key(page_ignores: Page) -> None:
+    expect(page_ignores.locator("body")).to_contain_text(f"project {helpers.PROJECT_KEY}")
 
 
 def test_no_ignores_initially(page_ignores: Page) -> None:

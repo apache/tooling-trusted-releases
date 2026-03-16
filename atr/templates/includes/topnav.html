@@ -34,13 +34,13 @@
                   Candidates</a>
               </li>
               {% if topnav_unfinished_releases %}
-                {% for project_short_display_name, project_name, releases in topnav_unfinished_releases %}
+                {% for project_short_display_name, project_key, releases in topnav_unfinished_releases %}
                   <li>
                     <hr class="dropdown-divider" />
                   </li>
                   <li>
                     <a class="dropdown-item fw-bold"
-                       href="{{ as_url(get.projects.view, project_name=project_name|string) }}">{{ project_short_display_name }}</a>
+                       href="{{ as_url(get.projects.view, project_key=project_key|string) }}">{{ project_short_display_name }}</a>
                   </li>
                   {% for release in releases %}
                     <li>
@@ -58,10 +58,10 @@
                 <li>
                   <a class="dropdown-item fw-bold" href="{{ as_url(get.root.index) }}">Start a release</a>
                 </li>
-                {% for project_name, project_full_name in topnav_user_projects[:max_projects] %}
+                {% for project_key, project_full_name in topnav_user_projects[:max_projects] %}
                   <li>
                     <a class="dropdown-item"
-                       href="{{ as_url(get.start.selected, project_name=project_name|string) }}"><i class="bi bi-plus-circle"></i>
+                       href="{{ as_url(get.start.selected, project_key=project_key|string) }}"><i class="bi bi-plus-circle"></i>
                       {{ project_full_name.removeprefix("Apache ").removesuffix(" (Incubating)") }}</a>
                   </li>
                 {% endfor %}

@@ -22,13 +22,13 @@
         <tr>
           <td>
             {% if release.project %}
-              <a href="{{ release_as_url(release) }}">{{ release.name }}</a>
+              <a href="{{ release_as_url(release) }}">{{ release.key }}</a>
             {% else %}
-              {{ release.name }}
+              {{ release.key }}
             {% endif %}
           </td>
-          <td>{{ release.project.committee.name if release.project and release.project.committee else "N/A" }}</td>
-          <td>{{ release.project.name if release.project else "N/A" }}</td>
+          <td>{{ release.project.committee.key if release.project and release.project.committee else "N/A" }}</td>
+          <td>{{ release.project.key if release.project else "N/A" }}</td>
           <td>
             {% set phase_value = release.phase.value %}
             <!-- {{ phase_value }} <br> -->

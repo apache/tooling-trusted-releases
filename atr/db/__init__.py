@@ -129,11 +129,11 @@ class Query[T]:
         stmt = sqlalchemy.dialects.sqlite.insert(model_class).values([item.model_dump() for item in items])
         # TODO: The primary key might not be the index element
         # For example, we might have a unique constraint on other columns
-        primary_keys = [key.name for key in sqlalchemy.inspect(model_class).primary_key]
+        primary_keys = [key.key for key in sqlalchemy.inspect(model_class).primary_key]
         update_cols = {
-            col.name: getattr(stmt.excluded, col.name)
+            col.key: getattr(stmt.excluded, col.key)
             for col in sqlalchemy.inspect(model_class).c
-            if col.name not in primary_keys
+            if col.key not in primary_keys
         }
         stmt = stmt.on_conflict_do_update(index_elements=primary_keys, set_=update_cols)
         await self.session.execute(stmt)
@@ -160,7 +160,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         id: Opt[int] = NOT_SET,
         id_in: Opt[list[int]] = NOT_SET,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         revision_number: Opt[str] = NOT_SET,
         checker: Opt[str] = NOT_SET,
         primary_rel_path: Opt[str | None] = NOT_SET,
@@ -181,8 +181,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.CheckResult.id == id)
         if is_defined(id_in):
             query = query.where(via(sql.CheckResult.id).in_(id_in))
-        if is_defined(release_name):
-            query = query.where(sql.CheckResult.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.CheckResult.release_key == release_key)
         if is_defined(revision_number):
             query = query.where(sql.CheckResult.revision_number == revision_number)
         if is_defined(checker):
@@ -211,7 +211,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def check_result_ignore(
         self,
-        project_name: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
         release_glob: Opt[str] = NOT_SET,
         revision_number: Opt[str] = NOT_SET,
         checker_glob: Opt[str] = NOT_SET,
@@ -222,8 +222,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.CheckResultIgnore]:
         query = sqlmodel.select(sql.CheckResultIgnore)
 
-        if is_defined(project_name):
-            query = query.where(sql.CheckResultIgnore.project_name == project_name)
+        if is_defined(project_key):
+            query = query.where(sql.CheckResultIgnore.project_key == project_key)
         if is_defined(release_glob):
             query = query.where(sql.CheckResultIgnore.release_glob == release_glob)
         if is_defined(revision_number):
@@ -243,10 +243,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def committee(
         self,
+        key: Opt[str] = NOT_SET,
         name: Opt[str] = NOT_SET,
-        full_name: Opt[str] = NOT_SET,
         is_podling: Opt[bool] = NOT_SET,
-        parent_committee_name: Opt[str] = NOT_SET,
+        parent_committee_key: Opt[str] = NOT_SET,
         committee_members: Opt[list[str]] = NOT_SET,
         committers: Opt[list[str]] = NOT_SET,
         release_managers: Opt[list[str]] = NOT_SET,
@@ -261,14 +261,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         via = sql.validate_instrumented_attribute
         query = sqlmodel.select(sql.Committee)
 
+        if is_defined(key):
+            query = query.where(sql.Committee.key == key)
         if is_defined(name):
             query = query.where(sql.Committee.name == name)
-        if is_defined(full_name):
-            query = query.where(sql.Committee.full_name == full_name)
         if is_defined(is_podling):
             query = query.where(sql.Committee.is_podling == is_podling)
-        if is_defined(parent_committee_name):
-            query = query.where(sql.Committee.parent_committee_name == parent_committee_name)
+        if is_defined(parent_committee_key):
+            query = query.where(sql.Committee.parent_committee_key == parent_committee_key)
         if is_defined(committee_members):
             query = query.where(sql.Committee.committee_members == committee_members)
         if is_defined(committers):
@@ -277,7 +277,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.release_managers == release_managers)
 
         if is_defined(name_in):
-            query = query.where(via(sql.Committee.name).in_(name_in))
+            query = query.where(via(sql.Committee.key).in_(name_in))
         if is_defined(has_member):
             query = query.where(via(sql.Committee.committee_members).contains(has_member))
         if is_defined(has_committer):
@@ -299,7 +299,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def distribution(
         self,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         platform: Opt[sql.DistributionPlatform] = NOT_SET,
         owner_namespace: Opt[str] = NOT_SET,
         package: Opt[str] = NOT_SET,
@@ -309,8 +309,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         _with_release_project: bool = False,
     ) -> Query[sql.Distribution]:
         query = sqlmodel.select(sql.Distribution)
-        if is_defined(release_name):
-            query = query.where(sql.Distribution.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.Distribution.release_key == release_key)
         if is_defined(platform):
             query = query.where(sql.Distribution.platform == platform)
         if is_defined(owner_namespace):
@@ -382,9 +382,9 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def project(
         self,
+        key: Opt[str] = NOT_SET,
         name: Opt[str] = NOT_SET,
-        full_name: Opt[str] = NOT_SET,
-        committee_name: Opt[str] = NOT_SET,
+        committee_key: Opt[str] = NOT_SET,
         release_policy_id: Opt[int] = NOT_SET,
         status: Opt[sql.ProjectStatus] = NOT_SET,
         _committee: bool = True,
@@ -396,12 +396,12 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.Project]:
         query = sqlmodel.select(sql.Project)
 
+        if is_defined(key):
+            query = query.where(sql.Project.key == key)
         if is_defined(name):
             query = query.where(sql.Project.name == name)
-        if is_defined(full_name):
-            query = query.where(sql.Project.full_name == full_name)
-        if is_defined(committee_name):
-            query = query.where(sql.Project.committee_name == committee_name)
+        if is_defined(committee_key):
+            query = query.where(sql.Project.committee_key == committee_key)
         if is_defined(release_policy_id):
             query = query.where(sql.Project.release_policy_id == release_policy_id)
         if is_defined(status):
@@ -485,7 +485,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     def quarantined(
         self,
         id: Opt[int] = NOT_SET,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         status: Opt[sql.QuarantineStatus] = NOT_SET,
         token: Opt[str] = NOT_SET,
         _release: bool = False,
@@ -495,8 +495,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         via = sql.validate_instrumented_attribute
         if is_defined(id):
             query = query.where(via(sql.Quarantined.id) == id)
-        if is_defined(release_name):
-            query = query.where(sql.Quarantined.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.Quarantined.release_key == release_key)
         if is_defined(status):
             query = query.where(sql.Quarantined.status == status)
         if is_defined(token):
@@ -509,10 +509,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def release(
         self,
-        name: Opt[str] = NOT_SET,
+        key: Opt[str] = NOT_SET,
         phase: Opt[sql.ReleasePhase] = NOT_SET,
         created: Opt[datetime.datetime] = NOT_SET,
-        project_name: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
         package_managers: Opt[list[str]] = NOT_SET,
         version: Opt[str] = NOT_SET,
         sboms: Opt[list[str]] = NOT_SET,
@@ -528,14 +528,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.Release]:
         query = sqlmodel.select(sql.Release)
 
-        if is_defined(name):
-            query = query.where(sql.Release.name == name)
+        if is_defined(key):
+            query = query.where(sql.Release.key == key)
         if is_defined(phase):
             query = query.where(sql.Release.phase == phase)
         if is_defined(created):
             query = query.where(sql.Release.created == created)
-        if is_defined(project_name):
-            query = query.where(sql.Release.project_name == project_name)
+        if is_defined(project_key):
+            query = query.where(sql.Release.project_key == project_key)
         if is_defined(package_managers):
             query = query.where(sql.Release.package_managers == package_managers)
         if is_defined(version):
@@ -571,7 +571,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def release_file_state(
         self,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         path: Opt[str] = NOT_SET,
         since_revision_seq: Opt[int] = NOT_SET,
         present: Opt[bool] = NOT_SET,
@@ -580,8 +580,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.ReleaseFileState]:
         query = sqlmodel.select(sql.ReleaseFileState)
 
-        if is_defined(release_name):
-            query = query.where(sql.ReleaseFileState.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.ReleaseFileState.release_key == release_key)
         if is_defined(path):
             query = query.where(sql.ReleaseFileState.path == path)
         if is_defined(since_revision_seq):
@@ -655,14 +655,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def revision(
         self,
-        name: Opt[str] = NOT_SET,
-        release_name: Opt[str] = NOT_SET,
+        key: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         seq: Opt[int] = NOT_SET,
         number: Opt[str] = NOT_SET,
         asfuid: Opt[str] = NOT_SET,
         created: Opt[datetime.datetime] = NOT_SET,
         phase: Opt[sql.ReleasePhase] = NOT_SET,
-        parent_name: Opt[str | None] = NOT_SET,
+        parent_key: Opt[str | None] = NOT_SET,
         description: Opt[str | None] = NOT_SET,
         _release: bool = False,
         _parent: bool = False,
@@ -670,10 +670,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.Revision]:
         query = sqlmodel.select(sql.Revision)
 
-        if is_defined(name):
-            query = query.where(sql.Revision.name == name)
-        if is_defined(release_name):
-            query = query.where(sql.Revision.release_name == release_name)
+        if is_defined(key):
+            query = query.where(sql.Revision.key == key)
+        if is_defined(release_key):
+            query = query.where(sql.Revision.release_key == release_key)
         if is_defined(seq):
             query = query.where(sql.Revision.seq == seq)
         if is_defined(number):
@@ -684,8 +684,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Revision.created == created)
         if is_defined(phase):
             query = query.where(sql.Revision.phase == phase)
-        if is_defined(parent_name):
-            query = query.where(sql.Revision.parent_name == parent_name)
+        if is_defined(parent_key):
+            query = query.where(sql.Revision.parent_key == parent_key)
         if is_defined(description):
             query = query.where(sql.Revision.description == description)
 
@@ -700,13 +700,13 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def revision_counter(
         self,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         last_allocated_number: Opt[int] = NOT_SET,
     ) -> Query[sql.RevisionCounter]:
         query = sqlmodel.select(sql.RevisionCounter)
 
-        if is_defined(release_name):
-            query = query.where(sql.RevisionCounter.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.RevisionCounter.release_key == release_key)
         if is_defined(last_allocated_number):
             query = query.where(sql.RevisionCounter.last_allocated_number == last_allocated_number)
 
@@ -744,8 +744,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         completed: Opt[datetime.datetime | None] = NOT_SET,
         result: Opt[Any | None] = NOT_SET,
         error: Opt[str | None] = NOT_SET,
-        project_name: Opt[str | None] = NOT_SET,
-        version_name: Opt[str | None] = NOT_SET,
+        project_key: Opt[str | None] = NOT_SET,
+        version_key: Opt[str | None] = NOT_SET,
         revision_number: Opt[str | None] = NOT_SET,
         primary_rel_path: Opt[str | None] = NOT_SET,
         _workflow: bool = False,
@@ -779,10 +779,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Task.result == result)
         if is_defined(error):
             query = query.where(sql.Task.error == error)
-        if is_defined(project_name):
-            query = query.where(sql.Task.project_name == project_name)
-        if is_defined(version_name):
-            query = query.where(sql.Task.version_name == version_name)
+        if is_defined(project_key):
+            query = query.where(sql.Task.project_key == project_key)
+        if is_defined(version_key):
+            query = query.where(sql.Task.version_key == version_key)
         if is_defined(revision_number):
             query = query.where(sql.Task.revision_number == revision_number)
         if is_defined(primary_rel_path):
@@ -814,7 +814,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         fingerprint: Opt[str] = NOT_SET,
         key: Opt[str] = NOT_SET,
-        project_name: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
         expires: Opt[int] = NOT_SET,
         asf_uid: Opt[str] = NOT_SET,
         github_uid: Opt[str] = NOT_SET,
@@ -826,8 +826,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.WorkflowSSHKey.fingerprint == fingerprint)
         if is_defined(key):
             query = query.where(sql.WorkflowSSHKey.key == key)
-        if is_defined(project_name):
-            query = query.where(sql.WorkflowSSHKey.project_name == project_name)
+        if is_defined(project_key):
+            query = query.where(sql.WorkflowSSHKey.project_key == project_key)
         if is_defined(expires):
             query = query.where(sql.WorkflowSSHKey.expires == expires)
         if is_defined(asf_uid):
@@ -843,7 +843,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         workflow_id: Opt[str] = NOT_SET,
         run_id: Opt[int] = NOT_SET,
-        project_name: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
         task_id: Opt[int] = NOT_SET,
         status: Opt[str] = NOT_SET,
         status_in: Opt[list[str]] = NOT_SET,
@@ -855,8 +855,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.WorkflowStatus.workflow_id == workflow_id)
         if is_defined(run_id):
             query = query.where(sql.WorkflowStatus.run_id == run_id)
-        if is_defined(project_name):
-            query = query.where(sql.WorkflowStatus.project_name == project_name)
+        if is_defined(project_key):
+            query = query.where(sql.WorkflowStatus.project_key == project_key)
         if is_defined(task_id):
             query = query.where(sql.WorkflowStatus.task_id == task_id)
         if is_defined(status):
@@ -907,10 +907,10 @@ def ensure_session(caller_data: Session | None) -> Session | contextlib.nullcont
     return contextlib.nullcontext(caller_data)
 
 
-async def get_project_release_policy(data: Session, project_name: safe.ProjectKey) -> sql.ReleasePolicy | None:
+async def get_project_release_policy(data: Session, project_key: safe.ProjectKey) -> sql.ReleasePolicy | None:
     """Fetch the ReleasePolicy for a project."""
-    project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
-        RuntimeError(f"Project {project_name} not found")
+    project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
+        RuntimeError(f"Project {project_key} not found")
     )
     return project.release_policy
 

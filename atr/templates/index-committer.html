@@ -44,7 +44,7 @@
           {% if toc_name and toc_name.startswith("Apache ") %}
             {% set toc_name = toc_name[7:] %}
           {% endif %}
-          {% set project_id = project.name|slugify %}
+          {% set project_id = project.key|slugify %}
           <li class="col">
             <a href="#project-{{ project_id }}"
                class="text-decoration-none page-semibold">{{ toc_name }}</a>
@@ -57,7 +57,7 @@
       {% set project = item.project %}
       {% set active_releases = item.active_releases %}
       {% set completed_releases = item.completed_releases %}
-      {% set project_id = project.name|slugify %}
+      {% set project_id = project.key|slugify %}
 
       {% set display_name_cleaned = project.display_name %}
       {% if display_name_cleaned and display_name_cleaned.lower().endswith(" (incubating)") %}
@@ -67,19 +67,19 @@
       <div class="mb-5" id="project-{{ project_id }}">
         <h2 class="border-bottom border-secondary pb-2 mb-3">
           {{ display_name_cleaned }}
-          {% if project.committee.is_podling or project.name.startswith("incubator-") %}
+          {% if project.committee.is_podling or project.key.startswith("incubator-") %}
             <span class="text-muted fw-normal fs-5">(Incubating)</span>
             <img src="{{ static_url('svg/apache_incubator.svg') }}"
                  alt=""
                  class="float-end ms-3 page-logo"
                  height="24" />
-          {% elif project.super_project_name %}
-            <img src="https://www.apache.org/logos/res/{{ project.super_project_name }}/default.png"
+          {% elif project.super_project_key %}
+            <img src="https://www.apache.org/logos/res/{{ project.super_project_key }}/default.png"
                  alt=""
                  class="float-end ms-3 page-logo"
                  height="24" />
           {% else %}
-            <img src="https://www.apache.org/logos/res/{{ project.name }}/default.png"
+            <img src="https://www.apache.org/logos/res/{{ project.key }}/default.png"
                  alt=""
                  class="float-end ms-3 page-logo"
                  height="24" />
@@ -87,16 +87,16 @@
         </h2>
 
         <p class="mb-3">
-          <a href="{{ as_url(get.projects.view, project_name=project.name )}}"
+          <a href="{{ as_url(get.projects.view, project_key=project.key )}}"
              class="text-decoration-none me-2">About this project</a>
-          {% if project.committee.name in current_user.committees %}
+          {% if project.committee.key in current_user.committees %}
             <span class="text-muted me-2">/</span>
-            <a href="{{ as_url(get.projects.add_project, committee_name=project.committee.name) }}"
+            <a href="{{ as_url(get.projects.add_project, committee_key=project.committee.key) }}"
                class="text-decoration-none me-2">Create a sibling project</a>
           {% endif %}
           {% if completed_releases %}
             <span class="text-muted me-2">/</span>
-            <a href="{{ as_url(get.release.finished, project_name=project.name) }}"
+            <a href="{{ as_url(get.release.finished, project_key=project.key) }}"
                class="text-decoration-none">Finished releases</a>
           {% endif %}
         </p>
@@ -145,7 +145,7 @@
             </a>
           {% endfor %}
 
-          <a href="{{ as_url(get.start.selected, project_name=project.name) }}"
+          <a href="{{ as_url(get.start.selected, project_key=project.key) }}"
              title="Start a new {{ project.display_name }} release"
              class="text-decoration-none">
             <div class="card h-100 shadow-sm atr-cursor-pointer page-card">

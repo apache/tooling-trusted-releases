@@ -19,8 +19,8 @@ from typing import Final
 
 from playwright.sync_api import Locator, Page
 
-PROJECT_NAME: Final[str] = "test"
-IGNORES_URL: Final[str] = f"/ignores/{PROJECT_NAME}"
+PROJECT_KEY: Final[str] = "test"
+IGNORES_URL: Final[str] = f"/ignores/{PROJECT_KEY}"
 
 
 def button_add_ignore(page: Page) -> Locator:

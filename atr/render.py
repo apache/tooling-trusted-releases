@@ -63,8 +63,8 @@ def html_nav_phase(block: htm.Block, project: str, version: str, staging: bool) 
         block,
         util.as_url(
             route,
-            project_name=project,
-            version_name=version,
+            project_key=project,
+            version_key=version,
         ),
         back_anchor=f"{label.title()} {project} {version}",
         phase=label,

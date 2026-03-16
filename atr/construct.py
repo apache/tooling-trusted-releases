@@ -54,8 +54,8 @@ TEMPLATE_VARIABLES: list[tuple[str, str, set[Context]]] = [
 class AnnounceReleaseOptions:
     asfuid: str
     fullname: str
-    project_name: safe.ProjectKey
-    version_name: safe.VersionKey
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
 
 
@@ -63,17 +63,17 @@ class AnnounceReleaseOptions:
 class StartVoteOptions:
     asfuid: str
     fullname: str
-    project_name: safe.ProjectKey
-    version_name: safe.VersionKey
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
     vote_duration: int
 
 
-async def announce_release_default(project_name: safe.ProjectKey) -> str:
+async def announce_release_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
-            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_name} not found"))
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_key} not found"))
 
     return project.policy_announce_release_template
 
@@ -92,32 +92,32 @@ async def announce_release_subject_and_body(
 
     async with db.session() as data:
         release = await data.release(
-            project_name=str(options.project_name),
-            version=str(options.version_name),
+            project_key=str(options.project_key),
+            version=str(options.version_key),
             _project=True,
             _committee=True,
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
-        ).demand(RuntimeError(f"Release {options.project_name} {options.version_name} not found"))
+        ).demand(RuntimeError(f"Release {options.project_key} {options.version_key} not found"))
         if not release.committee:
-            raise RuntimeError(f"Release {options.project_name} {options.version_name} has no committee")
+            raise RuntimeError(f"Release {options.project_key} {options.version_key} has no committee")
         committee = release.committee
 
-        revision = await data.revision(release_name=release.name, number=str(options.revision_number)).get()
+        revision = await data.revision(release_key=release.key, number=str(options.revision_number)).get()
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
-    project_display_name = release.project.short_display_name if release.project else str(options.project_name)
+    project_display_name = release.project.short_display_name if release.project else str(options.project_key)
 
     routes_file_selected = get.file.selected
     download_path = util.as_url(
-        routes_file_selected, project_name=str(options.project_name), version_name=str(options.version_name)
+        routes_file_selected, project_key=str(options.project_key), version_key=str(options.version_key)
     )
     # TODO: This download_url should probably be for the proxy download directory, not the ATR view
     download_url = f"https://{host}{download_path}"
 
     # Perform substitutions in the subject
     subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{VERSION}}", str(options.version_name))
+    subject = subject.replace("{{VERSION}}", str(options.version_key))
 
     # Perform substitutions in the body
     body = body.replace("{{COMMITTEE}}", committee.display_name)
@@ -125,18 +125,18 @@ async def announce_release_subject_and_body(
     body = body.replace("{{PROJECT}}", project_display_name)
     body = body.replace("{{REVISION}}", revision_number)
     body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", str(options.version_name))
+    body = body.replace("{{VERSION}}", str(options.version_key))
     body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
     body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
 
-async def announce_release_subject_default(project_name: safe.ProjectKey) -> str:
+async def announce_release_subject_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
-            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_name} not found"))
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_key} not found"))
 
     return project.policy_announce_release_subject
 
@@ -152,7 +152,7 @@ def announce_template_variables() -> list[tuple[str, str]]:
 def checklist_body(
     markdown: str,
     project: sql.Project,
-    version_name: safe.VersionKey,
+    version_key: safe.VersionKey,
     committee: sql.Committee,
     revision: sql.Revision | None,
 ) -> str:
@@ -165,7 +165,7 @@ def checklist_body(
 
     revision_number = revision.number if revision else ""
     revision_tag = revision.tag if (revision and revision.tag) else ""
-    review_path = util.as_url(vote.selected, project_name=project.name, version_name=version_name)
+    review_path = util.as_url(vote.selected, project_key=project.key, version_key=version_key)
     review_url = f"https://{host}{review_path}"
 
     markdown = markdown.replace("{{COMMITTEE}}", committee.display_name)
@@ -173,7 +173,7 @@ def checklist_body(
     markdown = markdown.replace("{{REVIEW_URL}}", review_url)
     markdown = markdown.replace("{{REVISION}}", revision_number)
     markdown = markdown.replace("{{TAG}}", revision_tag)
-    markdown = markdown.replace("{{VERSION}}", str(version_name))
+    markdown = markdown.replace("{{VERSION}}", str(version_key))
     return markdown
 
 
@@ -181,11 +181,11 @@ def checklist_template_variables() -> list[tuple[str, str]]:
     return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "checklist" in contexts]
 
 
-async def start_vote_default(project_name: safe.ProjectKey) -> str:
+async def start_vote_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
-            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_name} not found"))
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_key} not found"))
 
     return project.policy_start_vote_template
 
@@ -197,16 +197,16 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     async with db.session() as data:
         # Do not limit by phase, as it may be at RELEASE_CANDIDATE already
         release = await data.release(
-            project_name=str(options.project_name),
-            version=str(options.version_name),
+            project_key=str(options.project_key),
+            version=str(options.version_key),
             _project=True,
             _committee=True,
-        ).demand(RuntimeError(f"Release {options.project_name} {options.version_name} not found"))
+        ).demand(RuntimeError(f"Release {options.project_key} {options.version_key} not found"))
         if not release.committee:
-            raise RuntimeError(f"Release {options.project_name} {options.version_name} has no committee")
+            raise RuntimeError(f"Release {options.project_key} {options.version_key} has no committee")
         committee = release.committee
 
-        revision = await data.revision(release_name=release.name, number=str(options.revision_number)).get()
+        revision = await data.revision(release_key=release.key, number=str(options.revision_number)).get()
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
@@ -216,14 +216,12 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         host = config.get().APP_HOST
 
     checklist_path = util.as_url(
-        checklist.selected, project_name=str(options.project_name), version_name=str(options.version_name)
+        checklist.selected, project_key=str(options.project_key), version_key=str(options.version_key)
     )
     checklist_url = f"https://{host}{checklist_path}"
-    review_path = util.as_url(
-        vote.selected, project_name=str(options.project_name), version_name=str(options.version_name)
-    )
+    review_path = util.as_url(vote.selected, project_key=str(options.project_key), version_key=str(options.version_key))
     review_url = f"https://{host}{review_path}"
-    project_display_name = release.project.short_display_name if release.project else str(options.project_name)
+    project_display_name = release.project.short_display_name if release.project else str(options.project_key)
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
     vote_end_str = f"{vote_end.day} {vote_end.strftime('%b %H:%M')} UTC"
 
@@ -231,17 +229,17 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     # Therefore there is no route handler, so we have to construct the URL manually
     keys_file = None
     if committee.is_podling:
-        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.key / "KEYS"
         if await aiofiles.os.path.isfile(keys_file_path):
-            keys_file = f"https://{host}/downloads/incubator/{committee.name}/KEYS"
+            keys_file = f"https://{host}/downloads/incubator/{committee.key}/KEYS"
     else:
-        keys_file_path = paths.get_downloads_dir() / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / committee.key / "KEYS"
         if await aiofiles.os.path.isfile(keys_file_path):
-            keys_file = f"https://{host}/downloads/{committee.name}/KEYS"
+            keys_file = f"https://{host}/downloads/{committee.key}/KEYS"
 
     checklist_content = ""
     async with db.session() as data:
-        release_policy = await db.get_project_release_policy(data, options.project_name)
+        release_policy = await db.get_project_release_policy(data, options.project_key)
         if release_policy:
             checklist_content = release_policy.release_checklist or ""
 
@@ -249,7 +247,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         checklist_content = checklist_body(
             checklist_content,
             project=release.project,
-            version_name=options.version_name,
+            version_key=options.version_key,
             committee=committee,
             revision=revision,
         )
@@ -259,7 +257,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     subject = subject.replace("{{PROJECT}}", str(project_display_name))
     subject = subject.replace("{{REVISION}}", revision_number)
     subject = subject.replace("{{TAG}}", revision_tag)
-    subject = subject.replace("{{VERSION}}", str(options.version_name))
+    subject = subject.replace("{{VERSION}}", str(options.version_key))
     subject = subject.replace("{{VOTE_ENDS_UTC}}", vote_end_str)
 
     # Perform substitutions in the body
@@ -273,18 +271,18 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     body = body.replace("{{REVIEW_URL}}", review_url)
     body = body.replace("{{REVISION}}", revision_number)
     body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", str(options.version_name))
+    body = body.replace("{{VERSION}}", str(options.version_key))
     body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
     body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
 
     return subject, body
 
 
-async def start_vote_subject_default(project_name: safe.ProjectKey) -> str:
+async def start_vote_subject_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
-            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
-        ).demand(RuntimeError(f"Project {project_name} not found"))
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+        ).demand(RuntimeError(f"Project {project_key} not found"))
 
     return project.policy_start_vote_subject
 

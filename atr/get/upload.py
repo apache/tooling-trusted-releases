@@ -41,22 +41,22 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _upload: Literal["upload"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str:
     """
-    URL: /upload/<project_name>/<version_name>
+    URL: /upload/<project_key>/<version_key>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
-        release = await session.release(project_name, version_name, data=data)
+        release = await session.release(project_key, version_key, data=data)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
     block = htm.Block()
 
     render.html_nav(
         block,
-        util.as_url(compose.selected, project_name=release.project.name, version_name=release.version),
+        util.as_url(compose.selected, project_key=release.project.key, version_key=release.version),
         f"Compose {release.short_display_name}",
         "COMPOSE",
     )
@@ -82,14 +82,14 @@ async def selected(
     stage_url = util.as_url(
         post.upload.stage,
         upload_session=upload_session_token,
-        _project_name=str(project_name),
-        _version_name=str(version_name),
+        _project_key=str(project_key),
+        _version_key=str(version_key),
     )
     finalise_url = util.as_url(
         post.upload.finalise,
         upload_session=upload_session_token,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
     )
 
     block.append(
@@ -148,7 +148,7 @@ async def selected(
     server_domain = session.app_host.split(":", 1)[0]
     rsync_command = (
         f"rsync -av -e 'ssh -p 2222' ${{YOUR_FILES}}/ "
-        f"{session.uid}@{server_domain}:/{release.project.name}/{release.version}/"
+        f"{session.uid}@{server_domain}:/{release.project.key}/{release.version}/"
     )
     block.pre(".bg-light.p-3.mb-3")[rsync_command]
 
@@ -192,7 +192,7 @@ jobs:
       - name: Upload to ATR
         uses: apache/tooling-actions/upload-to-atr@04741906f3f38a64ed4489bb12ad78b99424a7a0
         with:
-          project: {project_name!s}
+          project: {project_key!s}
           version: ${{{{github.ref_name}}}}
         """
     ]
@@ -200,7 +200,7 @@ jobs:
         "(assuming your",
         htm.code[" github.ref_name "],
         "resolves to match your version - currently",
-        htm.code[f" {version_name!s} "],
+        htm.code[f" {version_key!s} "],
         "and",
         htm.code[" build.sh "],
         " produces the files you want to upload)",

@@ -31,27 +31,27 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _start: Literal["start"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     start_release_form: shared.start.StartReleaseForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /start/<project_name>
+    URL: /start/<project_key>
     """
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(project_key)
             new_release, _project = await wacp.release.start(
-                project_name,
-                safe.VersionKey(start_release_form.version_name),
+                project_key,
+                safe.VersionKey(start_release_form.version_key),
             )
 
         return await session.redirect(
             get.compose.selected,
-            project_name=str(project_name),
-            version_name=new_release.version,
+            project_key=str(project_key),
+            version_key=new_release.version,
             success="Release candidate draft created successfully",
         )
     except (web.FlashError, base.ASFQuartException) as e:
         await quart.flash(str(e), "error")
-        return await session.redirect(get.start.selected, project_name=str(project_name))
+        return await session.redirect(get.start.selected, project_key=str(project_key))

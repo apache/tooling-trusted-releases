@@ -73,7 +73,7 @@ class DistributeSshRegisterArgs(schema.Strict):
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
     phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
     asf_uid: str = schema.example("user")
-    project_name: safe.ProjectKey = schema.example("tooling")
+    project_key: safe.ProjectKey = schema.example("tooling")
     version: safe.VersionKey = schema.example("0.0.1")
 
 
@@ -89,7 +89,7 @@ class DistributeStatusUpdateArgs(schema.Strict):
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     workflow: str = schema.description("Workflow name")
     run_id: str = schema.description("Workflow run ID")
-    project_name: safe.ProjectKey = schema.description("Project name in ATR")
+    project_key: safe.ProjectKey = schema.description("Project name in ATR")
     status: str = schema.description("Workflow status")
     message: str = schema.description("Workflow message")
 
@@ -164,7 +164,7 @@ class DistributionRecordResults(schema.Strict):
 
 
 class IgnoreAddArgs(schema.Strict):
-    project_name: safe.ProjectKey = schema.example("example")
+    project_key: safe.ProjectKey = schema.example("example")
     release_glob: str | None = schema.default_example(None, "example-0.0.*")
     revision_number: safe.RevisionNumber | None = schema.default_example(None, "00001")
     checker_glob: str | None = schema.default_example(None, "atr.tasks.checks.license.files")
@@ -194,7 +194,7 @@ class IgnoreAddResults(schema.Strict):
 
 
 class IgnoreDeleteArgs(schema.Strict):
-    project_name: safe.ProjectKey = schema.example("example")
+    project_key: safe.ProjectKey = schema.example("example")
     id: int = schema.example(1)
 
 
@@ -289,7 +289,7 @@ class ProjectGetResults(schema.Strict):
 
 class ProjectPolicyResults(schema.Strict):
     endpoint: Literal["/project/policy"] = schema.alias("endpoint")
-    project_name: safe.ProjectKey
+    project_key: safe.ProjectKey
     policy_announce_release_subject: str
     policy_announce_release_template: str
     policy_binary_artifact_paths: list[str]
@@ -558,8 +558,8 @@ class TasksListResults(schema.Strict):
 
 class UserInfoResults(schema.Strict):
     endpoint: Literal["/user/info"] = schema.alias("endpoint")
-    participant_of: list[str] = schema.example(["committee_name_a", "committee_name_b"])
-    member_of: list[str] = schema.example(["committee_name_a"])
+    participant_of: list[str] = schema.example(["committee_key_a", "committee_key_b"])
+    member_of: list[str] = schema.example(["committee_key_a"])
 
 
 class UsersListResults(schema.Strict):

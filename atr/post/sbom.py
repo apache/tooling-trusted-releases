@@ -42,13 +42,13 @@ if TYPE_CHECKING:
 async def report(
     session: web.Committer,
     _sbom_report: Literal["sbom/report"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
     sbom_form: shared.sbom.SBOMForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /sbom/report/<project_name>/<version_name>/<path:file_path>
+    URL: /sbom/report/<project_key>/<version_key>/<path:file_path>
     """
 
     validated_path = form.to_relpath(file_path)
@@ -57,14 +57,14 @@ async def report(
 
     match sbom_form:
         case shared.sbom.AugmentSBOMForm():
-            return await _augment(session, project_name, version_name, validated_path)
+            return await _augment(session, project_key, version_key, validated_path)
 
         case shared.sbom.ScanSBOMForm():
-            return await _scan(session, project_name, version_name, validated_path)
+            return await _scan(session, project_key, version_key, validated_path)
 
 
 async def _augment(
-    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, rel_path: pathlib.Path
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Augment a CycloneDX SBOM file."""
     # Check that the file is a .cdx.json archive before creating a revision
@@ -73,17 +73,17 @@ async def _augment(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
             revision_number = release.latest_revision_number
             if revision_number is None:
                 raise RuntimeError("No revision number found for new revision creation")
-            log.info(f"Augmenting SBOM for {project_name} {version_name} {revision_number} {rel_path}")
-        async with storage.write_as_project_committee_member(project_name) as wacm:
+            log.info(f"Augmenting SBOM for {project_key} {version_key} {revision_number} {rel_path}")
+        async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.augment_cyclonedx(
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 revision_number,
                 rel_path,
             )
@@ -93,22 +93,22 @@ async def _augment(
         await quart.flash(f"Error augmenting SBOM: {e!s}", "error")
         return await session.redirect(
             get.sbom.report,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             file_path=str(rel_path),
         )
 
     return await session.redirect(
         get.sbom.report,
         success=f"SBOM augmentation task queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
-        project_name=project_name,
-        version_name=version_name,
+        project_key=project_key,
+        version_key=version_key,
         file_path=str(rel_path),
     )
 
 
 async def _scan(
-    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, rel_path: pathlib.Path
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
     if not (rel_path.name.endswith(".cdx.json")):
@@ -116,17 +116,17 @@ async def _scan(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
                 RuntimeError("Release does not exist for OSV scan")
             )
             revision_number = release.latest_revision_number
             if revision_number is None:
                 raise RuntimeError("No revision number found for OSV scan")
-            log.info(f"Starting OSV scan for {project_name} {version_name} {revision_number} {rel_path}")
-        async with storage.write_as_project_committee_member(project_name) as wacm:
+            log.info(f"Starting OSV scan for {project_key} {version_key} {revision_number} {rel_path}")
+        async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.osv_scan_cyclonedx(
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 revision_number,
                 rel_path,
             )
@@ -136,15 +136,15 @@ async def _scan(
         await quart.flash(f"Error starting OSV scan: {e!s}", "error")
         return await session.redirect(
             get.sbom.report,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             file_path=str(rel_path),
         )
 
     return await session.redirect(
         get.sbom.report,
         success=f"OSV vulnerability scan queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
-        project_name=project_name,
-        version_name=version_name,
+        project_key=project_key,
+        version_key=version_key,
         file_path=str(rel_path),
     )

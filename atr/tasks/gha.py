@@ -51,11 +51,11 @@ class DistributionWorkflow(schema.Strict):
     package: str = schema.description("Package to distribute")
     version: str = schema.description("Version to distribute")
     staging: bool = schema.description("Whether this is a staging distribution")
-    project_name: str = schema.description("Project name in ATR")
-    version_name: str = schema.description("Version name in ATR")
+    project_key: str = schema.description("Project name in ATR")
+    version_key: str = schema.description("Version name in ATR")
     phase: str = schema.description("Release phase in ATR")
     asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
-    committee_name: str = schema.description("Committee name in ATR")
+    committee_key: str = schema.description("Committee name in ATR")
     platform: str = schema.description("Distribution platform")
     arguments: dict[str, str] = schema.description("Workflow arguments")
     name: str = schema.description("Name of the run")
@@ -142,8 +142,8 @@ async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
 @checks.with_model(DistributionWorkflow)
 async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
     unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
-    project = safe.ProjectKey(args.project_name)
-    safe.VersionKey(args.version_name)
+    project = safe.ProjectKey(args.project_key)
+    safe.VersionKey(args.version_key)
     try:
         sql_platform = sql.DistributionPlatform[args.platform]
     except KeyError:
@@ -154,9 +154,9 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
         "inputs": {
             "atr-id": unique_id,
             "asf-uid": args.asf_uid,
-            "project": args.project_name,
+            "project": args.project_key,
             "phase": args.phase,
-            "version": args.version_name,
+            "version": args.version_key,
             "distribution-owner-namespace": args.namespace,
             "distribution-package": args.package,
             "distribution-version": args.version,
@@ -185,7 +185,7 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
 
         if run.get("status") in _FAILED_STATUSES:
             _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
-        async with storage.write_as_committee_member(args.committee_name, args.asf_uid) as w:
+        async with storage.write_as_committee_member(args.committee_key, args.asf_uid) as w:
             try:
                 await w.workflowstatus.add_workflow_status(workflow, run_id, project, task_id, status=run.get("status"))
             except storage.AccessError as e:

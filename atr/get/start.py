@@ -35,14 +35,14 @@ import atr.web as web
 
 
 @get.typed
-async def selected(session: web.Committer, _start: Literal["start"], project_name: safe.ProjectKey) -> str:
+async def selected(session: web.Committer, _start: Literal["start"], project_key: safe.ProjectKey) -> str:
     """
-    URL: /start/<project_name>
+    URL: /start/<project_key>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
-            base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
+            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
 
     releases = await interaction.all_releases(project)
@@ -105,7 +105,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         submit_classes="btn-primary btn-lg",
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
-        defaults={"project_name": project.name},
+        defaults={"project_key": project.key},
     )
     if releases:
         page.h2(".mt-5")["Existing releases"]

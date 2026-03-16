@@ -29,8 +29,8 @@ class RecorderStub(checks.Recorder):
         super().__init__(
             checker=checker,
             inputs_hash=None,
-            project_name="test",
-            version_name="test",
+            project_key="test",
+            version_key="test",
             revision_number="00001",
             primary_rel_path=None,
             member_rel_path=None,
@@ -56,7 +56,7 @@ class RecorderStub(checks.Recorder):
         self.messages.append((status.value, message, data if isinstance(data, dict) else None))
         return sql.CheckResult(
             id=0,
-            release_name=self.release_name,
+            release_key=self.release_key,
             revision_number=self.revision_number,
             checker=self.checker,
             primary_rel_path=primary_rel_path,

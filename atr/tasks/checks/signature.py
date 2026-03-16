@@ -32,7 +32,7 @@ import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_name", "unsuffixed_file_hash"]
+INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "unsuffixed_file_hash"]
 CHECK_VERSION: Final[str] = "1"
 
 
@@ -50,19 +50,19 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     if not (artifact_abs_path := await recorder.abs_path(artifact_rel_path)):
         return None
 
-    committee_name = args.extra_args.get("committee_name")
-    if not isinstance(committee_name, str):
-        await recorder.exception("Committee name is required", {"committee_name": committee_name})
+    committee_key = args.extra_args.get("committee_key")
+    if not isinstance(committee_key, str):
+        await recorder.exception("Committee name is required", {"committee_key": committee_key})
         return None
 
     log.info(
         f"Checking signature {primary_abs_path} for {artifact_abs_path}"
-        f" using {committee_name} keys (rel: {primary_rel_path})"
+        f" using {committee_key} keys (rel: {primary_rel_path})"
     )
 
     try:
         result_data = await _check_core_logic(
-            committee_name=committee_name,
+            committee_key=committee_key,
             artifact_path=str(artifact_abs_path),
             signature_path=str(primary_abs_path),
         )
@@ -80,19 +80,19 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-async def _check_core_logic(committee_name: str, artifact_path: str, signature_path: str) -> dict[str, Any]:
+async def _check_core_logic(committee_key: str, artifact_path: str, signature_path: str) -> dict[str, Any]:
     """Verify a signature file using the committee's public signing keys."""
-    log.info(f"Attempting to fetch keys for committee_name: '{committee_name}'")
+    log.info(f"Attempting to fetch keys for committee_key: '{committee_key}'")
     async with db.session() as session:
         statement = (
             sqlmodel.select(sql.PublicSigningKey)
             .join(sql.KeyLink)
             .join(sql.Committee)
-            .where(sql.validate_instrumented_attribute(sql.Committee.name) == committee_name)
+            .where(sql.validate_instrumented_attribute(sql.Committee.key) == committee_key)
         )
         result = await session.execute(statement)
         db_public_keys = result.scalars().all()
-    log.info(f"Found {len(db_public_keys)} public keys for committee_name: '{committee_name}'")
+    log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
     for key in db_public_keys:
         if key.fingerprint:
@@ -101,8 +101,8 @@ async def _check_core_logic(committee_name: str, artifact_path: str, signature_p
                 apache_uid_map[key.fingerprint.lower()] = True
             elif key.primary_declared_uid:
                 if email := util.email_from_uid(key.primary_declared_uid):
-                    # Allow uploaded keys of the form private@<committee_name>.apache.org
-                    allowed_github_key_email = f"private@{committee_name}.apache.org"
+                    # Allow uploaded keys of the form private@<committee_key>.apache.org
+                    allowed_github_key_email = f"private@{committee_key}.apache.org"
                     log.info(
                         f"Comparing {key.fingerprint.upper()} with email {email} to allowed {allowed_github_key_email}"
                     )

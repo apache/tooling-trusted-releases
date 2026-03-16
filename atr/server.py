@@ -739,11 +739,11 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
         return
 
     async with db.session() as data:
-        test_committee = await data.committee(name="test").get()
+        test_committee = await data.committee(key="test").get()
         if not test_committee:
             test_committee = sql.Committee(
-                name="test",
-                full_name="Test Committee",
+                key="test",
+                name="Test Committee",
                 is_podling=False,
                 committee_members=["test"],
                 committers=["test"],
@@ -752,13 +752,13 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
             data.add(test_committee)
             await data.commit()
 
-        test_project = await data.project(name="test").get()
+        test_project = await data.project(key="test").get()
         if not test_project:
             test_project = sql.Project(
-                name="test",
-                full_name="Apache Test",
+                key="test",
+                name="Apache Test",
                 status=sql.ProjectStatus.ACTIVE,
-                committee_name="test",
+                committee_key="test",
                 created=datetime.datetime.now(datetime.UTC),
                 created_by="test",
             )

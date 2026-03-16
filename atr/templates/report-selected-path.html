@@ -21,10 +21,10 @@
   {% set phase = release.phase.value %}
   <p class="d-flex justify-content-between align-items-center">
     {% if phase == "release_candidate_draft" %}
-      <a href="{{ as_url(get.compose.selected, project_name=release.project.name, version_name=release.version) }}"
+      <a href="{{ as_url(get.compose.selected, project_key=release.project.key, version_key=release.version) }}"
          class="atr-back-link">← Back to Compose {{ release.project.short_display_name }} {{ release.version }}</a>
     {% else %}
-      <a href="{{ as_url(get.vote.selected, project_name=release.project.name, version_name=release.version) }}"
+      <a href="{{ as_url(get.vote.selected, project_key=release.project.key, version_key=release.version) }}"
          class="atr-back-link">← Back to Vote on {{ release.project.short_display_name }} {{ release.version }}</a>
     {% endif %}
     <span class="atr-phase-nav">
@@ -111,7 +111,7 @@
             <tr class="atr-result-primary atr-result-status-{{ primary_result.status.value }} {% if primary_result.status.value == 'success' and not all_primary_are_success %}atr-hide{% endif %}">
               <th scope="row" class="align-middle fw-bold">
                 <a class="atr-link-plain"
-                   href="{{ as_url(get.result.data, project_name=project_name, version_name=version_name, check_id=primary_result.id) }}">
+                   href="{{ as_url(get.result.data, project_key=project_key, version_key=version_key, check_id=primary_result.id) }}">
                   {{ function_name_from_key(primary_result.checker) }}
                 </a>
               </th>
@@ -298,7 +298,7 @@
                 <td class="align-middle">{{ member_rel_path }}</td>
                 <th scope="row" class="align-middle fw-bold">
                   <a class="atr-link-plain"
-                     href="{{ as_url(get.result.data, project_name=project_name, version_name=version_name, check_id=member_result.id) }}">
+                     href="{{ as_url(get.result.data, project_key=project_key, version_key=version_key, check_id=member_result.id) }}">
                     {{ function_name_from_key(member_result.checker) }}
                   </a>
                 </th>

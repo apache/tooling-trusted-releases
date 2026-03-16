@@ -69,7 +69,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -79,7 +79,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -88,9 +88,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -98,13 +98,13 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def add_workflow_status(
         self,
         workflow_id: str,
         run_id: int,
-        project_name: safe.ProjectKey,
+        project_key: safe.ProjectKey,
         task_id: int | None = None,
         status: str | None = None,
         message: str | None = None,
@@ -117,7 +117,7 @@ class CommitteeMember(CommitteeParticipant):
         ws = sql.WorkflowStatus(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=str(project_name),
+            project_key=str(project_key),
             task_id=task_id,
             status=status or "",
             message=message,
@@ -127,7 +127,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__write_as.append_to_audit_log(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=str(project_name),
+            project_key=str(project_key),
             task_id=task_id,
             status=status,
             message=message,

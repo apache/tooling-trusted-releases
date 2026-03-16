@@ -19,8 +19,8 @@ from typing import Final
 
 from playwright.sync_api import Locator, Page
 
-PROJECT_NAME: Final[str] = "test"
-PROJECT_URL: Final[str] = f"/projects/{PROJECT_NAME}"
+PROJECT_KEY: Final[str] = "test"
+PROJECT_URL: Final[str] = f"/projects/{PROJECT_KEY}"
 
 
 def compose_form_save_button(page: Page) -> Locator:

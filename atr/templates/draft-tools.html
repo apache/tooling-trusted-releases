@@ -5,7 +5,7 @@
 {%- block description -%}Manage a file in the candidate draft using tools.{%- endblock description -%}
 
 {% block content %}
-  <a href="{{ as_url(get.compose.selected, project_name=project_name|string, version_name=version_name|string) }}"
+  <a href="{{ as_url(get.compose.selected, project_key=project_key|string, version_key=version_key|string) }}"
      class="atr-back-link">← Back to Compose release</a>
 
   <div class="p-3 mb-4 bg-light border rounded">

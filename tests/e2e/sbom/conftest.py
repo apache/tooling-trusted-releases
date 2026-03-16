@@ -33,12 +33,12 @@ if TYPE_CHECKING:
 def page_release_with_file(page: Page) -> Generator[Page]:
     helpers.log_in(page)
 
-    helpers.delete_release_if_exists(page, sbom_helpers.PROJECT_NAME, sbom_helpers.VERSION_NAME)
+    helpers.delete_release_if_exists(page, sbom_helpers.PROJECT_KEY, sbom_helpers.VERSION_KEY)
 
-    helpers.visit(page, f"/start/{sbom_helpers.PROJECT_NAME}")
-    page.get_by_role("textbox").type(sbom_helpers.VERSION_NAME)
+    helpers.visit(page, f"/start/{sbom_helpers.PROJECT_KEY}")
+    page.get_by_role("textbox").type(sbom_helpers.VERSION_KEY)
     page.get_by_role("button", name="Start new release").click()
-    helpers.visit(page, f"/upload/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
+    helpers.visit(page, f"/upload/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}")
     page.locator('input[name="file_data"]').set_input_files(
         [
             f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}",
@@ -47,10 +47,10 @@ def page_release_with_file(page: Page) -> Generator[Page]:
         ]
     )
     page.get_by_role("button", name="Add files").click()
-    page.wait_for_url(f"**/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}")
     helpers.wait_for_upload_and_tasks(
         page,
-        f"/compose/{sbom_helpers.PROJECT_NAME}/{sbom_helpers.VERSION_NAME}",
+        f"/compose/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}",
         sbom_helpers.FILE_NAME,
     )
     yield page

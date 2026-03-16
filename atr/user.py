@@ -88,7 +88,7 @@ async def projects(uid: str, committee_only: bool = False, super_project: bool =
 
             # Allow access to test project when ALLOW_TESTS is enabled
             # This means that the Test project will show in the user interface for everyone
-            if config.get().ALLOW_TESTS and (p.committee.name == "test"):
+            if config.get().ALLOW_TESTS and (p.committee.key == "test"):
                 user_projects.append(p)
                 continue
 

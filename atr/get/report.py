@@ -37,12 +37,12 @@ import atr.web as web
 async def selected_path(
     session: web.Committer,
     _report: Literal["report"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     rel_path: unsafe.Path,
 ) -> str:
     """
-    URL: /report/<project_name>/<version_name>/<rel_path>
+    URL: /report/<project_key>/<version_key>/<rel_path>
     Show the report for a specific file.
     """
     validated_path = form.to_relpath(rel_path)
@@ -52,16 +52,16 @@ async def selected_path(
     # If the draft is not found, we try to get the release candidate
     try:
         release = await session.release(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             with_committee=True,
             with_release_policy=True,
             with_project_release_policy=True,
         )
     except base.ASFQuartException:
         release = await session.release(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             with_committee=True,
             with_release_policy=True,
@@ -96,8 +96,8 @@ async def selected_path(
 
     return await template.render(
         "report-selected-path.html",
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         rel_path=str(validated_path),
         package=file_data,
         release=release,

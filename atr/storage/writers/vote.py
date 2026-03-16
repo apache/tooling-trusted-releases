@@ -65,7 +65,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -75,7 +75,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def send_user_vote(
         self,
@@ -125,8 +125,8 @@ class CommitteeParticipant(FoundationCommitter):
                 in_reply_to=in_reply_to,
             ).model_dump(),
             asf_uid=self.__asf_uid,
-            project_name=release.project.name,
-            version_name=release.version,
+            project_key=release.project.key,
+            version_key=release.version,
         )
         self.__data.add(task)
         await self.__data.flush()
@@ -137,8 +137,8 @@ class CommitteeParticipant(FoundationCommitter):
     async def start(
         self,
         email_to: str,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         selected_revision_number: safe.RevisionNumber,
         vote_duration_choice: int,
         subject: str,
@@ -151,13 +151,13 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Task:
         if release is None:
             release = await self.__data.release(
-                project_name=str(project_name),
-                version=str(version_name),
+                project_key=str(project_key),
+                version=str(version_key),
                 _project=True,
                 _committee=True,
             ).demand(storage.AccessError("Release not found"))
         if permitted_recipients is None:
-            permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_name)
+            permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_key)
         if email_to not in permitted_recipients:
             # This will be checked again by tasks/vote.py for extra safety
             log.info(f"Invalid mailing list choice: {email_to} not in {permitted_recipients}")
@@ -171,7 +171,7 @@ class CommitteeParticipant(FoundationCommitter):
         if promote is True:
             # This verifies the state and sets the phase to RELEASE_CANDIDATE
             error = await self.__write_as.release.promote_to_candidate(
-                release.safe_name, selected_revision_number, vote_manual=False
+                release.safe_key, selected_revision_number, vote_manual=False
             )
             if error:
                 raise storage.AccessError(error)
@@ -188,7 +188,7 @@ class CommitteeParticipant(FoundationCommitter):
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.VOTE_INITIATE,
             task_args=tasks_vote.Initiate(
-                release_name=release.name,
+                release_key=release.key,
                 email_to=email_to,
                 vote_duration=vote_duration_choice,
                 initiator_id=asf_uid,
@@ -197,8 +197,8 @@ class CommitteeParticipant(FoundationCommitter):
                 body=body_data,
             ).model_dump(),
             asf_uid=asf_uid,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
         self.__data.add(task)
         await self.__data.commit()
@@ -215,9 +215,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -225,18 +225,18 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def resolve(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         vote_result: Literal["passed", "failed"],
         asf_fullname: str,
         resolution_body: str,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
-            name=sql.release_name(str(project_name), str(version_name)),
+            key=sql.release_key(str(project_key), str(version_key)),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -258,7 +258,7 @@ class CommitteeMember(CommitteeParticipant):
             raise ValueError("Project has no committee - Invalid state")
 
         return await self.resolve_release(
-            project_name,
+            project_key,
             release,
             voting_round,
             vote_result,
@@ -269,12 +269,12 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve_manually(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         vote_result: Literal["passed", "failed"],
     ) -> str:
         release = await self.__data.release(
-            name=sql.release_name(str(project_name), str(version_name)),
+            key=sql.release_key(str(project_key), str(version_key)),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -298,7 +298,7 @@ class CommitteeMember(CommitteeParticipant):
 
             description = "Create a preview revision from the last candidate draft"
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_name, release.safe_version_name, self.__asf_uid, description=description
+                project_key, release.safe_version_key, self.__asf_uid, description=description
             )
         else:
             release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -310,15 +310,15 @@ class CommitteeMember(CommitteeParticipant):
 
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             vote_result=vote_result,
         )
         return success_message
 
     async def resolve_release(
         self,
-        project_name: safe.ProjectKey,
+        project_key: safe.ProjectKey,
         release: sql.Release,
         voting_round: int | None,
         vote_result: Literal["passed", "failed"],
@@ -351,13 +351,13 @@ class CommitteeMember(CommitteeParticipant):
             if revision_number is None:
                 raise ValueError("Release has no revision number - Invalid state")
             vote_duration = latest_vote_task.task_args["vote_duration"]
-            subject_template = await construct.start_vote_subject_default(release.safe_project_name)
-            body_template = await construct.start_vote_default(release.safe_project_name)
+            subject_template = await construct.start_vote_subject_default(release.safe_project_key)
+            body_template = await construct.start_vote_default(release.safe_project_key)
             options = construct.StartVoteOptions(
                 asfuid=self.__asf_uid,
                 fullname=asf_fullname,
-                project_name=release.safe_project_name,
-                version_name=release.safe_version_name,
+                project_key=release.safe_project_key,
+                version_key=release.safe_version_key,
                 revision_number=release.safe_latest_revision_number,
                 vote_duration=vote_duration,
             )
@@ -367,8 +367,8 @@ class CommitteeMember(CommitteeParticipant):
             await self.start(
                 email_to=incubator_vote_address,
                 permitted_recipients=[incubator_vote_address],
-                project_name=release.safe_project_name,
-                version_name=release.safe_version_name,
+                project_key=release.safe_project_key,
+                version_key=release.safe_version_key,
                 selected_revision_number=release.safe_latest_revision_number,
                 asf_uid=self.__asf_uid,
                 asf_fullname=asf_fullname,
@@ -388,7 +388,7 @@ class CommitteeMember(CommitteeParticipant):
 
             description = "Create a preview revision from the last candidate draft"
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_name, release.safe_version_name, self.__asf_uid, description=description
+                project_key, release.safe_version_key, self.__asf_uid, description=description
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -415,8 +415,8 @@ class CommitteeMember(CommitteeParticipant):
         # TODO: Could move this up before send_resolution
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=str(project_name),
-            version_name=release.version,
+            project_key=str(project_key),
+            version_key=release.version,
             vote_result=vote_result,
             voting_round=voting_round,
         )
@@ -469,8 +469,8 @@ class CommitteeMember(CommitteeParticipant):
                 in_reply_to=in_reply_to,
             ).model_dump(),
             asf_uid=asf_uid,
-            project_name=release.project.name,
-            version_name=release.version,
+            project_key=release.project.key,
+            version_key=release.version,
         )
         tasks = [task]
         if extra_destination is not None:
@@ -485,8 +485,8 @@ class CommitteeMember(CommitteeParticipant):
                     in_reply_to=extra_destination[1],
                 ).model_dump(),
                 asf_uid=asf_uid,
-                project_name=release.project.name,
-                version_name=release.version,
+                project_key=release.project.key,
+                version_key=release.version,
             )
             tasks.append(task)
         self.__data.add_all(tasks)

@@ -53,19 +53,19 @@ class FilesDiff(schema.Strict):
 async def selected(
     session: web.Committer,
     _revisions: Literal["revisions"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str:
     """
-    URL: /revisions/<project_name>/<version_name>
+    URL: /revisions/<project_key>/<version_key>
     Show the revision history for a release candidate draft or release preview.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     try:
-        release = await session.release(project_name, version_name)
+        release = await session.release(project_key, version_key)
         phase_key = "draft"
     except base.ASFQuartException:
-        release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_PREVIEW)
+        release = await session.release(project_key, version_key, phase=sql.ReleasePhase.RELEASE_PREVIEW)
         phase_key = "preview"
     release_dir = paths.release_directory_base(release)
 
@@ -79,7 +79,7 @@ async def selected(
     async with db.session() as data_for_revisions:
         revisions_stmt = (
             sqlmodel.select(sql.Revision)
-            .where(sql.Revision.release_name == release.name)
+            .where(sql.Revision.release_key == release.key)
             .order_by(sql.validate_instrumented_attribute(sql.Revision.seq))
             .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Revision.parent)))
         )
@@ -105,8 +105,8 @@ async def selected(
         phase_key,
         list(reversed(revision_history)),
         latest_revision_number,
-        str(project_name),
-        str(version_name),
+        str(project_key),
+        str(version_key),
     )
 
     return await template.blank(
@@ -117,10 +117,10 @@ async def selected(
 
 def _render_back_link(release: sql.Release, phase_key: str) -> htm.Element:
     if phase_key == "draft":
-        back_url = util.as_url(compose.selected, project_name=release.project.name, version_name=release.version)
+        back_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
         return htm.a(".atr-back-link", href=back_url)[f"← Back to Compose {release.short_display_name}"]
     elif phase_key == "preview":
-        back_url = util.as_url(finish.selected, project_name=release.project.name, version_name=release.version)
+        back_url = util.as_url(finish.selected, project_key=release.project.key, version_key=release.version)
         return htm.a(".atr-back-link", href=back_url)[f"← Back to Finish {release.short_display_name}"]
     else:
         return htm.a(".atr-back-link", href=util.as_url(root.index))["← Back to Select a release"]
@@ -164,8 +164,8 @@ async def _render_page(
     phase_key: str,
     revision_history: list[tuple[sql.Revision, "FilesDiff"]],
     latest_revision_number: str | None,
-    project_name: str,
-    version_name: str,
+    project_key: str,
+    version_key: str,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -184,7 +184,7 @@ async def _render_page(
     if revision_history:
         for revision, files_diff in revision_history:
             _render_revision_card(
-                page, revision, files_diff, latest_revision_number, phase_key, project_name, version_name
+                page, revision, files_diff, latest_revision_number, phase_key, project_key, version_key
             )
     else:
         page.div(".alert.alert-info")["No revision history found for this candidate draft."]
@@ -213,7 +213,7 @@ def _render_phase_indicator(phase_key: str) -> htm.Element:
     return span.collect(separator=" ")
 
 
-def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_name: str, version_name: str) -> None:
+def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
     body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Actions"]
     body.div(".mt-3")[
         form.render(
@@ -233,8 +233,8 @@ def _render_revision_card(
     files_diff: "FilesDiff",
     latest_revision_number: str | None,
     phase_key: str,
-    project_name: str,
-    version_name: str,
+    project_key: str,
+    version_key: str,
 ) -> None:
     with page.block(htm.div, classes=".card.mb-3") as card:
         card.div(".card-header.d-flex.justify-content-between.align-items-center")[
@@ -257,12 +257,12 @@ def _render_revision_card(
                 card_body.p(".small.text-muted.mb-2")["Initial revision"]
 
             _render_files_diff(card_body, files_diff)
-            _render_tag_form(card_body, revision, project_name, version_name)
+            _render_tag_form(card_body, revision, project_key, version_key)
 
             is_draft = phase_key == "draft"
             revision_is_preview = revision.phase.value.lower() == "release_preview"
             if (revision.number != latest_revision_number) and (is_draft or revision_is_preview):
-                _render_revision_actions(card_body, revision, project_name, version_name)
+                _render_revision_actions(card_body, revision, project_key, version_key)
 
 
 def _render_revision_header(revision: sql.Revision, latest_revision_number: str | None) -> htm.Element:
@@ -289,9 +289,9 @@ def _render_revision_timestamp(revision: sql.Revision) -> htm.Element:
     return htm.span(".fs-6.text-muted")[f"{timestamp} by {revision.asfuid}"]
 
 
-def _render_tag_form(body: htm.Block, revision: sql.Revision, project_name: str, version_name: str) -> None:
+def _render_tag_form(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
     body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Tag"]
-    action_url = util.as_url(post.revisions.selected_post, project_name=project_name, version_name=version_name)
+    action_url = util.as_url(post.revisions.selected_post, project_key=project_key, version_key=version_key)
     body.form(".d-flex.align-items-center.gap-2.mt-2.w-50", method="post", action=action_url)[
         form.csrf_input(),
         htpy.input(type="hidden", name="variant", value="set_tag"),

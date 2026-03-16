@@ -92,7 +92,7 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
 
     _, totals = await _compute_stats(release, all_paths, match_ignore)
     return totals
@@ -100,16 +100,16 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
 @get.typed
 async def selected(
-    session: web.Public, _checks: Literal["checks"], project_name: safe.ProjectKey, version_name: safe.VersionKey
+    session: web.Public, _checks: Literal["checks"], project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> str:
     """
-    URL: /checks/<project_name>/<version_name>
+    URL: /checks/<project_key>/<version_key>
     Show the file checks for a release candidate.
     """
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
@@ -123,7 +123,7 @@ async def selected(
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
 
     per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
 
@@ -144,18 +144,18 @@ async def selected(
 async def selected_revision(
     session: web.Committer,
     _checks: Literal["checks"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> web.QuartResponse:
     """
-    URL: /checks/<project_name>/<version_name>/<revision_number>
+    URL: /checks/<project_key>/<version_key>/<revision_number>
     Return JSON with ongoing count and HTML fragments for dynamic updates.
     """
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             _committee=True,
             # _project=True is included in _project_release_policy=True
             _project_release_policy=True,
@@ -169,9 +169,9 @@ async def selected_revision(
         ragp = read.as_general_public()
         info = await ragp.releases.path_info(release, all_paths)
 
-    ongoing_count = await interaction.tasks_ongoing(project_name, version_name, revision_number)
+    ongoing_count = await interaction.tasks_ongoing(project_key, version_key, revision_number)
 
-    checks_summary_elem = shared.web.render_checks_summary(info, project_name, version_name)
+    checks_summary_elem = shared.web.render_checks_summary(info, project_key, version_key)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
     delete_file_forms: dict[str, str] = {}
@@ -181,7 +181,7 @@ async def selected_revision(
                 form.render(
                     model_cls=draft.DeleteFileForm,
                     action=util.as_url(
-                        post.draft.delete_file, project_name=str(project_name), version_name=str(version_name)
+                        post.draft.delete_file, project_key=str(project_key), version_key=str(version_key)
                     ),
                     form_classes=".d-inline-block.m-0",
                     submit_classes="btn-sm btn-outline-danger",
@@ -200,8 +200,8 @@ async def selected_revision(
         "check-selected-path-table.html",
         paths=all_paths,
         info=info,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         release=release,
         phase=release.phase.value,
         delete_file_forms=delete_file_forms,
@@ -424,18 +424,18 @@ def _render_file_row(
 
     report_url = util.as_url(
         report.selected_path,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
         rel_path=path_str,
     )
     download_url = util.as_url(
         download.path,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
         file_path=path_str,
     )
     sbom_url = util.as_url(
-        sbom.report, project_name=release.project.name, version_name=release.version, file_path=path_str
+        sbom.report, project_key=release.project.key, version_key=release.version, file_path=path_str
     )
 
     if not has_checks_before:
@@ -481,7 +481,7 @@ def _render_file_row(
         err_cell = htpy.span(".text-muted", style=num_style)["0"]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-success", href=report_url)["Show details"]
 
-    # <a href="{{ as_url(get.sbom.report, project=project_name, version=version_name, file_path=path) }}"
+    # <a href="{{ as_url(get.sbom.report, project=project_key, version=version_key, file_path=path) }}"
     # class="btn btn-sm btn-outline-secondary">Show SBOM</a>
     sbom_btn = None
     if path.suffixes[-2:] == [".cdx", ".json"]:
@@ -506,7 +506,7 @@ def _render_file_row(
 def _render_header(page: htm.Block, release: sql.Release) -> None:
     render.html_nav(
         page,
-        back_url=util.as_url(vote.selected, project_name=release.project.name, version_name=release.version),
+        back_url=util.as_url(vote.selected, project_key=release.project.key, version_key=release.version),
         back_anchor=f"Vote on {release.project.short_display_name} {release.version}",
         phase="VOTE",
     )
@@ -526,7 +526,7 @@ def _render_ignores_section(page: htm.Block, release: sql.Release) -> None:
         "Project committee members can configure rules to ignore specific check results. "
         "Ignored checks are excluded from the counts shown above.",
     ]
-    ignores_url = util.as_url(ignores.ignores, project_name=release.project.name)
+    ignores_url = util.as_url(ignores.ignores, project_key=release.project.key)
     page.div[htpy.a(".btn.btn-outline-primary", href=ignores_url)["Manage check ignores"],]
 
 

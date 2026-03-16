@@ -49,7 +49,7 @@ The [`ResultsJSON`](/ref/atr/models/sql.py:ResultsJSON) type handles storing tas
 
 Some fields are populated automatically using SQLAlchemy event listeners. When a new [`Revision`](/ref/atr/models/sql.py:Revision) is created, the [`populate_revision_sequence_and_name`](/ref/atr/models/sql.py:populate_revision_sequence_and_name) function runs before the database insert. This function queries for the highest existing sequence number for the release, increments it, and sets both the `seq` and `number` fields. It also constructs the revision name by combining the release name with the revision number.
 
-The [`check_release_name`](/ref/atr/models/sql.py:check_release_name) function runs before inserting a release. If the release name is empty, it automatically generates it from the project name and version using the [`release_name`](/ref/atr/models/sql.py:release_name) helper function.
+The [`check_release_key`](/ref/atr/models/sql.py:check_release_key) function runs before inserting a release. If the release name is empty, it automatically generates it from the project name and version using the [`release_key`](/ref/atr/models/sql.py:release_key) helper function.
 
 ### Computed properties
 
@@ -61,7 +61,7 @@ Projects have many computed properties that provide access to release policy set
 
 Database constraints ensure data integrity. The [`Task`](/ref/atr/models/sql.py:Task) model includes a check constraint that validates the status transitions. A task must start in `QUEUED` state, can only transition to `ACTIVE` when `started` and `pid` are set, and can only reach `COMPLETED` or `FAILED` when the `completed` timestamp is set. These constraints prevent invalid state transitions at the database level.
 
-Unique constraints ensure that certain combinations of fields are unique. The `Release` model has a unique constraint on `(project_name, version)` to prevent creating duplicate releases for the same project version. The `Revision` model has two unique constraints: one on `(release_name, seq)` and another on `(release_name, number)`, ensuring that revision numbers are unique within a release.
+Unique constraints ensure that certain combinations of fields are unique. The `Release` model has a unique constraint on `(project_name, version)` to prevent creating duplicate releases for the same project version. The `Revision` model has two unique constraints: one on `(release_key, seq)` and another on `(release_key, number)`, ensuring that revision numbers are unique within a release.
 
 ## Schema changes and migrations
 

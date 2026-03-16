@@ -36,8 +36,8 @@ async def merge(
     base_inodes: dict[str, int],
     base_hashes: dict[str, str],
     prior_dir: pathlib.Path,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     prior_revision_number: safe.RevisionNumber,
     temp_dir: pathlib.Path,
     n_inodes: dict[str, int],
@@ -76,8 +76,8 @@ async def merge(
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 prior_revision_number,
             )
             continue
@@ -107,8 +107,8 @@ async def merge(
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 prior_revision_number,
             )
 
@@ -120,15 +120,15 @@ async def _add_from_prior(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     target = temp_dir / path
     await asyncio.to_thread(_makedirs_with_permissions, target.parent, temp_dir)
     await aiofiles.os.link(prior_dir / path, target)
     if prior_hashes is None:
-        prior_hashes = await attestable.load_paths(project_name, version_name, prior_revision_number)
+        prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
     # Update n_hashes and n_sizes in place
     if (prior_hashes is not None) and (path in prior_hashes):
         n_hashes[path] = prior_hashes[path]
@@ -177,8 +177,8 @@ async def _merge_all_present(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     # Cases 6, 8: prior and new share an inode so they already agree
@@ -198,8 +198,8 @@ async def _merge_all_present(
             n_hashes,
             n_sizes,
             prior_hashes,
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             prior_revision_number,
         )
 
@@ -208,7 +208,7 @@ async def _merge_all_present(
     n_hash = n_hashes[path]
     if b_hash == n_hash:
         if prior_hashes is None:
-            prior_hashes = await attestable.load_paths(project_name, version_name, prior_revision_number)
+            prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
         if (prior_hashes is not None) and (path in prior_hashes):
             p_hash = prior_hashes[path]
         else:
@@ -222,8 +222,8 @@ async def _merge_all_present(
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 prior_revision_number,
             )
 
@@ -238,14 +238,14 @@ async def _replace_with_prior(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     prior_revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     await aiofiles.os.remove(temp_dir / path)
     await aiofiles.os.link(prior_dir / path, temp_dir / path)
     if prior_hashes is None:
-        prior_hashes = await attestable.load_paths(project_name, version_name, prior_revision_number)
+        prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
     # Update n_hashes and n_sizes in place
     file_path = temp_dir / path
     if (prior_hashes is not None) and (path in prior_hashes):

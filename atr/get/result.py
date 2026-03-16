@@ -31,25 +31,25 @@ import atr.web as web
 async def data(
     session: web.Committer,
     _result_data: Literal["result/data"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     check_id: int,
 ) -> web.TextResponse:
     """
-    URL: /result/data/<project_name>/<version_name>/<check_id>
+    URL: /result/data/<project_key>/<version_key>/<check_id>
     Show a check result as formatted JSON.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
         ).get()
 
         if release is None:
-            release = await session.release(project_name, version_name, with_committee=True)
+            release = await session.release(project_key, version_key, with_committee=True)
 
         if release.committee is None:
             raise base.ASFQuartException("Release has no committee", errorcode=500)

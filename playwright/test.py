@@ -99,43 +99,43 @@ def go_to_path(page: Page, path: str, wait: bool = True) -> None:
         wait_for_path(page, path)
 
 
-def lifecycle_01_add_draft(page: Page, credentials: Credentials, version_name: str) -> None:
+def lifecycle_01_add_draft(page: Page, credentials: Credentials, version_key: str) -> None:
     logging.info("Following link to start a new release")
     go_to_path(page, f"/start/{TEST_PROJECT}")
 
     logging.info("Waiting for the start new release page")
-    version_name_locator = page.locator("input#version_name")
-    if not version_name_locator.is_visible(timeout=1000):
+    version_key_locator = page.locator("input#version_key")
+    if not version_key_locator.is_visible(timeout=1000):
         logging.error(f"Version name input not found. Page content:\n{page.content()}")
-    expect(version_name_locator).to_be_visible()
+    expect(version_key_locator).to_be_visible()
     logging.info("Start new release page loaded")
 
-    logging.info(f"Filling version '{version_name}'")
-    version_name_locator.fill(version_name)
+    logging.info(f"Filling version '{version_key}'")
+    version_key_locator.fill(version_key)
 
     logging.info("Submitting the start new release form")
     submit_button_locator = page.get_by_role("button", name="Start new release")
     expect(submit_button_locator).to_be_enabled()
     submit_button_locator.click()
 
-    logging.info(f"Waiting for navigation to /compose/{TEST_PROJECT}/{version_name} after adding draft")
-    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Waiting for navigation to /compose/{TEST_PROJECT}/{version_key} after adding draft")
+    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     logging.info("Add draft actions completed successfully")
 
 
-def lifecycle_02_check_draft_added(page: Page, credentials: Credentials, version_name: str) -> None:
-    logging.info(f"Checking for draft '{TEST_PROJECT} {version_name}'")
-    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+def lifecycle_02_check_draft_added(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Checking for draft '{TEST_PROJECT} {version_key}'")
+    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     h1_strong_locator = page.locator("h1 strong:has-text('Test')")
     expect(h1_strong_locator).to_be_visible()
-    h1_em_locator = page.locator(f"h1 em:has-text('{esc_id(version_name)}')")
+    h1_em_locator = page.locator(f"h1 em:has-text('{esc_id(version_key)}')")
     expect(h1_em_locator).to_be_visible()
-    logging.info(f"Draft '{TEST_PROJECT} {version_name}' found successfully")
+    logging.info(f"Draft '{TEST_PROJECT} {version_key}' found successfully")
 
 
-def lifecycle_03_add_file(page: Page, credentials: Credentials, version_name: str) -> None:
-    logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_name}")
-    go_to_path(page, f"/upload/{TEST_PROJECT}/{version_name}")
+def lifecycle_03_add_file(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_key}")
+    go_to_path(page, f"/upload/{TEST_PROJECT}/{version_key}")
     logging.info("Upload file page loaded")
 
     logging.info("Locating the file input")
@@ -153,15 +153,15 @@ def lifecycle_03_add_file(page: Page, credentials: Credentials, version_name: st
     # We used to check here that the #upload-progress-container was visible
     # But this caused occasional timing issues, so we removed that check
     logging.info("Waiting for upload to complete and redirect to compose page")
-    page.wait_for_url(f"**/compose/{TEST_PROJECT}/{version_name}*", timeout=30000)
-    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+    page.wait_for_url(f"**/compose/{TEST_PROJECT}/{version_key}*", timeout=30000)
+    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     logging.info("Add file actions completed successfully")
 
-    logging.info(f"Navigating back to /compose/{TEST_PROJECT}/{version_name}")
-    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Navigating back to /compose/{TEST_PROJECT}/{version_key}")
+    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
 
     logging.info("Extracting latest revision from compose page")
-    revision_link_locator = page.locator(f'a[href^="/revisions/{TEST_PROJECT}/{version_name}#"]')
+    revision_link_locator = page.locator(f'a[href^="/revisions/{TEST_PROJECT}/{version_key}#"]')
     expect(revision_link_locator).to_be_visible()
     revision_href = revision_link_locator.get_attribute("href")
     if not revision_href:
@@ -170,17 +170,17 @@ def lifecycle_03_add_file(page: Page, credentials: Credentials, version_name: st
     logging.info(f"Found revision: {revision}")
 
     logging.info("Polling for task completion after file upload")
-    poll_for_tasks_completion(page, TEST_PROJECT, version_name, revision)
+    poll_for_tasks_completion(page, TEST_PROJECT, version_key, revision)
 
-    logging.info(f"Navigation back to /compose/{TEST_PROJECT}/{version_name} completed successfully")
+    logging.info(f"Navigation back to /compose/{TEST_PROJECT}/{version_key} completed successfully")
 
 
-def lifecycle_04_start_vote(page: Page, credentials: Credentials, version_name: str) -> None:
-    logging.info(f"Navigating to the compose/{TEST_PROJECT} page for {TEST_PROJECT} {version_name}")
-    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+def lifecycle_04_start_vote(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Navigating to the compose/{TEST_PROJECT} page for {TEST_PROJECT} {version_key}")
+    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     logging.info(f"Compose/{TEST_PROJECT} page loaded successfully")
 
-    logging.info(f"Locating start vote link for {TEST_PROJECT} {version_name}")
+    logging.info(f"Locating start vote link for {TEST_PROJECT} {version_key}")
     start_vote_link_locator = page.locator('a[title="Start a vote on this draft"]')
     expect(start_vote_link_locator).to_be_visible()
 
@@ -197,15 +197,15 @@ def lifecycle_04_start_vote(page: Page, credentials: Credentials, version_name: 
     expect(submit_button_locator).to_be_enabled()
     submit_button_locator.click()
 
-    logging.info(f"Waiting for navigation to /vote/{TEST_PROJECT}/{version_name} after submitting vote email")
-    wait_for_path(page, f"/vote/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Waiting for navigation to /vote/{TEST_PROJECT}/{version_key} after submitting vote email")
+    wait_for_path(page, f"/vote/{TEST_PROJECT}/{version_key}")
 
     logging.info("Vote initiation actions completed successfully")
 
 
-def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_name: str) -> None:
-    logging.info(f"Navigating to the vote page for {TEST_PROJECT} {version_name}")
-    go_to_path(page, f"/vote/{TEST_PROJECT}/{version_name}")
+def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Navigating to the vote page for {TEST_PROJECT} {version_key}")
+    go_to_path(page, f"/vote/{TEST_PROJECT}/{version_key}")
     logging.info("Vote page loaded successfully")
 
     # Wait until the vote initiation background task has completed
@@ -226,7 +226,7 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_name
         logging.warning("Vote thread link not detected after 15s, proceeding anyway")
 
     logging.info("Locating the 'Resolve vote' button")
-    tabulate_form_locator = page.locator(f'form[action="/resolve/{TEST_PROJECT}/{version_name}"]')
+    tabulate_form_locator = page.locator(f'form[action="/resolve/{TEST_PROJECT}/{version_key}"]')
     expect(tabulate_form_locator).to_be_visible()
 
     tabulate_button_locator = tabulate_form_locator.get_by_role("button", name="Resolve vote")
@@ -235,10 +235,10 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_name
     tabulate_button_locator.click()
 
     logging.info("Waiting for navigation to tabulated votes page")
-    wait_for_path(page, f"/resolve/{TEST_PROJECT}/{version_name}")
+    wait_for_path(page, f"/resolve/{TEST_PROJECT}/{version_key}")
 
     logging.info("Locating the resolve vote form on the tabulated votes page")
-    resolve_form_locator = page.locator(f'form[action="/resolve/{TEST_PROJECT}/{version_name}"]')
+    resolve_form_locator = page.locator(f'form[action="/resolve/{TEST_PROJECT}/{version_key}"]')
     expect(resolve_form_locator).to_be_visible()
 
     logging.info("Selecting 'Passed' radio button in resolve form")
@@ -251,25 +251,25 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_name
     expect(resolve_submit_locator).to_be_enabled()
     resolve_submit_locator.click()
 
-    logging.info(f"Waiting for navigation to /finish/{TEST_PROJECT}/{version_name} after resolving the vote")
-    wait_for_path(page, f"/finish/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Waiting for navigation to /finish/{TEST_PROJECT}/{version_key} after resolving the vote")
+    wait_for_path(page, f"/finish/{TEST_PROJECT}/{version_key}")
     logging.info("Vote resolution actions completed successfully")
 
 
-def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_name: str) -> None:
-    go_to_path(page, f"/finish/{TEST_PROJECT}/{version_name}")
+def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_key: str) -> None:
+    go_to_path(page, f"/finish/{TEST_PROJECT}/{version_key}")
     logging.info("Finish page loaded successfully")
 
-    logging.info(f"Locating the announce link for {TEST_PROJECT} {version_name}")
-    announce_link_locator = page.locator(f'a[href="/announce/{TEST_PROJECT}/{esc_id(version_name)}"]')
+    logging.info(f"Locating the announce link for {TEST_PROJECT} {version_key}")
+    announce_link_locator = page.locator(f'a[href="/announce/{TEST_PROJECT}/{esc_id(version_key)}"]')
     expect(announce_link_locator).to_be_visible()
     announce_link_locator.click()
 
-    logging.info(f"Waiting for navigation to /announce/{TEST_PROJECT}/{version_name} after announcing preview")
-    wait_for_path(page, f"/announce/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Waiting for navigation to /announce/{TEST_PROJECT}/{version_key} after announcing preview")
+    wait_for_path(page, f"/announce/{TEST_PROJECT}/{version_key}")
 
-    logging.info(f"Locating the announcement form for {TEST_PROJECT} {version_name}")
-    form_locator = page.locator(f'form[action="/announce/{TEST_PROJECT}/{esc_id(version_name)}"]')
+    logging.info(f"Locating the announcement form for {TEST_PROJECT} {version_key}")
+    form_locator = page.locator(f'form[action="/announce/{TEST_PROJECT}/{esc_id(version_key)}"]')
     expect(form_locator).to_be_visible()
 
     logging.info("Locating the confirmation input within the form")
@@ -294,15 +294,15 @@ def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_
     logging.info("Preview announcement actions completed successfully")
 
 
-def lifecycle_07_release_exists(page: Page, credentials: Credentials, version_name: str) -> None:
-    logging.info(f"Checking for release {TEST_PROJECT} {version_name} on /releases/finished/{TEST_PROJECT}")
+def lifecycle_07_release_exists(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Checking for release {TEST_PROJECT} {version_key} on /releases/finished/{TEST_PROJECT}")
     go_to_path(page, f"/releases/finished/{TEST_PROJECT}")
     logging.info("Releases finished page loaded successfully")
 
-    release_card_locator = page.locator(f'div.card:has(strong.card-title:has-text("{version_name}"))')
+    release_card_locator = page.locator(f'div.card:has(strong.card-title:has-text("{version_key}"))')
     expect(release_card_locator).to_be_visible()
-    logging.info(f"Found card for {TEST_PROJECT} {version_name} release")
-    logging.info(f"Release {TEST_PROJECT} {version_name} confirmed exists on /releases/finished/{TEST_PROJECT}")
+    logging.info(f"Found card for {TEST_PROJECT} {version_key} release")
+    logging.info(f"Release {TEST_PROJECT} {version_key} confirmed exists on /releases/finished/{TEST_PROJECT}")
 
 
 def main() -> None:
@@ -349,8 +349,8 @@ def main() -> None:
     run_tests(args.skip_slow, args.tidy)
 
 
-def poll_for_tasks_completion(page: Page, project_name: str, version_name: str, revision: str) -> None:
-    rev_path = f"{project_name}/{version_name}/{revision}"
+def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, revision: str) -> None:
+    rev_path = f"{project_key}/{version_key}/{revision}"
     polling_url = f"{ATR_BASE_URL}/admin/ongoing-tasks/{rev_path}"
     logging.info(f"Polling URL: {polling_url}")
 
@@ -401,34 +401,34 @@ def ensure_success_results_are_visible(page: Page, result_type: str) -> None:
                 expect(first_success_row).not_to_have_class("atr-hide", timeout=1000)
 
 
-def release_remove(page: Page, release_name: str) -> None:
-    logging.info(f"Checking whether the {release_name} release exists")
-    release_checkbox_locator = page.locator(f'input[name="releases_to_delete"][value="{release_name}"]')
+def release_remove(page: Page, release_key: str) -> None:
+    logging.info(f"Checking whether the {release_key} release exists")
+    release_checkbox_locator = page.locator(f'input[name="releases_to_delete"][value="{release_key}"]')
 
     if release_checkbox_locator.is_visible():
-        logging.info(f"Found the {release_name} release, proceeding with deletion")
-        logging.info(f"Selecting {release_name} for deletion")
+        logging.info(f"Found the {release_key} release, proceeding with deletion")
+        logging.info(f"Selecting {release_key} for deletion")
         release_checkbox_locator.check()
 
-        logging.info(f"Filling deletion confirmation for {release_name}")
+        logging.info(f"Filling deletion confirmation for {release_key}")
         page.locator("#confirm_delete").fill("DELETE")
 
-        logging.info(f"Submitting deletion form for {release_name}")
+        logging.info(f"Submitting deletion form for {release_key}")
         submit_button_locator = page.get_by_role("button", name="Delete selected releases permanently")
         expect(submit_button_locator).to_be_enabled()
         submit_button_locator.click()
 
-        logging.info(f"Waiting for page load after deletion submission for {release_name}")
+        logging.info(f"Waiting for page load after deletion submission for {release_key}")
         page.wait_for_load_state()
-        logging.info(f"Page loaded after deletion for {release_name}")
+        logging.info(f"Page loaded after deletion for {release_key}")
 
-        logging.info(f"Checking for success flash message for {release_name}")
+        logging.info(f"Checking for success flash message for {release_key}")
         flash_message_locator = page.locator("div.flash-success")
         expect(flash_message_locator).to_be_visible()
         expect(flash_message_locator).to_contain_text("Successfully deleted 1 release")
-        logging.info(f"Deletion successful for {release_name}")
+        logging.info(f"Deletion successful for {release_key}")
     else:
-        logging.info(f"Could not find the {release_name} release, no deletion needed")
+        logging.info(f"Could not find the {release_key} release, no deletion needed")
 
 
 def run_tests(skip_slow: bool, tidy_after: bool) -> None:
@@ -569,11 +569,11 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
 
 
 def test_checks_01_hashing_sha512(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_sha512 = f"apache-{project_name}-{version_name}.tar.gz.sha512"
-    compose_path = f"/compose/{project_name}/{version_name}"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_sha512}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_sha512 = f"apache-{project_key}-{version_key}.tar.gz.sha512"
+    compose_path = f"/compose/{project_key}/{version_key}"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_sha512}"
 
     logging.info(f"Starting hashing check test for {filename_sha512}")
 
@@ -606,11 +606,11 @@ def test_checks_01_hashing_sha512(page: Page, credentials: Credentials) -> None:
 
 
 def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_targz = f"apache-{project_name}-{version_name}.tar.gz"
-    compose_path = f"/compose/{project_name}/{version_name}"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_targz}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_targz = f"apache-{project_key}-{version_key}.tar.gz"
+    compose_path = f"/compose/{project_key}/{version_key}"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting License Files check test for {filename_targz}")
 
@@ -643,10 +643,10 @@ def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
 
 
 def test_checks_03_license_headers(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_targz = f"apache-{project_name}-{version_name}.tar.gz"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_targz}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_targz = f"apache-{project_key}-{version_key}.tar.gz"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting License Headers check test for {filename_targz}")
 
@@ -668,10 +668,10 @@ def test_checks_03_license_headers(page: Page, credentials: Credentials) -> None
 
 
 def test_checks_04_paths(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_sha512 = f"apache-{project_name}-{version_name}.tar.gz.sha512"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_sha512}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_sha512 = f"apache-{project_key}-{version_key}.tar.gz.sha512"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_sha512}"
 
     logging.info(f"Starting Paths check test for {filename_sha512}")
 
@@ -696,10 +696,10 @@ def test_checks_04_paths(page: Page, credentials: Credentials) -> None:
 
 
 def test_checks_05_signature(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_asc = f"apache-{project_name}-{version_name}.tar.gz.asc"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_asc}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_asc = f"apache-{project_key}-{version_key}.tar.gz.asc"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_asc}"
 
     logging.info(f"Starting Signature check test for {filename_asc}")
 
@@ -720,10 +720,10 @@ def test_checks_05_signature(page: Page, credentials: Credentials) -> None:
 
 
 def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_targz = f"apache-{project_name}-{version_name}.tar.gz"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_targz}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_targz = f"apache-{project_key}-{version_key}.tar.gz"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting Targz checks for {filename_targz}")
 
@@ -743,15 +743,15 @@ def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
 
 
 def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    filename_targz = f"apache-{project_name}-{version_name}.tar.gz"
-    report_file_path = f"/report/{project_name}/{version_name}/{filename_targz}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    filename_targz = f"apache-{project_key}-{version_key}.tar.gz"
+    report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting check cache checks for {filename_targz}")
     logging.info("Uploading new file to create new revision")
-    logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_name}")
-    go_to_path(page, f"/upload/{TEST_PROJECT}/{version_name}")
+    logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_key}")
+    go_to_path(page, f"/upload/{TEST_PROJECT}/{version_key}")
     logging.info("Upload file page loaded")
 
     logging.info("Locating the file input")
@@ -767,8 +767,8 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
     submit_button_locator.click()
 
     logging.info("Waiting for upload to complete and redirect to compose page")
-    page.wait_for_url(f"**/compose/{TEST_PROJECT}/{version_name}*", timeout=30000)
-    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_name}")
+    page.wait_for_url(f"**/compose/{TEST_PROJECT}/{version_key}*", timeout=30000)
+    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     logging.info("Add file actions completed successfully")
 
     logging.info(f"Navigating to report page {report_file_path}")
@@ -859,43 +859,43 @@ def test_openpgp_01_upload(page: Page, credentials: Credentials) -> None:
 
 
 def test_lifecycle_01_add_draft(page: Page, credentials: Credentials) -> None:
-    lifecycle_01_add_draft(page, credentials, version_name="0.1+draft")
-    lifecycle_01_add_draft(page, credentials, version_name="0.1+candidate")
-    lifecycle_01_add_draft(page, credentials, version_name="0.1+preview")
-    lifecycle_01_add_draft(page, credentials, version_name="0.1+release")
+    lifecycle_01_add_draft(page, credentials, version_key="0.1+draft")
+    lifecycle_01_add_draft(page, credentials, version_key="0.1+candidate")
+    lifecycle_01_add_draft(page, credentials, version_key="0.1+preview")
+    lifecycle_01_add_draft(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_02_check_draft_added(page: Page, credentials: Credentials) -> None:
-    lifecycle_02_check_draft_added(page, credentials, version_name="0.1+draft")
-    lifecycle_02_check_draft_added(page, credentials, version_name="0.1+candidate")
-    lifecycle_02_check_draft_added(page, credentials, version_name="0.1+preview")
-    lifecycle_02_check_draft_added(page, credentials, version_name="0.1+release")
+    lifecycle_02_check_draft_added(page, credentials, version_key="0.1+draft")
+    lifecycle_02_check_draft_added(page, credentials, version_key="0.1+candidate")
+    lifecycle_02_check_draft_added(page, credentials, version_key="0.1+preview")
+    lifecycle_02_check_draft_added(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_03_add_file(page: Page, credentials: Credentials) -> None:
-    lifecycle_03_add_file(page, credentials, version_name="0.1+draft")
-    lifecycle_03_add_file(page, credentials, version_name="0.1+candidate")
-    lifecycle_03_add_file(page, credentials, version_name="0.1+preview")
-    lifecycle_03_add_file(page, credentials, version_name="0.1+release")
+    lifecycle_03_add_file(page, credentials, version_key="0.1+draft")
+    lifecycle_03_add_file(page, credentials, version_key="0.1+candidate")
+    lifecycle_03_add_file(page, credentials, version_key="0.1+preview")
+    lifecycle_03_add_file(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_04_start_vote(page: Page, credentials: Credentials) -> None:
-    lifecycle_04_start_vote(page, credentials, version_name="0.1+candidate")
-    lifecycle_04_start_vote(page, credentials, version_name="0.1+preview")
-    lifecycle_04_start_vote(page, credentials, version_name="0.1+release")
+    lifecycle_04_start_vote(page, credentials, version_key="0.1+candidate")
+    lifecycle_04_start_vote(page, credentials, version_key="0.1+preview")
+    lifecycle_04_start_vote(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_05_resolve_vote(page: Page, credentials: Credentials) -> None:
-    lifecycle_05_resolve_vote(page, credentials, version_name="0.1+preview")
-    lifecycle_05_resolve_vote(page, credentials, version_name="0.1+release")
+    lifecycle_05_resolve_vote(page, credentials, version_key="0.1+preview")
+    lifecycle_05_resolve_vote(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_06_announce_preview(page: Page, credentials: Credentials) -> None:
-    lifecycle_06_announce_preview(page, credentials, version_name="0.1+release")
+    lifecycle_06_announce_preview(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_07_release_exists(page: Page, credentials: Credentials) -> None:
-    lifecycle_07_release_exists(page, credentials, version_name="0.1+release")
+    lifecycle_07_release_exists(page, credentials, version_key="0.1+release")
 
 
 def test_login(page: Page, credentials: Credentials) -> None:
@@ -1012,15 +1012,15 @@ def test_projects_02_check_directory(page: Page, credentials: Credentials) -> No
 
 def test_projects_03_add_project(page: Page, credentials: Credentials) -> None:
     base_project_label = "test"
-    project_name = "Apache Test Example"
+    project_key = "Apache Test Example"
     project_label = "test-example"
 
     logging.info("Navigating to the add derived project page")
     go_to_path(page, f"/project/add/{base_project_label}")
     logging.info("Add a new project page loaded")
 
-    logging.info(f"Filling display name '{project_name}'")
-    page.locator('input[name="display_name"]').fill(project_name)
+    logging.info(f"Filling display name '{project_key}'")
+    page.locator('input[name="display_name"]').fill(project_key)
 
     logging.info(f"Filling label '{project_label}'")
     page.locator('input[name="label"]').fill(project_label)
@@ -1034,8 +1034,8 @@ def test_projects_03_add_project(page: Page, credentials: Credentials) -> None:
     wait_for_path(page, f"/projects/{project_label}")
     logging.info("Navigated to project view page successfully")
 
-    logging.info(f"Checking for project title '{project_name}' on view page")
-    title_locator = page.locator(f'h1:has-text("{project_name}")')
+    logging.info(f"Checking for project title '{project_key}' on view page")
+    title_locator = page.locator(f'h1:has-text("{project_key}")')
     expect(title_locator).to_be_visible()
     logging.info("Project title confirmed on view page")
 
@@ -1100,14 +1100,14 @@ def test_ssh_01_add_key(page: Page, credentials: Credentials) -> None:
 
 
 def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
-    project_name = TEST_PROJECT
-    version_name = "0.2"
-    source_dir_rel = f"apache-{project_name}-{version_name}"
+    project_key = TEST_PROJECT
+    version_key = "0.2"
+    source_dir_rel = f"apache-{project_key}-{version_key}"
     source_dir_abs = f"/run/tests/{source_dir_rel}"
-    file1 = f"apache-{project_name}-{version_name}.tar.gz"
+    file1 = f"apache-{project_key}-{version_key}.tar.gz"
     file2 = f"{file1}.sha512"
 
-    logging.info(f"Starting rsync upload test for {project_name}-{version_name}")
+    logging.info(f"Starting rsync upload test for {project_key}-{version_key}")
 
     if "ATR_BASE_URL" in os.environ:
         ssh_host = os.environ.get("ATR_BASE_URL", "").replace("https://", "").replace(":8080", "")
@@ -1120,7 +1120,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     username = credentials.username
     ssh_command = "ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     source_path = f"{source_dir_abs}/"
-    destination = f"{username}@{ssh_host}:/{project_name}/{version_name}/"
+    destination = f"{username}@{ssh_host}:/{project_key}/{version_key}/"
 
     rsync_cmd = [
         "rsync",
@@ -1146,7 +1146,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
         logging.error("rsync command not found. Is rsync installed in the container?")
         raise RuntimeError("rsync command not found")
 
-    compose_path = f"/compose/{project_name}/{version_name}"
+    compose_path = f"/compose/{project_key}/{version_key}"
     logging.info(f"Waiting for quarantine validation and files to appear on {compose_path}")
     max_wait_seconds = 30
     start_time = time.monotonic()
@@ -1167,7 +1167,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     logging.info("rsync upload test completed successfully")
 
     logging.info(f"Extracting latest revision from {compose_path}")
-    revision_link_locator = page.locator(f'a[href^="/revisions/{project_name}/{version_name}#"]')
+    revision_link_locator = page.locator(f'a[href^="/revisions/{project_key}/{version_key}#"]')
     expect(revision_link_locator).to_be_visible()
     revision_href = revision_link_locator.get_attribute("href")
     if not revision_href:
@@ -1176,7 +1176,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     logging.info(f"Found revision: {revision}")
 
     logging.info(f"Polling for task completion for revision {revision}")
-    poll_for_tasks_completion(page, project_name, version_name, revision)
+    poll_for_tasks_completion(page, project_key, version_key, revision)
 
 
 def test_tidy_up(page: Page) -> None:
@@ -1277,20 +1277,20 @@ def test_tidy_up_openpgp_keys_continued(page: Page, fingerprints_to_delete: list
 
 
 def test_tidy_up_project(page: Page) -> None:
-    project_name = "Apache Test"
-    logging.info(f"Checking for project '{project_name}' at /projects")
+    project_key = "Apache Test"
+    logging.info(f"Checking for project '{project_key}' at /projects")
     go_to_path(page, "/projects")
     logging.info("Project directory page loaded")
 
-    h3_locator = page.get_by_text(project_name, exact=True)
+    h3_locator = page.get_by_text(project_key, exact=True)
     example_card_locator = h3_locator.locator("xpath=ancestor::div[contains(@class, 'project-card')]")
 
     if example_card_locator.is_visible():
-        logging.info(f"Found project card for '{project_name}'")
+        logging.info(f"Found project card for '{project_key}'")
         delete_button_locator = example_card_locator.get_by_role("button", name="Delete Project")
 
         if delete_button_locator.is_visible():
-            logging.info(f"Delete button found for '{project_name}', proceeding with deletion")
+            logging.info(f"Delete button found for '{project_key}', proceeding with deletion")
 
             def handle_dialog(dialog: Dialog) -> None:
                 logging.info(f"Accepting dialog: {dialog.message}")
@@ -1302,15 +1302,15 @@ def test_tidy_up_project(page: Page) -> None:
             logging.info("Waiting for navigation back to /projects after deletion")
             wait_for_path(page, "/projects")
 
-            logging.info(f"Verifying project card for '{project_name}' is no longer visible")
-            h3_locator_check = page.get_by_text(project_name, exact=True)
+            logging.info(f"Verifying project card for '{project_key}' is no longer visible")
+            h3_locator_check = page.get_by_text(project_key, exact=True)
             card_locator_check = h3_locator_check.locator("xpath=ancestor::div[contains(@class, 'project-card')]")
             expect(card_locator_check).not_to_be_visible()
-            logging.info(f"Project '{project_name}' deleted successfully")
+            logging.info(f"Project '{project_key}' deleted successfully")
         else:
-            logging.info(f"Delete button not visible for '{project_name}', no deletion performed")
+            logging.info(f"Delete button not visible for '{project_key}', no deletion performed")
     else:
-        logging.info(f"Project card for '{project_name}' not found, no deletion needed")
+        logging.info(f"Project card for '{project_key}' not found, no deletion needed")
 
 
 def test_tidy_up_ssh_keys(page: Page) -> None:

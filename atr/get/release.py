@@ -32,19 +32,19 @@ import atr.web as web
 
 @get.typed
 async def finished(
-    _session: web.Public, _releases_finished: Literal["releases/finished"], project_name: safe.ProjectKey
+    _session: web.Public, _releases_finished: Literal["releases/finished"], project_key: safe.ProjectKey
 ) -> str:
     """
-    URL: /releases/finished/<project_name>
+    URL: /releases/finished/<project_key>
     View all finished releases for a project.
     """
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
-            base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
+            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
 
         releases = await data.release(
-            project_name=project.name,
+            project_key=project.key,
             phase=sql.ReleasePhase.RELEASE,
             _committee=True,
         ).all()
@@ -89,16 +89,16 @@ async def releases(_session: web.Public, _releases: Literal["releases"]) -> str:
 
 @get.typed
 async def select(
-    session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectKey
+    session: web.Committer, _release_select: Literal["release/select"], project_key: safe.ProjectKey
 ) -> str:
     """
-    URL: /release/select/<project_name>
+    URL: /release/select/<project_key>
     Show releases in progress for a project.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
-            base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
+            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)
     return await template.render(

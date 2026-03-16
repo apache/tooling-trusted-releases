@@ -41,23 +41,23 @@ class BodyPreviewForm(form.Form):
 async def body_preview(
     session: web.Committer,
     _voting_body_preview: Literal["voting/body/preview"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     preview_form: BodyPreviewForm,
 ) -> web.QuartResponse:
     """
-    URL: /voting/body/preview/<project_name>/<version_name>/<revision_number>
+    URL: /voting/body/preview/<project_key>/<version_key>/<revision_number>
     """
 
-    default_subject_template = await construct.start_vote_subject_default(project_name)
-    default_body_template = await construct.start_vote_default(project_name)
+    default_subject_template = await construct.start_vote_subject_default(project_key)
+    default_body_template = await construct.start_vote_default(project_key)
 
     options = construct.StartVoteOptions(
         asfuid=session.uid,
         fullname=session.fullname,
-        project_name=project_name,
-        version_name=version_name,
+        project_key=project_key,
+        version_key=version_key,
         revision_number=revision_number,
         vote_duration=preview_form.vote_duration,
     )
@@ -70,38 +70,38 @@ async def body_preview(
 async def selected_revision(
     session: web.Committer,
     _voting: Literal["voting"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
     start_voting_form: shared.voting.StartVotingForm,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /voting/<project_name>/<version_name>/<revision>
+    URL: /voting/<project_key>/<version_key>/<revision>
     """
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=False
+            session, project_key, version_key, revision, data, manual_vote=False
         ):
             case str() as error:
                 return await session.redirect(
                     get.compose.selected,
                     error=error,
-                    project_name=str(project_name),
-                    version_name=str(version_name),
+                    project_key=str(project_key),
+                    version_key=str(version_key),
                     revision=str(revision),
                 )
             case (release, committee):
                 pass
 
-        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.name)
+        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
         if start_voting_form.mailing_list not in permitted_recipients:
             return await session.form_error(
                 "mailing_list",
                 f"Invalid mailing list selection: {start_voting_form.mailing_list}",
             )
 
-        subject_template = await construct.start_vote_subject_default(project_name)
+        subject_template = await construct.start_vote_subject_default(project_key)
         current_hash = construct.template_hash(subject_template)
         if current_hash != start_voting_form.subject_template_hash:
             return await session.form_error(
@@ -113,18 +113,18 @@ async def selected_revision(
         options = construct.StartVoteOptions(
             asfuid=session.uid,
             fullname=session.fullname,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             revision_number=revision,
             vote_duration=start_voting_form.vote_duration,
         )
         subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
 
-        async with storage.write_as_committee_participant(committee.name) as wacp:
+        async with storage.write_as_committee_participant(committee.key) as wacp:
             _task = await wacp.vote.start(
                 start_voting_form.mailing_list,
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 revision,
                 start_voting_form.vote_duration,
                 subject,
@@ -140,6 +140,6 @@ async def selected_revision(
         return await session.redirect(
             get.vote.selected,
             success=f"The vote announcement email will soon be sent to {start_voting_form.mailing_list}.",
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )

@@ -34,17 +34,17 @@ import atr.web as web
 async def resolve_selected(
     session: web.Committer,
     _manual_resolve: Literal["manual/resolve"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     resolve_vote_form: shared.manual.ResolveVoteForm,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /manual/resolve/<project_name>/<version_name>
+    URL: /manual/resolve/<project_key>/<version_key>
     Post the manual vote resolution page.
     """
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -57,8 +57,8 @@ async def resolve_selected(
     except RuntimeError as e:
         return await session.redirect(
             get.manual.resolve_selected,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             error=str(e),
         )
 
@@ -70,13 +70,13 @@ async def resolve_selected(
             vote_result = "failed"
             destination = get.compose.selected
 
-    async with storage.write_as_project_committee_member(project_name) as wacm:
-        success_message = await wacm.vote.resolve_manually(project_name, version_name, vote_result)
+    async with storage.write_as_project_committee_member(project_key) as wacm:
+        success_message = await wacm.vote.resolve_manually(project_key, version_key, vote_result)
 
     return await session.redirect(
         destination,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         success=success_message,
     )
 
@@ -85,46 +85,46 @@ async def resolve_selected(
 async def start_selected_revision(
     session: web.Committer,
     _manual_start: Literal["manual/start"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
     _form: form.Empty,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /manual/start/<project_name>/<version_name>/<revision>
+    URL: /manual/start/<project_key>/<version_key>/<revision>
     """
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=True
+            session, project_key, version_key, revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
                     get.vote.selected,
                     error=error,
-                    project_name=str(project_name),
-                    version_name=str(version_name),
+                    project_key=str(project_key),
+                    version_key=str(version_key),
                 )
             case (release, _committee):
                 pass
 
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(release.safe_project_name)
-            error = await wacp.release.promote_to_candidate(release.safe_name, revision, vote_manual=True)
+            wacp = await write.as_project_committee_participant(release.safe_project_key)
+            error = await wacp.release.promote_to_candidate(release.safe_key, revision, vote_manual=True)
 
         if error:
             return await session.redirect(
                 get.vote.selected,
                 error=error,
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
 
         return await session.redirect(
             get.vote.selected,
             success="The manual vote process has been started.",
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
 
 

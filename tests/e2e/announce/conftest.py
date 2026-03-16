@@ -29,13 +29,13 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Browser, BrowserContext, Page
 
-PROJECT_NAME: Final[str] = "test"
+PROJECT_KEY: Final[str] = "test"
 # TODO: We need a convention to scope this per test
-VERSION_NAME: Final[str] = "0.1+e2e-announce"
+VERSION_KEY: Final[str] = "0.1+e2e-announce"
 FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
 CURRENT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent.resolve()
-ANNOUNCE_URL: Final[str] = f"/announce/{PROJECT_NAME}/{VERSION_NAME}"
-FINISH_URL: Final[str] = f"/finish/{PROJECT_NAME}/{VERSION_NAME}"
+ANNOUNCE_URL: Final[str] = f"/announce/{PROJECT_KEY}/{VERSION_KEY}"
+FINISH_URL: Final[str] = f"/finish/{PROJECT_KEY}/{VERSION_KEY}"
 
 
 @pytest.fixture(scope="module")
@@ -51,14 +51,14 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
 
     helpers.log_in(page)
 
-    helpers.delete_release_if_exists(page, PROJECT_NAME, VERSION_NAME)
+    helpers.delete_release_if_exists(page, PROJECT_KEY, VERSION_KEY)
 
-    helpers.visit(page, f"/start/{PROJECT_NAME}")
-    page.locator("input#version_name").fill(VERSION_NAME)
+    helpers.visit(page, f"/start/{PROJECT_KEY}")
+    page.locator("input#version_key").fill(VERSION_KEY)
     page.get_by_role("button", name="Start new release").click()
-    page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
-    helpers.visit(page, f"/upload/{PROJECT_NAME}/{VERSION_NAME}")
+    helpers.visit(page, f"/upload/{PROJECT_KEY}/{VERSION_KEY}")
     page.locator('input[name="file_data"]').set_input_files(
         [
             f"{CURRENT_DIR}/../test_files/{FILE_NAME}",
@@ -67,26 +67,26 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
         ]
     )
     page.get_by_role("button", name="Add files").click()
-    page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
-    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}", FILE_NAME)
+    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_KEY}/{VERSION_KEY}", FILE_NAME)
 
     page.locator('a[title="Start a vote on this draft"]').click()
     page.wait_for_load_state()
 
     page.get_by_role("button", name="Send vote email").click()
-    page.wait_for_url(f"**/vote/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/vote/{PROJECT_KEY}/{VERSION_KEY}")
 
-    helpers.visit(page, f"/vote/{PROJECT_NAME}/{VERSION_NAME}")
+    helpers.visit(page, f"/vote/{PROJECT_KEY}/{VERSION_KEY}")
     _poll_for_vote_thread_link(page)
 
-    resolve_form = page.locator(f'form[action="/resolve/{PROJECT_NAME}/{VERSION_NAME}"]')
+    resolve_form = page.locator(f'form[action="/resolve/{PROJECT_KEY}/{VERSION_KEY}"]')
     resolve_form.get_by_role("button", name="Resolve vote").click()
-    page.wait_for_url(f"**/resolve/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/resolve/{PROJECT_KEY}/{VERSION_KEY}")
 
     page.locator('input[name="vote_result"][value="Passed"]').check()
     page.get_by_role("button", name="Resolve vote").click()
-    page.wait_for_url(f"**/finish/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/finish/{PROJECT_KEY}/{VERSION_KEY}")
 
     page.close()
 

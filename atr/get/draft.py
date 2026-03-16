@@ -39,20 +39,20 @@ import atr.web as web
 async def tools(
     session: web.Committer,
     _draft_tools: Literal["draft/tools"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """
-    URL: /draft/tools/<project_name>/<version_name>/<path:file_path>
+    URL: /draft/tools/<project_key>/<version_key>/<path:file_path>
     Show the tools for a specific file.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise base.ASFQuartException("Invalid file path", errorcode=400)
 
-    release = await session.release(project_name, version_name)
+    release = await session.release(project_key, version_key)
     full_path = str(paths.release_directory(release) / validated_path)
 
     # Check that the file exists
@@ -72,8 +72,8 @@ async def tools(
 
     hashgen_action = util.as_url(
         post.draft.hashgen,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         file_path=validated_path_str,
     )
     sha512_form = form.render(
@@ -87,8 +87,8 @@ async def tools(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.sbomgen,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             file_path=validated_path_str,
         ),
         submit_label="Generate CycloneDX SBOM (.cdx.json)",
@@ -99,8 +99,8 @@ async def tools(
     return await template.render(
         "draft-tools.html",
         asf_id=session.uid,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         file_path=validated_path_str,
         file_data=file_data,
         release=release,

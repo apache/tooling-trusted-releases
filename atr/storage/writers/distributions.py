@@ -61,7 +61,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -71,7 +71,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -80,9 +80,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -90,16 +90,16 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def automate(
         self,
-        release_name: models.safe.ReleaseKey,
+        release_key: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
-        committee_name: str,
+        committee_key: str,
         owner_namespace: models.safe.Alphanumeric | None,
-        project_name: models.safe.ProjectKey,
-        version_name: models.safe.VersionKey,
+        project_key: models.safe.ProjectKey,
+        version_key: models.safe.VersionKey,
         phase: str,
         revision_number: str | None,
         package: models.safe.Alphanumeric,
@@ -109,24 +109,24 @@ class CommitteeMember(CommitteeParticipant):
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=gha.DistributionWorkflow(
-                name=str(release_name),
+                name=str(release_key),
                 namespace=str(owner_namespace) if owner_namespace else "",
                 package=str(package),
                 version=str(version),
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
                 phase=phase,
                 platform=platform.name,
                 staging=staging,
                 asf_uid=self.__asf_uid,
-                committee_name=committee_name,
+                committee_key=committee_key,
                 arguments={},
             ).model_dump(),
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=models.sql.TaskStatus.QUEUED,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             revision_number=revision_number,
         )
         self.__data.add(dist_task)
@@ -136,7 +136,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record(
         self,
-        release_name: models.safe.ReleaseKey,
+        release_key: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: models.safe.Alphanumeric | None,
         package: models.safe.Alphanumeric,
@@ -149,11 +149,11 @@ class CommitteeMember(CommitteeParticipant):
     ) -> tuple[models.sql.Distribution, bool]:
         namespace = str(owner_namespace) if owner_namespace else ""
         existing = await self.__data.distribution(
-            str(release_name), platform, namespace, str(package), str(version)
+            str(release_key), platform, namespace, str(package), str(version)
         ).get()
         dist = models.sql.Distribution(
             platform=platform,
-            release_name=str(release_name),
+            release_key=str(release_key),
             owner_namespace=namespace,
             package=str(package),
             version=str(version),
@@ -172,7 +172,7 @@ class CommitteeMember(CommitteeParticipant):
         # If we're doing production and existing was for staging, upgrade it
         if (not staging) and existing.staging:
             upgraded = await self.__upgrade_staging_to_final(
-                release_name,
+                release_key,
                 platform,
                 namespace,
                 str(package),
@@ -197,7 +197,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record_from_data(
         self,
-        release_name: models.safe.ReleaseKey,
+        release_key: models.safe.ReleaseKey,
         staging: bool,
         dd: models.distribution.Data,
         allow_retries: bool = False,
@@ -214,7 +214,7 @@ class CommitteeMember(CommitteeParticipant):
                 log.error(f"Failed to get API response from {api_url}: {error}")
                 if allow_retries:
                     dist, added = await self.record(
-                        release_name=release_name,
+                        release_key=release_key,
                         platform=dd.platform,
                         owner_namespace=dd.owner_namespace,
                         package=dd.package,
@@ -238,7 +238,7 @@ class CommitteeMember(CommitteeParticipant):
             web_url=web_url,
         )
         dist, added = await self.record(
-            release_name=release_name,
+            release_key=release_key,
             platform=dd.platform,
             owner_namespace=dd.owner_namespace,
             package=dd.package,
@@ -253,7 +253,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def __upgrade_staging_to_final(
         self,
-        release_name: models.safe.ReleaseKey,
+        release_key: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str | None,
         package: str,
@@ -263,9 +263,9 @@ class CommitteeMember(CommitteeParticipant):
         api_url: str | None,
         web_url: str | None,
     ) -> models.sql.Distribution | None:
-        tag = f"{release_name} {platform} {owner_namespace or ''} {package} {version}"
+        tag = f"{release_key} {platform} {owner_namespace or ''} {package} {version}"
         existing = await self.__data.distribution(
-            release_name=str(release_name),
+            release_key=str(release_key),
             platform=platform,
             owner_namespace=(owner_namespace or ""),
             package=package,
@@ -284,20 +284,18 @@ class CommitteeMember(CommitteeParticipant):
 
     async def delete_distribution(
         self,
-        release_name: models.safe.ReleaseKey,
+        release_key: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str,
         package: str,
         version: str,
     ) -> None:
         distribution = await self.__data.distribution(
-            release_name=str(release_name),
+            release_key=str(release_key),
             platform=platform,
             owner_namespace=owner_namespace,
             package=package,
             version=version,
-        ).demand(
-            RuntimeError(f"Distribution {release_name} {platform} {owner_namespace} {package} {version} not found")
-        )
+        ).demand(RuntimeError(f"Distribution {release_key} {platform} {owner_namespace} {package} {version} not found"))
         await self.__data.delete(distribution)
         await self.__data.commit()

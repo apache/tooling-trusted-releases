@@ -62,7 +62,7 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
 
     assert quarantined_row.status == sql.QuarantineStatus.ACKNOWLEDGED
     mock_data.commit.assert_awaited_once()
-    mock_data.quarantined.assert_called_once_with(id=7, release_name="proj-1.0", status=sql.QuarantineStatus.FAILED)
+    mock_data.quarantined.assert_called_once_with(id=7, release_key="proj-1.0", status=sql.QuarantineStatus.FAILED)
 
 
 @pytest.mark.asyncio
@@ -271,7 +271,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
     release.name = "proj-1.0"
 
     quarantined_row = mock.MagicMock(spec=sql.Quarantined)
-    quarantined_row.prior_revision_name = None
+    quarantined_row.prior_revision_key = None
     quarantined_row.asf_uid = "testuser"
     quarantined_row.description = "test upload"
 
@@ -312,12 +312,12 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
         await quarantine._promote(quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir)
 
     mock_release_data.release.assert_called_once_with(
-        name="proj-1.0", _release_policy=True, _project_release_policy=True
+        key="proj-1.0", _release_policy=True, _project_release_policy=True
     )
     mock_finalise.assert_awaited_once()
     call_kwargs = mock_finalise.call_args.kwargs
     assert call_kwargs["was_quarantined"] is True
-    assert call_kwargs["project_name"] == "proj"
+    assert call_kwargs["project_key"] == "proj"
     assert call_kwargs["release"] is release
     assert call_kwargs["path_to_hash"] == {"file.txt": "hash1"}
     mock_delete_data.delete.assert_awaited_once_with(quarantined_row)
@@ -490,7 +490,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
 
     assert result is None
     mock_promote.assert_awaited_once_with(
-        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.name, str(quarantine_dir)
+        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.key, str(quarantine_dir)
     )
     mock_mark.assert_not_awaited()
 
@@ -520,12 +520,12 @@ def _make_quarantined_row() -> mock.MagicMock:
     row.id = 1
     row.status = sql.QuarantineStatus.PENDING
     row.release = mock.MagicMock()
-    row.release.name = "proj-1.0"
-    row.release.safe_name = safe.ReleaseKey(row.release.name)
-    row.release.project_name = "proj"
-    row.release.safe_project_name = safe.ProjectKey(row.release.project_name)
+    row.release.key = "proj-1.0"
+    row.release.safe_key = safe.ReleaseKey(row.release.key)
+    row.release.project_key = "proj"
+    row.release.safe_project_key = safe.ProjectKey(row.release.project_key)
     row.release.version = "1.0"
-    row.release.safe_version_name = safe.VersionKey(row.release.version)
+    row.release.safe_version_key = safe.VersionKey(row.release.version)
     return row
 
 

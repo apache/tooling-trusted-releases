@@ -126,7 +126,7 @@ class GeneralPublic:
     async def __successes_errors_warnings(
         self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: types.PathInfo
     ) -> None:
-        match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_name)
+        match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_key)
         attestable_checks = await interaction.checks_for(
             release, revision=latest_revision_number, caller_data=self.__data
         )

@@ -39,26 +39,26 @@ type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
 async def selected(
     session: web.Committer,
     _file: Literal["file"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str:
     """
-    URL: /file/<project_name>/<version_name>
+    URL: /file/<project_key>/<version_key>
     View all the files in a release (any phase).
     """
-    release = await session.release(project_name, version_name, phase=None)
+    release = await session.release(project_key, version_key, phase=None)
 
     revision_number = release.latest_revision_number
     file_stats = []
     if release.phase == sql.ReleasePhase.RELEASE:
         file_stats = [
-            stat async for stat in util.content_list(paths.get_finished_dir(), str(project_name), str(version_name))
+            stat async for stat in util.content_list(paths.get_finished_dir(), str(project_key), str(version_key))
         ]
     elif revision_number is not None:
         file_stats = [
             stat
             async for stat in util.content_list(
-                paths.get_unfinished_dir(), str(project_name), str(version_name), revision_number
+                paths.get_unfinished_dir(), str(project_key), str(version_key), revision_number
             )
         ]
     else:
@@ -82,7 +82,7 @@ async def selected(
             htm.div(".row")[
                 htm.div(".col-md-6")[
                     htm.p[htm.strong["Project:"], " ", release.project.display_name],
-                    htm.p[htm.strong["Label:"], " ", release.name],
+                    htm.p[htm.strong["Label:"], " ", release.key],
                 ],
                 htm.div(".col-md-6")[htm.p[htm.strong["Created:"], " ", release.created.strftime("%Y-%m-%d %H:%M:%S")]],
             ]
@@ -98,8 +98,8 @@ async def selected(
             if stat.is_file:
                 file_url = util.as_url(
                     selected_path,
-                    project_name=release.project.name,
-                    version_name=release.version,
+                    project_key=release.project.key,
+                    version_key=release.version,
                     file_path=stat.path,
                 )
                 file_link = htm.a(href=file_url)[stat.path]
@@ -141,19 +141,19 @@ async def selected(
 async def selected_path(
     session: web.Committer,
     _file: Literal["file"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """
-    URL: /file/<project_name>/<version_name>/<path:file_path>
+    URL: /file/<project_key>/<version_key>/<path:file_path>
     View the content of a specific file in a release (any phase).
     """
     validated_path = form.to_relpath(str(file_path))
     if validated_path is None:
         raise web.FlashError("Invalid file path")
 
-    release = await session.release(project_name, version_name, phase=None)
+    release = await session.release(project_key, version_key, phase=None)
     _max_view_size = 512 * 1024
     full_path = paths.release_directory(release) / validated_path
     content_listing = await util.archive_listing(full_path)
@@ -161,13 +161,13 @@ async def selected_path(
 
     block = htm.Block()
 
-    back_url = util.as_url(selected, project_name=release.project.name, version_name=release.version)
+    back_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
     phase_name = _phase_display_name(release.phase)
     block.a(href=back_url, class_="atr-back-link")[f"← Back to {phase_name} files"]
 
     block.div(".p-3.mt-4.mb-4.bg-light.border.rounded")[
         htm.h2(".mt-0")[f"Viewing file: {validated_path}"],
-        htm.p(".mb-0")[htm.strong["Release:"], " ", release.name],
+        htm.p(".mb-0")[htm.strong["Release:"], " ", release.key],
     ]
 
     if content_listing:
@@ -199,19 +199,19 @@ def _get_navigation_info(release: sql.Release) -> tuple[str, str, Phase] | None:
     """Get back URL, back label, and phase label based on release phase."""
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return (
-            util.as_url(compose.selected, project_name=release.project.name, version_name=release.version),
+            util.as_url(compose.selected, project_key=release.project.key, version_key=release.version),
             f"Compose {release.short_display_name}",
             "COMPOSE",
         )
     elif release.phase == sql.ReleasePhase.RELEASE_CANDIDATE:
         return (
-            util.as_url(vote.selected, project_name=release.project.name, version_name=release.version),
+            util.as_url(vote.selected, project_key=release.project.key, version_key=release.version),
             f"Vote on {release.short_display_name}",
             "VOTE",
         )
     elif release.phase == sql.ReleasePhase.RELEASE_PREVIEW:
         return (
-            util.as_url(finish.selected, project_name=release.project.name, version_name=release.version),
+            util.as_url(finish.selected, project_key=release.project.key, version_key=release.version),
             f"Finish {release.short_display_name}",
             "FINISH",
         )

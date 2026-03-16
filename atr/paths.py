@@ -23,9 +23,9 @@ import atr.models.sql as sql
 
 
 def base_path_for_revision(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> pathlib.Path:
-    return pathlib.Path(get_unfinished_dir(), str(project_name), str(version_name), str(revision))
+    return pathlib.Path(get_unfinished_dir(), str(project_key), str(version_key), str(revision))
 
 
 def get_attestable_dir() -> pathlib.Path:
@@ -67,7 +67,7 @@ def quarantine_directory(quarantined: sql.Quarantined) -> pathlib.Path:
     if not quarantined.token.isalnum():
         raise ValueError("Invalid quarantine token")
     release = quarantined.release
-    return get_quarantined_dir() / release.project_name / release.version / quarantined.token
+    return get_quarantined_dir() / release.project_key / release.version / quarantined.token
 
 
 def release_directory(release: sql.Release) -> pathlib.Path:
@@ -81,8 +81,8 @@ def release_directory(release: sql.Release) -> pathlib.Path:
 def release_directory_base(release: sql.Release) -> pathlib.Path:
     """Determine the filesystem directory for a given release based on its phase."""
     phase = release.phase
-    project_name = release.project.name
-    version_name = release.version
+    project_key = release.project.key
+    version_key = release.version
 
     base_dir: pathlib.Path | None = None
     match phase:
@@ -95,12 +95,12 @@ def release_directory_base(release: sql.Release) -> pathlib.Path:
         case sql.ReleasePhase.RELEASE:
             base_dir = get_finished_dir()
         # Do not add "case _" here
-    return base_dir / project_name / version_name
+    return base_dir / project_key / version_key
 
 
 def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
+    path_project = release.project.key
     path_version = release.version
     match release.phase:
         case (
@@ -119,7 +119,7 @@ def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
 
 def release_directory_version(release: sql.Release) -> pathlib.Path:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
+    path_project = release.project.key
     path_version = release.version
     match release.phase:
         case (
@@ -135,6 +135,6 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
 
 
 def revision_path_for_file(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision: safe.RevisionNumber, file_name: str
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber, file_name: str
 ) -> pathlib.Path:
-    return base_path_for_revision(project_name, version_name, revision) / file_name
+    return base_path_for_revision(project_key, version_key, revision) / file_name

@@ -71,7 +71,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -81,7 +81,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -90,9 +90,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -100,12 +100,12 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def release(  # noqa: C901
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         preview_revision_number: safe.RevisionNumber,
         recipient: str,
         body: str,
@@ -121,8 +121,8 @@ class CommitteeMember(CommitteeParticipant):
         finished_dir: str = ""
 
         release = await self.__data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
             latest_revision_number=str(preview_revision_number),
             _project_release_policy=True,
@@ -131,7 +131,7 @@ class CommitteeMember(CommitteeParticipant):
             _release_policy=True,
         ).demand(
             storage.AccessError(
-                f"Release {project_name!s} {version_name!s} {preview_revision_number!s} does not exist",
+                f"Release {project_key!s} {version_key!s} {preview_revision_number!s} does not exist",
             )
         )
         if (committee := release.project.committee) is None:
@@ -155,7 +155,7 @@ class CommitteeMember(CommitteeParticipant):
                 )
 
         # Fetch the current subject template and verify the hash
-        subject_template = await construct.announce_release_subject_default(project_name)
+        subject_template = await construct.announce_release_subject_default(project_key)
         if subject_template_hash is not None:
             current_hash = construct.template_hash(subject_template)
             if current_hash != subject_template_hash:
@@ -165,8 +165,8 @@ class CommitteeMember(CommitteeParticipant):
         options = construct.AnnounceReleaseOptions(
             asfuid=asf_uid,
             fullname=fullname,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             revision_number=preview_revision_number,
         )
         subject, _ = await construct.announce_release_subject_and_body(subject_template, "", options)
@@ -197,8 +197,8 @@ class CommitteeMember(CommitteeParticipant):
             await aioshutil.move(unfinished_dir, finished_dir)
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
                 revision_number=str(preview_revision_number),
                 source_directory=unfinished_dir,
                 target_directory=finished_dir,
@@ -209,7 +209,7 @@ class CommitteeMember(CommitteeParticipant):
                 # Each prior revision directory is immutable
                 await util.delete_immutable_directory(
                     unfinished_revisions_path,
-                    reason="user {self.__asf_uid} is releasing {project_name} {version_name} {preview_revision_number}",
+                    reason="user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
                 )
         except Exception as e:
             raise storage.AccessError(f"Error moving files: {e!s}")
@@ -236,8 +236,8 @@ class CommitteeMember(CommitteeParticipant):
                     in_reply_to=None,
                 ).model_dump(),
                 asf_uid=asf_uid,
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
             self.__data.add(task)
 
@@ -261,7 +261,7 @@ class CommitteeMember(CommitteeParticipant):
         """Hard link the release files to the downloads directory."""
         # TODO: Rename *_dir functions to _path functions
         downloads_base_path = paths.get_downloads_dir()
-        downloads_path = downloads_base_path / committee.name / download_path_suffix.removeprefix("/")
+        downloads_path = downloads_base_path / committee.key / download_path_suffix.removeprefix("/")
         # The "exist_ok" parameter means to overwrite files if True
         # We only overwrite if we're not preserving, so we supply "not preserve"
         # TODO: Add a test for this
@@ -290,7 +290,7 @@ class CommitteeMember(CommitteeParticipant):
         update_stmt = (
             sqlmodel.update(sql.Release)
             .where(
-                via(sql.Release.name) == release.name,
+                via(sql.Release.key) == release.key,
                 via(sql.Release.phase) == sql.ReleasePhase.RELEASE_PREVIEW,
                 sql.latest_revision_number_query() == str(preview_revision_number),
             )
@@ -307,6 +307,6 @@ class CommitteeMember(CommitteeParticipant):
             raise RuntimeError("A newer revision appeared, please refresh and try again.")
 
         delete_revisions_stmt = sqlmodel.delete(sql.Revision).where(
-            via(sql.Revision.release_name) == release.name,
+            via(sql.Revision.release_key) == release.key,
         )
         await self.__data.execute_query(delete_revisions_stmt)

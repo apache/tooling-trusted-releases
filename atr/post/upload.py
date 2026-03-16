@@ -46,12 +46,12 @@ import atr.web as web
 async def finalise(
     session: web.Committer,
     _upload_finalise: Literal["upload/finalise"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
-    URL: /upload/finalise/<project_name>/<version_name>/<upload_session>
+    URL: /upload/finalise/<project_key>/<version_key>/<upload_session>
     """
 
     try:
@@ -73,7 +73,7 @@ async def finalise(
 
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(project_key)
             number_of_files = len(staged_files)
             description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
 
@@ -84,7 +84,7 @@ async def finalise(
                     await aioshutil.move(str(src), str(dst))
 
             result = await wacp.revision.create_revision_with_quarantine(
-                project_name, version_name, session.uid, description=description, modify=modify
+                project_key, version_key, session.uid, description=description, modify=modify
             )
 
         await aioshutil.rmtree(staging_dir)
@@ -93,23 +93,23 @@ async def finalise(
             return await session.redirect(
                 get.compose.selected,
                 success="Upload received. Archive validation in progress.",
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
 
         return await session.redirect(
             get.compose.selected,
             success=f"{util.plural(number_of_files, 'file')} added successfully",
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
     except types.FailedError as e:
         await aioshutil.rmtree(staging_dir)
         await quart.flash(str(e), "error")
         return await session.redirect(
             get.upload.selected,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
     except Exception as e:
         log.exception(f"Error finalising upload: {e!r}")
@@ -120,32 +120,32 @@ async def finalise(
 async def selected(
     session: web.Committer,
     _upload: Literal["upload"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     upload_form: shared.upload.UploadForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /upload/<project_name>/<version_name>
+    URL: /upload/<project_key>/<version_key>
     """
 
     match upload_form:
         case shared.upload.AddFilesForm() as add_form:
-            return await _add_files(session, add_form, project_name, version_name)
+            return await _add_files(session, add_form, project_key, version_key)
 
         case shared.upload.SvnImportForm() as svn_form:
-            return await _svn_import(session, svn_form, project_name, version_name)
+            return await _svn_import(session, svn_form, project_key, version_key)
 
 
 @post.typed
 async def stage(
     _session: web.Committer,
     _upload_stage: Literal["upload/stage"],
-    _project_name: safe.ProjectKey,
-    _version_name: safe.VersionKey,
+    _project_key: safe.ProjectKey,
+    _version_key: safe.VersionKey,
     upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
-    URL: /upload/stage/<project_name>/<version_name>/<upload_session>
+    URL: /upload/stage/<project_key>/<version_key>/<upload_session>
     """
 
     try:
@@ -188,54 +188,54 @@ async def stage(
 async def _add_files(
     session: web.Committer,
     add_form: shared.upload.AddFilesForm,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     try:
         file_data = add_form.file_data
 
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(project_key)
             creation_error, number_of_files, was_quarantined = await wacp.release.upload_files(
-                project_name, version_name, file_data
+                project_key, version_key, file_data
             )
 
         if creation_error is not None:
             await quart.flash(creation_error, "error")
             return await session.redirect(
                 get.upload.selected,
-                project_name=project_name,
-                version_name=version_name,
+                project_key=project_key,
+                version_key=version_key,
             )
 
         if was_quarantined:
             return await session.redirect(
                 get.compose.selected,
                 success="Upload received. Archive validation in progress.",
-                project_name=project_name,
-                version_name=version_name,
+                project_key=project_key,
+                version_key=version_key,
             )
 
         return await session.redirect(
             get.compose.selected,
             success=f"{util.plural(number_of_files, 'file')} added successfully",
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
         )
     except Exception as e:
         log.exception("Error adding file:")
         await quart.flash(f"Error adding file: {e!s}", "error")
         return await session.redirect(
             get.upload.selected,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
         )
 
 
-def _construct_svn_url(committee_name: str, area: shared.upload.SvnArea, path: str, *, is_podling: bool) -> str:
+def _construct_svn_url(committee_key: str, area: shared.upload.SvnArea, path: str, *, is_podling: bool) -> str:
     if is_podling:
-        return f"{area.value}/incubator/{committee_name}/{path}"
-    return f"{area.value}/{committee_name}/{path}"
+        return f"{area.value}/incubator/{committee_key}/{path}"
+    return f"{area.value}/{committee_key}/{path}"
 
 
 def _json_error(message: str, status: int) -> web.WerkzeugResponse:
@@ -251,8 +251,8 @@ def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugRespon
 async def _svn_import(
     session: web.Committer,
     svn_form: shared.upload.SvnImportForm,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
@@ -261,21 +261,21 @@ async def _svn_import(
         svn_path = svn_form.svn_path or ""
 
         async with db.session() as data:
-            release = await session.release(project_name, version_name, data=data)
+            release = await session.release(project_key, version_key, data=data)
             is_podling = (release.project.committee is not None) and release.project.committee.is_podling
-            committee_name = release.project.committee_name or str(project_name)
+            committee_key = release.project.committee_key or str(project_key)
 
         svn_url = _construct_svn_url(
-            committee_name,
+            committee_key,
             svn_area,  # pyright: ignore[reportArgumentType]
             svn_path,
             is_podling=is_podling,
         )
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_name)
+            wacp = await write.as_project_committee_participant(project_key)
             await wacp.release.import_from_svn(
-                project_name,
-                version_name,
+                project_key,
+                version_key,
                 svn_url,
                 svn_form.revision,
                 target_subdirectory,
@@ -284,14 +284,14 @@ async def _svn_import(
         return await session.redirect(
             get.compose.selected,
             success="SVN import task queued successfully",
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
         )
     except Exception:
         log.exception("Error queueing SVN import task:")
         return await session.redirect(
             get.upload.selected,
             error="Error queueing SVN import task",
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
         )

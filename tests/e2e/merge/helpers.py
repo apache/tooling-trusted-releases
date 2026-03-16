@@ -17,5 +17,5 @@
 
 from typing import Final
 
-PROJECT_NAME: Final[str] = "test"
-VERSION_NAME: Final[str] = "0.1+e2e-merge"
+PROJECT_KEY: Final[str] = "test"
+VERSION_KEY: Final[str] = "0.1+e2e-merge"
