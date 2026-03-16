@@ -252,7 +252,7 @@ pydantic==2.12.5
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.41.5
+pydantic-core==2.42.0
     # via
     #   pydantic
     #   pydantic-xml
