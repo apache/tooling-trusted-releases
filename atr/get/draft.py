@@ -39,8 +39,8 @@ import atr.web as web
 async def tools(
     session: web.Committer,
     _draft_tools: Literal["draft/tools"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """

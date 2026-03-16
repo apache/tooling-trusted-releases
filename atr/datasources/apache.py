@@ -484,7 +484,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
             updated_count += 1
 
         # Pass the project name through the validator
-        safe.ProjectName(project_model.name)
+        safe.ProjectKey(project_model.name)
         project_model.full_name = str(project_status.name)
         project_model.category = project_status.category
         project_model.description = project_status.description

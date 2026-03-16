@@ -599,8 +599,8 @@ async def logs(session: web.Committer) -> web.QuartResponse:
 async def ongoing_tasks_get(
     session: web.Committer, project_name: str, version_name: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectName(project_name)
-    version = safe.VersionName(version_name)
+    project = safe.ProjectKey(project_name)
+    version = safe.VersionKey(version_name)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
@@ -609,8 +609,8 @@ async def ongoing_tasks_get(
 async def ongoing_tasks_post(
     session: web.Committer, project_name: str, version_name: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectName(project_name)
-    version = safe.VersionName(version_name)
+    project = safe.ProjectKey(project_name)
+    version = safe.VersionKey(version_name)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
@@ -1177,8 +1177,8 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 async def _ongoing_tasks(
     session: web.Committer,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.QuartResponse:
     try:

@@ -94,16 +94,16 @@ class CommitteeMember(CommitteeParticipant):
 
     async def automate(
         self,
-        release_name: models.safe.ReleaseName,
+        release_name: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         committee_name: str,
         owner_namespace: models.safe.Alphanumeric | None,
-        project_name: models.safe.ProjectName,
-        version_name: models.safe.VersionName,
+        project_name: models.safe.ProjectKey,
+        version_name: models.safe.VersionKey,
         phase: str,
         revision_number: str | None,
         package: models.safe.Alphanumeric,
-        version: models.safe.VersionName,
+        version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
         dist_task = models.sql.Task(
@@ -136,11 +136,11 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record(
         self,
-        release_name: models.safe.ReleaseName,
+        release_name: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: models.safe.Alphanumeric | None,
         package: models.safe.Alphanumeric,
-        version: models.safe.VersionName,
+        version: models.safe.VersionKey,
         staging: bool,
         pending: bool,
         upload_date: datetime.datetime | None,
@@ -197,7 +197,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def record_from_data(
         self,
-        release_name: models.safe.ReleaseName,
+        release_name: models.safe.ReleaseKey,
         staging: bool,
         dd: models.distribution.Data,
         allow_retries: bool = False,
@@ -253,7 +253,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def __upgrade_staging_to_final(
         self,
-        release_name: models.safe.ReleaseName,
+        release_name: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str | None,
         package: str,
@@ -284,7 +284,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def delete_distribution(
         self,
-        release_name: models.safe.ReleaseName,
+        release_name: models.safe.ReleaseKey,
         platform: models.sql.DistributionPlatform,
         owner_namespace: str,
         package: str,

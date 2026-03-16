@@ -34,8 +34,8 @@ import atr.web as web
 async def resolve_selected(
     session: web.Committer,
     _manual_resolve: Literal["manual/resolve"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     resolve_vote_form: shared.manual.ResolveVoteForm,
 ) -> web.WerkzeugResponse | str:
     """
@@ -85,8 +85,8 @@ async def resolve_selected(
 async def start_selected_revision(
     session: web.Committer,
     _manual_start: Literal["manual/start"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
     _form: form.Empty,
 ) -> web.WerkzeugResponse | str:

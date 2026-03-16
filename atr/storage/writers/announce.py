@@ -104,8 +104,8 @@ class CommitteeMember(CommitteeParticipant):
 
     async def release(  # noqa: C901
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         preview_revision_number: safe.RevisionNumber,
         recipient: str,
         body: str,

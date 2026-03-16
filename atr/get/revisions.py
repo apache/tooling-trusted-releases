@@ -53,8 +53,8 @@ class FilesDiff(schema.Strict):
 async def selected(
     session: web.Committer,
     _revisions: Literal["revisions"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /revisions/<project_name>/<version_name>

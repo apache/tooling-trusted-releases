@@ -35,7 +35,7 @@ import atr.web as web
 
 
 @get.typed
-async def selected(session: web.Committer, _start: Literal["start"], project_name: safe.ProjectName) -> str:
+async def selected(session: web.Committer, _start: Literal["start"], project_name: safe.ProjectKey) -> str:
     """
     URL: /start/<project_name>
     """

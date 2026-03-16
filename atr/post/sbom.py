@@ -42,8 +42,8 @@ if TYPE_CHECKING:
 async def report(
     session: web.Committer,
     _sbom_report: Literal["sbom/report"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
     sbom_form: shared.sbom.SBOMForm,
 ) -> web.WerkzeugResponse:
@@ -64,7 +64,7 @@ async def report(
 
 
 async def _augment(
-    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
+    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Augment a CycloneDX SBOM file."""
     # Check that the file is a .cdx.json archive before creating a revision
@@ -108,7 +108,7 @@ async def _augment(
 
 
 async def _scan(
-    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
+    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, rel_path: pathlib.Path
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
     if not (rel_path.name.endswith(".cdx.json")):

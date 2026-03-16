@@ -250,7 +250,7 @@ async def has_failing_checks(
 
 
 async def latest_info(
-    project_name: safe.ProjectName, version_name: safe.VersionName
+    project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
     release_name = sql.release_name(project_name, version_name)
@@ -303,8 +303,8 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
 
 async def release_ready_for_vote(  # noqa: C901
     session: web.Committer,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
     data: db.Session,
     manual_vote: bool = False,
@@ -404,7 +404,7 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
 
 
 async def tasks_ongoing(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber | None = None
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber | None = None
 ) -> int:
     tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
     async with db.session() as data:
@@ -420,8 +420,8 @@ async def tasks_ongoing(
 
 
 async def tasks_ongoing_revision(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber | None = None,
 ) -> tuple[int, str | None]:
     via = sql.validate_instrumented_attribute
@@ -471,8 +471,8 @@ async def trusted_jwt_for_dist(
     jwt: str,
     asf_uid: str,
     phase: TrustedProjectPhase,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> tuple[dict[str, Any], str, sql.Project, sql.Release]:
     payload, asf_uid_from_jwt = await validate_trusted_jwt(publisher, jwt)
     if asf_uid_from_jwt is not None:

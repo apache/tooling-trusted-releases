@@ -95,7 +95,7 @@ class Data(schema.Subset):
     platform: sql.DistributionPlatform
     owner_namespace: safe.Alphanumeric | None = None
     package: safe.Alphanumeric
-    version: safe.VersionName
+    version: safe.VersionKey
     details: bool
 
     @pydantic.field_validator("owner_namespace", mode="before")

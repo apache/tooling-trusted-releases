@@ -96,8 +96,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def delete(
         self,
-        project_name: safe.ProjectName,
-        version: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version: safe.VersionKey,
         phase: db.Opt[sql.ReleasePhase] = db.NOT_SET,
         include_downloads: bool = True,
     ) -> str | None:
@@ -158,7 +158,7 @@ class CommitteeParticipant(FoundationCommitter):
         return error
 
     async def delete_empty_directory(
-        self, project_name: safe.ProjectName, version_name: safe.VersionName, dir_to_delete_rel: pathlib.Path
+        self, project_name: safe.ProjectKey, version_name: safe.VersionKey, dir_to_delete_rel: pathlib.Path
     ) -> str | None:
         description = f"Delete empty directory {dir_to_delete_rel} via web interface"
 
@@ -181,7 +181,7 @@ class CommitteeParticipant(FoundationCommitter):
         return None
 
     async def delete_file(
-        self, project_name: safe.ProjectName, version: safe.VersionName, rel_path_to_delete: pathlib.Path
+        self, project_name: safe.ProjectKey, version: safe.VersionKey, rel_path_to_delete: pathlib.Path
     ) -> int:
         metadata_files_deleted = 0
         description = "File deletion through web interface"
@@ -221,7 +221,7 @@ class CommitteeParticipant(FoundationCommitter):
         return metadata_files_deleted
 
     async def generate_hash_file(
-        self, project_name: safe.ProjectName, version_name: safe.VersionName, rel_path: pathlib.Path
+        self, project_name: safe.ProjectKey, version_name: safe.VersionKey, rel_path: pathlib.Path
     ) -> None:
         description = "Hash generation through web interface"
 
@@ -262,8 +262,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def import_from_svn(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         svn_url: str,
         revision: str,
         target_subdirectory: str | None,
@@ -292,8 +292,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def move_file(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         source_files_rel: list[pathlib.Path],
         target_dir_rel: pathlib.Path,
     ) -> tuple[str | None, list[str], list[str]]:
@@ -320,7 +320,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def promote_to_candidate(
         self,
-        release_name: safe.ReleaseName,
+        release_name: safe.ReleaseKey,
         selected_revision_number: safe.RevisionNumber,
         vote_manual: bool = False,
     ) -> str | None:
@@ -384,7 +384,7 @@ class CommitteeParticipant(FoundationCommitter):
         return None
 
     async def remove_rc_tags(
-        self, project_name: safe.ProjectName, version_name: safe.VersionName
+        self, project_name: safe.ProjectKey, version_name: safe.VersionKey
     ) -> tuple[str | None, int, list[str]]:
         description = "Remove RC tags from paths via web interface"
         error_messages: list[str] = []
@@ -402,7 +402,7 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), renamed_count, error_messages
         return None, renamed_count, error_messages
 
-    async def start(self, project_name: safe.ProjectName, version: safe.VersionName) -> tuple[sql.Release, sql.Project]:  # noqa: C901
+    async def start(self, project_name: safe.ProjectKey, version: safe.VersionKey) -> tuple[sql.Release, sql.Project]:  # noqa: C901
         """Creates the initial release draft record and revision directory."""
         # Get the project from the project name
         project = await self.__data.project(
@@ -503,8 +503,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def upload_files(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         files: Sequence[datastructures.FileStorage],
     ) -> tuple[str | None, int, bool]:
         """Process and save the uploaded files into a new draft revision."""
@@ -565,7 +565,7 @@ class CommitteeParticipant(FoundationCommitter):
                         continue
 
     async def __delete_release_data_filesystem(
-        self, release_dirs: Sequence[pathlib.Path], project_name: safe.ProjectName, version: safe.VersionName
+        self, release_dirs: Sequence[pathlib.Path], project_name: safe.ProjectKey, version: safe.VersionKey
     ) -> str | None:
         delete_errors: list[str] = []
         for release_dir in release_dirs:
@@ -756,8 +756,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __tasks_ongoing(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: safe.RevisionNumber | None = None,
     ) -> int:
         tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)

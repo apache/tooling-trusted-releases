@@ -214,7 +214,7 @@ async def check(
 
 
 def render_checks_summary(
-    info: types.PathInfo | None, project_name: safe.ProjectName, version_name: safe.VersionName
+    info: types.PathInfo | None, project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> htm.Element | None:
     if (info is None) or (not info.checker_stats):
         return None

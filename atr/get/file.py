@@ -39,8 +39,8 @@ type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
 async def selected(
     session: web.Committer,
     _file: Literal["file"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /file/<project_name>/<version_name>
@@ -141,8 +141,8 @@ async def selected(
 async def selected_path(
     session: web.Committer,
     _file: Literal["file"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """

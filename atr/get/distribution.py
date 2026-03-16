@@ -39,8 +39,8 @@ from atr.tasks import gha
 async def automate(
     session: web.Committer,
     _distribution: Literal["distribution/automate"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /distribution/automate/<project_name>/<version>
@@ -53,8 +53,8 @@ async def automate(
 async def list_get(
     _session: web.Committer,
     _distribution: Literal["distribution/list"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /distribution/list/<project_name>/<version_name>
@@ -147,8 +147,8 @@ async def list_get(
 async def record(
     session: web.Committer,
     _distribution: Literal["distribution/record"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /distribution/record/<project_name>/<version_name>
@@ -161,8 +161,8 @@ async def record(
 async def stage_automate(
     session: web.Committer,
     _distribution: Literal["distribution/stage/automate"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /distribution/stage/automate/<project_name>/<version_name>
@@ -175,8 +175,8 @@ async def stage_automate(
 async def stage_record(
     session: web.Committer,
     _distribution: Literal["distribution/stage/record"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /distribution/stage/record/<project_name>/<version_name>
@@ -185,7 +185,7 @@ async def stage_record(
     return await _record_form_page(project_name, version_name, staging=True)
 
 
-async def _automate_form_page(project: safe.ProjectName, version: safe.VersionName, staging: bool) -> str:
+async def _automate_form_page(project: safe.ProjectKey, version: safe.VersionKey, staging: bool) -> str:
     """Helper to render the distribution automation form page."""
     await shared.distribution.release_validated(project, version, staging=staging)
 
@@ -228,7 +228,7 @@ async def _automate_form_page(project: safe.ProjectName, version: safe.VersionNa
 
 
 async def _get_page_data(
-    project_name: safe.ProjectName, version_name: safe.VersionName
+    project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> tuple[Sequence[sql.Distribution], Sequence[sql.Task]]:
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
@@ -261,7 +261,7 @@ async def _get_page_data(
     return distributions, tasks
 
 
-async def _record_form_page(project: safe.ProjectName, version: safe.VersionName, staging: bool) -> str:
+async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, staging: bool) -> str:
     """Helper to render the distribution recording form page."""
     await shared.distribution.release_validated(project, version, staging=staging)
 
@@ -304,7 +304,7 @@ async def _record_form_page(project: safe.ProjectName, version: safe.VersionName
 
 
 def _render_distribution_tasks(
-    tasks: Sequence[sql.Task], block: htm.Block, project_name: safe.ProjectName, version_name: safe.VersionName
+    tasks: Sequence[sql.Task], block: htm.Block, project_name: safe.ProjectKey, version_name: safe.VersionKey
 ):
     failed_tasks = [
         t for t in tasks if (t.status == sql.TaskStatus.FAILED) or (t.workflow and (t.workflow.status == "failed"))

@@ -31,7 +31,7 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _start: Literal["start"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     start_release_form: shared.start.StartReleaseForm,
 ) -> web.WerkzeugResponse:
     """
@@ -43,7 +43,7 @@ async def selected(
             wacp = await write.as_project_committee_participant(project_name)
             new_release, _project = await wacp.release.start(
                 project_name,
-                safe.VersionName(start_release_form.version_name),
+                safe.VersionKey(start_release_form.version_name),
             )
 
         return await session.redirect(

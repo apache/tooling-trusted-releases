@@ -297,8 +297,8 @@ async def _mark_failed(
 
 async def _promote(
     quarantined: sql.Quarantined,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     release_name: str,
     quarantine_dir: str,
 ) -> None:

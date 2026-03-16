@@ -73,8 +73,8 @@ async def import_files(args: SvnImport) -> results.Results | None:
 async def _import_files_core(args: SvnImport) -> str:
     """Core logic to perform the SVN export."""
 
-    project = safe.ProjectName(args.project_name)
-    version = safe.VersionName(args.version_name)
+    project = safe.ProjectKey(args.project_name)
+    version = safe.VersionKey(args.version_name)
 
     log.info(f"Starting SVN import for {args.project_name}-{args.version_name}")
     # We have to use a temporary directory otherwise SVN thinks it's a pegged revision

@@ -32,8 +32,8 @@ import atr.web as web
 async def selected_post(
     session: web.Committer,
     _revisions: Literal["revisions"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_form: shared.revisions.RevisionForm,
 ) -> web.WerkzeugResponse:
     """
@@ -49,8 +49,8 @@ async def selected_post(
 async def _set_revision(
     session: web.Committer,
     set_revision_form: shared.revisions.SetRevisionForm,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     """Set a specific revision as the latest for a candidate draft or release preview."""
     selected_revision_number = set_revision_form.revision_number
@@ -91,8 +91,8 @@ async def _set_revision(
 async def _set_tag(
     session: web.Committer,
     set_tag_form: shared.revisions.SetTagForm,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     """Set a tag on a specific revision."""
     revision_number = set_tag_form.revision_number

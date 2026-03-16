@@ -45,8 +45,8 @@ import atr.web as web
 async def selected_revision(
     session: web.Committer,
     _voting: Literal["voting"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """

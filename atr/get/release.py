@@ -32,7 +32,7 @@ import atr.web as web
 
 @get.typed
 async def finished(
-    _session: web.Public, _releases_finished: Literal["releases/finished"], project_name: safe.ProjectName
+    _session: web.Public, _releases_finished: Literal["releases/finished"], project_name: safe.ProjectKey
 ) -> str:
     """
     URL: /releases/finished/<project_name>
@@ -89,7 +89,7 @@ async def releases(_session: web.Public, _releases: Literal["releases"]) -> str:
 
 @get.typed
 async def select(
-    session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectName
+    session: web.Committer, _release_select: Literal["release/select"], project_name: safe.ProjectKey
 ) -> str:
     """
     URL: /release/select/<project_name>

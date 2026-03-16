@@ -46,8 +46,8 @@ import atr.web as web
 async def finalise(
     session: web.Committer,
     _upload_finalise: Literal["upload/finalise"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
@@ -120,8 +120,8 @@ async def finalise(
 async def selected(
     session: web.Committer,
     _upload: Literal["upload"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     upload_form: shared.upload.UploadForm,
 ) -> web.WerkzeugResponse:
     """
@@ -140,8 +140,8 @@ async def selected(
 async def stage(
     _session: web.Committer,
     _upload_stage: Literal["upload/stage"],
-    _project_name: safe.ProjectName,
-    _version_name: safe.VersionName,
+    _project_name: safe.ProjectKey,
+    _version_name: safe.VersionKey,
     upload_session: unsafe.UnsafeStr,
 ) -> web.WerkzeugResponse:
     """
@@ -188,8 +188,8 @@ async def stage(
 async def _add_files(
     session: web.Committer,
     add_form: shared.upload.AddFilesForm,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     try:
         file_data = add_form.file_data
@@ -251,8 +251,8 @@ def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugRespon
 async def _svn_import(
     session: web.Committer,
     svn_form: shared.upload.SvnImportForm,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:

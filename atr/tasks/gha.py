@@ -142,8 +142,8 @@ async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
 @checks.with_model(DistributionWorkflow)
 async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
     unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
-    project = safe.ProjectName(args.project_name)
-    safe.VersionName(args.version_name)
+    project = safe.ProjectKey(args.project_name)
+    safe.VersionKey(args.version_name)
     try:
         sql_platform = sql.DistributionPlatform[args.platform]
     except KeyError:

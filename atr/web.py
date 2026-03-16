@@ -88,7 +88,7 @@ class Committer:
     def is_admin(self) -> bool:
         return user.is_admin(self.uid)
 
-    async def check_access(self, project_name: str | safe.ProjectName) -> None:
+    async def check_access(self, project_name: str | safe.ProjectKey) -> None:
         if not any((str(p.name) == str(project_name)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
@@ -162,8 +162,8 @@ class Committer:
 
     async def release(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         phase: sql.ReleasePhase | db.NotSet | None = db.NOT_SET,
         latest_revision_number: safe.RevisionNumber | db.NotSet | None = db.NOT_SET,
         data: db.Session | None = None,

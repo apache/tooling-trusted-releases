@@ -613,9 +613,9 @@ class Project(sqlmodel.SQLModel, table=True):
         return base
 
     @property
-    def safe_name(self) -> safe.ProjectName:
+    def safe_name(self) -> safe.ProjectKey:
         """Get the typesafe validated name for the Project"""
-        return safe.ProjectName(self.name)
+        return safe.ProjectKey(self.name)
 
     @property
     def short_display_name(self) -> str:
@@ -942,19 +942,19 @@ class Release(sqlmodel.SQLModel, table=True):
         return safe.RevisionNumber(self.unwrap_revision_number)
 
     @property
-    def safe_name(self) -> safe.ReleaseName:
+    def safe_name(self) -> safe.ReleaseKey:
         """Get the typesafe validated name for the Release"""
-        return safe.ReleaseName(self.name)
+        return safe.ReleaseKey(self.name)
 
     @property
-    def safe_project_name(self) -> safe.ProjectName:
+    def safe_project_name(self) -> safe.ProjectKey:
         """Get the typesafe validated name for the release project"""
-        return safe.ProjectName(self.project_name)
+        return safe.ProjectKey(self.project_name)
 
     @property
-    def safe_version_name(self) -> safe.VersionName:
+    def safe_version_name(self) -> safe.VersionKey:
         """Get the typesafe validated name for the release version"""
-        return safe.VersionName(self.version)
+        return safe.VersionKey(self.version)
 
     @property
     def short_display_name(self) -> str:
@@ -1087,7 +1087,7 @@ class Distribution(sqlmodel.SQLModel, table=True):
             platform=self.platform,
             owner_namespace=safe.Alphanumeric(self.owner_namespace),
             package=safe.Alphanumeric(self.package),
-            version=safe.VersionName(self.version),
+            version=safe.VersionKey(self.version),
             details=details,
         )
 
@@ -1102,9 +1102,9 @@ class Distribution(sqlmodel.SQLModel, table=True):
         return f"{name}-{package}-{version}"
 
     @property
-    def safe_release_name(self) -> safe.ReleaseName:
+    def safe_release_name(self) -> safe.ReleaseKey:
         """Get the typesafe validated name for the distribution release"""
-        return safe.ReleaseName(self.release_name)
+        return safe.ReleaseKey(self.release_name)
 
     @property
     def title(self) -> str:
@@ -1409,7 +1409,7 @@ class WorkflowStatus(sqlmodel.SQLModel, table=True):
     message: str | None = sqlmodel.Field(default=None)
 
 
-def revision_name(release_name: safe.ReleaseName | str, number: str) -> str:
+def revision_name(release_name: safe.ReleaseKey | str, number: str) -> str:
     return f"{release_name} {number}"
 
 
@@ -1481,18 +1481,18 @@ def latest_revision_number_query(release_name: str | None = None) -> expression.
 
 
 @overload
-def release_name(project_name: safe.ProjectName, version_name: safe.VersionName) -> safe.ReleaseName: ...
+def release_name(project_name: safe.ProjectKey, version_name: safe.VersionKey) -> safe.ReleaseKey: ...
 
 
 @overload
 def release_name(project_name: str, version_name: str) -> str: ...
 
 
-def release_name(project_name: safe.ProjectName | str, version_name: safe.VersionName | str) -> safe.ReleaseName | str:
+def release_name(project_name: safe.ProjectKey | str, version_name: safe.VersionKey | str) -> safe.ReleaseKey | str:
     """Return the release name for a given project and version."""
     name = f"{project_name}-{version_name}"
-    if isinstance(project_name, safe.ProjectName) and isinstance(version_name, safe.VersionName):
-        return safe.ReleaseName(name)
+    if isinstance(project_name, safe.ProjectKey) and isinstance(version_name, safe.VersionKey):
+        return safe.ReleaseKey(name)
     return name
 
 

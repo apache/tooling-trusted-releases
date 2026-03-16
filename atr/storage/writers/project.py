@@ -175,7 +175,7 @@ class CommitteeMember(CommitteeParticipant):
             project_name=label,
         )
 
-    async def delete(self, project_name: safe.ProjectName) -> None:
+    async def delete(self, project_name: safe.ProjectKey) -> None:
         project = await self.__data.project(
             name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
         ).get()

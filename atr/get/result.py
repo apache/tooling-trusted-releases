@@ -31,8 +31,8 @@ import atr.web as web
 async def data(
     session: web.Committer,
     _result_data: Literal["result/data"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     check_id: int,
 ) -> web.TextResponse:
     """

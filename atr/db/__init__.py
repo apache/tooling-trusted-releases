@@ -896,7 +896,7 @@ def ensure_session(caller_data: Session | None) -> Session | contextlib.nullcont
     return contextlib.nullcontext(caller_data)
 
 
-async def get_project_release_policy(data: Session, project_name: safe.ProjectName) -> sql.ReleasePolicy | None:
+async def get_project_release_policy(data: Session, project_name: safe.ProjectKey) -> sql.ReleasePolicy | None:
     """Fetch the ReleasePolicy for a project."""
     project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True).demand(
         RuntimeError(f"Project {project_name} not found")

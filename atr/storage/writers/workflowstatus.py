@@ -104,7 +104,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         workflow_id: str,
         run_id: int,
-        project_name: safe.ProjectName,
+        project_name: safe.ProjectKey,
         task_id: int | None = None,
         status: str | None = None,
         message: str | None = None,

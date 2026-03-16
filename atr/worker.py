@@ -119,8 +119,8 @@ async def _execute_check_task(
             f"Task {task_id} ({task_type}) has non-dict raw args {task_args} which should represent keyword_args"
         )
 
-    project_name = safe.ProjectName(task_obj.project_name)
-    version_name = safe.VersionName(task_obj.version_name)
+    project_name = safe.ProjectKey(task_obj.project_name)
+    version_name = safe.VersionKey(task_obj.version_name)
     revision_number = safe.RevisionNumber(task_obj.revision_number)
 
     async def recorder_factory() -> checks.Recorder:

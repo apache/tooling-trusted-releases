@@ -30,7 +30,7 @@ import atr.web as web
 async def ignores(
     session: web.Committer,
     _ignores: Literal["ignores"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     ignore_form: shared.ignores.IgnoreForm,
 ) -> web.WerkzeugResponse:
     """
@@ -50,7 +50,7 @@ async def ignores(
 
 
 async def _add_ignore(
-    session: web.Committer, add_form: shared.ignores.AddIgnoreForm, project_name: safe.ProjectName
+    session: web.Committer, add_form: shared.ignores.AddIgnoreForm, project_name: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Add a new ignore."""
     status = shared.ignores.ignore_status_to_sql(add_form.status)  # pyright: ignore[reportArgumentType]
@@ -76,7 +76,7 @@ async def _add_ignore(
 
 
 async def _delete_ignore(
-    session: web.Committer, delete_form: shared.ignores.DeleteIgnoreForm, project_name: safe.ProjectName
+    session: web.Committer, delete_form: shared.ignores.DeleteIgnoreForm, project_name: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Delete an ignore."""
     async with storage.write() as write:
@@ -91,7 +91,7 @@ async def _delete_ignore(
 
 
 async def _update_ignore(
-    session: web.Committer, update_form: shared.ignores.UpdateIgnoreForm, project_name: safe.ProjectName
+    session: web.Committer, update_form: shared.ignores.UpdateIgnoreForm, project_name: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Update an ignore."""
     status = shared.ignores.ignore_status_to_sql(update_form.status)  # pyright: ignore[reportArgumentType]

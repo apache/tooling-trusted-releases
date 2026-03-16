@@ -157,7 +157,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
         await participant.create_revision_with_quarantine(
-            safe.ProjectName("proj"), safe.VersionName("1.0"), "test", clone_from=safe.RevisionNumber("00002")
+            safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", clone_from=safe.RevisionNumber("00002")
         )
 
     if merge_mock.called:

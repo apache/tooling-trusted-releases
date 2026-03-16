@@ -37,8 +37,8 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _resolve: Literal["resolve"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     resolve_form: shared.resolve.ResolveForm,
 ) -> web.WerkzeugResponse | str:
     """
@@ -55,8 +55,8 @@ async def selected(
 async def _submit(
     session: web.Committer,
     submit_form: shared.resolve.SubmitForm,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     email_body = submit_form.email_body
     vote_result = submit_form.vote_result
@@ -85,7 +85,7 @@ async def _submit(
     )
 
 
-async def _tabulate(session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName) -> str:
+async def _tabulate(session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey) -> str:
     asf_uid = session.uid
     full_name = session.fullname
 

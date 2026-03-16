@@ -64,7 +64,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - check_access is called automatically for committer routes with project_name
     """
     path, validated_params, literal_params, form_param, public = common.build_path(func)
-    project_name_var = next((name for name, t in validated_params if t is safe.ProjectName), None)
+    project_name_var = next((name for name, t in validated_params if t is safe.ProjectKey), None)
     check_access = (not public) and (project_name_var is not None)
     form_safe_params = common.safe_params_for_type(form_param[1]) if form_param is not None else []
 

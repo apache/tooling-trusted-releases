@@ -115,7 +115,7 @@ class DistributionPlatform(enum.Enum):
 
 
 class DeleteForm(form.Form):
-    release_name: safe.ReleaseName = form.label("Release name", widget=form.Widget.HIDDEN)
+    release_name: safe.ReleaseKey = form.label("Release name", widget=form.Widget.HIDDEN)
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
     owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
     package: str = form.label("Package", widget=form.Widget.HIDDEN)
@@ -132,7 +132,7 @@ class DistributionAutomateForm(form.Form):
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
     )
     package: safe.Alphanumeric = form.label("Package")
-    version: safe.VersionName = form.label("Version")
+    version: safe.VersionKey = form.label("Version")
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
@@ -165,7 +165,7 @@ class DistributionRecordForm(form.Form):
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
     )
     package: safe.Alphanumeric = form.label("Package")
-    version: safe.VersionName = form.label("Version")
+    version: safe.VersionKey = form.label("Version")
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
@@ -193,7 +193,7 @@ class DistributionRecordForm(form.Form):
 def distribution_upload_date(  # noqa: C901
     platform: sql.DistributionPlatform,
     data: basic.JSON,
-    version_name: safe.VersionName,
+    version_name: safe.VersionKey,
 ) -> datetime.datetime | None:
     version = str(version_name)
     match platform:
@@ -237,7 +237,7 @@ def distribution_upload_date(  # noqa: C901
 def distribution_web_url(  # noqa: C901
     platform: sql.DistributionPlatform,
     data: basic.JSON,
-    version: safe.VersionName,
+    version: safe.VersionKey,
 ) -> str | None:
     match platform:
         case sql.DistributionPlatform.ARTIFACT_HUB:
@@ -319,7 +319,7 @@ def html_tr_a(label: str, value: str | None) -> htm.Element:
 
 
 async def json_from_distribution_platform(
-    api_url: str, platform: sql.DistributionPlatform, version_name: safe.VersionName
+    api_url: str, platform: sql.DistributionPlatform, version_name: safe.VersionKey
 ) -> outcome.Outcome[basic.JSON]:
     version = str(version_name)
     try:
@@ -338,7 +338,7 @@ async def json_from_distribution_platform(
     return outcome.Result(result)
 
 
-async def json_from_maven_xml(api_url: str, version_name: safe.VersionName) -> outcome.Outcome[basic.JSON]:
+async def json_from_maven_xml(api_url: str, version_name: safe.VersionKey) -> outcome.Outcome[basic.JSON]:
     import datetime
 
     import defusedxml.ElementTree as ElementTree
@@ -404,8 +404,8 @@ async def json_from_maven_xml(api_url: str, version_name: safe.VersionName) -> o
 
 
 async def release_validated(
-    project: safe.ProjectName,
-    version: safe.VersionName,
+    project: safe.ProjectKey,
+    version: safe.VersionKey,
     committee: bool = False,
     staging: bool | None = None,
     release_policy: bool = False,
@@ -432,7 +432,7 @@ async def release_validated(
 
 
 async def release_validated_and_committee(
-    project: safe.ProjectName, version: safe.VersionName, *, staging: bool | None = None, release_policy: bool = False
+    project: safe.ProjectKey, version: safe.VersionKey, *, staging: bool | None = None, release_policy: bool = False
 ) -> tuple[sql.Release, sql.Committee]:
     release = await release_validated(project, version, committee=True, staging=staging, release_policy=release_policy)
     committee = release.committee

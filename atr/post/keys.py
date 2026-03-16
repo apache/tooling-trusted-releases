@@ -146,8 +146,8 @@ async def details(
 async def import_selected_revision(
     session: web.Committer,
     _keys_import: Literal["keys/import"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """

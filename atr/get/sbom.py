@@ -49,8 +49,8 @@ if TYPE_CHECKING:
 async def report(
     session: web.Committer,
     _sbom_report: Literal["sbom/report"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """
@@ -245,7 +245,7 @@ def _extract_vulnerability_severity(vuln: results.VulnerabilityDetails) -> str:
 
 
 async def _fetch_tasks(
-    file_path: str, project: safe.ProjectName, release: sql.Release, version: safe.VersionName
+    file_path: str, project: safe.ProjectKey, release: sql.Release, version: safe.VersionKey
 ) -> tuple[sql.Task | None, Sequence[sql.Task], Sequence[sql.Task]]:
     # TODO: Abstract this code and the sbomtool.MissingAdapter validators
     async with db.session() as data:

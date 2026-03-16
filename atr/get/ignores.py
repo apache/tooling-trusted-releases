@@ -34,7 +34,7 @@ import atr.web as web
 async def ignores(
     session: web.Committer,
     _ignores: Literal["ignores"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
 ) -> str | web.WerkzeugResponse:
     """
     URL: /ignores/<project_name>

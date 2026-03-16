@@ -133,8 +133,8 @@ async def distribution_status_check(
 
 async def draft_checks(
     asf_uid: str,
-    project_name: safe.ProjectName,
-    release_version: safe.VersionName,
+    project_name: safe.ProjectKey,
+    release_version: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     caller_data: db.Session | None = None,
 ) -> int:
@@ -206,8 +206,8 @@ async def draft_checks(
 
 async def keys_import_file(
     asf_uid: str,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: str,
     caller_data: db.Session | None = None,
 ) -> None:
@@ -569,9 +569,9 @@ async def _draft_file_checks(
     data: db.Session,
     path: pathlib.Path,
     previous_version: sql.Release | None,
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     release: sql.Release,
-    release_version: safe.VersionName,
+    release_version: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ):
     path_str = str(path)

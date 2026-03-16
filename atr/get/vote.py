@@ -59,7 +59,7 @@ class UserCategory(enum.StrEnum):
 
 
 async def category_and_release(
-    session: web.Committer | None, project_name: safe.ProjectName, version_name: safe.VersionName
+    session: web.Committer | None, project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> tuple[UserCategory, sql.Release, sql.Task | None]:
     async with db.session() as data:
         release = await data.release(
@@ -176,8 +176,8 @@ async def render_vote_closed_page(release: sql.Release) -> str:
 async def selected(
     session: web.Public,
     _vote: Literal["vote"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
     """
     URL: /vote/<project_name>/<version_name>

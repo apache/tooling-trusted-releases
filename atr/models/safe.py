@@ -102,12 +102,12 @@ class Numeric(SafeType):
         return _NUMERIC
 
 
-class ProjectName(Alphanumeric):
+class ProjectKey(Alphanumeric):
     """A project name that has been validated for safety."""
 
 
-class ReleaseName(Alphanumeric):
-    """A release name composed from a validated ProjectName and VersionName."""
+class ReleaseKey(Alphanumeric):
+    """A release name composed from a validated ProjectKey and VersionKey."""
 
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:
@@ -118,7 +118,7 @@ class RevisionNumber(Numeric):
     """A revision number that has been validated for safety."""
 
 
-class VersionName(Alphanumeric):
+class VersionKey(Alphanumeric):
     """A version name that has been validated for safety"""
 
     @classmethod

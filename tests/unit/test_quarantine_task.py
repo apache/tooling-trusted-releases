@@ -41,7 +41,7 @@ async def test_clear_quarantine_raises_when_not_found():
 
     writer = _make_revision_writer(mock_data)
     with pytest.raises(RuntimeError, match="not found"):
-        await writer.clear_quarantine(safe.ProjectName("proj"), safe.VersionName("1.0"), 999)
+        await writer.clear_quarantine(safe.ProjectKey("proj"), safe.VersionKey("1.0"), 999)
 
     mock_data.commit.assert_not_awaited()
 
@@ -58,7 +58,7 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
     mock_data.quarantined = mock.MagicMock(return_value=mock_query)
 
     writer = _make_revision_writer(mock_data)
-    await writer.clear_quarantine(safe.ProjectName("proj"), safe.VersionName("1.0"), 7)
+    await writer.clear_quarantine(safe.ProjectKey("proj"), safe.VersionKey("1.0"), 7)
 
     assert quarantined_row.status == sql.QuarantineStatus.ACKNOWLEDGED
     mock_data.commit.assert_awaited_once()
@@ -490,7 +490,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
 
     assert result is None
     mock_promote.assert_awaited_once_with(
-        row, safe.ProjectName("proj"), safe.VersionName("1.0"), row.release.name, str(quarantine_dir)
+        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.name, str(quarantine_dir)
     )
     mock_mark.assert_not_awaited()
 
@@ -521,11 +521,11 @@ def _make_quarantined_row() -> mock.MagicMock:
     row.status = sql.QuarantineStatus.PENDING
     row.release = mock.MagicMock()
     row.release.name = "proj-1.0"
-    row.release.safe_name = safe.ReleaseName(row.release.name)
+    row.release.safe_name = safe.ReleaseKey(row.release.name)
     row.release.project_name = "proj"
-    row.release.safe_project_name = safe.ProjectName(row.release.project_name)
+    row.release.safe_project_name = safe.ProjectKey(row.release.project_name)
     row.release.version = "1.0"
-    row.release.safe_version_name = safe.VersionName(row.release.version)
+    row.release.safe_version_name = safe.VersionKey(row.release.version)
     return row
 
 

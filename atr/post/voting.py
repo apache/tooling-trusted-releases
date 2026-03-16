@@ -41,8 +41,8 @@ class BodyPreviewForm(form.Form):
 async def body_preview(
     session: web.Committer,
     _voting_body_preview: Literal["voting/body/preview"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     preview_form: BodyPreviewForm,
 ) -> web.QuartResponse:
@@ -70,8 +70,8 @@ async def body_preview(
 async def selected_revision(
     session: web.Committer,
     _voting: Literal["voting"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
     start_voting_form: shared.voting.StartVotingForm,
 ) -> web.WerkzeugResponse | str:

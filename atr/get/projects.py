@@ -149,7 +149,7 @@ async def select(session: web.Committer, _project_select: Literal["project/selec
 
 @get.typed
 async def view(
-    session: web.Committer, _projects: Literal["projects"], project_name: safe.ProjectName
+    session: web.Committer, _projects: Literal["projects"], project_name: safe.ProjectKey
 ) -> web.WerkzeugResponse | str:
     """
     URL: /projects/<project_name>

@@ -54,8 +54,8 @@ TEMPLATE_VARIABLES: list[tuple[str, str, set[Context]]] = [
 class AnnounceReleaseOptions:
     asfuid: str
     fullname: str
-    project_name: safe.ProjectName
-    version_name: safe.VersionName
+    project_name: safe.ProjectKey
+    version_name: safe.VersionKey
     revision_number: safe.RevisionNumber
 
 
@@ -63,13 +63,13 @@ class AnnounceReleaseOptions:
 class StartVoteOptions:
     asfuid: str
     fullname: str
-    project_name: safe.ProjectName
-    version_name: safe.VersionName
+    project_name: safe.ProjectKey
+    version_name: safe.VersionKey
     revision_number: safe.RevisionNumber
     vote_duration: int
 
 
-async def announce_release_default(project_name: safe.ProjectName) -> str:
+async def announce_release_default(project_name: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
             name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
@@ -132,7 +132,7 @@ async def announce_release_subject_and_body(
     return subject, body
 
 
-async def announce_release_subject_default(project_name: safe.ProjectName) -> str:
+async def announce_release_subject_default(project_name: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
             name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
@@ -152,7 +152,7 @@ def announce_template_variables() -> list[tuple[str, str]]:
 def checklist_body(
     markdown: str,
     project: sql.Project,
-    version_name: safe.VersionName,
+    version_name: safe.VersionKey,
     committee: sql.Committee,
     revision: sql.Revision | None,
 ) -> str:
@@ -181,7 +181,7 @@ def checklist_template_variables() -> list[tuple[str, str]]:
     return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "checklist" in contexts]
 
 
-async def start_vote_default(project_name: safe.ProjectName) -> str:
+async def start_vote_default(project_name: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
             name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True
@@ -280,7 +280,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     return subject, body
 
 
-async def start_vote_subject_default(project_name: safe.ProjectName) -> str:
+async def start_vote_subject_default(project_name: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
             name=str(project_name), status=sql.ProjectStatus.ACTIVE, _release_policy=True

@@ -105,7 +105,7 @@ def project_version_has_project(project_name: str) -> bool:
     return project_name in project_version_get()
 
 
-def project_version_has_version(project_name: safe.ProjectName, version_name: str) -> bool:
+def project_version_has_version(project_name: safe.ProjectKey, version_name: str) -> bool:
     projects = project_version_get()
     if str(project_name) not in projects:
         return False

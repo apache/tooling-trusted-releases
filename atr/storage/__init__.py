@@ -333,12 +333,12 @@ class Write:
     # async def as_key_owner(self) -> types.Outcome[WriteAsKeyOwner]:
     #     ...
 
-    async def as_project_committee_admin(self, project_name: safe.ProjectName) -> WriteAsCommitteeAdmin:
+    async def as_project_committee_admin(self, project_name: safe.ProjectKey) -> WriteAsCommitteeAdmin:
         write_as_outcome = await self.as_project_committee_admin_outcome(project_name)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_admin_outcome(
-        self, project_name: safe.ProjectName
+        self, project_name: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeAdmin]:
         project = await self.__data.project(str(project_name), _committee=True).demand(
             AccessError(f"Project not found: {project_name}")
@@ -355,12 +355,12 @@ class Write:
             return outcome.Error(e)
         return outcome.Result(waca)
 
-    async def as_project_committee_member(self, project_name: safe.ProjectName) -> WriteAsCommitteeMember:
+    async def as_project_committee_member(self, project_name: safe.ProjectKey) -> WriteAsCommitteeMember:
         write_as_outcome = await self.as_project_committee_member_outcome(project_name)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_member_outcome(
-        self, project_name: safe.ProjectName
+        self, project_name: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeMember]:
         project = await self.__data.project(str(project_name), _committee=True).demand(
             AccessError(f"Project not found: {project_name}")
@@ -377,12 +377,12 @@ class Write:
             return outcome.Error(e)
         return outcome.Result(wacm)
 
-    async def as_project_committee_participant(self, project_name: safe.ProjectName) -> WriteAsCommitteeParticipant:
+    async def as_project_committee_participant(self, project_name: safe.ProjectKey) -> WriteAsCommitteeParticipant:
         write_as_outcome = await self.as_project_committee_participant_outcome(project_name)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_participant_outcome(
-        self, project_name: safe.ProjectName
+        self, project_name: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeParticipant]:
         project = await self.__data.project(str(project_name), _committee=True).demand(
             AccessError(f"Project not found: {project_name!s}")
@@ -514,7 +514,7 @@ async def write_as_committee_participant(
 
 @contextlib.asynccontextmanager
 async def write_as_project_committee_member(
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     asf_uid: principal.UID = principal.ArgumentNone,
 ) -> AsyncGenerator[WriteAsCommitteeMember]:
     async with write(asf_uid) as w:

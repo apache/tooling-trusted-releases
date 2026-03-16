@@ -62,7 +62,7 @@ async def initiate(args: Initiate) -> results.Results | None:
 async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     """Get arguments, create an email, and then send it to the recipient."""
     log.info("Starting initiate_core")
-    safe.ReleaseName(args.release_name)
+    safe.ReleaseKey(args.release_name)
 
     # Validate arguments
     if not (args.email_to.endswith("@apache.org") or args.email_to.endswith(".apache.org")):

@@ -44,8 +44,8 @@ import atr.web as web
 async def all_selected(
     session: web.Committer,
     _download_all: Literal["download/all"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
     """
     URL: /download/all/<project_name>/<version_name>
@@ -83,8 +83,8 @@ async def all_selected(
 async def path(
     _session: web.Public,
     _download_path: Literal["download/path"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> web.Response:
     """
@@ -98,8 +98,8 @@ async def path(
 async def path_empty(
     _session: web.Public,
     _download_path: Literal["download/path"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.Response:
     """
     URL: /download/path/<project_name>/<version_name>/
@@ -112,8 +112,8 @@ async def path_empty(
 async def sh_selected(
     _session: web.Public,
     _download_sh: Literal["download/sh"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.Response:
     """
     URL: /download/sh/<project_name>/<version_name>
@@ -137,8 +137,8 @@ async def sh_selected(
 async def urls_selected(
     _session: web.Public,
     _download_urls: Literal["download/urls"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.Response:
     """
     URL: /download/urls/<project_name>/<version_name>
@@ -160,8 +160,8 @@ async def urls_selected(
 async def zip_selected(
     session: web.Committer,
     _download_zip: Literal["download/zip"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.Response:
     """
     URL: /download/zip/<project_name>/<version_name>
@@ -196,7 +196,7 @@ async def zip_selected(
 
 
 async def _download_or_list(
-    project_name: safe.ProjectName, version_name: safe.VersionName, file_path: str
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, file_path: str
 ) -> web.Response:
     """Download a file or list a directory from a release in any phase."""
     import atr.get.root as root

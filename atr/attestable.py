@@ -35,32 +35,32 @@ import atr.util as util
 
 
 def attestable_checks_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
     return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.checks.json"
 
 
 def attestable_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
     return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.json"
 
 
 def attestable_paths_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
     return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.paths.json"
 
 
 def github_tp_payload_path(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision_number: safe.RevisionNumber
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
     return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.github-tp.json"
 
 
 async def github_tp_payload_write(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     github_payload: dict[str, Any],
 ) -> None:
@@ -69,8 +69,8 @@ async def github_tp_payload_write(
 
 
 async def load(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> models.Attestable | None:
     file_path = attestable_path(project_name, version_name, revision_number)
@@ -86,8 +86,8 @@ async def load(
 
 
 async def load_checks(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> dict[str, dict[str, str]]:
     file_path = attestable_checks_path(project_name, version_name, revision_number)
@@ -108,8 +108,8 @@ async def load_checks(
 
 
 async def load_paths(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
     file_path = attestable_paths_path(project_name, version_name, revision_number)
@@ -194,8 +194,8 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, 
 
 
 async def write_checks_data(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     rel_path: str,
     checks: dict[str, str],
@@ -218,8 +218,8 @@ async def write_checks_data(
 
 
 async def write_files_data(
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,

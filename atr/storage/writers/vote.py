@@ -137,8 +137,8 @@ class CommitteeParticipant(FoundationCommitter):
     async def start(
         self,
         email_to: str,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         selected_revision_number: safe.RevisionNumber,
         vote_duration_choice: int,
         subject: str,
@@ -229,8 +229,8 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         vote_result: Literal["passed", "failed"],
         asf_fullname: str,
         resolution_body: str,
@@ -269,8 +269,8 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve_manually(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         vote_result: Literal["passed", "failed"],
     ) -> str:
         release = await self.__data.release(
@@ -318,7 +318,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def resolve_release(
         self,
-        project_name: safe.ProjectName,
+        project_name: safe.ProjectKey,
         release: sql.Release,
         voting_round: int | None,
         vote_result: Literal["passed", "failed"],

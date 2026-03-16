@@ -32,8 +32,8 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _finish: Literal["finish"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     finish_form: shared.finish.FinishForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
@@ -54,8 +54,8 @@ async def selected(
 async def _delete_empty_directory(
     delete_form: shared.finish.DeleteEmptyDirectoryForm,
     session: web.Committer,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     dir_to_delete_rel = delete_form.directory_to_delete
@@ -77,8 +77,8 @@ async def _delete_empty_directory(
 async def _move_file_to_revision(
     move_form: shared.finish.MoveFileForm,
     session: web.Committer,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     source_files_rel = move_form.source_files
@@ -122,8 +122,8 @@ async def _move_file_to_revision(
 
 async def _remove_rc_tags(
     session: web.Committer,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
@@ -154,7 +154,7 @@ async def _remove_rc_tags(
 
 
 def _respond_helper(
-    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName, wants_json: bool
+    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey, wants_json: bool
 ) -> shared.finish.Respond:
     """Create a response helper function for the finish route."""
     import atr.get as get

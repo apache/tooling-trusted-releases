@@ -41,8 +41,8 @@ _AUTOMATED_PLATFORMS_STAGE: Final[tuple[shared.distribution.DistributionPlatform
 async def automate_form_process_page(
     session: web.Committer,
     form_data: shared.distribution.DistributionAutomateForm,
-    project: safe.ProjectName,
-    version: safe.VersionName,
+    project: safe.ProjectKey,
+    version: safe.VersionKey,
     /,
     staging: bool = False,
 ) -> web.WerkzeugResponse:
@@ -112,8 +112,8 @@ async def automate_form_process_page(
 async def automate_selected(
     session: web.Committer,
     _distribution_automate: Literal["distribution/automate"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
@@ -127,8 +127,8 @@ async def automate_selected(
 async def delete(
     session: web.Committer,
     _distribution_delete: Literal["distribution/delete"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     delete_form: shared.distribution.DeleteForm,
 ) -> web.WerkzeugResponse:
     """
@@ -170,8 +170,8 @@ async def delete(
 async def record_form_process_page(
     session: web.Committer,
     form_data: shared.distribution.DistributionRecordForm,
-    project: safe.ProjectName,
-    version: safe.VersionName,
+    project: safe.ProjectKey,
+    version: safe.VersionKey,
     /,
     staging: bool = False,
 ) -> web.WerkzeugResponse:
@@ -220,8 +220,8 @@ async def record_form_process_page(
 async def record_selected(
     session: web.Committer,
     _distribution_record: Literal["distribution/record"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """
@@ -234,8 +234,8 @@ async def record_selected(
 async def stage_automate_selected(
     session: web.Committer,
     _distribution_stage_automate: Literal["distribution/stage/automate"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     distribute_form: shared.distribution.DistributionAutomateForm,
 ) -> web.WerkzeugResponse:
     """
@@ -248,8 +248,8 @@ async def stage_automate_selected(
 async def stage_record_selected(
     session: web.Committer,
     _distribution_stage_record: Literal["distribution/stage/record"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     distribute_form: shared.distribution.DistributionRecordForm,
 ) -> web.WerkzeugResponse:
     """

@@ -86,7 +86,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_name = committee_name
 
     async def add_workflow_key(
-        self, github_uid: str, github_nid: int, project_name: safe.ProjectName, key: str, github_payload: dict[str, Any]
+        self, github_uid: str, github_nid: int, project_name: safe.ProjectKey, key: str, github_payload: dict[str, Any]
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files

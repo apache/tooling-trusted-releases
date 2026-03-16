@@ -34,8 +34,8 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _announce: Literal["announce"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     announce_form: shared.announce.AnnounceForm,
 ) -> web.WerkzeugResponse:
     """

@@ -93,7 +93,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def ignore_add(
         self,
-        project_name: safe.ProjectName,
+        project_name: safe.ProjectKey,
         release_glob: str | None = None,
         revision_number: safe.RevisionNumber | None = None,
         checker_glob: str | None = None,

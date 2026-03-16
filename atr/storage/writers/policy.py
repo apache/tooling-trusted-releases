@@ -170,7 +170,7 @@ class CommitteeMember(CommitteeParticipant):
         )
 
     async def __get_or_create_policy(
-        self, project_name: models.safe.ProjectName
+        self, project_name: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
         project = await self.__data.project(
             name=str(project_name), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True

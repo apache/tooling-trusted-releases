@@ -52,8 +52,8 @@ import atr.util as util
 class FunctionArguments:
     recorder: Callable[[], Awaitable[Recorder]]
     asf_uid: str
-    project_name: safe.ProjectName
-    version_name: safe.VersionName
+    project_name: safe.ProjectKey
+    version_name: safe.VersionKey
     revision_number: safe.RevisionNumber
     primary_rel_path: str | None
     extra_args: dict[str, Any]
@@ -61,9 +61,9 @@ class FunctionArguments:
 
 class Recorder:
     checker: str
-    release_name: safe.ReleaseName
-    project_name: safe.ProjectName
-    version_name: safe.VersionName
+    release_name: safe.ReleaseKey
+    project_name: safe.ProjectKey
+    version_name: safe.VersionKey
     primary_rel_path: str | None
     member_rel_path: str | None
     revision_number: safe.RevisionNumber
@@ -75,8 +75,8 @@ class Recorder:
         self,
         checker: str | Callable[..., Any],
         inputs_hash: str | None,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: safe.RevisionNumber,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,
@@ -101,8 +101,8 @@ class Recorder:
         cls,
         checker: str | Callable[..., Any],
         inputs_hash: str,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: safe.RevisionNumber,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,

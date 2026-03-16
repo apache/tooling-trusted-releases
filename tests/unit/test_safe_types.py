@@ -19,7 +19,7 @@ import pytest
 import atr.models.safe as safe
 
 
-@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectName, safe.VersionName, safe.ReleaseName])
+@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey, safe.VersionKey, safe.ReleaseKey])
 @pytest.mark.parametrize(
     "bad",
     ["\n", "\t", "\r", "\x1f", "\x7f", "\u200b", "e\u0301"],
@@ -29,7 +29,7 @@ def test_safe_types_reject_bad_bytes(cls: type[safe.Alphanumeric], bad: str):
         cls("abc" + bad + "def")
 
 
-@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectName, safe.VersionName, safe.ReleaseName])
+@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey, safe.VersionKey, safe.ReleaseKey])
 @pytest.mark.parametrize(
     "bad",
     [
@@ -44,19 +44,19 @@ def test_safe_types_reject_invalid_characters(cls: type[safe.Alphanumeric], bad:
         cls(bad)
 
 
-@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectName, safe.VersionName, safe.ReleaseName])
+@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey, safe.VersionKey, safe.ReleaseKey])
 def test_safe_types_accept_valid_alpha(cls: type[safe.Alphanumeric]):
     value = cls("abcdef")
     assert str(value) == "abcdef"
 
 
-@pytest.mark.parametrize("cls", [safe.VersionName, safe.ReleaseName])
+@pytest.mark.parametrize("cls", [safe.VersionKey, safe.ReleaseKey])
 def test_safe_version_types_accept_valid_version(cls: type[safe.Alphanumeric]):
     value = cls("0.1+def")
     assert str(value) == "0.1+def"
 
 
-@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectName])
+@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey])
 def test_safe_alpha_types_reject_valid_version(cls: type[safe.Alphanumeric]):
     with pytest.raises(ValueError):
         cls("0.1+def")

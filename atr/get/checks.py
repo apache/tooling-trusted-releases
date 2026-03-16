@@ -100,7 +100,7 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
 @get.typed
 async def selected(
-    session: web.Public, _checks: Literal["checks"], project_name: safe.ProjectName, version_name: safe.VersionName
+    session: web.Public, _checks: Literal["checks"], project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> str:
     """
     URL: /checks/<project_name>/<version_name>
@@ -144,8 +144,8 @@ async def selected(
 async def selected_revision(
     session: web.Committer,
     _checks: Literal["checks"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> web.QuartResponse:
     """

@@ -341,7 +341,7 @@ def _step_03_command_simple_validate(argv: list[str]) -> bool:
 
 async def _step_04_command_validate(
     process: asyncssh.SSHServerProcess, argv: list[str], is_read_request: bool, server: SSHServer
-) -> tuple[safe.ProjectName, safe.VersionName, list[str] | None, sql.Release | None]:
+) -> tuple[safe.ProjectKey, safe.VersionKey, list[str] | None, sql.Release | None]:
     """Validate the path and user permissions for read or write."""
     ############################################
     ### Calls _step_05a/b_command_path_validate ###
@@ -377,7 +377,7 @@ async def _step_04_command_validate(
     return project_name, version_name, None, None
 
 
-async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectName, safe.VersionName, str | None]:
+async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, str | None]:
     """Validate the path argument for rsync read commands, returning safe types."""
     # READ: rsync --server --sender -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
@@ -388,11 +388,11 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectN
     path_project, path_version, *rest = path.strip("/").split("/", 2)
     tag = rest[0] if rest else None
     try:
-        project_name = safe.ProjectName(path_project)
+        project_name = safe.ProjectKey(path_project)
     except ValueError:
         raise RsyncArgsError("Project is invalid")
     try:
-        version_name = safe.VersionName(path_version)
+        version_name = safe.VersionKey(path_version)
     except ValueError:
         raise RsyncArgsError("Version is invalid")
     if tag:
@@ -408,7 +408,7 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectN
     return project_name, version_name, tag
 
 
-async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectName, safe.VersionName, None]:
+async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, None]:
     """Validate the path argument for rsync write commands, returning safe types."""
     # WRITE: rsync --server -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
@@ -418,11 +418,11 @@ async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.Project
 
     path_project, path_version = path.strip("/").split("/", 1)
     try:
-        project_name = safe.ProjectName(path_project)
+        project_name = safe.ProjectKey(path_project)
     except ValueError:
         raise RsyncArgsError("Project is invalid")
     try:
-        version_name = safe.VersionName(path_version)
+        version_name = safe.VersionKey(path_version)
     except ValueError:
         raise RsyncArgsError("Version is invalid")
 
@@ -455,8 +455,8 @@ async def _step_06a_validate_read_permissions(
     ssh_uid: str,
     project: sql.Project,
     release: sql.Release | None,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     tag: str | None,
 ) -> tuple[sql.Release | None, list[str] | None]:
     """Validate permissions for a read request."""
@@ -564,8 +564,8 @@ async def _step_07a_process_validated_rsync_read(
 async def _step_07b_process_validated_rsync_write(
     process: asyncssh.SSHServerProcess,
     argv: list[str],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     server: SSHServer,
 ) -> None:
     """Handle a validated rsync write request."""
@@ -636,7 +636,7 @@ async def _step_07b_process_validated_rsync_write(
 
 
 async def _step_07c_ensure_release_object_for_write(
-    project_name: safe.ProjectName, version_name: safe.VersionName
+    project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> None:
     """Ensure the release object exists or create it for a write operation."""
     release_name = sql.release_name(str(project_name), str(version_name))

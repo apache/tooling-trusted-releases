@@ -32,8 +32,8 @@ import atr.web as web
 async def selected_post(
     session: web.Committer,
     _vote: Literal["vote"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     cast_vote_form: shared.vote.CastVoteForm,
 ) -> web.WerkzeugResponse:
     """

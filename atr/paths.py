@@ -23,7 +23,7 @@ import atr.models.sql as sql
 
 
 def base_path_for_revision(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision: safe.RevisionNumber
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision: safe.RevisionNumber
 ) -> pathlib.Path:
     return pathlib.Path(get_unfinished_dir(), str(project_name), str(version_name), str(revision))
 
@@ -135,6 +135,6 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
 
 
 def revision_path_for_file(
-    project_name: safe.ProjectName, version_name: safe.VersionName, revision: safe.RevisionNumber, file_name: str
+    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision: safe.RevisionNumber, file_name: str
 ) -> pathlib.Path:
     return base_path_for_revision(project_name, version_name, revision) / file_name

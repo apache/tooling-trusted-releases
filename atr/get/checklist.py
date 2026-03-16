@@ -37,8 +37,8 @@ import atr.web as web
 async def selected(
     _session: web.Public,
     _checklist: Literal["checklist"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     async with db.session() as data:
         release = await data.release(

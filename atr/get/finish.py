@@ -62,8 +62,8 @@ class RCTagAnalysisResult:
 async def selected(
     session: web.Committer,
     _finish: Literal["finish"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse | str:
     """
     URL: /finish/<project_name>/<version_name>
@@ -155,7 +155,7 @@ async def _deletable_choices(
 
 
 async def _get_page_data(
-    project_name: safe.ProjectName, version_name: safe.VersionName
+    project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> tuple[
     sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]
 ]:

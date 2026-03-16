@@ -78,8 +78,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def augment_cyclonedx(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: str,
         rel_path: pathlib.Path,
     ) -> sql.Task:
@@ -107,8 +107,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def generate_cyclonedx(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: str,
         path_in_new_revision: pathlib.Path,
         sbom_path_in_new_revision: pathlib.Path,
@@ -137,8 +137,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def osv_scan_cyclonedx(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         revision_number: str,
         rel_path: pathlib.Path,
     ) -> sql.Task:

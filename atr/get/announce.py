@@ -40,8 +40,8 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _announce: Literal["announce"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str | web.WerkzeugResponse:
     """
     URL: /announce/<project_name>/<version_name>
@@ -111,7 +111,7 @@ async def selected(
 
 
 async def _get_page_data(
-    session: web.Committer, project_name: safe.ProjectName, version_name: safe.VersionName
+    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> sql.Release:
     release = await session.release(
         project_name,

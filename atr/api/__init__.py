@@ -65,8 +65,8 @@ ROUTES_MODULE: Final[Literal[True]] = True
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list(
     _checks_list: Literal["checks/list"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> DictResponse:
     """
     URL: GET /checks/list/<project_name>/<version_name>
@@ -99,8 +99,8 @@ async def checks_list(
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list_revision(
     _checks_list: Literal["checks/list"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> DictResponse:
     """
@@ -140,8 +140,8 @@ async def checks_list_revision(
 @quart_schema.validate_response(models.api.ChecksOngoingResults, 200)
 async def checks_ongoing(
     _checks_ongoing: Literal["checks/ongoing"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
@@ -462,7 +462,7 @@ async def ignore_delete(
 @quart_schema.validate_response(models.api.IgnoreListResults, 200)
 async def ignore_list(
     _ignore_list: Literal["ignore/list"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
 ) -> DictResponse:
     """
     URL: GET /ignore/list/<project_name>
@@ -692,7 +692,7 @@ async def keys_user(
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
 async def project_get(
     _project_get: Literal["project/get"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
 ) -> DictResponse:
     """
     URL: GET /project/get/<project_name>
@@ -711,7 +711,7 @@ async def project_get(
 @quart_schema.validate_response(models.api.ProjectPolicyResults, 200)
 async def project_policy(
     _project_policy: Literal["project/policy"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
 ) -> DictResponse:
     """
     URL: GET /project/policy/<project_name>
@@ -755,7 +755,7 @@ async def project_policy(
 @quart_schema.validate_response(models.api.ProjectReleasesResults, 200)
 async def project_releases(
     _project_releases: Literal["project/releases"],
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
 ) -> DictResponse:
     """
     URL: GET /project/releases/<project_name>
@@ -1049,8 +1049,8 @@ async def release_delete(
 @quart_schema.validate_response(models.api.ReleaseGetResults, 200)
 async def release_get(
     _release_get: Literal["release/get"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> DictResponse:
     """
     URL: GET /release/get/<project_name>/<version_name>
@@ -1070,8 +1070,8 @@ async def release_get(
 @quart_schema.validate_response(models.api.ReleasePathsResults, 200)
 async def release_paths(
     _release_paths: Literal["release/paths"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     revision: safe.RevisionNumber | None = None,
 ) -> DictResponse:
     """
@@ -1101,8 +1101,8 @@ async def release_paths(
 @quart_schema.validate_response(models.api.ReleaseRevisionsResults, 200)
 async def release_revisions(
     _release_revisions: Literal["release/revisions"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> DictResponse:
     """
     URL: GET /release/revisions/<project_name>/<version_name>

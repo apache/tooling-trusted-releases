@@ -83,8 +83,8 @@ class ScoreArgs(FileArgs):
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectName(args.project_name)
-    version = safe.VersionName(args.version_name)
+    project = safe.ProjectKey(args.project_name)
+    version = safe.VersionKey(args.version_name)
 
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
@@ -146,8 +146,8 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def osv_scan(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectName(args.project_name)
-    version = safe.VersionName(args.version_name)
+    project = safe.ProjectKey(args.project_name)
+    version = safe.VersionKey(args.version_name)
 
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
@@ -206,8 +206,8 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def score_qs(args: FileArgs) -> results.Results | None:
-    safe.ProjectName(args.project_name)
-    safe.VersionName(args.version_name)
+    safe.ProjectKey(args.project_name)
+    safe.VersionKey(args.version_name)
 
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
@@ -245,8 +245,8 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(ScoreArgs)
 async def score_tool(args: ScoreArgs) -> results.Results | None:
-    safe.ProjectName(args.project_name)
-    safe.VersionName(args.version_name)
+    safe.ProjectKey(args.project_name)
+    safe.VersionKey(args.version_name)
 
     base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
     previous_base_dir = None

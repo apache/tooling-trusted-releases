@@ -83,12 +83,12 @@ async def finalise_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     release: sql.Release,
-    release_name: safe.ReleaseName,
+    release_name: safe.ReleaseKey,
     temp_dir: str,
     temp_dir_path: pathlib.Path,
-    version_name: safe.VersionName,
+    version_name: safe.VersionKey,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
@@ -138,11 +138,11 @@ async def _commit_new_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     release: sql.Release,
     release_name: str,
     temp_dir: str,
-    version_name: safe.VersionName,
+    version_name: safe.VersionKey,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
@@ -243,11 +243,11 @@ async def _lock_and_merge(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectName,
+    project_name: safe.ProjectKey,
     release: sql.Release,
-    _release_name: safe.ReleaseName,
+    _release_name: safe.ReleaseKey,
     temp_dir_path: pathlib.Path,
-    version_name: safe.VersionName,
+    version_name: safe.VersionKey,
 ) -> tuple[atr.models.attestable.Attestable | None, str | None, str | None, sql.Release]:
     # Acquire the write lock
     # We need this write lock for moving the directory afterwards atomically
@@ -334,8 +334,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def clear_quarantine(
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         quarantined_id: int,
     ) -> None:
         release_name = sql.release_name(str(project_name), str(version_name))
@@ -355,8 +355,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def create_revision_with_quarantine(  # noqa: C901
         self,
-        project_name: safe.ProjectName,
-        version_name: safe.VersionName,
+        project_name: safe.ProjectKey,
+        version_name: safe.VersionKey,
         asf_uid: str,
         description: str | None = None,
         set_local_cache: bool = False,
@@ -514,10 +514,10 @@ class CommitteeParticipant(FoundationCommitter):
         description: str | None,
         path_to_size: dict[str, int],
         prior_revision_name: str | None,
-        project_name: safe.ProjectName,
+        project_name: safe.ProjectKey,
         release_name: str,
         temp_dir: str,
-        version_name: safe.VersionName,
+        version_name: safe.VersionKey,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(

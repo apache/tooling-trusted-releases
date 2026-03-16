@@ -41,9 +41,9 @@ QUART_CONVERTERS: dict[Any, str] = {
 VALIDATED_TYPES: set[Any] = {
     safe.Alphanumeric,
     safe.CommitteeKey,
-    safe.ProjectName,
+    safe.ProjectKey,
     safe.RevisionNumber,
-    safe.VersionName,
+    safe.VersionKey,
     unsafe.UnsafeStr,
 }
 
@@ -196,14 +196,14 @@ async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, 
     """Validate URL parameters in order, using the type-specific validators."""
     for param_name, param_type in known_params:
         raw = kwargs[param_name]
-        if param_type is safe.ProjectName:
+        if param_type is safe.ProjectKey:
             try:
-                kwargs[param_name] = safe.ProjectName(raw)
+                kwargs[param_name] = safe.ProjectKey(raw)
             except ValueError:
                 raise base.ASFQuartException(f"Project name {param_name!r} is invalid. ")
-        elif param_type is safe.VersionName:
+        elif param_type is safe.VersionKey:
             try:
-                kwargs[param_name] = safe.VersionName(raw)
+                kwargs[param_name] = safe.VersionKey(raw)
             except ValueError:
                 raise base.ASFQuartException(f"Version name {param_name!r} is invalid. ")
         elif param_type is safe.RevisionNumber:

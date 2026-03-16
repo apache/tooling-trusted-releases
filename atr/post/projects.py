@@ -47,7 +47,7 @@ async def add_project(
     label = project_form.label
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(safe.ProjectName(str(committee_name)))
+        wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_name)))
         try:
             await wacm.project.create(committee_name, display_name, label)
         except storage.AccessError as e:

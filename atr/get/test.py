@@ -89,8 +89,8 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
 async def test_merge(
     session: web.Committer,
     _test_merge: Literal["test/merge"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     """
     URL: /test/merge/<project_name>/<version_name>
@@ -206,8 +206,8 @@ async def test_vote(
     session: web.Public,
     _test_vote: Literal["test/vote"],
     category: unsafe.UnsafeStr,
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
 ) -> str:
     """
     URL: /test/vote/<category>/<project_name>/<version_name>

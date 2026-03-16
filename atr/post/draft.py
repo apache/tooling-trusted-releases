@@ -44,8 +44,8 @@ if TYPE_CHECKING:
 async def cache_reset(
     session: web.Committer,
     _draft_reset: Literal["draft/reset"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
@@ -81,8 +81,8 @@ async def cache_reset(
 async def delete(
     session: web.Committer,
     _compose: Literal["compose"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
@@ -112,8 +112,8 @@ async def delete(
 async def delete_file(
     session: web.Committer,
     _draft_delete_file: Literal["draft/delete-file"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     delete_file_form: shared.draft.DeleteFileForm,
 ) -> web.WerkzeugResponse:
     """
@@ -150,8 +150,8 @@ async def delete_file(
 async def hashgen(
     session: web.Committer,
     _draft_hashgen: Literal["draft/hashgen"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
@@ -190,8 +190,8 @@ async def hashgen(
 async def quarantine_clear(
     session: web.Committer,
     _draft_quarantine_clear: Literal["draft/quarantine/clear"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     clear_form: shared.draft.ClearQuarantineForm,
 ) -> web.WerkzeugResponse:
     """URL: /draft/quarantine/clear/<project_name>/<version_name>"""
@@ -211,8 +211,8 @@ async def quarantine_clear(
 async def recheck(
     session: web.Committer,
     _draft_recheck: Literal["draft/recheck"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
@@ -248,8 +248,8 @@ async def recheck(
 async def sbomgen(
     session: web.Committer,
     _draft_sbomgen: Literal["draft/sbomgen"],
-    project_name: safe.ProjectName,
-    version_name: safe.VersionName,
+    project_name: safe.ProjectKey,
+    version_name: safe.VersionKey,
     file_path: unsafe.Path,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:

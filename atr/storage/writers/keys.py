@@ -467,7 +467,7 @@ class CommitteeParticipant(FoundationCommitter):
         return outcomes
 
     async def import_keys_file(
-        self, project_name: safe.ProjectName, version_name: safe.VersionName
+        self, project_name: safe.ProjectKey, version_name: safe.VersionKey
     ) -> outcome.List[types.Key]:
         release = await self.__data.release(
             project_name=str(project_name),
