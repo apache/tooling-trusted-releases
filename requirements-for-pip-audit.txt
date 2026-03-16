@@ -16,7 +16,7 @@ aiosignal==1.4.0
     # via aiohttp
 aiosmtplib==5.1.0
     # via tooling-trusted-releases
-aiosqlite==0.21.0
+aiosqlite==0.22.1
     # via tooling-trusted-releases
 aiozipstream==0.4
     # via tooling-trusted-releases
@@ -348,7 +348,6 @@ types-aiofiles==25.1.0.20251011
     # via quart-uploads
 typing-extensions==4.15.0
     # via
-    #   aiosqlite
     #   alembic
     #   asyncssh
     #   pydantic
