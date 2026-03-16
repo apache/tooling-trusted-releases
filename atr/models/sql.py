@@ -1226,6 +1226,34 @@ class Quarantined(sqlmodel.SQLModel, table=True):
             self.status = QuarantineStatus(self.status)
 
 
+# ReleaseFileState: Revision
+class ReleaseFileState(sqlmodel.SQLModel, table=True):
+    release_name: str = sqlmodel.Field(primary_key=True, **example("example-0.0.1"))
+    path: str = sqlmodel.Field(primary_key=True, **example("apache-example-0.0.1-src.tar.gz"))
+    since_revision_seq: int = sqlmodel.Field(primary_key=True, **example(1))
+    present: bool = sqlmodel.Field(**example(True))
+    content_hash: str | None = sqlmodel.Field(default=None, **example("blake3:7f83b1657ff1fc..."))
+    classification: str | None = sqlmodel.Field(default=None, **example("source"))
+
+    __table_args__ = (
+        sqlalchemy.ForeignKeyConstraint(
+            ["release_name", "since_revision_seq"],
+            ["revision.release_name", "revision.seq"],
+            ondelete="CASCADE",
+        ),
+        sqlalchemy.CheckConstraint(
+            """
+            (
+                (present = 1 AND content_hash IS NOT NULL AND classification IS NOT NULL)
+                OR
+                (present = 0 AND content_hash IS NULL AND classification IS NULL)
+            )
+            """,
+            name="valid_release_file_state",
+        ),
+    )
+
+
 # ReleasePolicy: Project
 class ReleasePolicy(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True)
