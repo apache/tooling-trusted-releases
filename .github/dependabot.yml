@@ -23,8 +23,9 @@ updates:
       day: "monday"
     cooldown:
       default-days: 7
-  - package-ecosystem: "pre-commit"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
+  # # TODO: Uncomment when pre-commit checks support cooldowns
+  # - package-ecosystem: "pre-commit"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #     day: "monday"
