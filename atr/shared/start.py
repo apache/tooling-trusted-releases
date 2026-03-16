@@ -33,6 +33,6 @@ class StartReleaseForm(form.Form):
     @pydantic.field_validator("version_name", mode="after")
     @classmethod
     def validate_version_name(cls, value: str) -> str:
-        if error := util.version_name_error(value):
+        if error := util.version_key_error(value):
             raise ValueError(error)
         return value

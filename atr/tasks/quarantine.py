@@ -114,8 +114,8 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     release = quarantined.release
-    project_name = release.safe_project_name
-    version_name = release.safe_version_name
+    project_key = release.safe_project_key
+    version_key = release.safe_version_key
     quarantine_dir = paths.quarantine_directory(quarantined)
 
     if not await aiofiles.os.path.isdir(quarantine_dir):
@@ -130,13 +130,13 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives(args.archives, quarantine_dir, str(project_name), str(version_name), file_entries)
+        await _extract_archives(args.archives, quarantine_dir, str(project_key), str(version_key), file_entries)
     except Exception as exc:
         await _mark_failed(quarantined, file_entries, f"Archive extraction failed: {exc}")
         await aioshutil.rmtree(quarantine_dir)
         return None
 
-    await _promote(quarantined, project_name, version_name, release.name, str(quarantine_dir))
+    await _promote(quarantined, project_key, version_key, release.key, str(quarantine_dir))
     return None
 
 
@@ -160,15 +160,15 @@ def _backfill_extract_archive(
 
 def _backfill_revision(
     revision_dir: pathlib.Path,
-    project_name: str,
-    version_name: str,
+    project_key: str,
+    version_key: str,
     archives_dir: pathlib.Path,
     staging_base: pathlib.Path,
     extraction_cfg: exarch.SecurityConfig,
     seen_archive_keys: set[str],
     results_list: list[tuple[str, pathlib.Path, float]],
 ) -> None:
-    archives_base = archives_dir / project_name / version_name
+    archives_base = archives_dir / project_key / version_key
     for archive_path in sorted(revision_dir.rglob("*")):
         if not archive_path.is_file():
             continue
@@ -176,7 +176,7 @@ def _backfill_revision(
             continue
         content_hash = hashes.compute_file_hash_sync(archive_path)
         archive_key = hashes.filesystem_archives_key(content_hash)
-        dedupe_key = f"{project_name}/{version_name}/{archive_key}"
+        dedupe_key = f"{project_key}/{version_key}/{archive_key}"
         if dedupe_key in seen_archive_keys:
             continue
         seen_archive_keys.add(dedupe_key)
@@ -215,11 +215,11 @@ def _extract_archive_to_dir(
 async def _extract_archives(
     archives: list[QuarantineArchiveEntry],
     quarantine_dir: pathlib.Path,
-    project_name: str,
-    version_name: str,
+    project_key: str,
+    version_key: str,
     file_entries: list[sql.QuarantineFileEntryV1],
 ) -> None:
-    archives_base = paths.get_archives_dir() / project_name / version_name
+    archives_base = paths.get_archives_dir() / project_key / version_key
     staging_base = paths.get_tmp_dir()
     await aiofiles.os.makedirs(archives_base, exist_ok=True)
     await aiofiles.os.makedirs(staging_base, exist_ok=True)
@@ -297,29 +297,29 @@ async def _mark_failed(
 
 async def _promote(
     quarantined: sql.Quarantined,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
-    release_name: str,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    release_key: str,
     quarantine_dir: str,
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
 
     async with db.session() as data:
-        release = await data.release(name=release_name, _release_policy=True, _project_release_policy=True).demand(
-            RuntimeError(f"Release {release_name} not found during quarantine promotion")
+        release = await data.release(key=release_key, _release_policy=True, _project_release_policy=True).demand(
+            RuntimeError(f"Release {release_key} not found during quarantine promotion")
         )
 
     path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(quarantine_dir_path)
 
     old_revision: sql.Revision | None = None
-    if quarantined.prior_revision_name is not None:
-        prior_number = quarantined.prior_revision_name.split()[-1]
+    if quarantined.prior_revision_key is not None:
+        prior_number = quarantined.prior_revision_key.split()[-1]
         async with db.session() as data:
-            old_revision = await data.revision(release_name=release_name, number=prior_number).get()
+            old_revision = await data.revision(release_key=release_key, number=prior_number).get()
 
     previous_attestable = None
     if old_revision is not None:
-        previous_attestable = await attestable.load(project_name, version_name, old_revision.safe_number)
+        previous_attestable = await attestable.load(project_key, version_key, old_revision.safe_number)
 
     base_inodes: dict[str, int] = {}
     base_hashes: dict[str, str] = {}
@@ -342,12 +342,12 @@ async def _promote(
             path_to_hash=path_to_hash,
             path_to_size=path_to_size,
             previous_attestable=previous_attestable,
-            project_name=project_name,
+            project_key=project_key,
             release=release,
-            release_name=release.safe_name,
+            release_key=release.safe_key,
             temp_dir=quarantine_dir,
             temp_dir_path=quarantine_dir_path,
-            version_name=version_name,
+            version_key=version_key,
             was_quarantined=True,
         )
 

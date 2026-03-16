@@ -73,7 +73,7 @@ async def _augment(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
             revision_number = release.latest_revision_number
@@ -116,7 +116,7 @@ async def _scan(
 
     try:
         async with db.session() as data:
-            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
                 RuntimeError("Release does not exist for OSV scan")
             )
             revision_number = release.latest_revision_number

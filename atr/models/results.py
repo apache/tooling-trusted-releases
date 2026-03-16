@@ -105,8 +105,8 @@ class OSVComponent(schema.Strict):
 
 class SBOMOSVScan(schema.Strict):
     kind: Literal["sbom_osv_scan"] = schema.Field(alias="kind")
-    project_name: str = schema.description("Project name")
-    version_name: str = schema.description("Version name")
+    project_key: str = schema.description("Project name")
+    version_key: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     bom_version: int | None = schema.Field(
         default=None, strict=False, description="BOM Version produced with scan results"
@@ -165,8 +165,8 @@ class SBOMAugment(schema.Strict):
 
 class SBOMQsScore(schema.Strict):
     kind: Literal["sbom_qs_score"] = schema.Field(alias="kind")
-    project_name: str = schema.description("Project name")
-    version_name: str = schema.description("Version name")
+    project_key: str = schema.description("Project name")
+    version_key: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     file_path: str = schema.description("Relative path to the scored SBOM file")
     report: SbomQsReport
@@ -174,8 +174,8 @@ class SBOMQsScore(schema.Strict):
 
 class SBOMToolScore(schema.Strict):
     kind: Literal["sbom_tool_score"] = schema.Field(alias="kind")
-    project_name: str = schema.description("Project name")
-    version_name: str = schema.description("Version name")
+    project_key: str = schema.description("Project name")
+    version_key: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     bom_version: int | None = schema.Field(default=None, strict=False, description="BOM Version scanned")
     prev_bom_version: int | None = schema.Field(

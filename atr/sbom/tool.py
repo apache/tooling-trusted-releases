@@ -78,7 +78,7 @@ def plugin_outdated_version(bom_value: models.bom.Bom) -> list[models.tool.Outda
         tools.extend(services)
     errors = []
     for tool in tools:
-        name_or_description = (tool.name or tool.description or "").lower()
+        name_or_description = (tool.key or tool.description or "").lower()
         if name_or_description not in _KNOWN_TOOLS:
             continue
         if tool.version is None:

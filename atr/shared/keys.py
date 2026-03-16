@@ -141,11 +141,11 @@ async def render_upload_page(
         participant_of_committees = await write.participant_of_committees()
 
     eligible_committees = [
-        c for c in participant_of_committees if (not util.committee_is_standing(c.name)) or (c.name == "tooling")
+        c for c in participant_of_committees if (not util.committee_is_standing(c.key)) or (c.key == "tooling")
     ]
 
-    committee_choices = [(c.name, c.display_name) for c in eligible_committees]
-    committee_map = {c.name: c.display_name for c in eligible_committees}
+    committee_choices = [(c.key, c.display_name) for c in eligible_committees]
+    committee_map = {c.key: c.display_name for c in eligible_committees}
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(get.keys.keys))["← Back to Manage keys"]]

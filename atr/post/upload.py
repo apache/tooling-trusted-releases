@@ -263,7 +263,7 @@ async def _svn_import(
         async with db.session() as data:
             release = await session.release(project_name, version_name, data=data)
             is_podling = (release.project.committee is not None) and release.project.committee.is_podling
-            committee_name = release.project.committee_name or str(project_name)
+            committee_name = release.project.committee_key or str(project_name)
 
         svn_url = _construct_svn_url(
             committee_name,

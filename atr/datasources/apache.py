@@ -334,9 +334,9 @@ async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
     ).all()
     # For all committees that have no associated projects
     for committee in committees_without_projects:
-        if committee.name == "incubator":
+        if committee.key == "incubator":
             continue
-        log.warning(f"Missing top level project for committee {committee.name}")
+        log.warning(f"Missing top level project for committee {committee.key}")
         # If a committee is missing, the following code can be activated to fix it
         # But ideally the fix should be in the upstream data source
         # project = sql.Project(
@@ -350,13 +350,13 @@ async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
     return added_count, updated_count
 
 
-def _project_status(pmc: sql.Committee, project_name: str, project_status: ProjectStatus) -> sql.ProjectStatus:
-    if pmc.name == "attic":
+def _project_status(pmc: sql.Committee, project_key: str, project_status: ProjectStatus) -> sql.ProjectStatus:
+    if pmc.key == "attic":
         # This must come first, because attic is also a standing committee
         return sql.ProjectStatus.RETIRED
-    elif ("_dormant_" in project_name) or str(project_status.name).endswith("(Dormant)"):
+    elif ("_dormant_" in project_key) or str(project_status.name).endswith("(Dormant)"):
         return sql.ProjectStatus.DORMANT
-    elif util.committee_is_standing(pmc.name):
+    elif util.committee_is_standing(pmc.key):
         return sql.ProjectStatus.STANDING
     return sql.ProjectStatus.ACTIVE
 
@@ -375,9 +375,9 @@ async def _update_committees(
             continue
 
         # Get or create PMC
-        committee = await data.committee(name=name).get()
+        committee = await data.committee(key=name).get()
         if not committee:
-            committee = sql.Committee(name=name)
+            committee = sql.Committee(key=name)
             data.add(committee)
             added_count += 1
         else:
@@ -389,7 +389,7 @@ async def _update_committees(
         committee.is_podling = False
         committee_info = committees_by_name.get(name)
         if committee_info:
-            committee.full_name = committee_info.display_name
+            committee.name = committee_info.display_name
 
         updated_count += 1
 
@@ -405,9 +405,9 @@ async def _update_podlings(
     # Then add PPMCs and their associated project (podlings)
     for podling_name, podling_data in podlings_data:
         # Get or create PPMC
-        ppmc = await data.committee(name=podling_name).get()
+        ppmc = await data.committee(key=podling_name).get()
         if not ppmc:
-            ppmc = sql.Committee(name=podling_name, is_podling=True)
+            ppmc = sql.Committee(key=podling_name, is_podling=True)
             data.add(ppmc)
             added_count += 1
         else:
@@ -415,7 +415,7 @@ async def _update_podlings(
 
         # We create a PPMC
         ppmc.is_podling = True
-        ppmc.full_name = podling_data.name.removesuffix("(Incubating)").removeprefix("Apache").strip()
+        ppmc.name = podling_data.name.removesuffix("(Incubating)").removeprefix("Apache").strip()
         podling_project = ldap_projects_by_name.get(podling_name)
         if podling_project is not None:
             ppmc.committee_members = podling_project.owners
@@ -423,16 +423,16 @@ async def _update_podlings(
         else:
             log.warning(f"could not find ldap data for podling {podling_name}")
 
-        podling = await data.project(name=podling_name).get()
+        podling = await data.project(key=podling_name).get()
         if not podling:
             # Create the associated podling project
-            podling = sql.Project(name=podling_name, full_name=podling_data.name, committee=ppmc)
+            podling = sql.Project(key=podling_name, name=podling_data.name, committee=ppmc)
             data.add(podling)
             added_count += 1
         else:
             updated_count += 1
 
-        podling.full_name = podling_data.name.removesuffix(" (Incubating)")
+        podling.name = podling_data.name.removesuffix(" (Incubating)")
         podling.committee = ppmc
         # TODO: Why did the type checkers not detect this?
         # podling.is_podling = True
@@ -445,11 +445,11 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
     updated_count = 0
 
     # Add projects and associate them with the right PMC
-    for project_name, project_status in projects.items():
+    for project_key, project_status in projects.items():
         # FIXME: this is a quick workaround for inconsistent data wrt webservices PMC / projects
         #        the PMC seems to be identified by the key ws, but the associated projects use webservices
-        if project_name.startswith("webservices-"):
-            project_name = project_name.replace("webservices-", "ws-")
+        if project_key.startswith("webservices-"):
+            project_key = project_key.replace("webservices-", "ws-")
             project_status.pmc = "ws"
 
         # TODO: Annotator is in both projects and ldap_projects
@@ -460,23 +460,23 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         # Originally reported in https://github.com/apache/tooling-trusted-releases/issues/35
         # Ideally it would be removed from the upstream data source, which is:
         # https://projects.apache.org/json/foundation/projects.json
-        if project_name == "incubator-annotator":
+        if project_key == "incubator-annotator":
             continue
 
         if project_status.pmc is None:
-            log.warning(f"project {project_name} has no PMC, skipping")
+            log.warning(f"project {project_key} has no PMC, skipping")
             continue
 
-        pmc = await data.committee(name=project_status.pmc).get()
+        pmc = await data.committee(key=project_status.pmc).get()
         if not pmc:
-            log.warning(f"could not find PMC for project {project_name}: {project_status.pmc}")
+            log.warning(f"could not find PMC for project {project_key}: {project_status.pmc}")
             continue
 
-        project_model = await data.project(name=project_name).get()
+        project_model = await data.project(key=project_key).get()
         # Check whether the project is retired, whether temporarily or otherwise
-        status = _project_status(pmc, project_name, project_status)
+        status = _project_status(pmc, project_key, project_status)
         if not project_model:
-            project_model = sql.Project(name=project_name, committee=pmc, status=status)
+            project_model = sql.Project(key=project_key, committee=pmc, status=status)
             data.add(project_model)
             added_count += 1
         else:
@@ -484,8 +484,8 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
             updated_count += 1
 
         # Pass the project name through the validator
-        safe.ProjectKey(project_model.name)
-        project_model.full_name = str(project_status.name)
+        safe.ProjectKey(project_model.key)
+        project_model.name = str(project_status.name)
         project_model.category = project_status.category
         project_model.description = project_status.description
         project_model.programming_languages = project_status.programming_language
@@ -499,11 +499,11 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
 
     # Tooling is not a committee
     # We add a special entry for Tooling, pretending to be a PMC, for debugging and testing
-    tooling_committee = await data.committee(name="tooling").get()
+    tooling_committee = await data.committee(key="tooling").get()
     if not tooling_committee:
-        tooling_committee = sql.Committee(name="tooling", full_name="Tooling")
+        tooling_committee = sql.Committee(key="tooling", name="Tooling")
         data.add(tooling_committee)
-        tooling_project = sql.Project(name="tooling", full_name="Apache Tooling", committee=tooling_committee)
+        tooling_project = sql.Project(key="tooling", name="Apache Tooling", committee=tooling_committee)
         data.add(tooling_project)
         added_count += 1
     else:

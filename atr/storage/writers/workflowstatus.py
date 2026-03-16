@@ -104,7 +104,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         workflow_id: str,
         run_id: int,
-        project_name: safe.ProjectKey,
+        project_key: safe.ProjectKey,
         task_id: int | None = None,
         status: str | None = None,
         message: str | None = None,
@@ -117,7 +117,7 @@ class CommitteeMember(CommitteeParticipant):
         ws = sql.WorkflowStatus(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=str(project_name),
+            project_key=str(project_key),
             task_id=task_id,
             status=status or "",
             message=message,
@@ -127,7 +127,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__write_as.append_to_audit_log(
             workflow_id=workflow_id,
             run_id=run_id,
-            project_name=str(project_name),
+            project_key=str(project_key),
             task_id=task_id,
             status=status,
             message=message,

@@ -92,7 +92,7 @@ async def get_file_totals(release: sql.Release, session: web.Committer | None) -
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
 
     _, totals = await _compute_stats(release, all_paths, match_ignore)
     return totals
@@ -108,7 +108,7 @@ async def selected(
     """
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
+            project_key=str(project_name),
             version=str(version_name),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
@@ -123,7 +123,7 @@ async def selected(
 
     async with storage.read(session) as read:
         ragp = read.as_general_public()
-        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_name)
+        match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
 
     per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
 
@@ -154,7 +154,7 @@ async def selected_revision(
     """
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
+            project_key=str(project_name),
             version=str(version_name),
             _committee=True,
             # _project=True is included in _project_release_policy=True
@@ -424,18 +424,18 @@ def _render_file_row(
 
     report_url = util.as_url(
         report.selected_path,
-        project_name=release.project.name,
+        project_name=release.project.key,
         version_name=release.version,
         rel_path=path_str,
     )
     download_url = util.as_url(
         download.path,
-        project_name=release.project.name,
+        project_name=release.project.key,
         version_name=release.version,
         file_path=path_str,
     )
     sbom_url = util.as_url(
-        sbom.report, project_name=release.project.name, version_name=release.version, file_path=path_str
+        sbom.report, project_name=release.project.key, version_name=release.version, file_path=path_str
     )
 
     if not has_checks_before:
@@ -506,7 +506,7 @@ def _render_file_row(
 def _render_header(page: htm.Block, release: sql.Release) -> None:
     render.html_nav(
         page,
-        back_url=util.as_url(vote.selected, project_name=release.project.name, version_name=release.version),
+        back_url=util.as_url(vote.selected, project_name=release.project.key, version_name=release.version),
         back_anchor=f"Vote on {release.project.short_display_name} {release.version}",
         phase="VOTE",
     )
@@ -526,7 +526,7 @@ def _render_ignores_section(page: htm.Block, release: sql.Release) -> None:
         "Project committee members can configure rules to ignore specific check results. "
         "Ignored checks are excluded from the counts shown above.",
     ]
-    ignores_url = util.as_url(ignores.ignores, project_name=release.project.name)
+    ignores_url = util.as_url(ignores.ignores, project_name=release.project.key)
     page.div[htpy.a(".btn.btn-outline-primary", href=ignores_url)["Manage check ignores"],]
 
 

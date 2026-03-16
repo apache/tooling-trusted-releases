@@ -275,25 +275,25 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSH
     #######################################
     ### Calls _step_04_command_validate ###
     #######################################
-    project_name, version_name, file_patterns, release_obj = await _step_04_command_validate(
+    project_key, version_key, file_patterns, release_obj = await _step_04_command_validate(
         process, argv, is_read_request, server
     )
     # The release object is only present for read requests
 
     if release_obj is not None:
-        log.info(f"Processing READ request for {release_obj.name}")
+        log.info(f"Processing READ request for {release_obj.key}")
         ####################################################
         ### Calls _step_07a_process_validated_rsync_read ###
         ####################################################
         await _step_07a_process_validated_rsync_read(process, argv, release_obj, file_patterns)
     else:
-        release_name = sql.release_name(str(project_name), str(version_name))
+        release_name = sql.release_key(str(project_key), str(version_key))
         _output_stderr(process, f"Received write command: {process.command}")
         log.info(f"Processing WRITE request for {release_name}")
         #####################################################
         ### Calls _step_07b_process_validated_rsync_write ###
         #####################################################
-        await _step_07b_process_validated_rsync_write(process, argv, project_name, version_name, server)
+        await _step_07b_process_validated_rsync_write(process, argv, project_key, version_key, server)
 
 
 def _step_03_command_simple_validate(argv: list[str]) -> bool:
@@ -347,18 +347,18 @@ async def _step_04_command_validate(
     ### Calls _step_05a/b_command_path_validate ###
     ############################################
     if is_read_request:
-        project_name, version_name, tag = await _step_05a_command_path_validate_read(argv[-1])
+        project_key, version_key, tag = await _step_05a_command_path_validate_read(argv[-1])
     else:
-        project_name, version_name, tag = await _step_05b_command_path_validate_write(argv[-1])
+        project_key, version_key, tag = await _step_05b_command_path_validate_write(argv[-1])
 
     ssh_uid = server._get_asf_uid(process)
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _committee=True).get()
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).get()
         if project is None:
-            raise RsyncArgsError(f"Project '{project_name}' does not exist")
+            raise RsyncArgsError(f"Project '{project_key}' does not exist")
 
         release = await data.release(
-            project_name=str(project_name), version=str(version_name), _project_release_policy=True
+            project_key=str(project_key), version=str(version_key), _project_release_policy=True
         ).get()
 
     if is_read_request:
@@ -366,15 +366,15 @@ async def _step_04_command_validate(
         ### Calls _step_06a_validate_read_permissions ###
         #################################################
         validated_release, file_patterns = await _step_06a_validate_read_permissions(
-            ssh_uid, project, release, project_name, version_name, tag
+            ssh_uid, project, release, project_key, version_key, tag
         )
-        return project_name, version_name, file_patterns, validated_release
+        return project_key, version_key, file_patterns, validated_release
 
     ##################################################
     ### Calls _step_06b_validate_write_permissions ###
     ##################################################
     await _step_06b_validate_write_permissions(ssh_uid, project, release)
-    return project_name, version_name, None, None
+    return project_key, version_key, None, None
 
 
 async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, str | None]:
@@ -388,11 +388,11 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectK
     path_project, path_version, *rest = path.strip("/").split("/", 2)
     tag = rest[0] if rest else None
     try:
-        project_name = safe.ProjectKey(path_project)
+        project_key = safe.ProjectKey(path_project)
     except ValueError:
         raise RsyncArgsError("Project is invalid")
     try:
-        version_name = safe.VersionKey(path_version)
+        version_key = safe.VersionKey(path_version)
     except ValueError:
         raise RsyncArgsError("Version is invalid")
     if tag:
@@ -400,12 +400,12 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectK
 
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
         ).get()
         if release is None:
             raise RsyncArgsError(f"Release '{path_project}-{path_version}' does not exist")
-    return project_name, version_name, tag
+    return project_key, version_key, tag
 
 
 async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, None]:
@@ -418,20 +418,20 @@ async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.Project
 
     path_project, path_version = path.strip("/").split("/", 1)
     try:
-        project_name = safe.ProjectKey(path_project)
+        project_key = safe.ProjectKey(path_project)
     except ValueError:
         raise RsyncArgsError("Project is invalid")
     try:
-        version_name = safe.VersionKey(path_version)
+        version_key = safe.VersionKey(path_version)
     except ValueError:
         raise RsyncArgsError("Version is invalid")
 
     async with db.session() as data:
-        project = await data.project(name=str(project_name)).get()
+        project = await data.project(key=str(project_key)).get()
         if project is None:
-            raise RsyncArgsError(f"Project '{project_name}' does not exist")
+            raise RsyncArgsError(f"Project '{project_key}' does not exist")
 
-    return project_name, version_name, None
+    return project_key, version_key, None
 
 
 def _validate_path_common(path: str) -> None:
@@ -455,13 +455,13 @@ async def _step_06a_validate_read_permissions(
     ssh_uid: str,
     project: sql.Project,
     release: sql.Release | None,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     tag: str | None,
 ) -> tuple[sql.Release | None, list[str] | None]:
     """Validate permissions for a read request."""
     if release is None:
-        raise RsyncArgsError(f"Release '{project_name}-{version_name}' does not exist")
+        raise RsyncArgsError(f"Release '{project_key}-{version_key}' does not exist")
 
     allowed_read_phases = {
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
@@ -470,21 +470,21 @@ async def _step_06a_validate_read_permissions(
     }
     print(release)
     if release.phase not in allowed_read_phases:
-        raise RsyncArgsError(f"Release '{release.name}' is not in a readable phase ({release.phase.value})")
+        raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
 
     if not user.is_committer(project.committee, ssh_uid):
         raise RsyncArgsError(
-            f"You must be a committer or committee member for project '{project.name}' to read this release"
+            f"You must be a committer or committee member for project '{project.key}' to read this release"
         )
 
     if tag:
         if (not release.project.release_policy) or (not release.project.release_policy.file_tag_mappings):
-            raise RsyncArgsError(f"Release '{release.name}' does not support tags")
+            raise RsyncArgsError(f"Release '{release.key}' does not support tags")
         tags = release.project.release_policy.file_tag_mappings.keys()
         if tag not in tags:
-            raise RsyncArgsError(f"Tag '{tag}' is not allowed for release '{release.name}'")
+            raise RsyncArgsError(f"Tag '{tag}' is not allowed for release '{release.key}'")
         if ".." in "".join(release.project.release_policy.file_tag_mappings[tag]):
-            raise RsyncArgsError(f"Tag '{tag}' is misconfigured for release '{release.name}'")
+            raise RsyncArgsError(f"Tag '{tag}' is misconfigured for release '{release.key}'")
         return release, release.project.release_policy.file_tag_mappings[tag]
     return release, None
 
@@ -498,17 +498,17 @@ async def _step_06b_validate_write_permissions(
     if release is None:
         # Creating a new release requires committee membership
         if not user.is_committee_member(project.committee, ssh_uid):
-            raise RsyncArgsError(f"You must be a member of project '{project.name}' committee to create a release")
+            raise RsyncArgsError(f"You must be a member of project '{project.key}' committee to create a release")
     else:
         # Uploading to existing release, requires DRAFT and participant status
         if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             raise RsyncArgsError(
-                f"Cannot upload: Release '{release.name}' is no longer in draft phase ({release.phase.value})"
+                f"Cannot upload: Release '{release.key}' is no longer in draft phase ({release.phase.value})"
             )
 
         if not user.is_committer(project.committee, ssh_uid):
             raise RsyncArgsError(
-                f"You must be a committer or committee member for project '{project.name}' to upload to this release"
+                f"You must be a committer or committee member for project '{project.key}' to upload to this release"
             )
 
 
@@ -525,12 +525,12 @@ async def _step_07a_process_validated_rsync_read(
         source_dir = paths.release_directory(release)
         log.info(
             f"Identified source directory for read: {source_dir} for release "
-            f"{release.name} (phase {release.phase.value})"
+            f"{release.key} (phase {release.phase.value})"
         )
 
         # Check whether the source directory actually exists before proceeding
         if not await aiofiles.os.path.isdir(source_dir):
-            raise RsyncArgsError(f"Source directory '{source_dir}' not found for release {release.name}")
+            raise RsyncArgsError(f"Source directory '{source_dir}' not found for release {release.key}")
 
         if file_patterns is None:
             # Update the rsync command path to the determined source directory
@@ -549,7 +549,7 @@ async def _step_07a_process_validated_rsync_read(
         exit_status = await _step_08_execute_rsync(process, argv)
         if exit_status != 0:
             log.error(
-                f"rsync --sender failed with exit status {exit_status} for release {release.name}. "
+                f"rsync --sender failed with exit status {exit_status} for release {release.key}. "
                 f"Command: {process.command} (run as {' '.join(argv)})"
             )
 
@@ -557,33 +557,33 @@ async def _step_07a_process_validated_rsync_read(
             process.exit(exit_status)
 
     except Exception as e:
-        log.exception(f"Error during rsync read processing for {release.name}")
+        log.exception(f"Error during rsync read processing for {release.key}")
         raise RsyncArgsError(f"Internal error processing read request: {e}")
 
 
 async def _step_07b_process_validated_rsync_write(
     process: asyncssh.SSHServerProcess,
     argv: list[str],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     server: SSHServer,
 ) -> None:
     """Handle a validated rsync write request."""
     asf_uid = server._get_asf_uid(process)
     exit_status = 0
-    release_name = sql.release_name(project_name, version_name)
+    release_name = sql.release_key(project_key, version_key)
 
     # Ensure the release object exists or is created
     # This must happen before creating the revision directory
     #######################################################
     ### Calls _step_07c_ensure_release_object_for_write ###
     #######################################################
-    await _step_07c_ensure_release_object_for_write(project_name, version_name)
+    await _step_07c_ensure_release_object_for_write(project_key, version_key)
 
     # Create the draft revision directory structure
     description = "File synchronisation through ssh, using rsync"
     async with storage.write(asf_uid) as write:
-        wacp = await write.as_project_committee_participant(project_name)
+        wacp = await write.as_project_committee_participant(project_key)
 
         async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
             nonlocal exit_status
@@ -609,21 +609,21 @@ async def _step_07b_process_validated_rsync_write(
 
         try:
             result = await wacp.revision.create_revision_with_quarantine(
-                project_name, version_name, asf_uid, description=description, modify=modify
+                project_key, version_key, asf_uid, description=description, modify=modify
             )
             if isinstance(result, sql.Quarantined):
                 log.info(f"rsync upload quarantined for release {release_name}")
-                message = f"\nATR: Upload received for {project_name} {version_name}. Archive validation in progress.\n"
+                message = f"\nATR: Upload received for {project_key} {version_key}. Archive validation in progress.\n"
             else:
                 github_payload = server._get_github_payload(process)
                 if github_payload is not None:
                     await attestable.github_tp_payload_write(
-                        project_name, version_name, result.safe_number, github_payload
+                        project_key, version_key, result.safe_number, github_payload
                     )
                 log.info(f"rsync upload successful for revision {result.number}")
                 host = config.get().APP_HOST
-                message = f"\nATR: Created revision {result.number} of {project_name} {version_name}\n"
-                message += f"ATR: https://{host}/compose/{project_name}/{version_name}\n"
+                message = f"\nATR: Created revision {result.number} of {project_key} {version_key}\n"
+                message += f"ATR: https://{host}/compose/{project_key}/{version_key}\n"
             if not process.stderr.is_closing():
                 process.stderr.write(message.encode())
                 await process.stderr.drain()
@@ -635,32 +635,30 @@ async def _step_07b_process_validated_rsync_write(
             process.exit(exit_status)
 
 
-async def _step_07c_ensure_release_object_for_write(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey
-) -> None:
+async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> None:
     """Ensure the release object exists or create it for a write operation."""
-    release_name = sql.release_name(str(project_name), str(version_name))
+    release_name = sql.release_key(str(project_key), str(version_key))
     async with db.session() as data:
-        release = await data.release(name=release_name, _committee=True).get()
+        release = await data.release(key=release_name, _committee=True).get()
         if release is None:
-            project = await data.project(
-                name=str(project_name), status=sql.ProjectStatus.ACTIVE, _committee=True
-            ).demand(RuntimeError("Project not found after validation"))
-            if version_name_error := util.version_name_error(str(version_name)):
+            project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
+                RuntimeError("Project not found after validation")
+            )
+            if version_key_error := util.version_key_error(str(version_key)):
                 # This should ideally be caught by path validation, but double check
-                raise RuntimeError(f'Invalid version name "{version_name}": {version_name_error}')
+                raise RuntimeError(f'Invalid version name "{version_key}": {version_key_error}')
             # Create a new release object
             log.info(f"Creating new release object for {release_name}")
             release = sql.Release(
-                project_name=project.name,
+                project_key=project.key,
                 project=project,
-                version=str(version_name),
+                version=str(version_key),
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
                 created=datetime.datetime.now(datetime.UTC),
             )
             data.add(release)
         elif release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            raise RsyncArgsError(f"Release '{release.name}' is no longer in draft phase ({release.phase.value})")
+            raise RsyncArgsError(f"Release '{release.key}' is no longer in draft phase ({release.phase.value})")
         await data.commit()
 
 

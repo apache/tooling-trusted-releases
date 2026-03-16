@@ -107,7 +107,7 @@ async def list_get(
             id=f"distribution-{dist.identifier}"
         )[dist.title, *title_extra]
         tbody = htm.tbody[
-            shared.distribution.html_tr("Release name", str(dist.release_name)),
+            shared.distribution.html_tr("Release name", str(dist.release_key)),
             shared.distribution.html_tr("Platform", dist.platform.value.name),
             shared.distribution.html_tr("Owner or Namespace", dist.owner_namespace or "-"),
             shared.distribution.html_tr("Package", dist.package),
@@ -129,7 +129,7 @@ async def list_get(
             submit_label="Delete",
             empty=True,
             defaults={
-                "release_name": dist.release_name,
+                "release_name": dist.release_key,
                 "platform": shared.distribution.DistributionPlatform.from_sql(dist.platform),
                 "owner_namespace": dist.owner_namespace or "",
                 "package": dist.package,
@@ -234,10 +234,10 @@ async def _get_page_data(
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
         distributions = await data.distribution(
-            release_name=sql.release_name(str(project_name), str(version_name)),
+            release_key=sql.release_key(str(project_name), str(version_name)),
         ).all()
         release = await data.release(
-            project_name=str(project_name),
+            project_key=str(project_name),
             version=str(version_name),
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
@@ -245,8 +245,8 @@ async def _get_page_data(
             t
             for t in (
                 await data.task(
-                    project_name=str(project_name),
-                    version_name=str(version_name),
+                    project_key=str(project_name),
+                    version_key=str(version_name),
                     revision_number=release.latest_revision_number,
                     task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
                     _workflow=True,

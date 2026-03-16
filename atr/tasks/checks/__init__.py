@@ -83,7 +83,7 @@ class Recorder:
         afresh: bool = True,
     ) -> None:
         self.checker = function_key(checker)
-        self.release_name = sql.release_name(project_name, version_name)
+        self.release_name = sql.release_key(project_name, version_name)
         self.revision_number = revision_number
         self.primary_rel_path = primary_rel_path
         self.member_rel_path = member_rel_path
@@ -146,7 +146,7 @@ class Recorder:
                 self.member_problems[status] = self.member_problems.get(status, 0) + 1
 
         result = sql.CheckResult(
-            release_name=str(self.release_name),
+            release_key=str(self.release_name),
             revision_number=str(self.revision_number),
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
@@ -187,7 +187,7 @@ class Recorder:
         # TODO: Cache project
         async with db.session() as data:
             name_str = str(self.project_name)
-            return await data.project(name=name_str, _release_policy=True).demand(
+            return await data.project(key=name_str, _release_policy=True).demand(
                 RuntimeError(f"Project {name_str} not found")
             )
 
@@ -352,7 +352,7 @@ async def resolve_cache_key(
         args = {}
     cache_key = {"checker": function_key(checker), "version": checker_version}
     file_hash = None
-    attestable_data = await attestable.load(release.safe_project_name, release.safe_version_name, revision)
+    attestable_data = await attestable.load(release.safe_project_key, release.safe_version_key, revision)
     if attestable_data:
         policy_dict = _coerce_policy_nulls(attestable_data.policy)
         policy = sql.ReleasePolicy.model_validate(policy_dict)
@@ -364,7 +364,7 @@ async def resolve_cache_key(
         if not ignore_path:
             if path is None:
                 path = file_paths.revision_path_for_file(
-                    release.safe_project_name, release.safe_version_name, revision, file or ""
+                    release.safe_project_key, release.safe_version_key, revision, file or ""
                 )
             file_hash = await hashes.compute_file_hash(path)
     if file_hash:
@@ -423,7 +423,7 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
         return []
     if not (
         base_path := file_paths.base_path_for_revision(
-            release.safe_project_name, release.safe_version_name, release.safe_latest_revision_number
+            release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
         )
     ):
         return []
@@ -439,14 +439,14 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
 async def _resolve_committee_name(release: sql.Release, rel_path: str | None = None) -> str:
     if release.committee is None:
         raise ValueError("Release has no committee")
-    return release.committee.name
+    return release.committee.key
 
 
 async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
     if not release.latest_revision_number:
         return ""
     payload_path = attestable.github_tp_payload_path(
-        release.safe_project_name, release.safe_version_name, release.safe_latest_revision_number
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
     )
     if not await aiofiles.os.path.isfile(payload_path):
         return ""
@@ -474,7 +474,7 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
     if (not rel_path) or (not release.latest_revision_number):
         return ""
     abs_path = file_paths.revision_path_for_file(
-        release.safe_project_name, release.safe_version_name, release.safe_latest_revision_number, rel_path
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, rel_path
     )
     plain_path = abs_path.with_suffix("")
     if await aiofiles.os.path.isfile(plain_path):

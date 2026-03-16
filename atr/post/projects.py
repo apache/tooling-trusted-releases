@@ -169,7 +169,7 @@ async def _process_add_category(
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_name)
         async with db.session() as data:
-            project = await data.project(name=str(project_name)).demand(
+            project = await data.project(key=str(project_name)).demand(
                 base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
             )
         modified = await _metadata_category_add(wacm, project, category_to_add)
@@ -192,7 +192,7 @@ async def _process_add_language(
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_name)
         async with db.session() as data:
-            project = await data.project(name=str(project_name)).demand(
+            project = await data.project(key=str(project_name)).demand(
                 base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
             )
         modified = await _metadata_language_add(wacm, project, language_to_add)
@@ -268,7 +268,7 @@ async def _process_remove_category(
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_name)
         async with db.session() as data:
-            project = await data.project(name=str(project_name)).demand(
+            project = await data.project(key=str(project_name)).demand(
                 base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
             )
         modified = await _metadata_category_remove(wacm, project, category_to_remove)
@@ -291,7 +291,7 @@ async def _process_remove_language(
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_name)
         async with db.session() as data:
-            project = await data.project(name=str(project_name)).demand(
+            project = await data.project(key=str(project_name)).demand(
                 base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
             )
         modified = await _metadata_language_remove(wacm, project, language_to_remove)

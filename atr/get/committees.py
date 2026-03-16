@@ -39,7 +39,7 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
     Main committee directory page.
     """
     async with db.session() as data:
-        committees = await data.committee(_projects=True).order_by(sql.Committee.name).all()
+        committees = await data.committee(_projects=True).order_by(sql.Committee.key).all()
         return await template.render(
             "committee-directory.html",
             committees=committees,
@@ -56,7 +56,7 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
     # TODO: Could also import this from keys.py
     async with db.session() as data:
         committee = await data.committee(
-            name=str(name),
+            key=str(name),
             _projects=True,
             _public_signing_keys=True,
         ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
@@ -75,8 +75,8 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
             submit_label="Regenerate KEYS file",
-            defaults={"committee_name": committee.name},
+            defaults={"committee_name": committee.key},
             empty=True,
         ),
-        is_standing=util.committee_is_standing(committee.name),
+        is_standing=util.committee_is_standing(committee.key),
     )

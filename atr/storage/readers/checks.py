@@ -55,7 +55,7 @@ class GeneralPublic:
         # Filter out any results that are ignored
         unignored_checks = []
         ignored_checks = []
-        match_ignore = await self.ignores_matcher(release.safe_project_name)
+        match_ignore = await self.ignores_matcher(release.safe_project_key)
         for cr in all_check_results:
             if not match_ignore(cr):
                 unignored_checks.append(cr)
@@ -81,7 +81,7 @@ class GeneralPublic:
 
     async def ignores(self, project_name: safe.ProjectKey) -> list[sql.CheckResultIgnore]:
         results = await self.__data.check_result_ignore(
-            project_name=str(project_name),
+            project_key=str(project_name),
         ).all()
         return list(results)
 
@@ -90,7 +90,7 @@ class GeneralPublic:
         project_name: safe.ProjectKey,
     ) -> Callable[[sql.CheckResult], bool]:
         ignores = await self.__data.check_result_ignore(
-            project_name=str(project_name),
+            project_key=str(project_name),
         ).all()
 
         def match(cr: sql.CheckResult) -> bool:
@@ -111,7 +111,7 @@ class GeneralPublic:
             # Blockers are never ignored
             return False
         if cri.release_glob is not None:
-            if not self.__check_ignore_match_pattern(cri.release_glob, str(cr.release_name)):
+            if not self.__check_ignore_match_pattern(cri.release_glob, str(cr.release_key)):
                 return False
         if cri.revision_number is not None:
             if cri.revision_number != cr.revision_number:

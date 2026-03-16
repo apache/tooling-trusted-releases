@@ -30,35 +30,35 @@ import atr.web as web
 async def ignores(
     session: web.Committer,
     _ignores: Literal["ignores"],
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     ignore_form: shared.ignores.IgnoreForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /ignores/<project_name>
+    URL: /ignores/<project_key>
     Handle forms on the ignores page.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     match ignore_form:
         case shared.ignores.AddIgnoreForm() as add_form:
-            return await _add_ignore(session, add_form, project_name)
+            return await _add_ignore(session, add_form, project_key)
 
         case shared.ignores.DeleteIgnoreForm() as delete_form:
-            return await _delete_ignore(session, delete_form, project_name)
+            return await _delete_ignore(session, delete_form, project_key)
 
         case shared.ignores.UpdateIgnoreForm() as update_form:
-            return await _update_ignore(session, update_form, project_name)
+            return await _update_ignore(session, update_form, project_key)
 
 
 async def _add_ignore(
-    session: web.Committer, add_form: shared.ignores.AddIgnoreForm, project_name: safe.ProjectKey
+    session: web.Committer, add_form: shared.ignores.AddIgnoreForm, project_key: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Add a new ignore."""
     status = shared.ignores.ignore_status_to_sql(add_form.status)  # pyright: ignore[reportArgumentType]
 
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         await wacm.checks.ignore_add(
-            project_name=project_name,
+            project_key=project_key,
             release_glob=add_form.release_glob or None,
             revision_number=add_form.revision_number or None,
             checker_glob=add_form.checker_glob or None,
@@ -70,34 +70,34 @@ async def _add_ignore(
 
     return await session.redirect(
         get.ignores.ignores,
-        project_name=str(project_name),
+        project_key=str(project_key),
         success="Ignore added",
     )
 
 
 async def _delete_ignore(
-    session: web.Committer, delete_form: shared.ignores.DeleteIgnoreForm, project_name: safe.ProjectKey
+    session: web.Committer, delete_form: shared.ignores.DeleteIgnoreForm, project_key: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Delete an ignore."""
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         await wacm.checks.ignore_delete(id=delete_form.id)
 
     return await session.redirect(
         get.ignores.ignores,
-        project_name=str(project_name),
+        project_key=str(project_key),
         success="Ignore deleted",
     )
 
 
 async def _update_ignore(
-    session: web.Committer, update_form: shared.ignores.UpdateIgnoreForm, project_name: safe.ProjectKey
+    session: web.Committer, update_form: shared.ignores.UpdateIgnoreForm, project_key: safe.ProjectKey
 ) -> web.WerkzeugResponse:
     """Update an ignore."""
     status = shared.ignores.ignore_status_to_sql(update_form.status)  # pyright: ignore[reportArgumentType]
 
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         await wacm.checks.ignore_update(
             id=update_form.id,
             release_glob=update_form.release_glob or None,
@@ -111,6 +111,6 @@ async def _update_ignore(
 
     return await session.redirect(
         get.ignores.ignores,
-        project_name=str(project_name),
+        project_key=str(project_key),
         success="Ignore updated",
     )

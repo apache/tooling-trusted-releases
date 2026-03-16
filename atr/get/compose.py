@@ -42,7 +42,7 @@ async def selected(
     await session.check_access(project_name)
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
+            project_key=str(project_name),
             version=str(version_name),
             _committee=True,
             _project_release_policy=True,

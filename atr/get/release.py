@@ -39,12 +39,12 @@ async def finished(
     View all finished releases for a project.
     """
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
+        project = await data.project(key=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
 
         releases = await data.release(
-            project_name=project.name,
+            project_key=project.key,
             phase=sql.ReleasePhase.RELEASE,
             _committee=True,
         ).all()
@@ -97,7 +97,7 @@ async def select(
     """
     await session.check_access(project_name)
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
+        project = await data.project(key=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)

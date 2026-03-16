@@ -86,7 +86,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_name = committee_name
 
     async def add_workflow_key(
-        self, github_uid: str, github_nid: int, project_name: safe.ProjectKey, key: str, github_payload: dict[str, Any]
+        self, github_uid: str, github_nid: int, project_key: safe.ProjectKey, key: str, github_payload: dict[str, Any]
     ) -> tuple[str, int]:
         now = int(time.time())
         # Twenty minutes to upload all files
@@ -96,7 +96,7 @@ class CommitteeParticipant(FoundationCommitter):
         wsk = sql.WorkflowSSHKey(
             fingerprint=fingerprint,
             key=key,
-            project_name=str(project_name),
+            project_key=str(project_key),
             asf_uid=self.__asf_uid,
             github_uid=github_uid,
             github_nid=github_nid,
@@ -108,7 +108,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             fingerprint=fingerprint,
-            project_name=str(project_name),
+            project_key=str(project_key),
             github_uid=github_uid,
             github_nid=github_nid,
             expires=expires,

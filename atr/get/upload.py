@@ -56,7 +56,7 @@ async def selected(
 
     render.html_nav(
         block,
-        util.as_url(compose.selected, project_name=release.project.name, version_name=release.version),
+        util.as_url(compose.selected, project_name=release.project.key, version_name=release.version),
         f"Compose {release.short_display_name}",
         "COMPOSE",
     )
@@ -148,7 +148,7 @@ async def selected(
     server_domain = session.app_host.split(":", 1)[0]
     rsync_command = (
         f"rsync -av -e 'ssh -p 2222' ${{YOUR_FILES}}/ "
-        f"{session.uid}@{server_domain}:/{release.project.name}/{release.version}/"
+        f"{session.uid}@{server_domain}:/{release.project.key}/{release.version}/"
     )
     block.pre(".bg-light.p-3.mb-3")[rsync_command]
 

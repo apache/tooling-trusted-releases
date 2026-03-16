@@ -68,7 +68,7 @@ class TrustedProjectPhase(enum.Enum):
 
 async def all_releases(project: sql.Project) -> list[sql.Release]:
     """Get all releases for the project, sorted by version."""
-    query = sqlmodel.select(sql.Release).where(sql.Release.project_name == project.name)
+    query = sqlmodel.select(sql.Release).where(sql.Release.project_key == project.key)
 
     results = []
     async with db.session() as data:
@@ -126,7 +126,7 @@ async def automated_release_signing_committees(caller_data: db.Session | None = 
 
         for key in keys:
             for committee in key.committees:
-                committees.append(committee.name)
+                committees.append(committee.key)
 
     # Committees allowed to make automated releases for testing
     committees.append("test")
@@ -171,7 +171,7 @@ async def checks_for(
     """Get the check results for a release, optionally for a specific revision and/or file path."""
     if revision is None:
         revision = release.safe_latest_revision_number
-    file_path_checks = await attestable.load_checks(release.safe_project_name, release.safe_version_name, revision)
+    file_path_checks = await attestable.load_checks(release.safe_project_key, release.safe_version_key, revision)
     if file_path_checks:
         if rel_path is not None:
             hashes = [
@@ -199,9 +199,7 @@ async def count_checks_for_revision_by_status(
     revision_number: safe.RevisionNumber,
     caller_data: db.Session | None = None,
 ):
-    file_path_checks = await attestable.load_checks(
-        release.safe_project_name, release.safe_version_name, revision_number
-    )
+    file_path_checks = await attestable.load_checks(release.safe_project_key, release.safe_version_key, revision_number)
     check_hashes = [h for inner in file_path_checks.values() for h in inner.values()]
     if len(check_hashes) == 0:
         return 0
@@ -253,16 +251,16 @@ async def latest_info(
     project_name: safe.ProjectKey, version_name: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
-    release_name = sql.release_name(project_name, version_name)
+    release_name = sql.release_key(project_name, version_name)
     async with db.session() as data:
         # TODO: No need to get release here
         # Just use maximum seq from revisions
-        release = await data.release(name=str(release_name), _project=True).demand(
+        release = await data.release(key=str(release_name), _project=True).demand(
             RuntimeError(f"Release {release_name} does not exist")
         )
         if release.latest_revision_number is None:
             return None
-        revision = await data.revision(release_name=str(release_name), number=release.latest_revision_number).get()
+        revision = await data.revision(release_key=str(release_name), number=release.latest_revision_number).get()
         if not revision:
             return None
     return revision.safe_number, revision.asfuid, revision.created
@@ -272,7 +270,7 @@ async def latest_revision(release: sql.Release, caller_data: db.Session | None =
     if release.latest_revision_number is None:
         return None
     async with db.ensure_session(caller_data) as data:
-        return await data.revision(release_name=release.name, number=release.latest_revision_number).get()
+        return await data.revision(release_key=release.key, number=release.latest_revision_number).get()
 
 
 async def previews(project: sql.Project) -> list[sql.Release]:
@@ -289,8 +287,8 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
     async with db.ensure_session(caller_data) as data:
         query = (
             sqlmodel.select(sql.Task)
-            .where(sql.Task.project_name == release.project_name)
-            .where(sql.Task.version_name == release.version)
+            .where(sql.Task.project_key == release.project_key)
+            .where(sql.Task.version_key == release.version)
             .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
             .where(via(sql.Task.status).notin_(disallowed_statuses))
             .where(via(sql.Task.result).is_not(None))
@@ -357,7 +355,7 @@ async def releases_by_phase(project: sql.Project, phase: sql.ReleasePhase) -> li
     query = (
         sqlmodel.select(sql.Release)
         .where(
-            sql.Release.project_name == project.name,
+            sql.Release.project_key == project.key,
             sql.Release.phase == phase,
         )
         .order_by(sql.validate_instrumented_attribute(sql.Release.created).desc())
@@ -409,8 +407,8 @@ async def tasks_ongoing(
     tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
     async with db.session() as data:
         query = tasks.where(
-            sql.Task.project_name == str(project_name),
-            sql.Task.version_name == str(version_name),
+            sql.Task.project_key == str(project_name),
+            sql.Task.version_key == str(version_name),
             sql.Task.revision_number
             == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
@@ -428,7 +426,7 @@ async def tasks_ongoing_revision(
     subquery = (
         sqlalchemy.select(via(sql.Revision.number))
         .where(
-            via(sql.Revision.release_name) == sql.release_name(str(project_name), str(version_name)),
+            via(sql.Revision.release_key) == sql.release_key(str(project_name), str(version_name)),
         )
         .order_by(via(sql.Revision.seq).desc())
         .limit(1)
@@ -443,8 +441,8 @@ async def tasks_ongoing_revision(
         )
         .select_from(sql.Task)
         .where(
-            sql.Task.project_name == str(project_name),
-            sql.Task.version_name == str(version_name),
+            sql.Task.project_key == str(project_name),
+            sql.Task.version_key == str(version_name),
             sql.Task.revision_number == (subquery if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_(
                 [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
@@ -479,10 +477,10 @@ async def trusted_jwt_for_dist(
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
     # payload, asf_uid, project = await trusted_jwt(publisher, jwt, phase)
     async with db.session() as db_data:
-        project = await db_data.project(name=str(project_name), _committee=True).demand(
+        project = await db_data.project(key=str(project_name), _committee=True).demand(
             InteractionError(f"Project {project_name} does not exist")
         )
-        release = await db_data.release(project_name=str(project_name), version=str(version_name)).get()
+        release = await db_data.release(project_key=str(project_name), version=str(version_name)).get()
         if not release:
             raise InteractionError(f"Release {version_name} does not exist in project {project_name}")
         if (phase == TrustedProjectPhase.COMPOSE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
@@ -510,7 +508,7 @@ async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Rele
             stmt = (
                 sqlmodel.select(sql.Release)
                 .where(
-                    sql.Release.project_name == project.name,
+                    sql.Release.project_key == project.key,
                     sql.validate_instrumented_attribute(sql.Release.phase).in_(active_phases),
                 )
                 .options(db.select_in_load(sql.Release.project))
@@ -520,7 +518,7 @@ async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Rele
             active_releases = list(result.scalars().all())
             if active_releases:
                 active_releases.sort(key=lambda r: r.created, reverse=True)
-                releases.append((project.short_display_name, project.name, active_releases))
+                releases.append((project.short_display_name, project.key, active_releases))
 
     return releases
 
@@ -528,7 +526,7 @@ async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Rele
 async def user_committees(asf_uid: str) -> list[tuple[str, str]]:
     results = []
     for committee in await user_committees_participant(asf_uid):
-        results.append((committee.name, committee.full_name))
+        results.append((committee.key, committee.name))
     return results
 
 
@@ -552,7 +550,7 @@ async def user_committees_participant(asf_uid: str, caller_data: db.Session | No
 
 async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[str, str]]:
     projects = await user.projects(asf_uid)
-    return [(p.name, p.display_name) for p in projects]
+    return [(p.key, p.display_name) for p in projects]
 
 
 async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[dict[str, Any], str | None]:
@@ -623,10 +621,10 @@ async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedPro
             InteractionError(f"Project for release policy {policy.id} not found")
         )
     if project.committee is None:
-        raise InteractionError(f"Project {project.name} has no committee")
+        raise InteractionError(f"Project {project.key} has no committee")
     github_automated_release_committees = await automated_release_signing_committees()
-    if project.committee.name not in github_automated_release_committees:
-        raise InteractionError(f"Project {project.name} is not in a committee that can make automated releases")
+    if project.committee.key not in github_automated_release_committees:
+        raise InteractionError(f"Project {project.key} is not in a committee that can make automated releases")
     return project
 
 

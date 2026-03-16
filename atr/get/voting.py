@@ -45,44 +45,44 @@ import atr.web as web
 async def selected_revision(
     session: web.Committer,
     _voting: Literal["voting"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /voting/<project_name>/<version_name>/<revision>
+    URL: /voting/<project_key>/<version_key>/<revision>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=False
+            session, project_key, version_key, revision, data, manual_vote=False
         ):
             case str() as error:
                 return await session.redirect(
                     compose.selected,
                     error=error,
-                    project_name=str(project_name),
-                    version_name=str(version_name),
+                    project_key=str(project_key),
+                    version_key=str(version_key),
                     revision=str(revision),
                 )
             case (release, committee):
                 pass
 
-        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.name)
+        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
 
         min_hours = 72
         if release.release_policy and (release.release_policy.min_hours is not None):
             min_hours = release.release_policy.min_hours
 
-        default_subject_template = await construct.start_vote_subject_default(project_name)
-        default_body_template = await construct.start_vote_default(project_name)
+        default_subject_template = await construct.start_vote_subject_default(project_key)
+        default_body_template = await construct.start_vote_default(project_key)
         subject_template_hash = construct.template_hash(default_subject_template)
 
         options = construct.StartVoteOptions(
             asfuid=session.uid,
             fullname=session.fullname,
-            project_name=project_name,
-            version_name=release.safe_version_name,
+            project_key=project_key,
+            version_key=release.safe_version_key,
             revision_number=revision,
             vote_duration=min_hours,
         )
@@ -112,14 +112,14 @@ async def selected_revision(
 
 async def _check_keys_warning(committee: sql.Committee) -> bool:
     if committee.is_podling:
-        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.key / "KEYS"
     else:
-        keys_file_path = paths.get_downloads_dir() / committee.name / "KEYS"
+        keys_file_path = paths.get_downloads_dir() / committee.key / "KEYS"
 
     return not await aiofiles.os.path.isfile(keys_file_path)
 
 
-def _render_body_field(default_body: str, project_name: str) -> htm.Element:
+def _render_body_field(default_body: str, project_key: str) -> htm.Element:
     """Render the body textarea with a link to edit the template."""
     textarea = htpy.textarea(
         "#body.form-control.font-monospace",
@@ -127,7 +127,7 @@ def _render_body_field(default_body: str, project_name: str) -> htm.Element:
         rows="12",
     )[default_body]
 
-    settings_url = util.as_url(projects.view, project_name=project_name) + "#start_vote_template"
+    settings_url = util.as_url(projects.view, project_key=project_key) + "#start_vote_template"
     link = htm.div(".form-text.text-muted.mt-2")[
         "To edit the template, go to the ",
         htm.a(href=settings_url)["project settings"],
@@ -151,8 +151,8 @@ async def _render_page(
 
     back_link_url = util.as_url(
         compose.selected,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     render.html_nav(
         page,
@@ -176,7 +176,7 @@ async def _render_page(
     ]
 
     if keys_warning:
-        keys_url = util.as_url(keys.keys) + f"#committee-{release.committee.name}"
+        keys_url = util.as_url(keys.keys) + f"#committee-{release.committee.key}"
         page.div(".p-3.mb-4.bg-warning-subtle.border.border-warning.rounded")[
             htm.strong["Warning: "],
             "The KEYS file is missing. Please autogenerate one on the ",
@@ -186,12 +186,12 @@ async def _render_page(
 
     cancel_url = util.as_url(
         compose.selected,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
 
-    custom_subject_widget = _render_subject_field(default_subject, release.project.name)
-    custom_body_widget = _render_body_field(default_body, release.project.name)
+    custom_subject_widget = _render_subject_field(default_subject, release.project.key)
+    custom_body_widget = _render_body_field(default_body, release.project.key)
 
     vote_form = form.render(
         model_cls=shared.voting.StartVotingForm,
@@ -212,8 +212,8 @@ async def _render_page(
 
     preview_url = util.as_url(
         post.voting.body_preview,
-        project_name=release.project.name,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
         revision_number=revision_number,
     )
     page.append(htpy.div("#vote-body-config.d-none", data_preview_url=preview_url))
@@ -221,8 +221,8 @@ async def _render_page(
     return page.collect()
 
 
-def _render_subject_field(default_subject: str, project_name: str) -> htm.Element:
-    settings_url = util.as_url(projects.view, project_name=project_name) + "#start_vote_subject"
+def _render_subject_field(default_subject: str, project_key: str) -> htm.Element:
+    settings_url = util.as_url(projects.view, project_key=project_key) + "#start_vote_subject"
     return htm.div[
         htpy.input(
             type="text",

@@ -70,8 +70,8 @@ class SBOMScoringError(Exception):
 
 
 class FileArgs(schema.Strict):
-    project_name: str = schema.description("Project name")
-    version_name: str = schema.description("Version name")
+    project_key: str = schema.description("Project name")
+    version_key: str = schema.description("Version name")
     revision_number: str = schema.description("Revision number")
     file_path: str = schema.description("Relative path to the SBOM file")
     asf_uid: str | None = None
@@ -83,10 +83,10 @@ class ScoreArgs(FileArgs):
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectKey(args.project_name)
-    version = safe.VersionKey(args.version_name)
+    project = safe.ProjectKey(args.project_key)
+    version = safe.VersionKey(args.version_key)
 
-    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -146,10 +146,10 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def osv_scan(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectKey(args.project_name)
-    version = safe.VersionKey(args.version_name)
+    project = safe.ProjectKey(args.project_key)
+    version = safe.VersionKey(args.version_key)
 
-    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -193,8 +193,8 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
     return results.SBOMOSVScan(
         kind="sbom_osv_scan",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         bom_version=new_version,
         file_path=full_path_str,
@@ -206,10 +206,10 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def score_qs(args: FileArgs) -> results.Results | None:
-    safe.ProjectKey(args.project_name)
-    safe.VersionKey(args.version_name)
+    safe.ProjectKey(args.project_key)
+    safe.VersionKey(args.version_key)
 
-    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -235,8 +235,8 @@ async def score_qs(args: FileArgs) -> results.Results | None:
     report_obj = results.SbomQsReport.model_validate(json.loads(stdout.decode("utf-8")))
     return results.SBOMQsScore(
         kind="sbom_qs_score",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         file_path=args.file_path,
         report=report_obj,
@@ -245,13 +245,13 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(ScoreArgs)
 async def score_tool(args: ScoreArgs) -> results.Results | None:
-    safe.ProjectKey(args.project_name)
-    safe.VersionKey(args.version_name)
+    safe.ProjectKey(args.project_key)
+    safe.VersionKey(args.version_key)
 
-    base_dir = paths.get_unfinished_dir() / args.project_name / args.version_name / args.revision_number
+    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
     previous_base_dir = None
     if args.previous_release_version is not None:
-        previous_base_dir = paths.get_finished_dir() / args.project_name / str(args.previous_release_version)
+        previous_base_dir = paths.get_finished_dir() / args.project_key / str(args.previous_release_version)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / args.file_path
@@ -288,8 +288,8 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
 
     return results.SBOMToolScore(
         kind="sbom_tool_score",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         bom_version=version,
         prev_bom_version=prev_version,

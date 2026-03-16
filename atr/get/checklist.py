@@ -37,13 +37,13 @@ import atr.web as web
 async def selected(
     _session: web.Public,
     _checklist: Literal["checklist"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str:
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             _project=True,
             _committee=True,
             _project_release_policy=True,
@@ -67,7 +67,7 @@ async def selected(
     substituted_markdown = construct.checklist_body(
         checklist_markdown,
         project=project,
-        version_name=version_name,
+        version_key=version_key,
         committee=committee,
         revision=latest_revision,
     )
@@ -76,8 +76,8 @@ async def selected(
     page = htm.Block()
     render.html_nav(
         page,
-        back_url=util.as_url(vote.selected, project_name=str(project_name), version_name=str(version_name)),
-        back_anchor=f"Vote on {project.short_display_name} {version_name!s}",
+        back_url=util.as_url(vote.selected, project_key=str(project_key), version_key=str(version_key)),
+        back_anchor=f"Vote on {project.short_display_name} {version_key!s}",
         phase="VOTE",
     )
     page.h1["Release checklist"]
@@ -85,12 +85,12 @@ async def selected(
         "Checklist for ",
         htm.strong[project.short_display_name],
         " version ",
-        str(version_name),
+        str(version_key),
         ":",
     ]
     page.div(".checklist-content.mt-4")[checklist_html]
 
     return await template.blank(
-        title=f"Release checklist for {project.short_display_name} {version_name!s}",
+        title=f"Release checklist for {project.short_display_name} {version_key!s}",
         content=page.collect(),
     )

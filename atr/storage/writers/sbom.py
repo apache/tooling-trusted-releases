@@ -78,16 +78,16 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def augment_cyclonedx(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         revision_number: str,
         rel_path: pathlib.Path,
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_AUGMENT,
             task_args=sbom.FileArgs(
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
                 revision_number=revision_number,
                 file_path=str(rel_path),
                 asf_uid=util.unwrap(self.__asf_uid),
@@ -95,8 +95,8 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=sql.TaskStatus.QUEUED,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             revision_number=revision_number,
             primary_rel_path=str(rel_path),
         )
@@ -107,8 +107,8 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def generate_cyclonedx(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         revision_number: str,
         path_in_new_revision: pathlib.Path,
         sbom_path_in_new_revision: pathlib.Path,
@@ -126,8 +126,8 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=sql.TaskStatus.QUEUED,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             revision_number=revision_number,
         )
         self.__data.add(sbom_task)
@@ -137,16 +137,16 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def osv_scan_cyclonedx(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         revision_number: str,
         rel_path: pathlib.Path,
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_OSV_SCAN,
             task_args=sbom.FileArgs(
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
                 revision_number=revision_number,
                 file_path=str(rel_path),
                 asf_uid=util.unwrap(self.__asf_uid),
@@ -154,8 +154,8 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),
             status=sql.TaskStatus.QUEUED,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             revision_number=revision_number,
             primary_rel_path=str(rel_path),
         )

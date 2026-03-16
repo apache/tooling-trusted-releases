@@ -76,7 +76,7 @@ def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
 
     # Update form
     update_form_block = htm.Block(htm.div)
-    form_path_update = util.as_url(post.ignores.ignores, project_name=cri.project_name)
+    form_path_update = util.as_url(post.ignores.ignores, project_name=cri.project_key)
     status = shared.ignores.sql_to_ignore_status(cri.status)
     form.render_block(
         update_form_block,

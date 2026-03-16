@@ -41,7 +41,7 @@ async def selected(session: web.Committer, _start: Literal["start"], project_nam
     """
     await session.check_access(project_name)
     async with db.session() as data:
-        project = await data.project(name=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
+        project = await data.project(key=str(project_name), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
         )
 
@@ -105,7 +105,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         submit_classes="btn-primary btn-lg",
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
-        defaults={"project_name": project.name},
+        defaults={"project_name": project.key},
     )
     if releases:
         page.h2(".mt-5")["Existing releases"]

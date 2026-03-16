@@ -79,7 +79,7 @@ async def selected(
     async with db.session() as data_for_revisions:
         revisions_stmt = (
             sqlmodel.select(sql.Revision)
-            .where(sql.Revision.release_name == release.name)
+            .where(sql.Revision.release_key == release.key)
             .order_by(sql.validate_instrumented_attribute(sql.Revision.seq))
             .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Revision.parent)))
         )
@@ -117,10 +117,10 @@ async def selected(
 
 def _render_back_link(release: sql.Release, phase_key: str) -> htm.Element:
     if phase_key == "draft":
-        back_url = util.as_url(compose.selected, project_name=release.project.name, version_name=release.version)
+        back_url = util.as_url(compose.selected, project_name=release.project.key, version_name=release.version)
         return htm.a(".atr-back-link", href=back_url)[f"← Back to Compose {release.short_display_name}"]
     elif phase_key == "preview":
-        back_url = util.as_url(finish.selected, project_name=release.project.name, version_name=release.version)
+        back_url = util.as_url(finish.selected, project_name=release.project.key, version_name=release.version)
         return htm.a(".atr-back-link", href=back_url)[f"← Back to Finish {release.short_display_name}"]
     else:
         return htm.a(".atr-back-link", href=util.as_url(root.index))["← Back to Select a release"]

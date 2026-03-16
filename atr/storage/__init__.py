@@ -162,22 +162,22 @@ class WriteAsFoundationCommitter(WriteAsGeneralPublic):
 
 
 class WriteAsCommitteeParticipant(WriteAsFoundationCommitter):
-    def __init__(self, write: Write, data: db.Session, committee_name: str):
+    def __init__(self, write: Write, data: db.Session, committee_key: str):
         self.__asf_uid = write.authorisation.asf_uid
-        self.__committee_name = committee_name
-        self.announce = writers.announce.CommitteeParticipant(write, self, data, committee_name)
-        self.cache = writers.cache.CommitteeParticipant(write, self, data, committee_name)
-        self.checks = writers.checks.CommitteeParticipant(write, self, data, committee_name)
-        self.keys = writers.keys.CommitteeParticipant(write, self, data, committee_name)
-        self.mail = writers.mail.CommitteeParticipant(write, self, data, committee_name)
-        self.policy = writers.policy.CommitteeParticipant(write, self, data, committee_name)
-        self.project = writers.project.CommitteeParticipant(write, self, data, committee_name)
-        self.release = writers.release.CommitteeParticipant(write, self, data, committee_name)
-        self.revision = writers.revision.CommitteeParticipant(write, self, data, committee_name)
-        self.sbom = writers.sbom.CommitteeParticipant(write, self, data, committee_name)
-        self.ssh = writers.ssh.CommitteeParticipant(write, self, data, committee_name)
-        self.tokens = writers.tokens.CommitteeParticipant(write, self, data, committee_name)
-        self.vote = writers.vote.CommitteeParticipant(write, self, data, committee_name)
+        self.__committee_key = committee_key
+        self.announce = writers.announce.CommitteeParticipant(write, self, data, committee_key)
+        self.cache = writers.cache.CommitteeParticipant(write, self, data, committee_key)
+        self.checks = writers.checks.CommitteeParticipant(write, self, data, committee_key)
+        self.keys = writers.keys.CommitteeParticipant(write, self, data, committee_key)
+        self.mail = writers.mail.CommitteeParticipant(write, self, data, committee_key)
+        self.policy = writers.policy.CommitteeParticipant(write, self, data, committee_key)
+        self.project = writers.project.CommitteeParticipant(write, self, data, committee_key)
+        self.release = writers.release.CommitteeParticipant(write, self, data, committee_key)
+        self.revision = writers.revision.CommitteeParticipant(write, self, data, committee_key)
+        self.sbom = writers.sbom.CommitteeParticipant(write, self, data, committee_key)
+        self.ssh = writers.ssh.CommitteeParticipant(write, self, data, committee_key)
+        self.tokens = writers.tokens.CommitteeParticipant(write, self, data, committee_key)
+        self.vote = writers.vote.CommitteeParticipant(write, self, data, committee_key)
 
     @property
     def asf_uid(self) -> str:
@@ -186,29 +186,29 @@ class WriteAsCommitteeParticipant(WriteAsFoundationCommitter):
         return self.__asf_uid
 
     @property
-    def committee_name(self) -> str:
-        return self.__committee_name
+    def committee_key(self) -> str:
+        return self.__committee_key
 
 
 class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
-    def __init__(self, write: Write, data: db.Session, committee_name: str):
+    def __init__(self, write: Write, data: db.Session, committee_key: str):
         self.__asf_uid = write.authorisation.asf_uid
-        self.__committee_name = committee_name
-        self.announce = writers.announce.CommitteeMember(write, self, data, committee_name)
-        self.cache = writers.cache.CommitteeMember(write, self, data, committee_name)
-        self.checks = writers.checks.CommitteeMember(write, self, data, committee_name)
-        self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_name)
-        self.keys = writers.keys.CommitteeMember(write, self, data, committee_name)
-        self.mail = writers.mail.CommitteeMember(write, self, data, committee_name)
-        self.policy = writers.policy.CommitteeMember(write, self, data, committee_name)
-        self.project = writers.project.CommitteeMember(write, self, data, committee_name)
-        self.release = writers.release.CommitteeMember(write, self, data, committee_name)
-        self.revision = writers.revision.CommitteeMember(write, self, data, committee_name)
-        self.sbom = writers.sbom.CommitteeMember(write, self, data, committee_name)
-        self.ssh = writers.ssh.CommitteeMember(write, self, data, committee_name)
-        self.tokens = writers.tokens.CommitteeMember(write, self, data, committee_name)
-        self.vote = writers.vote.CommitteeMember(write, self, data, committee_name)
-        self.workflowstatus = writers.workflowstatus.CommitteeMember(write, self, data, committee_name)
+        self.__committee_key = committee_key
+        self.announce = writers.announce.CommitteeMember(write, self, data, committee_key)
+        self.cache = writers.cache.CommitteeMember(write, self, data, committee_key)
+        self.checks = writers.checks.CommitteeMember(write, self, data, committee_key)
+        self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)
+        self.keys = writers.keys.CommitteeMember(write, self, data, committee_key)
+        self.mail = writers.mail.CommitteeMember(write, self, data, committee_key)
+        self.policy = writers.policy.CommitteeMember(write, self, data, committee_key)
+        self.project = writers.project.CommitteeMember(write, self, data, committee_key)
+        self.release = writers.release.CommitteeMember(write, self, data, committee_key)
+        self.revision = writers.revision.CommitteeMember(write, self, data, committee_key)
+        self.sbom = writers.sbom.CommitteeMember(write, self, data, committee_key)
+        self.ssh = writers.ssh.CommitteeMember(write, self, data, committee_key)
+        self.tokens = writers.tokens.CommitteeMember(write, self, data, committee_key)
+        self.vote = writers.vote.CommitteeMember(write, self, data, committee_key)
+        self.workflowstatus = writers.workflowstatus.CommitteeMember(write, self, data, committee_key)
 
     @property
     def asf_uid(self) -> str:
@@ -217,8 +217,8 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
         return self.__asf_uid
 
     @property
-    def committee_name(self) -> str:
-        return self.__committee_name
+    def committee_key(self) -> str:
+        return self.__committee_key
 
 
 class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
@@ -235,9 +235,9 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
 
 
 class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
-    def __init__(self, write: Write, data: db.Session, committee_name: str):
-        super().__init__(write, data, committee_name)
-        self.keys = writers.keys.FoundationAdmin(write, self, data, committee_name)
+    def __init__(self, write: Write, data: db.Session, committee_key: str):
+        super().__init__(write, data, committee_key)
+        self.keys = writers.keys.FoundationAdmin(write, self, data, committee_key)
 
 
 # TODO: Could name this WriteDispatcher
@@ -252,44 +252,44 @@ class Write:
     def authorisation(self) -> principal.Authorisation:
         return self.__authorisation
 
-    def as_committee_admin(self, committee_name: str) -> WriteAsCommitteeAdmin:
-        return self.as_committee_admin_outcome(committee_name).result_or_raise()
+    def as_committee_admin(self, committee_key: str) -> WriteAsCommitteeAdmin:
+        return self.as_committee_admin_outcome(committee_key).result_or_raise()
 
-    def as_committee_admin_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeAdmin]:
+    def as_committee_admin_outcome(self, committee_key: str) -> outcome.Outcome[WriteAsCommitteeAdmin]:
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
         if not user.is_admin(self.__authorisation.asf_uid):
             return outcome.Error(AccessError("Not an admin"))
         try:
-            waca = WriteAsCommitteeAdmin(self, self.__data, committee_name)
+            waca = WriteAsCommitteeAdmin(self, self.__data, committee_key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(waca)
 
-    def as_committee_member(self, committee_name: str) -> WriteAsCommitteeMember:
-        return self.as_committee_member_outcome(committee_name).result_or_raise()
+    def as_committee_member(self, committee_key: str) -> WriteAsCommitteeMember:
+        return self.as_committee_member_outcome(committee_key).result_or_raise()
 
-    def as_committee_member_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeMember]:
+    def as_committee_member_outcome(self, committee_key: str) -> outcome.Outcome[WriteAsCommitteeMember]:
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
-        if not self.__authorisation.is_member_of(committee_name):
-            return outcome.Error(AccessError(f"{self.__authorisation.asf_uid} is not a member of {committee_name}"))
+        if not self.__authorisation.is_member_of(committee_key):
+            return outcome.Error(AccessError(f"{self.__authorisation.asf_uid} is not a member of {committee_key}"))
         try:
-            wacm = WriteAsCommitteeMember(self, self.__data, committee_name)
+            wacm = WriteAsCommitteeMember(self, self.__data, committee_key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wacm)
 
-    def as_committee_participant(self, committee_name: str) -> WriteAsCommitteeParticipant:
-        return self.as_committee_participant_outcome(committee_name).result_or_raise()
+    def as_committee_participant(self, committee_key: str) -> WriteAsCommitteeParticipant:
+        return self.as_committee_participant_outcome(committee_key).result_or_raise()
 
-    def as_committee_participant_outcome(self, committee_name: str) -> outcome.Outcome[WriteAsCommitteeParticipant]:
+    def as_committee_participant_outcome(self, committee_key: str) -> outcome.Outcome[WriteAsCommitteeParticipant]:
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
-        if not self.__authorisation.is_participant_of(committee_name):
-            return outcome.Error(AccessError(f"Not a participant of {committee_name}"))
+        if not self.__authorisation.is_participant_of(committee_key):
+            return outcome.Error(AccessError(f"Not a participant of {committee_key}"))
         try:
-            wacp = WriteAsCommitteeParticipant(self, self.__data, committee_name)
+            wacp = WriteAsCommitteeParticipant(self, self.__data, committee_key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wacp)
@@ -333,15 +333,15 @@ class Write:
     # async def as_key_owner(self) -> types.Outcome[WriteAsKeyOwner]:
     #     ...
 
-    async def as_project_committee_admin(self, project_name: safe.ProjectKey) -> WriteAsCommitteeAdmin:
-        write_as_outcome = await self.as_project_committee_admin_outcome(project_name)
+    async def as_project_committee_admin(self, project_key: safe.ProjectKey) -> WriteAsCommitteeAdmin:
+        write_as_outcome = await self.as_project_committee_admin_outcome(project_key)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_admin_outcome(
-        self, project_name: safe.ProjectKey
+        self, project_key: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeAdmin]:
-        project = await self.__data.project(str(project_name), _committee=True).demand(
-            AccessError(f"Project not found: {project_name}")
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}")
         )
         if project.committee is None:
             return outcome.Error(AccessError("No committee found for project - Invalid state"))
@@ -350,51 +350,51 @@ class Write:
         if not user.is_admin(self.__authorisation.asf_uid):
             return outcome.Error(AccessError("Not an admin"))
         try:
-            waca = WriteAsCommitteeAdmin(self, self.__data, project.committee.name)
+            waca = WriteAsCommitteeAdmin(self, self.__data, project.committee.key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(waca)
 
-    async def as_project_committee_member(self, project_name: safe.ProjectKey) -> WriteAsCommitteeMember:
-        write_as_outcome = await self.as_project_committee_member_outcome(project_name)
+    async def as_project_committee_member(self, project_key: safe.ProjectKey) -> WriteAsCommitteeMember:
+        write_as_outcome = await self.as_project_committee_member_outcome(project_key)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_member_outcome(
-        self, project_name: safe.ProjectKey
+        self, project_key: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeMember]:
-        project = await self.__data.project(str(project_name), _committee=True).demand(
-            AccessError(f"Project not found: {project_name}")
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}")
         )
         if project.committee is None:
             return outcome.Error(AccessError("No committee found for project - Invalid state"))
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
-        if not self.__authorisation.is_member_of(project.committee.name):
-            return outcome.Error(AccessError(f"Not a member of {project.committee.name}"))
+        if not self.__authorisation.is_member_of(project.committee.key):
+            return outcome.Error(AccessError(f"Not a member of {project.committee.key}"))
         try:
-            wacm = WriteAsCommitteeMember(self, self.__data, project.committee.name)
+            wacm = WriteAsCommitteeMember(self, self.__data, project.committee.key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wacm)
 
-    async def as_project_committee_participant(self, project_name: safe.ProjectKey) -> WriteAsCommitteeParticipant:
-        write_as_outcome = await self.as_project_committee_participant_outcome(project_name)
+    async def as_project_committee_participant(self, project_key: safe.ProjectKey) -> WriteAsCommitteeParticipant:
+        write_as_outcome = await self.as_project_committee_participant_outcome(project_key)
         return write_as_outcome.result_or_raise()
 
     async def as_project_committee_participant_outcome(
-        self, project_name: safe.ProjectKey
+        self, project_key: safe.ProjectKey
     ) -> outcome.Outcome[WriteAsCommitteeParticipant]:
-        project = await self.__data.project(str(project_name), _committee=True).demand(
-            AccessError(f"Project not found: {project_name!s}")
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key!s}")
         )
         if project.committee is None:
             return outcome.Error(AccessError("No committee found for project - Invalid state"))
         if self.__authorisation.asf_uid is None:
             return outcome.Error(AccessError("Not authorized"))
-        if not self.__authorisation.is_participant_of(project.committee.name):
-            return outcome.Error(AccessError(f"Not a participant of {project.committee.name}"))
+        if not self.__authorisation.is_participant_of(project.committee.key):
+            return outcome.Error(AccessError(f"Not a participant of {project.committee.key}"))
         try:
-            wacp = WriteAsCommitteeParticipant(self, self.__data, project.committee.name)
+            wacp = WriteAsCommitteeParticipant(self, self.__data, project.committee.key)
         except Exception as e:
             return outcome.Error(e)
         return outcome.Result(wacp)
@@ -406,7 +406,7 @@ class Write:
     async def member_of_committees(self) -> list[sql.Committee]:
         names = list(self.__authorisation.member_of())
         committees = list(await self.__data.committee(name_in=names).all())
-        committees.sort(key=lambda c: c.name)
+        committees.sort(key=lambda c: c.key)
         # Return even standing committees
         return committees
 
@@ -417,7 +417,7 @@ class Write:
     async def participant_of_committees(self) -> list[sql.Committee]:
         names = list(self.__authorisation.participant_of())
         committees = list(await self.__data.committee(name_in=names).all())
-        committees.sort(key=lambda c: c.name)
+        committees.sort(key=lambda c: c.key)
         # Return even standing committees
         return committees
 
@@ -496,26 +496,26 @@ async def write(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerat
 
 @contextlib.asynccontextmanager
 async def write_as_committee_member(
-    committee_name: str,
+    committee_key: str,
     asf_uid: principal.UID = principal.ArgumentNone,
 ) -> AsyncGenerator[WriteAsCommitteeMember]:
     async with write(asf_uid) as w:
-        yield w.as_committee_member(committee_name)
+        yield w.as_committee_member(committee_key)
 
 
 @contextlib.asynccontextmanager
 async def write_as_committee_participant(
-    committee_name: str,
+    committee_key: str,
     asf_uid: principal.UID = principal.ArgumentNone,
 ) -> AsyncGenerator[WriteAsCommitteeParticipant]:
     async with write(asf_uid) as w:
-        yield w.as_committee_participant(committee_name)
+        yield w.as_committee_participant(committee_key)
 
 
 @contextlib.asynccontextmanager
 async def write_as_project_committee_member(
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     asf_uid: principal.UID = principal.ArgumentNone,
 ) -> AsyncGenerator[WriteAsCommitteeMember]:
     async with write(asf_uid) as w:
-        yield await w.as_project_committee_member(project_name)
+        yield await w.as_project_committee_member(project_key)

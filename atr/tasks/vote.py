@@ -70,7 +70,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
         raise VoteInitiationError("Invalid destination email address")
 
     async with db.session() as data:
-        release = await data.release(name=args.release_name, _project=True, _committee=True).demand(
+        release = await data.release(key=args.release_name, _project=True, _committee=True).demand(
             VoteInitiationError(f"Release {args.release_name!s} not found")
         )
         latest_revision_number = release.latest_revision_number
@@ -78,7 +78,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
             raise VoteInitiationError(f"No revisions found for release {args.release_name!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
-            release.safe_project_name, release.safe_version_name, release.safe_latest_revision_number
+            release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
         )
         if ongoing_tasks > 0:
             raise VoteInitiationError(
@@ -111,7 +111,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     subject = args.subject
     body = args.body
 
-    permitted_recipients = util.permitted_voting_recipients(args.initiator_id, release.committee.name)
+    permitted_recipients = util.permitted_voting_recipients(args.initiator_id, release.committee.key)
     if args.email_to not in permitted_recipients:
         log.error(f"Invalid mailing list choice: {args.email_to} not in {permitted_recipients}")
         raise VoteInitiationError("Invalid mailing list choice")

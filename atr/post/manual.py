@@ -109,8 +109,8 @@ async def start_selected_revision(
                 pass
 
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(release.safe_project_name)
-            error = await wacp.release.promote_to_candidate(release.safe_name, revision, vote_manual=True)
+            wacp = await write.as_project_committee_participant(release.safe_project_key)
+            error = await wacp.release.promote_to_candidate(release.safe_key, revision, vote_manual=True)
 
         if error:
             return await session.redirect(

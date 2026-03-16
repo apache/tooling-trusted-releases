@@ -252,7 +252,7 @@ ATR uses SQLAlchemy ORM exclusively for database access. All queries use paramet
 ```python
 # Safe: parameterized query
 result = await session.exec(
-    select(Project).where(Project.name == project_name)
+    select(Project).where(Project.key == project_name)
 )
 ```
 

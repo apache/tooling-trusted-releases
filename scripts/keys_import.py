@@ -155,14 +155,14 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
     async with db.session() as data:
         committees = await data.committee().all()
     committees = list(committees)
-    committees.sort(key=lambda c: c.name.lower())
+    committees.sort(key=lambda c: c.key.lower())
 
     urls = []
     for committee in committees:
         if committee.is_podling:
-            url = f"https://downloads.apache.org/incubator/{committee.name}/KEYS"
+            url = f"https://downloads.apache.org/incubator/{committee.key}/KEYS"
         else:
-            url = f"https://downloads.apache.org/{committee.name}/KEYS"
+            url = f"https://downloads.apache.org/{committee.key}/KEYS"
         urls.append(url)
 
     total_yes = 0

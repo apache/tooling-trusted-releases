@@ -98,7 +98,7 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
                 stmt = (
                     sqlmodel.select(sql.Release)
                     .where(
-                        sql.Release.project_name == project.name,
+                        sql.Release.project_key == project.key,
                         sql.validate_instrumented_attribute(sql.Release.phase).in_(active_phases),
                     )
                     .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Release.project)))
@@ -107,7 +107,7 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
                 result = await data.execute(stmt)
                 active_releases = result.scalars().all()
                 completed_releases = (
-                    len(await data.release(phase=sql.ReleasePhase.RELEASE, project_name=project.name).all()) > 0
+                    len(await data.release(phase=sql.ReleasePhase.RELEASE, project_key=project.key).all()) > 0
                 )
 
                 if active_releases:

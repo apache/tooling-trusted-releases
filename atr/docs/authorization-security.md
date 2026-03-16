@@ -167,7 +167,7 @@ To verify a user is a committer on a project:
 
 ```python
 auth = await Authorisation()
-if not auth.is_participant_of(project.committee_name):
+if not auth.is_participant_of(project.committee_key):
     raise Forbidden("Project participation required")
 ```
 

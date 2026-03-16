@@ -180,8 +180,8 @@ async def _project_version_fetch_from_db() -> dict[str, set[str]]:
     async with db.session() as data:
         all_projects = await data.project(status=sql.ProjectStatus.ACTIVE, _committee=False).all()
         for project in all_projects:
-            all_releases = await data.release(project_name=project.name, _project=False, _committee=False).all()
-            projects[project.name] = {release.version for release in all_releases}
+            all_releases = await data.release(project_key=project.key, _project=False, _committee=False).all()
+            projects[project.key] = {release.version for release in all_releases}
     return projects
 
 

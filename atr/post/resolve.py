@@ -145,7 +145,7 @@ async def _tabulate(session: web.Committer, project_name: safe.ProjectKey, versi
 
     resolve_form = atr.form.render(
         model_cls=shared.resolve.SubmitForm,
-        action=util.as_url(selected, project_name=release.project.name, version_name=release.version),
+        action=util.as_url(selected, project_name=release.project.key, version_name=release.version),
         submit_label="Resolve vote",
         textarea_rows=24,
         defaults=defaults,

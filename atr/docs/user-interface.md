@@ -237,7 +237,7 @@ async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
     async with storage.write() as write:
         participant_of_committees = await write.participant_of_committees()
 
-    committee_choices = [(c.name, c.display_name or c.name) for c in participant_of_committees]
+    committee_choices = [(c.key, c.display_name or c.key) for c in participant_of_committees]
 
     page = htm.Block()
     page.p[htm.a(".atr-back-link", href=util.as_url(keys))["← Back to Manage keys"],]

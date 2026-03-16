@@ -118,7 +118,7 @@ async def details(
                 return await session.redirect(get.keys.keys)
 
             selected_committee_names = update_form.selected_committees
-            old_committee_names = {c.name for c in key.committees}
+            old_committee_names = {c.key for c in key.committees}
 
             new_committees = await data.committee(name_in=selected_committee_names).all()
             key.committees = list(new_committees)
@@ -146,26 +146,26 @@ async def details(
 async def import_selected_revision(
     session: web.Committer,
     _keys_import: Literal["keys/import"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /keys/import/<project_name>/<version_name>
+    URL: /keys/import/<project_key>/<version_key>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with storage.write() as write:
-        wacm = await write.as_project_committee_member(project_name)
-        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(project_name, version_name)
+        wacm = await write.as_project_committee_member(project_key)
+        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(project_key, version_key)
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
-        message += f", failed to upload {util.plural(outcomes.error_count, 'key')} for {wacm.committee_name}"
+        message += f", failed to upload {util.plural(outcomes.error_count, 'key')} for {wacm.committee_key}"
     return await session.redirect(
         get.compose.selected,
         success=message,
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
     )
 
 
@@ -364,7 +364,7 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
     try:
         selected_committee = upload_remote_form.committee
         async with db.session() as data:
-            committee = await data.committee(name=selected_committee).get()
+            committee = await data.committee(key=selected_committee).get()
             if not committee:
                 await quart.flash(f"Committee '{selected_committee}' not found", "error")
                 return await shared.keys.render_upload_page(error=True)

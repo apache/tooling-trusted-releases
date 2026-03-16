@@ -115,7 +115,7 @@ class DistributionPlatform(enum.Enum):
 
 
 class DeleteForm(form.Form):
-    release_name: safe.ReleaseKey = form.label("Release name", widget=form.Widget.HIDDEN)
+    release_key: safe.ReleaseKey = form.label("Release name", widget=form.Widget.HIDDEN)
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.HIDDEN)
     owner_namespace: str = form.label("Owner namespace", widget=form.Widget.HIDDEN)
     package: str = form.label("Package", widget=form.Widget.HIDDEN)
@@ -419,7 +419,7 @@ async def release_validated(
             phase = {sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}
     async with db.session() as data:
         release = await data.release(
-            project_name=str(project),
+            project_key=str(project),
             version=str(version),
             _committee=committee,
             _release_policy=release_policy,

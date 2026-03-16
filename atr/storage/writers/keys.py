@@ -87,7 +87,7 @@ class FoundationCommitter(GeneralPublic):
             await self.__data.delete(key)
             await self.__data.commit()
             for committee in key.committees:
-                wacm = self.__write.as_committee_member_outcome(committee.name).result_or_none()
+                wacm = self.__write.as_committee_member_outcome(committee.key).result_or_none()
                 if wacm is None:
                     continue
                 await wacm.keys.autogenerate_keys_file()
@@ -141,7 +141,7 @@ class FoundationCommitter(GeneralPublic):
             )
 
     async def keys_file_text(self, committee_name: str) -> str:
-        committee = await self.__data.committee(name=committee_name, _public_signing_keys=True).demand(
+        committee = await self.__data.committee(key=committee_name, _public_signing_keys=True).demand(
             storage.AccessError(f"Committee not found: {committee_name}")
         )
         if not committee.public_signing_keys:
@@ -446,7 +446,7 @@ class CommitteeParticipant(FoundationCommitter):
         return outcome.Result(str(committee_keys_path))
 
     async def committee(self) -> sql.Committee:
-        return await self.__data.committee(name=self.__committee_name, _public_signing_keys=True).demand(
+        return await self.__data.committee(key=self.__committee_name, _public_signing_keys=True).demand(
             storage.AccessError(f"Committee not found: {self.__committee_name}")
         )
 
@@ -470,7 +470,7 @@ class CommitteeParticipant(FoundationCommitter):
         self, project_name: safe.ProjectKey, version_name: safe.VersionKey
     ) -> outcome.List[types.Key]:
         release = await self.__data.release(
-            project_name=str(project_name),
+            project_key=str(project_name),
             version=str(version_name),
             _committee=True,
         ).demand(storage.AccessError(f"Release not found: {project_name} {version_name}"))
@@ -479,7 +479,7 @@ class CommitteeParticipant(FoundationCommitter):
             keys_file_text = await f.read()
         if release.committee is None:
             raise storage.AccessError("No committee found for release - Invalid state")
-        if release.committee.name != self.__committee_name:
+        if release.committee.key != self.__committee_name:
             raise storage.AccessError(
                 f"Release {project_name!s} {version_name!s} is not associated with committee {self.__committee_name}"
             )

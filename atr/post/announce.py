@@ -34,12 +34,12 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _announce: Literal["announce"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     announce_form: shared.announce.AnnounceForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /announce/<project_name>/<version_name>
+    URL: /announce/<project_key>/<version_key>
     Handle the announcement form submission and promote the preview to release.
     """
     permitted_recipients = util.permitted_announce_recipients(session.uid)
@@ -53,8 +53,8 @@ async def selected(
 
     # Get the release to find the revision number
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         with_committee=True,
         phase=sql.ReleasePhase.RELEASE_PREVIEW,
         with_distributions=True,
@@ -69,8 +69,8 @@ async def selected(
             get.announce.selected,
             error=f"The release has been updated since you loaded the form. "
             f"Please review the current revision ({preview_revision_number!s}) and submit the form again.",
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
 
     policy = release.release_policy or release.project.release_policy
@@ -87,12 +87,12 @@ async def selected(
                 error=f"This release cannot be announced until the following distributions have been recorded: {
                     ', '.join(missing)
                 }",
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
 
     # Validate that the subject template hasn't changed
-    subject_template = await construct.announce_release_subject_default(project_name)
+    subject_template = await construct.announce_release_subject_default(project_key)
     current_hash = construct.template_hash(subject_template)
     if current_hash != announce_form.subject_template_hash:
         return await session.form_error(
@@ -101,10 +101,10 @@ async def selected(
         )
 
     try:
-        async with storage.write_as_project_committee_member(project_name, session) as wacm:
+        async with storage.write_as_project_committee_member(project_key, session) as wacm:
             await wacm.announce.release(
-                project_name=project_name,
-                version_name=version_name,
+                project_key=project_key,
+                version_key=version_key,
                 preview_revision_number=preview_revision_number,
                 recipient=announce_form.mailing_list,
                 body=announce_form.body,
@@ -115,12 +115,12 @@ async def selected(
             )
     except storage.AccessError as e:
         return await session.redirect(
-            get.announce.selected, error=str(e), project_name=str(project_name), version_name=str(version_name)
+            get.announce.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)
         )
 
     routes_release_finished = get.release.finished
     return await session.redirect(
         routes_release_finished,
         success="Preview successfully announced",
-        project_name=str(project_name),
+        project_key=str(project_key),
     )

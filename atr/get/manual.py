@@ -104,7 +104,7 @@ async def _render_page(release, revision: str) -> htm.Element:
 
     back_link_url = util.as_url(
         compose.selected,
-        project_name=release.project.name,
+        project_name=release.project.key,
         version_name=release.version,
     )
     render.html_nav(
@@ -134,14 +134,14 @@ async def _render_page(release, revision: str) -> htm.Element:
         "The ATR will then require you to submit the vote and vote result thread URLs to proceed."
     ]
 
-    cancel_url = util.as_url(compose.selected, project_name=release.project.name, version_name=release.version)
+    cancel_url = util.as_url(compose.selected, project_name=release.project.key, version_name=release.version)
     manual_form = form.render(
         model_cls=form.Empty,
         submit_label="Start manual vote",
         cancel_url=cancel_url,
         action=util.as_url(
             post.manual.start_selected_revision,
-            project_name=release.project.name,
+            project_name=release.project.key,
             version_name=release.version,
             revision=revision,
         ),
@@ -155,7 +155,7 @@ async def _render_page(release, revision: str) -> htm.Element:
 def _render_resolve_page(release: sql.Release) -> htm.Element:
     page = htm.Block()
 
-    back_url = util.as_url(vote.selected, project_name=release.project.name, version_name=release.version)
+    back_url = util.as_url(vote.selected, project_name=release.project.key, version_name=release.version)
     page.p[htm.a(".atr-back-link", href=back_url)[f"← Back to Vote for {release.short_display_name}"]]
 
     page.h1[f"Resolve vote for {release.short_display_name}"]

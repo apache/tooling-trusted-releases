@@ -85,14 +85,14 @@ async def finalise_revision(
     previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectKey,
     release: sql.Release,
-    release_name: safe.ReleaseKey,
+    release_key: safe.ReleaseKey,
     temp_dir: str,
     temp_dir_path: pathlib.Path,
-    version_name: safe.VersionKey,
+    version_key: safe.VersionKey,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
-        previous_attestable, merge_base_revision_name, _, merged_release = await _lock_and_merge(
+        previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
             data,
             base_hashes=base_hashes,
             base_inodes=base_inodes,
@@ -102,11 +102,11 @@ async def finalise_revision(
             path_to_hash=path_to_hash,
             path_to_size=path_to_size,
             previous_attestable=previous_attestable,
-            project_name=project_name,
+            project_key=project_key,
             release=release,
-            _release_name=release_name,
+            _release_key=release_key,
             temp_dir_path=temp_dir_path,
-            version_name=version_name,
+            version_key=version_key,
         )
     except Exception:
         await aioshutil.rmtree(temp_dir)
@@ -116,15 +116,15 @@ async def finalise_revision(
         data,
         asf_uid=asf_uid,
         description=description,
-        merge_base_revision_name=merge_base_revision_name,
+        merge_base_revision_key=merge_base_revision_key,
         path_to_hash=path_to_hash,
         path_to_size=path_to_size,
         previous_attestable=previous_attestable,
-        project_name=project_name,
+        project_key=project_key,
         release=merged_release,
-        release_name=str(release_name),
+        release_key=str(release_key),
         temp_dir=temp_dir,
-        version_name=version_name,
+        version_key=version_key,
         was_quarantined=was_quarantined,
     )
 
@@ -134,15 +134,15 @@ async def _commit_new_revision(
     *,
     asf_uid: str,
     description: str | None,
-    merge_base_revision_name: str | None,
+    merge_base_revision_key: str | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectKey,
     release: sql.Release,
-    release_name: str,
+    release_key: str,
     temp_dir: str,
-    version_name: safe.VersionKey,
+    version_key: safe.VersionKey,
     was_quarantined: bool = False,
 ) -> sql.Revision:
     try:
@@ -151,13 +151,13 @@ async def _commit_new_revision(
         # Because that event is called when data.add is called below
         # And we have a write lock at that point through the use of data.begin_immediate
         new_revision = sql.Revision(
-            release_name=release_name,
+            release_key=release_key,
             release=release,
             asfuid=asf_uid,
             created=datetime.datetime.now(datetime.UTC),
             phase=release.phase,
             description=description,
-            merge_base_revision_name=merge_base_revision_name,
+            merge_base_revision_key=merge_base_revision_key,
             was_quarantined=was_quarantined,
         )
         data.add(new_revision)
@@ -197,8 +197,8 @@ async def _commit_new_revision(
     classifications = attestable.compute_classifications(path_to_hash, policy_dict, new_revision_dir)
 
     await attestable.write_files_data(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         new_revision.safe_number,
         policy_dict,
         asf_uid,
@@ -231,7 +231,7 @@ async def _commit_new_revision(
         # It does, however, need a transaction to be created using data.begin()
         if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             # Must use caller_data here because we acquired the write lock
-            await tasks.draft_checks(asf_uid, project_name, version_name, new_revision.safe_number, caller_data=data)
+            await tasks.draft_checks(asf_uid, project_key, version_key, new_revision.safe_number, caller_data=data)
 
     return new_revision
 
@@ -259,7 +259,7 @@ async def _lock_and_merge(
     previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectKey,
     release: sql.Release,
-    _release_name: safe.ReleaseKey,
+    _release_key: safe.ReleaseKey,
     temp_dir_path: pathlib.Path,
     version_name: safe.VersionKey,
 ) -> tuple[atr.models.attestable.Attestable | None, str | None, str | None, sql.Release]:
@@ -271,36 +271,36 @@ async def _lock_and_merge(
     merged_release: sql.Release = await data.merge(release)
     await data.refresh(merged_release)
     latest = await interaction.latest_revision(merged_release, caller_data=data)
-    prior_revision_name = latest.name if latest else None
+    prior_revision_key = latest.key if latest else None
 
     # Merge with the prior revision if there was an intervening change
-    merge_base_revision_name: str | None = None
+    merge_base_revision_key: str | None = None
     if (
         merge_enabled
         and (old_revision is not None)
         and (latest is not None)
-        and (prior_revision_name is not None)
-        and (prior_revision_name != old_revision.name)
+        and (prior_revision_key is not None)
+        and (prior_revision_key != old_revision.key)
     ):
-        merge_base_revision_name = prior_revision_name
-        # This won't be None because prior_revision_name is not None here
+        merge_base_revision_key = prior_revision_key
+        # This won't be None because prior_revision_key is not None here
         prior_number = latest.safe_number
         prior_dir = paths.release_directory_base(merged_release) / str(prior_number)
         await merge.merge(
             base_inodes,
             base_hashes,
             prior_dir,
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             prior_number,
             temp_dir_path,
             n_inodes,
             path_to_hash,
             path_to_size,
         )
-        previous_attestable = await attestable.load(project_name, version_name, prior_number)
+        previous_attestable = await attestable.load(project_key, version_key, prior_number)
 
-    return previous_attestable, merge_base_revision_name, prior_revision_name, merged_release
+    return previous_attestable, merge_base_revision_key, prior_revision_key, merged_release
 
 
 class GeneralPublic:
@@ -348,13 +348,13 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def clear_quarantine(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         quarantined_id: int,
     ) -> None:
-        release_name = sql.release_name(str(project_name), str(version_name))
+        release_key = sql.release_key(str(project_key), str(version_key))
         quarantined = await self.__data.quarantined(
-            id=quarantined_id, release_name=release_name, status=sql.QuarantineStatus.FAILED
+            id=quarantined_id, release_key=release_key, status=sql.QuarantineStatus.FAILED
         ).get()
         if quarantined is None:
             raise RuntimeError("Quarantine failure not found or not in FAILED state")
@@ -362,15 +362,15 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=str(project_name),
-            version_name=str(version_name),
+            project_key=str(project_key),
+            version_key=str(version_key),
             quarantined_id=quarantined_id,
         )
 
     async def create_revision_with_quarantine(  # noqa: C901
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         asf_uid: str,
         description: str | None = None,
         set_local_cache: bool = False,
@@ -379,13 +379,13 @@ class CommitteeParticipant(FoundationCommitter):
         clone_from: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
-        release_name = sql.release_name(str(project_name), str(version_name))
+        release_key = sql.release_key(str(project_key), str(version_key))
         async with db.session() as data:
-            release = await data.release(name=release_name, _release_policy=True, _project_release_policy=True).demand(
+            release = await data.release(key=release_key, _release_policy=True, _project_release_policy=True).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
             if clone_from is not None:
-                old_revision = await data.revision(release_name=release_name, number=str(clone_from)).demand(
+                old_revision = await data.revision(release_key=release_key, number=str(clone_from)).demand(
                     RuntimeError(f"Revision {clone_from} does not exist")
                 )
             else:
@@ -443,7 +443,7 @@ class CommitteeParticipant(FoundationCommitter):
             parent_revision_number = old_revision.safe_number if old_revision else None
             previous_attestable = None
             if parent_revision_number is not None:
-                previous_attestable = await attestable.load(project_name, version_name, parent_revision_number)
+                previous_attestable = await attestable.load(project_key, version_key, parent_revision_number)
             base_inodes: dict[str, int] = {}
             base_hashes: dict[str, str] = {}
             if merge_enabled and (old_revision is not None):
@@ -459,8 +459,8 @@ class CommitteeParticipant(FoundationCommitter):
             try:
                 (
                     previous_attestable,
-                    merge_base_revision_name,
-                    prior_revision_name,
+                    merge_base_revision_key,
+                    prior_revision_key,
                     merged_release,
                 ) = await _lock_and_merge(
                     data,
@@ -472,11 +472,11 @@ class CommitteeParticipant(FoundationCommitter):
                     path_to_hash=path_to_hash,
                     path_to_size=path_to_size,
                     previous_attestable=previous_attestable,
-                    project_name=project_name,
+                    project_key=project_key,
                     release=release,
-                    _release_name=release.safe_name,
+                    _release_key=release.safe_key,
                     temp_dir_path=temp_dir_path,
-                    version_name=version_name,
+                    version_key=version_key,
                 )
             except Exception:
                 await aioshutil.rmtree(temp_dir)
@@ -497,26 +497,26 @@ class CommitteeParticipant(FoundationCommitter):
                         deduped_archives=deduped,
                         description=description,
                         path_to_size=path_to_size,
-                        prior_revision_name=prior_revision_name,
-                        project_name=project_name,
-                        release_name=release_name,
+                        prior_revision_key=prior_revision_key,
+                        project_key=project_key,
+                        release_key=release_key,
                         temp_dir=temp_dir,
-                        version_name=version_name,
+                        version_key=version_key,
                     )
 
             return await _commit_new_revision(
                 data,
                 asf_uid=asf_uid,
                 description=description,
-                merge_base_revision_name=merge_base_revision_name,
+                merge_base_revision_key=merge_base_revision_key,
                 path_to_hash=path_to_hash,
                 path_to_size=path_to_size,
                 previous_attestable=previous_attestable,
-                project_name=project_name,
+                project_key=project_key,
                 release=merged_release,
-                release_name=release_name,
+                release_key=release_key,
                 temp_dir=temp_dir,
-                version_name=version_name,
+                version_key=version_key,
             )
 
     async def _quarantine_archives(
@@ -527,11 +527,11 @@ class CommitteeParticipant(FoundationCommitter):
         deduped_archives: list[tuple[str, str]],
         description: str | None,
         path_to_size: dict[str, int],
-        prior_revision_name: str | None,
-        project_name: safe.ProjectKey,
-        release_name: str,
+        prior_revision_key: str | None,
+        project_key: safe.ProjectKey,
+        release_key: str,
         temp_dir: str,
-        version_name: safe.VersionKey,
+        version_key: safe.VersionKey,
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
@@ -545,9 +545,9 @@ class CommitteeParticipant(FoundationCommitter):
 
         token = _generate_quarantine_token()
         quarantined = sql.Quarantined(
-            release_name=release_name,
+            release_key=release_key,
             asf_uid=asf_uid,
-            prior_revision_name=prior_revision_name,
+            prior_revision_key=prior_revision_key,
             status=sql.QuarantineStatus.STAGING,
             token=token,
             created=datetime.datetime.now(datetime.UTC),
@@ -580,8 +580,8 @@ class CommitteeParticipant(FoundationCommitter):
                     ],
                 },
                 asf_uid=asf_uid,
-                project_name=str(project_name),
-                version_name=str(version_name),
+                project_key=str(project_key),
+                version_key=str(version_key),
                 revision_number=None,
                 primary_rel_path=None,
             )

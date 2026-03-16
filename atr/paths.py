@@ -67,7 +67,7 @@ def quarantine_directory(quarantined: sql.Quarantined) -> pathlib.Path:
     if not quarantined.token.isalnum():
         raise ValueError("Invalid quarantine token")
     release = quarantined.release
-    return get_quarantined_dir() / release.project_name / release.version / quarantined.token
+    return get_quarantined_dir() / release.project_key / release.version / quarantined.token
 
 
 def release_directory(release: sql.Release) -> pathlib.Path:
@@ -81,7 +81,7 @@ def release_directory(release: sql.Release) -> pathlib.Path:
 def release_directory_base(release: sql.Release) -> pathlib.Path:
     """Determine the filesystem directory for a given release based on its phase."""
     phase = release.phase
-    project_name = release.project.name
+    project_name = release.project.key
     version_name = release.version
 
     base_dir: pathlib.Path | None = None
@@ -100,7 +100,7 @@ def release_directory_base(release: sql.Release) -> pathlib.Path:
 
 def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
+    path_project = release.project.key
     path_version = release.version
     match release.phase:
         case (
@@ -119,7 +119,7 @@ def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
 
 def release_directory_version(release: sql.Release) -> pathlib.Path:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.name
+    path_project = release.project.key
     path_version = release.version
     match release.phase:
         case (

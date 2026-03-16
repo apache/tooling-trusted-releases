@@ -40,35 +40,35 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _announce: Literal["announce"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str | web.WerkzeugResponse:
     """
-    URL: /announce/<project_name>/<version_name>
+    URL: /announce/<project_key>/<version_key>
     Allow the user to announce a release preview.
     """
-    await session.check_access(project_name)
-    release = await _get_page_data(session, project_name, version_name)
+    await session.check_access(project_key)
+    release = await _get_page_data(session, project_key, version_key)
 
     latest_revision_number = release.latest_revision_number
     if latest_revision_number is None:
         return await session.redirect(
             projects.view,
             error="No revisions exist for this release.",
-            name=project_name,
+            name=project_key,
         )
 
     # Get the templates from the release policy
-    default_subject_template = await construct.announce_release_subject_default(project_name)
-    default_body_template = await construct.announce_release_default(project_name)
+    default_subject_template = await construct.announce_release_subject_default(project_key)
+    default_body_template = await construct.announce_release_default(project_key)
     subject_template_hash = construct.template_hash(default_subject_template)
 
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
         asfuid=session.uid,
         fullname=session.fullname,
-        project_name=project_name,
-        version_name=version_name,
+        project_key=project_key,
+        version_key=version_key,
         revision_number=release.safe_latest_revision_number,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
@@ -79,15 +79,15 @@ async def selected(
     # The defaults depend on whether the project is top level or not
     if (committee := release.project.committee) is None:
         raise ValueError("Release has no committee")
-    top_level_project = release.project.name == util.unwrap(committee.name)
+    top_level_project = release.project.key == util.unwrap(committee.key)
     # These defaults are as per #136, but we allow the user to change the result
-    default_download_path_suffix = "/" if top_level_project else f"/{release.project.name}-{release.version}/"
+    default_download_path_suffix = "/" if top_level_project else f"/{release.project.key}-{release.version}/"
 
     # This must NOT end with a "/"
     description_download_prefix = f"https://{config.get().APP_HOST}/downloads"
     if committee.is_podling:
         description_download_prefix += "/incubator"
-    description_download_prefix += f"/{committee.name}"
+    description_download_prefix += f"/{committee.key}"
 
     permitted_recipients = util.permitted_announce_recipients(session.uid)
     mailing_list_choices = sorted([(recipient, recipient) for recipient in permitted_recipients])
@@ -111,11 +111,11 @@ async def selected(
 
 
 async def _get_page_data(
-    session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> sql.Release:
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         with_committee=True,
         phase=sql.ReleasePhase.RELEASE_PREVIEW,
         with_distributions=True,
@@ -125,7 +125,7 @@ async def _get_page_data(
     return release
 
 
-def _render_body_field(default_body: str, project_name: str) -> htm.Element:
+def _render_body_field(default_body: str, project_key: str) -> htm.Element:
     """Render the body textarea with a link to edit the template."""
     textarea = htpy.textarea(
         "#body.form-control.font-monospace",
@@ -133,7 +133,7 @@ def _render_body_field(default_body: str, project_name: str) -> htm.Element:
         rows="12",
     )[default_body]
 
-    settings_url = util.as_url(projects.view, project_name=project_name) + "#announce_release_template"
+    settings_url = util.as_url(projects.view, project_key=project_key) + "#announce_release_template"
     link = htm.div(".form-text.text-muted.mt-2")[
         "To edit the template, go to the ",
         htm.a(href=settings_url)["project settings"],
@@ -220,7 +220,7 @@ async def _render_page(
     """
     page.style[markupsafe.Markup(page_styles)]
 
-    render.html_nav_phase(page, release.project.name, release.version, staging=False)
+    render.html_nav_phase(page, release.project.key, release.version, staging=False)
 
     page.h1[
         "Announce ",
@@ -248,8 +248,8 @@ async def _render_page(
     if not announce_msg:
         page.p[f"This form will send an announcement to the ASF {util.USER_TESTS_ADDRESS} mailing list."]
 
-        custom_subject_widget = _render_subject_field(default_subject, release.project.name)
-        custom_body_widget = _render_body_field(default_body, release.project.name)
+        custom_subject_widget = _render_subject_field(default_subject, release.project.key)
+        custom_body_widget = _render_body_field(default_body, release.project.key)
         custom_mailing_list_widget = _render_mailing_list_with_warning(mailing_list_choices, util.USER_TESTS_ADDRESS)
 
         # Custom widget for download_path_suffix with custom documentation
@@ -264,7 +264,7 @@ async def _render_page(
         form.render_block(
             page,
             model_cls=shared.announce.AnnounceForm,
-            action=util.as_url(post.announce.selected, project_name=release.project.name, version_name=release.version),
+            action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
             submit_label="Send announcement email",
             defaults=defaults_dict,
             custom={
@@ -285,7 +285,7 @@ async def _render_page(
 
 def _render_release_card(release: sql.Release) -> htm.Element:
     """Render the release information card."""
-    card = htm.div(f"#{release.name}.card.mb-4.shadow-sm")[
+    card = htm.div(f"#{release.key}.card.mb-4.shadow-sm")[
         htm.div(".card-header.bg-light")[htm.h3(".card-title.mb-0")["About this release preview"]],
         htm.div(".card-body")[
             htm.div(".d-flex.flex-wrap.gap-3.pb-1.text-secondary.fs-6")[
@@ -297,8 +297,8 @@ def _render_release_card(release: sql.Release) -> htm.Element:
     return card
 
 
-def _render_subject_field(default_subject: str, project_name: str) -> htm.Element:
-    settings_url = util.as_url(projects.view, project_name=project_name) + "#announce_release_subject"
+def _render_subject_field(default_subject: str, project_key: str) -> htm.Element:
+    settings_url = util.as_url(projects.view, project_key=project_key) + "#announce_release_subject"
     return htm.div[
         htpy.input(
             type="text",

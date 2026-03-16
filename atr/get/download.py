@@ -145,7 +145,7 @@ async def urls_selected(
     """
     try:
         async with db.session() as data:
-            release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
                 ValueError("Release not found")
             )
         url_list_str = await _generate_file_url_list(release)
@@ -189,7 +189,7 @@ async def zip_selected(
             yield chunk
 
     headers = {
-        "Content-Disposition": web.HeaderValue("attachment", filename=release.name + ".zip"),
+        "Content-Disposition": web.HeaderValue("attachment", filename=release.key + ".zip"),
         "Content-Type": web.HeaderValue("application/zip"),
     }
     return web.ZipResponse(stream_zip(files_to_zip), headers=headers)
@@ -211,7 +211,7 @@ async def _download_or_list(
 
     # We allow downloading files from any phase
     async with db.session() as data:
-        release = await data.release(project_name=str(project_name), version=str(version_name)).demand(
+        release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
             base.ASFQuartException("Release does not exist", errorcode=404)
         )
     full_path = paths.release_directory(release) / validated_path
@@ -245,7 +245,7 @@ async def _generate_file_url_list(release: sql.Release) -> str:
         if await aiofiles.os.path.isfile(full_item_path):
             abs_url = util.as_url(
                 path,
-                project_name=release.project_name,
+                project_name=release.project_key,
                 version_name=release.version,
                 file_path=str(rel_path),
                 _external=True,

@@ -39,9 +39,9 @@ class AsyncContextManager:
 class FakeQuarantined:
     def __init__(self, **kwargs):
         self.id = 42
-        self.release_name = kwargs.get("release_name", "")
+        self.release_key = kwargs.get("release_key", "")
         self.asf_uid = kwargs.get("asf_uid", "")
-        self.prior_revision_name = kwargs.get("prior_revision_name")
+        self.prior_revision_key = kwargs.get("prior_revision_key")
         self.status = kwargs.get("status", sql.QuarantineStatus.STAGING)
         self.token = kwargs.get("token", "")
         self.created = kwargs.get("created")
@@ -51,10 +51,10 @@ class FakeQuarantined:
 
 
 class MockQuarantineData:
-    def __init__(self, latest_revision_name: str | None):
+    def __init__(self, latest_revision_key: str | None):
         self._added_objects: list[object] = []
         self._quarantined: FakeQuarantined | None = None
-        self._latest_revision_name = latest_revision_name
+        self._latest_revision_key = latest_revision_key
         self._flush_count = 0
         self.add = mock.MagicMock(side_effect=self._add)
         self.begin = mock.MagicMock(return_value=AsyncContextManager())
@@ -115,7 +115,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
     release.project = mock.MagicMock()
     release.project.release_policy = None
     release.release_policy = None
-    release.name = sql.release_name("proj", "1.0")
+    release.key = sql.release_key("proj", "1.0")
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
@@ -160,11 +160,11 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
-    release.name = sql.release_name("proj", "1.0")
+    release.key = sql.release_key("proj", "1.0")
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockQuarantineData(latest_revision_name=None)
+    safe_data = MockQuarantineData(latest_revision_key=None)
 
     quarantine_dir = tmp_path / "quarantine" / "proj" / "1.0" / "testtoken"
 
@@ -208,7 +208,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
 
     assert isinstance(result, FakeQuarantined)
     assert result.status == sql.QuarantineStatus.PENDING
-    assert result.prior_revision_name is None
+    assert result.prior_revision_key is None
     assert result.file_metadata is not None
     assert len(result.file_metadata) == 1
     assert result.file_metadata[0].rel_path == "dist/apache-test-1.0.tar.gz"
@@ -226,11 +226,11 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
-    release.name = sql.release_name("proj", "1.0")
+    release.key = sql.release_key("proj", "1.0")
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockQuarantineData(latest_revision_name=None)
+    safe_data = MockQuarantineData(latest_revision_key=None)
 
     quarantine_dir = tmp_path / "quarantine" / "proj" / "1.0" / "testtoken"
 
@@ -292,19 +292,19 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
 
 
 @pytest.mark.asyncio
-async def test_quarantine_stores_prior_revision_name_from_lock(tmp_path: pathlib.Path):
+async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.Path):
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
-    release.name = sql.release_name("proj", "1.0")
+    release.key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
-    old_revision.name = f"{release.name} 00003"
+    old_revision.key = f"{release.key} 00003"
     old_revision.number = "00003"
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockQuarantineData(latest_revision_name=old_revision.name)
+    safe_data = MockQuarantineData(latest_revision_key=old_revision.key)
 
     quarantine_dir = tmp_path / "quarantine" / "proj" / "1.0" / "testtoken"
 
@@ -357,7 +357,7 @@ async def test_quarantine_stores_prior_revision_name_from_lock(tmp_path: pathlib
         result = await participant.create_revision_with_quarantine("proj", "1.0", "test")
 
     assert isinstance(result, FakeQuarantined)
-    assert result.prior_revision_name == f"{release.name} 00003"
+    assert result.prior_revision_key == f"{release.key} 00003"
     assert result.status == sql.QuarantineStatus.PENDING
 
     assert safe_data.commit_snapshots == [

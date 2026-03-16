@@ -130,7 +130,7 @@ class SessionDataCommon(NamedTuple):
 async def all_releases(session: web.Committer) -> str:
     """Display a list of all releases across all phases."""
     async with db.session() as data:
-        releases = await data.release(_project=True, _committee=True).order_by(sql.Release.name).all()
+        releases = await data.release(_project=True, _committee=True).order_by(sql.Release.key).all()
     return await template.render("all-releases.html", releases=releases, release_as_url=mapping.release_as_url)
 
 
@@ -278,10 +278,10 @@ async def data_model(session: web.Committer, model: str = "Committee") -> str:
 async def delete_committee_keys_get(session: web.Committer) -> str | web.WerkzeugResponse:
     """Display the form to delete committee keys."""
     async with db.session() as data:
-        all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.name).all()
+        all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.key).all()
         committees_with_keys = [c for c in all_committees if c.public_signing_keys]
 
-    committee_choices = [(c.name, c.display_name) for c in committees_with_keys]
+    committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
 
     rendered_form = form.render(
         model_cls=DeleteCommitteeKeysForm,
@@ -300,7 +300,7 @@ async def delete_committee_keys_post(
     committee_name = delete_form.committee_name
 
     async with db.session() as data:
-        committee_query = data.committee(name=committee_name)
+        committee_query = data.committee(key=committee_name)
         via = sql.validate_instrumented_attribute
         committee_query.query = committee_query.query.options(
             orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
@@ -340,7 +340,7 @@ async def delete_committee_keys_post(
 async def delete_release_get(session: web.Committer) -> str | web.WerkzeugResponse:
     """Display the form to delete releases."""
     async with db.session() as data:
-        releases = await data.release(_project=True).order_by(sql.Release.name).all()
+        releases = await data.release(_project=True).order_by(sql.Release.key).all()
 
     if releases:
         releases_widget = htpy.div[
@@ -350,11 +350,11 @@ async def delete_release_get(session: web.Committer) -> str | web.WerkzeugRespon
                         class_="form-check-input",
                         type="checkbox",
                         name="releases_to_delete",
-                        value=release.name,
-                        id=f"release_{release.name}",
+                        value=release.key,
+                        id=f"release_{release.key}",
                     ),
-                    htpy.label(".form-check-label", for_=f"release_{release.name}")[
-                        htpy.strong[release.name],
+                    htpy.label(".form-check-label", for_=f"release_{release.key}")[
+                        htpy.strong[release.key],
                         f" ({release.project.display_name}, {release.phase.value.upper()})",
                     ],
                 ]
@@ -473,7 +473,7 @@ async def keys_regenerate_all_get(session: web.Committer) -> web.QuartResponse:
 async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
     """Regenerate the KEYS file for all committees."""
     async with db.session() as data:
-        committee_names = [c.name for c in await data.committee().all()]
+        committee_names = [c.key for c in await data.committee().all()]
 
     outcomes = outcome.List[str]()
     async with storage.write() as write:
@@ -803,8 +803,8 @@ async def task_times(
     values = []
     async with db.session() as data:
         tasks = await data.task(
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_name,
+            version_key=version_name,
             revision_number=revision_number,
         ).all()
         for task in tasks:
@@ -885,8 +885,8 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
                     htpy.td[task.status.value],
                     htpy.td[task.added.strftime("%H:%M:%S") if task.added else ""],
                     htpy.td[took_text],
-                    htpy.td[task.project_name or ""],
-                    htpy.td[task.version_name or ""],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
                     htpy.td[task.revision_number or ""],
                     htpy.td[error_text],
                 ]
@@ -918,8 +918,8 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
                     htpy.td[task.task_type.value],
                     htpy.td[task.added.strftime("%Y-%m-%d %H:%M:%S") if task.added else ""],
                     htpy.td[task.scheduled.strftime("%Y-%m-%d %H:%M:%S") if task.scheduled else ""],
-                    htpy.td[task.project_name or ""],
-                    htpy.td[task.version_name or ""],
+                    htpy.td[task.project_key or ""],
+                    htpy.td[task.version_key or ""],
                     htpy.td[task.revision_number or ""],
                 ]
             )
@@ -1099,14 +1099,14 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
     for release_name in releases_to_delete:
         try:
             async with db.session() as data:
-                release = await data.release(name=release_name, _committee=True, _project=True).demand(
+                release = await data.release(key=release_name, _committee=True, _project=True).demand(
                     RuntimeError(f"Release {release_name} not found")
                 )
                 if release.committee is None:
                     raise RuntimeError(f"Release {release_name} has no committee")
             async with storage.write(session) as write:
-                waca = write.as_committee_admin(release.committee.name)
-                error = await waca.release.delete(release.safe_project_name, release.safe_version_name)
+                waca = write.as_committee_admin(release.committee.key)
+                error = await waca.release.delete(release.safe_project_key, release.safe_version_key)
                 # Ensure that deletion errors are reported to the user
                 if error is not None:
                     raise RuntimeError(error)

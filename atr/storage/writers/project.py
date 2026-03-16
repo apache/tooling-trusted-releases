@@ -59,7 +59,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -69,7 +69,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -78,9 +78,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -88,7 +88,7 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def category_add(self, project: sql.Project, new_category: str) -> bool:
         project = await self.__data.merge(project)
@@ -107,7 +107,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=str(project.name),
+                project_key=str(project.key),
                 category=new_category,
             )
             return True
@@ -126,40 +126,40 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=str(project.name),
+                project_key=str(project.key),
                 category=action_value,
             )
             return True
         return False
 
-    async def create(self, committee_name: safe.CommitteeKey, display_name: str, label: str) -> None:
+    async def create(self, committee_key: safe.CommitteeKey, display_name: str, label: str) -> None:
         super_project = None
         # TODO: Do we need to do any additional validation on the string value?
         # Get the base project to derive from
         # We're allowing derivation from a retired project here
         # TODO: Should we disallow this instead?
         committee_projects = await self.__data.project(
-            committee_name=str(committee_name), _committee=True, _release_policy=True
+            committee_key=str(committee_key), _committee=True, _release_policy=True
         ).all()
         for committee_project in committee_projects:
-            if label.startswith(str(committee_project.name) + "-"):
-                if (super_project is None) or (len(str(super_project.name)) < len(str(committee_project.name))):
+            if label.startswith(str(committee_project.key) + "-"):
+                if (super_project is None) or (len(str(super_project.key)) < len(str(committee_project.key))):
                     super_project = committee_project
 
         # Check whether the project already exists
-        if await self.__data.project(name=label).get():
+        if await self.__data.project(key=label).get():
             raise storage.AccessError(f"Project {label} already exists")
 
         # TODO: Fix the potential race condition here
         project = sql.Project(
-            name=label,
-            full_name=display_name,
+            key=label,
+            name=display_name,
             status=sql.ProjectStatus.ACTIVE,
-            super_project_name=super_project.name if super_project else None,
+            super_project_key=super_project.key if super_project else None,
             description=super_project.description if super_project else None,
             category=super_project.category if super_project else None,
             programming_languages=super_project.programming_languages if super_project else None,
-            committee_name=str(committee_name),
+            committee_key=str(committee_key),
             created=datetime.datetime.now(datetime.UTC),
             created_by=self.__asf_uid,
         )
@@ -171,17 +171,17 @@ class CommitteeMember(CommitteeParticipant):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            committee_name=str(committee_name),
-            project_name=label,
+            committee_key=str(committee_key),
+            project_key=label,
         )
 
-    async def delete(self, project_name: safe.ProjectKey) -> None:
+    async def delete(self, project_key: safe.ProjectKey) -> None:
         project = await self.__data.project(
-            name=str(project_name), status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
         ).get()
 
         if not project:
-            raise storage.AccessError(f"Project '{project_name}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.")
 
         # Check for ownership or admin status
         # TODO: Should use FoundationCommitter for the latter check
@@ -189,17 +189,17 @@ class CommitteeMember(CommitteeParticipant):
         is_privileged = util.is_user_viewing_as_admin(self.__asf_uid)
 
         if not (is_owner or is_privileged):
-            raise storage.AccessError(f"You do not have permission to delete project '{project_name}'.")
+            raise storage.AccessError(f"You do not have permission to delete project '{project_key}'.")
 
         # Prevent deletion if there are associated releases or channels
         if project.releases:
-            raise storage.AccessError(f"Cannot delete project '{project_name}' because it has associated releases.")
+            raise storage.AccessError(f"Cannot delete project '{project_key}' because it has associated releases.")
 
         await self.__data.delete(project)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=str(project_name),
+            project_key=str(project_key),
         )
         return None
 
@@ -218,7 +218,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=str(project.name),
+                project_key=str(project.key),
                 language=new_language,
             )
             return True
@@ -235,7 +235,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
-                project_name=str(project.name),
+                project_key=str(project.key),
                 language=action_value,
             )
             return True

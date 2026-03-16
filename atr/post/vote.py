@@ -51,7 +51,7 @@ async def selected_post(
     is_pmc_member = user.is_committee_member(release.committee, session.uid)
     is_binding, _binding_committee = await shared.vote.is_binding(release.committee, is_pmc_member)
 
-    async with storage.write_as_committee_participant(release.committee.name) as wacm:
+    async with storage.write_as_committee_participant(release.committee.key) as wacm:
         email_recipient, error_message = await wacm.vote.send_user_vote(
             release, vote, comment, session.fullname, is_binding
         )

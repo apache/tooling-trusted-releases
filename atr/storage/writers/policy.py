@@ -173,7 +173,7 @@ class CommitteeMember(CommitteeParticipant):
         self, project_name: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
         project = await self.__data.project(
-            name=str(project_name), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
+            key=str(project_name), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
         ).demand(storage.AccessError(f"Project {project_name} not found"))
 
         release_policy = project.release_policy

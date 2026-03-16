@@ -1192,7 +1192,8 @@ def validate_relative_path_str(path_str: str) -> str:
     return path_str
 
 
-def version_name_error(version_name: str) -> str | None:
+# TODO: AM put these rules into safe.versionkey
+def version_key_error(version_name: str) -> str | None:
     """Check if the given version name is valid."""
     if version_name == "":
         return "Must not be empty"
