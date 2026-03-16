@@ -554,13 +554,14 @@ async def _render_vote_authenticated(
         version_key=release.version,
     )
     vote_comment_template = release.project.policy_vote_comment_template
-    cast_vote_form = form.render(
+    cast_vote_form = await form.render(
         model_cls=shared.vote.CastVoteForm,
         action=vote_action_url,
         submit_label="Submit vote",
         form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
         custom={"decision": vote_widget},
         defaults={"comment": vote_comment_template},
+        uid=session.asf_uid,
     )
     page.append(cast_vote_form)
 

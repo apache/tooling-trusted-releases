@@ -46,7 +46,7 @@ async def selected(session: web.Committer, _start: Literal["start"], project_key
         )
 
     releases = await interaction.all_releases(project)
-    content = await _render_page(project, releases)
+    content = await _render_page(project, releases, uid=session.asf_uid)
     return await template.blank(
         title=f"Start a new release for {project.display_name}",
         content=content,
@@ -89,7 +89,7 @@ def _get_phase_symbol(phase: sql.ReleasePhase) -> str:
             return "Ⓡ"
 
 
-async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm.Element:
+async def _render_page(project: sql.Project, releases: list[sql.Release], uid: str) -> htm.Element:
     page = htm.Block()
 
     page.h1[f"Start a new release for {project.display_name}"]
@@ -98,7 +98,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         htm.strong["release candidate draft"],
         ". You can then add files to this draft before promoting it for voting.",
     ]
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.start.StartReleaseForm,
         form_classes=".atr-canary.py-4.px-5.border.rounded",
@@ -106,6 +106,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
         defaults={"project_key": project.key},
+        uid=uid,
     )
     if releases:
         page.h2(".mt-5")["Existing releases"]

@@ -101,6 +101,7 @@ async def selected_revision(
             default_body=default_body,
             min_hours=min_hours,
             keys_warning=keys_warning,
+            uid=session.asf_uid,
         )
 
         return await template.blank(
@@ -146,6 +147,7 @@ async def _render_page(
     default_body: str,
     min_hours: int,
     keys_warning: bool,
+    uid: str,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -212,7 +214,7 @@ async def _render_page(
         ],
     ]
 
-    vote_form = form.render(
+    vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
         cancel_url=cancel_url,
@@ -226,6 +228,7 @@ async def _render_page(
             "subject": custom_subject_widget,
             "body": custom_body_widget,
         },
+        uid=uid,
         skip=["email_cc", "email_bcc"],
     )
     page.append(vote_form)

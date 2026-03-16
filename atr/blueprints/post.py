@@ -26,7 +26,7 @@ import pydantic
 import quart
 
 import atr.blueprints.common as common
-import atr.form
+import atr.form as form
 import atr.log as log
 import atr.models.safe as safe
 import atr.web as web
@@ -81,10 +81,10 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
                     case web.Committer() as committer:
                         kwargs[form_param_name] = await committer.form_validate(form_cls, context)
                     case None:
-                        form_data = await atr.form.quart_request()
-                        kwargs[form_param_name] = atr.form.validate(form_cls, form_data, context=context)
+                        form_data = await form.quart_request()
+                        kwargs[form_param_name] = form.validate(form_cls, form_data, context=context)
             except pydantic.ValidationError as e:
-                return await common.flash_form_error(form_cls, e)
+                return await common.flash_form_error(form_cls, enhanced_session, e)
             if form_safe_params:
                 await common.validate_safe_fields(kwargs[form_param_name], form_safe_params, kwargs)
 

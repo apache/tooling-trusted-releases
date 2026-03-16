@@ -99,6 +99,7 @@ async def selected(
         default_body=default_body,
         default_download_path_suffix=default_download_path_suffix,
         download_path_description=f"The URL will be {description_download_prefix} plus this suffix",
+        uid=session.asf_uid,
     )
 
     return await template.blank(
@@ -164,6 +165,7 @@ async def _render_page(
     default_body: str,
     default_download_path_suffix: str,
     download_path_description: str,
+    uid: str,
 ) -> htm.Element:
     """Render the announce page."""
     page = htm.Block()
@@ -237,7 +239,7 @@ async def _render_page(
             "body": default_body,
         }
 
-        form.render_block(
+        await form.render_block(
             page,
             model_cls=shared.announce.AnnounceForm,
             action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
@@ -253,6 +255,7 @@ async def _render_page(
             form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
             border=True,
             wider_widgets=True,
+            uid=uid,
         )
     else:
         page.p[htm.strong[announce_msg]]

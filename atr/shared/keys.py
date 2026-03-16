@@ -129,6 +129,7 @@ type UploadKeysForm = Annotated[
 
 
 async def render_upload_page(
+    uid: str,
     results: storage.outcome.List | None = None,
     submitted_committees: list[str] | None = None,
     error: bool = False,
@@ -159,7 +160,7 @@ async def render_upload_page(
     page.h2["Upload a file"]
     page.p["Upload a KEYS file from your computer."]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.UploadFileForm,
         action=util.as_url(post.keys.upload),
@@ -167,12 +168,13 @@ async def render_upload_page(
         defaults={"selected_committee": committee_choices},
         border=True,
         wider_widgets=True,
+        uid=uid,
     )
 
     page.h2(".mt-5")["Fetch existing KEYS file"]
     page.p["Fetch the KEYS file from the ASF downloads server for the selected committee."]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.UploadRemoteForm,
         action=util.as_url(post.keys.upload),
@@ -180,6 +182,7 @@ async def render_upload_page(
         defaults={"committee": committee_choices},
         border=True,
         wider_widgets=True,
+        uid=uid,
     )
 
     return await template.blank(

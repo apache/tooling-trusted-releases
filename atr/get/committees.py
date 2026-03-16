@@ -71,7 +71,7 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
-        update_committee_keys_form=form.render(
+        update_committee_keys_form=await form.render(
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
             submit_label="Regenerate KEYS file",

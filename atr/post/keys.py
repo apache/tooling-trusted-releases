@@ -217,7 +217,7 @@ async def ssh_add(
 
 @post.typed
 async def upload(
-    _session: web.Committer,
+    session: web.Committer,
     _keys_upload: Literal["keys/upload"],
     upload_form: shared.keys.UploadKeysForm,
 ) -> str:
@@ -225,11 +225,12 @@ async def upload(
     URL: /keys/upload
     Upload or fetch a KEYS file containing multiple OpenPGP keys.
     """
+    uid = session.asf_uid
     match upload_form:
         case shared.keys.UploadFileForm() as upload_file_form:
-            return await _upload_file_keys(upload_file_form)
+            return await _upload_file_keys(upload_file_form, uid=uid)
         case shared.keys.UploadRemoteForm() as upload_remote_form:
-            return await _upload_remote_keys(upload_remote_form)
+            return await _upload_remote_keys(upload_remote_form, uid=uid)
 
 
 def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
@@ -299,7 +300,7 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
         raise base.ASFQuartException(f"Network error while fetching keys: {e}", errorcode=503)
 
 
-async def _process_keys(keys_text: str, selected_committee: str) -> str:
+async def _process_keys(keys_text: str, selected_committee: str, uid: str) -> str:
     """Process keys text and associate with committee."""
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
@@ -315,7 +316,7 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
 
     await quart.flash(message, "success" if (success_count > 0) else "error")
 
-    return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee])
+    return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee], uid=uid)
 
 
 async def _update_committee_keys(
@@ -337,29 +338,29 @@ async def _update_committee_keys(
     return await session.redirect(get.keys.keys)
 
 
-async def _upload_file_keys(upload_file_form: shared.keys.UploadFileForm) -> str:
+async def _upload_file_keys(upload_file_form: shared.keys.UploadFileForm, uid: str) -> str:
     """Handle file upload."""
     try:
         if upload_file_form.key is None:
             await quart.flash("No KEYS file uploaded", "error")
-            return await shared.keys.render_upload_page(error=True)
+            return await shared.keys.render_upload_page(error=True, uid=uid)
 
         keys_content = await asyncio.to_thread(upload_file_form.key.read)
         keys_text = keys_content.decode("utf-8", errors="replace")
 
         if not keys_text:
             await quart.flash("No KEYS data found", "error")
-            return await shared.keys.render_upload_page(error=True)
+            return await shared.keys.render_upload_page(error=True, uid=uid)
 
         selected_committee = upload_file_form.selected_committee
-        return await _process_keys(keys_text, selected_committee)
+        return await _process_keys(keys_text, selected_committee, uid=uid)
     except Exception as e:
         log.exception("Error uploading KEYS file:")
         await quart.flash(f"Error processing KEYS file: {e!s}", "error")
-        return await shared.keys.render_upload_page(error=True)
+        return await shared.keys.render_upload_page(error=True, uid=uid)
 
 
-async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) -> str:
+async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm, uid: str) -> str:
     """Fetch KEYS file from ASF downloads."""
     try:
         selected_committee = upload_remote_form.committee
@@ -367,7 +368,7 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
             committee = await data.committee(key=selected_committee).get()
             if not committee:
                 await quart.flash(f"Committee '{selected_committee}' not found", "error")
-                return await shared.keys.render_upload_page(error=True)
+                return await shared.keys.render_upload_page(error=True, uid=uid)
             is_podling = committee.is_podling
 
         keys_url = _construct_keys_url(selected_committee, is_podling=is_podling)
@@ -375,10 +376,10 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
 
         if not keys_text:
             await quart.flash("No KEYS data found at ASF downloads", "error")
-            return await shared.keys.render_upload_page(error=True)
+            return await shared.keys.render_upload_page(error=True, uid=uid)
 
-        return await _process_keys(keys_text, selected_committee)
+        return await _process_keys(keys_text, selected_committee, uid=uid)
     except Exception as e:
         log.exception("Error fetching KEYS file from ASF:")
         await quart.flash(f"Error fetching KEYS file: {e!s}", "error")
-        return await shared.keys.render_upload_page(error=True)
+        return await shared.keys.render_upload_page(error=True, uid=uid)

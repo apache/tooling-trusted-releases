@@ -100,11 +100,12 @@ async def selected(
         )
     )
 
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.upload.AddFilesForm,
         submit_label="Add files",
         form_classes=".atr-canary.py-4.px-5",
+        uid=session.asf_uid,
     )
 
     block.append(htpy.div("#upload-progress-container.d-none"))
@@ -123,11 +124,12 @@ async def selected(
         " page for this draft once the task is queued.",
     ]
 
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.upload.SvnImportForm,
         submit_label="Queue SVN import task",
         form_classes=".atr-canary.py-4.px-5",
+        uid=session.asf_uid,
     )
 
     block.h2(id="rsync-upload")["Rsync upload"]

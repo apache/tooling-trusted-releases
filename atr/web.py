@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import json
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
@@ -128,11 +127,11 @@ class Committer:
                 type="atr_error",
             )
         ]
-        flash_data = form.flash_error_data(self.__form_cls, errors, self.__form_data)
-        summary = form.flash_error_summary(errors, flash_data)
+        error_data = form.flash_error_data(self.__form_cls, errors, self.__form_data)
+        summary = form.flash_error_summary(errors, error_data)
 
         await quart.flash(summary, category="error")
-        await quart.flash(json.dumps(flash_data), category="form-error-data")
+        await form.validation_cache_add(self.asf_uid, quart.request.path, error_data)
         return quart.redirect(quart.request.path)
 
     async def form_validate(self, form_cls: type[form.Form], context: dict[str, Any]) -> pydantic.BaseModel:

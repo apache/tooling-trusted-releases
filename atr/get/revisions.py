@@ -183,7 +183,7 @@ async def _render_page(
 
     if revision_history:
         for revision, files_diff in revision_history:
-            _render_revision_card(
+            await _render_revision_card(
                 page, revision, files_diff, latest_revision_number, phase_key, project_key, version_key
             )
     else:
@@ -213,10 +213,10 @@ def _render_phase_indicator(phase_key: str) -> htm.Element:
     return span.collect(separator=" ")
 
 
-def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
+async def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
     body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Actions"]
     body.div(".mt-3")[
-        form.render(
+        await form.render(
             model_cls=shared.revisions.SetRevisionForm,
             form_classes="",
             submit_classes="btn-sm btn-outline-danger",
@@ -227,7 +227,7 @@ def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_ke
     ]
 
 
-def _render_revision_card(
+async def _render_revision_card(
     page: htm.Block,
     revision: sql.Revision,
     files_diff: "FilesDiff",
@@ -262,7 +262,7 @@ def _render_revision_card(
             is_draft = phase_key == "draft"
             revision_is_preview = revision.phase.value.lower() == "release_preview"
             if (revision.number != latest_revision_number) and (is_draft or revision_is_preview):
-                _render_revision_actions(card_body, revision, project_key, version_key)
+                await _render_revision_actions(card_body, revision, project_key, version_key)
 
 
 def _render_revision_header(revision: sql.Revision, latest_revision_number: str | None) -> htm.Element:

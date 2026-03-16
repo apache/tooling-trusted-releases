@@ -38,7 +38,7 @@ import atr.web as web
 
 
 @get.typed
-async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
+async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
     """
     URL: /keys/add
     Add a new public signing key to the user's account.
@@ -54,12 +54,13 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
         htm.h1(".mb-4")["Add your OpenPGP key"],
         htm.p["Add your public key to use for signing release artifacts."],
     ]
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.AddOpenPGPKeyForm,
         action=util.as_url(post.keys.add),
         submit_label="Add OpenPGP key",
         cancel_url=util.as_url(keys),
+        uid=session.asf_uid,
         defaults={
             "selected_committees": committee_choices,
         },
@@ -143,7 +144,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         committee_choices = [(c.key, c.display_name or c.key) for c in user_committees]
         current_committee_keys = [c.key for c in key.committees]
 
-        # form.render_block(
+        # await form.render_block(
         #     pmc_div,
         #     model_cls=shared.keys.UpdateKeyCommitteesForm,
         #     action=util.as_url(post.keys.details, fingerprint=fingerprint),
@@ -226,9 +227,9 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
         htm.a(".btn.btn-outline-primary", href=util.as_url(ssh_add))["Add your SSH key"],
     ]
 
-    _openpgp_keys(page, list(user_keys))
-    _ssh_keys(page, list(user_ssh_keys))
-    _committee_keys(page, list(user_committees_with_keys))
+    await _openpgp_keys(page, list(user_keys))
+    await _ssh_keys(page, list(user_ssh_keys))
+    await _committee_keys(page, list(user_committees_with_keys))
 
     return await template.blank(
         "Manage keys",
@@ -255,11 +256,12 @@ async def ssh_add(session: web.Committer, _keys_ssh_add: Literal["keys/ssh/add"]
         ]
     ]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.AddSSHKeyForm,
         action=util.as_url(post.keys.ssh_add),
         submit_label="Add SSH key",
+        uid=session.asf_uid,
     )
 
     return await template.blank(
@@ -270,15 +272,16 @@ async def ssh_add(session: web.Committer, _keys_ssh_add: Literal["keys/ssh/add"]
 
 
 @get.typed
-async def upload(_session: web.Committer, _keys_upload: Literal["keys/upload"]) -> str:
+async def upload(session: web.Committer, _keys_upload: Literal["keys/upload"]) -> str:
     """
     URL: /keys/upload
     Upload a KEYS file containing multiple OpenPGP keys.
     """
-    return await shared.keys.render_upload_page()
+    uid = session.asf_uid
+    return await shared.keys.render_upload_page(uid=uid)
 
 
-def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.Committee]) -> None:
+async def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.Committee]) -> None:
     page.h2("#your-committee-keys")["Your committee's keys"]
     page.div(".mb-4")[htm.a(".btn.btn-outline-primary", href=util.as_url(upload))["Upload a KEYS file"]]
 
@@ -314,7 +317,7 @@ def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.Committ
                     " but you can also use the form below to manually regenerate it.",
                 ]
 
-                form.render_block(
+                await form.render_block(
                     page,
                     model_cls=shared.keys.UpdateCommitteeKeysForm,
                     action=util.as_url(post.keys.keys),
@@ -357,7 +360,7 @@ async def _key_and_is_owner(
     return key, is_owner
 
 
-def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) -> None:
+async def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) -> None:
     page.h3["Your OpenPGP keys"]
     if user_keys:
         thead = htm.thead[
@@ -380,7 +383,7 @@ def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) -> Non
             else:
                 row.td(".text-break.px-2.align-middle")["No PMCs associated"]
             with row.block(htm.td, classes=".px-2") as td:
-                form.render_block(
+                await form.render_block(
                     td,
                     model_cls=shared.keys.DeleteOpenPGPKeyForm,
                     action=util.as_url(post.keys.keys),
@@ -423,7 +426,7 @@ def _render_committee_checkboxes(
     return row_div.collect()
 
 
-def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
+async def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
     page.h3["Your SSH keys"]
     if user_ssh_keys:
         grid = htm.Block(htm.div, classes=".d-grid.gap-4")
@@ -447,7 +450,7 @@ def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
                 htm.pre(".mt-3")[key.key],
             ]
 
-            form.render_block(
+            await form.render_block(
                 card_block,
                 model_cls=shared.keys.DeleteSSHKeyForm,
                 action=util.as_url(post.keys.keys),

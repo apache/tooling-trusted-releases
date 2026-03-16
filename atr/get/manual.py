@@ -56,7 +56,7 @@ async def resolve_selected(
     if not release.vote_manual:
         raise RuntimeError("This page is for manual votes only")
 
-    content = _render_resolve_page(release)
+    content = await _render_resolve_page(release, uid=session.asf_uid)
 
     return await template.blank(
         title="Resolve vote",
@@ -135,7 +135,7 @@ async def _render_page(release, revision: str) -> htm.Element:
     ]
 
     cancel_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
-    manual_form = form.render(
+    manual_form = await form.render(
         model_cls=form.Empty,
         submit_label="Start manual vote",
         cancel_url=cancel_url,
@@ -152,7 +152,7 @@ async def _render_page(release, revision: str) -> htm.Element:
     return page.collect()
 
 
-def _render_resolve_page(release: sql.Release) -> htm.Element:
+async def _render_resolve_page(release: sql.Release, uid: str) -> htm.Element:
     page = htm.Block()
 
     back_url = util.as_url(vote.selected, project_key=release.project.key, version_key=release.version)
@@ -161,11 +161,12 @@ def _render_resolve_page(release: sql.Release) -> htm.Element:
     page.h1[f"Resolve vote for {release.short_display_name}"]
     page.p["This is a manual vote resolution."]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.manual.ResolveVoteForm,
         form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
         submit_label="Resolve vote",
+        uid=uid,
     )
 
     return page.collect()

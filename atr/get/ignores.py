@@ -47,28 +47,29 @@ async def ignores(
     content = htm.div[
         htm.h1["Ignored checks"],
         htm.p[f"Manage ignored checks for project {project_key!s}."],
-        _add_ignore(str(project_key)),
-        _existing_ignores(ignores),
+        _add_ignore(session.asf_uid, str(project_key)),
+        _existing_ignores(session.asf_uid, ignores),
     ]
 
     return await template.blank("Ignored checks", content, javascripts=["ignore-form-change"])
 
 
-def _add_ignore(project_key: str) -> htm.Element:
+async def _add_ignore(uid: str, project_key: str) -> htm.Element:
     form_path = util.as_url(post.ignores.ignores, project_key=project_key)
     block = htm.Block(htm.div)
     block.h2["Add ignore"]
     block.p["Add a new ignore for a check result."]
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.ignores.AddIgnoreForm,
         action=form_path,
         submit_label="Add ignore",
+        uid=uid,
     )
     return block.collect()
 
 
-def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
+async def _check_result_ignore_card(uid: str, cri: sql.CheckResultIgnore) -> htm.Element:
     h3_id = cri.id or ""
     h3_asf_uid = cri.asf_uid
     h3_created = util.format_datetime(cri.created)
@@ -78,12 +79,13 @@ def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
     update_form_block = htm.Block(htm.div)
     form_path_update = util.as_url(post.ignores.ignores, project_key=cri.project_key)
     status = shared.ignores.sql_to_ignore_status(cri.status)
-    form.render_block(
+    await form.render_block(
         update_form_block,
         model_cls=shared.ignores.UpdateIgnoreForm,
         action=form_path_update,
         submit_label="Update ignore",
         form_classes="",
+        uid=uid,
         defaults={
             "id": cri.id or 0,
             "release_glob": cri.release_glob or "",
@@ -98,7 +100,7 @@ def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
 
     # Delete form
     delete_form_block = htm.Block(htm.div)
-    form.render_block(
+    await form.render_block(
         delete_form_block,
         model_cls=shared.ignores.DeleteIgnoreForm,
         action=form_path_update,
@@ -117,8 +119,8 @@ def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
     return card
 
 
-def _existing_ignores(ignores: list[sql.CheckResultIgnore]) -> htm.Element:
+def _existing_ignores(uid: str, ignores: list[sql.CheckResultIgnore]) -> htm.Element:
     return htm.div[
         htm.h2["Existing ignores"],
-        [_check_result_ignore_card(cri) for cri in ignores] or htm.p["No ignores found."],
+        [_check_result_ignore_card(uid, cri) for cri in ignores] or htm.p["No ignores found."],
     ]

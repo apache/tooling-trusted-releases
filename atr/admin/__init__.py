@@ -146,7 +146,7 @@ async def browse_as_get(_session: web.Committer, _browse_as: Literal["browse-as"
 
     Allows an admin to browse as another user.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=BrowseAsUserForm,
         submit_label="Browse as this user",
     )
@@ -320,7 +320,7 @@ async def delete_committee_keys_get(
 
     committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=DeleteCommitteeKeysForm,
         submit_label="Delete all keys for selected committee",
         defaults={"committee_key": committee_choices},
@@ -416,7 +416,7 @@ async def delete_release_get(
     else:
         releases_widget_with_help = htpy.p(".text-muted")["No releases found in the database."]
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=DeleteReleaseForm,
         submit_label="Delete selected releases permanently",
         submit_classes="btn-danger",
@@ -452,7 +452,7 @@ async def delete_test_openpgp_keys_get(
     if not config.get().ALLOW_TESTS:
         return quart.abort(404)
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Delete all OpenPGP keys for test user",
         empty=True,
@@ -511,7 +511,7 @@ async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/che
 
     Check public signing key details.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Check public signing key details",
         empty=True,
@@ -540,7 +540,7 @@ async def keys_regenerate_all_get(
 
     Display the form to regenerate KEYS files.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Regenerate all KEYS files",
         empty=True,
@@ -582,7 +582,7 @@ async def keys_update_get(
 
     Update keys from remote data.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Update keys",
         empty=True,
@@ -623,7 +623,7 @@ async def ldap_get(session: web.Committer, _ldap: Literal["ldap"]) -> str:
     """
     URL: GET /ldap
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=LdapLookupForm,
         submit_label="Lookup",
     )
@@ -662,7 +662,7 @@ async def ldap_post(session: web.Committer, _ldap: Literal["ldap"], lookup_form:
         end = time.perf_counter_ns()
         log.info(f"LDAP search took {(end - start) / 1000000} ms")
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=LdapLookupForm,
         submit_label="Lookup",
         defaults={"uid": uid_query, "email": email_query},
@@ -806,7 +806,7 @@ async def projects_update_get(
 
     Update projects from remote data.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Update projects",
         empty=True,
@@ -861,7 +861,7 @@ async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: L
         rows = await data.execute_query(stmt)
         token_counts = [(row[0], row[1]) for row in rows]
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=RevokeUserTokensForm,
         submit_label="Revoke all tokens",
     )
@@ -900,7 +900,7 @@ async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["
     """
     URL: GET /rotate-jwt-key
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=RotateJwtKeyForm,
         submit_label="Rotate JWT key",
     )
@@ -1072,7 +1072,7 @@ async def toggle_view_get(_session: web.Committer, _toggle_view: Literal["toggle
 
     Display the page with a button to toggle between admin and user views.
     """
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=form.Empty,
         submit_label="Toggle view",
         empty=True,
@@ -1133,7 +1133,7 @@ async def validate_jwt_get(_session: web.Committer, _validate_jwt: Literal["vali
         _require_debug_and_allow_tests()
     except base.ASFQuartException:
         return quart.abort(404)
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=ValidateJwtForm,
         submit_label="Validate JWT",
         textarea_rows=8,
@@ -1175,7 +1175,7 @@ async def validate_jwt_post(
             "message": str(exc),
         }
 
-    rendered_form = form.render(
+    rendered_form = await form.render(
         model_cls=ValidateJwtForm,
         submit_label="Validate JWT",
         textarea_rows=8,

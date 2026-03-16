@@ -111,6 +111,7 @@ async def selected(
         rc_analysis=rc_analysis,
         distribution_tasks=tasks,
         announce_disable_message=announce_msg,
+        uid=session.asf_uid,
     )
 
 
@@ -196,19 +197,20 @@ async def _get_page_data(
     return release, source_files_rel, target_dirs, deletable_dirs, rc_analysis_result, tasks
 
 
-def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
+async def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]], uid: str) -> htm.Element:
     """Render the delete directory form."""
     section = htm.Block()
 
     section.h2["Delete an empty directory"]
 
-    form.render_block(
+    await form.render_block(
         section,
         shared.finish.DeleteEmptyDirectoryForm,
         defaults={"directory_to_delete": deletable_dirs},
         submit_label="Delete empty directory",
         submit_classes="btn-danger",
         form_classes=".mb-4",
+        uid=uid,
     )
 
     return section.collect()
@@ -370,6 +372,7 @@ async def _render_page(
     rc_analysis: RCTagAnalysisResult,
     distribution_tasks: Sequence[sql.Task],
     announce_disable_message: str,
+    uid: str,
 ) -> str:
     """Render the finish page using htm.py."""
     page = htm.Block()
@@ -410,10 +413,10 @@ async def _render_page(
 
     # Delete directory form
     if deletable_dirs:
-        page.append(_render_delete_directory_form(deletable_dirs))
+        page.append(await _render_delete_directory_form(deletable_dirs, uid=uid))
 
     # Remove RC tags section
-    page.append(_render_rc_tags_section(rc_analysis))
+    page.append(await _render_rc_tags_section(rc_analysis))
 
     # Custom styles
     page_styles = """
@@ -479,7 +482,7 @@ def _render_rc_preview_table(affected_paths: list[tuple[str, str]]) -> htm.Eleme
     ]
 
 
-def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
+async def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
     """Render the remove RC tags section."""
     section = htm.Block()
 
@@ -493,7 +496,7 @@ def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
             _render_rc_preview_table(rc_analysis.affected_paths_preview) if rc_analysis.affected_paths_preview else "",
         ]
 
-        form.render_block(
+        await form.render_block(
             section,
             shared.finish.RemoveRCTagsForm,
             submit_label="Remove RC tags",

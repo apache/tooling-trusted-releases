@@ -48,7 +48,7 @@ async def test_empty(_session: web.Public, _test_empty: Literal["test/empty"]) -
     """
     URL: /test/empty
     """
-    empty_form = form.render(
+    empty_form = await form.render(
         model_cls=form.Empty,
         submit_label="Submit empty form",
         action="/test/empty",
@@ -149,13 +149,13 @@ async def test_multiple(_session: web.Public, _test_multiple: Literal["test/mult
     """
     URL: /test/multiple
     """
-    apple_form = form.render(
+    apple_form = await form.render(
         model_cls=shared.test.AppleForm,
         submit_label="Order apples",
         action="/test/multiple",
     )
 
-    banana_form = form.render(
+    banana_form = await form.render(
         model_cls=shared.test.BananaForm,
         submit_label="Order bananas",
         action="/test/multiple",
@@ -187,7 +187,7 @@ async def test_single(session: web.Public, _test_single: Literal["test/single"])
         htpy.label(class_="btn btn-outline-danger", for_="vote_2")["-1"],
     ]
 
-    single_form = form.render(
+    single_form = await form.render(
         model_cls=shared.test.SingleForm,
         submit_label="Submit",
         action="/test/single",

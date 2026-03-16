@@ -18,12 +18,13 @@
 from __future__ import annotations
 
 import enum
-import json
 import pathlib
 import re
+import time
 import types
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin
 
+import asfquart
 import htpy
 import markupsafe
 import pydantic
@@ -73,6 +74,9 @@ class Widget(enum.Enum):
     TEXT = "text"
     TEXTAREA = "textarea"
     URL = "url"
+
+
+_FORM_ERROR_TTL_SECONDS: Final[float] = 60.0
 
 
 def csrf_input() -> htm.VoidElement:
@@ -151,7 +155,13 @@ def json_suitable(field_value: Any) -> Any:
 
 
 def label(
-    description: str, documentation: str | None = None, *, default: Any = ..., widget: Widget | None = None, **kwargs
+    description: str,
+    documentation: str | None = None,
+    *,
+    default: Any = ...,
+    widget: Widget | None = None,
+    max_length: int | None = None,
+    **kwargs,
 ) -> Any:
     extra: dict[str, Any] = {}
     if widget is not None:
@@ -160,7 +170,7 @@ def label(
         extra["documentation"] = documentation
     if len(kwargs) > 0:
         extra.update(kwargs)
-    return pydantic.Field(default, description=description, json_schema_extra=extra)
+    return pydantic.Field(default, description=description, json_schema_extra=extra, max_length=max_length)
 
 
 def name_and_label(form_cls: type[Form], i: int, loc: tuple[str | int, ...]) -> tuple[str, str]:
@@ -236,19 +246,7 @@ def _get_concrete_cls(form_cls: TypeAliasType, discriminator_value: str) -> type
     raise ValueError(f"Discriminator value {discriminator_value} not found in union type: {alias_value}")
 
 
-def _get_flash_error_data() -> dict[str, Any]:
-    flashed_error_messages = quart.get_flashed_messages(category_filter=["form-error-data"])
-    if flashed_error_messages:
-        try:
-            first_message = flashed_error_messages[0]
-            if isinstance(first_message, str):
-                return json.loads(first_message)
-        except (json.JSONDecodeError, IndexError):
-            pass
-    return {}
-
-
-def render(  # noqa: C901
+async def render(  # noqa: C901
     model_cls: type[Form],
     action: str | None = None,
     form_classes: str = ".atr-canary.py-4",
@@ -266,6 +264,7 @@ def render(  # noqa: C901
     skip: list[str] | None = None,
     confirm: str | None = None,
     submit_disabled: bool = False,
+    uid: str | None = None,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -279,7 +278,9 @@ def render(  # noqa: C901
     elif border and (".px-" not in form_classes):
         form_classes += ".px-5"
 
-    flash_error_data: dict[str, Any] = _get_flash_error_data() if use_error_data else {}
+    error_data = {}
+    if use_error_data and uid:
+        error_data = await _validation_cache_get(uid, quart.request.path)
     field_rows: list[htm.Element] = []
     hidden_fields: list[htm.Element | htm.VoidElement | markupsafe.Markup] = []
     hidden_fields.append(csrf_input())
@@ -294,7 +295,7 @@ def render(  # noqa: C901
         hidden_field, row = _render_row(
             field_info,
             field_name,
-            flash_error_data,
+            error_data,
             defaults,
             errors,
             textarea_rows,
@@ -346,8 +347,8 @@ def render(  # noqa: C901
     return htm.form(form_classes, **form_attrs)[form_children]
 
 
-def render_block(block: htm.Block, *args, **kwargs) -> None:
-    rendered = render(*args, **kwargs)
+async def render_block(block: htm.Block, *args: Any, **kwargs: Any) -> None:
+    rendered = await render(*args, **kwargs)
     block.append(rendered)
 
 
@@ -573,6 +574,19 @@ URL = pydantic.HttpUrl
 def validate(model_cls: Any, form: dict[str, Any], context: dict[str, Any] | None = None) -> pydantic.BaseModel:
     # Since pydantic.TypeAdapter accepts Any, we do the same
     return pydantic.TypeAdapter(model_cls).validate_python(form, context=context)
+
+
+async def validation_cache_add(uid: str, path: str, data: dict[str, Any]) -> None:
+    if asfquart.APP is not None:
+        cache = asfquart.APP.extensions["form_validation_error_cache"]
+        lock = asfquart.APP.extensions["form_validation_error_cache_lock"]
+
+        now = time.monotonic()
+        async with lock:
+            stale_keys = [k for k, (_, stored_at) in cache.items() if (now - stored_at) > _FORM_ERROR_TTL_SECONDS]
+            for k in stale_keys:
+                del cache[k]
+            cache[(uid, path)] = (data, now)
 
 
 def value(type_alias: Any) -> Any:
@@ -1045,3 +1059,21 @@ def _render_widget(  # noqa: C901
         elements.append(error_div)
 
     return htm.div[elements] if (len(elements) > 1) else elements[0]
+
+
+async def _validation_cache_get(uid: str, path: str) -> dict[str, Any]:
+    if asfquart.APP is None:
+        return {}
+    cache = asfquart.APP.extensions["form_validation_error_cache"]
+    lock = asfquart.APP.extensions["form_validation_error_cache_lock"]
+    key = (uid, path)
+
+    async with lock:
+        entry = cache.pop(key, None)
+
+    if entry is None:
+        return {}
+    data, stored_at = entry
+    if (time.monotonic() - stored_at) > _FORM_ERROR_TTL_SECONDS:
+        return {}
+    return data

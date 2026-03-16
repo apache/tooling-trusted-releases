@@ -99,7 +99,7 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
             try:
                 kwargs[form_param_name] = await enhanced_session.form_validate(form_cls, context)
             except pydantic.ValidationError as e:
-                return await common.flash_form_error(form_cls, e)
+                return await common.flash_form_error(form_cls, enhanced_session, e)
             if form_safe_params:
                 await common.validate_safe_fields(kwargs[form_param_name], form_safe_params, kwargs)
 

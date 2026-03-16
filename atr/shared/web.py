@@ -82,7 +82,7 @@ async def check(
         for q in quarantined_failed:
             if q.id is None:
                 continue
-            clear_quarantine_forms[q.id] = form.render(
+            clear_quarantine_forms[q.id] = await form.render(
                 model_cls=draft.ClearQuarantineForm,
                 action=util.as_url(
                     post.draft.quarantine_clear,
@@ -110,7 +110,7 @@ async def check(
             revision_editor = None
             revision_timestamp = None
 
-    delete_form = form.render(
+    delete_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             get.compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
@@ -123,7 +123,7 @@ async def check(
 
     delete_file_forms: dict[str, htm.Element] = {}
     for path in all_paths:
-        delete_file_forms[str(path)] = form.render(
+        delete_file_forms[str(path)] = await form.render(
             model_cls=draft.DeleteFileForm,
             action=util.as_url(
                 post.draft.delete_file, project_key=release.safe_project_key, version_key=release.safe_version_key
@@ -141,15 +141,17 @@ async def check(
             ),
         )
 
-    recheck_form = form.render(
+    uid = session.asf_uid if session is not None else None
+    recheck_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.recheck, project_key=release.safe_project_key, version_key=release.safe_version_key
         ),
         submit_label="Recheck with fresh cache",
         submit_classes="btn btn-primary",
+        uid=uid,
     )
-    cache_reset_form = form.render(
+    cache_reset_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.cache_reset, project_key=release.safe_project_key, version_key=release.safe_version_key
@@ -157,6 +159,7 @@ async def check(
         submit_label="Recheck with global cache",
         submit_classes="btn btn-primary",
         submit_disabled=release.check_cache_key is None,
+        uid=uid,
     )
 
     vote_task_warnings = _warnings_from_vote_result(vote_task)

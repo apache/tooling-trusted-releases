@@ -286,6 +286,10 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
 
         await asyncio.to_thread(_set_file_permissions_to_read_only)
 
+        # Initialise the form validation cache
+        app.extensions["form_validation_error_cache"] = {}
+        app.extensions["form_validation_error_cache_lock"] = asyncio.Lock()
+
         await _backfill_archive_cache()
 
         await cache.admins_startup_load()

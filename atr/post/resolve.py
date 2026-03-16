@@ -143,7 +143,7 @@ async def _tabulate(session: web.Committer, project_key: safe.ProjectKey, versio
         )
         defaults["vote_result"] = "passed" if details.passed else "failed"
 
-    resolve_form = atr.form.render(
+    resolve_form = await atr.form.render(
         model_cls=shared.resolve.SubmitForm,
         action=util.as_url(selected, project_key=release.project.key, version_key=release.version),
         submit_label="Resolve vote",

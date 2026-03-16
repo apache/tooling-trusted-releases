@@ -66,7 +66,7 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
 
         block.h3["Delete cache"]
         block.p["Remove your cached session information:"]
-        delete_cache_form = form.render(
+        delete_cache_form = await form.render(
             model_cls=shared.user.DeleteCacheForm,
             submit_label="Delete my cache",
             submit_classes="btn-danger",
@@ -78,7 +78,7 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
 
         block.h3["Cache current session"]
         block.p["Press the button below to cache your current session information:"]
-        cache_form = form.render(
+        cache_form = await form.render(
             model_cls=shared.user.CacheUserForm,
             submit_label="Cache me!",
             submit_classes="btn-primary",
