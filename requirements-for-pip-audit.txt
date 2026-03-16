@@ -58,7 +58,7 @@ cffi==2.0.0
     #   cryptography
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.5
+charset-normalizer==3.4.6
     # via requests
 click==8.3.1
     # via
@@ -152,7 +152,7 @@ hyperframe==6.1.0
     # via h2
 hyperscan==0.8.1
     # via tooling-trusted-releases
-identify==2.6.17
+identify==2.6.18
     # via pre-commit
 idna==3.11
     # via
