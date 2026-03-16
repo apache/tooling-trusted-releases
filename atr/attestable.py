@@ -18,21 +18,20 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+import pathlib
+from typing import Any
 
 import aiofiles
 import aiofiles.os
 import pydantic
 
+import atr.classify as classify
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
 import atr.models.safe as safe
 import atr.paths as paths
 import atr.util as util
-
-if TYPE_CHECKING:
-    import pathlib
 
 
 def attestable_checks_path(
@@ -73,14 +72,14 @@ async def load(
     project_name: safe.ProjectName,
     version_name: safe.VersionName,
     revision_number: safe.RevisionNumber,
-) -> models.AttestableV1 | None:
+) -> models.Attestable | None:
     file_path = attestable_path(project_name, version_name, revision_number)
     if not await aiofiles.os.path.isfile(file_path):
         return None
     try:
         async with aiofiles.open(file_path, encoding="utf-8") as f:
             data = json.loads(await f.read())
-        return models.AttestableV1.model_validate(data)
+        return _parse_attestable(data)
     except (json.JSONDecodeError, pydantic.ValidationError) as e:
         log.warning(f"Could not parse {file_path}, starting fresh: {e}")
         return None
@@ -124,7 +123,7 @@ async def load_paths(
             log.warning(f"Could not parse {file_path}: {e}")
     # combined = await load(project_name, version_name, revision_number)
     # if combined is not None:
-    #     return combined.paths
+    #     return path_hashes(combined)
     return None
 
 
@@ -148,8 +147,8 @@ def migrate_to_paths_files() -> int:
                 try:
                     with open(json_file, encoding="utf-8") as f:
                         data = json.loads(f.read())
-                    validated = models.AttestableV1.model_validate(data)
-                    paths_result = models.AttestablePathsV1(paths=validated.paths)
+                    validated = _parse_attestable(data)
+                    paths_result = models.AttestablePathsV1(paths=path_hashes(validated))
                     tmp = target.with_suffix(".tmp")
                     with open(tmp, "w", encoding="utf-8") as f:
                         f.write(paths_result.model_dump_json(indent=2))
@@ -158,6 +157,26 @@ def migrate_to_paths_files() -> int:
                 except (json.JSONDecodeError, pydantic.ValidationError):
                     continue
     return count
+
+
+def path_classification(attestable: models.Attestable, path_key: str) -> str | None:
+    if isinstance(attestable, models.AttestableV2):
+        entry = attestable.paths.get(path_key)
+        return entry.classification if (entry is not None) else None
+    return None
+
+
+def path_hash(attestable: models.Attestable, path_key: str) -> str | None:
+    if isinstance(attestable, models.AttestableV2):
+        entry = attestable.paths.get(path_key)
+        return entry.content_hash if (entry is not None) else None
+    return attestable.paths.get(path_key)
+
+
+def path_hashes(attestable: models.Attestable) -> dict[str, str]:
+    if isinstance(attestable, models.AttestableV2):
+        return {path_key: entry.content_hash for path_key, entry in attestable.paths.items()}
+    return dict(attestable.paths)
 
 
 async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, str], dict[str, int]]:
@@ -204,14 +223,17 @@ async def write_files_data(
     revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
-    previous: models.AttestableV1 | None,
+    previous: models.Attestable | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
+    base_path: pathlib.Path,
 ) -> None:
-    result = _generate_files_data(path_to_hash, path_to_size, revision_number, release_policy, uploader_uid, previous)
+    result = _generate_files_data(
+        path_to_hash, path_to_size, revision_number, release_policy, uploader_uid, previous, base_path
+    )
     file_path = attestable_path(project_name, version_name, revision_number)
     await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
-    paths_result = models.AttestablePathsV1(paths=result.paths)
+    paths_result = models.AttestablePathsV1(paths=path_hashes(result))
     paths_file_path = attestable_paths_path(project_name, version_name, revision_number)
     await util.atomic_write_file(paths_file_path, paths_result.model_dump_json(indent=2))
     checks_file_path = attestable_checks_path(project_name, version_name, revision_number)
@@ -220,16 +242,33 @@ async def write_files_data(
             await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
 
 
+def _compute_classifications(
+    path_to_hash: dict[str, str],
+    release_policy: dict[str, Any] | None,
+    base_path: pathlib.Path,
+) -> dict[str, str]:
+    policy = release_policy or {}
+    source_matcher, binary_matcher = classify.matchers_from_policy(
+        policy.get("source_artifact_paths", []),
+        policy.get("binary_artifact_paths", []),
+        base_path,
+    )
+    return {
+        path_key: classify.classify(pathlib.Path(path_key), base_path, source_matcher, binary_matcher).value
+        for path_key in path_to_hash
+    }
+
+
 def _compute_hashes_with_attribution(  # noqa: C901
     current_hash_to_paths: dict[str, set[str]],
     path_to_size: dict[str, int],
-    previous: models.AttestableV1 | None,
+    previous: models.Attestable | None,
     uploader_uid: str,
     revision_number: safe.RevisionNumber,
 ) -> dict[str, models.HashEntry]:
     previous_hash_to_paths: dict[str, set[str]] = {}
     if previous is not None:
-        for path_key, hash_ref in previous.paths.items():
+        for path_key, hash_ref in path_hashes(previous).items():
             previous_hash_to_paths.setdefault(hash_ref, set()).add(path_key)
 
     new_hashes: dict[str, models.HashEntry] = {}
@@ -271,8 +310,9 @@ def _generate_files_data(
     revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
-    previous: models.AttestableV1 | None,
-) -> models.AttestableV1:
+    previous: models.Attestable | None,
+    base_path: pathlib.Path,
+) -> models.AttestableV2:
     current_hash_to_paths: dict[str, set[str]] = {}
     for path_key, hash_ref in path_to_hash.items():
         current_hash_to_paths.setdefault(hash_ref, set()).add(path_key)
@@ -281,11 +321,21 @@ def _generate_files_data(
         current_hash_to_paths, path_to_size, previous, uploader_uid, revision_number
     )
 
-    return models.AttestableV1(
-        paths=dict(path_to_hash),
+    classifications = _compute_classifications(path_to_hash, release_policy, base_path)
+    return models.AttestableV2(
         hashes=dict(new_hashes),
+        paths={
+            path_key: models.PathEntryV2(content_hash=hash_ref, classification=classifications[path_key])
+            for path_key, hash_ref in path_to_hash.items()
+        },
         policy=release_policy or {},
     )
+
+
+def _parse_attestable(data: dict[str, object]) -> models.Attestable:
+    if data.get("version") == 2:
+        return models.AttestableV2.model_validate(data)
+    return models.AttestableV1.model_validate(data)
 
 
 def _path_basename(path_key: str) -> str:

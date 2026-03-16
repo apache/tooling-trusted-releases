@@ -357,7 +357,7 @@ async def resolve_cache_key(
         policy_dict = _coerce_policy_nulls(attestable_data.policy)
         policy = sql.ReleasePolicy.model_validate(policy_dict)
         if not ignore_path:
-            file_hash = attestable_data.paths.get(file) if file else None
+            file_hash = attestable.path_hash(attestable_data, file) if file else None
     else:
         # TODO: Is this fallback valid / necessary? Or should we bail out if there's no attestable data?
         policy = release.release_policy or release.project.release_policy

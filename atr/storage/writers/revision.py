@@ -82,7 +82,7 @@ async def finalise_revision(
     old_revision: sql.Revision | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
-    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectName,
     release: sql.Release,
     release_name: safe.ReleaseName,
@@ -137,7 +137,7 @@ async def _commit_new_revision(
     merge_base_revision_name: str | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
-    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectName,
     release: sql.Release,
     release_name: str,
@@ -202,6 +202,7 @@ async def _commit_new_revision(
         previous_attestable,
         path_to_hash,
         path_to_size,
+        new_revision_dir,
     )
 
     # Commit to end the transaction started by data.begin_immediate
@@ -241,13 +242,13 @@ async def _lock_and_merge(
     old_revision: sql.Revision | None,
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
-    previous_attestable: atr.models.attestable.AttestableV1 | None,
+    previous_attestable: atr.models.attestable.Attestable | None,
     project_name: safe.ProjectName,
     release: sql.Release,
     _release_name: safe.ReleaseName,
     temp_dir_path: pathlib.Path,
     version_name: safe.VersionName,
-) -> tuple[atr.models.attestable.AttestableV1 | None, str | None, str | None, sql.Release]:
+) -> tuple[atr.models.attestable.Attestable | None, str | None, str | None, sql.Release]:
     # Acquire the write lock
     # We need this write lock for moving the directory afterwards atomically
     # But it also helps to make models.populate_revision_sequence_and_name safe against races
@@ -434,7 +435,7 @@ class CommitteeParticipant(FoundationCommitter):
             if merge_enabled and (old_revision is not None):
                 base_dir = old_release_dir
                 base_inodes = await asyncio.to_thread(util.paths_to_inodes, base_dir)
-                base_hashes = dict(previous_attestable.paths) if (previous_attestable is not None) else {}
+                base_hashes = attestable.path_hashes(previous_attestable) if (previous_attestable is not None) else {}
             n_inodes = await asyncio.to_thread(util.paths_to_inodes, temp_dir_path)
         except Exception:
             await aioshutil.rmtree(temp_dir)

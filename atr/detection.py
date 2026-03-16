@@ -100,7 +100,7 @@ def deduplicate_quarantine_archives(archive_paths: list[str], path_to_hash: dict
 
 
 def detect_archives_requiring_quarantine(
-    path_to_hash: dict[str, str], previous_attestable: models.AttestableV1 | None
+    path_to_hash: dict[str, str], previous_attestable: models.Attestable | None
 ) -> list[str]:
     quarantine_paths: list[str] = []
     for path_key, hash_ref in path_to_hash.items():

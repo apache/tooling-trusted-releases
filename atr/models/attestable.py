@@ -48,3 +48,18 @@ class AttestableV1(schema.Strict):
     paths: dict[str, str] = schema.factory(dict)
     hashes: dict[str, HashEntry] = schema.factory(dict)
     policy: dict[str, Any] = schema.factory(dict)
+
+
+class PathEntryV2(schema.Strict):
+    content_hash: str
+    classification: str
+
+
+class AttestableV2(schema.Strict):
+    version: Literal[2] = 2
+    hashes: dict[str, HashEntry] = schema.factory(dict)
+    paths: dict[str, PathEntryV2] = schema.factory(dict)
+    policy: dict[str, Any] = schema.factory(dict)
+
+
+type Attestable = AttestableV1 | AttestableV2

@@ -326,7 +326,7 @@ async def _promote(
     if old_revision is not None:
         old_release_dir = paths.release_directory_base(release) / old_revision.number
         base_inodes = await asyncio.to_thread(util.paths_to_inodes, old_release_dir)
-        base_hashes = dict(previous_attestable.paths) if (previous_attestable is not None) else {}
+        base_hashes = attestable.path_hashes(previous_attestable) if (previous_attestable is not None) else {}
     n_inodes = await asyncio.to_thread(util.paths_to_inodes, quarantine_dir_path)
 
     async with revision.SafeSession(quarantine_dir) as data:

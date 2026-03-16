@@ -15,8 +15,49 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pathlib
+
 import atr.attestable as attestable
 import atr.models.attestable as models
+
+
+def test_attestable_v2_round_trip():
+    original = models.AttestableV2(
+        hashes={"h1": models.HashEntry(size=100, uploaders=[("alice", "00001")])},
+        paths={
+            "a.tar.gz": models.PathEntryV2(content_hash="h1", classification="source"),
+            "a.tar.gz.sha512": models.PathEntryV2(content_hash="h2", classification="metadata"),
+        },
+        policy={"min_hours": 72},
+    )
+
+    loaded = models.AttestableV2.model_validate_json(original.model_dump_json())
+
+    assert loaded == original
+    assert loaded.version == 2
+    assert loaded.paths["a.tar.gz"].content_hash == "h1"
+    assert loaded.paths["a.tar.gz"].classification == "source"
+    assert loaded.paths["a.tar.gz.sha512"].content_hash == "h2"
+    assert loaded.paths["a.tar.gz.sha512"].classification == "metadata"
+
+
+def test_generate_files_data_returns_attestable_v2():
+    data = attestable._generate_files_data(
+        path_to_hash={"apache-widget-1.0-src.tar.gz": "h1", "apache-widget-1.0-src.tar.gz.sha512": "h2"},
+        path_to_size={"apache-widget-1.0-src.tar.gz": 100, "apache-widget-1.0-src.tar.gz.sha512": 64},
+        revision_number="00001",
+        release_policy=None,
+        uploader_uid="alice",
+        previous=None,
+        base_path=pathlib.Path("/test"),
+    )
+
+    assert isinstance(data, models.AttestableV2)
+    assert data.version == 2
+    assert data.paths["apache-widget-1.0-src.tar.gz"].content_hash == "h1"
+    assert data.paths["apache-widget-1.0-src.tar.gz"].classification == "source"
+    assert data.paths["apache-widget-1.0-src.tar.gz.sha512"].content_hash == "h2"
+    assert data.paths["apache-widget-1.0-src.tar.gz.sha512"].classification == "metadata"
 
 
 def test_hash_entry_basenames_round_trip():
@@ -64,8 +105,51 @@ def test_hash_metadata_basenames_are_cumulative_and_unique():
         release_policy=None,
         uploader_uid="bob",
         previous=previous,
+        base_path=pathlib.Path("/test"),
     )
 
     assert data.hashes["h1"].basenames == ["apache-widget-1.0-src.tar.gz", "apache-widget-1.0.zip"]
     assert data.hashes["h1"].uploaders == [("alice", "00001"), ("bob", "00002")]
     assert data.hashes["h2"].basenames == ["readme.txt"]
+
+
+def test_parse_attestable_v1():
+    data = {"version": 1, "paths": {"a.tar.gz": "h1"}, "hashes": {}, "policy": {}}
+
+    result = attestable._parse_attestable(data)
+
+    assert isinstance(result, models.AttestableV1)
+    assert result.version == 1
+    assert result.paths == {"a.tar.gz": "h1"}
+
+
+def test_parse_attestable_v2():
+    data = {
+        "version": 2,
+        "paths": {
+            "a.tar.gz": {"content_hash": "h1", "classification": "source"},
+        },
+        "hashes": {},
+        "policy": {},
+    }
+
+    result = attestable._parse_attestable(data)
+
+    assert isinstance(result, models.AttestableV2)
+    assert result.version == 2
+    assert result.paths["a.tar.gz"].content_hash == "h1"
+    assert result.paths["a.tar.gz"].classification == "source"
+
+
+def test_path_hashes_support_v1_and_v2():
+    v1 = models.AttestableV1(paths={"a.tar.gz": "h1"}, hashes={}, policy={})
+    v2 = models.AttestableV2(
+        paths={"a.tar.gz": models.PathEntryV2(content_hash="h1", classification="source")},
+        hashes={},
+        policy={},
+    )
+
+    assert attestable.path_hashes(v1) == {"a.tar.gz": "h1"}
+    assert attestable.path_hashes(v2) == {"a.tar.gz": "h1"}
+    assert attestable.path_hash(v2, "a.tar.gz") == "h1"
+    assert attestable.path_classification(v2, "a.tar.gz") == "source"
