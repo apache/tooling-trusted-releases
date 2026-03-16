@@ -87,7 +87,7 @@ repos:
   rev: v17.4.0
   hooks:
     - id: stylelint
-      additional_dependencies: ['stylelint@16.14.1', 'stylelint-config-standard@37.0.0']
+      additional_dependencies: ['stylelint@16.14.1', 'stylelint-config-standard@40.0.0']
       files: "atr/static/css/.*\\.css$"
       types_or: ['css']
       args: ['--fix', '--allow-empty-input']
