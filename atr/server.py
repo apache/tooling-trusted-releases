@@ -53,6 +53,7 @@ import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.filters as filters
+import atr.form as form
 import atr.jwtoken as jwtoken
 import atr.log as log
 import atr.manager as manager
@@ -261,6 +262,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "admin": admin,
             "as_url": util.as_url,
             "commit": metadata.commit,
+            "csrf_input_fn": lambda: form.csrf_input(),
             "current_user": current_user,
             "get": get,
             "is_admin_fn": user.is_admin,

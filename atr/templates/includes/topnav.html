@@ -376,7 +376,10 @@
       <ul class="navbar-nav align-items-lg-center">
         <li class="nav-item">
           {% if current_user %}
-            <a href="/auth?logout=/" class="logout-link btn btn-sm btn-secondary ms-2">Log out</a>
+            <form method="post" action="/auth?logout=/" class="d-inline">
+              {{ csrf_input_fn()|safe }}
+              <button type="submit" class="logout-link btn btn-sm btn-secondary ms-2">Log out</button>
+            </form>
           {% else %}
             <a href="/auth?login={{ request.path }}" class="login-link btn btn-sm btn-secondary ms-2">Log in</a>
           {% endif %}
