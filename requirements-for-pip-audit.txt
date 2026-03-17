@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@12284bdf253362b539e87129c457965794103028
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@ae3b020002b63688c65715f4f45bd351d868da3d
     # via tooling-trusted-releases
 asyncssh==2.22.0
     # via tooling-trusted-releases
@@ -82,7 +82,7 @@ cssbeautifier==1.15.4
     # via djlint
 cvss==3.6
     # via tooling-trusted-releases
-cyclonedx-python-lib==11.6.0
+cyclonedx-python-lib==11.7.0
     # via tooling-trusted-releases
 decouple-types==1.0.2
 defusedxml==0.7.1
@@ -239,7 +239,7 @@ puremagic==2.1.0
     # via tooling-trusted-releases
 py-serializable==2.1.0
     # via cyclonedx-python-lib
-pyasn1==0.6.2
+pyasn1==0.6.3
     # via
     #   ldap3
     #   pgpy
