@@ -23,9 +23,10 @@ from typing import TYPE_CHECKING
 
 import aiofiles.os
 
-import atr.attestable as attestable
+import atr.db as db
 import atr.hashes as hashes
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -33,12 +34,13 @@ if TYPE_CHECKING:
 
 
 async def merge(
+    data: db.Session,
     base_inodes: dict[str, int],
     base_hashes: dict[str, str],
     prior_dir: pathlib.Path,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    prior_revision_number: safe.RevisionNumber,
+    prior_revision_seq: int,
     temp_dir: pathlib.Path,
     n_inodes: dict[str, int],
     n_hashes: dict[str, str],
@@ -48,6 +50,7 @@ async def merge(
     # This happens in the _add_from_prior and _replace_with_prior calls somewhat below
     prior_inodes = await asyncio.to_thread(util.paths_to_inodes, prior_dir)
     prior_hashes: dict[str, str] | None = None
+    release_key = str(sql.release_key(project_key, version_key))
 
     # Collect implicit directory paths from new (N) files for type conflict detection
     n_dirs: set[str] = set()
@@ -70,15 +73,15 @@ async def merge(
             if await aiofiles.os.path.isdir(temp_dir / path):
                 continue
             prior_hashes = await _add_from_prior(
+                data,
                 prior_dir,
                 temp_dir,
                 path,
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_key,
-                version_key,
-                prior_revision_number,
+                release_key,
+                prior_revision_seq,
             )
             continue
 
@@ -96,6 +99,7 @@ async def merge(
         # Cases 4, 5, 6, 8, 11, and 15: all three revisions have this path
         if (b_ino is not None) and (p_ino is not None) and (n_ino is not None):
             prior_hashes = await _merge_all_present(
+                data,
                 base_inodes,
                 base_hashes,
                 prior_dir,
@@ -107,30 +111,29 @@ async def merge(
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_key,
-                version_key,
-                prior_revision_number,
+                release_key,
+                prior_revision_seq,
             )
 
 
 async def _add_from_prior(
+    data: db.Session,
     prior_dir: pathlib.Path,
     temp_dir: pathlib.Path,
     path: str,
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    prior_revision_number: safe.RevisionNumber,
+    release_key: str,
+    prior_revision_seq: int,
 ) -> dict[str, str] | None:
     target = temp_dir / path
     await asyncio.to_thread(_makedirs_with_permissions, target.parent, temp_dir)
     await aiofiles.os.link(prior_dir / path, target)
     if prior_hashes is None:
-        prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
+        prior_hashes = await _prior_hashes_load(data, release_key, prior_revision_seq, prior_dir)
     # Update n_hashes and n_sizes in place
-    if (prior_hashes is not None) and (path in prior_hashes):
+    if path in prior_hashes:
         n_hashes[path] = prior_hashes[path]
     else:
         n_hashes[path] = await hashes.compute_file_hash(target)
@@ -166,6 +169,7 @@ def _makedirs_with_permissions(target_parent: pathlib.Path, root: pathlib.Path) 
 
 
 async def _merge_all_present(
+    data: db.Session,
     _base_inodes: dict[str, int],
     base_hashes: dict[str, str],
     prior_dir: pathlib.Path,
@@ -177,9 +181,8 @@ async def _merge_all_present(
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    prior_revision_number: safe.RevisionNumber,
+    release_key: str,
+    prior_revision_seq: int,
 ) -> dict[str, str] | None:
     # Cases 6, 8: prior and new share an inode so they already agree
     if p_ino == n_ino:
@@ -192,15 +195,15 @@ async def _merge_all_present(
     # Case 11 via inode: base and new share an inode so prior wins
     if b_ino == n_ino:
         return await _replace_with_prior(
+            data,
             prior_dir,
             temp_dir,
             path,
             n_hashes,
             n_sizes,
             prior_hashes,
-            project_key,
-            version_key,
-            prior_revision_number,
+            release_key,
+            prior_revision_seq,
         )
 
     # Cases 4, 5, 8, 11, 15: all inodes differ, so use hash to distinguish
@@ -208,47 +211,63 @@ async def _merge_all_present(
     n_hash = n_hashes[path]
     if b_hash == n_hash:
         if prior_hashes is None:
-            prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
-        if (prior_hashes is not None) and (path in prior_hashes):
+            prior_hashes = await _prior_hashes_load(data, release_key, prior_revision_seq, prior_dir)
+        if path in prior_hashes:
             p_hash = prior_hashes[path]
         else:
             p_hash = await hashes.compute_file_hash(prior_dir / path)
         if p_hash != b_hash:
             # Case 11 via hash: base and new have the same content but prior differs
             return await _replace_with_prior(
+                data,
                 prior_dir,
                 temp_dir,
                 path,
                 n_hashes,
                 n_sizes,
                 prior_hashes,
-                project_key,
-                version_key,
-                prior_revision_number,
+                release_key,
+                prior_revision_seq,
             )
 
     # Cases 4, 5, 8, 15: no merge action needed so new wins
     return prior_hashes
 
 
+async def _prior_hashes_load(
+    data: db.Session,
+    release_key: str,
+    prior_revision_seq: int,
+    prior_dir: pathlib.Path,
+) -> dict[str, str]:
+    result = await data.release_file_hashes_at(release_key, prior_revision_seq)
+    if result:
+        return result
+    prior_hashes: dict[str, str] = {}
+    # Slow, but only applies to pre-AttestableV2 release revisions
+    async for rel_path in util.paths_recursive(prior_dir):
+        prior_hashes[str(rel_path)] = await hashes.compute_file_hash(prior_dir / rel_path)
+    return prior_hashes
+
+
 async def _replace_with_prior(
+    data: db.Session,
     prior_dir: pathlib.Path,
     temp_dir: pathlib.Path,
     path: str,
     n_hashes: dict[str, str],
     n_sizes: dict[str, int],
     prior_hashes: dict[str, str] | None,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    prior_revision_number: safe.RevisionNumber,
+    release_key: str,
+    prior_revision_seq: int,
 ) -> dict[str, str] | None:
     await aiofiles.os.remove(temp_dir / path)
     await aiofiles.os.link(prior_dir / path, temp_dir / path)
     if prior_hashes is None:
-        prior_hashes = await attestable.load_paths(project_key, version_key, prior_revision_number)
+        prior_hashes = await _prior_hashes_load(data, release_key, prior_revision_seq, prior_dir)
     # Update n_hashes and n_sizes in place
     file_path = temp_dir / path
-    if (prior_hashes is not None) and (path in prior_hashes):
+    if path in prior_hashes:
         n_hashes[path] = prior_hashes[path]
     else:
         n_hashes[path] = await hashes.compute_file_hash(file_path)

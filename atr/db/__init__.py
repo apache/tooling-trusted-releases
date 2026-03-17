@@ -569,6 +569,58 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    async def release_file_hash_at(
+        self,
+        release_key: str,
+        path: str,
+        at_revision_seq: int,
+    ) -> str | None:
+        via = sql.validate_instrumented_attribute
+        query = (
+            sqlmodel.select(sql.ReleaseFileState)
+            .where(
+                sql.ReleaseFileState.release_key == release_key,
+                sql.ReleaseFileState.path == path,
+                via(sql.ReleaseFileState.since_revision_seq) <= at_revision_seq,
+            )
+            .order_by(via(sql.ReleaseFileState.since_revision_seq).desc())
+            .limit(1)
+        )
+        result = await self.execute(query)
+        row = result.scalar_one_or_none()
+        if (row is None) or (not row.present):
+            return None
+        return row.content_hash
+
+    async def release_file_hashes_at(
+        self,
+        release_key: str,
+        at_revision_seq: int,
+    ) -> dict[str, str]:
+        via = sql.validate_instrumented_attribute
+        query = (
+            sqlmodel.select(sql.ReleaseFileState)
+            .where(
+                sql.ReleaseFileState.release_key == release_key,
+                via(sql.ReleaseFileState.since_revision_seq) <= at_revision_seq,
+            )
+            .order_by(
+                sql.ReleaseFileState.path,
+                via(sql.ReleaseFileState.since_revision_seq).desc(),
+            )
+        )
+        result = await self.execute(query)
+        rows = result.scalars().all()
+        hashes: dict[str, str] = {}
+        seen: set[str] = set()
+        for row in rows:
+            if row.path in seen:
+                continue
+            seen.add(row.path)
+            if row.present and (row.content_hash is not None):
+                hashes[row.path] = row.content_hash
+        return hashes
+
     def release_file_state(
         self,
         release_key: Opt[str] = NOT_SET,

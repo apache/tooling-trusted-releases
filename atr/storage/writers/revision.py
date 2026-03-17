@@ -287,12 +287,13 @@ async def _lock_and_merge(
         prior_number = latest.safe_number
         prior_dir = paths.release_directory_base(merged_release) / str(prior_number)
         await merge.merge(
+            data,
             base_inodes,
             base_hashes,
             prior_dir,
             project_key,
             version_key,
-            prior_number,
+            latest.seq,
             temp_dir_path,
             n_inodes,
             path_to_hash,

@@ -209,6 +209,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     intervening_revision = mock.MagicMock()
     intervening_revision.key = f"{release_key} 00006"
     intervening_revision.number = "00006"
+    intervening_revision.seq = 6
     intervening_revision.safe_number = safe.RevisionNumber("00006")
 
     first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
@@ -259,7 +260,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
 
     merge_await_args = merge_mock.await_args
     assert merge_await_args is not None
-    assert merge_await_args.args[5] == safe.RevisionNumber("00006")
+    assert merge_await_args.args[6] == 6
 
 
 @pytest.mark.asyncio

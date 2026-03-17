@@ -324,10 +324,16 @@ async def resolve_archive_dir(args: FunctionArguments) -> pathlib.Path | None:
     """Resolve the extracted archive directory for the primary archive."""
     if args.primary_rel_path is None:
         return None
-    paths_data = await attestable.load_paths(args.project_key, args.version_key, args.revision_number)
-    if paths_data is None:
-        return None
-    content_hash = paths_data.get(args.primary_rel_path)
+    release_key = sql.release_key(str(args.project_key), str(args.version_key))
+    revision_seq = int(str(args.revision_number))
+    async with db.session() as data:
+        content_hash = await data.release_file_hash_at(release_key, args.primary_rel_path, revision_seq)
+    if content_hash is None:
+        abs_path = file_paths.revision_path_for_file(
+            args.project_key, args.version_key, args.revision_number, args.primary_rel_path
+        )
+        if await aiofiles.os.path.isfile(abs_path):
+            content_hash = await hashes.compute_file_hash(abs_path)
     if content_hash is None:
         return None
     archive_key = hashes.filesystem_archives_key(content_hash)
@@ -337,7 +343,7 @@ async def resolve_archive_dir(args: FunctionArguments) -> pathlib.Path | None:
     return None
 
 
-async def resolve_cache_key(
+async def resolve_cache_key(  # noqa: C901
     checker: str | Callable[..., Any],
     checker_version: str,
     policy_keys: list[str],
@@ -361,7 +367,13 @@ async def resolve_cache_key(
     else:
         # TODO: Is this fallback valid / necessary? Or should we bail out if there's no attestable data?
         policy = release.release_policy or release.project.release_policy
-        if not ignore_path:
+    if not ignore_path:
+        if file:
+            release_key = sql.release_key(str(release.safe_project_key), str(release.safe_version_key))
+            revision_seq = int(str(revision))
+            async with db.session() as data:
+                file_hash = await data.release_file_hash_at(release_key, file, revision_seq)
+        if file_hash is None:
             if path is None:
                 path = file_paths.revision_path_for_file(
                     release.safe_project_key, release.safe_version_key, revision, file or ""
