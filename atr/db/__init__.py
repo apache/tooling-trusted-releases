@@ -26,6 +26,7 @@ import alembic.command as command
 import alembic.config as alembic_config
 import sqlalchemy
 import sqlalchemy.dialects.sqlite
+import sqlalchemy.event as event
 import sqlalchemy.ext.asyncio
 import sqlalchemy.orm as orm
 import sqlalchemy.sql
@@ -44,6 +45,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterator, Sequence
 
     import asfquart.base as base
+    from sqlalchemy.engine.interfaces import DBAPIConnection
+    from sqlalchemy.pool.base import ConnectionPoolEntry
 
 global_log_query: bool = False
 _global_atr_engine: sqlalchemy.ext.asyncio.AsyncEngine | None = None
@@ -879,13 +882,21 @@ async def create_async_engine(app_config: type[config.AppConfig]) -> sqlalchemy.
 
     # Set SQLite pragmas for better performance
     # Use 64 MB for the cache_size, and 5000ms for busy_timeout
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection: DBAPIConnection, _connection_record: ConnectionPoolEntry) -> None:
+        log.info("Setting pragmas for new SQLite connection")
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA cache_size=-64000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA strict=ON")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
+    # The journal_mode=WAL pragma persists in the database file header
+    # We write it once at startup to ensure that it is set
     async with engine.begin() as conn:
         await conn.execute(sqlalchemy.text("PRAGMA journal_mode=WAL"))
-        await conn.execute(sqlalchemy.text("PRAGMA synchronous=NORMAL"))
-        await conn.execute(sqlalchemy.text("PRAGMA cache_size=-64000"))
-        await conn.execute(sqlalchemy.text("PRAGMA foreign_keys=ON"))
-        await conn.execute(sqlalchemy.text("PRAGMA busy_timeout=5000"))
-        await conn.execute(sqlalchemy.text("PRAGMA strict=ON"))
 
     return engine
 
