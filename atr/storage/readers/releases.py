@@ -62,15 +62,23 @@ class GeneralPublic:
             return None
         await self.__successes_errors_warnings(release, release.safe_latest_revision_number, info)
         base_path = paths.release_directory(release)
+        revision_seq = int(str(release.safe_latest_revision_number))
+        db_classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
+        # TODO: This should get the matchers from attestable data policy
+        # But this branch is only a fallback for pre-AttestableV2 releases
         source_matcher, binary_matcher = classify.matchers_from_policy(
             release.project.policy_source_artifact_paths,
             release.project.policy_binary_artifact_paths,
             base_path,
         )
         for path in all_paths:
-            info.file_types[path] = classify.classify(
-                path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
-            )
+            db_value = db_classifications.get(str(path))
+            if db_value is not None:
+                info.file_types[path] = classify.FileType(db_value)
+            else:
+                info.file_types[path] = classify.classify(
+                    path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                )
         self.__compute_checker_stats(info, all_paths)
         return info
 

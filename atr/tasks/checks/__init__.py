@@ -204,8 +204,16 @@ class Recorder:
     async def _classify_primary_path(self) -> classify.FileType:
         if self.primary_rel_path is None:
             return classify.FileType.BINARY
+        release_key = str(self.release_key)
+        revision_seq = int(str(self.revision_number))
+        async with db.session() as data:
+            classification = await data.release_file_classification_at(release_key, self.primary_rel_path, revision_seq)
+        if classification is not None:
+            return classify.FileType(classification)
         project = await self.project()
         base_path = self.abs_path_base()
+        # TODO: This should get the matchers from attestable data policy
+        # But this branch is only a fallback for pre-AttestableV2 releases
         source_matcher, binary_matcher = classify.matchers_from_policy(
             project.policy_source_artifact_paths,
             project.policy_binary_artifact_paths,
