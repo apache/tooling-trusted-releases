@@ -75,7 +75,7 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
             submit_label="Regenerate KEYS file",
-            defaults={"committee_name": committee.key},
+            defaults={"committee_key": committee.key},
             empty=True,
         ),
         is_standing=util.committee_is_standing(committee.key),

@@ -32,15 +32,15 @@ import atr.web as web
 async def selected_post(
     session: web.Committer,
     _vote: Literal["vote"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     cast_vote_form: shared.vote.CastVoteForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /vote/<project_name>/<version_name>
+    URL: /vote/<project_key>/<version_key>
     """
 
-    release = await session.release(project_name, version_name, phase=sql.ReleasePhase.RELEASE_CANDIDATE)
+    release = await session.release(project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE)
 
     if release.committee is None:
         raise ValueError("Release has no committee")
@@ -58,8 +58,8 @@ async def selected_post(
 
     if error_message:
         await quart.flash(error_message, "error")
-        return await session.redirect(get.vote.selected, project_name=str(project_name), version_name=str(version_name))
+        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
     success_message = f"Sending your vote to {email_recipient}."
     await quart.flash(success_message, "success")
-    return await session.redirect(get.vote.selected, project_name=str(project_name), version_name=str(version_name))
+    return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))

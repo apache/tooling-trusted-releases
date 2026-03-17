@@ -1,8 +1,8 @@
 {% extends "layouts/base.html" %}
 
-{%- block title -%}{{ release.project.display_name }} {{ version_name }} ~ ATR{%- endblock title -%}
+{%- block title -%}{{ release.project.display_name }} {{ version_key }} ~ ATR{%- endblock title -%}
 
-{%- block description -%}Review page for the {{ release.project.display_name }} {{ version_name }} candidate{%- endblock description -%}
+{%- block description -%}Review page for the {{ release.project.display_name }} {{ version_key }} candidate{%- endblock description -%}
 
 {% block stylesheets %}
   {{ super() }}
@@ -57,7 +57,7 @@
       Compose <strong>{{ release.project.short_display_name }}</strong> <em>{{ release.version }}</em>
     </h1>
     <p>
-      Manage the <strong>candidate draft</strong> for {{ release.project.display_name }} {{ version_name }}. Add files, review checks, and promote when ready.
+      Manage the <strong>candidate draft</strong> for {{ release.project.display_name }} {{ version_key }}. Add files, review checks, and promote when ready.
     </p>
   {% else %}
     <h1>
@@ -75,7 +75,7 @@
       {% else %}
         {{ release.committee.display_name }}
       {% endif %}
-      committee is currently voting on the <strong>release candidate</strong> for {{ release.project.display_name }} {{ version_name }}. This page allows you to review the automated checks run on the files in the release.
+      committee is currently voting on the <strong>release candidate</strong> for {{ release.project.display_name }} {{ version_key }}. This page allows you to review the automated checks run on the files in the release.
     </p>
   {% endif %}
 
@@ -125,7 +125,7 @@
   <div id="ongoing-tasks-banner"
        class="alert alert-warning{% if ongoing_tasks_count == 0 %} d-none{% endif %}"
        role="alert"
-       {% if revision_number %}data-api-url="/checks/{{ release.project.name }}/{{ release.version }}/{{ revision_number }}"{% endif %}>
+       {% if revision_number %}data-api-url="/checks/{{ release.project.key }}/{{ release.version }}/{{ revision_number }}"{% endif %}>
     <i class="bi bi-exclamation-triangle me-2"></i>
     <span id="ongoing-tasks-text">There {{ 'is' if ongoing_tasks_count == 1 else 'are' }} currently <strong id="ongoing-tasks-count">{{ ongoing_tasks_count }}</strong> background verification {{ 'task' if ongoing_tasks_count == 1 else 'tasks' }} running for the latest revision. Results shown below may be incomplete or outdated until the tasks finish.</span>
     <div id="poll-progress-container" class="progress mt-2">
@@ -171,9 +171,9 @@
 {#    </div>#}
     <p>
 {#      <a class="btn btn-primary"#}
-{#         href="{{ as_url(get.distribution.stage_automate, project_name=release.project.name, version_name=release.version) }}">Distribute</a>#}
+{#         href="{{ as_url(get.distribution.stage_automate, project_key=release.project.key, version_key=release.version) }}">Distribute</a>#}
       <a class="btn btn-primary"
-         href="{{ as_url(get.distribution.stage_record, project_name=release.project.name, version_name=release.version) }}">Record a manual distribution</a>
+         href="{{ as_url(get.distribution.stage_record, project_key=release.project.key, version_key=release.version) }}">Record a manual distribution</a>
     </p>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>
@@ -225,7 +225,7 @@
       <p>No ignored checks found.</p>
     {% endif %}
     <p>
-      You can also <a href="{{ as_url(get.ignores.ignores, project_name=release.project_name|string) }}">manage which check results are ignored</a>.
+      You can also <a href="{{ as_url(get.ignores.ignores, project_key=release.project_key|string) }}">manage which check results are ignored</a>.
     </p>
 
     {% if is_viewing_as_admin_fn(current_user.uid) %}

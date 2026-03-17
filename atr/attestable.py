@@ -36,21 +36,21 @@ import atr.util as util
 
 
 def attestable_checks_path(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.checks.json"
+    return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.checks.json"
 
 
 def attestable_path(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.json"
+    return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.json"
 
 
 def attestable_paths_path(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.paths.json"
+    return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.paths.json"
 
 
 def can_write_file_state_rows(
@@ -129,27 +129,27 @@ def compute_file_state_rows(
 
 
 def github_tp_payload_path(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
-    return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.github-tp.json"
+    return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.github-tp.json"
 
 
 async def github_tp_payload_write(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     github_payload: dict[str, Any],
 ) -> None:
-    payload_path = github_tp_payload_path(project_name, version_name, revision_number)
+    payload_path = github_tp_payload_path(project_key, version_key, revision_number)
     await util.atomic_write_file(payload_path, json.dumps(github_payload, indent=2))
 
 
 async def load(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> models.Attestable | None:
-    file_path = attestable_path(project_name, version_name, revision_number)
+    file_path = attestable_path(project_key, version_key, revision_number)
     if not await aiofiles.os.path.isfile(file_path):
         return None
     try:
@@ -162,11 +162,11 @@ async def load(
 
 
 async def load_checks(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> dict[str, dict[str, str]]:
-    file_path = attestable_checks_path(project_name, version_name, revision_number)
+    file_path = attestable_checks_path(project_key, version_key, revision_number)
     # TODO: Once we're sure everyone is on V2, we should be strict about failures here,
     # rather than returning {}
     if await aiofiles.os.path.isfile(file_path):
@@ -184,11 +184,11 @@ async def load_checks(
 
 
 async def load_paths(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
 ) -> dict[str, str] | None:
-    file_path = attestable_paths_path(project_name, version_name, revision_number)
+    file_path = attestable_paths_path(project_key, version_key, revision_number)
     if await aiofiles.os.path.isfile(file_path):
         try:
             async with aiofiles.open(file_path, encoding="utf-8") as f:
@@ -197,7 +197,7 @@ async def load_paths(
         except (json.JSONDecodeError, pydantic.ValidationError) as e:
             # log.warning(f"Could not parse {file_path}, trying combined file: {e}")
             log.warning(f"Could not parse {file_path}: {e}")
-    # combined = await load(project_name, version_name, revision_number)
+    # combined = await load(project_key, version_key, revision_number)
     # if combined is not None:
     #     return path_hashes(combined)
     return None
@@ -270,13 +270,13 @@ async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, 
 
 
 async def write_checks_data(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     rel_path: str,
     checks: dict[str, str],
 ) -> None:
-    log.info(f"Writing checks for {project_name}/{version_name}/{revision_number}/{rel_path}: {checks}")
+    log.info(f"Writing checks for {project_key}/{version_key}/{revision_number}/{rel_path}: {checks}")
 
     def modify(content: str) -> str:
         try:
@@ -290,12 +290,12 @@ async def write_checks_data(
         result = models.AttestableChecksV2(checks=current)
         return result.model_dump_json(indent=2)
 
-    await util.atomic_modify_file(attestable_checks_path(project_name, version_name, revision_number), modify)
+    await util.atomic_modify_file(attestable_checks_path(project_key, version_key, revision_number), modify)
 
 
 async def write_files_data(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
@@ -315,12 +315,12 @@ async def write_files_data(
         base_path,
         classifications=classifications,
     )
-    file_path = attestable_path(project_name, version_name, revision_number)
+    file_path = attestable_path(project_key, version_key, revision_number)
     await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
     paths_result = models.AttestablePathsV1(paths=path_hashes(result))
-    paths_file_path = attestable_paths_path(project_name, version_name, revision_number)
+    paths_file_path = attestable_paths_path(project_key, version_key, revision_number)
     await util.atomic_write_file(paths_file_path, paths_result.model_dump_json(indent=2))
-    checks_file_path = attestable_checks_path(project_name, version_name, revision_number)
+    checks_file_path = attestable_checks_path(project_key, version_key, revision_number)
     if not checks_file_path.exists():
         async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
             await f.write(models.AttestableChecksV2().model_dump_json(indent=2))

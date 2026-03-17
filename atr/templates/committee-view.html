@@ -29,7 +29,7 @@
       <ul>
         {% for project in projects %}
           <li>
-            <a href="{{ as_url(get.projects.view, project_name=project.name) }}">{{ project.display_name }}</a>
+            <a href="{{ as_url(get.projects.view, project_key=project.key) }}">{{ project.display_name }}</a>
           </li>
         {% endfor %}
       </ul>
@@ -37,7 +37,7 @@
   </div>
 
   {# Allow tooling to associate keys for testing #}
-  {% if (not is_standing) or (committee.name == "tooling") %}
+  {% if (not is_standing) or (committee.key == "tooling") %}
     <div class="card mb-4">
       <div class="card-header bg-light">
         <h3 class="mb-2">Signing keys</h3>

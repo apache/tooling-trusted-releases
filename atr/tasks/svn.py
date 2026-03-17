@@ -39,8 +39,8 @@ class SvnImport(schema.Strict):
     svn_url: str
     revision: str
     target_subdirectory: str | None
-    project_name: str
-    version_name: str
+    project_key: str
+    version_key: str
     asf_uid: str
 
 
@@ -73,10 +73,10 @@ async def import_files(args: SvnImport) -> results.Results | None:
 async def _import_files_core(args: SvnImport) -> str:
     """Core logic to perform the SVN export."""
 
-    project = safe.ProjectKey(args.project_name)
-    version = safe.VersionKey(args.version_name)
+    project = safe.ProjectKey(args.project_key)
+    version = safe.VersionKey(args.version_key)
 
-    log.info(f"Starting SVN import for {args.project_name}-{args.version_name}")
+    log.info(f"Starting SVN import for {args.project_key}-{args.version_key}")
     # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
     temp_export_dir_name = ".svn-export.tmp"
 
@@ -134,8 +134,8 @@ async def _import_files_core(args: SvnImport) -> str:
             project, version, args.asf_uid, description=description, modify=modify
         )
         if isinstance(result, sql.Quarantined):
-            log.info(f"SVN import quarantined for {args.project_name}-{args.version_name}")
-            return f"SVN import received for {args.project_name}-{args.version_name}. Archive validation in progress."
+            log.info(f"SVN import quarantined for {args.project_key}-{args.version_key}")
+            return f"SVN import received for {args.project_key}-{args.version_key}. Archive validation in progress."
         return f"Successfully imported files from SVN into revision {result.number}"
 
 

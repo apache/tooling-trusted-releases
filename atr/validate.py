@@ -105,9 +105,9 @@ def committee_child_committees(c: sql.Committee) -> Divergences:
     yield from divergences(expected, actual)
 
 
-@committee_components("Committee.full_name")
+@committee_components("Committee.name")
 def committee_full_name(c: sql.Committee) -> Divergences:
-    """Validate the Committee.full_name value."""
+    """Validate the Committee.name value."""
 
     full_name = c.name
 
@@ -211,14 +211,14 @@ def project_category(p: sql.Project) -> Divergences:
     yield from divergences_predicate(okay, expected, p.category)
 
 
-@project_components("Project.committee_name")
+@project_components("Project.committee_key")
 def project_committee(p: sql.Project) -> Divergences:
     """Check that the project is linked to a committee."""
 
     def okay(cn: str | None) -> bool:
         return cn is not None
 
-    expected = "committee_name to be set"
+    expected = "committee_key to be set"
     yield from divergences_predicate(okay, expected, p.committee_key)
 
 
@@ -234,7 +234,7 @@ def project_created(p: sql.Project) -> Divergences:
     yield from divergences_predicate(predicate, expected, p.created)
 
 
-@project_components("Project.full_name")
+@project_components("Project.name")
 def project_full_name(p: sql.Project) -> Divergences:
     """Check that the project full_name is present and starts with 'Apache '."""
 

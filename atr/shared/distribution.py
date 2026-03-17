@@ -193,9 +193,9 @@ class DistributionRecordForm(form.Form):
 def distribution_upload_date(  # noqa: C901
     platform: sql.DistributionPlatform,
     data: basic.JSON,
-    version_name: safe.VersionKey,
+    version_key: safe.VersionKey,
 ) -> datetime.datetime | None:
-    version = str(version_name)
+    version = str(version_key)
     match platform:
         case sql.DistributionPlatform.ARTIFACT_HUB:
             if not (versions := distribution.ArtifactHubResponse.model_validate(data).available_versions):
@@ -319,9 +319,9 @@ def html_tr_a(label: str, value: str | None) -> htm.Element:
 
 
 async def json_from_distribution_platform(
-    api_url: str, platform: sql.DistributionPlatform, version_name: safe.VersionKey
+    api_url: str, platform: sql.DistributionPlatform, version_key: safe.VersionKey
 ) -> outcome.Outcome[basic.JSON]:
-    version = str(version_name)
+    version = str(version_key)
     try:
         async with util.create_secure_session() as session:
             async with session.get(api_url) as response:
@@ -338,12 +338,12 @@ async def json_from_distribution_platform(
     return outcome.Result(result)
 
 
-async def json_from_maven_xml(api_url: str, version_name: safe.VersionKey) -> outcome.Outcome[basic.JSON]:
+async def json_from_maven_xml(api_url: str, version_key: safe.VersionKey) -> outcome.Outcome[basic.JSON]:
     import datetime
 
     import defusedxml.ElementTree as ElementTree
 
-    version = str(version_name)
+    version = str(version_key)
     try:
         async with util.create_secure_session() as session:
             async with session.get(api_url) as response:

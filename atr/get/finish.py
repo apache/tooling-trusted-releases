@@ -62,23 +62,23 @@ class RCTagAnalysisResult:
 async def selected(
     session: web.Committer,
     _finish: Literal["finish"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse | str:
     """
-    URL: /finish/<project_name>/<version_name>
+    URL: /finish/<project_key>/<version_key>
     Finish a release preview.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     try:
         (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
-            project_name, version_name
+            project_key, version_key
         )
     except ValueError:
         async with db.session() as data:
             release_fallback = await data.release(
-                project_key=str(project_name),
-                version=str(version_name),
+                project_key=str(project_key),
+                version=str(version_key),
                 _committee=True,
             ).get()
             if release_fallback:
@@ -155,7 +155,7 @@ async def _deletable_choices(
 
 
 async def _get_page_data(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey
+    project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[
     sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]
 ]:
@@ -163,8 +163,8 @@ async def _get_page_data(
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
         release = await data.release(
-            project_key=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
@@ -174,8 +174,8 @@ async def _get_page_data(
             t
             for t in (
                 await data.task(
-                    project_key=str(project_name),
-                    version_key=str(version_name),
+                    project_key=str(project_key),
+                    version_key=str(version_key),
                     revision_number=release.latest_revision_number,
                     task_type=sql.TaskType.DISTRIBUTION_WORKFLOW,
                     _workflow=True,
@@ -233,16 +233,16 @@ def _render_distribution_buttons(release: sql.Release) -> htm.Element:
                 ".btn.btn-primary.me-2",
                 href=util.as_url(
                     distribution.automate,
-                    project_name=release.project.key,
-                    version_name=release.version,
+                    project_key=release.project.key,
+                    version_key=release.version,
                 ),
             )["Distribute"],
             htm.a(
                 ".btn.btn-secondary.me-2",
                 href=util.as_url(
                     distribution.record,
-                    project_name=release.project.key,
-                    version_name=release.version,
+                    project_key=release.project.key,
+                    version_key=release.version,
                 ),
             )["Record a manual distribution"],
         ],
@@ -284,8 +284,8 @@ def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) 
                     ".btn.btn-success.mt-2",
                     href=util.as_url(
                         selected,
-                        project_name=release.project.key,
-                        version_name=release.version,
+                        project_key=release.project.key,
+                        version_key=release.version,
                     ),
                 )["Refresh"],
             ]
@@ -524,8 +524,8 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     title="Download all files",
                     href=util.as_url(
                         download.all_selected,
-                        project_name=release.project.key,
-                        version_name=release.version,
+                        project_key=release.project.key,
+                        version_key=release.version,
                     ),
                 )[
                     htm.icon("download"),
@@ -536,8 +536,8 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     title=f"Show files for {release.key}",
                     href=util.as_url(
                         file.selected,
-                        project_name=release.project.key,
-                        version_name=release.version,
+                        project_key=release.project.key,
+                        version_key=release.version,
                     ),
                 )[
                     htm.icon("archive"),
@@ -548,8 +548,8 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     title=f"Show revisions for {release.key}",
                     href=util.as_url(
                         revisions.selected,
-                        project_name=release.project.key,
-                        version_name=release.version,
+                        project_key=release.project.key,
+                        version_key=release.version,
                     ),
                 )[
                     htm.icon("clock-history"),
@@ -560,8 +560,8 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     title=f"Announce and distribute {release.key}",
                     href=util.as_url(
                         announce.selected,
-                        project_name=release.project.key,
-                        version_name=release.version,
+                        project_key=release.project.key,
+                        version_key=release.version,
                     )
                     if (not announce_disable_message)
                     else None,

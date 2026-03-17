@@ -59,7 +59,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
     - int, float use Quart's built-in type converters
     - str parameters pass through as-is
-    - check_access is called automatically for committer routes with project_name
+    - check_access is called automatically for committer routes with project_key
     """
     path, validated_params, literal_params, _, public = common.build_path(func)
 

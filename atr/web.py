@@ -88,8 +88,8 @@ class Committer:
     def is_admin(self) -> bool:
         return user.is_admin(self.uid)
 
-    async def check_access(self, project_name: str | safe.ProjectKey) -> None:
-        if not any((str(p.key) == str(project_name)) for p in (await self.user_projects)):
+    async def check_access(self, project_key: str | safe.ProjectKey) -> None:
+        if not any((str(p.key) == str(project_key)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
                 # But we must warn them when the project is not one of their own
@@ -99,8 +99,8 @@ class Committer:
                 return
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 
-    async def check_access_committee(self, committee_name: safe.CommitteeKey) -> None:
-        if str(committee_name) not in self.committees:
+    async def check_access_committee(self, committee_key: safe.CommitteeKey) -> None:
+        if str(committee_key) not in self.committees:
             if self.is_admin:
                 # Admins can view all committees
                 # But we must warn them when the committee is not one of their own
@@ -162,8 +162,8 @@ class Committer:
 
     async def release(
         self,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         phase: sql.ReleasePhase | db.NotSet | None = db.NOT_SET,
         latest_revision_number: safe.RevisionNumber | db.NotSet | None = db.NOT_SET,
         data: db.Session | None = None,
@@ -183,7 +183,7 @@ class Committer:
         else:
             phase_value = phase
         revision = db.NOT_SET if latest_revision_number == db.NOT_SET else str(latest_revision_number)
-        release_name = sql.release_key(project_name, version_name)
+        release_name = sql.release_key(project_key, version_key)
         if data is None:
             async with db.session() as data:
                 release = await data.release(

@@ -57,15 +57,15 @@ async def add(
     """
     try:
         key_text = add_openpgp_key_form.public_key
-        selected_committee_names = add_openpgp_key_form.selected_committees
+        selected_committee_keys = add_openpgp_key_form.selected_committees
 
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
             ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(key_text)
             key = ocr.result_or_raise()
 
-            for selected_committee_name in selected_committee_names:
-                wacp = write.as_committee_participant(selected_committee_name)
+            for selected_committee_key in selected_committee_keys:
+                wacp = write.as_committee_participant(selected_committee_key)
                 oc: outcome.Outcome[types.LinkedCommittee] = await wacp.keys.associate_fingerprint(
                     key.key_model.fingerprint
                 )
@@ -117,19 +117,19 @@ async def details(
                 await quart.flash("You are not authorized to modify this key", "error")
                 return await session.redirect(get.keys.keys)
 
-            selected_committee_names = update_form.selected_committees
-            old_committee_names = {c.key for c in key.committees}
+            selected_committee_keys = update_form.selected_committees
+            old_committee_keys = {c.key for c in key.committees}
 
-            new_committees = await data.committee(name_in=selected_committee_names).all()
+            new_committees = await data.committee(name_in=selected_committee_keys).all()
             key.committees = list(new_committees)
             data.add(key)
             await data.commit()
 
-            affected_committee_names = old_committee_names.union(set(selected_committee_names))
-            if affected_committee_names:
+            affected_committee_keys = old_committee_keys.union(set(selected_committee_keys))
+            if affected_committee_keys:
                 async with storage.write() as write:
-                    for affected_committee_name in affected_committee_names:
-                        wacm = write.as_committee_member_outcome(affected_committee_name).result_or_none()
+                    for affected_committee_key in affected_committee_keys:
+                        wacm = write.as_committee_member_outcome(affected_committee_key).result_or_none()
                         if wacm is None:
                             continue
                         await wacm.keys.autogenerate_keys_file()
@@ -232,10 +232,10 @@ async def upload(
             return await _upload_remote_keys(upload_remote_form)
 
 
-def _construct_keys_url(committee_name: str, *, is_podling: bool) -> str:
+def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
     if is_podling:
-        return f"{_KEYS_BASE_URL}/incubator/{committee_name}/KEYS"
-    return f"{_KEYS_BASE_URL}/{committee_name}/KEYS"
+        return f"{_KEYS_BASE_URL}/incubator/{committee_key}/KEYS"
+    return f"{_KEYS_BASE_URL}/{committee_key}/KEYS"
 
 
 async def _delete_openpgp_key(
@@ -322,17 +322,17 @@ async def _update_committee_keys(
     session: web.Committer, update_form: shared.keys.UpdateCommitteeKeysForm
 ) -> web.WerkzeugResponse:
     """Regenerate the KEYS file for a committee."""
-    committee_name = update_form.committee_name
+    committee_key = update_form.committee_key
 
     async with storage.write() as write:
-        wacm = write.as_committee_member(committee_name)
+        wacm = write.as_committee_member(committee_key)
         match await wacm.keys.autogenerate_keys_file():
             case outcome.Result():
                 await quart.flash(
-                    f'Successfully regenerated the KEYS file for the "{committee_name}" committee.', "success"
+                    f'Successfully regenerated the KEYS file for the "{committee_key}" committee.', "success"
                 )
             case outcome.Error():
-                await quart.flash(f"Error regenerating the KEYS file for the {committee_name} committee.", "error")
+                await quart.flash(f"Error regenerating the KEYS file for the {committee_key} committee.", "error")
 
     return await session.redirect(get.keys.keys)
 

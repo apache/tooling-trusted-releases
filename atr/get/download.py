@@ -44,18 +44,18 @@ import atr.web as web
 async def all_selected(
     session: web.Committer,
     _download_all: Literal["download/all"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /download/all/<project_name>/<version_name>
+    URL: /download/all/<project_key>/<version_key>
     Display download commands for a release.
     """
     # audit_guidance this application intentionally allows release files to be downloaded without authentication
     import atr.get.root as root
 
     async with db.session() as data:
-        release = await session.release(project_name=project_name, version_name=version_name, phase=None, data=data)
+        release = await session.release(project_key=project_key, version_key=version_key, phase=None, data=data)
         if not release:
             return await session.redirect(root.index, error="Release not found")
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
@@ -65,8 +65,8 @@ async def all_selected(
 
     return await template.render(
         "download-all.html",
-        project_name=str(project_name),
-        version_name=str(version_name),
+        project_key=str(project_key),
+        version_key=str(version_key),
         release=release,
         asf_id=session.uid,
         server_domain=session.app_host.split(":", 1)[0],
@@ -83,40 +83,40 @@ async def all_selected(
 async def path(
     _session: web.Public,
     _download_path: Literal["download/path"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> web.Response:
     """
-    URL: /download/path/<project_name>/<version_name>/<path:file_path>
+    URL: /download/path/<project_key>/<version_key>/<path:file_path>
     Download a file or list a directory from a release in any phase.
     """
-    return await _download_or_list(project_name, version_name, str(file_path))
+    return await _download_or_list(project_key, version_key, str(file_path))
 
 
 @get.typed
 async def path_empty(
     _session: web.Public,
     _download_path: Literal["download/path"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.Response:
     """
-    URL: /download/path/<project_name>/<version_name>/
+    URL: /download/path/<project_key>/<version_key>/
     List files at the root of a release directory for download.
     """
-    return await _download_or_list(project_name, version_name, ".")
+    return await _download_or_list(project_key, version_key, ".")
 
 
 @get.typed
 async def sh_selected(
     _session: web.Public,
     _download_sh: Literal["download/sh"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.Response:
     """
-    URL: /download/sh/<project_name>/<version_name>
+    URL: /download/sh/<project_key>/<version_key>
     Shell script to download a release.
     """
     conf = config.get()
@@ -124,8 +124,8 @@ async def sh_selected(
     script_path = (pathlib.Path(__file__).parent / "../static/sh/download-urls.sh").resolve()
     async with aiofiles.open(script_path) as f:
         content = await f.read()
-    download_urls_selected = util.as_url(urls_selected, project_name=str(project_name), version_name=str(version_name))
-    download_path = util.as_url(path, project_name=str(project_name), version_name=str(version_name), file_path="")
+    download_urls_selected = util.as_url(urls_selected, project_key=str(project_key), version_key=str(version_key))
+    download_path = util.as_url(path, project_key=str(project_key), version_key=str(version_key), file_path="")
     curl_options = "--insecure" if util.is_dev_environment() else "--proto =https --tlsv1.2"
     content = content.replace("[CURL_EXTRA]", curl_options)
     content = content.replace("[URL_OF_URLS]", f"https://{app_host}{download_urls_selected}")
@@ -137,15 +137,15 @@ async def sh_selected(
 async def urls_selected(
     _session: web.Public,
     _download_urls: Literal["download/urls"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.Response:
     """
-    URL: /download/urls/<project_name>/<version_name>
+    URL: /download/urls/<project_key>/<version_key>
     """
     try:
         async with db.session() as data:
-            release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
+            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
                 ValueError("Release not found")
             )
         url_list_str = await _generate_file_url_list(release)
@@ -160,14 +160,14 @@ async def urls_selected(
 async def zip_selected(
     session: web.Committer,
     _download_zip: Literal["download/zip"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.Response:
     """
-    URL: /download/zip/<project_name>/<version_name>
+    URL: /download/zip/<project_key>/<version_key>
     """
     try:
-        release = await session.release(project_name=project_name, version_name=version_name, phase=None)
+        release = await session.release(project_key=project_key, version_key=version_key, phase=None)
     except ValueError as e:
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:
@@ -195,9 +195,7 @@ async def zip_selected(
     return web.ZipResponse(stream_zip(files_to_zip), headers=headers)
 
 
-async def _download_or_list(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, file_path: str
-) -> web.Response:
+async def _download_or_list(project_key: safe.ProjectKey, version_key: safe.VersionKey, file_path: str) -> web.Response:
     """Download a file or list a directory from a release in any phase."""
     import atr.get.root as root
 
@@ -211,13 +209,13 @@ async def _download_or_list(
 
     # We allow downloading files from any phase
     async with db.session() as data:
-        release = await data.release(project_key=str(project_name), version=str(version_name)).demand(
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             base.ASFQuartException("Release does not exist", errorcode=404)
         )
     full_path = paths.release_directory(release) / validated_path
 
     if await aiofiles.os.path.isdir(full_path):
-        return await _list(validated_path, full_path, str(project_name), str(version_name), str(validated_path))
+        return await _list(validated_path, full_path, str(project_key), str(version_key), str(validated_path))
 
     # Check that the path is a regular file
     if not await aiofiles.os.path.isfile(full_path):
@@ -245,8 +243,8 @@ async def _generate_file_url_list(release: sql.Release) -> str:
         if await aiofiles.os.path.isfile(full_item_path):
             abs_url = util.as_url(
                 path,
-                project_name=release.project_key,
-                version_name=release.version,
+                project_key=release.project_key,
+                version_key=release.version,
                 file_path=str(rel_path),
                 _external=True,
             )
@@ -255,7 +253,7 @@ async def _generate_file_url_list(release: sql.Release) -> str:
 
 
 async def _list(
-    original_path: pathlib.Path, full_path: pathlib.Path, project_name: str, version_name: str, file_path: str
+    original_path: pathlib.Path, full_path: pathlib.Path, project_key: str, version_key: str, file_path: str
 ) -> web.Response:
     # Build a list of files in the directory
     files: list[pathlib.Path] = []
@@ -276,8 +274,8 @@ async def _list(
         parent_path_str = str(original_path.parent)
         parent_link_url = util.as_url(
             path,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             file_path=parent_path_str,
         )
         div.a(href=parent_link_url)["../"]
@@ -287,8 +285,8 @@ async def _list(
         relative_path_str = str(pathlib.Path(file_path) / item_in_dir)
         link_url = util.as_url(
             path,
-            project_name=project_name,
-            version_name=version_name,
+            project_key=project_key,
+            version_key=version_key,
             file_path=relative_path_str,
         )
         display_name = f"{item_in_dir}/" if await aiofiles.os.path.isdir(full_path / item_in_dir) else str(item_in_dir)

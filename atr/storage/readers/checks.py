@@ -79,18 +79,18 @@ class GeneralPublic:
             member_results_list[member_rel_path].sort(key=lambda r: r.checker)
         return types.CheckResults(primary_results_list, member_results_list, ignored_checks)
 
-    async def ignores(self, project_name: safe.ProjectKey) -> list[sql.CheckResultIgnore]:
+    async def ignores(self, project_key: safe.ProjectKey) -> list[sql.CheckResultIgnore]:
         results = await self.__data.check_result_ignore(
-            project_key=str(project_name),
+            project_key=str(project_key),
         ).all()
         return list(results)
 
     async def ignores_matcher(
         self,
-        project_name: safe.ProjectKey,
+        project_key: safe.ProjectKey,
     ) -> Callable[[sql.CheckResult], bool]:
         ignores = await self.__data.check_result_ignore(
-            project_key=str(project_name),
+            project_key=str(project_key),
         ).all()
 
         def match(cr: sql.CheckResult) -> bool:

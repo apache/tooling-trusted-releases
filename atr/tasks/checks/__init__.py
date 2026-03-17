@@ -52,8 +52,8 @@ import atr.util as util
 class FunctionArguments:
     recorder: Callable[[], Awaitable[Recorder]]
     asf_uid: str
-    project_name: safe.ProjectKey
-    version_name: safe.VersionKey
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
     primary_rel_path: str | None
     extra_args: dict[str, Any]
@@ -62,8 +62,8 @@ class FunctionArguments:
 class Recorder:
     checker: str
     release_name: safe.ReleaseKey
-    project_name: safe.ProjectKey
-    version_name: safe.VersionKey
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
     primary_rel_path: str | None
     member_rel_path: str | None
     revision_number: safe.RevisionNumber
@@ -75,15 +75,15 @@ class Recorder:
         self,
         checker: str | Callable[..., Any],
         inputs_hash: str | None,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         revision_number: safe.RevisionNumber,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,
         afresh: bool = True,
     ) -> None:
         self.checker = function_key(checker)
-        self.release_name = sql.release_key(project_name, version_name)
+        self.release_name = sql.release_key(project_key, version_key)
         self.revision_number = revision_number
         self.primary_rel_path = primary_rel_path
         self.member_rel_path = member_rel_path
@@ -93,16 +93,16 @@ class Recorder:
         self.__cached = False
         self.__input_hash = inputs_hash
 
-        self.project_name = project_name
-        self.version_name = version_name
+        self.project_key = project_key
+        self.version_key = version_key
 
     @classmethod
     async def create(
         cls,
         checker: str | Callable[..., Any],
         inputs_hash: str,
-        project_name: safe.ProjectKey,
-        version_name: safe.VersionKey,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
         revision_number: safe.RevisionNumber,
         primary_rel_path: str | None = None,
         member_rel_path: str | None = None,
@@ -111,8 +111,8 @@ class Recorder:
         recorder = cls(
             checker,
             inputs_hash,
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             revision_number,
             primary_rel_path,
             member_rel_path,
@@ -181,12 +181,12 @@ class Recorder:
         return self.abs_path_base() / rel_path_part
 
     def abs_path_base(self) -> pathlib.Path:
-        return file_paths.base_path_for_revision(self.project_name, self.version_name, self.revision_number)
+        return file_paths.base_path_for_revision(self.project_key, self.version_key, self.revision_number)
 
     async def project(self) -> sql.Project:
         # TODO: Cache project
         async with db.session() as data:
-            name_str = str(self.project_name)
+            name_str = str(self.project_key)
             return await data.project(key=name_str, _release_policy=True).demand(
                 RuntimeError(f"Project {name_str} not found")
             )
@@ -324,14 +324,14 @@ async def resolve_archive_dir(args: FunctionArguments) -> pathlib.Path | None:
     """Resolve the extracted archive directory for the primary archive."""
     if args.primary_rel_path is None:
         return None
-    paths_data = await attestable.load_paths(args.project_name, args.version_name, args.revision_number)
+    paths_data = await attestable.load_paths(args.project_key, args.version_key, args.revision_number)
     if paths_data is None:
         return None
     content_hash = paths_data.get(args.primary_rel_path)
     if content_hash is None:
         return None
     archive_key = hashes.filesystem_archives_key(content_hash)
-    archive_dir = file_paths.get_archives_dir() / str(args.project_name) / str(args.version_name) / archive_key
+    archive_dir = file_paths.get_archives_dir() / str(args.project_key) / str(args.version_key) / archive_key
     if await aiofiles.os.path.isdir(archive_dir):
         return archive_dir
     return None
@@ -436,7 +436,7 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
     return list(sorted(relative_paths_set))
 
 
-async def _resolve_committee_name(release: sql.Release, rel_path: str | None = None) -> str:
+async def _resolve_committee_key(release: sql.Release, rel_path: str | None = None) -> str:
     if release.committee is None:
         raise ValueError("Release has no committee")
     return release.committee.key
@@ -485,7 +485,7 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
 
 _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]] = {
     "all_files": _resolve_all_files,
-    "committee_name": _resolve_committee_name,
+    "committee_key": _resolve_committee_key,
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,

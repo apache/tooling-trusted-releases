@@ -76,7 +76,7 @@ async def asc_checks(
                     await checks.resolve_extra_args(signature.INPUT_EXTRA_ARGS, release, signature_path),
                     file=signature_path,
                 ),
-                extra_args={"committee_name": release.committee.key},
+                extra_args={"committee_key": release.committee.key},
             )
         )
 

@@ -101,15 +101,15 @@ def project_version_get() -> dict[str, set[str]]:
     return {}
 
 
-def project_version_has_project(project_name: str) -> bool:
-    return project_name in project_version_get()
+def project_version_has_project(project_key: str) -> bool:
+    return project_key in project_version_get()
 
 
-def project_version_has_version(project_name: safe.ProjectKey, version_name: str) -> bool:
+def project_version_has_version(project_key: safe.ProjectKey, version_key: str) -> bool:
     projects = project_version_get()
-    if str(project_name) not in projects:
+    if str(project_key) not in projects:
         return False
-    return version_name in projects[str(project_name)]
+    return version_key in projects[str(project_key)]
 
 
 async def project_version_refresh_loop() -> None:

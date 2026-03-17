@@ -243,15 +243,15 @@ def chmod_files(path: pathlib.Path, permissions: int) -> None:
             os.chmod(file_path, permissions)
 
 
-def committee_is_standing(committee_name: str) -> bool:
-    return committee_name in registry.STANDING_COMMITTEES
+def committee_is_standing(committee_key: str) -> bool:
+    return committee_key in registry.STANDING_COMMITTEES
 
 
 async def content_list(
-    phase_subdir: pathlib.Path, project_name: str, version_name: str, revision_name: str | None = None
+    phase_subdir: pathlib.Path, project_key: str, version_key: str, revision_name: str | None = None
 ) -> AsyncGenerator[FileStat]:
     """List all the files in the given path."""
-    base_path = phase_subdir / project_name / version_name
+    base_path = phase_subdir / project_key / version_key
     if phase_subdir.name in {"release-candidate-draft", "release-preview"}:
         if revision_name is None:
             raise ValueError("A revision name is required for release candidate draft or preview content listing")
@@ -823,10 +823,10 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
     return [basename_from_filename]
 
 
-def permitted_voting_recipients(asf_uid: str, committee_name: str) -> list[str]:
+def permitted_voting_recipients(asf_uid: str, committee_key: str) -> list[str]:
     recipients = [
-        f"dev@{committee_name}.apache.org",
-        f"private@{committee_name}.apache.org",
+        f"dev@{committee_key}.apache.org",
+        f"private@{committee_key}.apache.org",
     ]
     if config.get().ATR_STATUS == "ALPHA":
         recipients.append(USER_TESTS_ADDRESS)
@@ -1193,19 +1193,19 @@ def validate_relative_path_str(path_str: str) -> str:
 
 
 # TODO: AM put these rules into safe.versionkey
-def version_key_error(version_name: str) -> str | None:
+def version_key_error(version_key: str) -> str | None:
     """Check if the given version name is valid."""
-    if version_name == "":
+    if version_key == "":
         return "Must not be empty"
-    if version_name.lower() == "version":
+    if version_key.lower() == "version":
         return "Must not be 'version'"
-    if not re.match(r"^[a-zA-Z0-9]", version_name):
+    if not re.match(r"^[a-zA-Z0-9]", version_key):
         return "Must start with a letter or number"
-    if not re.search(r"[a-zA-Z0-9]$", version_name):
+    if not re.search(r"[a-zA-Z0-9]$", version_key):
         return "Must end with a letter or number"
-    if re.search(r"[+.-]{2,}", version_name):
+    if re.search(r"[+.-]{2,}", version_key):
         return "Must not contain multiple consecutive plus, full stop, or hyphen"
-    if not re.match(r"^[a-zA-Z0-9+.-]+$", version_name):
+    if not re.match(r"^[a-zA-Z0-9+.-]+$", version_key):
         return "Must contain only letters, numbers, plus, full stop, or hyphen"
     return None
 

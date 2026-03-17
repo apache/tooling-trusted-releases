@@ -84,7 +84,7 @@ Release operations have the following access requirements:
 **Start a new release**:
 
 * Allowed for: Project participants (committers on the project)
-* Checked via: `is_participant_of(project.committee_name)`
+* Checked via: `is_participant_of(project.committee_key)`
 
 **Upload release artifacts**:
 
@@ -99,7 +99,7 @@ Release operations have the following access requirements:
 **Resolve a vote (tally votes and determine outcome)**:
 
 * Allowed for: PMC members only
-* Checked via: `is_member_of(project.committee_name)`
+* Checked via: `is_member_of(project.committee_key)`
 
 **Finish a release (publish to distribution)**:
 
@@ -143,7 +143,7 @@ Token operations apply to the authenticated user:
 
 ## Access control for check ignores
 
-Check ignores allow committee members to suppress specific check results from the warning and error counts. The ignores page is accessible to any authenticated committer, but only PMC members of the project's committee can add, update, or delete ignore rules. The storage writer validates that the user is a member of the committee that owns the target project by calling `is_member_of(project.committee_name)`. As additional protection, the writer also validates that the project belongs to the authorized committee before performing any operation. This ensures that even if the calling code passes an incorrect project name, the operation will be rejected.
+Check ignores allow committee members to suppress specific check results from the warning and error counts. The ignores page is accessible to any authenticated committer, but only PMC members of the project's committee can add, update, or delete ignore rules. The storage writer validates that the user is a member of the committee that owns the target project by calling `is_member_of(project.committee_key)`. As additional protection, the writer also validates that the project belongs to the authorized committee before performing any operation. This ensures that even if the calling code passes an incorrect project name, the operation will be rejected.
 
 ## Implementation patterns
 
@@ -157,7 +157,7 @@ To verify a user is a PMC member for a committee:
 from atr.principal import Authorisation
 
 auth = await Authorisation()
-if not auth.is_member_of(committee_name):
+if not auth.is_member_of(committee_key):
     raise Forbidden("PMC membership required")
 ```
 

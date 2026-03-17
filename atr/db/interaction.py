@@ -248,10 +248,10 @@ async def has_failing_checks(
 
 
 async def latest_info(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey
+    project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
-    release_name = sql.release_key(project_name, version_name)
+    release_name = sql.release_key(project_key, version_key)
     async with db.session() as data:
         # TODO: No need to get release here
         # Just use maximum seq from revisions
@@ -301,15 +301,15 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
 
 async def release_ready_for_vote(  # noqa: C901
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
     data: db.Session,
     manual_vote: bool = False,
 ) -> tuple[sql.Release, sql.Committee] | str:
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         data=data,
         with_project=True,
         with_committee=True,
@@ -402,13 +402,13 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
 
 
 async def tasks_ongoing(
-    project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber | None = None
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber | None = None
 ) -> int:
     tasks = sqlmodel.select(sqlalchemy.func.count()).select_from(sql.Task)
     async with db.session() as data:
         query = tasks.where(
-            sql.Task.project_key == str(project_name),
-            sql.Task.version_key == str(version_name),
+            sql.Task.project_key == str(project_key),
+            sql.Task.version_key == str(version_key),
             sql.Task.revision_number
             == (sql.RELEASE_LATEST_REVISION_NUMBER if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]),
@@ -418,15 +418,15 @@ async def tasks_ongoing(
 
 
 async def tasks_ongoing_revision(
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber | None = None,
 ) -> tuple[int, str | None]:
     via = sql.validate_instrumented_attribute
     subquery = (
         sqlalchemy.select(via(sql.Revision.number))
         .where(
-            via(sql.Revision.release_key) == sql.release_key(str(project_name), str(version_name)),
+            via(sql.Revision.release_key) == sql.release_key(str(project_key), str(version_key)),
         )
         .order_by(via(sql.Revision.seq).desc())
         .limit(1)
@@ -441,8 +441,8 @@ async def tasks_ongoing_revision(
         )
         .select_from(sql.Task)
         .where(
-            sql.Task.project_key == str(project_name),
-            sql.Task.version_key == str(version_name),
+            sql.Task.project_key == str(project_key),
+            sql.Task.version_key == str(version_key),
             sql.Task.revision_number == (subquery if (revision_number is None) else str(revision_number)),
             sql.validate_instrumented_attribute(sql.Task.status).in_(
                 [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
@@ -469,26 +469,26 @@ async def trusted_jwt_for_dist(
     jwt: str,
     asf_uid: str,
     phase: TrustedProjectPhase,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> tuple[dict[str, Any], str, sql.Project, sql.Release]:
     payload, asf_uid_from_jwt = await validate_trusted_jwt(publisher, jwt)
     if asf_uid_from_jwt is not None:
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
     # payload, asf_uid, project = await trusted_jwt(publisher, jwt, phase)
     async with db.session() as db_data:
-        project = await db_data.project(key=str(project_name), _committee=True).demand(
-            InteractionError(f"Project {project_name} does not exist")
+        project = await db_data.project(key=str(project_key), _committee=True).demand(
+            InteractionError(f"Project {project_key} does not exist")
         )
-        release = await db_data.release(project_key=str(project_name), version=str(version_name)).get()
+        release = await db_data.release(project_key=str(project_key), version=str(version_key)).get()
         if not release:
-            raise InteractionError(f"Release {version_name} does not exist in project {project_name}")
+            raise InteractionError(f"Release {version_key} does not exist in project {project_key}")
         if (phase == TrustedProjectPhase.COMPOSE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
-            raise InteractionError(f"Release {version_name} is not in compose phase")
+            raise InteractionError(f"Release {version_key} is not in compose phase")
         if (phase == TrustedProjectPhase.VOTE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE):
-            raise InteractionError(f"Release {version_name} is not in vote phase")
+            raise InteractionError(f"Release {version_key} is not in vote phase")
         if (phase == TrustedProjectPhase.FINISH) and (release.phase != sql.ReleasePhase.RELEASE_PREVIEW):
-            raise InteractionError(f"Release {version_name} is not in finish phase")
+            raise InteractionError(f"Release {version_key} is not in finish phase")
 
     return payload, asf_uid, project, release
 

@@ -348,10 +348,10 @@ def _vote_resolution_body(
     asf_uid: str,
     thread_id: str,
 ) -> Generator[str]:
-    committee_name = committee.display_name
+    committee_key = committee.display_name
     if release.podling_thread_id:
-        committee_name = "Incubator"
-    yield f"Dear {committee_name} participants,"
+        committee_key = "Incubator"
+    yield f"Dear {committee_key} participants,"
     yield ""
     outcome = "passed" if passed else "failed"
     yield f"The vote on {release.project.key} {release.version} {outcome}."

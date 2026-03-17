@@ -71,7 +71,7 @@ class BrowseAsUserForm(form.Form):
 
 
 class DeleteCommitteeKeysForm(form.Form):
-    committee_name: str = form.label("Committee", widget=form.Widget.SELECT)
+    committee_key: str = form.label("Committee", widget=form.Widget.SELECT)
     confirm_delete: Literal["DELETE KEYS"] = form.label("Confirmation", "Type DELETE KEYS to confirm.")
 
 
@@ -286,7 +286,7 @@ async def delete_committee_keys_get(session: web.Committer) -> str | web.Werkzeu
     rendered_form = form.render(
         model_cls=DeleteCommitteeKeysForm,
         submit_label="Delete all keys for selected committee",
-        defaults={"committee_name": committee_choices},
+        defaults={"committee_key": committee_choices},
     )
     return await template.render("delete-committee-keys.html", form=rendered_form)
 
@@ -297,10 +297,10 @@ async def delete_committee_keys_post(
     session: web.Committer, delete_form: DeleteCommitteeKeysForm
 ) -> str | web.WerkzeugResponse:
     """Delete all keys for selected committee."""
-    committee_name = delete_form.committee_name
+    committee_key = delete_form.committee_key
 
     async with db.session() as data:
-        committee_query = data.committee(key=committee_name)
+        committee_query = data.committee(key=committee_key)
         via = sql.validate_instrumented_attribute
         committee_query.query = committee_query.query.options(
             orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
@@ -308,12 +308,12 @@ async def delete_committee_keys_post(
         committee = await committee_query.get()
 
         if not committee:
-            await quart.flash(f"Committee '{committee_name}' not found.", "error")
+            await quart.flash(f"Committee '{committee_key}' not found.", "error")
             return await session.redirect(delete_committee_keys_get)
 
         keys_to_check = list(committee.public_signing_keys)
         if not keys_to_check:
-            await quart.flash(f"Committee '{committee_name}' has no keys.", "info")
+            await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
             return await session.redirect(delete_committee_keys_get)
 
         num_removed = len(committee.public_signing_keys)
@@ -328,7 +328,7 @@ async def delete_committee_keys_post(
 
         await data.commit()
         await quart.flash(
-            f"Removed {util.plural(num_removed, 'key link')} for '{committee_name}'. "
+            f"Removed {util.plural(num_removed, 'key link')} for '{committee_key}'. "
             f"Deleted {util.plural(unused_deleted, 'unused key')}.",
             "success",
         )
@@ -473,12 +473,12 @@ async def keys_regenerate_all_get(session: web.Committer) -> web.QuartResponse:
 async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
     """Regenerate the KEYS file for all committees."""
     async with db.session() as data:
-        committee_names = [c.key for c in await data.committee().all()]
+        committee_keys = [c.key for c in await data.committee().all()]
 
     outcomes = outcome.List[str]()
     async with storage.write() as write:
-        for committee_name in committee_names:
-            wacm_outcome = write.as_committee_member_outcome(committee_name)
+        for committee_key in committee_keys:
+            wacm_outcome = write.as_committee_member_outcome(committee_key)
             wacm = wacm_outcome.result_or_none()
             if wacm is None:
                 continue
@@ -595,22 +595,22 @@ async def logs(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(recent_logs))
 
 
-@admin.get("/ongoing-tasks/<project_name>/<version_name>/<revision>")
+@admin.get("/ongoing-tasks/<project_key>/<version_key>/<revision>")
 async def ongoing_tasks_get(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer, project_key: str, version_key: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_name)
-    version = safe.VersionKey(version_name)
+    project = safe.ProjectKey(project_key)
+    version = safe.VersionKey(version_key)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
 
-@admin.post("/ongoing-tasks/<project_name>/<version_name>/<revision>")
+@admin.post("/ongoing-tasks/<project_key>/<version_key>/<revision>")
 async def ongoing_tasks_post(
-    session: web.Committer, project_name: str, version_name: str, revision: str
+    session: web.Committer, project_key: str, version_key: str, revision: str
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_name)
-    version = safe.VersionKey(version_name)
+    project = safe.ProjectKey(project_key)
+    version = safe.VersionKey(version_key)
     revision_number = safe.RevisionNumber(revision)
     return await _ongoing_tasks(session, project, version, revision_number)
 
@@ -796,15 +796,15 @@ async def rotate_jwt_key_post(session: web.Committer, _rotate_form: RotateJwtKey
     return await session.redirect(rotate_jwt_key_get)
 
 
-@admin.get("/task-times/<project_name>/<version_name>/<revision_number>")
+@admin.get("/task-times/<project_key>/<version_key>/<revision_number>")
 async def task_times(
-    session: web.Committer, project_name: str, version_name: str, revision_number: str
+    session: web.Committer, project_key: str, version_key: str, revision_number: str
 ) -> web.QuartResponse:
     values = []
     async with db.session() as data:
         tasks = await data.task(
-            project_key=project_name,
-            version_key=version_name,
+            project_key=project_key,
+            version_key=version_key,
             revision_number=revision_number,
         ).all()
         for task in tasks:
@@ -1177,15 +1177,15 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
 
 async def _ongoing_tasks(
     session: web.Committer,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.QuartResponse:
     try:
-        ongoing = await interaction.tasks_ongoing(project_name, version_name, revision)
+        ongoing = await interaction.tasks_ongoing(project_key, version_key, revision)
         return web.TextResponse(str(ongoing))
     except Exception:
-        log.exception(f"Error fetching ongoing task count for {project_name!s} {version_name!s} rev {revision!s}:")
+        log.exception(f"Error fetching ongoing task count for {project_key!s} {version_key!s} rev {revision!s}:")
         return web.TextResponse("")
 
 

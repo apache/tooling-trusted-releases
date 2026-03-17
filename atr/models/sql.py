@@ -1116,7 +1116,7 @@ class Distribution(sqlmodel.SQLModel, table=True):
 #     is_test: bool = sqlmodel.Field(default=False)
 #     automation_endpoint: str
 #
-#     project_name: str = sqlmodel.Field(foreign_key="project.name")
+#     project_key: str = sqlmodel.Field(foreign_key="project.name")
 #
 #     # M-1: DistributionChannel -> Project
 #     # 1-M: Project -> [DistributionChannel]

@@ -223,7 +223,7 @@ async def validate_safe_fields(
     """Validate safe-typed fields on a body, query, or form instance via cache/DB lookup.
 
     Context should contain any URL params already validated, so that validate_version
-    can find a project_name that lives in the URL rather than the instance.
+    can find a project_key that lives in the URL rather than the instance.
     """
     temp = dict(context)
     for name, _ in safe_params:

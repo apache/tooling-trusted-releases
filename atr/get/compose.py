@@ -32,18 +32,18 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _compose: Literal["compose"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /compose/<project_name>/<version_name>
+    URL: /compose/<project_key>/<version_key>
     Show the contents of the release candidate draft.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
         release = await data.release(
-            project_key=str(project_name),
-            version=str(version_name),
+            project_key=str(project_key),
+            version=str(version_key),
             _committee=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))

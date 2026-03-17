@@ -22,7 +22,7 @@ import atr.util as util
 
 
 class StartReleaseForm(form.Form):
-    version_name: str = form.label(
+    version_key: str = form.label(
         "Version",
         "Enter the version string for this new release."
         " This cannot be changed later, and must be the version of the finished release."
@@ -30,9 +30,9 @@ class StartReleaseForm(form.Form):
         " and you can also set your own tag before a vote starts.",
     )
 
-    @pydantic.field_validator("version_name", mode="after")
+    @pydantic.field_validator("version_key", mode="after")
     @classmethod
-    def validate_version_name(cls, value: str) -> str:
+    def validate_version_key(cls, value: str) -> str:
         if error := util.version_key_error(value):
             raise ValueError(error)
         return value

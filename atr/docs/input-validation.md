@@ -175,7 +175,7 @@ The [`committee`](/ref/atr/validate.py:committee) function checks:
 The [`project`](/ref/atr/validate.py:project) function checks:
 
 * `category` must use comma-separated labels without colons
-* `committee_name` must be set (project must be linked to a committee)
+* `committee_key` must be set (project must be linked to a committee)
 * `created` timestamp must be in the past
 * `full_name` must be set and start with "Apache "
 * `programming_languages` must use comma-separated labels without colons

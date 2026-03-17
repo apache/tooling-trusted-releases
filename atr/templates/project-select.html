@@ -11,20 +11,20 @@
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
       {% for project in user_projects %}
         <div class="col">
-          <a href="{{ as_url(get.release.select, project_name=project.name) }}"
+          <a href="{{ as_url(get.release.select, project_key=project.key) }}"
              class="text-decoration-none">
             {# TODO: We're only setting data-project-url for style #}
             <div class="card h-100 shadow-sm atr-cursor-pointer"
-                 data-project-url="{{ as_url(get.release.select, project_name=project.name) }}">
+                 data-project-url="{{ as_url(get.release.select, project_key=project.key) }}">
               <div class="card-body">
                 <h3 class="card-title fs-5 mb-2">{{ project.display_name }}</h3>
-                <h4 class="card-subtitle mb-2 text-muted fs-6">{{ project.name }}</h4>
+                <h4 class="card-subtitle mb-2 text-muted fs-6">{{ project.key }}</h4>
                 <p>
-                  {% if project.committee.is_podling or project.name.startswith("incubator-") %}
+                  {% if project.committee.is_podling or project.key.startswith("incubator-") %}
                     <img src="https://incubator.apache.org/images/SVG/apache_incubator.svg"
                          alt="" />
                   {% else %}
-                    <img src="https://www.apache.org/logos/originals/{{ project.name }}.svg"
+                    <img src="https://www.apache.org/logos/originals/{{ project.key }}.svg"
                          alt="" />
                   {% endif %}
                 </p>

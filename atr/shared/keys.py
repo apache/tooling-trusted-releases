@@ -76,7 +76,7 @@ class DeleteSSHKeyForm(form.Form):
 
 class UpdateCommitteeKeysForm(form.Empty):
     variant: UPDATE_COMMITTEE_KEYS = form.value(UPDATE_COMMITTEE_KEYS)
-    committee_name: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
 
 
 type KeysForm = Annotated[
@@ -263,8 +263,8 @@ def _render_results_table(
     header_row = htm.Block(htm.tr)
     header_row.th(scope="col")["Key ID"]
     header_row.th(scope="col")["User ID"]
-    for committee_name in submitted_committees:
-        header_row.th(".page-rotated-header", scope="col")[htm.div[committee_map.get(committee_name, committee_name)]]
+    for committee_key in submitted_committees:
+        header_row.th(".page-rotated-header", scope="col")[htm.div[committee_map.get(committee_key, committee_key)]]
     thead.append(header_row.collect())
 
     tbody = htm.Block(htm.tbody)
@@ -288,7 +288,7 @@ def _render_results_table(
         row.td(".page-key-details.px-2")[htm.code[fingerprint[-16:].upper()]]
         row.td(".page-key-details.px-2")[email_addr or ""]
 
-        for committee_name in submitted_committees:
+        for committee_key in submitted_committees:
             if error_flag:
                 cell_class = "page-status-cell-error"
                 title_text = "Error processing key"

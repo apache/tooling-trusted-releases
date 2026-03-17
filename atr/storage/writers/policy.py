@@ -63,7 +63,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -73,7 +73,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -82,9 +82,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -92,11 +92,11 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def edit_compose(self, form: shared.projects.ComposePolicyForm) -> None:
-        project_name = form.project_name
-        _, release_policy = await self.__get_or_create_policy(project_name)
+        project_key = form.project_key
+        _, release_policy = await self.__get_or_create_policy(project_key)
 
         try:
             schema = strictyaml.EmptyDict() | strictyaml.MapPattern(
@@ -129,22 +129,22 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.file_tag_mappings = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
 
-        await self.__commit_and_log(str(project_name))
+        await self.__commit_and_log(str(project_key))
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
-        project_name = form.project_name
-        project, release_policy = await self.__get_or_create_policy(project_name)
+        project_key = form.project_key
+        project, release_policy = await self.__get_or_create_policy(project_key)
 
         release_policy.github_finish_workflow_path = _split_lines(form.github_finish_workflow_path)
         self.__set_announce_release_subject(form.announce_release_subject or "", project, release_policy)
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
         release_policy.preserve_download_files = form.preserve_download_files
 
-        await self.__commit_and_log(str(project_name))
+        await self.__commit_and_log(str(project_key))
 
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
-        project_name = form.project_name
-        project, release_policy = await self.__get_or_create_policy(project_name)
+        project_key = form.project_key
+        project, release_policy = await self.__get_or_create_policy(project_key)
 
         release_policy.manual_vote = form.manual_vote
 
@@ -160,21 +160,21 @@ class CommitteeMember(CommitteeParticipant):
         elif project.committee and project.committee.is_podling:
             raise storage.AccessError("Manual voting is not allowed for podlings.")
 
-        await self.__commit_and_log(str(str(project_name)))
+        await self.__commit_and_log(str(str(project_key)))
 
-    async def __commit_and_log(self, project_name: str) -> None:
+    async def __commit_and_log(self, project_key: str) -> None:
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            project_name=project_name,
+            project_key=project_key,
         )
 
     async def __get_or_create_policy(
-        self, project_name: models.safe.ProjectKey
+        self, project_key: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
         project = await self.__data.project(
-            key=str(project_name), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
-        ).demand(storage.AccessError(f"Project {project_name} not found"))
+            key=str(project_key), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
+        ).demand(storage.AccessError(f"Project {project_key} not found"))
 
         release_policy = project.release_policy
         if release_policy is None:

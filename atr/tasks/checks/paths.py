@@ -57,8 +57,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     recorder_errors = await checks.Recorder.create(
         checker=checks.function_key(check) + "_errors",
         inputs_hash=base_recorder.input_hash or "",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
@@ -66,8 +66,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     recorder_warnings = await checks.Recorder.create(
         checker=checks.function_key(check) + "_warnings",
         inputs_hash=base_recorder.input_hash or "",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
@@ -75,8 +75,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     recorder_success = await checks.Recorder.create(
         checker=checks.function_key(check) + "_success",
         inputs_hash=base_recorder.input_hash or "",
-        project_name=args.project_name,
-        version_name=args.version_name,
+        project_key=args.project_key,
+        version_key=args.version_key,
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,

@@ -190,10 +190,10 @@ class Committer:
         for hit in result:
             if not (len(hit.cn) == 1):
                 raise CommitterError("Common backend assertions failed, LDAP corruption?")
-            committee_or_project_name = hit.cn[0]
-            if not committee_or_project_name:
+            committee_or_project_key = hit.cn[0]
+            if not committee_or_project_key:
                 raise CommitterError("Common backend assertions failed, LDAP corruption?")
-            committees_or_projects.append(committee_or_project_name)
+            committees_or_projects.append(committee_or_project_key)
         return committees_or_projects
 
 
@@ -220,11 +220,11 @@ class AuthoriserASFQuart:
     def __init__(self):
         self.__cache = cache
 
-    def is_member_of(self, asf_uid: str, committee_name: str) -> bool:
-        return committee_name in self.__cache.member_of[asf_uid]
+    def is_member_of(self, asf_uid: str, committee_key: str) -> bool:
+        return committee_key in self.__cache.member_of[asf_uid]
 
-    def is_participant_of(self, asf_uid: str, committee_name: str) -> bool:
-        return committee_name in self.__cache.participant_of[asf_uid]
+    def is_participant_of(self, asf_uid: str, committee_key: str) -> bool:
+        return committee_key in self.__cache.participant_of[asf_uid]
 
     def member_of(self, asf_uid: str) -> frozenset[str]:
         return self.__cache.member_of[asf_uid]
@@ -261,11 +261,11 @@ class AuthoriserLDAP:
     def __init__(self):
         self.__cache = cache
 
-    def is_member_of(self, asf_uid: str, committee_name: str) -> bool:
-        return committee_name in self.__cache.member_of[asf_uid]
+    def is_member_of(self, asf_uid: str, committee_key: str) -> bool:
+        return committee_key in self.__cache.member_of[asf_uid]
 
-    def is_participant_of(self, asf_uid: str, committee_name: str) -> bool:
-        return committee_name in self.__cache.participant_of[asf_uid]
+    def is_participant_of(self, asf_uid: str, committee_key: str) -> bool:
+        return committee_key in self.__cache.participant_of[asf_uid]
 
     def member_of(self, asf_uid: str) -> frozenset[str]:
         return self.__cache.member_of[asf_uid]
@@ -377,15 +377,15 @@ class Authorisation(AsyncObject):
     def is_committer(self) -> bool:
         return self.__asf_uid is not None
 
-    def is_member_of(self, committee_name: str) -> bool:
+    def is_member_of(self, committee_key: str) -> bool:
         if self.__asf_uid is None:
             return False
-        return self.__authoriser.is_member_of(self.__asf_uid, committee_name)
+        return self.__authoriser.is_member_of(self.__asf_uid, committee_key)
 
-    def is_participant_of(self, committee_name: str) -> bool:
+    def is_participant_of(self, committee_key: str) -> bool:
         if self.__asf_uid is None:
             return False
-        return self.__authoriser.is_participant_of(self.__asf_uid, committee_name)
+        return self.__authoriser.is_participant_of(self.__asf_uid, committee_key)
 
     def participant_of(self) -> frozenset[str]:
         if self.__asf_uid is None:

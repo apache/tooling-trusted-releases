@@ -65,7 +65,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -75,7 +75,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def send_user_vote(
         self,
@@ -157,7 +157,7 @@ class CommitteeParticipant(FoundationCommitter):
                 _committee=True,
             ).demand(storage.AccessError("Release not found"))
         if permitted_recipients is None:
-            permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_name)
+            permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_key)
         if email_to not in permitted_recipients:
             # This will be checked again by tasks/vote.py for extra safety
             log.info(f"Invalid mailing list choice: {email_to} not in {permitted_recipients}")
@@ -215,9 +215,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -225,7 +225,7 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def resolve(
         self,

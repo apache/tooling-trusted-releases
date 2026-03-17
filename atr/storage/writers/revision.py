@@ -83,7 +83,7 @@ async def finalise_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     release: sql.Release,
     release_key: safe.ReleaseKey,
     temp_dir: str,
@@ -138,7 +138,7 @@ async def _commit_new_revision(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     release: sql.Release,
     release_key: str,
     temp_dir: str,
@@ -257,11 +257,11 @@ async def _lock_and_merge(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     previous_attestable: atr.models.attestable.Attestable | None,
-    project_name: safe.ProjectKey,
+    project_key: safe.ProjectKey,
     release: sql.Release,
     _release_key: safe.ReleaseKey,
     temp_dir_path: pathlib.Path,
-    version_name: safe.VersionKey,
+    version_key: safe.VersionKey,
 ) -> tuple[atr.models.attestable.Attestable | None, str | None, str | None, sql.Release]:
     # Acquire the write lock
     # We need this write lock for moving the directory afterwards atomically
@@ -334,7 +334,7 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
         super().__init__(write, write_as, data)
         self.__write = write
@@ -344,7 +344,7 @@ class CommitteeParticipant(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
     async def clear_quarantine(
         self,
@@ -598,9 +598,9 @@ class CommitteeMember(CommitteeParticipant):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeMember,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ):
-        super().__init__(write, write_as, data, committee_name)
+        super().__init__(write, write_as, data, committee_key)
         self.__write = write
         self.__write_as = write_as
         self.__data = data
@@ -608,4 +608,4 @@ class CommitteeMember(CommitteeParticipant):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key

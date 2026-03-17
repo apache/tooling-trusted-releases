@@ -48,7 +48,7 @@
             {% endif %}
           </td>
           <td class="py-2">
-            <a href="{{ as_url(get.file.selected_path, project_name=project_name|string, version_name=version_name|string, file_path=path) }}"
+            <a href="{{ as_url(get.file.selected_path, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                title="View file {{ path }}"
                class="text-decoration-none text-reset">
               {% if has_errors or has_warnings %}
@@ -62,7 +62,7 @@
             <div class="d-flex justify-content-end align-items-center gap-2">
               {% if path|string == "KEYS" %}
                 <form method="post"
-                      action="{{ as_url(post.keys.import_selected_revision, project_name=project_name|string, version_name=version_name|string) }}"
+                      action="{{ as_url(post.keys.import_selected_revision, project_key=project_key|string, version_key=version_key|string) }}"
                       class="d-inline mb-0">
                   {{ csrf_input|safe }}
 
@@ -70,20 +70,20 @@
                 </form>
               {% endif %}
               {% if path.suffixes[-2:] == [".cdx", ".json"] %}
-                <a href="{{ as_url(get.sbom.report, project_name=project_name|string, version_name=version_name|string, file_path=path) }}"
+                <a href="{{ as_url(get.sbom.report, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">SBOM report</a>
               {% endif %}
               {% if has_blockers %}
-                <a href="{{ as_url(get.report.selected_path, project_name=project_name|string, version_name=version_name|string, rel_path=path) }}"
+                <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm atr-btn-outline-blocker"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.errors[path]|length }} {{ "error" if info.errors[path]|length == 1 else "errors" }}</a>
               {% elif has_errors %}
-                <a href="{{ as_url(get.report.selected_path, project_name=project_name|string, version_name=version_name|string, rel_path=path) }}"
+                <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-danger"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.errors[path]|length }} {{ "error" if info.errors[path]|length == 1 else "errors" }}</a>
               {% elif has_warnings %}
-                <a href="{{ as_url(get.report.selected_path, project_name=project_name|string, version_name=version_name|string, rel_path=path) }}"
+                <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-warning">Show {{ info.warnings[path]|length }} {{ "warning" if info.warnings[path]|length == 1 else "warnings" }}</a>
               {% elif info and (path in info.successes) %}
-                <a href="{{ as_url(get.report.selected_path, project_name=project_name|string, version_name=version_name|string, rel_path=path) }}"
+                <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-success"
                    title="Show report for {{ path }}">Show report</a>
               {% else %}
@@ -99,7 +99,7 @@
                         aria-controls="actions-{{ row_id }}"
                         title="Show more actions for {{ path }}">More</button>
               {% elif phase == "release_candidate" %}
-                <a href="{{ as_url(get.download.path, project_name=release.project.name, version_name=release.version, file_path=path) }}"
+                <a href="{{ as_url(get.download.path, project_key=release.project.key, version_key=release.version, file_path=path) }}"
                    title="Download file {{ path }}"
                    class="btn btn-sm btn-outline-secondary">Download</a>
               {% endif %}
@@ -114,10 +114,10 @@
                 <div class="d-flex justify-content-end align-items-center gap-2"
                      role="group"
                      aria-label="More file actions for {{ path }}">
-                  <a href="{{ as_url(get.download.path, project_name=release.project.name, version_name=release.version, file_path=path) }}"
+                  <a href="{{ as_url(get.download.path, project_key=release.project.key, version_key=release.version, file_path=path) }}"
                      title="Download file {{ path }}"
                      class="btn btn-sm btn-outline-secondary">Download</a>
-                  <a href="{{ as_url(get.draft.tools, project_name=release.project.name, version_name=release.version, file_path=path) }}"
+                  <a href="{{ as_url(get.draft.tools, project_key=release.project.key, version_key=release.version, file_path=path) }}"
                      title="Tools for file {{ path }}"
                      class="btn btn-sm btn-outline-secondary">Tools</a>
                   {{ delete_file_forms[path|string] }}

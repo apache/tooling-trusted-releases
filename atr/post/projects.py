@@ -37,26 +37,26 @@ import atr.web as web
 async def add_project(
     session: web.Committer,
     _project_add: Literal["project/add"],
-    committee_name: safe.CommitteeKey,
+    committee_key: safe.CommitteeKey,
     project_form: shared.projects.AddProjectForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /project/add/<committee_name>
+    URL: /project/add/<committee_key>
     """
     display_name = project_form.display_name
     label = project_form.label
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_name)))
+        wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_key)))
         try:
-            await wacm.project.create(committee_name, display_name, label)
+            await wacm.project.create(committee_key, display_name, label)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.add_project, committee_name=str(committee_name), error=f"Error adding project: {e}"
+                get.projects.add_project, committee_key=str(committee_key), error=f"Error adding project: {e}"
             )
 
     return await session.redirect(
-        get.projects.view, project_name=label, success=f"Project '{display_name}' added successfully."
+        get.projects.view, project_key=label, success=f"Project '{display_name}' added successfully."
     )
 
 
@@ -70,18 +70,18 @@ async def delete(
     URL: /project/delete
     Delete a project created by the user.
     """
-    project_name = delete_selected_project_form.project_name
+    project_key = delete_selected_project_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         try:
-            await wacm.project.delete(project_name)
+            await wacm.project.delete(project_key)
         except storage.AccessError as e:
             # TODO: Redirect to committees
             return await session.redirect(get.projects.projects, error=f"Error deleting project: {e}")
 
     # TODO: Redirect to committees
-    return await session.redirect(get.projects.projects, success=f"Project '{project_name}' deleted successfully.")
+    return await session.redirect(get.projects.projects, success=f"Project '{project_key}' deleted successfully.")
 
 
 @post.typed
@@ -163,160 +163,160 @@ async def _metadata_language_remove(
 async def _process_add_category(
     session: web.Committer, add_category_form: shared.projects.AddCategoryForm
 ) -> web.WerkzeugResponse:
-    project_name = add_category_form.project_name
+    project_key = add_category_form.project_key
     category_to_add = add_category_form.category_to_add.strip()
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         async with db.session() as data:
-            project = await data.project(key=str(project_name)).demand(
-                base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+            project = await data.project(key=str(project_key)).demand(
+                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
             )
         modified = await _metadata_category_add(wacm, project, category_to_add)
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_name=str(project_name), success=f"Category '{category_to_add}' added."
+            get.projects.view, project_key=str(project_key), success=f"Category '{category_to_add}' added."
         )
     return await session.redirect(
-        get.projects.view, project_name=str(project_name), error=f"Category '{category_to_add}' already exists."
+        get.projects.view, project_key=str(project_key), error=f"Category '{category_to_add}' already exists."
     )
 
 
 async def _process_add_language(
     session: web.Committer, add_language_form: shared.projects.AddLanguageForm
 ) -> web.WerkzeugResponse:
-    project_name = add_language_form.project_name
+    project_key = add_language_form.project_key
     language_to_add = add_language_form.language_to_add.strip()
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         async with db.session() as data:
-            project = await data.project(key=str(project_name)).demand(
-                base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+            project = await data.project(key=str(project_key)).demand(
+                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
             )
         modified = await _metadata_language_add(wacm, project, language_to_add)
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_name=str(project_name), success=f"Language '{language_to_add}' added."
+            get.projects.view, project_key=str(project_key), success=f"Language '{language_to_add}' added."
         )
     return await session.redirect(
-        get.projects.view, project_name=str(project_name), error=f"Language '{language_to_add}' already exists."
+        get.projects.view, project_key=str(project_key), error=f"Language '{language_to_add}' already exists."
     )
 
 
 async def _process_compose_form(
     session: web.Committer, compose_form: shared.projects.ComposePolicyForm
 ) -> web.WerkzeugResponse:
-    project_name = compose_form.project_name
+    project_key = compose_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         try:
             await wacm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_name=project_name, error=f"Error editing compose policy: {e}"
+                get.projects.view, project_key=project_key, error=f"Error editing compose policy: {e}"
             )
 
     return await session.redirect(
-        get.projects.view, project_name=project_name, success="Compose options saved successfully."
+        get.projects.view, project_key=project_key, success="Compose options saved successfully."
     )
 
 
 async def _process_delete_project(
     session: web.Committer, delete_form: shared.projects.DeleteProjectForm
 ) -> web.WerkzeugResponse:
-    project_name = delete_form.project_name
+    project_key = delete_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         try:
-            await wacm.project.delete(project_name)
+            await wacm.project.delete(project_key)
         except storage.AccessError as e:
             return await session.redirect(get.projects.projects, error=f"Error deleting project: {e}")
 
-    return await session.redirect(get.projects.projects, success=f"Project '{project_name}' deleted successfully.")
+    return await session.redirect(get.projects.projects, success=f"Project '{project_key}' deleted successfully.")
 
 
 async def _process_finish_form(
     session: web.Committer, finish_form: shared.projects.FinishPolicyForm
 ) -> web.WerkzeugResponse:
-    project_name = finish_form.project_name
+    project_key = finish_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         try:
             await wacm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_name=project_name, error=f"Error editing finish policy: {e}"
+                get.projects.view, project_key=project_key, error=f"Error editing finish policy: {e}"
             )
 
     return await session.redirect(
-        get.projects.view, project_name=project_name, success="Finish options saved successfully."
+        get.projects.view, project_key=project_key, success="Finish options saved successfully."
     )
 
 
 async def _process_remove_category(
     session: web.Committer, remove_form: shared.projects.RemoveCategoryForm
 ) -> web.WerkzeugResponse:
-    project_name = remove_form.project_name
+    project_key = remove_form.project_key
     category_to_remove = remove_form.category_to_remove
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         async with db.session() as data:
-            project = await data.project(key=str(project_name)).demand(
-                base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+            project = await data.project(key=str(project_key)).demand(
+                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
             )
         modified = await _metadata_category_remove(wacm, project, category_to_remove)
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_name=str(project_name), success=f"Category '{category_to_remove}' removed."
+            get.projects.view, project_key=str(project_key), success=f"Category '{category_to_remove}' removed."
         )
     return await session.redirect(
-        get.projects.view, project_name=str(project_name), error=f"Category '{category_to_remove}' does not exist."
+        get.projects.view, project_key=str(project_key), error=f"Category '{category_to_remove}' does not exist."
     )
 
 
 async def _process_remove_language(
     session: web.Committer, remove_form: shared.projects.RemoveLanguageForm
 ) -> web.WerkzeugResponse:
-    project_name = remove_form.project_name
+    project_key = remove_form.project_key
     language_to_remove = remove_form.language_to_remove
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         async with db.session() as data:
-            project = await data.project(key=str(project_name)).demand(
-                base.ASFQuartException(f"Project {project_name} not found", errorcode=404)
+            project = await data.project(key=str(project_key)).demand(
+                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
             )
         modified = await _metadata_language_remove(wacm, project, language_to_remove)
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_name=project_name, success=f"Language '{language_to_remove}' removed."
+            get.projects.view, project_key=project_key, success=f"Language '{language_to_remove}' removed."
         )
     return await session.redirect(
-        get.projects.view, project_name=project_name, error=f"Language '{language_to_remove}' does not exist."
+        get.projects.view, project_key=project_key, error=f"Language '{language_to_remove}' does not exist."
     )
 
 
 async def _process_vote_form(session: web.Committer, vote_form: shared.projects.VotePolicyForm) -> web.WerkzeugResponse:
-    project_name = vote_form.project_name
+    project_key = vote_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_name)
+        wacm = await write.as_project_committee_member(project_key)
         try:
             await wacm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_name=project_name, error=f"Error editing vote policy: {e}"
+                get.projects.view, project_key=project_key, error=f"Error editing vote policy: {e}"
             )
 
     return await session.redirect(
-        get.projects.view, project_name=project_name, success="Vote options saved successfully."
+        get.projects.view, project_key=project_key, success="Vote options saved successfully."
     )

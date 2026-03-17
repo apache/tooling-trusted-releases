@@ -86,8 +86,8 @@ async def check(
                 model_cls=draft.ClearQuarantineForm,
                 action=util.as_url(
                     post.draft.quarantine_clear,
-                    project_name=release.safe_project_key,
-                    version_name=release.safe_version_key,
+                    project_key=release.safe_project_key,
+                    version_key=release.safe_version_key,
                 ),
                 form_classes=".d-inline-block.m-0",
                 submit_classes="btn-sm btn-outline-secondary",
@@ -113,7 +113,7 @@ async def check(
     delete_form = form.render(
         model_cls=form.Empty,
         action=util.as_url(
-            get.compose.selected, project_name=release.safe_project_key, version_name=release.safe_version_key
+            get.compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
         ),
         submit_label="Delete this draft",
         submit_classes="btn btn-danger",
@@ -126,7 +126,7 @@ async def check(
         delete_file_forms[str(path)] = form.render(
             model_cls=draft.DeleteFileForm,
             action=util.as_url(
-                post.draft.delete_file, project_name=release.safe_project_key, version_name=release.safe_version_key
+                post.draft.delete_file, project_key=release.safe_project_key, version_key=release.safe_version_key
             ),
             form_classes=".d-inline-block.m-0",
             submit_classes="btn-sm btn-outline-danger",
@@ -144,7 +144,7 @@ async def check(
     recheck_form = form.render(
         model_cls=form.Empty,
         action=util.as_url(
-            post.draft.recheck, project_name=release.safe_project_key, version_name=release.safe_version_key
+            post.draft.recheck, project_key=release.safe_project_key, version_key=release.safe_version_key
         ),
         submit_label="Recheck with fresh cache",
         submit_classes="btn btn-primary",
@@ -152,7 +152,7 @@ async def check(
     cache_reset_form = form.render(
         model_cls=form.Empty,
         action=util.as_url(
-            post.draft.cache_reset, project_name=release.safe_project_key, version_name=release.safe_version_key
+            post.draft.cache_reset, project_key=release.safe_project_key, version_key=release.safe_version_key
         ),
         submit_label="Recheck with global cache",
         submit_classes="btn btn-primary",
@@ -173,8 +173,8 @@ async def check(
 
     return await template.render(
         "check-selected.html",
-        project_name=release.project.key,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
         release=release,
         paths=all_paths,
         info=info,
@@ -212,7 +212,7 @@ async def check(
 
 
 def render_checks_summary(
-    info: types.PathInfo | None, project_name: safe.ProjectKey, version_name: safe.VersionKey
+    info: types.PathInfo | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> htm.Element | None:
     if (info is None) or (not info.checker_stats):
         return None
@@ -239,7 +239,7 @@ def render_checks_summary(
         files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
         all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
         for file_path in sorted(all_files):
-            report_url = f"/report/{project_name!s}/{version_name!s}/{file_path}"
+            report_url = f"/report/{project_key!s}/{version_key!s}/{file_path}"
             error_count = stat.failure_files.get(file_path, 0)
             blocker_count = stat.blocker_files.get(file_path, 0)
             warning_count = stat.warning_files.get(file_path, 0)

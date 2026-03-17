@@ -38,17 +38,17 @@ import atr.web as web
 async def resolve_selected(
     session: web.Committer,
     _manual_resolve: Literal["manual/resolve"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> str:
     """
-    URL: /manual/resolve/<project_name>/<version_name>
+    URL: /manual/resolve/<project_key>/<version_key>
     Get the manual vote resolution page.
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -69,24 +69,24 @@ async def resolve_selected(
 async def start_selected_revision(
     session: web.Committer,
     _manual_start: Literal["manual/start"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /manual/start/<project_name>/<version_name>/<revision>
+    URL: /manual/start/<project_key>/<version_key>/<revision>
     """
-    await session.check_access(project_name)
+    await session.check_access(project_key)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_name, version_name, revision, data, manual_vote=True
+            session, project_key, version_key, revision, data, manual_vote=True
         ):
             case str() as error:
                 return await session.redirect(
                     compose.selected,
                     error=error,
-                    project_name=str(project_name),
-                    version_name=str(version_name),
+                    project_key=str(project_key),
+                    version_key=str(version_key),
                     revision=str(revision),
                 )
             case (release, _committee):
@@ -104,8 +104,8 @@ async def _render_page(release, revision: str) -> htm.Element:
 
     back_link_url = util.as_url(
         compose.selected,
-        project_name=release.project.key,
-        version_name=release.version,
+        project_key=release.project.key,
+        version_key=release.version,
     )
     render.html_nav(
         page,
@@ -134,15 +134,15 @@ async def _render_page(release, revision: str) -> htm.Element:
         "The ATR will then require you to submit the vote and vote result thread URLs to proceed."
     ]
 
-    cancel_url = util.as_url(compose.selected, project_name=release.project.key, version_name=release.version)
+    cancel_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
     manual_form = form.render(
         model_cls=form.Empty,
         submit_label="Start manual vote",
         cancel_url=cancel_url,
         action=util.as_url(
             post.manual.start_selected_revision,
-            project_name=release.project.key,
-            version_name=release.version,
+            project_key=release.project.key,
+            version_key=release.version,
             revision=revision,
         ),
     )
@@ -155,7 +155,7 @@ async def _render_page(release, revision: str) -> htm.Element:
 def _render_resolve_page(release: sql.Release) -> htm.Element:
     page = htm.Block()
 
-    back_url = util.as_url(vote.selected, project_name=release.project.key, version_name=release.version)
+    back_url = util.as_url(vote.selected, project_key=release.project.key, version_key=release.version)
     page.p[htm.a(".atr-back-link", href=back_url)[f"← Back to Vote for {release.short_display_name}"]]
 
     page.h1[f"Resolve vote for {release.short_display_name}"]

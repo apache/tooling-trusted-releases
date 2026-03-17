@@ -18,7 +18,7 @@
 import pathlib
 from typing import Final
 
-PROJECT_NAME: Final[str] = "test"
-VERSION_NAME: Final[str] = "0.1+e2e-sbom"
+PROJECT_KEY: Final[str] = "test"
+VERSION_KEY: Final[str] = "0.1+e2e-sbom"
 FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
 CURRENT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent.resolve()

@@ -102,10 +102,10 @@ class CommitteeParticipant(FoundationCommitter):
         write: storage.Write,
         write_as: storage.WriteAsCommitteeParticipant,
         data: db.Session,
-        committee_name: str,
+        committee_key: str,
     ) -> None:
         super().__init__(write, write_as, data)
-        self.__committee_name = committee_name
+        self.__committee_key = committee_key
 
 class CommitteeMember(CommitteeParticipant):
     ...
@@ -115,7 +115,7 @@ This hierarchy that this creates is: `GeneralPublic` â†’ `FoundationCommitter` â
 
 Use `__private_methods` for helper code that is not part of the public interface. Use `public_methods` for operations that should be available to callers at the appropriate permission level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py:Outcome) types to allow callers flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for more details.
 
-After adding a new writer module, register it in the appropriate `WriteAs*` classes in [`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions` writer, it was necessary to add `self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_name)` to the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py:WriteAsCommitteeMember) class.
+After adding a new writer module, register it in the appropriate `WriteAs*` classes in [`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions` writer, it was necessary to add `self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)` to the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py:WriteAsCommitteeMember) class.
 
 ## How do we use outcomes?
 

@@ -100,7 +100,7 @@ The `widget` parameter in [`form.label`](/ref/atr/form.py:label) lets you overri
 From [`projects.AddProjectForm`](/ref/atr/shared/projects.py:AddProjectForm):
 
 ```python
-committee_name: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
 ```
 
 From [`resolve.SubmitForm`](/ref/atr/shared/resolve.py:SubmitForm):
@@ -132,7 +132,7 @@ async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenP
     """Add a new public signing key to the user's account."""
     try:
         key_text = add_openpgp_key_form.public_key
-        selected_committee_names = add_openpgp_key_form.selected_committees
+        selected_committee_keys = add_openpgp_key_form.selected_committees
 
         # Process the validated form data...
         async with storage.write() as write:
@@ -280,7 +280,7 @@ async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenP
     """Add a new public signing key to the user's account."""
     try:
         key_text = add_openpgp_key_form.public_key
-        selected_committee_names = add_openpgp_key_form.selected_committees
+        selected_committee_keys = add_openpgp_key_form.selected_committees
 
         # Process the validated form data...
 

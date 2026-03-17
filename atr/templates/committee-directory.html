@@ -93,18 +93,18 @@
                     <div class="row mb-3 align-items-center">
                         <div class="col">
                             <h3 class="card-title fs-4 mb-0">
-                                <a href="{{ as_url(get.committees.view, name=committee.name) }}"
+                                <a href="{{ as_url(get.committees.view, name=committee.key) }}"
                                    class="text-decoration-none text-dark page-committee-title-link">{{ committee.display_name }}</a>
                             </h3>
                         </div>
                         <div class="col-5 col-lg-4 text-center">
                             <div class="page-logo-container">
-                                {% if (committee.name == "incubator") or committee.name.startswith("incubator-") %}
+                                {% if (committee.key == "incubator") or committee.key.startswith("incubator-") %}
                                     <img src="https://www.apache.org/logos/res/incubator/default.png"
                                          alt=""
                                          class="page-logo" />
                                 {% else %}
-                                    <img src="https://www.apache.org/logos/res/{{ committee.name }}/default.png"
+                                    <img src="https://www.apache.org/logos/res/{{ committee.key }}/default.png"
                                          alt=""
                                          class="page-logo" />
                                 {% endif %}
@@ -116,11 +116,11 @@
                         {% if committee.projects %}
                             {% for project in committee.projects|sort(attribute="name") %}
                                 <div class="card mb-3 shadow-sm page-project-subcard {% if loop.index > max_initial_projects %}page-project-extra d-none{% endif %} {% if project.status.value.lower() != "active" %}page-project-inactive{% endif %}"
-                                     data-project-url="{{ as_url(get.projects.view, project_name=(project.name)) }}">
+                                     data-project-url="{{ as_url(get.projects.view, project_key=(project.key)) }}">
                                     <div class="card-body p-3 d-flex flex-column h-100">
                                         <div class="d-flex justify-content-between align-items-start">
                                             <p class="mb-1 me-2 fs-6">
-                                                <a href="{{ as_url(get.projects.view, project_name=(project.name)) }}"
+                                                <a href="{{ as_url(get.projects.view, project_key=(project.key)) }}"
                                                    class="text-decoration-none stretched-link">{{ project.display_name }}</a>
                                             </p>
                                             <div>
@@ -153,8 +153,8 @@
                 {# Add an else clause here if we decide to show an alternative to an empty card #}
                         {% endif %}
                     </div>
-                    {% if current_user and (committee.name in current_user.committees) and (not committee_is_standing(committee.name)) %}
-                        <a href="{{ as_url(get.projects.add_project, committee_name=committee.name) }}"
+                    {% if current_user and (committee.key in current_user.committees) and (not committee_is_standing(committee.key)) %}
+                        <a href="{{ as_url(get.projects.add_project, committee_key=committee.key) }}"
                            title="Create a project for {{ committee.display_name }}"
                            class="text-decoration-none d-block mt-4 mb-3">
                             <div class="card h-100 shadow-sm atr-cursor-pointer page-project-subcard">

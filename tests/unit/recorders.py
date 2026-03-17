@@ -29,8 +29,8 @@ class RecorderStub(checks.Recorder):
         super().__init__(
             checker=checker,
             inputs_hash=None,
-            project_name="test",
-            version_name="test",
+            project_key="test",
+            version_key="test",
             revision_number="00001",
             primary_rel_path=None,
             member_rel_path=None,

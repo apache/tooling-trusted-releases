@@ -141,7 +141,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
     pmc_div = htm.Block(htm.div, classes=".text-break.pt-2")
     if is_owner:
         committee_choices = [(c.key, c.display_name or c.key) for c in user_committees]
-        current_committee_names = [c.key for c in key.committees]
+        current_committee_keys = [c.key for c in key.committees]
 
         # form.render_block(
         #     pmc_div,
@@ -151,9 +151,9 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         #     submit_label="Update associations",
         #     submit_classes="btn-primary btn-sm",
         #     defaults={"selected_committees": committee_choices},
-        #     custom={"selected_committees": _render_committee_checkboxes(committee_choices, current_committee_names)},
+        #     custom={"selected_committees": _render_committee_checkboxes(committee_choices, current_committee_keys)},
         # )
-        checkboxes = _render_committee_checkboxes(committee_choices, current_committee_names)
+        checkboxes = _render_committee_checkboxes(committee_choices, current_committee_keys)
         pmc_div.form(
             method="post",
             action=util.as_url(post.keys.details, fingerprint=key_fingerprint),
@@ -164,8 +164,8 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         ]
     else:
         if key.committees:
-            committee_names = ", ".join([c.key for c in key.committees])
-            pmc_div.text(committee_names)
+            committee_keys = ", ".join([c.key for c in key.committees])
+            pmc_div.text(committee_keys)
         else:
             pmc_div.text("No PMCs associated")
     _add_row("Associated PMCs", pmc_div.collect())
@@ -184,15 +184,15 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
 @get.typed
 async def export(
-    _session: web.Committer, _keys_export: Literal["keys/export"], committee_name: safe.CommitteeKey
+    _session: web.Committer, _keys_export: Literal["keys/export"], committee_key: safe.CommitteeKey
 ) -> web.TextResponse:
     """
-    URL: /keys/export/<committee_name>
+    URL: /keys/export/<committee_key>
     Export a KEYS file for a specific committee.
     """
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
-        keys_file_text = await wafc.keys.keys_file_text(str(committee_name))
+        keys_file_text = await wafc.keys.keys_file_text(str(committee_key))
 
     return web.TextResponse(keys_file_text)
 
@@ -321,7 +321,7 @@ def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.Committ
                     form_classes=".mb-4.d-inline-block",
                     submit_label="Regenerate KEYS file",
                     submit_classes="btn btn-sm btn-outline-secondary",
-                    defaults={"committee_name": committee.key},
+                    defaults={"committee_key": committee.key},
                     empty=True,
                 )
             else:
@@ -345,8 +345,8 @@ async def _key_and_is_owner(
         authorised = True
     else:
         user_affiliations = set(session.committees + session.projects)
-        key_committee_names = {c.key for c in key.committees}
-        if user_affiliations.intersection(key_committee_names):
+        key_committee_keys = {c.key for c in key.committees}
+        if user_affiliations.intersection(key_committee_keys):
             authorised = True
         elif session.is_admin:
             authorised = True
@@ -375,8 +375,8 @@ def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) -> Non
                 htm.a(href=util.as_url(details, fingerprint=key.fingerprint))[key.fingerprint[-16:].upper()]
             ]
             if key.committees:
-                committee_names = ", ".join([c.key for c in key.committees])
-                row.td(".text-break.px-2.align-middle")[committee_names]
+                committee_keys = ", ".join([c.key for c in key.committees])
+                row.td(".text-break.px-2.align-middle")[committee_keys]
             else:
                 row.td(".text-break.px-2.align-middle")["No PMCs associated"]
             with row.block(htm.td, classes=".px-2") as td:

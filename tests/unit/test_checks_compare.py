@@ -168,7 +168,7 @@ class PayloadLoader:
         self.payload = payload
 
     async def __call__(
-        self, project_name: str, version_name: str, revision_number: str
+        self, project_key: str, version_key: str, revision_number: str
     ) -> atr.models.github.TrustedPublisherPayload | None:
         return self.payload
 
@@ -202,8 +202,8 @@ class RecorderStub(atr.tasks.checks.Recorder):
         super().__init__(
             checker="compare.source_trees",
             inputs_hash=None,
-            project_name="project",
-            version_name="version",
+            project_key="project",
+            version_key="version",
             revision_number="00001",
             primary_rel_path="artifact.tar.gz",
             member_rel_path=None,
@@ -849,8 +849,8 @@ def _make_args(recorder: atr.tasks.checks.Recorder) -> atr.tasks.checks.Function
     return atr.tasks.checks.FunctionArguments(
         recorder=RecorderFactory(recorder),
         asf_uid="test",
-        project_name="project",
-        version_name="version",
+        project_key="project",
+        version_key="version",
         revision_number="00001",
         primary_rel_path="artifact.tar.gz",
         extra_args={},

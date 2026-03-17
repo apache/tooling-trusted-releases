@@ -37,34 +37,34 @@ import atr.web as web
 async def selected(
     session: web.Committer,
     _resolve: Literal["resolve"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     resolve_form: shared.resolve.ResolveForm,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /resolve/<project_name>/<version_name>
+    URL: /resolve/<project_key>/<version_key>
     """
     match resolve_form:
         case shared.resolve.SubmitForm() as submit_form:
-            return await _submit(session, submit_form, project_name, version_name)
+            return await _submit(session, submit_form, project_key, version_key)
 
         case shared.resolve.TabulateForm():
-            return await _tabulate(session, project_name, version_name)
+            return await _tabulate(session, project_key, version_key)
 
 
 async def _submit(
     session: web.Committer,
     submit_form: shared.resolve.SubmitForm,
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse:
     email_body = submit_form.email_body
     vote_result = submit_form.vote_result
 
-    async with storage.write_as_project_committee_member(project_name) as wacm:
+    async with storage.write_as_project_committee_member(project_key) as wacm:
         _release, voting_round, success_message, error_message = await wacm.vote.resolve(
-            project_name,
-            version_name,
+            project_key,
+            version_key,
             "passed" if (vote_result == "Passed") else "failed",
             session.fullname,
             email_body,
@@ -81,17 +81,17 @@ async def _submit(
             destination = get.compose.selected
 
     return await session.redirect(
-        destination, project_name=str(project_name), version_name=str(version_name), success=success_message
+        destination, project_key=str(project_key), version_key=str(version_key), success=success_message
     )
 
 
-async def _tabulate(session: web.Committer, project_name: safe.ProjectKey, version_name: safe.VersionKey) -> str:
+async def _tabulate(session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> str:
     asf_uid = session.uid
     full_name = session.fullname
 
     release = await session.release(
-        project_name,
-        version_name,
+        project_key,
+        version_key,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         with_release_policy=True,
         with_project_release_policy=True,
@@ -145,7 +145,7 @@ async def _tabulate(session: web.Committer, project_name: safe.ProjectKey, versi
 
     resolve_form = atr.form.render(
         model_cls=shared.resolve.SubmitForm,
-        action=util.as_url(selected, project_name=release.project.key, version_name=release.version),
+        action=util.as_url(selected, project_key=release.project.key, version_key=release.version),
         submit_label="Resolve vote",
         textarea_rows=24,
         defaults=defaults,

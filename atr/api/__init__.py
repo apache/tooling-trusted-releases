@@ -522,15 +522,15 @@ async def key_add(
     automatically generated KEYS file for each committee.
     """
     asf_uid = _jwt_asf_uid()
-    selected_committee_names = data.committees
+    selected_committee_keys = data.committees
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(data.key)
         key = ocr.result_or_raise()
 
-        for selected_committee_name in selected_committee_names:
-            wacm = write.as_committee_member(selected_committee_name)
+        for selected_committee_key in selected_committee_keys:
+            wacm = write.as_committee_member(selected_committee_key)
             oc: outcome.Outcome[types.LinkedCommittee] = await wacm.keys.associate_fingerprint(
                 key.key_model.fingerprint
             )
@@ -620,9 +620,9 @@ async def keys_upload(
     """
     asf_uid = _jwt_asf_uid()
     filetext = data.filetext
-    selected_committee_name = data.committee
+    selected_committee_key = data.committee
     async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(selected_committee_name)
+        wacm = write.as_committee_member(selected_committee_key)
         outcomes: outcome.List[types.Key] = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
@@ -662,7 +662,7 @@ async def keys_upload(
         results=api_outcomes,
         success_count=outcomes.result_count,
         error_count=outcomes.error_count,
-        submitted_committee=selected_committee_name,
+        submitted_committee=selected_committee_key,
     ).model_dump(mode="json"), 200
 
 
@@ -1242,17 +1242,17 @@ async def signature_provenance(
         )
 
     downloads_dir = paths.get_downloads_dir()
-    matched_committee_names = await _match_committee_names(key.committees, paths.get_finished_dir(), data)
+    matched_committee_keys = await _match_committee_keys(key.committees, paths.get_finished_dir(), data)
 
-    for matched_committee_name in matched_committee_names:
-        keys_file_path = downloads_dir / matched_committee_name / "KEYS"
+    for matched_committee_key in matched_committee_keys:
+        keys_file_path = downloads_dir / matched_committee_key / "KEYS"
         async with aiofiles.open(keys_file_path, "rb") as f:
             keys_file_data = await f.read()
         keys_file_sha3_256 = hashes.compute_sha3_256(keys_file_data)
         signing_keys.append(
             models.api.SignatureProvenanceKey(
-                committee=matched_committee_name,
-                keys_file_url=f"https://{host}/downloads/{matched_committee_name}/KEYS",
+                committee=matched_committee_key,
+                keys_file_url=f"https://{host}/downloads/{matched_committee_key}/KEYS",
                 keys_file_sha3_256=keys_file_sha3_256,
             )
         )
@@ -1613,16 +1613,16 @@ def _jwt_asf_uid() -> str:
     return asf_uid
 
 
-async def _match_committee_names(
+async def _match_committee_keys(
     key_committees: list[sql.Committee], finished_dir: pathlib.Path, data: models.api.SignatureProvenanceArgs
 ) -> set[str]:
-    key_committee_names = set(committee.key for committee in key_committees)
+    key_committee_keys = set(committee.key for committee in key_committees)
     finished_dir = paths.get_finished_dir()
-    matched_committee_names = set()
+    matched_committee_keys = set()
 
     # Check for finished files
-    for key_committee_name in key_committee_names:
-        key_committee_finished_dir = finished_dir / key_committee_name
+    for key_committee_key in key_committee_keys:
+        key_committee_finished_dir = finished_dir / key_committee_key
         async for rel_path in util.paths_recursive(key_committee_finished_dir):
             if rel_path.name == data.signature_file_name:
                 abs_path = finished_dir / rel_path
@@ -1631,22 +1631,22 @@ async def _match_committee_names(
                 rel_path_sha3_256 = hashlib.sha3_256(rel_path_data).hexdigest()
                 if rel_path_sha3_256 == data.signature_sha3_256:
                     # We got a match
-                    matched_committee_names.add(key_committee_name)
+                    matched_committee_keys.add(key_committee_key)
                     break
 
     # Check for unfinished files
     async with db.session() as db_data:
-        for key_committee_name in key_committee_names:
+        for key_committee_key in key_committee_keys:
             release_directories = []
-            projects = await db_data.project(committee_key=key_committee_name).all()
+            projects = await db_data.project(committee_key=key_committee_key).all()
             for project in projects:
                 releases = await db_data.release(project_key=project.key).all()
                 release_directories.extend(paths.release_directory(release) for release in releases)
             for release_directory in release_directories:
                 if await _match_unfinished(release_directory, data):
-                    matched_committee_names.add(key_committee_name)
+                    matched_committee_keys.add(key_committee_key)
                     break
-    return matched_committee_names
+    return matched_committee_keys
 
 
 async def _match_unfinished(release_directory: pathlib.Path, data: models.api.SignatureProvenanceArgs) -> bool:

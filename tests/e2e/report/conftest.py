@@ -29,12 +29,12 @@ if TYPE_CHECKING:
 
     from playwright.sync_api import Browser, BrowserContext, Locator, Page
 
-PROJECT_NAME: Final[str] = "test"
-VERSION_NAME: Final[str] = "0.1+e2e-report"
+PROJECT_KEY: Final[str] = "test"
+VERSION_KEY: Final[str] = "0.1+e2e-report"
 FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
 CURRENT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent.resolve()
-REPORT_URL: Final[str] = f"/report/{PROJECT_NAME}/{VERSION_NAME}/{FILE_NAME}"
-COMPOSE_URL: Final[str] = f"/compose/{PROJECT_NAME}/{VERSION_NAME}"
+REPORT_URL: Final[str] = f"/report/{PROJECT_KEY}/{VERSION_KEY}/{FILE_NAME}"
+COMPOSE_URL: Final[str] = f"/compose/{PROJECT_KEY}/{VERSION_KEY}"
 
 
 @pytest.fixture
@@ -99,14 +99,14 @@ def report_context(browser: Browser, verify_license_check_mode: None) -> Generat
 
     helpers.log_in(page)
 
-    helpers.delete_release_if_exists(page, PROJECT_NAME, VERSION_NAME)
+    helpers.delete_release_if_exists(page, PROJECT_KEY, VERSION_KEY)
 
-    helpers.visit(page, f"/start/{PROJECT_NAME}")
-    page.locator("input#version_name").fill(VERSION_NAME)
+    helpers.visit(page, f"/start/{PROJECT_KEY}")
+    page.locator("input#version_key").fill(VERSION_KEY)
     page.get_by_role("button", name="Start new release").click()
-    page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
-    helpers.visit(page, f"/upload/{PROJECT_NAME}/{VERSION_NAME}")
+    helpers.visit(page, f"/upload/{PROJECT_KEY}/{VERSION_KEY}")
     page.locator('input[name="file_data"]').set_input_files(
         [
             f"{CURRENT_DIR}/../test_files/{FILE_NAME}",
@@ -115,9 +115,9 @@ def report_context(browser: Browser, verify_license_check_mode: None) -> Generat
         ]
     )
     page.get_by_role("button", name="Add files").click()
-    page.wait_for_url(f"**/compose/{PROJECT_NAME}/{VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
-    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_NAME}/{VERSION_NAME}", FILE_NAME)
+    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_KEY}/{VERSION_KEY}", FILE_NAME)
     _poll_for_member_rows(page, REPORT_URL)
 
     page.close()
@@ -131,7 +131,7 @@ def report_context(browser: Browser, verify_license_check_mode: None) -> Generat
 def verify_license_check_mode(browser: Browser) -> None:
     """Verify that the test project has the correct license check mode."""
     context = browser.new_context(ignore_https_errors=True)
-    policy = helpers.api_get(context.request, f"/api/project/policy/{PROJECT_NAME}")
+    policy = helpers.api_get(context.request, f"/api/project/policy/{PROJECT_KEY}")
     context.close()
 
     mode = policy.get("policy_license_check_mode", "").upper()

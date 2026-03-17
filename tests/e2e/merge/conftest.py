@@ -35,12 +35,12 @@ def merge_context(browser: Browser) -> Generator[BrowserContext]:
     page = context.new_page()
 
     helpers.log_in(page)
-    helpers.delete_release_if_exists(page, merge_helpers.PROJECT_NAME, merge_helpers.VERSION_NAME)
+    helpers.delete_release_if_exists(page, merge_helpers.PROJECT_KEY, merge_helpers.VERSION_KEY)
 
-    helpers.visit(page, f"/start/{merge_helpers.PROJECT_NAME}")
-    page.locator("input#version_name").fill(merge_helpers.VERSION_NAME)
+    helpers.visit(page, f"/start/{merge_helpers.PROJECT_KEY}")
+    page.locator("input#version_key").fill(merge_helpers.VERSION_KEY)
     page.get_by_role("button", name="Start new release").click()
-    page.wait_for_url(f"**/compose/{merge_helpers.PROJECT_NAME}/{merge_helpers.VERSION_NAME}")
+    page.wait_for_url(f"**/compose/{merge_helpers.PROJECT_KEY}/{merge_helpers.VERSION_KEY}")
 
     page.close()
 

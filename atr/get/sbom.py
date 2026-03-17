@@ -49,19 +49,19 @@ if TYPE_CHECKING:
 async def report(
     session: web.Committer,
     _sbom_report: Literal["sbom/report"],
-    project_name: safe.ProjectKey,
-    version_name: safe.VersionKey,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_path: unsafe.Path,
 ) -> str:
     """
-    URL: /sbom/report/<project_name>/<version_name>/<file_path>
+    URL: /sbom/report/<project_key>/<version_key>/<file_path>
     """
     # If the draft is not found, we try to get the release candidate
     try:
-        release = await session.release(project_name, version_name, with_committee=True)
+        release = await session.release(project_key, version_key, with_committee=True)
     except base.ASFQuartException:
         release = await session.release(
-            project_name, version_name, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
+            project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
         )
 
     block = htm.Block()
@@ -72,12 +72,12 @@ async def report(
     phase: Literal["COMPOSE", "VOTE"] = "COMPOSE"
     match release.phase:
         case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            back_url = util.as_url(compose.selected, project_name=release.project.key, version_name=release.version)
+            back_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
             back_anchor = f"Compose {release.project.short_display_name} {release.version}"
             phase = "COMPOSE"
         case sql.ReleasePhase.RELEASE_CANDIDATE:
             is_release_candidate = True
-            back_url = util.as_url(vote.selected, project_name=release.project.key, version_name=release.version)
+            back_url = util.as_url(vote.selected, project_key=release.project.key, version_key=release.version)
             back_anchor = f"Vote on {release.project.short_display_name} {release.version}"
             phase = "VOTE"
 
@@ -95,7 +95,7 @@ async def report(
         raise base.ASFQuartException("Invalid file path", errorcode=400)
     validated_path_str = str(validated_path)
 
-    task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project_name, release, version_name)
+    task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project_key, release, version_key)
 
     task_status = await _report_task_results(block, task)
     if task_status:
@@ -124,7 +124,7 @@ async def report(
     _license_section(block, task_result)
 
     _vulnerability_scan_section(
-        block, str(project_name), str(version_name), str(file_path), task_result, osv_tasks, is_release_candidate
+        block, str(project_key), str(version_key), str(file_path), task_result, osv_tasks, is_release_candidate
     )
 
     _outdated_tool_section(block, task_result)
