@@ -221,7 +221,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
     ) -> atr.models.sql.CheckResult:
         self.failure_calls.append((message, data))
         return atr.models.sql.CheckResult(
-            release_name=self.release_name,
+            release_key=self.release_key,
             revision_number=self.revision_number,
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
@@ -238,7 +238,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
     ) -> atr.models.sql.CheckResult:
         self.success_calls.append((message, data))
         return atr.models.sql.CheckResult(
-            release_name=None,
+            release_key=None,
             revision_number=None,
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,

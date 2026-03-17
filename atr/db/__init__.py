@@ -571,7 +571,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
     def release_file_state(
         self,
-        release_name: Opt[str] = NOT_SET,
+        release_key: Opt[str] = NOT_SET,
         path: Opt[str] = NOT_SET,
         since_revision_seq: Opt[int] = NOT_SET,
         present: Opt[bool] = NOT_SET,
@@ -580,8 +580,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     ) -> Query[sql.ReleaseFileState]:
         query = sqlmodel.select(sql.ReleaseFileState)
 
-        if is_defined(release_name):
-            query = query.where(sql.ReleaseFileState.release_name == release_name)
+        if is_defined(release_key):
+            query = query.where(sql.ReleaseFileState.release_key == release_key)
         if is_defined(path):
             query = query.where(sql.ReleaseFileState.path == path)
         if is_defined(since_revision_seq):

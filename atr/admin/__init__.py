@@ -1096,14 +1096,14 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
     fail_count = 0
     error_messages = []
 
-    for release_name in releases_to_delete:
+    for release_key in releases_to_delete:
         try:
             async with db.session() as data:
-                release = await data.release(key=release_name, _committee=True, _project=True).demand(
-                    RuntimeError(f"Release {release_name} not found")
+                release = await data.release(key=release_key, _committee=True, _project=True).demand(
+                    RuntimeError(f"Release {release_key} not found")
                 )
                 if release.committee is None:
-                    raise RuntimeError(f"Release {release_name} has no committee")
+                    raise RuntimeError(f"Release {release_key} has no committee")
             async with storage.write(session) as write:
                 waca = write.as_committee_admin(release.committee.key)
                 error = await waca.release.delete(release.safe_project_key, release.safe_version_key)
@@ -1112,13 +1112,13 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
                     raise RuntimeError(error)
             success_count += 1
         except base.ASFQuartException as e:
-            log.error(f"Error deleting release {release_name}: {e}")
+            log.error(f"Error deleting release {release_key}: {e}")
             fail_count += 1
-            error_messages.append(f"{release_name}: {e}")
+            error_messages.append(f"{release_key}: {e}")
         except Exception as e:
-            log.exception(f"Unexpected error deleting release {release_name}:")
+            log.exception(f"Unexpected error deleting release {release_key}:")
             fail_count += 1
-            error_messages.append(f"{release_name}: Unexpected error ({e})")
+            error_messages.append(f"{release_key}: Unexpected error ({e})")
 
     if success_count > 0:
         await quart.flash(f"Successfully deleted {util.plural(success_count, 'release')}.", "success")

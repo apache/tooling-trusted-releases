@@ -30,9 +30,9 @@ def api_get(request: APIRequestContext, path: str) -> dict[str, Any]:
 
 
 def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> None:
-    release_name = f"{project_key}-{version_key}"
+    release_key = f"{project_key}-{version_key}"
     visit(page, "/admin/delete-release")
-    checkbox = page.locator(f'input[name="releases_to_delete"][value="{release_name}"]')
+    checkbox = page.locator(f'input[name="releases_to_delete"][value="{release_key}"]')
     if checkbox.count() == 0:
         return
     checkbox.check()

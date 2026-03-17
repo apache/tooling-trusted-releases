@@ -990,7 +990,7 @@ class Release(sqlmodel.SQLModel, table=True):
     # def latest_revision_number_query(self) -> expression.ScalarSelect[str]:
     #     return (
     #         sqlmodel.select(validate_instrumented_attribute(Revision.number))
-    #         .where(validate_instrumented_attribute(Revision.release_name) == Release.name)
+    #         .where(validate_instrumented_attribute(Revision.release_key) == Release.name)
     #         .order_by(validate_instrumented_attribute(Revision.seq).desc())
     #         .limit(1)
     #         .scalar_subquery()
@@ -1224,7 +1224,7 @@ class Quarantined(sqlmodel.SQLModel, table=True):
 
 # ReleaseFileState: Revision
 class ReleaseFileState(sqlmodel.SQLModel, table=True):
-    release_name: str = sqlmodel.Field(primary_key=True, **example("example-0.0.1"))
+    release_key: str = sqlmodel.Field(primary_key=True, **example("example-0.0.1"))
     path: str = sqlmodel.Field(primary_key=True, **example("apache-example-0.0.1-src.tar.gz"))
     since_revision_seq: int = sqlmodel.Field(primary_key=True, **example(1))
     present: bool = sqlmodel.Field(**example(True))
@@ -1233,8 +1233,8 @@ class ReleaseFileState(sqlmodel.SQLModel, table=True):
 
     __table_args__ = (
         sqlalchemy.ForeignKeyConstraint(
-            ["release_name", "since_revision_seq"],
-            ["revision.release_name", "revision.seq"],
+            ["release_key", "since_revision_seq"],
+            ["revision.release_key", "revision.seq"],
             ondelete="CASCADE",
         ),
         sqlalchemy.CheckConstraint(

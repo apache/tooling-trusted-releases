@@ -152,7 +152,7 @@ def test_compute_file_state_rows_v1_previous():
 
 def test_release_file_state_deleted():
     state = sql.ReleaseFileState(
-        release_name="example-0.0.1",
+        release_key="example-0.0.1",
         path="removed-file.tar.gz",
         since_revision_seq=3,
         present=False,
@@ -160,7 +160,7 @@ def test_release_file_state_deleted():
         classification=None,
     )
 
-    assert state.release_name == "example-0.0.1"
+    assert state.release_key == "example-0.0.1"
     assert state.path == "removed-file.tar.gz"
     assert state.since_revision_seq == 3
     assert state.present is False
@@ -170,7 +170,7 @@ def test_release_file_state_deleted():
 
 def test_release_file_state_present():
     state = sql.ReleaseFileState(
-        release_name="example-0.0.1",
+        release_key="example-0.0.1",
         path="apache-example-0.0.1-src.tar.gz",
         since_revision_seq=1,
         present=True,
@@ -178,7 +178,7 @@ def test_release_file_state_present():
         classification="source",
     )
 
-    assert state.release_name == "example-0.0.1"
+    assert state.release_key == "example-0.0.1"
     assert state.path == "apache-example-0.0.1-src.tar.gz"
     assert state.since_revision_seq == 1
     assert state.present is True

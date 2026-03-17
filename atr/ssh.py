@@ -287,9 +287,9 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSH
         ####################################################
         await _step_07a_process_validated_rsync_read(process, argv, release_obj, file_patterns)
     else:
-        release_name = sql.release_key(str(project_key), str(version_key))
+        release_key = sql.release_key(str(project_key), str(version_key))
         _output_stderr(process, f"Received write command: {process.command}")
-        log.info(f"Processing WRITE request for {release_name}")
+        log.info(f"Processing WRITE request for {release_key}")
         #####################################################
         ### Calls _step_07b_process_validated_rsync_write ###
         #####################################################
@@ -571,7 +571,7 @@ async def _step_07b_process_validated_rsync_write(
     """Handle a validated rsync write request."""
     asf_uid = server._get_asf_uid(process)
     exit_status = 0
-    release_name = sql.release_key(project_key, version_key)
+    release_key = sql.release_key(project_key, version_key)
 
     # Ensure the release object exists or is created
     # This must happen before creating the revision directory
@@ -600,7 +600,7 @@ async def _step_07b_process_validated_rsync_write(
                 if old_rev is not None:
                     for_revision = f"successor of revision {old_rev.number}"
                 else:
-                    for_revision = f"initial revision for release {release_name}"
+                    for_revision = f"initial revision for release {release_key}"
                 log.error(
                     f"rsync upload failed with exit status {exit_status} for {for_revision}. "
                     f"Command: {process.command} (run as {' '.join(argv)})"
@@ -612,7 +612,7 @@ async def _step_07b_process_validated_rsync_write(
                 project_key, version_key, asf_uid, description=description, modify=modify
             )
             if isinstance(result, sql.Quarantined):
-                log.info(f"rsync upload quarantined for release {release_name}")
+                log.info(f"rsync upload quarantined for release {release_key}")
                 message = f"\nATR: Upload received for {project_key} {version_key}. Archive validation in progress.\n"
             else:
                 github_payload = server._get_github_payload(process)
@@ -628,7 +628,7 @@ async def _step_07b_process_validated_rsync_write(
                 process.stderr.write(message.encode())
                 await process.stderr.drain()
         except types.FailedError:
-            log.info(f"rsync upload unsuccessful for release {release_name}")
+            log.info(f"rsync upload unsuccessful for release {release_key}")
 
         # If we got here, there was no exception
         if not process.is_closing():
@@ -637,9 +637,9 @@ async def _step_07b_process_validated_rsync_write(
 
 async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> None:
     """Ensure the release object exists or create it for a write operation."""
-    release_name = sql.release_key(str(project_key), str(version_key))
+    release_key = sql.release_key(str(project_key), str(version_key))
     async with db.session() as data:
-        release = await data.release(key=release_name, _committee=True).get()
+        release = await data.release(key=release_key, _committee=True).get()
         if release is None:
             project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
                 RuntimeError("Project not found after validation")
@@ -648,7 +648,7 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
                 # This should ideally be caught by path validation, but double check
                 raise RuntimeError(f'Invalid version name "{version_key}": {version_key_error}')
             # Create a new release object
-            log.info(f"Creating new release object for {release_name}")
+            log.info(f"Creating new release object for {release_key}")
             release = sql.Release(
                 project_key=project.key,
                 project=project,

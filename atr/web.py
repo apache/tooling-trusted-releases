@@ -183,11 +183,11 @@ class Committer:
         else:
             phase_value = phase
         revision = db.NOT_SET if latest_revision_number == db.NOT_SET else str(latest_revision_number)
-        release_name = sql.release_key(project_key, version_key)
+        release_key = sql.release_key(project_key, version_key)
         if data is None:
             async with db.session() as data:
                 release = await data.release(
-                    key=str(release_name),
+                    key=str(release_key),
                     phase=phase_value,
                     latest_revision_number=revision,
                     _committee=with_committee,
@@ -199,7 +199,7 @@ class Committer:
                 ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
         else:
             release = await data.release(
-                key=str(release_name),
+                key=str(release_key),
                 phase=phase_value,
                 latest_revision_number=revision,
                 _committee=with_committee,

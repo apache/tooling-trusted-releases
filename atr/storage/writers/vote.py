@@ -188,7 +188,7 @@ class CommitteeParticipant(FoundationCommitter):
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.VOTE_INITIATE,
             task_args=tasks_vote.Initiate(
-                release_name=release.key,
+                release_key=release.key,
                 email_to=email_to,
                 vote_duration=vote_duration_choice,
                 initiator_id=asf_uid,

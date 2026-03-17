@@ -251,16 +251,16 @@ async def latest_info(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
-    release_name = sql.release_key(project_key, version_key)
+    release_key = sql.release_key(project_key, version_key)
     async with db.session() as data:
         # TODO: No need to get release here
         # Just use maximum seq from revisions
-        release = await data.release(key=str(release_name), _project=True).demand(
-            RuntimeError(f"Release {release_name} does not exist")
+        release = await data.release(key=str(release_key), _project=True).demand(
+            RuntimeError(f"Release {release_key} does not exist")
         )
         if release.latest_revision_number is None:
             return None
-        revision = await data.revision(release_key=str(release_name), number=release.latest_revision_number).get()
+        revision = await data.revision(release_key=str(release_key), number=release.latest_revision_number).get()
         if not revision:
             return None
     return revision.safe_number, revision.asfuid, revision.created

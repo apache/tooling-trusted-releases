@@ -1,7 +1,7 @@
 """mass rename name => key
 
-Revision ID: 0059_2026.03.16_2c8e4716
-Revises: 0058_2026.03.12_2ebee77e
+Revision ID: 0060_2026.03.16_2c8e4716
+Revises: 0059_2026.03.16_7dda4775
 Create Date: 2026-03-16 18:35:29.940455+00:00
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # Revision identifiers, used by Alembic
-revision: str = "0059_2026.03.16_2c8e4716"
-down_revision: str | None = "0058_2026.03.12_2ebee77e"
+revision: str = "0060_2026.03.16_2c8e4716"
+down_revision: str | None = "0059_2026.03.16_7dda4775"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -118,6 +118,25 @@ def upgrade() -> None:
         batch_op.drop_column("merge_base_revision_name")
         batch_op.drop_column("release_name")
 
+    # --- releasefilestate ---
+    op.add_column("releasefilestate", sa.Column("release_key", sa.String(), nullable=True))
+    op.execute(sa.text("UPDATE releasefilestate SET release_key = release_name"))
+    with op.batch_alter_table("releasefilestate", schema=None) as batch_op:
+        batch_op.alter_column("release_key", existing_type=sa.String(), nullable=False)
+        batch_op.drop_constraint(batch_op.f("pk_releasefilestate"), type_="primary")
+        batch_op.create_primary_key(batch_op.f("pk_releasefilestate"), ["release_key", "path", "since_revision_seq"])
+        batch_op.drop_constraint(
+            batch_op.f("fk_releasefilestate_release_name_since_revision_seq_revision"), type_="foreignkey"
+        )
+        batch_op.create_foreign_key(
+            batch_op.f("fk_releasefilestate_release_key_since_revision_seq_revision"),
+            "revision",
+            ["release_key", "since_revision_seq"],
+            ["release_key", "seq"],
+            ondelete="CASCADE",
+        )
+        batch_op.drop_column("release_name")
+
     # --- checkresult ---
     op.add_column("checkresult", sa.Column("release_key", sa.String(), nullable=True))
     op.execute(sa.text("UPDATE checkresult SET release_key = release_name"))
@@ -148,6 +167,10 @@ def upgrade() -> None:
     with op.batch_alter_table("distribution", schema=None) as batch_op:
         batch_op.alter_column("release_key", existing_type=sa.String(), nullable=False)
         batch_op.drop_index(batch_op.f("ix_distribution_release_name"))
+        batch_op.drop_constraint(batch_op.f("pk_distribution"), type_="primary")
+        batch_op.create_primary_key(
+            batch_op.f("pk_distribution"), ["release_key", "platform", "owner_namespace", "package", "version"]
+        )
         batch_op.create_index(batch_op.f("ix_distribution_release_key"), ["release_key"], unique=False)
         batch_op.drop_constraint(batch_op.f("fk_distribution_release_name_release"), type_="foreignkey")
         batch_op.create_foreign_key(
@@ -260,6 +283,25 @@ def downgrade() -> None:
         batch_op.alter_column("release_name", existing_type=sa.VARCHAR(), nullable=False)
         batch_op.drop_constraint(batch_op.f("pk_revisioncounter"), type_="primary")
         batch_op.create_primary_key(batch_op.f("pk_revisioncounter"), ["release_name"])
+        batch_op.drop_column("release_key")
+
+    # --- releasefilestate ---
+    op.add_column("releasefilestate", sa.Column("release_name", sa.VARCHAR(), nullable=True))
+    op.execute(sa.text("UPDATE releasefilestate SET release_name = release_key"))
+    with op.batch_alter_table("releasefilestate", schema=None) as batch_op:
+        batch_op.alter_column("release_name", existing_type=sa.VARCHAR(), nullable=False)
+        batch_op.drop_constraint(batch_op.f("pk_releasefilestate"), type_="primary")
+        batch_op.create_primary_key(batch_op.f("pk_releasefilestate"), ["release_name", "path", "since_revision_seq"])
+        batch_op.drop_constraint(
+            batch_op.f("fk_releasefilestate_release_key_since_revision_seq_revision"), type_="foreignkey"
+        )
+        batch_op.create_foreign_key(
+            batch_op.f("fk_releasefilestate_release_name_since_revision_seq_revision"),
+            "revision",
+            ["release_name", "since_revision_seq"],
+            ["release_name", "seq"],
+            ondelete="CASCADE",
+        )
         batch_op.drop_column("release_key")
 
     # --- revision ---
@@ -387,6 +429,10 @@ def downgrade() -> None:
         )
         batch_op.drop_index(batch_op.f("ix_distribution_release_key"))
         batch_op.create_index(batch_op.f("ix_distribution_release_name"), ["release_name"], unique=False)
+        batch_op.drop_constraint(batch_op.f("pk_distribution"), type_="primary")
+        batch_op.create_primary_key(
+            batch_op.f("pk_distribution"), ["release_name", "platform", "owner_namespace", "package", "version"]
+        )
         batch_op.drop_column("release_key")
 
     # --- committee ---

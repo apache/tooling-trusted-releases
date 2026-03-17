@@ -83,8 +83,8 @@ async def checks_list(
     """
     # TODO: We should perhaps paginate this
     async with db.session() as data:
-        release_name = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_name).demand(exceptions.NotFound(f"Release {release_name} not found"))
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound(f"Release {release_key} not found"))
         check_results = await interaction.checks_for(release, caller_data=data)
 
     return models.api.ChecksListResults(
@@ -117,14 +117,14 @@ async def checks_list_revision(
     may potentially be thousands or results or more.
     """
     async with db.session() as data:
-        release_name = sql.release_key(str(project_key), str(version_key))
-        release_result = await data.release(key=release_name).demand(
-            exceptions.NotFound(f"Release '{release_name}' does not exist")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release_result = await data.release(key=release_key).demand(
+            exceptions.NotFound(f"Release '{release_key}' does not exist")
         )
 
-        revision_result = await data.revision(release_key=release_name, number=str(revision)).get()
+        revision_result = await data.revision(release_key=release_key, number=str(revision)).get()
         if revision_result is None:
-            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_name}'")
+            raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_key}'")
 
         check_results = await interaction.checks_for(release_result, revision=revision, caller_data=data)
 
@@ -1056,8 +1056,8 @@ async def release_get(
     Get a release by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_name).demand(exceptions.NotFound())
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound())
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
         release=release,
@@ -1078,12 +1078,12 @@ async def release_paths(
     List paths in a release by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_name).demand(exceptions.NotFound())
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await data.release(key=release_key).demand(exceptions.NotFound())
         if revision is None:
             dir_path = paths.release_directory(release)
         else:
-            await data.revision(release_key=release_name, number=str(revision)).demand(exceptions.NotFound())
+            await data.revision(release_key=release_key, number=str(revision)).demand(exceptions.NotFound())
             dir_path = paths.release_directory_version(release) / str(revision)
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
@@ -1108,8 +1108,8 @@ async def release_revisions(
     List revisions by project and version.
     """
     async with db.session() as data:
-        release_name = sql.release_key(str(project_key), str(version_key))
-        revisions = await data.revision(release_key=release_name).all()
+        release_key = sql.release_key(str(project_key), str(version_key))
+        revisions = await data.revision(release_key=release_key).all()
     if not isinstance(revisions, list):
         revisions = list(revisions)
     revisions.sort(key=lambda rev: rev.number)
@@ -1579,9 +1579,9 @@ async def vote_tabulate(
     """
     # asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
-        release_name = sql.release_key(data.project, data.version)
-        release = await db_data.release(key=str(release_name), _project_release_policy=True).demand(
-            exceptions.NotFound(f"Release {release_name} not found"),
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(key=str(release_key), _project_release_policy=True).demand(
+            exceptions.NotFound(f"Release {release_key} not found"),
         )
 
     latest_vote_task = await interaction.release_latest_vote_task(release)

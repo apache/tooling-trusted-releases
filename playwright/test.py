@@ -401,34 +401,34 @@ def ensure_success_results_are_visible(page: Page, result_type: str) -> None:
                 expect(first_success_row).not_to_have_class("atr-hide", timeout=1000)
 
 
-def release_remove(page: Page, release_name: str) -> None:
-    logging.info(f"Checking whether the {release_name} release exists")
-    release_checkbox_locator = page.locator(f'input[name="releases_to_delete"][value="{release_name}"]')
+def release_remove(page: Page, release_key: str) -> None:
+    logging.info(f"Checking whether the {release_key} release exists")
+    release_checkbox_locator = page.locator(f'input[name="releases_to_delete"][value="{release_key}"]')
 
     if release_checkbox_locator.is_visible():
-        logging.info(f"Found the {release_name} release, proceeding with deletion")
-        logging.info(f"Selecting {release_name} for deletion")
+        logging.info(f"Found the {release_key} release, proceeding with deletion")
+        logging.info(f"Selecting {release_key} for deletion")
         release_checkbox_locator.check()
 
-        logging.info(f"Filling deletion confirmation for {release_name}")
+        logging.info(f"Filling deletion confirmation for {release_key}")
         page.locator("#confirm_delete").fill("DELETE")
 
-        logging.info(f"Submitting deletion form for {release_name}")
+        logging.info(f"Submitting deletion form for {release_key}")
         submit_button_locator = page.get_by_role("button", name="Delete selected releases permanently")
         expect(submit_button_locator).to_be_enabled()
         submit_button_locator.click()
 
-        logging.info(f"Waiting for page load after deletion submission for {release_name}")
+        logging.info(f"Waiting for page load after deletion submission for {release_key}")
         page.wait_for_load_state()
-        logging.info(f"Page loaded after deletion for {release_name}")
+        logging.info(f"Page loaded after deletion for {release_key}")
 
-        logging.info(f"Checking for success flash message for {release_name}")
+        logging.info(f"Checking for success flash message for {release_key}")
         flash_message_locator = page.locator("div.flash-success")
         expect(flash_message_locator).to_be_visible()
         expect(flash_message_locator).to_contain_text("Successfully deleted 1 release")
-        logging.info(f"Deletion successful for {release_name}")
+        logging.info(f"Deletion successful for {release_key}")
     else:
-        logging.info(f"Could not find the {release_name} release, no deletion needed")
+        logging.info(f"Could not find the {release_key} release, no deletion needed")
 
 
 def run_tests(skip_slow: bool, tidy_after: bool) -> None:

@@ -127,7 +127,7 @@ async def list_get(
             submit_label="Delete",
             empty=True,
             defaults={
-                "release_name": dist.release_key,
+                "release_key": dist.release_key,
                 "platform": shared.distribution.DistributionPlatform.from_sql(dist.platform),
                 "owner_namespace": dist.owner_namespace or "",
                 "package": dist.package,

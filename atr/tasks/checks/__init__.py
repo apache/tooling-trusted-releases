@@ -61,7 +61,7 @@ class FunctionArguments:
 
 class Recorder:
     checker: str
-    release_name: safe.ReleaseKey
+    release_key: safe.ReleaseKey
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
     primary_rel_path: str | None
@@ -83,7 +83,7 @@ class Recorder:
         afresh: bool = True,
     ) -> None:
         self.checker = function_key(checker)
-        self.release_name = sql.release_key(project_key, version_key)
+        self.release_key = sql.release_key(project_key, version_key)
         self.revision_number = revision_number
         self.primary_rel_path = primary_rel_path
         self.member_rel_path = member_rel_path
@@ -146,7 +146,7 @@ class Recorder:
                 self.member_problems[status] = self.member_problems.get(status, 0) + 1
 
         result = sql.CheckResult(
-            release_key=str(self.release_name),
+            release_key=str(self.release_key),
             revision_number=str(self.revision_number),
             checker=self.checker,
             primary_rel_path=primary_rel_path or self.primary_rel_path,

@@ -126,12 +126,12 @@ class CommitteeParticipant(FoundationCommitter):
         task_count = task_result.rowcount if isinstance(task_result, engine.CursorResult) else 0
         log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_key!s} {version!s}")
 
-        release_name = release.key
+        release_key = release.key
 
         # These deletes would also be performed by database cascade
         # We do them here before the commit instead to be explicit
         rfs_delete_stmt = sqlmodel.delete(sql.ReleaseFileState).where(
-            via(sql.ReleaseFileState.release_key) == release_name,
+            via(sql.ReleaseFileState.release_key) == release_key,
         )
         rfs_result = await self.__data.execute(rfs_delete_stmt)
         rfs_count = rfs_result.rowcount if isinstance(rfs_result, engine.CursorResult) else 0
@@ -146,10 +146,10 @@ class CommitteeParticipant(FoundationCommitter):
         is_test_release = config.get().ALLOW_TESTS and (committee is not None) and (committee.key == "test")
         if is_test_release:
             counter_delete_stmt = sqlmodel.delete(sql.RevisionCounter).where(
-                via(sql.RevisionCounter.release_key) == release_name
+                via(sql.RevisionCounter.release_key) == release_key
             )
             await self.__data.execute(counter_delete_stmt)
-            log.info(f"Deleted revision counter for test release: {release_name}")
+            log.info(f"Deleted revision counter for test release: {release_key}")
 
         # Filesystem deletions are more likely to have permission errors than database deletions
         # Therefore we do filesystem deletions first
@@ -330,12 +330,12 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def promote_to_candidate(
         self,
-        release_name: safe.ReleaseKey,
+        release_key: safe.ReleaseKey,
         selected_revision_number: safe.RevisionNumber,
         vote_manual: bool = False,
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
-        release_for_pre_checks = await self.__data.release(key=str(release_name), _project=True).demand(
+        release_for_pre_checks = await self.__data.release(key=str(release_key), _project=True).demand(
             storage.AccessError("Release candidate draft not found")
         )
         project_key = release_for_pre_checks.safe_project_key
@@ -387,7 +387,7 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
-            release_name=str(release_name),
+            release_key=str(release_key),
             selected_revision_number=str(selected_revision_number),
             vote_manual=vote_manual,
         )
@@ -505,9 +505,9 @@ class CommitteeParticipant(FoundationCommitter):
         if isinstance(result, sql.Quarantined):
             return result
         async with db.session() as data:
-            release_name = sql.release_key(args.project, args.version)
+            release_key = sql.release_key(args.project, args.version)
             return await data.revision(
-                release_key=str(release_name),
+                release_key=str(release_key),
                 number=result.number,
             ).demand(storage.AccessError("Revision not found"))
 

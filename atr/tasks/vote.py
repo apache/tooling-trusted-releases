@@ -32,7 +32,7 @@ import atr.util as util
 class Initiate(schema.Strict):
     """Arguments for the task to start a vote."""
 
-    release_name: str = schema.description("The name of the release to vote on")
+    release_key: str = schema.description("The name of the release to vote on")
     email_to: str = schema.description("The mailing list address to send the vote email to")
     vote_duration: int = schema.description("Duration of the vote in hours")
     initiator_id: str = schema.description("ASF ID of the vote initiator")
@@ -62,7 +62,7 @@ async def initiate(args: Initiate) -> results.Results | None:
 async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     """Get arguments, create an email, and then send it to the recipient."""
     log.info("Starting initiate_core")
-    safe.ReleaseKey(args.release_name)
+    safe.ReleaseKey(args.release_key)
 
     # Validate arguments
     if not (args.email_to.endswith("@apache.org") or args.email_to.endswith(".apache.org")):
@@ -70,20 +70,18 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
         raise VoteInitiationError("Invalid destination email address")
 
     async with db.session() as data:
-        release = await data.release(key=args.release_name, _project=True, _committee=True).demand(
-            VoteInitiationError(f"Release {args.release_name!s} not found")
+        release = await data.release(key=args.release_key, _project=True, _committee=True).demand(
+            VoteInitiationError(f"Release {args.release_key!s} not found")
         )
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
-            raise VoteInitiationError(f"No revisions found for release {args.release_name!s}")
+            raise VoteInitiationError(f"No revisions found for release {args.release_key!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
             release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
         )
         if ongoing_tasks > 0:
-            raise VoteInitiationError(
-                f"Cannot start vote for {args.release_name!s} as {ongoing_tasks} are not complete"
-            )
+            raise VoteInitiationError(f"Cannot start vote for {args.release_key!s} as {ongoing_tasks} are not complete")
 
     # Calculate vote end date
     vote_duration_hours = args.vote_duration
@@ -141,7 +139,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     )
 
     if mail_errors:
-        log.warning(f"Start vote for {args.release_name}: sending to {args.email_to} gave errors: {mail_errors}")
+        log.warning(f"Start vote for {args.release_key}: sending to {args.email_to} gave errors: {mail_errors}")
     else:
         log.info(f"Vote email sent successfully to {args.email_to}")
     return result

@@ -279,7 +279,7 @@ def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
 def release(r: sql.Release) -> AnnotatedDivergences:
     """Check that a release is valid."""
     yield from release_created(r)
-    yield from release_name(r)
+    yield from release_key(r)
     yield from release_on_disk(r)
     yield from release_package_managers(r)
     yield from release_released(r)
@@ -319,8 +319,8 @@ def release_created(r: sql.Release) -> Divergences:
     yield from divergences_predicate(predicate, expected, r.created)
 
 
-@release_components("Release.name")
-def release_name(r: sql.Release) -> Divergences:
+@release_components("Release.key")
+def release_key(r: sql.Release) -> Divergences:
     """Check that the release name is valid."""
     expected = sql.release_key(r.project_key, r.version)
     actual = r.key
