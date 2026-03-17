@@ -54,6 +54,7 @@ class FakeRevision:
         self.name = ""
         self.number = ""
         self.parent_name: str | None = None
+        self.seq: int = 0
         self.phase = phase
         self.release = release
         self.release_name = release_name
@@ -85,6 +86,7 @@ class MockSafeData:
             raise RuntimeError("Expected data.add to set _new_revision before flush")
         self._new_revision.name = f"{self._new_revision.release_name} {self._new_number}"
         self._new_revision.number = self._new_number
+        self._new_revision.seq = int(self._new_number)
         self._new_revision.parent_name = self._parent_name
 
     async def _merge(self, obj: object) -> object:
@@ -282,6 +284,71 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
     assert isinstance(received_args["path"], pathlib.Path)
     assert received_args["old_rev"] is None
     assert not os.listdir(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathlib.Path):
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.release_policy = None
+    release.release_policy = None
+    release_name = sql.release_name("proj", "1.0")
+
+    old_revision = mock.MagicMock()
+    old_revision.name = f"{release_name} 00001"
+    old_revision.number = "00001"
+    old_revision.safe_number = safe.RevisionNumber("00001")
+
+    import contextlib
+
+    import atr.models.attestable as attestable
+
+    v1_attestable = attestable.AttestableV1(paths={"example.txt": "hash1"})
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_name=old_revision.name, new_number="00002")
+
+    patches = [
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=v1_attestable),
+        mock.patch.object(
+            revision.attestable,
+            "paths_to_hashes_and_sizes",
+            new_callable=mock.AsyncMock,
+            return_value=({"example.txt": "hash2"}, {"example.txt": 100}),
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_classifications", return_value={"example.txt": "binary"}),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(
+            revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=old_revision
+        ),
+        mock.patch.object(revision.merge, "merge", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision.tasks, "draft_checks", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00002"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
+    ]
+
+    with contextlib.ExitStack() as stack:
+        for patch in patches:
+            stack.enter_context(patch)
+        await participant.create_revision_with_quarantine("proj", "1.0", "test")
+
+    added_objects = [call.args[0] for call in safe_data.add.call_args_list]
+    file_state_rows = [obj for obj in added_objects if isinstance(obj, sql.ReleaseFileState)]
+    assert file_state_rows == []
 
 
 def _make_fake_revision(**kwargs) -> FakeRevision:
