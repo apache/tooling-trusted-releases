@@ -112,7 +112,7 @@ async def finalise(
             version_name=str(version_name),
         )
     except Exception as e:
-        log.exception("Error finalising upload:")
+        log.exception(f"Error finalising upload: {e!r}")
         return _json_error(f"Error finalising upload: {e!s}", 500)
 
 

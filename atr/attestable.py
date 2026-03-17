@@ -30,6 +30,7 @@ import atr.hashes as hashes
 import atr.log as log
 import atr.models.attestable as models
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
 
@@ -50,6 +51,81 @@ def attestable_paths_path(
     project_name: safe.ProjectKey, version_name: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> pathlib.Path:
     return paths.get_attestable_dir() / str(project_name) / str(version_name) / f"{revision_number!s}.paths.json"
+
+
+def can_write_file_state_rows(
+    previous: models.Attestable | None,
+    parent_name: str | None,
+) -> bool:
+    is_first_revision = (previous is None) and (parent_name is None)
+    is_v2_continuation = isinstance(previous, models.AttestableV2)
+    return is_first_revision or is_v2_continuation
+
+
+def compute_classifications(
+    path_to_hash: dict[str, str],
+    release_policy: dict[str, Any] | None,
+    base_path: pathlib.Path,
+) -> dict[str, str]:
+    policy = release_policy or {}
+    source_matcher, binary_matcher = classify.matchers_from_policy(
+        policy.get("source_artifact_paths", []),
+        policy.get("binary_artifact_paths", []),
+        base_path,
+    )
+    return {
+        path_key: classify.classify(pathlib.Path(path_key), base_path, source_matcher, binary_matcher).value
+        for path_key in path_to_hash
+    }
+
+
+def compute_file_state_rows(
+    release_name: str,
+    since_revision_seq: int,
+    path_to_hash: dict[str, str],
+    classifications: dict[str, str],
+    previous: models.Attestable | None,
+) -> list[sql.ReleaseFileState]:
+    prev_hashes: dict[str, str] = {}
+    prev_classifications: dict[str, str] = {}
+    if previous is not None:
+        prev_hashes = path_hashes(previous)
+        if isinstance(previous, models.AttestableV2):
+            prev_classifications = {path_key: entry.classification for path_key, entry in previous.paths.items()}
+
+    rows: list[sql.ReleaseFileState] = []
+
+    for path_key in sorted(path_to_hash):
+        content_hash = path_to_hash[path_key]
+        classification = classifications[path_key]
+        # If all prior metadata properties are the same, we skip recording an event
+        if (prev_hashes.get(path_key) == content_hash) and (prev_classifications.get(path_key) == classification):
+            continue
+        rows.append(
+            sql.ReleaseFileState(
+                release_name=release_name,
+                path=path_key,
+                since_revision_seq=since_revision_seq,
+                present=True,
+                content_hash=content_hash,
+                classification=classification,
+            )
+        )
+
+    for path_key in sorted(prev_hashes):
+        if path_key not in path_to_hash:
+            rows.append(
+                sql.ReleaseFileState(
+                    release_name=release_name,
+                    path=path_key,
+                    since_revision_seq=since_revision_seq,
+                    present=False,
+                    content_hash=None,
+                    classification=None,
+                )
+            )
+
+    return rows
 
 
 def github_tp_payload_path(
@@ -227,9 +303,17 @@ async def write_files_data(
     path_to_hash: dict[str, str],
     path_to_size: dict[str, int],
     base_path: pathlib.Path,
+    classifications: dict[str, str] | None = None,
 ) -> None:
     result = _generate_files_data(
-        path_to_hash, path_to_size, revision_number, release_policy, uploader_uid, previous, base_path
+        path_to_hash,
+        path_to_size,
+        revision_number,
+        release_policy,
+        uploader_uid,
+        previous,
+        base_path,
+        classifications=classifications,
     )
     file_path = attestable_path(project_name, version_name, revision_number)
     await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
@@ -240,23 +324,6 @@ async def write_files_data(
     if not checks_file_path.exists():
         async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
             await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
-
-
-def _compute_classifications(
-    path_to_hash: dict[str, str],
-    release_policy: dict[str, Any] | None,
-    base_path: pathlib.Path,
-) -> dict[str, str]:
-    policy = release_policy or {}
-    source_matcher, binary_matcher = classify.matchers_from_policy(
-        policy.get("source_artifact_paths", []),
-        policy.get("binary_artifact_paths", []),
-        base_path,
-    )
-    return {
-        path_key: classify.classify(pathlib.Path(path_key), base_path, source_matcher, binary_matcher).value
-        for path_key in path_to_hash
-    }
 
 
 def _compute_hashes_with_attribution(  # noqa: C901
@@ -312,6 +379,7 @@ def _generate_files_data(
     uploader_uid: str,
     previous: models.Attestable | None,
     base_path: pathlib.Path,
+    classifications: dict[str, str] | None = None,
 ) -> models.AttestableV2:
     current_hash_to_paths: dict[str, set[str]] = {}
     for path_key, hash_ref in path_to_hash.items():
@@ -321,7 +389,8 @@ def _generate_files_data(
         current_hash_to_paths, path_to_size, previous, uploader_uid, revision_number
     )
 
-    classifications = _compute_classifications(path_to_hash, release_policy, base_path)
+    if classifications is None:
+        classifications = compute_classifications(path_to_hash, release_policy, base_path)
     return models.AttestableV2(
         hashes=dict(new_hashes),
         paths={

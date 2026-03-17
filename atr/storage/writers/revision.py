@@ -192,18 +192,32 @@ async def _commit_new_revision(
     await asyncio.to_thread(util.chmod_directories, new_revision_dir, 0o555)
 
     policy = release.release_policy or release.project.release_policy
+    policy_dict = policy.model_dump() if policy else None
+
+    classifications = attestable.compute_classifications(path_to_hash, policy_dict, new_revision_dir)
 
     await attestable.write_files_data(
         project_name,
         version_name,
         new_revision.safe_number,
-        policy.model_dump() if policy else None,
+        policy_dict,
         asf_uid,
         previous_attestable,
         path_to_hash,
         path_to_size,
         new_revision_dir,
+        classifications=classifications,
     )
+
+    if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_name):
+        for row in attestable.compute_file_state_rows(
+            release_name,
+            new_revision.seq,
+            path_to_hash,
+            classifications,
+            previous_attestable,
+        ):
+            data.add(row)
 
     # Commit to end the transaction started by data.begin_immediate
     # We must commit the revision before starting the checks

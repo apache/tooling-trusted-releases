@@ -127,6 +127,16 @@ class CommitteeParticipant(FoundationCommitter):
         log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_name!s} {version!s}")
 
         release_name = release.name
+
+        # These deletes would also be performed by database cascade
+        # We do them here before the commit instead to be explicit
+        rfs_delete_stmt = sqlmodel.delete(sql.ReleaseFileState).where(
+            via(sql.ReleaseFileState.release_name) == release_name,
+        )
+        rfs_result = await self.__data.execute(rfs_delete_stmt)
+        rfs_count = rfs_result.rowcount if isinstance(rfs_result, engine.CursorResult) else 0
+        log.debug(f"Deleted {util.plural(rfs_count, 'file state row')} for {project_name!s} {version!s}")
+
         await self.__data.delete(release)
         log.info(f"Deleted release record: {project_name!s} {version!s}")
 
