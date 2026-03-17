@@ -109,7 +109,7 @@ def test_compute_file_state_rows_new_path():
     )
 
     assert len(rows) == 1
-    assert rows[0].release_name == "example-0.0.1"
+    assert rows[0].release_key == "example-0.0.1"
     assert rows[0].path == "README.md"
     assert rows[0].since_revision_seq == 1
     assert rows[0].present is True

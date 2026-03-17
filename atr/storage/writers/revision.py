@@ -209,9 +209,9 @@ async def _commit_new_revision(
         classifications=classifications,
     )
 
-    if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_name):
+    if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
         for row in attestable.compute_file_state_rows(
-            release_name,
+            release_key,
             new_revision.seq,
             path_to_hash,
             classifications,

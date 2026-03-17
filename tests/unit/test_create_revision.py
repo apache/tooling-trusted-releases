@@ -249,7 +249,9 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00007"),
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
-        created_revision = await participant.create_revision_with_quarantine(safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test")
+        created_revision = await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test"
+        )
 
     assert isinstance(created_revision, FakeRevision)
     assert merge_mock.await_count == 1
@@ -279,7 +281,9 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
-            await participant.create_revision_with_quarantine(safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", modify=modify)
+            await participant.create_revision_with_quarantine(
+                safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", modify=modify
+            )
 
     assert isinstance(received_args["path"], pathlib.Path)
     assert received_args["old_rev"] is None
@@ -293,10 +297,10 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     release.project = mock.MagicMock()
     release.project.release_policy = None
     release.release_policy = None
-    release_name = sql.release_name("proj", "1.0")
+    release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
-    old_revision.name = f"{release_name} 00001"
+    old_revision.name = f"{release_key} 00001"
     old_revision.number = "00001"
     old_revision.safe_number = safe.RevisionNumber("00001")
 
@@ -308,7 +312,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
-    safe_data = MockSafeData(parent_name=old_revision.name, new_number="00002")
+    safe_data = MockSafeData(parent_key=old_revision.name, new_number="00002")
 
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),

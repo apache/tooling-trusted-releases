@@ -80,7 +80,7 @@ def compute_classifications(
 
 
 def compute_file_state_rows(
-    release_name: str,
+    release_key: str,
     since_revision_seq: int,
     path_to_hash: dict[str, str],
     classifications: dict[str, str],
@@ -103,7 +103,7 @@ def compute_file_state_rows(
             continue
         rows.append(
             sql.ReleaseFileState(
-                release_name=release_name,
+                release_key=release_key,
                 path=path_key,
                 since_revision_seq=since_revision_seq,
                 present=True,
@@ -116,7 +116,7 @@ def compute_file_state_rows(
         if path_key not in path_to_hash:
             rows.append(
                 sql.ReleaseFileState(
-                    release_name=release_name,
+                    release_key=release_key,
                     path=path_key,
                     since_revision_seq=since_revision_seq,
                     present=False,
