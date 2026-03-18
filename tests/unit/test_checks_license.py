@@ -34,8 +34,68 @@ NOTICE_VALID: str = (
 )
 
 
+def test_files_binary_license_notice_in_subdir(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    meta_inf = root / "META-INF"
+    meta_inf.mkdir()
+    (meta_inf / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (meta_inf / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+
+
+def test_files_binary_license_txt_notice_txt_nested(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    nested = root / "lib" / "inner"
+    nested.mkdir(parents=True)
+    (nested / "LICENSE.txt").write_text(constants.APACHE_LICENSE_2_0)
+    (nested / "NOTICE.txt").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+
+
+def test_files_binary_missing_license(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
+    blockers = [
+        r for r in results if isinstance(r, license.ArtifactResult) and (r.status == sql.CheckResultStatus.BLOCKER)
+    ]
+    assert any("LICENSE" in r.message for r in blockers)
+
+
+def test_files_binary_missing_notice(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
+    blockers = [
+        r for r in results if isinstance(r, license.ArtifactResult) and (r.status == sql.CheckResultStatus.BLOCKER)
+    ]
+    assert any("NOTICE" in r.message for r in blockers)
+
+
+def test_files_binary_multiple_license_no_failure(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (root / "NOTICE").write_text(NOTICE_VALID)
+    meta_inf = root / "META-INF"
+    meta_inf.mkdir()
+    (meta_inf / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (meta_inf / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+
+
 def test_files_missing_cache_dir():
-    results = list(license._files_check_core_logic(pathlib.Path("/nonexistent"), is_podling=False))
+    results = list(license._files_check_core_logic(pathlib.Path("/nonexistent"), is_podling=False, is_binary=False))
     assert len(results) == 1
     assert results[0].status == sql.CheckResultStatus.FAILURE
     assert "not available" in results[0].message.lower()
@@ -46,7 +106,7 @@ def test_files_multiple_root_dirs(tmp_path):
     cache_dir.mkdir()
     (cache_dir / "root-a").mkdir()
     (cache_dir / "root-b").mkdir()
-    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     assert len(results) >= 1
     assert results[0].status == sql.CheckResultStatus.FAILURE
     assert "root directory" in results[0].message.lower()
@@ -56,7 +116,7 @@ def test_files_no_root_dirs(tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     (cache_dir / "LICENSE").write_text("stray file")
-    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     assert len(results) >= 1
     assert results[0].status == sql.CheckResultStatus.FAILURE
     assert "0" in results[0].message
@@ -67,7 +127,7 @@ def test_files_podling_without_disclaimer(tmp_path):
     root = cache_dir / "apache-test-0.2"
     (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
     (root / "NOTICE").write_text(NOTICE_VALID)
-    results = list(license._files_check_core_logic(cache_dir, is_podling=True))
+    results = list(license._files_check_core_logic(cache_dir, is_podling=True, is_binary=False))
     assert any(isinstance(r, license.ArtifactResult) and (r.status == sql.CheckResultStatus.BLOCKER) for r in results)
 
 
@@ -78,9 +138,24 @@ def test_files_single_root_with_stray_top_level_file(tmp_path):
     (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
     (root / "NOTICE").write_text(NOTICE_VALID)
     (cache_dir / "stray.txt").write_text("ignored")
-    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
     assert sql.CheckResultStatus.SUCCESS in statuses
+
+
+def test_files_source_nested_license_notice_ignored(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    meta_inf = root / "META-INF"
+    meta_inf.mkdir()
+    (meta_inf / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
+    (meta_inf / "NOTICE").write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
+    blockers = [
+        r for r in results if isinstance(r, license.ArtifactResult) and (r.status == sql.CheckResultStatus.BLOCKER)
+    ]
+    assert any("LICENSE" in r.message for r in blockers)
+    assert any("NOTICE" in r.message for r in blockers)
 
 
 def test_files_valid_license_and_notice(tmp_path):
@@ -88,7 +163,7 @@ def test_files_valid_license_and_notice(tmp_path):
     root = cache_dir / "apache-test-0.2"
     (root / "LICENSE").write_text(constants.APACHE_LICENSE_2_0)
     (root / "NOTICE").write_text(NOTICE_VALID)
-    results = list(license._files_check_core_logic(cache_dir, is_podling=False))
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
     assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
 

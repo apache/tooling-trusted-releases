@@ -81,9 +81,11 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "3"
+CHECK_VERSION_FILES: Final[str] = "4"
 CHECK_VERSION_HEADERS: Final[str] = "3"
 
+_BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
+_BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
 _MAX_LICENSE_NOTICE_SIZE: Final[int] = 1024 * 1024
 
 # Types
@@ -154,7 +156,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     try:
-        for result in await asyncio.to_thread(_files_check_core_logic, archive_dir, is_podling):
+        for result in await asyncio.to_thread(_files_check_core_logic, archive_dir, is_podling, is_binary):
             match result:
                 case ArtifactResult():
                     await _record_artifact(recorder, result)
@@ -239,12 +241,73 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
     return False, "Could not find Apache License header"
 
 
-def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool) -> Iterator[Result]:
-    """Verify that LICENSE and NOTICE files exist and are placed and formatted correctly."""
-    license_results: dict[str, str | None] = {}
-    notice_results: dict[str, tuple[bool, list[str], str]] = {}
-    disclaimer_found = False
+def _files_check_binary(root_path: pathlib.Path) -> Iterator[Result]:
+    license_paths: list[pathlib.Path] = []
+    notice_paths: list[pathlib.Path] = []
 
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("._"))
+
+        for filename in sorted(filenames):
+            if filename.startswith("._"):
+                continue
+
+            if filename in _BINARY_LICENSE_FILENAMES:
+                license_paths.append(pathlib.Path(dirpath) / filename)
+
+            if filename in _BINARY_NOTICE_FILENAMES:
+                notice_paths.append(pathlib.Path(dirpath) / filename)
+
+    yield _files_check_binary_license(license_paths, root_path)
+    yield _files_check_binary_notice(notice_paths, root_path)
+
+
+def _files_check_binary_license(paths: list[pathlib.Path], root_path: pathlib.Path) -> ArtifactResult:
+    if not paths:
+        return ArtifactResult(
+            status=sql.CheckResultStatus.BLOCKER,
+            message="No LICENSE or LICENSE.txt file found",
+            data=None,
+        )
+    for path in paths:
+        if _files_check_core_logic_license(path) is None:
+            rel_path = str(path.relative_to(root_path))
+            return ArtifactResult(
+                status=sql.CheckResultStatus.SUCCESS,
+                message=f"{rel_path} is valid",
+                data=None,
+            )
+    return ArtifactResult(
+        status=sql.CheckResultStatus.FAILURE,
+        message="No valid LICENSE or LICENSE.txt file found",
+        data=None,
+    )
+
+
+def _files_check_binary_notice(paths: list[pathlib.Path], root_path: pathlib.Path) -> ArtifactResult:
+    if not paths:
+        return ArtifactResult(
+            status=sql.CheckResultStatus.BLOCKER,
+            message="No NOTICE or NOTICE.txt file found",
+            data=None,
+        )
+    for path in paths:
+        notice_ok, _, _ = _files_check_core_logic_notice(path)
+        if notice_ok:
+            rel_path = str(path.relative_to(root_path))
+            return ArtifactResult(
+                status=sql.CheckResultStatus.SUCCESS,
+                message=f"{rel_path} is valid",
+                data=None,
+            )
+    return ArtifactResult(
+        status=sql.CheckResultStatus.FAILURE,
+        message="No valid NOTICE or NOTICE.txt file found",
+        data=None,
+    )
+
+
+def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool, is_binary: bool) -> Iterator[Result]:
     if not archive_dir.is_dir():
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
@@ -265,37 +328,12 @@ def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool) -> Iter
             data=None,
         )
         return
+
     root_path = archive_dir / root_dirs[0]
-
-    for entry in sorted(os.listdir(root_path)):
-        if entry.startswith("._"):
-            # Metadata convention
-            continue
-
-        entry_path = root_path / entry
-        if not entry_path.is_file():
-            # Skip subdirectories
-            continue
-
-        if entry == "LICENSE":
-            # TODO: Check length, should be 11,358 bytes
-            license_diff = _files_check_core_logic_license(entry_path)
-            license_results[entry] = license_diff
-        elif entry == "NOTICE":
-            # TODO: Check length doesn't exceed some preset
-            notice_ok, notice_issues, notice_preamble = _files_check_core_logic_notice(entry_path)
-            notice_results[entry] = (notice_ok, notice_issues, notice_preamble)
-        elif entry in {"DISCLAIMER", "DISCLAIMER-WIP"}:
-            disclaimer_found = True
-
-    yield from _license_results(license_results)
-    yield from _notice_results(notice_results)
-    if is_podling and (not disclaimer_found):
-        yield ArtifactResult(
-            status=sql.CheckResultStatus.BLOCKER,
-            message="No DISCLAIMER or DISCLAIMER-WIP file found",
-            data=None,
-        )
+    if is_binary:
+        yield from _files_check_binary(root_path)
+    else:
+        yield from _files_check_source(root_path, is_podling)
 
 
 def _files_check_core_logic_license(file_path: pathlib.Path) -> str | None:
@@ -357,6 +395,40 @@ def _files_check_core_logic_notice(file_path: pathlib.Path) -> tuple[bool, list[
         issues.append("missing or invalid foundation attribution")
 
     return len(issues) == 0, issues, preamble
+
+
+def _files_check_source(root_path: pathlib.Path, is_podling: bool) -> Iterator[Result]:
+    license_results: dict[str, str | None] = {}
+    notice_results: dict[str, tuple[bool, list[str], str]] = {}
+    disclaimer_found = False
+
+    for entry in sorted(os.listdir(root_path)):
+        if entry.startswith("._"):
+            continue
+
+        entry_path = root_path / entry
+        if not entry_path.is_file():
+            continue
+
+        if entry == "LICENSE":
+            # TODO: Check length, should be 11,358 bytes
+            license_diff = _files_check_core_logic_license(entry_path)
+            license_results[entry] = license_diff
+        elif entry == "NOTICE":
+            # TODO: Check length doesn't exceed some preset
+            notice_ok, notice_issues, notice_preamble = _files_check_core_logic_notice(entry_path)
+            notice_results[entry] = (notice_ok, notice_issues, notice_preamble)
+        elif entry in {"DISCLAIMER", "DISCLAIMER-WIP"}:
+            disclaimer_found = True
+
+    yield from _license_results(license_results)
+    yield from _notice_results(notice_results)
+    if is_podling and (not disclaimer_found):
+        yield ArtifactResult(
+            status=sql.CheckResultStatus.BLOCKER,
+            message="No DISCLAIMER or DISCLAIMER-WIP file found",
+            data=None,
+        )
 
 
 def _get_file_extension(filename: str) -> str | None:
