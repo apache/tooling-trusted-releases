@@ -27,6 +27,7 @@ import dulwich.refs
 import pytest
 
 import atr.models.github
+import atr.models.safe
 import atr.models.sql
 import atr.tasks.checks
 import atr.tasks.checks.compare
@@ -193,7 +194,7 @@ class RecorderFactory:
     def __init__(self, recorder: atr.tasks.checks.Recorder) -> None:
         self._recorder = recorder
 
-    async def __call__(self) -> atr.tasks.checks.Recorder:
+    async def __call__(self, _version: str | None) -> atr.tasks.checks.Recorder:
         return self._recorder
 
 
@@ -201,10 +202,11 @@ class RecorderStub(atr.tasks.checks.Recorder):
     def __init__(self, is_source: bool) -> None:
         super().__init__(
             checker="compare.source_trees",
+            checker_version="1",
             inputs_hash=None,
-            project_key="project",
-            version_key="version",
-            revision_number="00001",
+            project_key=atr.models.safe.ProjectKey("project"),
+            version_key=atr.models.safe.VersionKey("version"),
+            revision_number=atr.models.safe.RevisionNumber("00001"),
             primary_rel_path="artifact.tar.gz",
             member_rel_path=None,
             afresh=False,
@@ -224,6 +226,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
             release_key=self.release_key,
             revision_number=self.revision_number,
             checker=self.checker,
+            checker_version=self.checker_version,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
@@ -241,6 +244,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
             release_key=None,
             revision_number=None,
             checker=self.checker,
+            checker_version=self.checker_version,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),

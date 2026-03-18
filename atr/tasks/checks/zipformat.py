@@ -38,7 +38,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     # Now that we migrated to extracted trees, they're very similar
     # For simplicity, they've been updated separately for now
     # (There are several small differences to resolve between the two)
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION_STRUCTURE)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
     if await recorder.primary_path_is_binary():

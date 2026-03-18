@@ -50,7 +50,7 @@ import atr.util as util
 # It says: "you should define `Callable`, then call `FunctionArguments.model_rebuild()`"
 @dataclasses.dataclass
 class FunctionArguments:
-    recorder: Callable[[], Awaitable[Recorder]]
+    recorder: Callable[[str | None], Awaitable[Recorder]]
     asf_uid: str
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
@@ -61,6 +61,7 @@ class FunctionArguments:
 
 class Recorder:
     checker: str
+    checker_version: str | None
     release_key: safe.ReleaseKey
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
@@ -74,6 +75,7 @@ class Recorder:
     def __init__(
         self,
         checker: str | Callable[..., Any],
+        checker_version: str | None,
         inputs_hash: str | None,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
@@ -83,6 +85,7 @@ class Recorder:
         afresh: bool = True,
     ) -> None:
         self.checker = function_key(checker)
+        self.checker_version = checker_version
         self.release_key = sql.release_key(project_key, version_key)
         self.revision_number = revision_number
         self.primary_rel_path = primary_rel_path
@@ -100,6 +103,7 @@ class Recorder:
     async def create(
         cls,
         checker: str | Callable[..., Any],
+        checker_version: str | None,
         inputs_hash: str,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
@@ -110,6 +114,7 @@ class Recorder:
     ) -> Recorder:
         recorder = cls(
             checker,
+            checker_version,
             inputs_hash,
             project_key,
             version_key,
@@ -134,6 +139,8 @@ class Recorder:
     ) -> sql.CheckResult:
         if self.constructed is False:
             raise RuntimeError("Cannot add check result to a recorder that has not been constructed")
+        if self.checker_version is None:
+            raise RuntimeError("checker_version must be set before recording results")
         if primary_rel_path is not None:
             if self.primary_rel_path is not None:
                 raise ValueError("Cannot specify path twice")
@@ -149,6 +156,7 @@ class Recorder:
             release_key=str(self.release_key),
             revision_number=str(self.revision_number),
             checker=self.checker,
+            checker_version=self.checker_version,
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),

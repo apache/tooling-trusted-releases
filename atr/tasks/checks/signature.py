@@ -38,7 +38,7 @@ CHECK_VERSION: Final[str] = "1"
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
     """Check a signature file."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION)
     if not (primary_abs_path := await recorder.abs_path()):
         return None
 

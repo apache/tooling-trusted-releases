@@ -20,18 +20,20 @@ import pathlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 
 
 class RecorderStub(checks.Recorder):
-    def __init__(self, path: pathlib.Path, checker: str) -> None:
+    def __init__(self, path: pathlib.Path, checker: str, checker_version: str | None = None) -> None:
         super().__init__(
             checker=checker,
+            checker_version=checker_version,
             inputs_hash=None,
-            project_key="test",
-            version_key="test",
-            revision_number="00001",
+            project_key=safe.ProjectKey("test"),
+            version_key=safe.VersionKey("test"),
+            revision_number=safe.RevisionNumber("00001"),
             primary_rel_path=None,
             member_rel_path=None,
             afresh=False,
@@ -59,6 +61,7 @@ class RecorderStub(checks.Recorder):
             release_key=self.release_key,
             revision_number=self.revision_number,
             checker=self.checker,
+            checker_version=self.checker_version,
             primary_rel_path=primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
@@ -89,8 +92,8 @@ class RecorderStub(checks.Recorder):
         return await self._add(sql.CheckResultStatus.WARNING, message, data, primary_rel_path, member_rel_path)
 
 
-def get_recorder(recorder: checks.Recorder) -> Callable[[], Awaitable[checks.Recorder]]:
-    async def _recorder() -> checks.Recorder:
+def get_recorder(recorder: checks.Recorder) -> Callable[[str | None], Awaitable[checks.Recorder]]:
+    async def _recorder(_version: str | None) -> checks.Recorder:
         return recorder
 
     return _recorder

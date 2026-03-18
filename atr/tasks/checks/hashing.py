@@ -33,7 +33,7 @@ CHECK_VERSION: Final[str] = "1"
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
     """Check the hash of a file."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION)
     if not (hash_abs_path := await recorder.abs_path()):
         return None
 

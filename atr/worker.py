@@ -123,9 +123,10 @@ async def _execute_check_task(
     version_key = safe.VersionKey(task_obj.version_key)
     revision_number = safe.RevisionNumber(task_obj.revision_number)
 
-    async def recorder_factory() -> checks.Recorder:
+    async def recorder_factory(checker_version: str | None = None) -> checks.Recorder:
         return await checks.Recorder.create(
             checker=handler,
+            checker_version=checker_version,
             inputs_hash=task_obj.inputs_hash or "",
             project_key=project_key,
             version_key=version_key,

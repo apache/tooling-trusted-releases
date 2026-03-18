@@ -133,7 +133,7 @@ type Result = ArtifactResult | MemberResult | MemberSkippedResult
 
 async def files(args: checks.FunctionArguments) -> results.Results | None:
     """Check that the LICENSE and NOTICE files exist and are valid."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION_FILES)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 
@@ -174,7 +174,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
 async def headers(args: checks.FunctionArguments) -> results.Results | None:
     """Check that all source files have valid license headers."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION_HEADERS)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 

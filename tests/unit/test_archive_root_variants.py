@@ -21,6 +21,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.tasks.checks.targz as targz
@@ -291,9 +292,9 @@ async def _targz_structure_args(
     args = checks.FunctionArguments(
         recorder=recorders.get_recorder(recorder),
         asf_uid="",
-        project_key="test",
-        version_key="test",
-        revision_number="00001",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("test"),
+        revision_number=safe.RevisionNumber("00001"),
         primary_rel_path=archive_filename,
         extra_args={},
     )

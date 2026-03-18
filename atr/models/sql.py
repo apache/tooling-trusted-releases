@@ -1015,6 +1015,8 @@ class CheckResult(sqlmodel.SQLModel, table=True):
     # We don't call this latest_revision_number, because it might not be the latest
     revision_number: str | None = sqlmodel.Field(default=None, index=True, **example("00005"))
     checker: str = sqlmodel.Field(**example("atr.tasks.checks.license.files"))
+    checker_version: str | None = sqlmodel.Field(default=None, **example("2"))
+
     primary_rel_path: str | None = sqlmodel.Field(
         default=None, index=True, **example("apache-example-0.0.1-source.tar.gz")
     )

@@ -77,7 +77,7 @@ class RatError(RuntimeError):
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
     """Use Apache RAT to check the licenses of the files in the artifact."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
     if await recorder.primary_path_is_binary():

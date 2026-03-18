@@ -52,10 +52,11 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     # https://infra.apache.org/release-distribution.html
     # - Incubation Policy (IP)
     # https://incubator.apache.org/policy/incubation.html
-    base_recorder = await args.recorder()
+    base_recorder = await args.recorder(CHECK_VERSION)
 
     recorder_errors = await checks.Recorder.create(
         checker=checks.function_key(check) + "_errors",
+        checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
         project_key=args.project_key,
         version_key=args.version_key,
@@ -65,6 +66,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     )
     recorder_warnings = await checks.Recorder.create(
         checker=checks.function_key(check) + "_warnings",
+        checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
         project_key=args.project_key,
         version_key=args.version_key,
@@ -74,6 +76,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     )
     recorder_success = await checks.Recorder.create(
         checker=checks.function_key(check) + "_success",
+        checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
         project_key=args.project_key,
         version_key=args.version_key,

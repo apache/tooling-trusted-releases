@@ -83,7 +83,7 @@ class TreeComparisonResult:
 
 
 async def source_trees(args: checks.FunctionArguments) -> results.Results | None:  # noqa: C901
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION)
     is_source = await recorder.primary_path_is_source()
     if not is_source:
         log.info(

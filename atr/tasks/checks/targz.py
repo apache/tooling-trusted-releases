@@ -75,7 +75,7 @@ def root_directory(archive_dir: pathlib.Path) -> tuple[str, bytes | None]:
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:  # noqa: C901
     """Check the structure of a .tar.gz file using the extracted tree."""
-    recorder = await args.recorder()
+    recorder = await args.recorder(CHECK_VERSION_STRUCTURE)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
     if await recorder.primary_path_is_binary():
