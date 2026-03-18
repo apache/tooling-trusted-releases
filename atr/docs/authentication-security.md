@@ -9,6 +9,7 @@
 **Sections**:
 
 * [Overview](#overview)
+* [OAuth architecture and security responsibilities](#oauth-architecture-and-security-responsibilities)
 * [Transport security](#transport-security)
 * [Web authentication](#web-authentication)
 * [API authentication](#api-authentication)
@@ -24,6 +25,36 @@ ATR uses two authentication mechanisms depending on the access method:
 * **API**: Personal Access Tokens (PATs) authenticate users to obtain short-lived JSON Web Tokens (JWTs), which then authenticate API requests
 
 Both mechanisms require HTTPS. Authentication verifies the identity of users, while authorization (covered in [Authorization security](authorization-security)) determines what actions they can perform.
+
+## OAuth architecture and security responsibilities
+
+ATR participates in several authentication protocols but does not implement an OAuth Authorization Server. Understanding which roles ATR fills is important for knowing which security requirements apply to ATR versus external services.
+
+### ATR's roles
+
+**OAuth Client.** ATR delegates user authentication to the ASF OAuth service at `oauth.apache.org` via the [ASFQuart](https://github.com/apache/infrastructure-asfquart) framework. ATR redirects users to the ASF authorization endpoint, receives an authorization code in the callback, and immediately exchanges that code for session data. ATR does not store authorization codes, issue OAuth tokens, or manage OAuth client registrations.
+
+**OIDC Relying Party.** For [trusted publishing](trusted-publishing) workflows, ATR validates OIDC ID tokens issued by GitHub Actions (`token.actions.githubusercontent.com`). ATR verifies the token signature using the provider's JWKS endpoint, and checks the issuer, audience, expiration, and expected claims. ATR does not issue OIDC tokens.
+
+**Resource Server.** ATR issues its own short-lived JWTs (30-minute TTL, HS256) for API access. These are a custom API authentication mechanism, not OAuth access tokens or refresh tokens. See [API authentication](#api-authentication) below.
+
+### What ATR does not implement
+
+ATR does not implement any OAuth Authorization Server functionality: there is no authorization endpoint, no token endpoint with OAuth grant type handling, no authorization code generation or lifetime management, no client registration, no refresh token issuance or rotation, and no support for the Implicit or Resource Owner Password Credentials flows.
+
+### ASVS applicability
+
+The OWASP ASVS V10.4 requirements target OAuth Authorization Servers. Because ATR is not an Authorization Server, V10.4.1 through V10.4.5 (redirect URI validation, authorization code single-use and lifetime, grant type restrictions, refresh token replay mitigation) are the responsibility of `oauth.apache.org`, not ATR.
+
+The ASVS sections applicable to ATR are V10.2 (OAuth Client) and V10.3 (OAuth Resource Server). The OAuth client security controls that ATR implements are described in the sections below.
+
+### OAuth client security controls
+
+* **State parameter**: Generated with `secrets.token_hex(16)` and enforced as single-use (removed immediately on callback). Stale states expire after 900 seconds.
+* **Authorization code exchange**: Codes received from `oauth.apache.org` are exchanged immediately over HTTPS and are never stored locally.
+* **Session cookies**: Configured with `Secure`, `HttpOnly`, `SameSite=Strict`, and the `__Host-` prefix.
+* **Session lifetime**: Enforced with a configurable absolute maximum (default 72 hours).
+* **TLS enforcement**: All outbound requests to OAuth and OIDC endpoints use a hardened TLS context via [`util.create_secure_ssl_context()`](/ref/atr/util.py).
 
 ## Transport security
 
