@@ -25,6 +25,9 @@ from typing import Annotated, Any, Literal, TypeAliasType, get_args, get_origin,
 import asfquart.base as base
 import asfquart.session
 import pydantic
+import quart
+import quart_schema
+import werkzeug.exceptions as exceptions
 
 import atr.form as form
 import atr.ldap as ldap
@@ -89,7 +92,7 @@ def build_path(
     segments: list[str] = []
     validated_params: list[tuple[str, type]] = []
     literal_params: dict[str, str] = {}
-    form_param: tuple[str, type] | None = None
+    unique = _UniqueParams()
 
     for ix, param_name in enumerate(params):
         hint = hints.get(param_name)
@@ -102,16 +105,13 @@ def build_path(
             public = hint is web.Public
             continue
 
-        if _is_form_type(hint):
-            if form_param is not None:
-                raise TypeError(f"Parameter {param_name!r} in {func.__name__}: only one Form is allowed")
-            form_param = (param_name, hint)
+        if unique.check(hint, param_name, func.__name__):
             continue
 
         _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
 
     path = "/" + "/".join(segments)
-    return path, validated_params, literal_params, form_param, public
+    return path, validated_params, literal_params, unique.form, public
 
 
 def build_api_path(
@@ -121,6 +121,7 @@ def build_api_path(
     list[tuple[str, type]],
     dict[str, str],
     tuple[str, type[pydantic.BaseModel]] | None,
+    tuple[str, type] | None,
     tuple[str, type] | None,
     list[str],
 ]:
@@ -144,25 +145,20 @@ def build_api_path(
     segments: list[str] = []
     validated_params: list[tuple[str, type]] = []
     literal_params: dict[str, str] = {}
-    body_param: tuple[str, type[pydantic.BaseModel]] | None = None
-    query_param: tuple[str, type] | None = None
+    unique = _UniqueParams()
     optional_params: list[str] = []
 
-    for param_name in params:
+    for ix, param_name in enumerate(params):
         hint = hints.get(param_name)
         if hint is None:
             raise TypeError(f"Parameter {param_name!r} in {func.__name__} has no type annotation")
 
-        if _is_body_type(hint):
-            if body_param is not None:
-                raise TypeError(f"Parameter {param_name!r} in {func.__name__}: only one body type is allowed")
-            body_param = (param_name, hint)
+        if (hint is web.Public) or (hint is web.Committer):
+            if ix != 0:
+                raise TypeError(f"Parameter {param_name!r} in {func.__name__} must be first")
             continue
 
-        if _is_query_type(hint):
-            if query_param is not None:
-                raise TypeError(f"Parameter {param_name!r} in {func.__name__}: only one query type is allowed")
-            query_param = (param_name, hint)
+        if unique.check(hint, param_name, func.__name__):
             continue
 
         inner, is_optional = _unwrap_optional(hint)
@@ -175,7 +171,7 @@ def build_api_path(
         _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
 
     path = "/" + "/".join(segments)
-    return path, validated_params, literal_params, body_param, query_param, optional_params
+    return path, validated_params, literal_params, unique.body, unique.form, unique.query, optional_params
 
 
 def register_route(func: Callable[..., Any], prefix: str, routes: list[str]) -> None:
@@ -234,6 +230,96 @@ async def validate_safe_fields(
     for name, _ in safe_params:
         if name in temp:
             setattr(instance, name, temp[name])
+
+
+async def parse_body(
+    body_param: tuple[str, type[pydantic.BaseModel]],
+    safe_params: list[tuple[str, type]],
+    kwargs: dict[str, Any],
+) -> None:
+    """Parse and validate a JSON body parameter, adding it to kwargs."""
+    body_name, body_cls = body_param
+    json_data = await quart.request.get_json()
+    try:
+        body_instance = body_cls.model_validate(json_data)
+    except pydantic.ValidationError as e:
+        raise quart_schema.RequestSchemaValidationError(e) from e
+    if safe_params:
+        await validate_safe_fields(body_instance, safe_params, kwargs)
+    kwargs[body_name] = body_instance
+
+
+async def parse_query(
+    query_param: tuple[str, type],
+    safe_params: list[tuple[str, type]],
+    kwargs: dict[str, Any],
+) -> None:
+    """Parse and validate query string parameters, adding them to kwargs."""
+    query_name, query_cls = query_param
+    query_instance = _parse_query_args(query_cls, quart.request.args)
+    if safe_params:
+        await validate_safe_fields(query_instance, safe_params, kwargs)
+    kwargs[query_name] = query_instance
+
+
+def _coerce_query_field(raw: str, field_type: Any, field_name: str) -> Any:
+    """Coerce a raw query string value to the expected field type."""
+    if field_type is str or field_type == "str":
+        return raw
+    if field_type is int or field_type == "int":
+        try:
+            return int(raw)
+        except ValueError:
+            raise exceptions.BadRequest(f"Query parameter {field_name!r} must be an integer")
+    if field_type is bool or field_type == "bool":
+        return raw.lower() in ("true", "1", "yes")
+    return raw
+
+
+def _parse_query_args(query_cls: type, args: Any) -> Any:
+    """Parse query string parameters into a dataclass instance."""
+    field_values: dict[str, Any] = {}
+    for field in dataclasses.fields(query_cls):
+        raw = args.get(field.name)
+        if raw is None:
+            if field.default is not dataclasses.MISSING:
+                field_values[field.name] = field.default
+            elif field.default_factory is not dataclasses.MISSING:
+                field_values[field.name] = field.default_factory()
+            continue
+        field_values[field.name] = _coerce_query_field(raw, field.type, field.name)
+    return query_cls(**field_values)
+
+
+@dataclasses.dataclass
+class _UniqueParams:
+    """Tracks the at-most-one body, form, and query parameters during path building."""
+
+    body: tuple[str, type[pydantic.BaseModel]] | None = None
+    form: tuple[str, type] | None = None
+    query: tuple[str, type] | None = None
+
+    def check(self, hint: Any, param_name: str, func_name: str) -> bool:
+        """If hint is a body/form/query type, store it (ensuring uniqueness). Return True if matched."""
+        if _is_body_type(hint):
+            if self.body is not None:
+                raise TypeError(f"Parameter {param_name!r} in {func_name}: only one body type is allowed")
+            self.body = (param_name, hint)
+            return True
+
+        if _is_form_type(hint):
+            if self.form is not None:
+                raise TypeError(f"Parameter {param_name!r} in {func_name}: only one Form is allowed")
+            self.form = (param_name, hint)
+            return True
+
+        if _is_query_type(hint):
+            if self.query is not None:
+                raise TypeError(f"Parameter {param_name!r} in {func_name}: only one query type is allowed")
+            self.query = (param_name, hint)
+            return True
+
+        return False
 
 
 def _classify_url_param(
@@ -309,3 +395,14 @@ def _unwrap_optional(hint: Any) -> tuple[Any, bool]:
     if len(non_none) == 1 and type(None) in args:
         return non_none[0], True
     return hint, False
+
+
+QUART_ATTRIBUTES = [
+    quart_schema.validation.QUART_SCHEMA_HEADERS_ATTRIBUTE,
+    quart_schema.validation.QUART_SCHEMA_RESPONSE_ATTRIBUTE,
+    quart_schema.openapi.QUART_SCHEMA_SECURITY_ATTRIBUTE,
+    quart_schema.openapi.QUART_SCHEMA_TAG_ATTRIBUTE,
+    quart_schema.openapi.QUART_SCHEMA_HIDDEN_ATTRIBUTE,
+    quart_schema.openapi.QUART_SCHEMA_DEPRECATED_ATTRIBUTE,
+    quart_schema.openapi.QUART_SCHEMA_OPERATION_ID_ATTRIBUTE,
+]

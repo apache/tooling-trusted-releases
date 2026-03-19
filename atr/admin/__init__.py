@@ -53,6 +53,7 @@ import atr.mapping as mapping
 import atr.models.safe as safe
 import atr.models.session
 import atr.models.sql as sql
+import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
@@ -126,17 +127,25 @@ class SessionDataCommon(NamedTuple):
     projects: list[str]
 
 
-@admin.get("/all-releases")
-async def all_releases(session: web.Committer) -> str:
-    """Display a list of all releases across all phases."""
+@admin.typed
+async def all_releases(_session: web.Committer, _all_releases: Literal["all/releases"]) -> str:
+    """
+    URL: GET /all/releases
+
+    Display a list of all releases across all phases.
+    """
     async with db.session() as data:
         releases = await data.release(_project=True, _committee=True).order_by(sql.Release.key).all()
     return await template.render("all-releases.html", releases=releases, release_as_url=mapping.release_as_url)
 
 
-@admin.get("/browse-as")
-async def browse_as_get(session: web.Committer) -> str | web.WerkzeugResponse:
-    """Allows an admin to browse as another user."""
+@admin.typed
+async def browse_as_get(_session: web.Committer, _browse_as: Literal["browse-as"]) -> str | web.WerkzeugResponse:
+    """
+    URL: GET /browse-as
+
+    Allows an admin to browse as another user.
+    """
     rendered_form = form.render(
         model_cls=BrowseAsUserForm,
         submit_label="Browse as this user",
@@ -144,10 +153,15 @@ async def browse_as_get(session: web.Committer) -> str | web.WerkzeugResponse:
     return await template.render("browse-as.html", form=rendered_form)
 
 
-@admin.post("/browse-as")
-@admin.form(BrowseAsUserForm)
-async def browse_as_post(session: web.Committer, browse_form: BrowseAsUserForm) -> str | web.WerkzeugResponse:
-    """Allows an admin to browse as another user."""
+@admin.typed
+async def browse_as_post(
+    session: web.Committer, _browse_as: Literal["browse-as"], browse_form: BrowseAsUserForm
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /browse-as
+
+    Allows an admin to browse as another user.
+    """
     # We specifically need to use this on the production server
     import atr.get.root as root
 
@@ -194,9 +208,13 @@ async def browse_as_post(session: web.Committer, browse_form: BrowseAsUserForm) 
     return await session.redirect(root.index)
 
 
-@admin.get("/configuration")
-async def configuration(session: web.Committer) -> web.QuartResponse:
-    """Display the current application configuration values."""
+@admin.typed
+async def configuration(_session: web.Committer, _configuration: Literal["configuration"]) -> web.QuartResponse:
+    """
+    URL: GET /configuration
+
+    Display the current application configuration values.
+    """
 
     sensitive_config_patterns = ("_PASSWORD", "_KEY", "_TOKEN", "_SECRET")
 
@@ -219,9 +237,13 @@ async def configuration(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(values))
 
 
-@admin.get("/consistency")
-async def consistency(session: web.Committer) -> web.TextResponse:
-    """Check for consistency between the database and the filesystem."""
+@admin.typed
+async def consistency(_session: web.Committer, _consistency: Literal["consistency"]) -> web.TextResponse:
+    """
+    URL: GET /consistency
+
+    Check for consistency between the database and the filesystem.
+    """
     # Get all releases from the database
     async with db.session() as data:
         releases = await data.release().all()
@@ -264,19 +286,34 @@ async def consistency(session: web.Committer) -> web.TextResponse:
     )
 
 
-@admin.get("/data")
-async def data(session: web.Committer) -> str:
-    return await _data(session, "Committee")
+@admin.typed
+async def data(session: web.Committer, _data: Literal["data"]) -> str:
+    """
+    URL: GET /data
+    """
+    return await _data_browse(session, "Committee")
 
 
-@admin.get("/data/<model>")
-async def data_model(session: web.Committer, model: str = "Committee") -> str:
-    return await _data(session, model)
+@admin.typed
+async def data_model(
+    session: web.Committer, _data: Literal["data"], model: unsafe.UnsafeStr = unsafe.UnsafeStr("Committee")
+) -> str:
+    """
+    URL: GET /data/<model>
+    """
+
+    return await _data_browse(session, str(model))
 
 
-@admin.get("/delete-committee-keys")
-async def delete_committee_keys_get(session: web.Committer) -> str | web.WerkzeugResponse:
-    """Display the form to delete committee keys."""
+@admin.typed
+async def delete_committee_keys_get(
+    _session: web.Committer, _delete_committee_keys: Literal["delete-committee-keys"]
+) -> str | web.WerkzeugResponse:
+    """
+    URL: GET /delete-committee-keys
+
+    Display the form to delete committee keys.
+    """
     async with db.session() as data:
         all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.key).all()
         committees_with_keys = [c for c in all_committees if c.public_signing_keys]
@@ -291,12 +328,17 @@ async def delete_committee_keys_get(session: web.Committer) -> str | web.Werkzeu
     return await template.render("delete-committee-keys.html", form=rendered_form)
 
 
-@admin.post("/delete-committee-keys")
-@admin.form(DeleteCommitteeKeysForm)
+@admin.typed
 async def delete_committee_keys_post(
-    session: web.Committer, delete_form: DeleteCommitteeKeysForm
+    session: web.Committer,
+    _delete_committee_keys: Literal["delete-committee-keys"],
+    delete_form: DeleteCommitteeKeysForm,
 ) -> str | web.WerkzeugResponse:
-    """Delete all keys for selected committee."""
+    """
+    URL: POST /delete-committee-keys
+
+    Delete all keys for selected committee.
+    """
     committee_key = delete_form.committee_key
 
     async with db.session() as data:
@@ -336,9 +378,15 @@ async def delete_committee_keys_post(
     return await session.redirect(delete_committee_keys_get)
 
 
-@admin.get("/delete-release")
-async def delete_release_get(session: web.Committer) -> str | web.WerkzeugResponse:
-    """Display the form to delete releases."""
+@admin.typed
+async def delete_release_get(
+    _session: web.Committer, _delete_release_get: Literal["delete-release"]
+) -> str | web.WerkzeugResponse:
+    """
+    URL: GET /delete-release
+
+    Display the form to delete releases.
+    """
     async with db.session() as data:
         releases = await data.release(_project=True).order_by(sql.Release.key).all()
 
@@ -378,20 +426,31 @@ async def delete_release_get(session: web.Committer) -> str | web.WerkzeugRespon
     return await template.render("delete-release.html", form=rendered_form)
 
 
-@admin.post("/delete-release")
-@admin.form(DeleteReleaseForm)
-async def delete_release_post(session: web.Committer, delete_form: DeleteReleaseForm) -> str | web.WerkzeugResponse:
-    """Delete selected releases and their associated data and files."""
+@admin.typed
+async def delete_release_post(
+    session: web.Committer, _delete_release_get: Literal["delete-release"], delete_form: DeleteReleaseForm
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /delete-release
+
+    Delete selected releases and their associated data and files.
+    """
     await _delete_releases(session, delete_form.releases_to_delete)
 
     return await session.redirect(delete_release_get)
 
 
-@admin.get("/delete-test-openpgp-keys")
-async def delete_test_openpgp_keys_get(session: web.Committer) -> web.Response:
-    """Display the form to delete test user OpenPGP keys."""
+@admin.typed
+async def delete_test_openpgp_keys_get(
+    _session: web.Committer, _delete_test_openpgp_keys: Literal["delete-test-openpgp-keys"]
+) -> web.Response:
+    """
+    URL: GET /delete-test-openpgp-keys
+
+    Display the form to delete test user OpenPGP keys.
+    """
     if not config.get().ALLOW_TESTS:
-        raise base.ASFQuartException("Test operations are disabled in this environment", errorcode=403)
+        return quart.abort(404)
 
     rendered_form = form.render(
         model_cls=form.Empty,
@@ -401,12 +460,17 @@ async def delete_test_openpgp_keys_get(session: web.Committer) -> web.Response:
     return web.ElementResponse(rendered_form)
 
 
-@admin.post("/delete-test-openpgp-keys")
-@admin.empty()
-async def delete_test_openpgp_keys_post(session: web.Committer) -> web.Response:
-    """Delete all test user OpenPGP keys and their links."""
+@admin.typed
+async def delete_test_openpgp_keys_post(
+    session: web.Committer, _delete_test_openpgp_keys: Literal["delete-test-openpgp-keys"], _form: form.Empty
+) -> web.Response:
+    """
+    URL: POST /delete-test-openpgp-keys
+
+    Delete all test user OpenPGP keys and their links.
+    """
     if not config.get().ALLOW_TESTS:
-        raise base.ASFQuartException("Test operations are disabled in this environment", errorcode=403)
+        return quart.abort(404)
 
     test_uid = "test"
     try:
@@ -427,18 +491,26 @@ async def delete_test_openpgp_keys_post(session: web.Committer) -> web.Response:
     return await session.redirect(get.keys.keys)
 
 
-@admin.get("/env")
-async def env(session: web.Committer) -> web.QuartResponse:
-    """Display the environment variables."""
+@admin.typed
+async def env(_session: web.Committer, _env: Literal["env"]) -> web.QuartResponse:
+    """
+    URL: GET /env
+
+    Display the environment variables.
+    """
     env_vars = []
     for key, value in os.environ.items():
         env_vars.append(f"{key}={value}")
     return web.TextResponse("\n".join(env_vars))
 
 
-@admin.get("/keys/check")
-async def keys_check_get(session: web.Committer) -> web.QuartResponse:
-    """Check public signing key details."""
+@admin.typed
+async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/check"]) -> web.QuartResponse:
+    """
+    URL: GET /keys/check
+
+    Check public signing key details.
+    """
     rendered_form = form.render(
         model_cls=form.Empty,
         submit_label="Check public signing key details",
@@ -447,6 +519,7 @@ async def keys_check_get(session: web.Committer) -> web.QuartResponse:
     return web.ElementResponse(rendered_form)
 
 
+# TODO: AM Why has this no empty form?
 @admin.post("/keys/check")
 async def keys_check_post(session: web.Committer) -> web.QuartResponse:
     """Check public signing key details."""
@@ -458,9 +531,15 @@ async def keys_check_post(session: web.Committer) -> web.QuartResponse:
         return web.TextResponse(f"Exception during key check: {e!s}")
 
 
-@admin.get("/keys/regenerate-all")
-async def keys_regenerate_all_get(session: web.Committer) -> web.QuartResponse:
-    """Display the form to regenerate KEYS files."""
+@admin.typed
+async def keys_regenerate_all_get(
+    _session: web.Committer, _keys_regenerate_all: Literal["keys/regenerate-all"]
+) -> web.QuartResponse:
+    """
+    URL: GET /keys/regenerate-all
+
+    Display the form to regenerate KEYS files.
+    """
     rendered_form = form.render(
         model_cls=form.Empty,
         submit_label="Regenerate all KEYS files",
@@ -469,6 +548,7 @@ async def keys_regenerate_all_get(session: web.Committer) -> web.QuartResponse:
     return web.ElementResponse(rendered_form)
 
 
+# TODO: AM Why has this no empty form?
 @admin.post("/keys/regenerate-all")
 async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
     """Regenerate the KEYS file for all committees."""
@@ -493,9 +573,15 @@ async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(response_lines))
 
 
-@admin.get("/keys/update")
-async def keys_update_get(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """Update keys from remote data."""
+@admin.typed
+async def keys_update_get(
+    _session: web.Committer, _keys_update: Literal["keys/update"]
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+    """
+    URL: GET /keys/update
+
+    Update keys from remote data.
+    """
     rendered_form = form.render(
         model_cls=form.Empty,
         submit_label="Update keys",
@@ -512,6 +598,7 @@ async def keys_update_get(session: web.Committer) -> str | web.WerkzeugResponse 
     return await template.render("update-keys.html", empty_form=rendered_form, previous_output=previous_output)
 
 
+# TODO: AM Why has this no empty form?
 @admin.post("/keys/update")
 async def keys_update_post(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update keys from remote data."""
@@ -531,8 +618,11 @@ async def keys_update_post(session: web.Committer) -> str | web.WerkzeugResponse
         }, 200
 
 
-@admin.get("/ldap")
-async def ldap_get(session: web.Committer) -> str:
+@admin.typed
+async def ldap_get(session: web.Committer, _ldap: Literal["ldap"]) -> str:
+    """
+    URL: GET /ldap
+    """
     rendered_form = form.render(
         model_cls=LdapLookupForm,
         submit_label="Lookup",
@@ -547,9 +637,11 @@ async def ldap_get(session: web.Committer) -> str:
     )
 
 
-@admin.post("/ldap")
-@admin.form(LdapLookupForm)
-async def ldap_post(session: web.Committer, lookup_form: LdapLookupForm) -> str:
+@admin.typed
+async def ldap_post(session: web.Committer, _ldap: Literal["ldap"], lookup_form: LdapLookupForm) -> str:
+    """
+    URL POST /ldap
+    """
     # TODO: This is one case where we should perhaps allow str | None on the form
     uid_query = lookup_form.uid if lookup_form.uid else None
     email_query = lookup_form.email if lookup_form.email else None
@@ -586,8 +678,11 @@ async def ldap_post(session: web.Committer, lookup_form: LdapLookupForm) -> str:
     )
 
 
-@admin.get("/logs")
-async def logs(session: web.Committer) -> web.QuartResponse:
+@admin.typed
+async def logs(_session: web.Committer, _logs: Literal["logs"]) -> web.QuartResponse:
+    """
+    URL: GET /logs
+    """
     _require_debug_and_allow_tests()
     recent_logs = log.get_recent_logs()
     if recent_logs is None:
@@ -595,29 +690,35 @@ async def logs(session: web.Committer) -> web.QuartResponse:
     return web.TextResponse("\n".join(recent_logs))
 
 
-@admin.get("/ongoing-tasks/<project_key>/<version_key>/<revision>")
+@admin.typed
 async def ongoing_tasks_get(
-    session: web.Committer, project_key: str, version_key: str, revision: str
+    session: web.Committer,
+    _ongoing_tasks: Literal["ongoing-tasks"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_key)
-    version = safe.VersionKey(version_key)
-    revision_number = safe.RevisionNumber(revision)
-    return await _ongoing_tasks(session, project, version, revision_number)
+    """
+    URL: GET /ongoing-tasks
+    """
+    return await _fetch_ongoing_tasks(session, project_key, version_key, revision)
 
 
+# TODO: AM Why has this no empty form?
 @admin.post("/ongoing-tasks/<project_key>/<version_key>/<revision>")
 async def ongoing_tasks_post(
-    session: web.Committer, project_key: str, version_key: str, revision: str
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> web.QuartResponse:
-    project = safe.ProjectKey(project_key)
-    version = safe.VersionKey(version_key)
-    revision_number = safe.RevisionNumber(revision)
-    return await _ongoing_tasks(session, project, version, revision_number)
+    return await _fetch_ongoing_tasks(session, project_key, version_key, revision)
 
 
-@admin.get("/performance")
-async def performance(session: web.Committer) -> str:
-    """Display performance statistics for all routes."""
+@admin.typed
+async def performance(_session: web.Committer, _performance: Literal["performance"]) -> str:
+    """
+    URL: GET /performance
+
+    Display performance statistics for all routes.
+    """
     app = asfquart.APP
 
     if app is ...:
@@ -696,9 +797,15 @@ async def performance(session: web.Committer) -> str:
     return await template.render("performance.html", stats=sorted_summary)
 
 
-@admin.get("/projects/update")
-async def projects_update_get(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
-    """Update projects from remote data."""
+@admin.typed
+async def projects_update_get(
+    _session: web.Committer, _projects_update: Literal["projects/update"]
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+    """
+    URL: GET /projects/update
+
+    Update projects from remote data.
+    """
     rendered_form = form.render(
         model_cls=form.Empty,
         submit_label="Update projects",
@@ -708,6 +815,7 @@ async def projects_update_get(session: web.Committer) -> str | web.WerkzeugRespo
     return await template.render("update-projects.html", empty_form=rendered_form)
 
 
+# TODO: AM Why has this no empty form?
 @admin.post("/projects/update")
 async def projects_update_post(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update projects from remote data."""
@@ -725,14 +833,21 @@ async def projects_update_post(session: web.Committer) -> str | web.WerkzeugResp
         }, 200
 
 
-@admin.get("/raise-error")
-async def raise_error(session: web.Committer) -> web.QuartResponse:
+@admin.typed
+async def raise_error(_session: web.Committer, _raise_error: Literal["raise-error"]) -> web.QuartResponse:
+    """
+    URL: GET /raise-error
+    """
     raise RuntimeError("Admin test route deliberately raised an unhandled error")
 
 
-@admin.get("/revoke-user-tokens")
-async def revoke_user_tokens_get(session: web.Committer) -> str:
-    """Revoke all Personal Access Tokens for a specified user."""
+@admin.typed
+async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"]) -> str:
+    """
+    URL: GET /revoke-user-tokens
+
+    Revoke all Personal Access Tokens for a specified user.
+    """
     token_counts: list[tuple[str, int]] = []
     async with db.session() as data:
         stmt = (
@@ -757,12 +872,15 @@ async def revoke_user_tokens_get(session: web.Committer) -> str:
     )
 
 
-@admin.post("/revoke-user-tokens")
-@admin.form(RevokeUserTokensForm)
+@admin.typed
 async def revoke_user_tokens_post(
-    session: web.Committer, revoke_form: RevokeUserTokensForm
+    session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"], revoke_form: RevokeUserTokensForm
 ) -> str | web.WerkzeugResponse:
-    """Revoke all Personal Access Tokens for a specified user."""
+    """
+    URL: POST /revoke-user-tokens
+
+    Revoke all Personal Access Tokens for a specified user.
+    """
     target_uid = revoke_form.asf_uid
 
     async with storage.write(session) as write:
@@ -777,8 +895,11 @@ async def revoke_user_tokens_post(
     return await session.redirect(revoke_user_tokens_get)
 
 
-@admin.get("/rotate-jwt-key")
-async def rotate_jwt_key_get(session: web.Committer) -> str:
+@admin.typed
+async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"]) -> str:
+    """
+    URL: GET /rotate-jwt-key
+    """
     rendered_form = form.render(
         model_cls=RotateJwtKeyForm,
         submit_label="Rotate JWT key",
@@ -786,9 +907,13 @@ async def rotate_jwt_key_get(session: web.Committer) -> str:
     return await _rotate_jwt_key_page(rendered_form)
 
 
-@admin.post("/rotate-jwt-key")
-@admin.form(RotateJwtKeyForm)
-async def rotate_jwt_key_post(session: web.Committer, _rotate_form: RotateJwtKeyForm) -> str | web.WerkzeugResponse:
+@admin.typed
+async def rotate_jwt_key_post(
+    session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"], _rotate_form: RotateJwtKeyForm
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /rotate-jwt-key
+    """
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         await wafa.tokens.rotate_jwt_signing_key()
@@ -796,16 +921,23 @@ async def rotate_jwt_key_post(session: web.Committer, _rotate_form: RotateJwtKey
     return await session.redirect(rotate_jwt_key_get)
 
 
-@admin.get("/task-times/<project_key>/<version_key>/<revision_number>")
+@admin.typed
 async def task_times(
-    session: web.Committer, project_key: str, version_key: str, revision_number: str
+    _session: web.Committer,
+    _task_times: Literal["task-times"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
 ) -> web.QuartResponse:
+    """
+    URL: GET /task-times/<project_key>/<version_key>/<revision_number>
+    """
     values = []
     async with db.session() as data:
         tasks = await data.task(
-            project_key=project_key,
-            version_key=version_key,
-            revision_number=revision_number,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(revision_number),
         ).all()
         for task in tasks:
             if (task.started is None) or (task.completed is None):
@@ -816,9 +948,13 @@ async def task_times(
     return web.TextResponse("\n".join(values))
 
 
-@admin.get("/tasks/recent/<int:minutes>")
-async def tasks_recent(session: web.Committer, minutes: int) -> str:
-    """Display tasks from the last N minutes."""
+@admin.typed
+async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/recent"], minutes: int) -> str:
+    """
+    URL: GET /tasks/recent/<int:minutes>
+
+    Display tasks from the last N minutes.
+    """
     if minutes < 1:
         minutes = 1
     if minutes > 1440:
@@ -929,9 +1065,13 @@ async def tasks_recent(session: web.Committer, minutes: int) -> str:
     return await template.blank(f"Recent Tasks ({minutes}m)", content=page.collect())
 
 
-@admin.get("/toggle-view")
-async def toggle_view_get(session: web.Committer) -> str:
-    """Display the page with a button to toggle between admin and user views."""
+@admin.typed
+async def toggle_view_get(_session: web.Committer, _toggle_view: Literal["toggle-view"]) -> str:
+    """
+    URL: GET /toggle-view
+
+    Display the page with a button to toggle between admin and user views.
+    """
     rendered_form = form.render(
         model_cls=form.Empty,
         submit_label="Toggle view",
@@ -941,10 +1081,15 @@ async def toggle_view_get(session: web.Committer) -> str:
     return await template.render("toggle-admin-view.html", empty_form=rendered_form)
 
 
-@admin.post("/toggle-view")
-@admin.empty()
-async def toggle_view_post(session: web.Committer) -> web.WerkzeugResponse:
-    """Toggle between admin and user views."""
+@admin.typed
+async def toggle_view_post(
+    _session: web.Committer, _toggle_view: Literal["toggle-view"], _form: form.Empty
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /toggle-view
+
+    Toggle between admin and user views.
+    """
     app = asfquart.APP
     if (not hasattr(app, "app_id")) or (not isinstance(app.app_id, str)):
         raise TypeError("Internal error: APP has no valid app_id")
@@ -962,9 +1107,13 @@ async def toggle_view_post(session: web.Committer) -> web.WerkzeugResponse:
     return quart.redirect("https://" + quart.request.host + "/")
 
 
-@admin.get("/validate")
-async def validate_(session: web.Committer) -> str:
-    """Run validators and display any divergences."""
+@admin.typed
+async def validate_(_session: web.Committer, _validate: Literal["validate"]) -> str:
+    """
+    URL: GET /validate
+
+    Run validators and display any divergences.
+    """
 
     async with db.session() as data:
         divergences = [d async for d in validate.everything(data)]
@@ -975,9 +1124,15 @@ async def validate_(session: web.Committer) -> str:
     )
 
 
-@admin.get("/validate-jwt")
-async def validate_jwt_get(session: web.Committer) -> str:
-    _require_debug_and_allow_tests()
+@admin.typed
+async def validate_jwt_get(_session: web.Committer, _validate_jwt: Literal["validate-jwt"]) -> str:
+    """
+    URL: GET /validate-jwt
+    """
+    try:
+        _require_debug_and_allow_tests()
+    except base.ASFQuartException:
+        return quart.abort(404)
     rendered_form = form.render(
         model_cls=ValidateJwtForm,
         submit_label="Validate JWT",
@@ -986,10 +1141,18 @@ async def validate_jwt_get(session: web.Committer) -> str:
     return await _validate_jwt_page(rendered_form, result=None)
 
 
-@admin.post("/validate-jwt")
-@admin.form(ValidateJwtForm)
-async def validate_jwt_post(session: web.Committer, validate_form: ValidateJwtForm) -> str:
-    _require_debug_and_allow_tests()
+@admin.typed
+async def validate_jwt_post(
+    _session: web.Committer, _validate_jwt: Literal["validate-jwt"], validate_form: ValidateJwtForm
+) -> str:
+    """
+    URL: POST /validate-jwt
+    """
+    try:
+        _require_debug_and_allow_tests()
+    except base.ASFQuartException:
+        return quart.abort(404)
+
     token = validate_form.token
     result: dict[str, Any] = {"token_length": len(token), "valid": False}
 
@@ -1044,7 +1207,7 @@ async def _check_keys(fix: bool = False) -> str:
     return message
 
 
-async def _data(session: web.Committer, model: str = "Committee") -> str:
+async def _data_browse(_session: web.Committer, model: str = "Committee") -> str:
     """Browse all records in the database."""
     async with db.session() as data:
         # Map of model names to their classes
@@ -1175,8 +1338,8 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                         filesystem_dirs.append(version_dir_path)
 
 
-async def _ongoing_tasks(
-    session: web.Committer,
+async def _fetch_ongoing_tasks(
+    _session: web.Committer,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     revision: safe.RevisionNumber,

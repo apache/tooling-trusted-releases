@@ -14,12 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import dataclasses
 import datetime
 import inspect
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from types import ModuleType
 from typing import Any
 
@@ -33,19 +32,11 @@ import werkzeug.exceptions as exceptions
 
 import atr.blueprints.common as common
 import atr.log as log
+import atr.web as web
 
 _BLUEPRINT_NAME = "api_blueprint"
 _BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
 _routes: list[str] = []
-_QUART_ATTRIBUTES = [
-    quart_schema.validation.QUART_SCHEMA_HEADERS_ATTRIBUTE,
-    quart_schema.validation.QUART_SCHEMA_RESPONSE_ATTRIBUTE,
-    quart_schema.openapi.QUART_SCHEMA_SECURITY_ATTRIBUTE,
-    quart_schema.openapi.QUART_SCHEMA_TAG_ATTRIBUTE,
-    quart_schema.openapi.QUART_SCHEMA_HIDDEN_ATTRIBUTE,
-    quart_schema.openapi.QUART_SCHEMA_DEPRECATED_ATTRIBUTE,
-    quart_schema.openapi.QUART_SCHEMA_OPERATION_ID_ATTRIBUTE,
-]
 
 
 def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
@@ -55,9 +46,10 @@ def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
     return api, _routes
 
 
-def typed(func: Callable[..., Any]) -> Callable[..., Any]:
+def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
+    - Arguments after session are joined with / to make the web path
     - Literal["..."] parameters become literal path segments
     - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
     - pydantic.BaseModel subclass parameters are parsed from the JSON request body
@@ -67,7 +59,9 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     - HTTP method is POST if a body param is present, GET otherwise
     """
     original = inspect.unwrap(func)
-    path, validated_params, literal_params, body_param, query_param, optional_params = common.build_api_path(original)
+    path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
+        original
+    )
     method = "POST" if body_param is not None else "GET"
     body_safe_params = common.safe_params_for_type(body_param[1]) if body_param is not None else []
     query_safe_params = common.safe_params_for_type(query_param[1]) if query_param is not None else []
@@ -77,22 +71,10 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
         kwargs.update(literal_params)
 
         if body_param is not None:
-            body_name, body_cls = body_param
-            json_data = await quart.request.get_json()
-            try:
-                body_instance = body_cls.model_validate(json_data)
-            except pydantic.ValidationError as e:
-                raise quart_schema.RequestSchemaValidationError(e) from e
-            if body_safe_params:
-                await common.validate_safe_fields(body_instance, body_safe_params, kwargs)
-            kwargs[body_name] = body_instance
+            await common.parse_body(body_param, body_safe_params, kwargs)
 
         if query_param is not None:
-            query_name, query_cls = query_param
-            query_instance = _parse_query_args(query_cls, quart.request.args)
-            if query_safe_params:
-                await common.validate_safe_fields(query_instance, query_safe_params, kwargs)
-            kwargs[query_name] = query_instance
+            await common.parse_query(query_param, query_safe_params, kwargs)
 
         start_time_ns = time.perf_counter_ns()
         response = await func(**kwargs)
@@ -157,7 +139,7 @@ def _add_url_rules(
 
 def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> None:
     """Copy quart schema attributes from src to dst to preserve OpenAPI documentation."""
-    for attr in _QUART_ATTRIBUTES:
+    for attr in common.QUART_ATTRIBUTES:
         if hasattr(src, attr):
             setattr(dst, attr, getattr(src, attr))
 
@@ -195,35 +177,6 @@ async def _handle_request_validation(err: quart_schema.RequestSchemaValidationEr
         raise err.validation_error
     verr: pydantic.ValidationError = err.validation_error
     return _json_error("Input validation failed", 400, {"validation_details": verr.errors()})
-
-
-def _coerce_query_field(raw: str, field_type: Any, field_name: str) -> Any:
-    """Coerce a raw query string value to the expected field type."""
-    if field_type is str or field_type == "str":
-        return raw
-    if field_type is int or field_type == "int":
-        try:
-            return int(raw)
-        except ValueError:
-            raise exceptions.BadRequest(f"Query parameter {field_name!r} must be an integer")
-    if field_type is bool or field_type == "bool":
-        return raw.lower() in ("true", "1", "yes")
-    return raw
-
-
-def _parse_query_args(query_cls: type, args: Any) -> Any:
-    """Parse query string parameters into a dataclass instance."""
-    field_values: dict[str, Any] = {}
-    for field in dataclasses.fields(query_cls):
-        raw = args.get(field.name)
-        if raw is None:
-            if field.default is not dataclasses.MISSING:
-                field_values[field.name] = field.default
-            elif field.default_factory is not dataclasses.MISSING:
-                field_values[field.name] = field.default_factory()
-            continue
-        field_values[field.name] = _coerce_query_field(raw, field.type, field.name)
-    return query_cls(**field_values)
 
 
 def _json_error(

@@ -21,6 +21,7 @@ from typing import Literal
 
 import aiofiles
 import asfquart.base as base
+import quart
 import werkzeug.wrappers.response as response
 
 import atr.blueprints.get as get
@@ -68,7 +69,7 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
     URL: /test/login
     """
     if not config.get().ALLOW_TESTS:
-        return await web.redirect(root.notfound)
+        return quart.abort(404)
 
     session_data = atr.models.session.CookieData(
         uid="test",
@@ -96,7 +97,7 @@ async def test_merge(
     URL: /test/merge/<project_key>/<version_key>
     """
     if not config.get().ALLOW_TESTS:
-        raise base.ASFQuartException("Test routes not enabled", errorcode=404)
+        return quart.abort(404)
 
     async with storage.write(session) as write_n:
         wacp_n = await write_n.as_project_committee_participant(project_key)
@@ -213,7 +214,7 @@ async def test_vote(
     URL: /test/vote/<category>/<project_key>/<version_key>
     """
     if not config.get().ALLOW_TESTS:
-        raise base.ASFQuartException("Test routes not enabled", errorcode=404)
+        return quart.abort(404)
 
     category_map = {
         "unauthenticated": vote.UserCategory.UNAUTHENTICATED,
