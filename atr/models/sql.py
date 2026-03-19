@@ -631,6 +631,7 @@ class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
         default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     expires: int = sqlmodel.Field()
+    revoked: bool = sqlmodel.Field(default=False)
 
 
 # SQL core models

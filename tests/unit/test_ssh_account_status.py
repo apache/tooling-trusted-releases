@@ -88,6 +88,7 @@ async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "Mon
     key.get_fingerprint.return_value = "SHA256:abc"
     mock_workflow_key = mock.MagicMock()
     mock_workflow_key.asf_uid = "alice"
+    mock_workflow_key.revoked = False
     mock_workflow_key.expires = 9999999999
     mock_workflow_key.github_payload = {
         "actor": "alice",
@@ -154,6 +155,7 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
 
     mock_workflow_key = mock.MagicMock()
     mock_workflow_key.asf_uid = "alice"
+    mock_workflow_key.revoked = False
     mock_workflow_key.expires = 9999999999
     mock_workflow_key.github_payload = {
         "actor": "alice",

@@ -30,6 +30,17 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
+def page_revoke_ssh_keys(browser: Browser) -> Generator[Page]:
+    context = browser.new_context(ignore_https_errors=True)
+    page = context.new_page()
+    helpers.log_in(page)
+    helpers.visit(page, admin_helpers.REVOKE_SSH_KEYS_PATH)
+    yield page
+    page.close()
+    context.close()
+
+
+@pytest.fixture
 def page_revoke_tokens(browser: Browser) -> Generator[Page]:
     context = browser.new_context(ignore_https_errors=True)
     page = context.new_page()
@@ -46,12 +57,15 @@ def page_revoke_tokens_with_token(browser: Browser) -> Generator[Page]:
     context = browser.new_context(ignore_https_errors=True)
     page = context.new_page()
     helpers.log_in(page)
+
     # Create a token first
     helpers.visit(page, admin_helpers.TOKENS_PATH)
     admin_helpers.create_token(page, admin_helpers.TOKEN_LABEL_FOR_TESTING)
+
     # Navigate to admin revoke page
     helpers.visit(page, admin_helpers.REVOKE_TOKENS_PATH)
     yield page
+
     # Cleanup: delete the test token if it still exists
     helpers.visit(page, admin_helpers.TOKENS_PATH)
     from e2e.tokens.helpers import delete_token_by_label

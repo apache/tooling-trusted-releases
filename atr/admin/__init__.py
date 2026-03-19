@@ -107,6 +107,11 @@ class RevokeUserTokensForm(form.Form):
     confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
 
 
+class RevokeUserSSHKeysForm(form.Form):
+    asf_uid: str = form.label("ASF UID", "Enter the ASF UID whose SSH keys should be revoked.")
+    confirm_revoke: Literal["REVOKE"] = form.label("Confirmation", "Type REVOKE to confirm.")
+
+
 class RotateJwtKeyForm(form.Form):
     confirm_rotate: Literal["ROTATE"] = form.label("Confirmation", "Type ROTATE to confirm.")
 
@@ -868,6 +873,88 @@ async def revoke_user_tokens_post(
         await quart.flash(f"No tokens found for {target_uid}.", "info")
 
     return await session.redirect(revoke_user_tokens_get)
+
+
+@admin.typed
+async def revoke_user_ssh_keys_get(
+    _session: web.Committer, _revoke_user_ssh_keys: Literal["revoke-user-ssh-keys"]
+) -> str:
+    """
+    URL: GET /revoke-user-ssh-keys
+
+    Revoke all SSH keys for a specified user.
+    """
+    via = sql.validate_instrumented_attribute
+    ssh_key_counts: list[tuple[str, int]] = []
+    workflow_key_counts: list[tuple[str, int]] = []
+    async with db.session() as data:
+        ssh_stmt = (
+            sqlmodel.select(
+                sql.SSHKey.asf_uid,
+                sqlmodel.func.count(),
+            )
+            .group_by(sql.SSHKey.asf_uid)
+            .order_by(sql.SSHKey.asf_uid)
+        )
+        ssh_rows = await data.execute_query(ssh_stmt)
+        ssh_key_counts = [(row[0], row[1]) for row in ssh_rows]
+
+        workflow_stmt = (
+            sqlmodel.select(
+                sql.WorkflowSSHKey.asf_uid,
+                sqlmodel.func.count(),
+            )
+            .where(
+                via(sql.WorkflowSSHKey.revoked).is_(False),
+                sql.WorkflowSSHKey.expires > int(time.time()),
+            )
+            .group_by(sql.WorkflowSSHKey.asf_uid)
+            .order_by(sql.WorkflowSSHKey.asf_uid)
+        )
+        workflow_rows = await data.execute_query(workflow_stmt)
+        workflow_key_counts = [(row[0], row[1]) for row in workflow_rows]
+
+    rendered_form = await form.render(
+        model_cls=RevokeUserSSHKeysForm,
+        submit_label="Revoke all SSH keys",
+    )
+    return await template.render(
+        "revoke-user-ssh-keys.html",
+        form=rendered_form,
+        ssh_key_counts=ssh_key_counts,
+        workflow_key_counts=workflow_key_counts,
+    )
+
+
+@admin.typed
+async def revoke_user_ssh_keys_post(
+    session: web.Committer,
+    _revoke_user_ssh_keys: Literal["revoke-user-ssh-keys"],
+    revoke_form: RevokeUserSSHKeysForm,
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /revoke-user-ssh-keys
+
+    Revoke all SSH keys for a specified user.
+    """
+    target_uid = revoke_form.asf_uid
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        persistent_count, workflow_count = await wafa.ssh.revoke_all_user_keys(target_uid)
+
+    total = persistent_count + workflow_count
+    if total > 0:
+        parts = []
+        if persistent_count > 0:
+            parts.append(util.plural(persistent_count, "persistent key"))
+        if workflow_count > 0:
+            parts.append(util.plural(workflow_count, "workflow key"))
+        await quart.flash(f"Revoked {' and '.join(parts)} for {target_uid}.", "success")
+    else:
+        await quart.flash(f"No SSH keys found for {target_uid}.", "info")
+
+    return await session.redirect(revoke_user_ssh_keys_get)
 
 
 @admin.typed
