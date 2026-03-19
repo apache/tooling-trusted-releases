@@ -58,7 +58,9 @@ class TrustedPublisherPayload(schema.Subset):
 
     @pydantic.field_validator("exp")
     @classmethod
-    def _validate_exp(cls, value: int) -> int:
+    def _validate_exp(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
         now = int(time.time())
         if now > value:
             raise ValueError("Token has expired")
@@ -67,6 +69,8 @@ class TrustedPublisherPayload(schema.Subset):
     @pydantic.field_validator("nbf")
     @classmethod
     def _validate_nbf(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
         now = int(time.time())
         if value and now < value:
             raise ValueError("Token not yet valid")
