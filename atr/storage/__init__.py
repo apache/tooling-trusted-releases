@@ -229,6 +229,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         self.__asf_uid = write.authorisation.asf_uid
         self.release = writers.release.FoundationAdmin(write, self, data)
         self.tokens = writers.tokens.FoundationAdmin(write, self, data)
+        self.ssh = writers.ssh.FoundationAdmin(write, self, data)
 
     @property
     def asf_uid(self) -> str:

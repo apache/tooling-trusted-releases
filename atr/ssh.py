@@ -178,8 +178,13 @@ class SSHServer(asyncssh.SSHServer):
 
         async with db.session() as data:
             workflow_key = await data.workflow_ssh_key(fingerprint=fingerprint).get()
-            if workflow_key is None:
-                return False
+
+        if workflow_key is None:
+            return False
+
+        if workflow_key.revoked:
+            log.auth_failure("githubssh", "workflow_key_revoked", workflow_key.asf_uid)
+            return False
 
         # In some cases this will be a service account
         self._github_asf_uid = workflow_key.asf_uid
@@ -238,10 +243,11 @@ async def server_start() -> asyncssh.SSHAcceptor:
         private_key = asyncssh.generate_private_key("ssh-ed25519")
         private_key.write_private_key(key_path)
         log.info(f"Generated SSH host key at {key_path}")
-        permissions = stat.S_IMODE(os.stat(key_path).st_mode)
-        if permissions != 0o400:
-            os.chmod(key_path, 0o400)
-            log.warning("Set permissions of SSH host key to 0o400")
+
+    permissions = stat.S_IMODE(os.stat(key_path).st_mode)
+    if permissions != 0o400:
+        os.chmod(key_path, 0o400)
+        log.warning("Set permissions of SSH host key to 0o400")
 
     def process_factory(process: asyncssh.SSHServerProcess) -> asyncio.Task[None]:
         connection = process.get_extra_info("connection")
@@ -291,8 +297,8 @@ def _rate_limit_check(bucket: dict[str, collections.deque[float]], key: str, lim
     if window is not None:
         while window and (now - window[0]) > _RATE_WINDOW:
             window.popleft()
-    if window and len(window) >= limit:
-        return False
+        if window and len(window) >= limit:
+            return False
     if window is None:
         window = collections.deque()
         bucket[key] = window

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import time
 
+import sqlmodel
+
 import atr.db as db
 import atr.models.github as github
 import atr.models.safe as safe
@@ -140,3 +142,53 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+
+class FoundationAdmin(FoundationCommitter):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsFoundationAdmin,
+        data: db.Session,
+    ):
+        super().__init__(write, write_as, data)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized")
+        self.__asf_uid = asf_uid
+
+    async def revoke_all_user_keys(self, target_asf_uid: str) -> tuple[int, int]:
+        """Revoke all SSH keys for a specified user.
+
+        Returns (persistent_count, workflow_count) of keys affected.
+        """
+        via = sql.validate_instrumented_attribute
+        persistent_keys = await self.__data.query_all(
+            sqlmodel.select(sql.SSHKey).where(sql.SSHKey.asf_uid == target_asf_uid)
+        )
+        persistent_count = len(persistent_keys)
+        for key in persistent_keys:
+            await self.__data.delete(key)
+
+        workflow_keys = await self.__data.query_all(
+            sqlmodel.select(sql.WorkflowSSHKey).where(
+                sql.WorkflowSSHKey.asf_uid == target_asf_uid,
+                via(sql.WorkflowSSHKey.revoked).is_(False),
+            )
+        )
+        workflow_count = len(workflow_keys)
+        for key in workflow_keys:
+            key.revoked = True
+
+        total = persistent_count + workflow_count
+        if total > 0:
+            await self.__data.commit()
+            self.__write_as.append_to_audit_log(
+                target_asf_uid=target_asf_uid,
+                persistent_keys_deleted=persistent_count,
+                workflow_keys_revoked=workflow_count,
+            )
+        return persistent_count, workflow_count

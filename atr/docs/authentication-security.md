@@ -264,6 +264,13 @@ log.auth_event(event="pat_bulk_revoke", asfuid="akm", by="wave") # In this case,
 * Signed with a server secret initialized at startup
 * Stateless design means no database lookup required for verification
 
+### SSH keys
+
+* Persistent SSH keys are deleted when an admin revokes keys for a user
+* Workflow SSH keys (20-minute TTL) can be immediately revoked via a `revoked` flag
+* LDAP account status is checked during SSH authentication, rejecting banned or deleted accounts
+* Administrators can revoke all SSH keys for a user via the admin interface
+
 ### Credential protection
 
 Tokens must be protected by the user at all times:
@@ -280,3 +287,4 @@ Tokens must be protected by the user at all times:
 * [`db/interaction.py`](/ref/atr/db/interaction.py) - `validate_trusted_jwt` implements the service account authorisation, `trusted_jwt_for_dist` implements gating based on the service account
 * [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation
 * [`ssh.py`](/ref/atr/ssh.py) - SSH server implementation, authentication, and rsync handling
+* [`storage/writers/ssh.py`](/ref/atr/storage/writers/ssh.py) - SSH key management and admin revocation
