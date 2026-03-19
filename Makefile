@@ -140,4 +140,4 @@ update-deps:
 	pre-commit autoupdate || :
 	uv lock --upgrade --exclude-newer "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	uv sync --frozen --all-groups
-	uv export --frozen --format requirements-txt --no-emit-project --no-header --no-hashes > requirements-for-pip-audit.txt
+	uv export --frozen --format requirements-txt --no-emit-project --no-header --no-hashes > pip-audit.requirements

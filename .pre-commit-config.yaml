@@ -102,7 +102,7 @@ repos:
     - id: pip-audit
       args:
         - '-r'
-        - 'requirements-for-pip-audit.txt'
+        - 'pip-audit.requirements'
         - '--disable-pip'
         - '--no-deps'
 - repo: https://github.com/oxc-project/mirrors-oxlint
