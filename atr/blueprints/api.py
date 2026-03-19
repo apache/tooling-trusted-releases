@@ -20,7 +20,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
 import asfquart.base as base
 import pydantic
@@ -34,8 +34,8 @@ import atr.blueprints.common as common
 import atr.log as log
 import atr.web as web
 
-_BLUEPRINT_NAME = "api_blueprint"
-_BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
+_BLUEPRINT_NAME: Final = "api_blueprint"
+_BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
 _routes: list[str] = []
 
 
@@ -49,13 +49,12 @@ def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
 def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
-    - Arguments after session are joined with / to make the web path
     - Literal["..."] parameters become literal path segments
-    - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
+    - safe.SafeType subclass parameters are validated from the URL path
     - pydantic.BaseModel subclass parameters are parsed from the JSON request body
     - dataclass parameters are parsed from the query string
     - str | None parameters create optional URL segments (two routes registered)
-    - int, float, str use Quart's built-in type converters
+    - int, float use Quart's built-in type converters
     - HTTP method is POST if a body param is present, GET otherwise
     """
     original = inspect.unwrap(func)
@@ -84,9 +83,7 @@ def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
 
         return response
 
-    endpoint = original.__module__.replace(".", "_") + "_" + original.__name__
-    wrapper.__name__ = original.__name__
-    wrapper.__doc__ = original.__doc__
+    endpoint = common.setup_wrapper(wrapper, original, _BLUEPRINT_NAME)
 
     # Replace the original quart request decorators
     if query_param is not None:

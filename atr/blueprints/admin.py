@@ -14,11 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import json
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any, Concatenate, overload
+from typing import Any, Concatenate, Final, overload
 
 import asfquart.base as base
 import asfquart.session
@@ -27,91 +26,15 @@ import quart
 import quart_schema
 
 import atr.blueprints.common as common
-import atr.form
 import atr.log as log
 import atr.user as user
 import atr.web as web
 
-_BLUEPRINT_NAME = "admin_blueprint"
-_BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/admin", template_folder="../admin/templates")
+_BLUEPRINT_NAME: Final = "admin_blueprint"
+_BLUEPRINT: Final = quart.Blueprint(
+    _BLUEPRINT_NAME, __name__, url_prefix="/admin", template_folder="../admin/templates"
+)
 _routes: list[str] = []
-
-
-def empty() -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
-    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
-        async def wrapper(session: web.Committer, *args: Any, **kwargs: Any) -> Any:
-            form_data = await atr.form.quart_request()
-            try:
-                context = {
-                    "args": args,
-                    "kwargs": kwargs,
-                    "session": session,
-                }
-                atr.form.validate(atr.form.Empty, form_data, context=context)
-                return await func(session, *args, **kwargs)
-            except pydantic.ValidationError:
-                msg = "Sorry, there was an empty form validation error. Please try again."
-                await quart.flash(msg, "error")
-                return quart.redirect(quart.request.path)
-
-        wrapper.__annotations__ = func.__annotations__.copy()
-        wrapper.__doc__ = func.__doc__
-        wrapper.__module__ = func.__module__
-        wrapper.__name__ = func.__name__
-        return wrapper
-
-    return decorator
-
-
-def form(
-    form_cls: Any,
-) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
-    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
-        async def wrapper(session: web.Committer, *args: Any, **kwargs: Any) -> Any:
-            form_data = await atr.form.quart_request()
-            try:
-                context = {
-                    "args": args,
-                    "kwargs": kwargs,
-                    "session": session,
-                }
-                validated_form = atr.form.validate(form_cls, form_data, context=context)
-                return await func(session, validated_form, *args, **kwargs)
-            except pydantic.ValidationError as e:
-                errors = e.errors()
-                if len(errors) == 0:
-                    raise RuntimeError("Validation failed, but no errors were reported")
-                flash_data = atr.form.flash_error_data(form_cls, errors, form_data)
-                summary = atr.form.flash_error_summary(errors, flash_data)
-
-                await quart.flash(summary, category="error")
-                await quart.flash(json.dumps(flash_data), category="form-error-data")
-                return quart.redirect(quart.request.path)
-
-        wrapper.__annotations__ = func.__annotations__.copy()
-        wrapper.__doc__ = func.__doc__
-        wrapper.__module__ = func.__module__
-        wrapper.__name__ = func.__name__
-        return wrapper
-
-    return decorator
-
-
-def get(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunction[Any]]:
-    def decorator(func: web.CommitterRouteFunction[Any]) -> web.RouteFunction[Any]:
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return await func(quart.g.session, *args, **kwargs)
-
-        endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
-        wrapper.__name__ = func.__name__
-        wrapper.__doc__ = func.__doc__
-        wrapper.__annotations__["endpoint"] = _BLUEPRINT_NAME + "." + endpoint
-
-        _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=["GET"])
-
-        return wrapper
-
-    return decorator
 
 
 def post(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunction[Any]]:
@@ -119,11 +42,7 @@ def post(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunc
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             return await func(quart.g.session, *args, **kwargs)
 
-        endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
-        wrapper.__name__ = func.__name__
-        wrapper.__doc__ = func.__doc__
-        wrapper.__annotations__["endpoint"] = _BLUEPRINT_NAME + "." + endpoint
-
+        endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=["POST"])
 
         return wrapper
@@ -150,12 +69,13 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
     - Literal["..."] parameters become literal path segments
-    - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
+    - safe.SafeType subclass parameters are validated from the URL path
     - pydantic.BaseModel subclass parameters are parsed from the JSON request body
+    - form.Form subclass parameters are validated from the request body
     - dataclass parameters are parsed from the query string
     - str | None parameters create optional URL segments (two routes registered)
-    - int, float, str use Quart's built-in type converters
-    - HTTP method is POST if a body param is present, GET otherwise
+    - int, float use Quart's built-in type converters
+    - HTTP method is POST if a body or form param is present, GET otherwise
     """
     path, validated_params, literal_params, body_param, form_param, query_param, optional_params = (
         common.build_api_path(func)
@@ -179,15 +99,7 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
             try:
                 kwargs[form_param_name] = await enhanced_session.form_validate(form_cls, context)
             except pydantic.ValidationError as e:
-                errors = e.errors()
-                if len(errors) == 0:
-                    raise RuntimeError("Validation failed, but no errors were reported")
-                form_data_raw = await atr.form.quart_request()
-                flash_data = atr.form.flash_error_data(form_cls, errors, form_data_raw)
-                summary = atr.form.flash_error_summary(errors, flash_data)
-                await quart.flash(summary, category="error")
-                await quart.flash(json.dumps(flash_data), category="form-error-data")
-                return quart.redirect(quart.request.path)
+                return await common.flash_form_error(form_cls, e)
             if form_safe_params:
                 await common.validate_safe_fields(kwargs[form_param_name], form_safe_params, kwargs)
 
@@ -202,10 +114,7 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
 
         return response
 
-    endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
-    wrapper.__name__ = func.__name__
-    wrapper.__doc__ = func.__doc__
-    wrapper.__annotations__["endpoint"] = _BLUEPRINT_NAME + "." + endpoint
+    endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
 
     # Replace the original quart request decorators
     if query_param is not None:

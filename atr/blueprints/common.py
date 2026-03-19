@@ -20,7 +20,7 @@ import inspect
 import types
 import typing
 from collections.abc import Callable
-from typing import Annotated, Any, Literal, TypeAliasType, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin, get_type_hints
 
 import asfquart.base as base
 import asfquart.session
@@ -35,13 +35,13 @@ import atr.models.safe as safe
 import atr.models.unsafe as unsafe
 import atr.web as web
 
-QUART_CONVERTERS: dict[Any, str] = {
+QUART_CONVERTERS: Final[dict[Any, str]] = {
     int: "int",
     float: "float",
     unsafe.Path: "path",
 }
 
-VALIDATED_TYPES: set[Any] = {
+VALIDATED_TYPES: Final[set[Any]] = {
     safe.Alphanumeric,
     safe.CommitteeKey,
     safe.ProjectKey,
@@ -81,7 +81,7 @@ def build_path(
     Validates that the session param (web.Committer or web.Public) is first, and that only one Form param is allowed
 
     Returns (path, validated_params, literal_params, form_param, public) where:
-    - validated_params: (name, type) pairs for URL params to be validated with cache/DB
+    - validated_params: (name, type) pairs for safe.SafeType subclass URL params to be validated
     - literal_params: param name → literal string value for Literal["..."] params
     - form_param: (name, type) for the single form.Form subclass param, or None
     - public: True if the session type is web.Public
@@ -130,14 +130,14 @@ def build_api_path(
     Accepts URL path params for data, Literal strings for plain URL text, dataclasses for GET query params
     and Pydantic model params for POST bodies
 
-    Returns (path, validated_params, literal_params, body_param, query_param,
+    Returns (path, validated_params, literal_params, body_param, form_param, query_param,
     optional_params) where:
-    - validated_params: (name, type) pairs for URL params to be validated with cache/DB
+    - validated_params: (name, type) pairs for safe.SafeType subclass URL params to be validated
     - literal_params: param name -> literal string value for Literal["..."] params
     - body_param: (name, type) for the single BaseModel param, or None
+    - form_param: (name, type) for the single form.Form subclass param, or None
     - query_param: (name, type) for the single dataclass param, or None
     - optional_params: param names whose type is T | None with a default of None
-    - return_type: the return type of the function
     """
     hints = get_type_hints(func, include_extras=True)
     sig = inspect.signature(func)
@@ -174,6 +174,15 @@ def build_api_path(
     return path, validated_params, literal_params, unique.body, unique.form, unique.query, optional_params
 
 
+def setup_wrapper(wrapper: Callable[..., Any], func: Callable[..., Any], blueprint_name: str) -> str:
+    """Set standard metadata on a route wrapper and return the endpoint name."""
+    endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
+    wrapper.__name__ = func.__name__
+    wrapper.__doc__ = func.__doc__
+    wrapper.__annotations__["endpoint"] = blueprint_name + "." + endpoint
+    return endpoint
+
+
 def register_route(func: Callable[..., Any], prefix: str, routes: list[str]) -> None:
     module_name = func.__module__.split(".")[-1]
     routes.append(f"{prefix}.{module_name}.{func.__name__}")
@@ -192,23 +201,13 @@ async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, 
     """Validate URL parameters in order, using the type-specific validators."""
     for param_name, param_type in known_params:
         raw = kwargs[param_name]
-        if param_type is safe.ProjectKey:
-            try:
-                kwargs[param_name] = safe.ProjectKey(raw)
-            except ValueError:
-                raise base.ASFQuartException(f"Project name {param_name!r} is invalid. ")
-        elif param_type is safe.VersionKey:
-            try:
-                kwargs[param_name] = safe.VersionKey(raw)
-            except ValueError:
-                raise base.ASFQuartException(f"Version name {param_name!r} is invalid. ")
-        elif param_type is safe.RevisionNumber:
-            try:
-                kwargs[param_name] = safe.RevisionNumber(raw)
-            except ValueError:
-                raise base.ASFQuartException(f"Revision number {param_name!r} is invalid. ")
-        elif param_type is unsafe.UnsafeStr:
+        if param_type is unsafe.UnsafeStr:
             kwargs[param_name] = unsafe.UnsafeStr(raw)
+        elif issubclass(param_type, safe.SafeType):
+            try:
+                kwargs[param_name] = param_type(raw)
+            except ValueError:
+                raise base.ASFQuartException(f"Parameter {param_name!r} is invalid. ")
 
 
 async def validate_safe_fields(
@@ -230,6 +229,21 @@ async def validate_safe_fields(
     for name, _ in safe_params:
         if name in temp:
             setattr(instance, name, temp[name])
+
+
+async def flash_form_error(form_cls: type, error: pydantic.ValidationError) -> Any:
+    """Flash form validation errors and return a redirect to the current page."""
+    import json
+
+    errors = error.errors()
+    if len(errors) == 0:
+        raise RuntimeError("Validation failed, but no errors were reported")
+    form_data_raw = await form.quart_request()
+    flash_data = form.flash_error_data(form_cls, errors, form_data_raw)
+    summary = form.flash_error_summary(errors, flash_data)
+    await quart.flash(summary, category="error")
+    await quart.flash(json.dumps(flash_data), category="form-error-data")
+    return quart.redirect(quart.request.path)
 
 
 async def parse_body(

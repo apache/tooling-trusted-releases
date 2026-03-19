@@ -15,11 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any, Concatenate, overload
+from typing import Any, Concatenate, Final, overload
 
 import asfquart.auth as auth
 import asfquart.base as base
@@ -32,8 +31,8 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.web as web
 
-_BLUEPRINT_NAME = "post_blueprint"
-_BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__)
+_BLUEPRINT_NAME: Final = "post_blueprint"
+_BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__)
 _routes: list[str] = []
 
 
@@ -55,11 +54,9 @@ def typed[**P, R](func: Callable[Concatenate[web.Public, P], Awaitable[R]]) -> w
 def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
-    - Arguments after session are joined with / to make the web path
     - Literal["..."] parameters become literal path segments
-    - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
+    - safe.SafeType subclass parameters are validated from the URL path
     - int, float use Quart's built-in type converters
-    - str parameters pass through as-is
     - A single form.Form subclass parameter is validated from the request body and injected
     - check_access is called automatically for committer routes with project_key
     """
@@ -87,15 +84,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
                         form_data = await atr.form.quart_request()
                         kwargs[form_param_name] = atr.form.validate(form_cls, form_data, context=context)
             except pydantic.ValidationError as e:
-                errors = e.errors()
-                if len(errors) == 0:
-                    raise RuntimeError("Validation failed, but no errors were reported")
-                form_data_raw = await atr.form.quart_request()
-                flash_data = atr.form.flash_error_data(form_cls, errors, form_data_raw)
-                summary = atr.form.flash_error_summary(errors, flash_data)
-                await quart.flash(summary, category="error")
-                await quart.flash(json.dumps(flash_data), category="form-error-data")
-                return quart.redirect(quart.request.path)
+                return await common.flash_form_error(form_cls, e)
             if form_safe_params:
                 await common.validate_safe_fields(kwargs[form_param_name], form_safe_params, kwargs)
 
@@ -109,10 +98,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
 
         return response
 
-    endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
-    wrapper.__name__ = func.__name__
-    wrapper.__doc__ = func.__doc__
-    wrapper.__annotations__["endpoint"] = _BLUEPRINT_NAME + "." + endpoint
+    endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
 
     decorated = wrapper if public else auth.require(auth.Requirements.committer)(wrapper)
     _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=decorated, methods=["POST"])

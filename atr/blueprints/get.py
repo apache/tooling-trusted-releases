@@ -18,7 +18,7 @@
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
-from typing import Any, Concatenate, ParamSpec, TypeVar, overload
+from typing import Any, Concatenate, Final, overload
 
 import asfquart.auth as auth
 import asfquart.base as base
@@ -28,12 +28,9 @@ import atr.blueprints.common as common
 import atr.log as log
 import atr.web as web
 
-_BLUEPRINT_NAME = "get_blueprint"
-_BLUEPRINT = quart.Blueprint(_BLUEPRINT_NAME, __name__)
+_BLUEPRINT_NAME: Final = "get_blueprint"
+_BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__)
 _routes: list[str] = []
-
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
 
 
 def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
@@ -54,12 +51,9 @@ def typed[**P, R](func: Callable[Concatenate[web.Public, P], Awaitable[R]]) -> w
 def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
-    - Arguments after session are joined with / to make the web path
     - Literal["..."] parameters become literal path segments
-    - safe.ProjectName / safe.VersionName parameters are validated via cache/DB
+    - safe.SafeType subclass parameters are validated from the URL path
     - int, float use Quart's built-in type converters
-    - str parameters pass through as-is
-    - check_access is called automatically for committer routes with project_key
     """
     path, validated_params, literal_params, _, public = common.build_path(func)
 
@@ -80,10 +74,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
 
         return response
 
-    endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
-    wrapper.__name__ = func.__name__
-    wrapper.__doc__ = func.__doc__
-    wrapper.__annotations__["endpoint"] = _BLUEPRINT_NAME + "." + endpoint
+    endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
 
     decorated = wrapper if public else auth.require(auth.Requirements.committer)(wrapper)
     _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=decorated, methods=["GET"])
