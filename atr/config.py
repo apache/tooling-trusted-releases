@@ -23,7 +23,7 @@ import decouple
 
 _MB: Final = 1024 * 1024
 _GB: Final = 1024 * _MB
-_RAT_VERSION: Final = "0.17"
+_RAT_VERSION: Final = "0.18"
 
 
 def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: type = str) -> str | None:

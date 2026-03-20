@@ -127,7 +127,7 @@ def test_sanitise_command_replaces_absolute_paths():
     command = [
         "java",
         "-jar",
-        "/opt/tools/apache-rat-0.17.jar",
+        "/opt/tools/apache-rat-0.18.jar",
         "--output-file",
         "/fake/path/rat_verify_abc123/rat-report.xml",
         "--input-exclude",
@@ -140,7 +140,7 @@ def test_sanitise_command_replaces_absolute_paths():
         ".",
     ]
     result = rat._sanitise_command_for_storage(command)
-    assert result[2] == "apache-rat-0.17.jar"
+    assert result[2] == "apache-rat-0.18.jar"
     assert result[4] == "rat-report.xml"
     assert result[6] == ".rat-excludes"
     assert result[8] == ".atr-policy-rat-excludes"

@@ -42,7 +42,7 @@ RUN apk update && \
       go
 
 # install additional tools
-ENV RAT_VERSION=0.17
+ENV RAT_VERSION=0.18
 
 RUN set -eux; \
     mkdir -p /opt/tools /tmp/apache-rat; \
@@ -81,7 +81,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ENV JAVA_TOOL_OPTIONS="-XX:MaxMetaspaceSize=32m -Xmx128m -XX:+UseSerialGC -XX:MaxRAM=256m -XX:CompressedClassSpaceSize=16m"
 
 # go is required for syft
-# openjdk8 is required for Apache RAT
+# openjdk17 is required for Apache RAT
 # icu-libs are required for cyclonedx
 RUN apk update && \
     apk add --no-cache \
@@ -92,7 +92,7 @@ RUN apk update && \
       gpg \
       gpg-agent \
       icu-libs \
-      openjdk8 \
+      openjdk17 \
       rsync \
       subversion
 
