@@ -687,32 +687,13 @@ async def keys_user(
 
 
 @api.typed
-@quart_schema.validate_response(models.api.ProjectGetResults, 200)
-async def project_get(
-    _project_get: Literal["project/get"],
+@quart_schema.validate_response(models.api.PolicyGetResults, 200)
+async def policy_get(
+    _policy_get: Literal["policy/get"],
     project_key: safe.ProjectKey,
 ) -> DictResponse:
     """
-    URL: GET /project/get/<project_key>
-
-    Get a project by name.
-    """
-    async with db.session() as data:
-        project = await data.project(key=str(project_key)).demand(exceptions.NotFound())
-    return models.api.ProjectGetResults(
-        endpoint="/project/get",
-        project=project,
-    ).model_dump(mode="json"), 200
-
-
-@api.typed
-@quart_schema.validate_response(models.api.ProjectPolicyResults, 200)
-async def project_policy(
-    _project_policy: Literal["project/policy"],
-    project_key: safe.ProjectKey,
-) -> DictResponse:
-    """
-    URL: GET /project/policy/<project_key>
+    URL: GET /policy/get/<project_key>
 
     Get project policy by name.
 
@@ -723,8 +704,8 @@ async def project_policy(
         project = await data.project(key=str(project_key), _release_policy=True, _committee=True).demand(
             exceptions.NotFound()
         )
-    return models.api.ProjectPolicyResults(
-        endpoint="/project/policy",
+    return models.api.PolicyGetResults(
+        endpoint="/policy/get",
         project_key=project.safe_key,
         policy_announce_release_subject=project.policy_announce_release_subject,
         policy_announce_release_template=project.policy_announce_release_template,
@@ -746,6 +727,25 @@ async def project_policy(
         policy_start_vote_template=project.policy_start_vote_template,
         policy_strict_checking=project.policy_strict_checking,
         policy_vote_comment_template=project.policy_vote_comment_template,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed
+@quart_schema.validate_response(models.api.ProjectGetResults, 200)
+async def project_get(
+    _project_get: Literal["project/get"],
+    project_key: safe.ProjectKey,
+) -> DictResponse:
+    """
+    URL: GET /project/get/<project_key>
+
+    Get a project by name.
+    """
+    async with db.session() as data:
+        project = await data.project(key=str(project_key)).demand(exceptions.NotFound())
+    return models.api.ProjectGetResults(
+        endpoint="/project/get",
+        project=project,
     ).model_dump(mode="json"), 200
 
 

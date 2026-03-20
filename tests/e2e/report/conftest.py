@@ -131,7 +131,7 @@ def report_context(browser: Browser, verify_license_check_mode: None) -> Generat
 def verify_license_check_mode(browser: Browser) -> None:
     """Verify that the test project has the correct license check mode."""
     context = browser.new_context(ignore_https_errors=True)
-    policy = helpers.api_get(context.request, f"/api/project/policy/{PROJECT_KEY}")
+    policy = helpers.api_get(context.request, f"/api/policy/get/{PROJECT_KEY}")
     context.close()
 
     mode = policy.get("policy_license_check_mode", "").upper()

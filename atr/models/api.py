@@ -287,8 +287,8 @@ class ProjectGetResults(schema.Strict):
     project: sql.Project
 
 
-class ProjectPolicyResults(schema.Strict):
-    endpoint: Literal["/project/policy"] = schema.alias("endpoint")
+class PolicyGetResults(schema.Strict):
+    endpoint: Literal["/policy/get"] = schema.alias("endpoint")
     project_key: safe.ProjectKey
     policy_announce_release_subject: str
     policy_announce_release_template: str
