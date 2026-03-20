@@ -108,11 +108,6 @@ class AddProjectForm(form.Form):
 class ComposePolicyForm(form.Form):
     variant: COMPOSE = form.value(COMPOSE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    source_artifact_paths: str = form.label(
-        "Source artifact paths",
-        "Paths to source artifacts to be included in the release.",
-        widget=form.Widget.TEXTAREA,
-    )
     license_check_mode: form.Enum[sql.LicenseCheckMode] = form.label(
         "Source artifact license checker",
         "Only affects source artifacts. Lightweight checks ALWAYS RUN on binary artifacts.",
@@ -127,11 +122,6 @@ class ComposePolicyForm(form.Form):
     source_excludes_rat: str = form.label(
         "RAT source excludes",
         "RAT exclude file contents for source artifacts. Used only when no .rat-excludes file exists in the archive.",
-        widget=form.Widget.TEXTAREA,
-    )
-    binary_artifact_paths: str = form.label(
-        "Binary artifact paths",
-        "Paths to binary artifacts to be included in the release.",
         widget=form.Widget.TEXTAREA,
     )
     file_tag_mappings: str = form.label(
