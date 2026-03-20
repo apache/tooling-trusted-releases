@@ -201,7 +201,7 @@ def _extract_archive_to_dir(
         try:
             os.rename(staging_dir, archive_dir)
         except OSError as err:
-            if isinstance(err, FileExistsError) or err.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+            if isinstance(err, FileExistsError) or (err.errno in {errno.EEXIST, errno.ENOTEMPTY}):
                 shutil.rmtree(staging_dir, ignore_errors=True)
             else:
                 raise

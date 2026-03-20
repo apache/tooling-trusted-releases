@@ -1290,6 +1290,20 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
         await quart.flash(f"Failed to delete {util.plural(fail_count, 'release')}:\n{errors_str}", "error")
 
 
+async def _fetch_ongoing_tasks(
+    _session: web.Committer,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
+) -> web.QuartResponse:
+    try:
+        ongoing = await interaction.tasks_ongoing(project_key, version_key, revision)
+        return web.TextResponse(str(ongoing))
+    except Exception:
+        log.exception(f"Error fetching ongoing task count for {project_key!s} {version_key!s} rev {revision!s}:")
+        return web.TextResponse("")
+
+
 def _format_exception_location(exc: BaseException) -> str:
     tb = exc.__traceback__
     last_tb = None
@@ -1336,20 +1350,6 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                     version_dir_path = os.path.join(project_dir_path, version_dir)
                     if await aiofiles.os.path.isdir(version_dir_path):
                         filesystem_dirs.append(version_dir_path)
-
-
-async def _fetch_ongoing_tasks(
-    _session: web.Committer,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
-) -> web.QuartResponse:
-    try:
-        ongoing = await interaction.tasks_ongoing(project_key, version_key, revision)
-        return web.TextResponse(str(ongoing))
-    except Exception:
-        log.exception(f"Error fetching ongoing task count for {project_key!s} {version_key!s} rev {revision!s}:")
-        return web.TextResponse("")
 
 
 def _require_debug_and_allow_tests() -> None:

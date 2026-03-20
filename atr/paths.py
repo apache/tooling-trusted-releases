@@ -28,12 +28,12 @@ def base_path_for_revision(
     return pathlib.Path(get_unfinished_dir(), str(project_key), str(version_key), str(revision))
 
 
-def get_attestable_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
-
-
 def get_archives_dir() -> pathlib.Path:
     return pathlib.Path(config.get().ARCHIVES_STORAGE_DIR)
+
+
+def get_attestable_dir() -> pathlib.Path:
+    return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
 
 
 def get_downloads_dir() -> pathlib.Path:

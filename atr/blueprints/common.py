@@ -278,14 +278,14 @@ async def parse_query(
 
 def _coerce_query_field(raw: str, field_type: Any, field_name: str) -> Any:
     """Coerce a raw query string value to the expected field type."""
-    if field_type is str or field_type == "str":
+    if (field_type is str) or (field_type == "str"):
         return raw
-    if field_type is int or field_type == "int":
+    if (field_type is int) or (field_type == "int"):
         try:
             return int(raw)
         except ValueError:
             raise exceptions.BadRequest(f"Query parameter {field_name!r} must be an integer")
-    if field_type is bool or field_type == "bool":
+    if (field_type is bool) or (field_type == "bool"):
         return raw.lower() in ("true", "1", "yes")
     return raw
 
@@ -402,11 +402,11 @@ def _unwrap_optional(hint: Any) -> tuple[Any, bool]:
     (typing.Union).
     """
     origin = get_origin(hint)
-    if origin is not types.UnionType and origin is not typing.Union:
+    if (origin is not types.UnionType) and (origin is not typing.Union):
         return hint, False
     args = get_args(hint)
     non_none = [a for a in args if a is not type(None)]
-    if len(non_none) == 1 and type(None) in args:
+    if (len(non_none) == 1) and (type(None) in args):
         return non_none[0], True
     return hint, False
 

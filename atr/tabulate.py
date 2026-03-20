@@ -304,7 +304,7 @@ def _vote_identity(
         name = "-"
         asf_uid = from_email_lower.split("@")[0]
     else:
-        if "via" in from_raw and from_email_lower.replace("@", ".") in list_email:
+        if ("via" in from_raw) and (from_email_lower.replace("@", ".") in list_email):
             # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
             name = from_raw[: from_raw.index("via") - 1]
             if cc:

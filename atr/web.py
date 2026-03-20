@@ -182,7 +182,7 @@ class Committer:
             phase_value = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
         else:
             phase_value = phase
-        revision = db.NOT_SET if latest_revision_number == db.NOT_SET else str(latest_revision_number)
+        revision = db.NOT_SET if (latest_revision_number == db.NOT_SET) else str(latest_revision_number)
         release_key = sql.release_key(project_key, version_key)
         if data is None:
             async with db.session() as data:

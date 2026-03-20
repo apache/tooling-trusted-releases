@@ -435,23 +435,6 @@ async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.Project
     return project_key, version_key, None
 
 
-def _validate_path_common(path: str) -> None:
-    """Validate the common structural requirements for an rsync path argument."""
-    if not path.startswith("/"):
-        raise RsyncArgsError("The path argument should be an absolute path")
-    if not path.endswith("/"):
-        # Technically we could ignore this, because we rewrite the path anyway for writes
-        # But we should enforce good rsync usage practices
-        raise RsyncArgsError("The path argument should be a directory path, ending with a /")
-    if "//" in path:
-        raise RsyncArgsError("The path argument should not contain //")
-
-
-def _validate_tag_segment(segment: str) -> None:
-    if not all(c in _PATH_ALPHANUM for c in segment):
-        raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
-
-
 async def _step_06a_validate_read_permissions(
     ssh_uid: str,
     project: sql.Project,
@@ -682,6 +665,23 @@ async def _step_08_execute_rsync(process: asyncssh.SSHServerProcess, argv: list[
     exit_status = await proc.wait()
     log.info(f"Rsync finished with exit status {exit_status}")
     return exit_status
+
+
+def _validate_path_common(path: str) -> None:
+    """Validate the common structural requirements for an rsync path argument."""
+    if not path.startswith("/"):
+        raise RsyncArgsError("The path argument should be an absolute path")
+    if not path.endswith("/"):
+        # Technically we could ignore this, because we rewrite the path anyway for writes
+        # But we should enforce good rsync usage practices
+        raise RsyncArgsError("The path argument should be a directory path, ending with a /")
+    if "//" in path:
+        raise RsyncArgsError("The path argument should not contain //")
+
+
+def _validate_tag_segment(segment: str) -> None:
+    if not all(c in _PATH_ALPHANUM for c in segment):
+        raise RsyncArgsError("The tag should contain only alphanumeric characters or hyphens")
 
 
 async def _wait_for_process_to_close(process: asyncssh.SSHServerProcess) -> None:

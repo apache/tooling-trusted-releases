@@ -72,6 +72,6 @@ class TrustedPublisherPayload(schema.Subset):
         if value is None:
             return value
         now = int(time.time())
-        if value and now < value:
+        if value and (now < value):
             raise ValueError("Token not yet valid")
         return value

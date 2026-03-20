@@ -44,6 +44,12 @@ def test_safe_types_reject_invalid_characters(cls: type[safe.Alphanumeric], bad:
         cls(bad)
 
 
+@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey])
+def test_safe_alpha_types_reject_valid_version(cls: type[safe.Alphanumeric]):
+    with pytest.raises(ValueError):
+        cls("0.1+def")
+
+
 @pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey, safe.VersionKey, safe.ReleaseKey])
 def test_safe_types_accept_valid_alpha(cls: type[safe.Alphanumeric]):
     value = cls("abcdef")
@@ -54,9 +60,3 @@ def test_safe_types_accept_valid_alpha(cls: type[safe.Alphanumeric]):
 def test_safe_version_types_accept_valid_version(cls: type[safe.Alphanumeric]):
     value = cls("0.1+def")
     assert str(value) == "0.1+def"
-
-
-@pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey])
-def test_safe_alpha_types_reject_valid_version(cls: type[safe.Alphanumeric]):
-    with pytest.raises(ValueError):
-        cls("0.1+def")

@@ -61,9 +61,9 @@ def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
         original
     )
-    method = "POST" if body_param is not None else "GET"
-    body_safe_params = common.safe_params_for_type(body_param[1]) if body_param is not None else []
-    query_safe_params = common.safe_params_for_type(query_param[1]) if query_param is not None else []
+    method = "POST" if (body_param is not None) else "GET"
+    body_safe_params = common.safe_params_for_type(body_param[1]) if (body_param is not None) else []
+    query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         await common.validate_params(kwargs, validated_params)
@@ -107,13 +107,6 @@ def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     return wrapper
 
 
-@_BLUEPRINT.before_request
-@rate_limiter.rate_limit(500, datetime.timedelta(hours=1))
-async def _api_rate_limit() -> None:
-    """Set API-wide rate limit"""
-    pass
-
-
 def _add_url_rules(
     wrapper: Callable[..., Any],
     path: str,
@@ -132,6 +125,13 @@ def _add_url_rules(
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint + "_full", view_func=wrapper, methods=[method])
     else:
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=[method])
+
+
+@_BLUEPRINT.before_request
+@rate_limiter.rate_limit(500, datetime.timedelta(hours=1))
+async def _api_rate_limit() -> None:
+    """Set API-wide rate limit"""
+    pass
 
 
 def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> None:

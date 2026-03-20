@@ -80,10 +80,10 @@ def typed(func: Callable[..., Any]) -> Callable[..., Any]:
     path, validated_params, literal_params, body_param, form_param, query_param, optional_params = (
         common.build_api_path(func)
     )
-    method = "POST" if (body_param is not None or form_param is not None) else "GET"
-    body_safe_params = common.safe_params_for_type(body_param[1]) if body_param is not None else []
-    form_safe_params = common.safe_params_for_type(form_param[1]) if form_param is not None else []
-    query_safe_params = common.safe_params_for_type(query_param[1]) if query_param is not None else []
+    method = "POST" if ((body_param is not None) or (form_param is not None)) else "GET"
+    body_safe_params = common.safe_params_for_type(body_param[1]) if (body_param is not None) else []
+    form_safe_params = common.safe_params_for_type(form_param[1]) if (form_param is not None) else []
+    query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
         enhanced_session = await common.authenticate()

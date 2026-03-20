@@ -641,28 +641,6 @@ def key_ssh_fingerprint(ssh_key_string: str) -> str:
         raise SshFingerprintError(str(e)) from e
 
 
-def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
-
-    if pattern == "!":
-        # Special case, "!" matches None
-        return value is None
-    if (pattern is None) or (value is None):
-        return False
-    negate = False
-    raw_pattern = pattern
-    if raw_pattern.startswith("!"):
-        raw_pattern = raw_pattern[1:]
-        negate = True
-    try:
-        regex = validation.compile_ignore_pattern(raw_pattern)
-    except ValueError:
-        return False
-    matched = regex.search(value) is not None
-    if negate:
-        return not matched
-    return matched
-
-
 def key_ssh_fingerprint_core(ssh_key_string: str) -> str:
     # The format should be as in *.pub or authorized_keys files
     # I.e. TYPE DATA COMMENT
@@ -685,6 +663,28 @@ def key_ssh_fingerprint_core(ssh_key_string: str) -> str:
         return f"SHA256:{fingerprint_b64}"
 
     raise ValueError("Invalid SSH key format")
+
+
+def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
+
+    if pattern == "!":
+        # Special case, "!" matches None
+        return value is None
+    if (pattern is None) or (value is None):
+        return False
+    negate = False
+    raw_pattern = pattern
+    if raw_pattern.startswith("!"):
+        raw_pattern = raw_pattern[1:]
+        negate = True
+    try:
+        regex = validation.compile_ignore_pattern(raw_pattern)
+    except ValueError:
+        return False
+    matched = regex.search(value) is not None
+    if negate:
+        return not matched
+    return matched
 
 
 async def number_of_release_files(release: sql.Release) -> int:
