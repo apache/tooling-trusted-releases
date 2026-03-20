@@ -80,8 +80,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     recorder = await args.recorder(CHECK_VERSION)
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
-    if await recorder.primary_path_is_binary():
-        log.info(f"Skipping RAT check for binary artifact {artifact_abs_path} (rel: {args.primary_rel_path})")
+    if not await recorder.primary_path_is_source():
+        log.info(f"Skipping RAT check for non-source artifact {artifact_abs_path} (rel: {args.primary_rel_path})")
         return None
 
     project = await recorder.project()
@@ -99,8 +99,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
-    is_source = await recorder.primary_path_is_source()
-    policy_excludes = project.policy_source_excludes_rat if is_source else []
+    policy_excludes = project.policy_source_excludes_rat
 
     try:
         await _check_core(args, recorder, archive_dir, policy_excludes)

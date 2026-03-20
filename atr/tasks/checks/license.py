@@ -137,8 +137,8 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 
-    is_binary = await recorder.primary_path_is_binary()
-    if not is_binary:
+    is_source = await recorder.primary_path_is_source()
+    if is_source:
         project = await recorder.project()
         if project.policy_license_check_mode == sql.LicenseCheckMode.RAT:
             return None
@@ -156,7 +156,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
     try:
-        for result in await asyncio.to_thread(_files_check_core_logic, archive_dir, is_podling, is_binary):
+        for result in await asyncio.to_thread(_files_check_core_logic, archive_dir, is_podling, not is_source):
             match result:
                 case ArtifactResult():
                     await _record_artifact(recorder, result)
@@ -178,8 +178,8 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
     if not (artifact_abs_path := await recorder.abs_path()):
         return None
 
-    is_binary = await recorder.primary_path_is_binary()
-    if not is_binary:
+    is_source = await recorder.primary_path_is_source()
+    if is_source:
         project = await recorder.project()
         if project.policy_license_check_mode == sql.LicenseCheckMode.RAT:
             return None
@@ -198,7 +198,6 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     log.info(f"Checking license headers for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
-    is_source = await recorder.primary_path_is_source()
     project = await recorder.project()
 
     ignore_lines: list[str] = []

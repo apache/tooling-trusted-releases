@@ -58,9 +58,36 @@ def test_binary_stem_heuristic():
     assert classify.classify(path) == classify.FileType.BINARY
 
 
+def test_counts_docs_only():
+    assert classify.classify_from_counts(0, 0, 1) == classify.FileType.DOCS
+
+
+def test_counts_docs_with_binary():
+    assert classify.classify_from_counts(0, 1, 1) == classify.FileType.BINARY
+
+
+def test_counts_docs_with_source():
+    assert classify.classify_from_counts(1, 0, 1) == classify.FileType.SOURCE
+
+
 def test_disallowed_files_detected():
     path = pathlib.Path(".DS_Store")
     assert classify.classify(path) == classify.FileType.DISALLOWED
+
+
+def test_docs_stem_heuristic():
+    path = pathlib.Path("apache-widget-1.0-docs.tar.gz")
+    assert classify.classify(path) == classify.FileType.DOCS
+
+
+def test_docs_stem_heuristic_javadoc():
+    path = pathlib.Path("apache-widget-1.0-javadoc.zip")
+    assert classify.classify(path) == classify.FileType.DOCS
+
+
+def test_docs_stem_heuristic_site():
+    path = pathlib.Path("apache-widget-1.0-site.tar.gz")
+    assert classify.classify(path) == classify.FileType.DOCS
 
 
 def test_jar_defaults_to_binary():

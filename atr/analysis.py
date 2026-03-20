@@ -70,6 +70,7 @@ DISALLOWED_FILENAMES: Final[frozenset[str]] = frozenset(
         "id_ecdsa",
         "id_ed25519",
         "id_rsa",
+        "KEYS",
         "Thumbs.db",
     }
 )

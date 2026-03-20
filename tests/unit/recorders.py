@@ -44,8 +44,8 @@ class RecorderStub(checks.Recorder):
     async def abs_path(self, rel_path: str | None = None) -> pathlib.Path | None:
         return self._path if (rel_path is None) else self._path / rel_path
 
-    async def primary_path_is_binary(self) -> bool:
-        return False
+    async def primary_path_is_source(self) -> bool:
+        return True
 
     async def _add(
         self,

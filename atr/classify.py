@@ -108,6 +108,7 @@ _TOKEN_SPLIT_RE: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
 class FileType(enum.Enum):
     BINARY = "binary"
     DISALLOWED = "disallowed"
+    DOCS = "docs"
     METADATA = "metadata"
     SOURCE = "source"
 
@@ -167,7 +168,7 @@ def classify(
 def classify_from_counts(source_count: int, binary_count: int, docs_count: int) -> FileType:
     if (source_count == 0) and (binary_count == 0):
         if docs_count > 0:
-            return FileType.BINARY
+            return FileType.DOCS
         return FileType.SOURCE
     if source_count >= binary_count:
         return FileType.SOURCE
