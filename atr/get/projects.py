@@ -202,6 +202,7 @@ async def view(
             page.append(_render_compose_form(project))
             page.append(_render_vote_form(project))
             page.append(_render_finish_form(project))
+            page.append(_render_trusted_publishing_form(project))
         else:
             page.append(_render_policy_readonly(project))
 
@@ -358,9 +359,6 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
                 "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
                 "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
                 "binary_artifact_paths": "\n".join(project.policy_binary_artifact_paths),
-                "github_repository_name": project.policy_github_repository_name or "",
-                "github_repository_branch": project.policy_github_repository_branch or "",
-                "github_compose_workflow_path": "\n".join(project.policy_github_compose_workflow_path),
                 "file_tag_mappings": atr_tag_yaml,
                 "strict_checking": project.policy_strict_checking,
             },
@@ -427,7 +425,6 @@ def _render_finish_form(project: sql.Project) -> htm.Element:
             submit_label="Save",
             defaults={
                 "project_key": project.key,
-                "github_finish_workflow_path": "\n".join(project.policy_github_finish_workflow_path),
                 "announce_release_subject": project.policy_announce_release_subject or "",
                 "announce_release_template": project.policy_announce_release_template or "",
                 "preserve_download_files": project.policy_preserve_download_files,
@@ -615,6 +612,33 @@ async def _render_releases_sections(
     return sections.collect()
 
 
+def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+        htm.h3(".mb-0")["Release policy - Trusted Publishing"]
+    ]
+
+    with card.block(htm.div, classes=".card-body") as card_body:
+        form.render_block(
+            card_body,
+            model_cls=shared.projects.TrustedPublishingPolicyForm,
+            action=util.as_url(post.projects.view, name=str(project.key)),
+            submit_label="Save",
+            defaults={
+                "project_key": str(project.key),
+                "github_repository_name": project.policy_github_repository_name or "",
+                "github_repository_branch": project.policy_github_repository_branch or "",
+                "github_compose_workflow_path": "\n".join(project.policy_github_compose_workflow_path),
+                "github_vote_workflow_path": "\n".join(project.policy_github_vote_workflow_path),
+                "github_finish_workflow_path": "\n".join(project.policy_github_finish_workflow_path),
+            },
+            form_classes=".atr-canary.py-4.px-5",
+            border=True,
+            textarea_rows=5,
+        )
+    return card.collect()
+
+
 def _render_vote_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
@@ -623,7 +647,6 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
 
     defaults_dict = {
         "project_key": str(project.key),
-        "github_vote_workflow_path": "\n".join(project.policy_github_vote_workflow_path),
         "mailto_addresses": project.policy_mailto_addresses[0]
         if project.policy_mailto_addresses
         else f"dev@{project.key}.apache.org",

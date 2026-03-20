@@ -110,6 +110,9 @@ async def view(
         case shared.projects.FinishPolicyForm() as finish_form:
             return await _process_finish_form(session, finish_form)
 
+        case shared.projects.TrustedPublishingPolicyForm() as tp_form:
+            return await _process_trusted_publishing_form(session, tp_form)
+
         case shared.projects.RemoveCategoryForm() as remove_form:
             return await _process_remove_category(session, remove_form)
 
@@ -302,6 +305,25 @@ async def _process_remove_language(
         )
     return await session.redirect(
         get.projects.view, project_key=project_key, error=f"Language '{language_to_remove}' does not exist."
+    )
+
+
+async def _process_trusted_publishing_form(
+    session: web.Committer, tp_form: shared.projects.TrustedPublishingPolicyForm
+) -> web.WerkzeugResponse:
+    project_key = tp_form.project_key
+
+    async with storage.write(session) as write:
+        wacm = await write.as_project_committee_member(project_key)
+        try:
+            await wacm.policy.edit_trusted_publishing(tp_form)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view, project_key=project_key, error=f"Error editing Trusted Publishing policy: {e}"
+            )
+
+    return await session.redirect(
+        get.projects.view, project_key=project_key, success="Trusted Publishing options saved successfully."
     )
 
 

@@ -28,8 +28,9 @@ import atr.models.sql as sql
 import atr.util as util
 
 type COMPOSE = Literal["compose"]
-type VOTE = Literal["vote"]
 type FINISH = Literal["finish"]
+type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
+type VOTE = Literal["vote"]
 type ADD_CATEGORY = Literal["add_category"]
 type REMOVE_CATEGORY = Literal["remove_category"]
 type ADD_LANGUAGE = Literal["add_language"]
@@ -133,19 +134,6 @@ class ComposePolicyForm(form.Form):
         "Paths to binary artifacts to be included in the release.",
         widget=form.Widget.TEXTAREA,
     )
-    github_repository_name: str = form.label(
-        "GitHub repository name",
-        "The name of the GitHub repository to use for the release, excluding the apache/ prefix.",
-    )
-    github_repository_branch: str = form.label(
-        "GitHub repository branch",
-        "Branch used for release builds (for example, main or 2.5.x). Optional.",
-    )
-    github_compose_workflow_path: str = form.label(
-        "GitHub compose workflow paths",
-        "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
-        widget=form.Widget.TEXTAREA,
-    )
     file_tag_mappings: str = form.label(
         "Tagging spec",
         "Spec for which files should be tagged for release in specific distribution types, YAML format",
@@ -156,38 +144,10 @@ class ComposePolicyForm(form.Form):
         "If enabled, then the release cannot be voted upon unless all checks pass.",
     )
 
-    @pydantic.model_validator(mode="after")
-    def validate_github_fields(self) -> ComposePolicyForm:
-        github_repository_name = self.github_repository_name.strip()
-        github_repository_branch = self.github_repository_branch.strip()
-        compose_raw = self.github_compose_workflow_path or ""
-        compose = [p.strip() for p in compose_raw.split("\n") if p.strip()]
-
-        if compose and (not github_repository_name):
-            raise ValueError("GitHub repository name is required when any workflow path is set.")
-
-        if github_repository_branch and (not github_repository_name):
-            raise ValueError("GitHub repository name is required when a GitHub branch is set.")
-
-        if github_repository_name and ("/" in github_repository_name):
-            raise ValueError("GitHub repository name must not contain a slash.")
-
-        if compose:
-            for p in compose:
-                if not p.startswith(".github/workflows/"):
-                    raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
-
-        return self
-
 
 class VotePolicyForm(form.Form):
     variant: VOTE = form.value(VOTE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    github_vote_workflow_path: str = form.label(
-        "GitHub vote workflow paths",
-        "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
-        widget=form.Widget.TEXTAREA,
-    )
     mailto_addresses: form.Email = form.label(
         "Email",
         f"The mailing list where vote emails are sent. This is usually your dev list. "
@@ -227,14 +187,6 @@ class VotePolicyForm(form.Form):
 
     @pydantic.model_validator(mode="after")
     def validate_vote_fields(self) -> VotePolicyForm:
-        vote_raw = self.github_vote_workflow_path or ""
-        vote = [p.strip() for p in vote_raw.split("\n") if p.strip()]
-
-        if vote:
-            for p in vote:
-                if not p.startswith(".github/workflows/"):
-                    raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
-
         min_hours = self.min_hours
         if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
             raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
@@ -245,11 +197,6 @@ class VotePolicyForm(form.Form):
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    github_finish_workflow_path: str = form.label(
-        "GitHub finish workflow paths",
-        "The full paths to the GitHub workflows to use for the release, including the .github/workflows/ prefix.",
-        widget=form.Widget.TEXTAREA,
-    )
     announce_release_subject: str = form.label(
         "Announce release subject",
         widget=form.Widget.CUSTOM,
@@ -263,15 +210,61 @@ class FinishPolicyForm(form.Form):
         "If enabled, existing download files will not be overwritten.",
     )
 
-    @pydantic.model_validator(mode="after")
-    def validate_finish_fields(self) -> FinishPolicyForm:
-        finish_raw = self.github_finish_workflow_path or ""
-        finish = [p.strip() for p in finish_raw.split("\n") if p.strip()]
 
-        if finish:
-            for p in finish:
-                if not p.startswith(".github/workflows/"):
-                    raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+class TrustedPublishingPolicyForm(form.Form):
+    variant: TRUSTED_PUBLISHING = form.value(TRUSTED_PUBLISHING)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    github_repository_name: str = form.label(
+        "GitHub repository name",
+        "The name of the GitHub repository to use for the release, excluding the apache/ prefix.",
+    )
+    github_repository_branch: str = form.label(
+        "GitHub repository branch",
+        "Branch used for release builds (for example, main or 2.5.x). Optional.",
+    )
+    # TODO: We should think about making these a list[RelUrlPath]
+    # But note that they contain .github, so that will be awkward
+    github_compose_workflow_path: str = form.label(
+        "Compose workflow paths",
+        "GitHub workflow paths for the compose phase, including the .github/workflows/ prefix.",
+        widget=form.Widget.TEXTAREA,
+    )
+    github_vote_workflow_path: str = form.label(
+        "Vote workflow paths",
+        "GitHub workflow paths for the vote phase, including the .github/workflows/ prefix.",
+        widget=form.Widget.TEXTAREA,
+    )
+    github_finish_workflow_path: str = form.label(
+        "Finish workflow paths",
+        "GitHub workflow paths for the finish phase, including the .github/workflows/ prefix.",
+        widget=form.Widget.TEXTAREA,
+    )
+
+    @pydantic.model_validator(mode="after")
+    def validate_trusted_publishing_fields(self) -> TrustedPublishingPolicyForm:
+        github_repository_name = self.github_repository_name.strip()
+        github_repository_branch = self.github_repository_branch.strip()
+
+        all_paths: list[str] = []
+        for raw in (
+            self.github_compose_workflow_path,
+            self.github_vote_workflow_path,
+            self.github_finish_workflow_path,
+        ):
+            all_paths.extend(p.strip() for p in (raw or "").split("\n") if p.strip())
+
+        if all_paths and (not github_repository_name):
+            raise ValueError("GitHub repository name is required when any workflow path is set.")
+
+        if github_repository_branch and (not github_repository_name):
+            raise ValueError("GitHub repository name is required when a GitHub branch is set.")
+
+        if github_repository_name and ("/" in github_repository_name):
+            raise ValueError("GitHub repository name must not contain a slash.")
+
+        for p in all_paths:
+            if not p.startswith(".github/workflows/"):
+                raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
 
         return self
 
@@ -311,8 +304,9 @@ class DeleteSelectedProject(form.Form):
 
 type ProjectViewForm = Annotated[
     ComposePolicyForm
-    | VotePolicyForm
     | FinishPolicyForm
+    | TrustedPublishingPolicyForm
+    | VotePolicyForm
     | AddCategoryForm
     | RemoveCategoryForm
     | AddLanguageForm

@@ -25,13 +25,13 @@ def test_github_repository_branch_can_be_cleared(page_project: Page) -> None:
     repo_input.fill("tooling-actions")
     branch_input = helpers.input_github_repository_branch(page_project)
     branch_input.fill("main")
-    helpers.compose_form_save_button(page_project).click()
+    helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
     root_helpers.visit(page_project, helpers.PROJECT_URL)
     branch_input = helpers.input_github_repository_branch(page_project)
     branch_input.fill("")
-    helpers.compose_form_save_button(page_project).click()
+    helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
     root_helpers.visit(page_project, helpers.PROJECT_URL)
@@ -44,7 +44,7 @@ def test_github_repository_branch_value_persists(page_project: Page) -> None:
     repo_input.fill("tooling-actions")
     branch_input = helpers.input_github_repository_branch(page_project)
     branch_input.fill("2.5.x")
-    helpers.compose_form_save_button(page_project).click()
+    helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
     root_helpers.visit(page_project, helpers.PROJECT_URL)

@@ -123,9 +123,6 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.binary_artifact_paths = _split_lines(form.binary_artifact_paths)
-        release_policy.github_repository_name = form.github_repository_name.strip()
-        release_policy.github_repository_branch = form.github_repository_branch.strip()
-        release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
         release_policy.file_tag_mappings = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
 
@@ -135,10 +132,21 @@ class CommitteeMember(CommitteeParticipant):
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
 
-        release_policy.github_finish_workflow_path = _split_lines(form.github_finish_workflow_path)
         self.__set_announce_release_subject(form.announce_release_subject or "", project, release_policy)
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
         release_policy.preserve_download_files = form.preserve_download_files
+
+        await self.__commit_and_log(str(project_key))
+
+    async def edit_trusted_publishing(self, form: shared.projects.TrustedPublishingPolicyForm) -> None:
+        project_key = form.project_key
+        _, release_policy = await self.__get_or_create_policy(project_key)
+
+        release_policy.github_repository_name = form.github_repository_name.strip()
+        release_policy.github_repository_branch = form.github_repository_branch.strip()
+        release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
+        release_policy.github_vote_workflow_path = _split_lines(form.github_vote_workflow_path)
+        release_policy.github_finish_workflow_path = _split_lines(form.github_finish_workflow_path)
 
         await self.__commit_and_log(str(project_key))
 
@@ -149,7 +157,6 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.manual_vote = form.manual_vote
 
         if not release_policy.manual_vote:
-            release_policy.github_vote_workflow_path = _split_lines(form.github_vote_workflow_path)
             release_policy.mailto_addresses = [form.mailto_addresses]
             self.__set_min_hours(form.min_hours, project, release_policy)
             release_policy.pause_for_rm = form.pause_for_rm
