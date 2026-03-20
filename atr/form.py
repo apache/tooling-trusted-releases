@@ -1024,7 +1024,10 @@ def _render_widget(  # noqa: C901
             widget = htpy.input(**attrs)
 
         case Widget.TEXTAREA:
-            attrs = {**base_attrs, "rows": str(textarea_rows)}
+            json_schema_extra = field_info.json_schema_extra or {}
+            per_field_rows = json_schema_extra.get("rows") if isinstance(json_schema_extra, dict) else None
+            rows = per_field_rows if (per_field_rows is not None) else textarea_rows
+            attrs = {**base_attrs, "rows": str(rows)}
             widget = htpy.textarea(**attrs)[field_value or ""]
 
         case Widget.URL:

@@ -411,7 +411,7 @@ def _render_finish_form(project: sql.Project) -> htm.Element:
         field_name="announce_release_template",
         default_value=project.policy_announce_release_template or "",
         template_variables=construct.announce_template_variables(),
-        rows=10,
+        rows=18,
         documentation="Email template for messages to announce a finished release.",
     )
 
@@ -663,7 +663,7 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
         field_name="release_checklist",
         default_value=project.policy_release_checklist or "",
         template_variables=construct.checklist_template_variables(),
-        rows=10,
+        rows=3,
         documentation="Markdown text describing how to test release candidates.",
     )
 
@@ -678,7 +678,7 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
         field_name="start_vote_template",
         default_value=project.policy_start_vote_template or "",
         template_variables=construct.vote_template_variables(),
-        rows=10,
+        rows=18,
         documentation="Email template for messages to start a vote on a release.",
     )
 

@@ -118,16 +118,19 @@ class ComposePolicyForm(form.Form):
         "Patterns using .gitignore syntax for files to exclude"
         " from lightweight license header checks on source artifacts.",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
     source_excludes_rat: str = form.label(
         "RAT source excludes",
         "RAT exclude file contents for source artifacts. Used only when no .rat-excludes file exists in the archive.",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
     file_tag_mappings: str = form.label(
         "Tagging spec",
         "Spec for which files should be tagged for release in specific distribution types, YAML format",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
     strict_checking: form.Bool = form.label(
         "Strict checking",
@@ -165,6 +168,7 @@ class VotePolicyForm(form.Form):
         "Vote comment template",
         "Plain text template for vote comments. Voters can edit before submitting.",
         widget=form.Widget.TEXTAREA,
+        rows=6,
     )
     start_vote_subject: str = form.label(
         "Start vote subject",
@@ -218,16 +222,19 @@ class TrustedPublishingPolicyForm(form.Form):
         "Compose workflow paths",
         "GitHub workflow paths for the compose phase, including the .github/workflows/ prefix.",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
     github_vote_workflow_path: str = form.label(
         "Vote workflow paths",
         "GitHub workflow paths for the vote phase, including the .github/workflows/ prefix.",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
     github_finish_workflow_path: str = form.label(
         "Finish workflow paths",
         "GitHub workflow paths for the finish phase, including the .github/workflows/ prefix.",
         widget=form.Widget.TEXTAREA,
+        rows=3,
     )
 
     @pydantic.model_validator(mode="after")
