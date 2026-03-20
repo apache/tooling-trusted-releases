@@ -312,6 +312,38 @@ class PolicyGetResults(schema.Strict):
     policy_vote_comment_template: str
 
 
+class PolicyUpdateArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    announce_release_subject: str | None = None
+    announce_release_template: str | None = None
+    binary_artifact_paths: list[str] | None = None
+    file_tag_mappings: dict[str, list[str]] | None = None
+    github_compose_workflow_path: list[str] | None = None
+    github_finish_workflow_path: list[str] | None = None
+    github_repository_branch: str | None = None
+    github_repository_name: str | None = None
+    github_vote_workflow_path: list[str] | None = None
+    license_check_mode: sql.LicenseCheckMode | None = None
+    mailto_addresses: list[str] | None = None
+    manual_vote: bool | None = None
+    min_hours: int | None = None
+    pause_for_rm: bool | None = None
+    preserve_download_files: bool | None = None
+    release_checklist: str | None = None
+    source_artifact_paths: list[str] | None = None
+    source_excludes_lightweight: list[str] | None = None
+    source_excludes_rat: list[str] | None = None
+    start_vote_subject: str | None = None
+    start_vote_template: str | None = None
+    strict_checking: bool | None = None
+    vote_comment_template: str | None = None
+
+
+class PolicyUpdateResults(schema.Strict):
+    endpoint: Literal["/policy/update"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+
+
 class ProjectReleasesResults(schema.Strict):
     endpoint: Literal["/project/releases"] = schema.alias("endpoint")
     releases: Sequence[sql.Release]

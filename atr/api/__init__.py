@@ -731,6 +731,33 @@ async def policy_get(
 
 
 @api.typed
+@jwtoken.require
+@quart_schema.security_scheme([{"BearerAuth": []}])
+@quart_schema.validate_response(models.api.PolicyUpdateResults, 200)
+async def policy_update(
+    _policy_update: Literal["policy/update"],
+    data: models.api.PolicyUpdateArgs,
+) -> DictResponse:
+    """
+    URL: POST /policy/update
+
+    Update release policy fields for a project.
+
+    Only fields present in the request body are modified.
+    """
+    asf_uid = _jwt_asf_uid()
+    try:
+        async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
+            await wacm.policy.edit_policy(data.project, data)
+    except (storage.AccessError, ValueError) as e:
+        raise exceptions.BadRequest(str(e))
+    return models.api.PolicyUpdateResults(
+        endpoint="/policy/update",
+        success=True,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
 async def project_get(
     _project_get: Literal["project/get"],

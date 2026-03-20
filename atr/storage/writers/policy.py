@@ -18,7 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Final
 
 import strictyaml
 import strictyaml.ruamel.error as error
@@ -30,6 +30,21 @@ import atr.storage as storage
 
 if TYPE_CHECKING:
     import atr.shared as shared
+
+_NULLABLE_POLICY_FIELDS: Final = frozenset({"min_hours"})
+_TRUSTED_PUBLISHING_PATH_FIELDS: Final = frozenset(
+    {
+        "github_compose_workflow_path",
+        "github_vote_workflow_path",
+        "github_finish_workflow_path",
+    }
+)
+_TRUSTED_PUBLISHING_FIELDS: Final = _TRUSTED_PUBLISHING_PATH_FIELDS | frozenset(
+    {
+        "github_repository_branch",
+        "github_repository_name",
+    }
+)
 
 
 class GeneralPublic:
@@ -112,17 +127,46 @@ class CommitteeMember(CommitteeParticipant):
         if not isinstance(atr_tags_data, dict):
             raise ValueError("Invalid file tag mappings")
         atr_tags_dict: dict[str, list[str]] = atr_tags_data
-        for key, values in atr_tags_dict.items():
-            if ".." in key:
-                raise ValueError("File tag mapping keys may not contain '..'")
-            for value in values:
-                if ".." in value:
-                    raise ValueError("File tag mapping values may not contain '..'")
+        _validate_file_tag_mappings(atr_tags_dict)
         release_policy.license_check_mode = form.license_check_mode  # pyright: ignore[reportAttributeAccessIssue]
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.file_tag_mappings = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
+
+        await self.__commit_and_log(str(project_key))
+
+    async def edit_policy(
+        self,
+        project_key: models.safe.ProjectKey,
+        update: models.api.PolicyUpdateArgs,
+    ) -> None:
+        # TODO: Ideally we would centralise the validation in this method
+        project, release_policy = await self.__get_or_create_policy(project_key)
+        fields_to_update = update.model_fields_set - {"project"}
+        normalised_values: dict[str, Any] = {}
+
+        for field in fields_to_update:
+            value = getattr(update, field)
+            if (value is None) and (field not in _NULLABLE_POLICY_FIELDS):
+                raise ValueError(f"Field '{field}' does not accept null")
+            normalised_values[field] = value
+
+        if ("file_tag_mappings" in fields_to_update) and (update.file_tag_mappings is not None):
+            _validate_file_tag_mappings(update.file_tag_mappings)
+
+        if ("min_hours" in fields_to_update) and (update.min_hours is not None):
+            _validate_min_hours(update.min_hours)
+
+        if ("manual_vote" in fields_to_update) and update.manual_vote:
+            if project.committee and project.committee.is_podling:
+                raise storage.AccessError("Manual voting is not allowed for podlings.")
+
+        if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
+            normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
+
+        for field in fields_to_update:
+            setattr(release_policy, field, normalised_values[field])
 
         await self.__commit_and_log(str(project_key))
 
@@ -267,6 +311,55 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.start_vote_template = submitted_template
 
 
+def _normalise_text_list(values: list[str]) -> list[str]:
+    return [value.strip() for value in values if value.strip()]
+
+
+def _normalise_text_value(value: str) -> str:
+    return value.strip()
+
+
+def _normalise_trusted_publishing_update(
+    release_policy: models.sql.ReleasePolicy,
+    values: dict[str, Any],
+) -> dict[str, Any]:
+    # TODO: Ideally we would use this function in the form validation too
+    normalised_values: dict[str, Any] = {}
+
+    github_repository_name = release_policy.github_repository_name
+    if "github_repository_name" in values:
+        github_repository_name = _normalise_text_value(values["github_repository_name"])
+        normalised_values["github_repository_name"] = github_repository_name
+
+    github_repository_branch = release_policy.github_repository_branch
+    if "github_repository_branch" in values:
+        github_repository_branch = _normalise_text_value(values["github_repository_branch"])
+        normalised_values["github_repository_branch"] = github_repository_branch
+
+    all_paths: list[str] = []
+    for field in sorted(_TRUSTED_PUBLISHING_PATH_FIELDS):
+        paths = getattr(release_policy, field)
+        if field in values:
+            paths = _normalise_text_list(values[field])
+            normalised_values[field] = paths
+        all_paths.extend(paths)
+
+    if all_paths and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when any workflow path is set.")
+
+    if github_repository_branch and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
+
+    if github_repository_name and ("/" in github_repository_name):
+        raise ValueError("GitHub repository name must not contain a slash.")
+
+    for path in all_paths:
+        if not path.startswith(".github/workflows/"):
+            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+
+    return normalised_values
+
+
 def _split_lines(text: str) -> list[str]:
     return [line.strip() for line in text.split("\n") if line.strip()]
 
@@ -274,3 +367,17 @@ def _split_lines(text: str) -> list[str]:
 def _split_lines_verbatim(text: str) -> list[str]:
     # This still excludes empty lines
     return [line for line in text.split("\n") if line]
+
+
+def _validate_file_tag_mappings(mappings: dict[str, list[str]]) -> None:
+    for key, values in mappings.items():
+        if ".." in key:
+            raise ValueError("File tag mapping keys may not contain '..'")
+        for value in values:
+            if ".." in value:
+                raise ValueError("File tag mapping values may not contain '..'")
+
+
+def _validate_min_hours(min_hours: int) -> None:
+    if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
+        raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
