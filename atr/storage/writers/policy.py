@@ -118,11 +118,9 @@ class CommitteeMember(CommitteeParticipant):
             for value in values:
                 if ".." in value:
                     raise ValueError("File tag mapping values may not contain '..'")
-        release_policy.source_artifact_paths = _split_lines(form.source_artifact_paths)
         release_policy.license_check_mode = form.license_check_mode  # pyright: ignore[reportAttributeAccessIssue]
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
-        release_policy.binary_artifact_paths = _split_lines(form.binary_artifact_paths)
         release_policy.file_tag_mappings = atr_tags_dict
         release_policy.strict_checking = form.strict_checking
 
