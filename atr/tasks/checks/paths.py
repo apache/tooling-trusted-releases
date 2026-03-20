@@ -29,18 +29,15 @@ import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
 
+_ALLOWED_TOP_LEVEL_NAMES: Final = ("CHANGES", "LICENSE", "NOTICE", "README", "SECURITY")
+_ALLOWED_TOP_LEVEL_SUFFIXES: Final = ("", ".adoc", ".md", ".rst", ".txt")
 _ALLOWED_TOP_LEVEL: Final = frozenset(
-    {
-        "CHANGES",
-        "LICENSE",
-        "NOTICE",
-        "README",
-    }
+    (name + suffix) for name in _ALLOWED_TOP_LEVEL_NAMES for suffix in _ALLOWED_TOP_LEVEL_SUFFIXES
 )
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -258,7 +255,6 @@ async def _check_path_process_single(  # noqa: C901
                 is_standalone_metadata = True
                 break
 
-    allowed_top_level = _ALLOWED_TOP_LEVEL
     if ext_artifact:
         log.info(f"Checking artifact rules for {full_path}")
         await _check_artifact_rules(base_path, relative_path, relative_paths, errors, blockers, is_podling)
@@ -276,7 +272,7 @@ async def _check_path_process_single(  # noqa: C901
         )
     else:
         log.info(f"Checking general rules for {full_path}")
-        if (relative_path.parent == pathlib.Path(".")) and (relative_path.name not in allowed_top_level):
+        if (relative_path.parent == pathlib.Path(".")) and (relative_path.name not in _ALLOWED_TOP_LEVEL):
             errors.append(f"Unknown top level file: {relative_path.name}")
 
     await _record(
