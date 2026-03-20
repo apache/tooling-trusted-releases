@@ -121,27 +121,29 @@ def test_primary_toggle_button_text_changes(
     expect(btn_span).to_have_text("Hide")
 
 
-def test_row_striping_updates_after_filter(
-    page_report: Page,
-    member_rows: Locator,
-    member_filter_input: Locator,
-) -> None:
+def test_row_striping_updates_after_filter(page_report: Page) -> None:
     """Row striping should update when filtering member results."""
-    if member_rows.count() < 2:
-        # There's only one .py file in the test .tar.gz
-        pytest.skip("Need at least 2 member rows for striping test")
+    page_report.evaluate("""() => {
+        const tbody = document.querySelector('.atr-result-member').closest('tbody');
+        for (const path of ['synth/alpha.py', 'synth/beta.py', 'synth/gamma.py']) {
+            const tr = document.createElement('tr');
+            tr.className = 'atr-result-member atr-result-status-success';
+            const td = document.createElement('td');
+            td.textContent = path;
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        updateMemberStriping();
+    }""")
 
-    first_visible = page_report.locator(".atr-result-member:not(.page-member-path-hide):not(.atr-hide)").first
-    first_path = first_visible.locator("td").first.text_content()
-    if not first_path:
-        pytest.fail("First visible row has no path text")
+    synth_rows = page_report.locator(".atr-result-member").filter(has_text="synth/")
+    expect(synth_rows).to_have_count(3)
 
-    member_filter_input.fill(first_path)
+    page_report.locator("#member-path-filter").fill("synth/alpha")
 
-    filtered_visible = page_report.locator(".atr-result-member:not(.page-member-path-hide):not(.atr-hide)")
-    if filtered_visible.count() == 0:
-        pytest.fail("No visible rows after filtering")
-    expect(filtered_visible.first).to_have_class(re.compile(r"page-member-visible-odd"))
+    visible = page_report.locator(".atr-result-member:not(.page-member-path-hide):not(.atr-hide)")
+    expect(visible).to_have_count(1)
+    expect(visible.first).to_have_class(re.compile(r"page-member-visible-odd"))
 
 
 def test_toggle_all_details_button_visible(page_report: Page) -> None:

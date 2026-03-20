@@ -42,6 +42,10 @@ def _clear_policy_excludes(page: Page) -> None:
     helpers.visit(page, policy_helpers.PROJECT_URL)
     policy_helpers.textarea_source_excludes_lightweight(page).fill("")
     policy_helpers.textarea_source_excludes_rat(page).fill("")
+    policy_helpers.compose_form_save_button(page).click()
+    page.wait_for_load_state()
+
+    helpers.visit(page, policy_helpers.PROJECT_URL)
     policy_helpers.input_github_repository_name(page).fill("")
     policy_helpers.input_github_repository_branch(page).fill("")
     policy_helpers.textarea_github_compose_workflow_path(page).fill("")
