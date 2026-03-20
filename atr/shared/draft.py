@@ -16,6 +16,7 @@
 # under the License.
 
 import atr.form as form
+import atr.models.safe as safe
 
 
 class ClearQuarantineForm(form.Form):
@@ -23,7 +24,7 @@ class ClearQuarantineForm(form.Form):
 
 
 class DeleteFileForm(form.Form):
-    file_path: form.RelPath = form.label("File path", widget=form.Widget.HIDDEN)
+    file_path: safe.RelPath = form.label("File path", widget=form.Widget.HIDDEN)
 
 
 class HashGen(form.Empty):

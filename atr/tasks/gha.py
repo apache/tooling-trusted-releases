@@ -35,7 +35,6 @@ import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.util as util
-from atr.models.results import DistributionWorkflowStatus
 
 _BASE_URL: Final[str] = "https://api.github.com/repos"
 _IN_PROGRESS_STATUSES: Final[list[str]] = ["in_progress", "queued", "requested", "waiting", "pending", "expected"]
@@ -68,7 +67,7 @@ class WorkflowStatusCheck(schema.Strict):
 
 
 @checks.with_model(WorkflowStatusCheck)
-async def status_check(args: WorkflowStatusCheck) -> DistributionWorkflowStatus:
+async def status_check(args: WorkflowStatusCheck) -> results.DistributionWorkflowStatus:
     """Check remote workflow statuses."""
 
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}

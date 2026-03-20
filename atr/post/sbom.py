@@ -17,25 +17,20 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
 import atr.db as db
-import atr.form as form
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
-import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
-
-if TYPE_CHECKING:
-    import pathlib
 
 
 @post.typed
@@ -44,31 +39,28 @@ async def report(
     _sbom_report: Literal["sbom/report"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
     sbom_form: shared.sbom.SBOMForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /sbom/report/<project_key>/<version_key>/<path:file_path>
     """
 
-    validated_path = form.to_relpath(file_path)
-    if validated_path is None:
-        raise base.ASFQuartException("Invalid file path", errorcode=400)
-
     match sbom_form:
         case shared.sbom.AugmentSBOMForm():
-            return await _augment(session, project_key, version_key, validated_path)
+            return await _augment(session, project_key, version_key, file_path)
 
         case shared.sbom.ScanSBOMForm():
-            return await _scan(session, project_key, version_key, validated_path)
+            return await _scan(session, project_key, version_key, file_path)
 
 
 async def _augment(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: pathlib.Path
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: safe.RelPath
 ) -> web.WerkzeugResponse:
     """Augment a CycloneDX SBOM file."""
+    path = rel_path.as_path()
     # Check that the file is a .cdx.json archive before creating a revision
-    if not (rel_path.name.endswith(".cdx.json")):
+    if not (path.name.endswith(".cdx.json")):
         raise base.ASFQuartException("SBOM augmentation is only supported for .cdx.json files", errorcode=400)
 
     try:
@@ -79,13 +71,13 @@ async def _augment(
             revision_number = release.latest_revision_number
             if revision_number is None:
                 raise RuntimeError("No revision number found for new revision creation")
-            log.info(f"Augmenting SBOM for {project_key} {version_key} {revision_number} {rel_path}")
+            log.info(f"Augmenting SBOM for {project_key} {version_key} {revision_number} {path}")
         async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.augment_cyclonedx(
                 project_key,
                 version_key,
                 revision_number,
-                rel_path,
+                path,
             )
 
     except Exception as e:
@@ -100,7 +92,7 @@ async def _augment(
 
     return await session.redirect(
         get.sbom.report,
-        success=f"SBOM augmentation task queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
+        success=f"SBOM augmentation task queued for {path.name} (task ID: {util.unwrap(sbom_task.id)})",
         project_key=project_key,
         version_key=version_key,
         file_path=str(rel_path),
@@ -108,10 +100,11 @@ async def _augment(
 
 
 async def _scan(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: pathlib.Path
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: safe.RelPath
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
-    if not (rel_path.name.endswith(".cdx.json")):
+    path = rel_path.as_path()
+    if not (path.name.endswith(".cdx.json")):
         raise base.ASFQuartException("OSV scanning is only supported for .cdx.json files", errorcode=400)
 
     try:
@@ -122,13 +115,13 @@ async def _scan(
             revision_number = release.latest_revision_number
             if revision_number is None:
                 raise RuntimeError("No revision number found for OSV scan")
-            log.info(f"Starting OSV scan for {project_key} {version_key} {revision_number} {rel_path}")
+            log.info(f"Starting OSV scan for {project_key} {version_key} {revision_number} {path}")
         async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.osv_scan_cyclonedx(
                 project_key,
                 version_key,
                 revision_number,
-                rel_path,
+                path,
             )
 
     except Exception as e:
@@ -143,7 +136,7 @@ async def _scan(
 
     return await session.redirect(
         get.sbom.report,
-        success=f"OSV vulnerability scan queued for {rel_path.name} (task ID: {util.unwrap(sbom_task.id)})",
+        success=f"OSV vulnerability scan queued for {path.name} (task ID: {util.unwrap(sbom_task.id)})",
         project_key=project_key,
         version_key=version_key,
         file_path=str(rel_path),

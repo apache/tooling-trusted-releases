@@ -32,7 +32,6 @@ import sqlmodel
 import atr.analysis as analysis
 import atr.config as config
 import atr.db as db
-import atr.form as form
 import atr.log as log
 import atr.models.api as api
 import atr.models.safe as safe
@@ -274,14 +273,14 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        svn_url: str,
-        revision: str,
-        target_subdirectory: str | None,
+        svn_url: safe.RelPath,
+        svn_revision: str,
+        target_subdirectory: safe.RelPath | None,
     ) -> sql.Task:
         task_args = {
-            "svn_url": svn_url,
-            "revision": revision,
-            "target_subdirectory": target_subdirectory,
+            "svn_url": str(svn_url),
+            "revision": svn_revision,
+            "target_subdirectory": str(target_subdirectory) if target_subdirectory else None,
             "project_key": str(project_key),
             "version_key": str(version_key),
             "asf_uid": self.__asf_uid,
@@ -304,8 +303,8 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        source_files_rel: list[pathlib.Path],
-        target_dir_rel: pathlib.Path,
+        source_files_rel: list[safe.RelPath],
+        target_dir_rel: safe.RelPath,
     ) -> tuple[str | None, list[str], list[str]]:
         description = "File move through web interface"
         moved_files_names: list[str] = []
@@ -486,9 +485,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def upload_file(self, args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
         file_bytes = base64.b64decode(args.content, validate=True)
-        validated_path = form.to_relpath(args.relpath)
-        if validated_path is None:
-            raise storage.AccessError("Invalid file path")
+        validated_path = args.relpath.as_path()
         description = f"Upload via API: {validated_path}"
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
@@ -525,11 +522,8 @@ class CommitteeParticipant(FoundationCommitter):
             for file in files:
                 if not file.filename:
                     raise storage.AccessError("No filename provided")
-                # Validate the filename from multipart upload
-                validated_path = form.to_relpath(file.filename)
-                if validated_path is None:
-                    raise storage.AccessError("Invalid filename")
-                target_path = path / validated_path
+                # Validate the filename from multipart upload and construct the new path
+                target_path = path / str(safe.RelPath(file.filename))
                 await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
                 await self.__save_file(file, target_path)
 
@@ -687,13 +681,13 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __setup_revision(
         self,
-        source_files_rel: list[pathlib.Path],
-        target_dir_rel: pathlib.Path,
+        source_files_rel: list[safe.RelPath],
+        target_dir_rel: safe.RelPath,
         interim_path: pathlib.Path,
         moved_files_names: list[str],
         skipped_files_names: list[str],
     ) -> None:
-        target_path = interim_path / target_dir_rel
+        target_path = interim_path / target_dir_rel.as_path()
         try:
             resolved = await asyncio.to_thread(target_path.resolve)
             resolved.relative_to(await asyncio.to_thread(interim_path.resolve))
@@ -704,6 +698,7 @@ class CommitteeParticipant(FoundationCommitter):
         if not await aiofiles.os.path.exists(target_path):
             for part in target_path.parts:
                 # TODO: This .prefix check could include some existing directory segment
+                # TODO: The second check probably isn't needed now since this came from a safe RelPath type.
                 if util.is_disallowed_dotfile(part):
                     raise types.FailedError("This segment is a disallowed dotfile")
                 if ".." in part:
@@ -723,33 +718,35 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __setup_revision_item(
         self,
-        source_file_rel: pathlib.Path,
-        target_dir_rel: pathlib.Path,
+        source_file_rel: safe.RelPath,
+        target_dir_rel: safe.RelPath,
         interim_path: pathlib.Path,
         moved_files_names: list[str],
         skipped_files_names: list[str],
         target_path: pathlib.Path,
     ) -> None:
-        if source_file_rel.parent == target_dir_rel:
-            skipped_files_names.append(source_file_rel.name)
+        source_path = source_file_rel.as_path()
+        target_dir_path = target_dir_rel.as_path()
+        if source_path.parent == target_dir_path:
+            skipped_files_names.append(source_path.name)
             return
 
-        full_source_item_path = interim_path / source_file_rel
+        full_source_item_path = interim_path / source_path
 
         if await aiofiles.os.path.isdir(full_source_item_path):
-            if (target_dir_rel == source_file_rel) or (interim_path / target_dir_rel).resolve().is_relative_to(
+            if (target_dir_rel == source_file_rel) or (interim_path / target_dir_path).resolve().is_relative_to(
                 full_source_item_path.resolve()
             ):
                 raise types.FailedError("Cannot move a directory into itself or a subdirectory of itself")
 
-            final_target_for_item = target_path / source_file_rel.name
+            final_target_for_item = target_path / source_path.name
             if await aiofiles.os.path.exists(final_target_for_item):
                 raise types.FailedError("Target name already exists")
 
             await aiofiles.os.rename(full_source_item_path, final_target_for_item)
-            moved_files_names.append(source_file_rel.name)
+            moved_files_names.append(source_path.name)
         else:
-            related_files = self.__related_files(source_file_rel)
+            related_files = self.__related_files(source_path)
             bundle = [f for f in related_files if await aiofiles.os.path.exists(interim_path / f)]
             for f_check in bundle:
                 if await aiofiles.os.path.isdir(interim_path / f_check):
@@ -761,7 +758,7 @@ class CommitteeParticipant(FoundationCommitter):
 
             for f in bundle:
                 await aiofiles.os.rename(interim_path / f, target_path / f.name)
-                if f == source_file_rel:
+                if f == source_path:
                     moved_files_names.append(f.name)
 
     async def __tasks_ongoing(

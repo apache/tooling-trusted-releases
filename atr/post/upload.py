@@ -232,10 +232,12 @@ async def _add_files(
         )
 
 
-def _construct_svn_url(committee_key: str, area: shared.upload.SvnArea, path: str, *, is_podling: bool) -> str:
+def _construct_svn_url(
+    committee_key: str, area: shared.upload.SvnArea, path: safe.RelPath, *, is_podling: bool
+) -> safe.RelPath:
     if is_podling:
-        return f"{area.value}/incubator/{committee_key}/{path}"
-    return f"{area.value}/{committee_key}/{path}"
+        return path.prepend(f"{area.value}/incubator/{committee_key}")
+    return path.prepend(f"{area.value}/{committee_key}")
 
 
 def _json_error(message: str, status: int) -> web.WerkzeugResponse:
@@ -256,9 +258,9 @@ async def _svn_import(
 ) -> web.WerkzeugResponse:
     # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
-        target_subdirectory = str(svn_form.target_subdirectory) if svn_form.target_subdirectory else None
+        target_subdirectory = svn_form.target_subdirectory if svn_form.target_subdirectory else None
         svn_area = shared.upload.SvnArea.DEV
-        svn_path = svn_form.svn_path or ""
+        svn_path = svn_form.svn_path
 
         async with db.session() as data:
             release = await session.release(project_key, version_key, data=data)

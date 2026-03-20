@@ -33,7 +33,6 @@ import atr.htm as htm
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.render as render
 import atr.sbom as sbom
 import atr.shared as shared
@@ -51,7 +50,7 @@ async def report(
     _sbom_report: Literal["sbom/report"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
 ) -> str:
     """
     URL: /sbom/report/<project_key>/<version_key>/<file_path>
@@ -90,10 +89,7 @@ async def report(
 
     block.h1["SBOM report"]
 
-    validated_path = form.to_relpath(file_path)
-    if validated_path is None:
-        raise base.ASFQuartException("Invalid file path", errorcode=400)
-    validated_path_str = str(validated_path)
+    validated_path_str = str(file_path)
 
     task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project_key, release, version_key)
 

@@ -25,16 +25,15 @@ import quart
 
 import atr.blueprints.get as get
 import atr.config as config
-import atr.form as form
 import atr.htm as htm
-import atr.models.unsafe as unsafe
+import atr.models.safe as safe
 import atr.paths as paths
 import atr.util as util
 import atr.web as web
 
 
 @get.typed
-async def path(session: web.Committer, _published: Literal["published"], file_path: unsafe.Path) -> web.QuartResponse:
+async def path(session: web.Committer, _published: Literal["published"], file_path: safe.RelPath) -> web.QuartResponse:
     """
     URL: /published/<path:file_path>
     View the content of a specific file in the downloads directory.
@@ -44,10 +43,7 @@ async def path(session: web.Committer, _published: Literal["published"], file_pa
     # Therefore this path acts as a way to check the contents of that directory
     if not config.get().ALLOW_TESTS:
         return quart.abort(404)
-    validated_path = form.to_relpath(str(file_path))
-    if validated_path is None:
-        return quart.abort(400)
-    return await _path(session, str(validated_path))
+    return await _path(session, str(file_path))
 
 
 @get.typed

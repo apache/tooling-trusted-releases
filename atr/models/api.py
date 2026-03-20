@@ -360,7 +360,7 @@ class PublisherReleaseAnnounceArgs(schema.Strict):
     revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
-    path_suffix: str = schema.example("example/1.0.0")
+    path_suffix: safe.OptionalRelPath = schema.example("example/1.0.0")
 
 
 class PublisherReleaseAnnounceResults(schema.Strict):
@@ -399,7 +399,7 @@ class ReleaseAnnounceArgs(schema.Strict):
     revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
-    path_suffix: str = schema.example("example/1.0.0")
+    path_suffix: safe.OptionalRelPath = schema.example("example/1.0.0")
 
 
 class ReleaseAnnounceResults(schema.Strict):
@@ -468,7 +468,7 @@ class ReleaseRevisionsResults(schema.Strict):
 class ReleaseUploadArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
-    relpath: str = schema.example("example/0.0.1/example-0.0.1-bin.tar.gz")
+    relpath: safe.RelPath = schema.example("example/0.0.1/example-0.0.1-bin.tar.gz")
     content: str = schema.example("This is the content of the file.")
 
 

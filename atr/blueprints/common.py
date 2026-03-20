@@ -38,6 +38,7 @@ import atr.web as web
 QUART_CONVERTERS: Final[dict[Any, str]] = {
     int: "int",
     float: "float",
+    safe.RelPath: "path",
     unsafe.Path: "path",
 }
 
@@ -45,6 +46,7 @@ VALIDATED_TYPES: Final[set[Any]] = {
     safe.Alphanumeric,
     safe.CommitteeKey,
     safe.ProjectKey,
+    safe.RelPath,
     safe.RevisionNumber,
     safe.VersionKey,
     unsafe.UnsafeStr,

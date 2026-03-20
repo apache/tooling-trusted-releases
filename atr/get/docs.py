@@ -26,8 +26,7 @@ import quart
 
 import atr.blueprints.get as get
 import atr.config as config
-import atr.form as form
-import atr.models.unsafe as unsafe
+import atr.models.safe as safe
 import atr.template as template
 import atr.web as web
 
@@ -57,11 +56,8 @@ async def index(_session: web.Public, _docs: Literal["docs"], _: Literal[""]) ->
 
 
 @get.typed
-async def page(_session: web.Public, _docs: Literal["docs"], path: unsafe.Path) -> str:
-    validated_page = form.to_relpath(path)
-    if validated_page is None:
-        quart.abort(400)
-    return await _serve_docs_page(str(validated_page))
+async def page(_session: web.Public, _docs: Literal["docs"], path: safe.RelPath) -> str:
+    return await _serve_docs_page(str(path))
 
 
 async def _serve_docs_page(page: str) -> str:

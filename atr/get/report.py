@@ -22,10 +22,8 @@ import aiofiles.os
 import asfquart.base as base
 
 import atr.blueprints.get as get
-import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.storage as storage
 import atr.template as template
@@ -39,15 +37,13 @@ async def selected_path(
     _report: Literal["report"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    rel_path: unsafe.Path,
+    rel_path: safe.RelPath,
 ) -> str:
     """
     URL: /report/<project_key>/<version_key>/<rel_path>
     Show the report for a specific file.
     """
-    validated_path = form.to_relpath(rel_path)
-    if validated_path is None:
-        raise base.ASFQuartException("Invalid file path", errorcode=400)
+    validated_path = rel_path.as_path()
 
     # If the draft is not found, we try to get the release candidate
     try:
@@ -98,7 +94,7 @@ async def selected_path(
         "report-selected-path.html",
         project_key=str(project_key),
         version_key=str(version_key),
-        rel_path=str(validated_path),
+        rel_path=str(rel_path),
         package=file_data,
         release=release,
         primary_results=check_results.primary_results_list,

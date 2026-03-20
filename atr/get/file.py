@@ -18,14 +18,12 @@
 from typing import Literal
 
 import atr.blueprints.get as get
-import atr.form as form
 import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.render as render
 import atr.template as template
@@ -143,15 +141,13 @@ async def selected_path(
     _file: Literal["file"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
 ) -> str:
     """
     URL: /file/<project_key>/<version_key>/<path:file_path>
     View the content of a specific file in a release (any phase).
     """
-    validated_path = form.to_relpath(str(file_path))
-    if validated_path is None:
-        raise web.FlashError("Invalid file path")
+    validated_path = file_path.as_path()
 
     release = await session.release(project_key, version_key, phase=None)
     _max_view_size = 512 * 1024

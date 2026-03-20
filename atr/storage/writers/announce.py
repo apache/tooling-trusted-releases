@@ -109,7 +109,7 @@ class CommitteeMember(CommitteeParticipant):
         preview_revision_number: safe.RevisionNumber,
         recipient: str,
         body: str,
-        download_path_suffix: str,
+        download_path_suffix: safe.RelPath | None,
         asf_uid: str,
         fullname: str,
         subject_template_hash: str | None = None,
@@ -254,14 +254,16 @@ class CommitteeMember(CommitteeParticipant):
         self,
         committee: sql.Committee,
         unfinished_path: pathlib.Path,
-        download_path_suffix: str,
+        download_path_suffix: safe.RelPath | None,
         dry_run: bool = False,
         preserve: bool = False,
     ) -> None:
         """Hard link the release files to the downloads directory."""
         # TODO: Rename *_dir functions to _path functions
         downloads_base_path = paths.get_downloads_dir()
-        downloads_path = downloads_base_path / committee.key / download_path_suffix.removeprefix("/")
+        downloads_path = downloads_base_path / committee.key
+        if download_path_suffix is not None:
+            downloads_path = downloads_path / download_path_suffix.as_path()
         # The "exist_ok" parameter means to overwrite files if True
         # We only overwrite if we're not preserving, so we supply "not preserve"
         # TODO: Add a test for this

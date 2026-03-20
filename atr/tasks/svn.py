@@ -75,6 +75,7 @@ async def _import_files_core(args: SvnImport) -> str:
 
     project = safe.ProjectKey(args.project_key)
     version = safe.VersionKey(args.version_key)
+    svn_path = safe.RelPath(args.svn_url)
 
     log.info(f"Starting SVN import for {args.project_key}-{args.version_key}")
     # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
@@ -109,7 +110,7 @@ async def _import_files_core(args: SvnImport) -> str:
                 "-r",
                 args.revision,
                 "--",
-                f"{_SVN_BASE_URL}/{args.svn_url}",
+                f"{_SVN_BASE_URL}/{svn_path!s}",
                 str(temp_export_path),
             ]
 

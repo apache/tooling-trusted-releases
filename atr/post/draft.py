@@ -30,7 +30,6 @@ import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
@@ -121,20 +120,18 @@ async def delete_file(
     Delete a specific file from the release candidate, creating a new revision.
     """
     rel_path_to_delete = delete_file_form.file_path
-    if rel_path_to_delete is None:
-        await quart.flash("No file path specified", "error")
-        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
+    path_to_delete = rel_path_to_delete.as_path()
 
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
-            metadata_files_deleted = await wacp.release.delete_file(project_key, version_key, rel_path_to_delete)
+            metadata_files_deleted = await wacp.release.delete_file(project_key, version_key, path_to_delete)
     except Exception as e:
         log.exception("Error deleting file:")
         await quart.flash(f"Error deleting file: {e!s}", "error")
         return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
-    success_message = f"File '{rel_path_to_delete.name}' deleted successfully"
+    success_message = f"File '{path_to_delete.name}' deleted successfully"
     if metadata_files_deleted:
         success_message += f", and {util.plural(metadata_files_deleted, 'associated metadata file')} deleted"
     return await session.redirect(
@@ -148,17 +145,14 @@ async def hashgen(
     _draft_hashgen: Literal["draft/hashgen"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
     URL: /draft/hashgen/<project_key>/<version_key>/<file_path>
     Generate an sha512 hash file for a candidate draft file, creating a new revision.
     """
-    rel_path = form.to_relpath(file_path)
-    if rel_path is None:
-        await quart.flash("Invalid file path", "error")
-        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
+    rel_path = file_path.as_path()
 
     try:
         async with storage.write(session) as write:
@@ -242,23 +236,24 @@ async def sbomgen(
     _draft_sbomgen: Literal["draft/sbomgen"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
     empty_form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
     URL: /draft/sbomgen/<project_key>/<version_key>/<file_path>
     Generate a CycloneDX SBOM file for a candidate draft file, creating a new revision.
     """
-    path = str(file_path)
-    rel_path = form.to_relpath(path)
-    if rel_path is None:
-        await quart.flash("Invalid file path", "error")
-        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
+    rel_path = file_path.as_path()
 
     # Check that the file is a .tar.gz archive before creating a revision
-    if not (path.endswith(".tar.gz") or path.endswith(".tgz") or path.endswith(".zip") or path.endswith(".jar")):
+    if not (
+        rel_path.name.endswith(".tar.gz")
+        or rel_path.name.endswith(".tgz")
+        or rel_path.name.endswith(".zip")
+        or rel_path.name.endswith(".jar")
+    ):
         raise base.ASFQuartException(
-            f"SBOM generation requires .tar.gz, .tgz, .zip or .jar files. Received: {path}", errorcode=400
+            f"SBOM generation requires .tar.gz, .tgz, .zip or .jar files. Received: {file_path!s}", errorcode=400
         )
 
     try:

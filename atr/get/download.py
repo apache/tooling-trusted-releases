@@ -28,12 +28,10 @@ import zipstream
 import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
-import atr.form as form
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.template as template
 import atr.util as util
@@ -85,13 +83,13 @@ async def path(
     _download_path: Literal["download/path"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
 ) -> web.Response:
     """
     URL: /download/path/<project_key>/<version_key>/<path:file_path>
     Download a file or list a directory from a release in any phase.
     """
-    return await _download_or_list(project_key, version_key, str(file_path))
+    return await _download_or_list(project_key, version_key, file_path)
 
 
 @get.typed
@@ -105,7 +103,7 @@ async def path_empty(
     URL: /download/path/<project_key>/<version_key>/
     List files at the root of a release directory for download.
     """
-    return await _download_or_list(project_key, version_key, ".")
+    return await _download_or_list(project_key, version_key, None)
 
 
 @get.typed
@@ -195,17 +193,13 @@ async def zip_selected(
     return web.ZipResponse(stream_zip(files_to_zip), headers=headers)
 
 
-async def _download_or_list(project_key: safe.ProjectKey, version_key: safe.VersionKey, file_path: str) -> web.Response:
+async def _download_or_list(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, file_path: safe.RelPath | None
+) -> web.Response:
     """Download a file or list a directory from a release in any phase."""
     import atr.get.root as root
 
-    # Validate the path, and allow "." for root directory
-    if file_path == ".":
-        validated_path = pathlib.Path(".")
-    else:
-        validated_path = form.to_relpath(file_path)
-        if validated_path is None:
-            raise base.ASFQuartException("Invalid file path", errorcode=400)
+    validated_path = file_path.as_path() if file_path is not None else pathlib.Path(".")
 
     # We allow downloading files from any phase
     async with db.session() as data:

@@ -19,6 +19,7 @@ import enum
 from typing import Annotated, Literal
 
 import atr.form as form
+import atr.models.safe as safe
 
 type ADD_FILES = Literal["add_files"]
 type SVN_IMPORT = Literal["svn_import"]
@@ -41,7 +42,7 @@ class SvnImportForm(form.Form):
     #     "Select whether to import from dev or release.",
     #     widget=form.Widget.RADIO,
     # )
-    svn_path: form.URLPath = form.label(
+    svn_path: safe.RelPath = form.label(
         "SVN path",
         "Path within the committee's svn:dist directory, e.g. 'java-library/4_0_4' or '3.1.5rc1'.",
     )
@@ -50,7 +51,7 @@ class SvnImportForm(form.Form):
         "Specify an SVN revision number or leave as HEAD for the latest.",
         default="HEAD",
     )
-    target_subdirectory: form.Filename = form.label(
+    target_subdirectory: safe.OptionalRelPath = form.label(
         "Target subdirectory",
         "Optional: Subdirectory to place imported files, defaulting to the root.",
     )

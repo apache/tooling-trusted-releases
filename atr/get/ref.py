@@ -25,8 +25,7 @@ import quart
 
 import atr.blueprints.get as get
 import atr.config as config
-import atr.form as form
-import atr.models.unsafe as unsafe
+import atr.models.safe as safe
 import atr.web as web
 
 # Perhaps GitHub will get around to implementing symbol permalinks:
@@ -35,7 +34,7 @@ import atr.web as web
 
 
 @get.typed
-async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.Path) -> web.WerkzeugResponse:
+async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: safe.RelPath) -> web.WerkzeugResponse:
     """
     URL: /ref/<ref_path>
     Resolve a code reference to a GitHub permalink.
@@ -45,7 +44,7 @@ async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.P
 
     if ":" in path:
         file_path_str, symbol = path.rsplit(":", 1)
-        resolved_file, validated_path_str = _validate_and_resolve_path(file_path_str, project_root)
+        resolved_file, validated_path_str = _validate_and_resolve_path(safe.RelPath(file_path_str), project_root)
 
         if (not await aiofiles.os.path.exists(resolved_file)) or (not await aiofiles.os.path.isfile(resolved_file)):
             quart.abort(404)
@@ -58,9 +57,10 @@ async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.P
         github_url = f"https://github.com/apache/tooling-trusted-releases/blob/main/{validated_path_str}#L{line_number}"
         return quart.redirect(github_url, code=303)
 
+    # TODO: Should these functions exist in RelPath?
     is_directory = path.endswith("/")
     path_str = path.rstrip("/")
-    resolved_path, validated_path_str = _validate_and_resolve_path(path_str, project_root)
+    resolved_path, validated_path_str = _validate_and_resolve_path(safe.RelPath(path_str), project_root)
 
     if not await aiofiles.os.path.exists(resolved_path):
         quart.abort(404)
@@ -100,11 +100,8 @@ async def _resolve_symbol_to_line(file_path: pathlib.Path, symbol: str) -> int |
     return None
 
 
-def _validate_and_resolve_path(path_str: str, project_root: pathlib.Path) -> tuple[pathlib.Path, str]:
-    validated_path = form.to_relpath(path_str)
-    if validated_path is None:
-        quart.abort(400)
-    validated_path_str = str(validated_path)
+def _validate_and_resolve_path(rel_path: safe.RelPath, project_root: pathlib.Path) -> tuple[pathlib.Path, str]:
+    validated_path = rel_path.as_path()
 
     file_path = project_root / validated_path
 
@@ -114,4 +111,4 @@ def _validate_and_resolve_path(path_str: str, project_root: pathlib.Path) -> tup
     except (FileNotFoundError, ValueError):
         quart.abort(404)
 
-    return resolved_path, validated_path_str
+    return resolved_path, str(validated_path)

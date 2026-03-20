@@ -26,7 +26,6 @@ import asfquart.base as base
 import atr.blueprints.get as get
 import atr.form as form
 import atr.models.safe as safe
-import atr.models.unsafe as unsafe
 import atr.paths as paths
 import atr.post as post
 import atr.shared as shared
@@ -41,16 +40,14 @@ async def tools(
     _draft_tools: Literal["draft/tools"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    file_path: unsafe.Path,
+    file_path: safe.RelPath,
 ) -> str:
     """
     URL: /draft/tools/<project_key>/<version_key>/<path:file_path>
     Show the tools for a specific file.
     """
     await session.check_access(project_key)
-    validated_path = form.to_relpath(str(file_path))
-    if validated_path is None:
-        raise base.ASFQuartException("Invalid file path", errorcode=400)
+    validated_path = file_path.as_path()
 
     release = await session.release(project_key, version_key)
     full_path = str(paths.release_directory(release) / validated_path)
@@ -62,8 +59,6 @@ async def tools(
     modified = int(await aiofiles.os.path.getmtime(full_path))
     file_size = await aiofiles.os.path.getsize(full_path)
 
-    validated_path_str = str(validated_path)
-
     file_data = {
         "filename": validated_path.name,
         "bytes_size": file_size,
@@ -74,7 +69,7 @@ async def tools(
         post.draft.hashgen,
         project_key=str(project_key),
         version_key=str(version_key),
-        file_path=validated_path_str,
+        file_path=str(file_path),
     )
     sha512_form = form.render(
         model_cls=shared.draft.HashGen,
@@ -89,7 +84,7 @@ async def tools(
             post.draft.sbomgen,
             project_key=str(project_key),
             version_key=str(version_key),
-            file_path=validated_path_str,
+            file_path=str(file_path),
         ),
         submit_label="Generate CycloneDX SBOM (.cdx.json)",
         submit_classes="btn-outline-secondary",
@@ -101,7 +96,7 @@ async def tools(
         asf_id=session.uid,
         project_key=str(project_key),
         version_key=str(version_key),
-        file_path=validated_path_str,
+        file_path=str(file_path),
         file_data=file_data,
         release=release,
         format_file_size=util.format_file_size,

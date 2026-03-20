@@ -17,15 +17,14 @@
 
 from typing import Literal
 
-import pydantic
-
 import atr.form as form
+import atr.models.safe as safe
 
 
 class AnnounceForm(form.Form):
     """Form for announcing a release preview."""
 
-    revision_number: str = form.label("Revision number", widget=form.Widget.HIDDEN)
+    revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)
     mailing_list: str = form.label(
         "Send vote email to",
         widget=form.Widget.CUSTOM,
@@ -33,25 +32,8 @@ class AnnounceForm(form.Form):
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM)
-    download_path_suffix: str = form.label("Download path suffix", widget=form.Widget.CUSTOM)
+    download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
     confirm_announce: Literal["CONFIRM"] = form.label(
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",
     )
-
-    @pydantic.field_validator("download_path_suffix")
-    @classmethod
-    def validate_and_normalize_download_path_suffix(cls, suffix: str) -> str:
-        if (".." in suffix) or ("//" in suffix):
-            raise ValueError("Download path suffix must not contain .. or //")
-        if suffix.startswith("./"):
-            suffix = suffix[1:]
-        elif suffix == ".":
-            suffix = "/"
-        if not suffix.startswith("/"):
-            suffix = "/" + suffix
-        if not suffix.endswith("/"):
-            suffix = suffix + "/"
-        if "/." in suffix:
-            raise ValueError("Download path suffix must not contain /.")
-        return suffix

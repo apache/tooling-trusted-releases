@@ -33,6 +33,7 @@ import quart.datastructures as datastructures
 import quart_wtf.utils as utils
 
 import atr.htm as htm
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.util as util
 
@@ -445,33 +446,14 @@ def to_optional_url(v: Any) -> pydantic.HttpUrl | None:
     return pydantic.TypeAdapter(pydantic.HttpUrl).validate_python(v)
 
 
-def to_relpath(v: Any) -> pathlib.Path | None:
-    """Validate a relative filesystem path."""
-    if not v:
-        return None
-
-    path_str = str(v).strip()
-    if not path_str:
-        raise ValueError("Path cannot be empty")
-
-    util.validate_relative_path_str(path_str)
-    return pathlib.Path(path_str)
-
-
-def to_relpath_list(v: Any) -> list[pathlib.Path]:
+def to_safe_path_list(v: Any) -> list[safe.RelPath]:
     if isinstance(v, list):
         result = []
         for item in v:
-            validated = to_relpath(item)
-            if validated is None:
-                raise ValueError("Path list items cannot be empty")
-            result.append(validated)
+            result.append(safe.RelPath(item))
         return result
     if isinstance(v, str):
-        validated = to_relpath(v)
-        if validated is None:
-            raise ValueError("Path cannot be empty")
-        return [validated]
+        return [safe.RelPath(v)]
     raise ValueError(f"Expected a path or list of paths, got {type(v).__name__}")
 
 
@@ -482,18 +464,6 @@ def to_str_list(v: Any) -> list[str]:
     if isinstance(v, str):
         return [v]
     raise ValueError(f"Expected a string or list of strings, got {type(v).__name__}")
-
-
-def to_url_path(v: Any) -> str | None:
-    """Validate a relative URL style path, e.g. for SVN paths."""
-    if not v:
-        return None
-
-    path_str = str(v).strip()
-    if not path_str:
-        raise ValueError("Path cannot be empty")
-
-    return util.validate_relative_path_str(path_str)
 
 
 # Validator types come before other functions
@@ -567,16 +537,9 @@ OptionalURL = Annotated[
     functional_validators.BeforeValidator(to_optional_url),
     pydantic.Field(default=None),
 ]
-
-RelPath = Annotated[
-    pathlib.Path | None,
-    functional_validators.BeforeValidator(to_relpath),
-    pydantic.Field(default=None),
-]
-
 RelPathList = Annotated[
-    list[pathlib.Path],
-    functional_validators.BeforeValidator(to_relpath_list),
+    list[safe.RelPath],
+    functional_validators.BeforeValidator(to_safe_path_list),
     pydantic.Field(default_factory=list),
 ]
 
@@ -584,12 +547,6 @@ StrList = Annotated[
     list[str],
     functional_validators.BeforeValidator(to_str_list),
     pydantic.Field(default_factory=list),
-]
-
-URLPath = Annotated[
-    str | None,
-    functional_validators.BeforeValidator(to_url_path),
-    pydantic.Field(default=None),
 ]
 
 

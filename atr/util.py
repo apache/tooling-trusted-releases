@@ -1167,31 +1167,6 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     return path_segment
 
 
-def validate_path_str(path_str: str) -> str:
-    # The pathlib module normalises empty components
-    # Therefore, we must do this check on the path string
-    if "//" in path_str:
-        raise ValueError("Path cannot contain //")
-
-    for segment in pathlib.Path(path_str).parts:
-        validate_path_segment(segment)
-    return path_str
-
-
-def validate_relative_path_str(path_str: str) -> str:
-    # Check for absolute paths using both POSIX and Windows semantics
-    # We don't support Windows paths, but we want to detect all bad inputs
-    # PurePosixPath doesn't recognise Windows drive letters as absolute
-    # PureWindowsPath treats leading "/" differently
-    posix_path = pathlib.PurePosixPath(path_str)
-    windows_path = pathlib.PureWindowsPath(path_str)
-    if posix_path.is_absolute() or windows_path.is_absolute():
-        raise ValueError("Absolute paths are not allowed")
-
-    validate_path_str(path_str)
-    return path_str
-
-
 # TODO: AM put these rules into safe.versionkey
 def version_key_error(version_key: str) -> str | None:
     """Check if the given version name is valid."""

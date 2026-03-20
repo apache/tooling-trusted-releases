@@ -59,12 +59,12 @@ async def _delete_empty_directory(
     respond: shared.finish.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     dir_to_delete_rel = delete_form.directory_to_delete
-    if dir_to_delete_rel is None:
-        return await respond(400, "No directory specified.")
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_member(project_key)
-            creation_error = await wacp.release.delete_empty_directory(project_key, version_key, dir_to_delete_rel)
+            creation_error = await wacp.release.delete_empty_directory(
+                project_key, version_key, dir_to_delete_rel.as_path()
+            )
     except Exception:
         log.exception(f"Unexpected error deleting directory {dir_to_delete_rel} for {project_key}/{version_key}")
         return await respond(500, "An unexpected error occurred.")
@@ -83,8 +83,6 @@ async def _move_file_to_revision(
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     source_files_rel = move_form.source_files
     target_dir_rel = move_form.target_directory
-    if target_dir_rel is None:
-        return await respond(400, "No target directory specified.")
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_member(project_key)

@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import string
 import unicodedata
 from typing import Annotated, Any, Final
@@ -25,6 +26,7 @@ import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
 _NUMERIC: Final = frozenset(string.digits)
+_PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
 
 
@@ -114,6 +116,42 @@ class ReleaseKey(Alphanumeric):
         return _VERSION_CHARS
 
 
+class RelPath(SafeType):
+    """A relative file path that has been validated for safety."""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _PATH_CHARS
+
+    def _additional_validations(self, value: str) -> None:
+        posix_path = pathlib.PurePosixPath(value)
+        windows_path = pathlib.PureWindowsPath(value)
+        if posix_path.is_absolute() or windows_path.is_absolute():
+            raise ValueError("Absolute paths are not allowed")
+        if "//" in value:
+            raise ValueError("Path cannot contain empty segments")
+        for segment in pathlib.Path(value).parts:
+            if segment in (".", ".."):
+                raise ValueError("Path cannot contain directory traversal")
+            if segment in (".git", ".svn"):
+                raise ValueError("Path cannot contain SCM directories")
+            if segment.startswith(".") and not segment.startswith(".atr") and segment != ".gitkeep":
+                raise ValueError("Path cannot contain dotfiles")
+
+    def as_path(self) -> pathlib.Path:
+        """Return the validated path as a pathlib.Path."""
+        return pathlib.Path(self._value)
+
+    def append(self, path: str | pathlib.Path) -> RelPath:
+        return RelPath(f"{self!s}/{path!s}")
+
+    def prepend(self, path: str | pathlib.Path) -> RelPath:
+        return RelPath(f"{path!s}/{self!s}")
+
+    def removeprefix(self, prefix: str):
+        return RelPath(self._value.removeprefix(prefix))
+
+
 class RevisionNumber(Numeric):
     """A revision number that has been validated for safety."""
 
@@ -137,6 +175,21 @@ def _empty_to_none(v: object) -> object:
         return None
     return v
 
+
+def _strip_slashes_or_none(v: object) -> object:
+    """Strip leading/trailing slashes from a path string; return None if only slashes."""
+    if isinstance(v, str):
+        stripped = v.strip("/")
+        if not stripped:
+            return None
+        return stripped
+    return v
+
+
+type OptionalRelPath = Annotated[
+    RelPath | None,
+    pydantic.BeforeValidator(_strip_slashes_or_none),
+]
 
 type OptionalRevisionNumber = Annotated[
     RevisionNumber | None,
