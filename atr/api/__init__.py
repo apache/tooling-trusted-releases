@@ -1699,7 +1699,7 @@ def _pagination_args_validate(query_args: Any) -> None:
             raise exceptions.BadRequest("Minimum limit less than 1 is nonsense")
     # Users could request any amount using offset=N with arbitrarily high N
     # We therefore limit the maximum offset to 1000000
-    if hasattr(query_args, "offest"):
+    if hasattr(query_args, "offset"):
         offset = query_args.offset
         if offset > 1000000:
             raise exceptions.BadRequest("Maximum offset of 1000000 exceeded")
