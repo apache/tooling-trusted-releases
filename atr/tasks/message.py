@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import Annotated, Any
 
 import pydantic
 
@@ -26,6 +27,15 @@ import atr.storage as storage
 import atr.tasks.checks as checks
 
 
+def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:
+    if isinstance(value, mail.MailFooterCategory):
+        return value
+    if isinstance(value, str):
+        return mail.MailFooterCategory(value)
+    else:
+        return None
+
+
 class Send(schema.Strict):
     """Arguments for the task to send an email."""
 
@@ -34,6 +44,9 @@ class Send(schema.Strict):
     subject: str = schema.description("The subject of the email")
     body: str = schema.description("The body of the email")
     in_reply_to: str | None = schema.description("The message ID of the email to reply to")
+    footer_category: Annotated[mail.MailFooterCategory, pydantic.BeforeValidator(_ensure_footer_enum)] = (
+        schema.description("The category of email footer to include")
+    )
 
 
 class SendError(Exception):
@@ -71,9 +84,11 @@ async def send(args: Send) -> results.Results | None:
         in_reply_to=args.in_reply_to,
     )
 
+    footer_category = mail.MailFooterCategory(args.footer_category)
+
     async with storage.write(sender_asf_uid) as write:
         wafc = write.as_foundation_committer()
-        mid, mail_errors = await wafc.mail.send(message)
+        mid, mail_errors = await wafc.mail.send(message, footer_category)
 
     if mail_errors:
         log.warning(f"Mail sending to {args.email_recipient} for subject '{args.subject}' encountered errors:")

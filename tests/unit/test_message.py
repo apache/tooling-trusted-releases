@@ -25,6 +25,7 @@ import pydantic
 import pytest
 
 import atr.ldap as ldap
+import atr.mail as mail
 import atr.tasks.message as message
 
 if TYPE_CHECKING:
@@ -107,6 +108,9 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
     mock_mail_send.assert_called_once()
 
 
+"""Build an argument dict matching the Send schema."""
+
+
 def _send_args(
     email_sender: str = "validuser@apache.org",
     email_recipient: str = "dev@project.apache.org",
@@ -114,11 +118,11 @@ def _send_args(
     body: str = "Test body",
     in_reply_to: str | None = None,
 ) -> dict[str, str | None]:
-    """Build an argument dict matching the Send schema."""
     return {
         "email_sender": email_sender,
         "email_recipient": email_recipient,
         "subject": subject,
         "body": body,
         "in_reply_to": in_reply_to,
+        "footer_category": mail.MailFooterCategory.NONE,
     }

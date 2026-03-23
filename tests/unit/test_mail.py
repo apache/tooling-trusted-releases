@@ -43,7 +43,7 @@ async def test_address_objects_used_for_from_to_headers(monkeypatch: "MonkeyPatc
         body="Test body",
     )
 
-    _, errors = await mail.send(legitimate_message)
+    _, errors = await mail.send(legitimate_message, mail.MailFooterCategory.NONE)
 
     # Verify the message was sent successfully
     assert len(errors) == 0
@@ -73,7 +73,7 @@ async def test_send_accepts_legitimate_message(monkeypatch: "MonkeyPatch") -> No
     )
 
     # Call send
-    mid, errors = await mail.send(legitimate_message)
+    mid, errors = await mail.send(legitimate_message, mail.MailFooterCategory.NONE)
 
     # Assert that no errors were returned
     assert len(errors) == 0
@@ -107,7 +107,7 @@ async def test_send_accepts_message_with_reply_to(monkeypatch: "MonkeyPatch") ->
     )
 
     # Call send
-    mid, errors = await mail.send(legitimate_message)
+    mid, errors = await mail.send(legitimate_message, mail.MailFooterCategory.NONE)
 
     # Assert that no errors were returned
     assert len(errors) == 0
@@ -134,7 +134,7 @@ async def test_send_handles_non_ascii_headers(monkeypatch: "MonkeyPatch") -> Non
     )
 
     # Call send
-    _mid, errors = await mail.send(message_with_unicode)
+    _mid, errors = await mail.send(message_with_unicode, mail.MailFooterCategory.NONE)
 
     # Assert that no errors were returned
     assert len(errors) == 0
@@ -164,7 +164,7 @@ async def test_send_rejects_bcc_header_injection(monkeypatch: "MonkeyPatch") -> 
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -189,7 +189,7 @@ async def test_send_rejects_content_type_injection(monkeypatch: "MonkeyPatch") -
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -214,7 +214,7 @@ async def test_send_rejects_cr_only_injection(monkeypatch: "MonkeyPatch") -> Non
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -244,7 +244,7 @@ async def test_send_rejects_crlf_in_from_address(monkeypatch: "MonkeyPatch") -> 
 
     # Call send and expect it to raise ValueError due to invalid from_addr format
     with pytest.raises(ValueError, match=r"from_addr must end with @apache.org"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that _send_many was never called
     mock_send_many.assert_not_called()
@@ -266,7 +266,7 @@ async def test_send_rejects_crlf_in_reply_to(monkeypatch: "MonkeyPatch") -> None
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -292,7 +292,7 @@ async def test_send_rejects_crlf_in_subject(monkeypatch: "MonkeyPatch") -> None:
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -322,7 +322,7 @@ async def test_send_rejects_crlf_in_to_address(monkeypatch: "MonkeyPatch") -> No
 
     # Call send and expect it to raise ValueError due to invalid recipient format
     with pytest.raises(ValueError, match=r"CR/LF"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that _send_many was never called
     mock_send_many.assert_not_called()
@@ -343,7 +343,7 @@ async def test_send_rejects_lf_only_injection(monkeypatch: "MonkeyPatch") -> Non
     )
 
     # Call send and expect it to catch the injection
-    _, errors = await mail.send(malicious_message)
+    _, errors = await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     # Assert that the function returned an error
     assert len(errors) == 1
@@ -367,7 +367,7 @@ async def test_send_rejects_null_byte_in_body(monkeypatch: "MonkeyPatch") -> Non
     )
 
     with pytest.raises(ValueError, match=r"null bytes"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
 
@@ -386,7 +386,7 @@ async def test_send_rejects_null_byte_in_from_address(monkeypatch: "MonkeyPatch"
     )
 
     with pytest.raises(ValueError, match=r"null bytes"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
 
@@ -406,7 +406,7 @@ async def test_send_rejects_null_byte_in_reply_to(monkeypatch: "MonkeyPatch") ->
     )
 
     with pytest.raises(ValueError, match=r"null bytes"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
 
@@ -425,7 +425,7 @@ async def test_send_rejects_null_byte_in_subject(monkeypatch: "MonkeyPatch") -> 
     )
 
     with pytest.raises(ValueError, match=r"null bytes"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
 
@@ -444,7 +444,7 @@ async def test_send_rejects_null_byte_in_to_address(monkeypatch: "MonkeyPatch") 
     )
 
     with pytest.raises(ValueError, match=r"null bytes"):
-        await mail.send(malicious_message)
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
 
@@ -497,3 +497,237 @@ def test_split_address_rejects_null_byte() -> None:
     """Test that _split_address rejects addresses containing null bytes."""
     with pytest.raises(ValueError, match=r"null bytes"):
         mail._split_address("user\x00@apache.org")
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_cc(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in the CC field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+        email_cc="cc\x00evil@apache.org",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_null_byte_in_bcc(monkeypatch: "MonkeyPatch") -> None:
+    """Test that null bytes in the BCC field are rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+        email_bcc="bcc\x00evil@apache.org",
+    )
+
+    with pytest.raises(ValueError, match=r"null bytes"):
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_crlf_in_cc_address(monkeypatch: "MonkeyPatch") -> None:
+    """Test that CRLF injection in the CC address field is rejected.
+
+    An attacker supplying CC addresses controls what goes into the Cc header,
+    so CR/LF must be caught before address objects are constructed.
+    """
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+        email_cc="cc@apache.org\r\nBcc: interloper@apache.org",
+    )
+
+    with pytest.raises(ValueError, match=r"CR/LF"):
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_crlf_in_bcc_address(monkeypatch: "MonkeyPatch") -> None:
+    """Test that CRLF injection in the BCC address field is rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    malicious_message = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Test Subject",
+        body="This is a test message",
+        email_bcc="bcc@apache.org\r\nTo: interloper@apache.org",
+    )
+
+    with pytest.raises(ValueError, match=r"CR/LF"):
+        await mail.send(malicious_message, mail.MailFooterCategory.NONE)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_multiple_to_addresses(monkeypatch: "MonkeyPatch") -> None:
+    """Test that multiple comma-separated To addresses all appear in the header and envelope."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="alice@apache.org, bob@apache.org",
+        subject="Multi-recipient test",
+        body="Hello both.",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert len(errors) == 0
+    call_args = mock_send_many.call_args
+    envelope_recipients = call_args[0][1]
+    msg_text = call_args[0][2]
+
+    # Both addresses must be in the SMTP envelope
+    assert "alice@apache.org" in envelope_recipients
+    assert "bob@apache.org" in envelope_recipients
+
+    # Both addresses must appear in the To header
+    assert "alice@apache.org" in msg_text
+    assert "bob@apache.org" in msg_text
+
+
+@pytest.mark.asyncio
+async def test_send_cc_appears_in_header_and_envelope(monkeypatch: "MonkeyPatch") -> None:
+    """Test that CC addresses appear in the Cc header and the SMTP envelope."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="CC test",
+        body="Hello.",
+        email_cc="cc@apache.org",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert len(errors) == 0
+    call_args = mock_send_many.call_args
+    envelope_recipients = call_args[0][1]
+    msg_text = call_args[0][2]
+
+    # CC must be in the SMTP envelope
+    assert "cc@apache.org" in envelope_recipients
+
+    # CC must appear in a Cc header, not only To
+    assert "Cc: cc@apache.org" in msg_text
+
+
+@pytest.mark.asyncio
+async def test_send_bcc_in_envelope_not_in_headers(monkeypatch: "MonkeyPatch") -> None:
+    """Test that BCC addresses are in the SMTP envelope but absent from all message headers."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="BCC test",
+        body="Hello.",
+        email_bcc="secret@apache.org",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert len(errors) == 0
+    call_args = mock_send_many.call_args
+    envelope_recipients = call_args[0][1]
+    msg_text = call_args[0][2]
+
+    # BCC must be in the SMTP envelope
+    assert "secret@apache.org" in envelope_recipients
+
+    # BCC must not appear anywhere in the message headers
+    assert "secret@apache.org" not in msg_text
+
+
+@pytest.mark.asyncio
+async def test_send_empty_cc_bcc_omits_cc_header(monkeypatch: "MonkeyPatch") -> None:
+    """Test that omitting CC/BCC produces no Cc header and only To recipients in envelope."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="No CC/BCC test",
+        body="Hello.",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert len(errors) == 0
+    call_args = mock_send_many.call_args
+    envelope_recipients = call_args[0][1]
+    msg_text = call_args[0][2]
+
+    assert envelope_recipients == ["recipient@apache.org"]
+    assert "Cc:" not in msg_text
+    assert "Bcc:" not in msg_text
+
+
+@pytest.mark.asyncio
+async def test_footer_user_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
+    """Test that USER category appends a footer attributing the sending user."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="bob@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Footer test",
+        body="Hello.",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.USER)
+
+    assert len(errors) == 0
+    msg_text = mock_send_many.call_args[0][2]
+    assert "This email was sent by bob@apache.org on the Apache Trusted Releases platform" in msg_text
+
+
+@pytest.mark.asyncio
+async def test_footer_auto_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
+    """Test that AUTO category appends an automation footer without a user attribution."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_recipient="recipient@apache.org",
+        subject="Footer test",
+        body="Hello.",
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.AUTO)
+
+    assert len(errors) == 0
+    msg_text = mock_send_many.call_args[0][2]
+    assert "This email was sent from automation on the Apache Trusted Releases platform" in msg_text

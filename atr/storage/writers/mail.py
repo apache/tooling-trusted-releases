@@ -52,7 +52,7 @@ class FoundationCommitter(GeneralPublic):
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
 
-    async def send(self, message: mail.Message) -> tuple[str, list[str]]:
+    async def send(self, message: mail.Message, category: mail.MailFooterCategory) -> tuple[str, list[str]]:
         is_dev = util.is_dev_environment()
 
         if is_dev:
@@ -60,7 +60,7 @@ class FoundationCommitter(GeneralPublic):
             mid = util.DEV_TEST_MID
             errors: list[str] = []
         else:
-            mid, errors = await mail.send(message)
+            mid, errors = await mail.send(message, category)
 
         self.__write_as.append_to_audit_log(
             sent=not is_dev,
