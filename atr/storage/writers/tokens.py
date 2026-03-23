@@ -83,7 +83,7 @@ class FoundationCommitter(GeneralPublic):
             body=f"In ATR a new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",
         )
-        await self.__write_as.mail.send(message)
+        await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return types.PersonalAccessTokenSafe.from_sql(pat)
 
     async def delete_token(self, token_id: int) -> None:
@@ -108,7 +108,7 @@ class FoundationCommitter(GeneralPublic):
                 body=f"In ATR an API token called '{label}' was deleted from your account. "
                 "If you did not delete this token, please check your account immediately.",
             )
-            await self.__write_as.mail.send(message)
+            await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
 
     async def issue_jwt(self, pat_text: str) -> str:
         pat_hash = hashlib.sha3_256(pat_text.encode()).hexdigest()

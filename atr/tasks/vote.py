@@ -125,7 +125,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
 
     async with storage.write(args.initiator_id) as write:
         wafc = write.as_foundation_committer()
-        mid, mail_errors = await wafc.mail.send(message)
+        mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.USER)
 
     # Original success message structure
     result = results.VoteInitiate(

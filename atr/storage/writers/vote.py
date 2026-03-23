@@ -25,6 +25,7 @@ import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
+import atr.mail as mail
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -123,6 +124,7 @@ class CommitteeParticipant(FoundationCommitter):
                 subject=subject,
                 body=body_text,
                 in_reply_to=in_reply_to,
+                footer_category=mail.MailFooterCategory.USER,
             ).model_dump(),
             asf_uid=self.__asf_uid,
             project_key=release.project.key,
@@ -467,6 +469,7 @@ class CommitteeMember(CommitteeParticipant):
                 subject=subject,
                 body=body,
                 in_reply_to=in_reply_to,
+                footer_category=mail.MailFooterCategory.USER,
             ).model_dump(),
             asf_uid=asf_uid,
             project_key=release.project.key,
@@ -483,6 +486,7 @@ class CommitteeMember(CommitteeParticipant):
                     subject=subject,
                     body=body,
                     in_reply_to=extra_destination[1],
+                    footer_category=mail.MailFooterCategory.USER,
                 ).model_dump(),
                 asf_uid=asf_uid,
                 project_key=release.project.key,

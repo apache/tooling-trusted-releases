@@ -29,6 +29,7 @@ import sqlmodel
 
 import atr.construct as construct
 import atr.db as db
+import atr.mail as mail
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -234,6 +235,7 @@ class CommitteeMember(CommitteeParticipant):
                     subject=subject,
                     body=body,
                     in_reply_to=None,
+                    footer_category=mail.MailFooterCategory.NONE.value,
                 ).model_dump(),
                 asf_uid=asf_uid,
                 project_key=str(project_key),
