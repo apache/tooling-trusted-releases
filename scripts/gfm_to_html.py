@@ -32,6 +32,7 @@ def main() -> None:
     output_path = pathlib.Path(sys.argv[2])
 
     markdown = input_path.read_text(encoding="utf-8")
+    # cmarkgfm will refuse to write unsafe strings into the html
     html = cmarkgfm.github_flavored_markdown_to_html(markdown)
     output_path.write_text(html, encoding="utf-8")
 

@@ -71,6 +71,7 @@ async def selected(
         committee=committee,
         revision=latest_revision,
     )
+    # cmarkgfm will refuse to write unsafe strings into the html
     checklist_html = markupsafe.Markup(cmarkgfm.github_flavored_markdown_to_html(substituted_markdown))
 
     page = htm.Block()
