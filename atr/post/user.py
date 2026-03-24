@@ -19,8 +19,13 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.form as form
 import atr.get as get
+import atr.htm as htm
+import atr.models as models
 import atr.shared as shared
+import atr.tabulate as tabulate
+import atr.template as template
 import atr.util as util
 import atr.web as web
 
@@ -42,6 +47,52 @@ async def session_post(
             await quart.flash("Your cached session has been deleted", "success")
 
     return await session.redirect(get.user.cache_get)
+
+
+@post.typed
+async def tally(
+    session: web.Committer,
+    _user_tally: Literal["user/tally"],
+    tally_form: shared.user.TallyForm,
+) -> str:
+    """
+    URL: /user/tally
+    """
+    thread_id = _extract_thread_id(tally_form.thread)
+
+    block = htm.Block()
+    block.h1["Vote tally"]
+
+    tally_resubmit = form.render(
+        model_cls=shared.user.TallyForm,
+        submit_label="Count votes",
+        defaults={"thread": tally_form.thread},
+    )
+    block.append(tally_resubmit)
+
+    if not thread_id:
+        block.div(".alert.alert-danger")["Please enter a thread URL or ID."]
+        return await template.blank("Vote tally", content=block.collect())
+
+    try:
+        _start_unixtime, tabulated_votes = await tabulate.votes(None, thread_id)
+    except (util.FetchError, ValueError) as e:
+        block.div(".alert.alert-danger")[str(e)]
+        return await template.blank("Vote tally", content=block.collect())
+
+    if not tabulated_votes:
+        block.p["No votes found in this thread."]
+        return await template.blank("Vote tally", content=block.collect())
+
+    summary = tabulate.vote_summary(tabulated_votes)
+
+    block.h2["Votes"]
+    _render_votes_table(block, tabulated_votes)
+
+    block.h2["Summary"]
+    _render_summary_table(block, summary)
+
+    return await template.blank("Vote tally", content=block.collect())
 
 
 async def _cache_session(session: web.Committer) -> None:
@@ -73,3 +124,58 @@ async def _delete_session_cache(session: web.Committer) -> None:
     if session.uid in cache_data:
         del cache_data[session.uid]
         await util.session_cache_write(cache_data)
+
+
+def _extract_thread_id(value: str) -> str:
+    value = value.strip().rstrip("/")
+    marker = "lists.apache.org/thread/"
+    index = value.find(marker)
+    if index >= 0:
+        return value[index + len(marker) :]
+    return value
+
+
+def _render_summary_table(block: htm.Block, summary: dict[str, int]) -> None:
+    thead = htm.thead[htm.tr[htm.th["Category"], htm.th["Yes"], htm.th["No"], htm.th["Abstain"], htm.th["Total"]]]
+    tbody = htm.Block(htm.tbody)
+    for label, prefix in [("Binding", "binding"), ("Non-binding", "non_binding"), ("Unknown", "unknown")]:
+        total = summary[f"{prefix}_votes"]
+        if total == 0:
+            continue
+        tbody.append(
+            htm.tr[
+                htm.td[label],
+                htm.td[str(summary[f"{prefix}_votes_yes"])],
+                htm.td[str(summary[f"{prefix}_votes_no"])],
+                htm.td[str(summary[f"{prefix}_votes_abstain"])],
+                htm.td[str(total)],
+            ]
+        )
+    block.table(".table.table-striped")[thead, tbody.collect()]
+
+
+def _render_votes_table(block: htm.Block, tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> None:
+    thead = htm.thead[
+        htm.tr[
+            htm.th["UID or email"],
+            htm.th(".text-center")["Vote"],
+            htm.th(".text-center")["Status"],
+            htm.th["Quotation"],
+        ]
+    ]
+    tbody = htm.Block(htm.tbody)
+    for vote_email in tabulated_votes.values():
+        vote_class = ""
+        if vote_email.vote == models.tabulate.Vote.YES:
+            vote_class = ".atr-green"
+        elif vote_email.vote == models.tabulate.Vote.NO:
+            vote_class = ".atr-red"
+        tbody.append(
+            htm.tr[
+                htm.td(".atr-nowrap")[vote_email.asf_uid_or_email],
+                htm.td(f".atr-nowrap.text-center{vote_class}")[vote_email.vote.value],
+                htm.td(".atr-nowrap.text-center")[vote_email.status.value],
+                htm.td[vote_email.quotation],
+            ]
+        )
+    block.table(".table.table-striped")[thead, tbody.collect()]

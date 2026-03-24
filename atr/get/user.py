@@ -86,3 +86,19 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
         block.append(cache_form)
 
     return await template.blank("Session cache management", content=block.collect())
+
+
+@get.typed
+async def tally(session: web.Committer, _user_tally: Literal["user/tally"]) -> str:
+    """
+    URL: /user/tally
+    """
+    block = htm.Block()
+    block.h1["Vote tally"]
+    block.p["Enter a lists.apache.org thread URL or thread ID to count the votes in the thread."]
+    tally_form = form.render(
+        model_cls=shared.user.TallyForm,
+        submit_label="Count votes",
+    )
+    block.append(tally_form)
+    return await template.blank("Vote tally", content=block.collect())
