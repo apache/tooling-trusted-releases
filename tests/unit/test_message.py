@@ -113,14 +113,14 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
 
 def _send_args(
     email_sender: str = "validuser@apache.org",
-    email_recipient: str = "dev@project.apache.org",
+    email_to: str = "dev@project.apache.org",
     subject: str = "Test Subject",
     body: str = "Test body",
     in_reply_to: str | None = None,
-) -> dict[str, str | None]:
+) -> dict[str, object]:
     return {
         "email_sender": email_sender,
-        "email_recipient": email_recipient,
+        "email_to": email_to,
         "subject": subject,
         "body": body,
         "in_reply_to": in_reply_to,

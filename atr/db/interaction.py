@@ -399,7 +399,9 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
     result = latest_vote_task.result
     if not isinstance(result, results.VoteInitiate):
         return None
-    return result.email_to
+    if not result.email_to:
+        return None
+    return result.email_to[0]
 
 
 async def tasks_ongoing(

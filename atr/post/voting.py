@@ -95,11 +95,13 @@ async def selected_revision(
                 pass
 
         permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
-        if start_voting_form.mailing_list not in permitted_recipients:
-            return await session.form_error(
-                "mailing_list",
-                f"Invalid mailing list selection: {start_voting_form.mailing_list}",
-            )
+        all_addrs = [start_voting_form.email_to, *start_voting_form.email_cc, *start_voting_form.email_bcc]
+        for addr in all_addrs:
+            if addr not in permitted_recipients:
+                return await session.form_error(
+                    "email_to",
+                    f"Invalid recipient selection: {addr}",
+                )
 
         subject_template = await construct.start_vote_subject_default(project_key)
         current_hash = construct.template_hash(subject_template)
@@ -122,7 +124,7 @@ async def selected_revision(
 
         async with storage.write_as_committee_participant(committee.key) as wacp:
             _task = await wacp.vote.start(
-                start_voting_form.mailing_list,
+                start_voting_form.email_to,
                 project_key,
                 version_key,
                 revision,
@@ -134,12 +136,14 @@ async def selected_revision(
                 release=release,
                 promote=True,
                 permitted_recipients=permitted_recipients,
+                email_cc=start_voting_form.email_cc,
+                email_bcc=start_voting_form.email_bcc,
             )
 
-        log.info(f"Vote email will be sent to: {start_voting_form.mailing_list}")
+        log.info(f"Vote email will be sent to: {all_addrs}")
         return await session.redirect(
             get.vote.selected,
-            success=f"The vote announcement email will soon be sent to {start_voting_form.mailing_list}.",
+            success=f"The vote announcement email will soon be sent to {start_voting_form.email_to}.",
             project_key=str(project_key),
             version_key=str(version_key),
         )

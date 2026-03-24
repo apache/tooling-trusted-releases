@@ -218,7 +218,7 @@ class VoteInitiate(schema.Strict):
 
     kind: Literal["vote_initiate"] = schema.Field(alias="kind")
     message: str = schema.description("The message from the vote initiation")
-    email_to: str = schema.description("The email address the vote was sent to")
+    email_to: str = schema.description("The email To address the vote was sent to")
     vote_end: str = schema.description("The date and time the vote ends")
     subject: str = schema.description("The subject of the vote email")
     mid: str | None = schema.description("The message ID of the vote email")

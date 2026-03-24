@@ -90,11 +90,10 @@ async def selected(
     description_download_prefix += f"/{committee.key}"
 
     permitted_recipients = util.permitted_announce_recipients(session.uid)
-    mailing_list_choices = sorted([(recipient, recipient) for recipient in permitted_recipients])
 
     content = await _render_page(
         release=release,
-        mailing_list_choices=mailing_list_choices,
+        permitted_recipients=permitted_recipients,
         default_subject=default_subject,
         subject_template_hash=subject_template_hash,
         default_body=default_body,
@@ -157,48 +156,9 @@ def _render_download_path_field(default_value: str, description: str) -> htm.Ele
     ]
 
 
-def _render_mailing_list_with_warning(choices: list[tuple[str, str]], default_value: str) -> htm.Element:
-    """Render the mailing list radio buttons with a warning card."""
-    container = htm.Block(htm.div)
-
-    # Radio buttons
-    radio_container = htm.div(".d-flex.flex-wrap.gap-2.mb-3")
-    radio_buttons = []
-    for value, label in choices:
-        radio_id = f"mailing_list_{value}"
-        radio_attrs = {
-            "type": "radio",
-            "name": "mailing_list",
-            "value": value,
-        }
-        if value == default_value:
-            radio_attrs["checked"] = ""
-
-        radio_buttons.append(
-            htm.div(".form-check")[
-                htpy.input(f"#{radio_id}.form-check-input", **radio_attrs),
-                htpy.label(".form-check-label", for_=radio_id)[label],
-            ]
-        )
-    container.append(radio_container[radio_buttons])
-
-    # Warning card
-    warning_card = htm.div(".card.bg-warning-subtle.mb-3")[
-        htm.span(".card-body.p-3")[
-            htpy.i(".bi.bi-exclamation-triangle.me-1"),
-            htm.strong["TODO: "],
-            "The limited options above are provided for testing purposes. In the finished version of ATR, "
-            "you will be able to send to your own specified mailing lists.",
-        ]
-    ]
-    container.append(warning_card)
-
-    return container.collect()
-
-
 async def _render_page(
     release: sql.Release,
-    mailing_list_choices: list[tuple[str, str]],
+    permitted_recipients: list[str],
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
@@ -246,11 +206,27 @@ async def _render_page(
             }"
 
     if not announce_msg:
-        page.p[f"This form will send an announcement to the ASF {util.USER_TESTS_ADDRESS} mailing list."]
+        page.p["This form will send an announcement to the selected recipients."]
 
         custom_subject_widget = _render_subject_field(default_subject, release.project.key)
         custom_body_widget = _render_body_field(default_body, release.project.key)
-        custom_mailing_list_widget = _render_mailing_list_with_warning(mailing_list_choices, util.USER_TESTS_ADDRESS)
+        default_to = permitted_recipients[0] if permitted_recipients else None
+        to_radios = htm.div[
+            render.html_recipients_to_radios(
+                permitted_recipients,
+                default_to=default_to,
+                documentation=(
+                    "Note: The options to send to the user-tests "
+                    "mailing list and yourself are provided for "
+                    "testing purposes only, and will not be "
+                    "available in the finished version of ATR."
+                ),
+            ),
+            htpy.details(".mt-2")[
+                htpy.summary["Select CC and BCC recipients"],
+                render.html_recipients_cc_bcc_table(permitted_recipients),
+            ],
+        ]
 
         # Custom widget for download_path_suffix with custom documentation
         download_path_widget = _render_download_path_field(default_download_path_suffix, download_path_description)
@@ -268,11 +244,12 @@ async def _render_page(
             submit_label="Send announcement email",
             defaults=defaults_dict,
             custom={
+                "email_to": to_radios,
                 "subject": custom_subject_widget,
                 "body": custom_body_widget,
-                "mailing_list": custom_mailing_list_widget,
                 "download_path_suffix": download_path_widget,
             },
+            skip=["email_cc", "email_bcc"],
             form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
             border=True,
             wider_widgets=True,

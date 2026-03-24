@@ -52,14 +52,12 @@ async def selected_post(
     is_binding, _binding_committee = await shared.vote.is_binding(release.committee, is_pmc_member)
 
     async with storage.write_as_committee_participant(release.committee.key) as wacm:
-        email_recipient, error_message = await wacm.vote.send_user_vote(
-            release, vote, comment, session.fullname, is_binding
-        )
+        email_to, error_message = await wacm.vote.send_user_vote(release, vote, comment, session.fullname, is_binding)
 
     if error_message:
         await quart.flash(error_message, "error")
         return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
-    success_message = f"Sending your vote to {email_recipient}."
+    success_message = f"Sending your vote to {email_to}."
     await quart.flash(success_message, "success")
     return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))

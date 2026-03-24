@@ -40,10 +40,12 @@ class Send(schema.Strict):
     """Arguments for the task to send an email."""
 
     email_sender: pydantic.EmailStr = schema.description("The email address of the sender")
-    email_recipient: pydantic.EmailStr = schema.description("The email address of the recipient")
+    email_to: pydantic.EmailStr = schema.description("The email To address")
     subject: str = schema.description("The subject of the email")
     body: str = schema.description("The body of the email")
     in_reply_to: str | None = schema.description("The message ID of the email to reply to")
+    email_cc: list[pydantic.EmailStr] = schema.factory(list)
+    email_bcc: list[pydantic.EmailStr] = schema.factory(list)
     footer_category: Annotated[mail.MailFooterCategory, pydantic.BeforeValidator(_ensure_footer_enum)] = (
         schema.description("The category of email footer to include")
     )
@@ -69,19 +71,23 @@ async def send(args: Send) -> results.Results | None:
     if ldap.is_banned(sender_account):
         raise SendError(f"Email account {args.email_sender} is banned")
 
-    recipient_domain = args.email_recipient.split("@")[-1]
-    sending_to_self = args.email_recipient == f"{sender_asf_uid}@apache.org"
-    # audit_guidance this application intentionally allows users to send messages to committees they are not a part of
-    sending_to_committee = recipient_domain.endswith(".apache.org")
-    if not (sending_to_self or sending_to_committee):
-        raise SendError(f"You are not permitted to send emails to {args.email_recipient}")
+    all_recipients = [args.email_to, *args.email_cc, *args.email_bcc]
+    for addr in all_recipients:
+        recipient_domain = addr.split("@")[-1]
+        sending_to_self = addr == f"{sender_asf_uid}@apache.org"
+        # audit_guidance we intentionally allow users to send messages to committees they are not a part of
+        sending_to_committee = recipient_domain.endswith(".apache.org")
+        if not (sending_to_self or sending_to_committee):
+            raise SendError(f"You are not permitted to send emails to {addr}")
 
     message = mail.Message(
         email_sender=args.email_sender,
-        email_recipient=args.email_recipient,
+        email_to=args.email_to,
         subject=args.subject,
         body=args.body,
         in_reply_to=args.in_reply_to,
+        email_cc=args.email_cc,
+        email_bcc=args.email_bcc,
     )
 
     footer_category = mail.MailFooterCategory(args.footer_category)
@@ -91,7 +97,7 @@ async def send(args: Send) -> results.Results | None:
         mid, mail_errors = await wafc.mail.send(message, footer_category)
 
     if mail_errors:
-        log.warning(f"Mail sending to {args.email_recipient} for subject '{args.subject}' encountered errors:")
+        log.warning(f"Mail sending to {args.email_to} for subject '{args.subject}' encountered errors:")
         for error in mail_errors:
             log.warning(f"- {error}")
 

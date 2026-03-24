@@ -78,7 +78,7 @@ class FoundationCommitter(GeneralPublic):
         await self.__data.commit()
         message = mail.Message(
             email_sender=NOREPLY_EMAIL_ADDRESS,
-            email_recipient=f"{self.__asf_uid}@apache.org",
+            email_to=f"{self.__asf_uid}@apache.org",
             subject="ATR - New API Token Created",
             body=f"In ATR a new API token called '{label}' was created for your account. "
             "If you did not create this token, please revoke it immediately.",
@@ -103,7 +103,7 @@ class FoundationCommitter(GeneralPublic):
             label = pat.label or "[unlabeled]"
             message = mail.Message(
                 email_sender=NOREPLY_EMAIL_ADDRESS,
-                email_recipient=f"{self.__asf_uid}@apache.org",
+                email_to=f"{self.__asf_uid}@apache.org",
                 subject="ATR - Deleted API Token",
                 body=f"In ATR an API token called '{label}' was deleted from your account. "
                 "If you did not delete this token, please check your account immediately.",

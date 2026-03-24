@@ -192,21 +192,41 @@ async def _render_page(
 
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
     custom_body_widget = _render_body_field(default_body, release.project.key)
+    default_to = permitted_recipients[0] if permitted_recipients else None
+    to_radios = htm.div[
+        render.html_recipients_to_radios(
+            permitted_recipients,
+            default_to=default_to,
+            documentation=(
+                "Note: The options to send to the user-tests "
+                "mailing list and yourself are provided for "
+                "testing purposes only, and will not be "
+                "available in the finished version of ATR. "
+                "If the option you pick is not a mailing list, "
+                "you will not be able to use vote tabulation."
+            ),
+        ),
+        htpy.details(".mt-2")[
+            htpy.summary["Select CC and BCC recipients"],
+            render.html_recipients_cc_bcc_table(permitted_recipients),
+        ],
+    ]
 
     vote_form = form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
         cancel_url=cancel_url,
         defaults={
-            "mailing_list": permitted_recipients,
             "vote_duration": min_hours,
             "subject_template_hash": subject_template_hash,
             "body": default_body,
         },
         custom={
+            "email_to": to_radios,
             "subject": custom_subject_widget,
             "body": custom_body_widget,
         },
+        skip=["email_cc", "email_bcc"],
     )
     page.append(vote_form)
 

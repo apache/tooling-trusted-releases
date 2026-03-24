@@ -569,6 +569,11 @@ td.atr-shrink {
     white-space: nowrap;
 }
 
+th.atr-checkbox-col,
+td.atr-checkbox-col {
+    max-width: 25px;
+}
+
 .atr-stripe-odd {
     background-color: #f8f9fa;
 }

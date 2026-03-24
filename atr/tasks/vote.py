@@ -17,6 +17,8 @@
 
 import datetime
 
+import pydantic
+
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
@@ -33,12 +35,14 @@ class Initiate(schema.Strict):
     """Arguments for the task to start a vote."""
 
     release_key: str = schema.description("The name of the release to vote on")
-    email_to: str = schema.description("The mailing list address to send the vote email to")
+    email_to: pydantic.EmailStr = schema.description("The mailing list To address")
     vote_duration: int = schema.description("Duration of the vote in hours")
     initiator_id: str = schema.description("ASF ID of the vote initiator")
     initiator_fullname: str = schema.description("Full name of the vote initiator")
     subject: str = schema.description("Subject line for the vote email")
     body: str = schema.description("Body content for the vote email")
+    email_cc: list[pydantic.EmailStr] = schema.factory(list)
+    email_bcc: list[pydantic.EmailStr] = schema.factory(list)
 
 
 class VoteInitiationError(Exception):
@@ -65,9 +69,11 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     safe.ReleaseKey(args.release_key)
 
     # Validate arguments
-    if not (args.email_to.endswith("@apache.org") or args.email_to.endswith(".apache.org")):
-        log.error(f"Invalid destination email address: {args.email_to}")
-        raise VoteInitiationError("Invalid destination email address")
+    all_addrs = [args.email_to, *args.email_cc, *args.email_bcc]
+    for addr in all_addrs:
+        if not (addr.endswith("@apache.org") or addr.endswith(".apache.org")):
+            log.error(f"Invalid destination email address: {addr}")
+            raise VoteInitiationError(f"Invalid destination email address: {addr}")
 
     async with db.session() as data:
         release = await data.release(key=args.release_key, _project=True, _committee=True).demand(
@@ -110,17 +116,20 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     body = args.body
 
     permitted_recipients = util.permitted_voting_recipients(args.initiator_id, release.committee.key)
-    if args.email_to not in permitted_recipients:
-        log.error(f"Invalid mailing list choice: {args.email_to} not in {permitted_recipients}")
-        raise VoteInitiationError("Invalid mailing list choice")
+    for addr in all_addrs:
+        if addr not in permitted_recipients:
+            log.error(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
+            raise VoteInitiationError("Invalid mailing list choice")
 
     # Create mail message
     log.info(f"Creating mail message for {args.email_to}")
     message = mail.Message(
         email_sender=f"{args.initiator_id}@apache.org",
-        email_recipient=args.email_to,
+        email_to=args.email_to,
         subject=subject,
         body=body,
+        email_cc=args.email_cc,
+        email_bcc=args.email_bcc,
     )
 
     async with storage.write(args.initiator_id) as write:
@@ -128,6 +137,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
         mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.USER)
 
     # Original success message structure
+    all_destinations = [args.email_to, *args.email_cc, *args.email_bcc]
     result = results.VoteInitiate(
         kind="vote_initiate",
         message="Vote announcement email sent successfully",
@@ -139,7 +149,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     )
 
     if mail_errors:
-        log.warning(f"Start vote for {args.release_key}: sending to {args.email_to} gave errors: {mail_errors}")
+        log.warning(f"Start vote for {args.release_key}: sending to {all_destinations} gave errors: {mail_errors}")
     else:
-        log.info(f"Vote email sent successfully to {args.email_to}")
+        log.info(f"Vote email sent successfully to {all_destinations}")
     return result

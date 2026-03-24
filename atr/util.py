@@ -35,7 +35,7 @@ import urllib.parse
 import uuid
 import zipfile
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 import aiofiles.os
 import aiohttp
@@ -80,6 +80,12 @@ USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 
 
 NoneType: Final[type[None]] = type(None)
+
+
+class EmailRecipients(Protocol):
+    email_to: str
+    email_cc: list[str]
+    email_bcc: list[str]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -245,6 +251,20 @@ def chmod_files(path: pathlib.Path, permissions: int) -> None:
 
 def committee_is_standing(committee_key: str) -> bool:
     return committee_key in registry.STANDING_COMMITTEES
+
+
+def conjunction(items: Sequence[str], empty: str | None = None) -> str:
+    match len(items):
+        case 0:
+            if empty is None:
+                raise ValueError("No items to join")
+            return empty
+        case 1:
+            return items[0]
+        case 2:
+            return f"{items[0]} and {items[1]}"
+        case _:
+            return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
 async def content_list(
@@ -1126,6 +1146,17 @@ def validate_as_type[T](value: Any, t: type[T]) -> T:
     if not isinstance(value, t):
         raise ValueError(f"Expected {t}, got {type(value)}")
     return value
+
+
+def validate_email_recipients(recipients: EmailRecipients) -> None:
+    if not recipients.email_to:
+        raise ValueError("At least one To recipient is required")
+    seen: set[str] = set()
+    for addr in [recipients.email_to, *recipients.email_cc, *recipients.email_bcc]:
+        lower = addr.lower()
+        if lower in seen:
+            raise ValueError(f"Duplicate recipient: {addr}")
+        seen.add(lower)
 
 
 def validate_filename(filename: str) -> str:

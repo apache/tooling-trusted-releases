@@ -85,25 +85,27 @@ class CommitteeParticipant(FoundationCommitter):
         comment: str,
         fullname: str,
         is_binding: bool = False,
-    ) -> tuple[str, str]:
+    ) -> tuple[list[str], str]:
         # Get the email thread
         latest_vote_task = await interaction.release_latest_vote_task(release)
         if latest_vote_task is None:
-            return "", "No vote task found."
+            return [], "No vote task found."
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
         if vote_thread_mid is None:
-            return "", "No vote thread found."
+            return [], "No vote thread found."
 
         # Construct the reply email
         vote_result = latest_vote_task.result
         if vote_result is None:
-            return "", "Vote task has not completed yet."
+            return [], "Vote task has not completed yet."
         if not isinstance(vote_result, results.VoteInitiate):
-            return "", "Vote task result is not a VoteInitiate result."
+            return [], "Vote task result is not a VoteInitiate result."
         original_subject = vote_result.subject
 
         # Arguments for the task to cast a vote
-        email_recipient = latest_vote_task.task_args["email_to"]
+        email_to: str = latest_vote_task.task_args["email_to"]
+        email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
+        email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
         email_sender = f"{self.__asf_uid}@apache.org"
         subject = f"Re: {original_subject}"
         body_text = format_vote_email_body(
@@ -120,10 +122,12 @@ class CommitteeParticipant(FoundationCommitter):
             task_type=sql.TaskType.MESSAGE_SEND,
             task_args=message.Send(
                 email_sender=email_sender,
-                email_recipient=email_recipient,
+                email_to=email_to,
                 subject=subject,
                 body=body_text,
                 in_reply_to=in_reply_to,
+                email_cc=email_cc,
+                email_bcc=email_bcc,
                 footer_category=mail.MailFooterCategory.USER,
             ).model_dump(),
             asf_uid=self.__asf_uid,
@@ -134,7 +138,7 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.flush()
         await self.__data.commit()
 
-        return email_recipient, ""
+        return [email_to], ""
 
     async def start(
         self,
@@ -150,6 +154,8 @@ class CommitteeParticipant(FoundationCommitter):
         release: sql.Release | None = None,
         promote: bool = True,
         permitted_recipients: list[str] | None = None,
+        email_cc: list[str] | None = None,
+        email_bcc: list[str] | None = None,
     ) -> sql.Task:
         if release is None:
             release = await self.__data.release(
@@ -160,10 +166,12 @@ class CommitteeParticipant(FoundationCommitter):
             ).demand(storage.AccessError("Release not found"))
         if permitted_recipients is None:
             permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_key)
-        if email_to not in permitted_recipients:
-            # This will be checked again by tasks/vote.py for extra safety
-            log.info(f"Invalid mailing list choice: {email_to} not in {permitted_recipients}")
-            raise storage.AccessError("Invalid mailing list choice")
+        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
+        for addr in all_addrs:
+            if addr not in permitted_recipients:
+                # This will be checked again by tasks/vote.py for extra safety
+                log.info(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
+                raise storage.AccessError("Invalid mailing list choice")
 
         if await interaction.has_blocker_checks(release, selected_revision_number, caller_data=self.__data):
             raise storage.AccessError(
@@ -197,6 +205,8 @@ class CommitteeParticipant(FoundationCommitter):
                 initiator_fullname=asf_fullname,
                 subject=subject,
                 body=body_data,
+                email_cc=email_cc or [],
+                email_bcc=email_bcc or [],
             ).model_dump(),
             asf_uid=asf_uid,
             project_key=str(project_key),
@@ -443,7 +453,9 @@ class CommitteeMember(CommitteeParticipant):
         # original_subject = latest_vote_task.task_args["subject"]
 
         # Arguments for the task to cast a vote
-        email_recipient = latest_vote_task.task_args["email_to"]
+        email_to: str = latest_vote_task.task_args["email_to"]
+        email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
+        email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
         email_sender = f"{asf_uid}@apache.org"
         subject = f"[VOTE] [RESULT] Release {release.project.display_name} {release.version} {resolution.upper()}"
         # TODO: This duplicates atr/tabulate.py code
@@ -465,10 +477,12 @@ class CommitteeMember(CommitteeParticipant):
             task_type=sql.TaskType.MESSAGE_SEND,
             task_args=message.Send(
                 email_sender=email_sender,
-                email_recipient=email_recipient,
+                email_to=email_to,
                 subject=subject,
                 body=body,
                 in_reply_to=in_reply_to,
+                email_cc=email_cc,
+                email_bcc=email_bcc,
                 footer_category=mail.MailFooterCategory.USER,
             ).model_dump(),
             asf_uid=asf_uid,
@@ -482,7 +496,7 @@ class CommitteeMember(CommitteeParticipant):
                 task_type=sql.TaskType.MESSAGE_SEND,
                 task_args=message.Send(
                     email_sender=email_sender,
-                    email_recipient=extra_destination[0],
+                    email_to=extra_destination[0],
                     subject=subject,
                     body=body,
                     in_reply_to=extra_destination[1],

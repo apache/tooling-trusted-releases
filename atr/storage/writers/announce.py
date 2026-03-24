@@ -30,6 +30,7 @@ import sqlmodel
 import atr.construct as construct
 import atr.db as db
 import atr.mail as mail
+import atr.models.basic as basic
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -108,15 +109,20 @@ class CommitteeMember(CommitteeParticipant):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         preview_revision_number: safe.RevisionNumber,
-        recipient: str,
+        email_to: str,
         body: str,
         download_path_suffix: safe.RelPath | None,
         asf_uid: str,
         fullname: str,
         subject_template_hash: str | None = None,
+        email_cc: list[str] | None = None,
+        email_bcc: list[str] | None = None,
     ) -> None:
-        if recipient not in util.permitted_announce_recipients(asf_uid):
-            raise storage.AccessError(f"You are not permitted to send announcements to {recipient}")
+        permitted = util.permitted_announce_recipients(asf_uid)
+        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
+        for addr in all_addrs:
+            if addr not in permitted:
+                raise storage.AccessError(f"You are not permitted to send announcements to {addr}")
 
         unfinished_dir: str = ""
         finished_dir: str = ""
@@ -203,7 +209,9 @@ class CommitteeMember(CommitteeParticipant):
                 revision_number=str(preview_revision_number),
                 source_directory=unfinished_dir,
                 target_directory=finished_dir,
-                email_recipient=recipient,
+                email_to=email_to,
+                email_cc=basic.as_json(email_cc or []),
+                email_bcc=basic.as_json(email_bcc or []),
             )
             if unfinished_revisions_path:
                 # This removes all of the prior revisions
@@ -231,10 +239,12 @@ class CommitteeMember(CommitteeParticipant):
                 task_type=sql.TaskType.MESSAGE_SEND,
                 task_args=message.Send(
                     email_sender=f"{asf_uid}@apache.org",
-                    email_recipient=recipient,
+                    email_to=email_to,
                     subject=subject,
                     body=body,
                     in_reply_to=None,
+                    email_cc=email_cc or [],
+                    email_bcc=email_bcc or [],
                     footer_category=mail.MailFooterCategory.NONE,
                 ).model_dump(),
                 asf_uid=asf_uid,

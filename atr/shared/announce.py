@@ -17,18 +17,20 @@
 
 from typing import Literal
 
+import pydantic
+
 import atr.form as form
 import atr.models.safe as safe
+import atr.util as util
 
 
 class AnnounceForm(form.Form):
     """Form for announcing a release preview."""
 
     revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)
-    mailing_list: str = form.label(
-        "Send vote email to",
-        widget=form.Widget.CUSTOM,
-    )
+    email_to: str = form.label("To", widget=form.Widget.CUSTOM)
+    email_cc: form.StrList = form.label("CC")
+    email_bcc: form.StrList = form.label("BCC")
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM)
@@ -37,3 +39,8 @@ class AnnounceForm(form.Form):
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",
     )
+
+    @pydantic.model_validator(mode="after")
+    def _validate_recipients(self) -> "AnnounceForm":
+        util.validate_email_recipients(self)
+        return self

@@ -30,13 +30,13 @@ import aiosmtplib
 
 # import dkim
 import atr.log as log
+import atr.util as util
 
 # TODO: We should choose a pattern for globals
 # We could e.g. use uppercase instead of global_
 # It's not always worth identifying globals as globals
 # But in many cases we should do so
-global_domain: str = "apache.org"
-
+_APACHE_DOMAIN: Final[str] = "apache.org"
 _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
@@ -51,12 +51,12 @@ class MailFooterCategory(enum.StrEnum):
 @dataclasses.dataclass
 class Message:
     email_sender: str
-    email_recipient: str
+    email_to: str
     subject: str
     body: str
-    email_cc: str = ""
-    email_bcc: str = ""
     in_reply_to: str | None = None
+    email_cc: list[str] = dataclasses.field(default_factory=list)
+    email_bcc: list[str] = dataclasses.field(default_factory=list)
 
 
 async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, list[str]]:
@@ -64,42 +64,36 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
     log.info(f"Sending email for event: {msg_data}")
     _reject_null_bytes(
         msg_data.email_sender,
-        msg_data.email_recipient,
-        msg_data.email_cc,
-        msg_data.email_bcc,
+        msg_data.email_to,
+        *msg_data.email_cc,
+        *msg_data.email_bcc,
         msg_data.subject,
         msg_data.body,
         msg_data.in_reply_to,
     )
     from_addr = msg_data.email_sender
-    if not from_addr.endswith(f"@{global_domain}"):
-        raise ValueError(f"from_addr must end with @{global_domain}, got {from_addr}")
-    to_addrs = _validate_recipients(msg_data.email_recipient)
-    if len(to_addrs) < 1:
-        raise ValueError("email_recipient must contain at least one email address")
-    cc_addrs = _validate_recipients(msg_data.email_cc)
-    bcc_addrs = _validate_recipients(msg_data.email_bcc)
+    if not from_addr.endswith(f"@{_APACHE_DOMAIN}"):
+        raise ValueError(f"from_addr must end with @{_APACHE_DOMAIN}, got {from_addr}")
+    util.validate_email_recipients(msg_data)
+    # BCC recipients go in the SMTP envelope only, never in message headers
+    all_envelope_recipients = [msg_data.email_to, *msg_data.email_cc, *msg_data.email_bcc]
+    for addr in all_envelope_recipients:
+        _validate_recipient(addr)
 
     # UUID4 is entirely random, with no timestamp nor namespace
     # It does have 6 version and variant bits, so only 122 bits are random
-    mid = f"{uuid.uuid4()}@{global_domain}"
+    mid = f"{uuid.uuid4()}@{_APACHE_DOMAIN}"
 
     # Use EmailMessage with Address objects for CRLF injection protection
     msg = message.EmailMessage(policy=policy.SMTPUTF8)
 
     try:
         from_local, from_domain = _split_address(from_addr)
-
         msg["From"] = headerregistry.Address(username=from_local, domain=from_domain)
-        msg["To"] = tuple(
-            headerregistry.Address(username=local, domain=domain)
-            for local, domain in [_split_address(addr) for addr in to_addrs]
-        )
-        if cc_addrs:
-            msg["Cc"] = tuple(
-                headerregistry.Address(username=local, domain=domain)
-                for local, domain in [_split_address(addr) for addr in cc_addrs]
-            )
+        to_local, to_domain = _split_address(msg_data.email_to)
+        msg["To"] = headerregistry.Address(username=to_local, domain=to_domain)
+        if msg_data.email_cc:
+            msg["Cc"] = _address_header(msg_data.email_cc)
         msg["Subject"] = msg_data.subject
         msg["Date"] = utils.formatdate(usegmt=True)
         msg["Message-ID"] = f"<{mid}>"
@@ -120,8 +114,6 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
     msg_text = msg.as_string()
     log.info(f"sending message: {msg_text}")
 
-    # BCC recipients go in the SMTP envelope only, never in message headers
-    all_envelope_recipients = to_addrs + cc_addrs + bcc_addrs
     errors = await _send_many(from_addr, all_envelope_recipients, msg_text)
 
     if not errors:
@@ -133,6 +125,11 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
     log.info(f"Time taken to _send_many: {elapsed:.3f}s")
 
     return mid, errors
+
+
+def _address_header(addresses: list[str]) -> str:
+    parts = [headerregistry.Address(username=local, domain=domain) for local, domain in map(_split_address, addresses)]
+    return ", ".join(str(a) for a in parts)
 
 
 def _body_with_footer(body: str, category: MailFooterCategory, from_addr: str) -> str:
@@ -203,19 +200,11 @@ def _split_address(addr: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def _validate_recipients(to_addr: str) -> list[str]:
-    # Ensure recipient is @apache.org or @tooling.apache.org
-    if not to_addr.strip():
-        return []
-    emails: list[str] = []
-    for mail in to_addr.split(","):
-        mail = mail.strip()
-        _, domain = _split_address(mail)
-        domain_is_apache = domain == "apache.org"
-        domain_is_subdomain = domain.endswith(".apache.org")
-        if not (domain_is_apache or domain_is_subdomain):
-            error_msg = f"Email recipient must be @apache.org or @*.apache.org, got {mail}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-        emails.append(mail)
-    return emails
+def _validate_recipient(addr: str) -> None:
+    _, domain = _split_address(addr)
+    domain_is_apache = domain == "apache.org"
+    domain_is_subdomain = domain.endswith(".apache.org")
+    if not (domain_is_apache or domain_is_subdomain):
+        error_msg = f"Email recipient must be @apache.org or @*.apache.org, got {addr}"
+        log.error(error_msg)
+        raise ValueError(error_msg)

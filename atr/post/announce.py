@@ -44,12 +44,14 @@ async def selected(
     """
     permitted_recipients = util.permitted_announce_recipients(session.uid)
 
-    # Validate that the recipient is permitted
-    if announce_form.mailing_list not in permitted_recipients:
-        return await session.form_error(
-            "mailing_list",
-            f"You are not permitted to send announcements to {announce_form.mailing_list}",
-        )
+    # Validate that the recipients are permitted
+    all_addrs = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
+    for addr in all_addrs:
+        if addr not in permitted_recipients:
+            return await session.form_error(
+                "email_to",
+                f"You are not permitted to send announcements to {addr}",
+            )
 
     # Get the release to find the revision number
     release = await session.release(
@@ -106,12 +108,14 @@ async def selected(
                 project_key=project_key,
                 version_key=version_key,
                 preview_revision_number=preview_revision_number,
-                recipient=announce_form.mailing_list,
+                email_to=announce_form.email_to,
                 body=announce_form.body,
                 download_path_suffix=announce_form.download_path_suffix,
                 asf_uid=session.uid,
                 fullname=session.fullname,
                 subject_template_hash=announce_form.subject_template_hash,
+                email_cc=announce_form.email_cc,
+                email_bcc=announce_form.email_bcc,
             )
     except storage.AccessError as e:
         return await session.redirect(

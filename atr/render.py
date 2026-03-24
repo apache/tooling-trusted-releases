@@ -17,6 +17,8 @@
 
 from typing import Literal
 
+import htpy
+
 import atr.get as get
 import atr.htm as htm
 import atr.util as util
@@ -69,3 +71,56 @@ def html_nav_phase(block: htm.Block, project: str, version: str, staging: bool) 
         back_anchor=f"{label.title()} {project} {version}",
         phase=label,
     )
+
+
+def html_recipients_cc_bcc_table(recipients: list[str]) -> htm.Element:
+    header = htpy.thead[
+        htpy.tr[
+            htpy.th(".text-center.atr-checkbox-col")["CC"],
+            htpy.th(".text-center.atr-checkbox-col")["BCC"],
+            htpy.th["Recipient"],
+        ]
+    ]
+    rows = []
+    for recipient in recipients:
+        rows.append(
+            htpy.tr[
+                htpy.td(".text-center.atr-checkbox-col")[
+                    htpy.input(type="checkbox", name="email_cc", value=recipient, class_="form-check-input")
+                ],
+                htpy.td(".text-center.atr-checkbox-col")[
+                    htpy.input(type="checkbox", name="email_bcc", value=recipient, class_="form-check-input")
+                ],
+                htpy.td[recipient],
+            ]
+        )
+    return htpy.table(".table.table-bordered.mb-0")[header, htpy.tbody[rows]]
+
+
+def html_recipients_to_radios(
+    recipients: list[str],
+    default_to: str | None = None,
+    documentation: str | None = None,
+) -> htm.Element:
+    radios = []
+    for recipient in recipients:
+        radio_id = f"email_to_{recipient.replace('@', '_').replace('.', '_')}"
+        radio_attrs: dict[str, str] = {
+            "type": "radio",
+            "name": "email_to",
+            "id": radio_id,
+            "value": recipient,
+            "class_": "form-check-input",
+        }
+        if recipient == default_to:
+            radio_attrs["checked"] = ""
+        radios.append(
+            htpy.div(".form-check")[
+                htpy.input(**radio_attrs),
+                htpy.label(".form-check-label", for_=radio_id)[recipient],
+            ]
+        )
+    container = htm.div[radios]
+    if documentation is None:
+        return container
+    return htm.div[container, htm.div(".text-muted.mt-1.form-text")[documentation]]

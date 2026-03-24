@@ -15,18 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pydantic
+
 import atr.form as form
+import atr.util as util
 
 
 class StartVotingForm(form.Form):
-    mailing_list: str = form.label(
-        "Send vote email to",
-        "Note: The options to send to the user-tests "
-        "mailing list and yourself are provided for "
-        "testing purposes only, and will not be "
-        "available in the finished version of ATR.",
-        widget=form.Widget.RADIO,
-    )
+    email_to: str = form.label("To (mailing list)", widget=form.Widget.CUSTOM)
+    email_cc: form.StrList = form.label("CC")
+    email_bcc: form.StrList = form.label("BCC")
     vote_duration: form.Int = form.label(
         "Minimum vote duration",
         "Minimum number of hours the vote will be open for.",
@@ -35,3 +33,8 @@ class StartVotingForm(form.Form):
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM)
+
+    @pydantic.model_validator(mode="after")
+    def _validate_recipients(self) -> "StartVotingForm":
+        util.validate_email_recipients(self)
+        return self

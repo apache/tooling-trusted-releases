@@ -56,7 +56,7 @@ class FoundationCommitter(GeneralPublic):
         is_dev = util.is_dev_environment()
 
         if is_dev:
-            log.info(f"Dev environment detected, not sending email to {message.email_recipient}")
+            log.info(f"Dev environment detected, not sending email to {message.email_to}")
             mid = util.DEV_TEST_MID
             errors: list[str] = []
         else:
@@ -65,7 +65,7 @@ class FoundationCommitter(GeneralPublic):
         self.__write_as.append_to_audit_log(
             sent=not is_dev,
             email_sender=message.email_sender,
-            email_recipient=message.email_recipient,
+            email_to=message.email_to,
             subject=message.subject,
             mid=mid,
             in_reply_to=message.in_reply_to,
