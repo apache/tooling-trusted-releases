@@ -26,18 +26,16 @@ class ImportFile(schema.Strict):
     """Import a KEYS file from a draft release candidate revision."""
 
     asf_uid: str
-    project_key: str
-    version_key: str
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
 
 
 @checks.with_model(ImportFile)
 async def import_file(args: ImportFile) -> results.Results | None:
     """Import a KEYS file from a draft release candidate revision."""
-    project = safe.ProjectKey(args.project_key)
-    version = safe.VersionKey(args.version_key)
     async with storage.write(args.asf_uid) as write:
-        wacm = await write.as_project_committee_member(project)
-        outcomes = await wacm.keys.import_keys_file(project, version)
+        wacm = await write.as_project_committee_member(args.project_key)
+        outcomes = await wacm.keys.import_keys_file(args.project_key, args.version_key)
         if outcomes.any_error:
             # TODO: Log this? This code is unused anyway
             pass

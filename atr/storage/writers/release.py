@@ -278,11 +278,11 @@ class CommitteeParticipant(FoundationCommitter):
         target_subdirectory: safe.RelPath | None,
     ) -> sql.Task:
         task_args = {
-            "svn_url": str(svn_url),
+            "svn_url": svn_url,
             "revision": svn_revision,
             "target_subdirectory": str(target_subdirectory) if target_subdirectory else None,
-            "project_key": str(project_key),
-            "version_key": str(version_key),
+            "project_key": project_key,
+            "version_key": version_key,
             "asf_uid": self.__asf_uid,
         }
         svn_import_task = sql.Task(

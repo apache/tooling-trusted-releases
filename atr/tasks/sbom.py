@@ -70,29 +70,31 @@ class SBOMScoringError(Exception):
 
 
 class FileArgs(schema.Strict):
-    project_key: str = schema.description("Project name")
-    version_key: str = schema.description("Version name")
-    revision_number: str = schema.description("Revision number")
-    file_path: str = schema.description("Relative path to the SBOM file")
+    project_key: safe.ProjectKey = schema.description("Project name")
+    version_key: safe.VersionKey = schema.description("Version name")
+    revision_number: safe.RevisionNumber = schema.description("Revision number")
+    file_path: safe.RelPath = schema.description("Relative path to the SBOM file")
     asf_uid: str | None = None
 
 
 class ScoreArgs(FileArgs):
-    previous_release_version: str | None = schema.description("Previous release version")
+    previous_release_version: safe.VersionKey | None = schema.description("Previous release version")
 
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectKey(args.project_key)
-    version = safe.VersionKey(args.version_key)
+    project_str = str(args.project_key)
+    version_str = str(args.version_key)
+    revision_str = str(args.revision_number)
+    path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
+    base_dir = paths.get_unfinished_dir() / project_str / version_str / revision_str
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
-    full_path = base_dir / args.file_path
+    full_path = base_dir / path_str
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": args.file_path})
+        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     # Read from the old revision
     bundle = sbom.utilities.path_to_bundle(full_path)
     patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
@@ -100,14 +102,14 @@ async def augment(args: FileArgs) -> results.Results | None:
     new_full_path_str: str | None = None
     new_version = None
     if patch_ops:
-        new_version, merged = sbom.utilities.apply_patch("augment", args.revision_number, bundle, patch_ops)
+        new_version, merged = sbom.utilities.apply_patch("augment", revision_str, bundle, patch_ops)
         description = "SBOM augmentation through web interface"
         async with storage.write(args.asf_uid) as write:
-            wacp = await write.as_project_committee_participant(project)
+            wacp = await write.as_project_committee_participant(args.project_key)
 
             async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
                 nonlocal new_full_path, new_full_path_str
-                new_full_path = path / args.file_path
+                new_full_path = path / path_str
                 new_full_path_str = str(new_full_path)
                 # Write to the new revision
                 log.info(f"Writing augmented SBOM to {new_full_path_str}")
@@ -116,7 +118,7 @@ async def augment(args: FileArgs) -> results.Results | None:
                     await f.write(merged.dumps())
 
             await wacp.revision.create_revision_with_quarantine(
-                project, version, args.asf_uid or "unknown", description=description, modify=modify
+                args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
             )
 
     return results.SBOMAugment(
@@ -146,16 +148,16 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def osv_scan(args: FileArgs) -> results.Results | None:
-    project = safe.ProjectKey(args.project_key)
-    version = safe.VersionKey(args.version_key)
+    revision_str = str(args.revision_number)
+    path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
-    full_path = base_dir / args.file_path
+    full_path = base_dir / path_str
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScanningError("SBOM file does not exist", {"file_path": args.file_path})
+        raise SBOMScanningError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
     vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
     patch_ops = await sbom.utilities.bundle_to_vuln_patch(bundle, vulnerabilities)
@@ -172,14 +174,14 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
     new_full_path: pathlib.Path | None = None
     new_full_path_str: str | None = None
-    new_version, merged = sbom.utilities.apply_patch("osv-scan", args.revision_number, bundle, patch_ops)
+    new_version, merged = sbom.utilities.apply_patch("osv-scan", revision_str, bundle, patch_ops)
     description = "SBOM vulnerability scan through web interface"
     async with storage.write(args.asf_uid) as write:
-        wacp = await write.as_project_committee_participant(project)
+        wacp = await write.as_project_committee_participant(args.project_key)
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
             nonlocal new_full_path, new_full_path_str
-            new_full_path = path / args.file_path
+            new_full_path = path / str(args.file_path)
             new_full_path_str = str(new_full_path)
             # Write to the new revision
             log.info(f"Writing updated SBOM to {new_full_path_str}")
@@ -188,7 +190,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
                 await f.write(merged.dumps())
 
         await wacp.revision.create_revision_with_quarantine(
-            project, version, args.asf_uid or "unknown", description=description, modify=modify
+            args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
         )
 
     return results.SBOMOSVScan(
@@ -206,16 +208,15 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(FileArgs)
 async def score_qs(args: FileArgs) -> results.Results | None:
-    safe.ProjectKey(args.project_key)
-    safe.VersionKey(args.version_key)
+    path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
-    full_path = base_dir / args.file_path
+    full_path = base_dir / path_str
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": args.file_path})
+        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     proc = await asyncio.create_subprocess_exec(
         "sbomqs",
         "score",
@@ -245,19 +246,18 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
 @checks.with_model(ScoreArgs)
 async def score_tool(args: ScoreArgs) -> results.Results | None:
-    safe.ProjectKey(args.project_key)
-    safe.VersionKey(args.version_key)
+    path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / args.project_key / args.version_key / args.revision_number
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     previous_base_dir = None
     if args.previous_release_version is not None:
-        previous_base_dir = paths.get_finished_dir() / args.project_key / str(args.previous_release_version)
+        previous_base_dir = paths.get_finished_dir_for(args.project_key, args.previous_release_version)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
-    full_path = base_dir / args.file_path
+    full_path = base_dir / path_str
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": args.file_path})
+        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
     version, properties = sbom.utilities.get_props_from_bundle(bundle)
     warnings, errors = sbom.conformance.ntia_2021_issues(bundle.bom)
@@ -272,7 +272,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     prev_licenses = None
     prev_vulnerabilities = None
     if previous_base_dir is not None:
-        previous_full_path = previous_base_dir / args.file_path
+        previous_full_path = previous_base_dir / path_str
         try:
             previous_bundle = sbom.utilities.path_to_bundle(previous_full_path)
         except FileNotFoundError:

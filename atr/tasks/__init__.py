@@ -219,8 +219,8 @@ async def keys_import_file(
                 task_type=sql.TaskType.KEYS_IMPORT_FILE,
                 task_args=keys.ImportFile(
                     asf_uid=asf_uid,
-                    project_key=str(project_key),
-                    version_key=str(version_key),
+                    project_key=project_key,
+                    version_key=version_key,
                 ).model_dump(),
                 asf_uid=asf_uid,
                 revision_number=revision_number,

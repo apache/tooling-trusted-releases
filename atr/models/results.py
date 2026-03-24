@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal
 
 import pydantic
 
-from . import schema
+from . import safe, schema
 
 
 class DistributionStatusCheck(schema.Strict):
@@ -105,14 +105,14 @@ class OSVComponent(schema.Strict):
 
 class SBOMOSVScan(schema.Strict):
     kind: Literal["sbom_osv_scan"] = schema.Field(alias="kind")
-    project_key: str = schema.description("Project name")
-    version_key: str = schema.description("Version name")
-    revision_number: str = schema.description("Revision number")
+    project_key: safe.ProjectKey = schema.description("Project name")
+    version_key: safe.VersionKey = schema.description("Version name")
+    revision_number: safe.RevisionNumber = schema.description("Revision number")
     bom_version: int | None = schema.Field(
         default=None, strict=False, description="BOM Version produced with scan results"
     )
-    file_path: str = schema.description("Relative path to the scanned SBOM file")
-    new_file_path: str = schema.Field(default="", strict=False, description="Relative path to the updated SBOM file")
+    file_path: str = schema.description("Absolute path to the scanned SBOM file")
+    new_file_path: str = schema.Field(default="", strict=False, description="Absolute path to the updated SBOM file")
     components: list[OSVComponent] = schema.description("Components with vulnerabilities")
     ignored: list[str] = schema.description("Components ignored")
 
@@ -165,23 +165,23 @@ class SBOMAugment(schema.Strict):
 
 class SBOMQsScore(schema.Strict):
     kind: Literal["sbom_qs_score"] = schema.Field(alias="kind")
-    project_key: str = schema.description("Project name")
-    version_key: str = schema.description("Version name")
-    revision_number: str = schema.description("Revision number")
-    file_path: str = schema.description("Relative path to the scored SBOM file")
+    project_key: safe.ProjectKey = schema.description("Project name")
+    version_key: safe.VersionKey = schema.description("Version name")
+    revision_number: safe.RevisionNumber = schema.description("Revision number")
+    file_path: safe.RelPath = schema.description("Relative path to the scored SBOM file")
     report: SbomQsReport
 
 
 class SBOMToolScore(schema.Strict):
     kind: Literal["sbom_tool_score"] = schema.Field(alias="kind")
-    project_key: str = schema.description("Project name")
-    version_key: str = schema.description("Version name")
-    revision_number: str = schema.description("Revision number")
+    project_key: safe.ProjectKey = schema.description("Project name")
+    version_key: safe.VersionKey = schema.description("Version name")
+    revision_number: safe.RevisionNumber = schema.description("Revision number")
     bom_version: int | None = schema.Field(default=None, strict=False, description="BOM Version scanned")
     prev_bom_version: int | None = schema.Field(
         default=None, strict=False, description="BOM Version from previous release"
     )
-    file_path: str = schema.description("Relative path to the scored SBOM file")
+    file_path: safe.RelPath = schema.description("Relative path to the scored SBOM file")
     warnings: list[str] = schema.description("Warnings from the SBOM tool")
     errors: list[str] = schema.description("Errors from the SBOM tool")
     outdated: list[str] | str | None = schema.description("Outdated tool(s) from the SBOM tool")

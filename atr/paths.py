@@ -44,6 +44,10 @@ def get_finished_dir() -> pathlib.Path:
     return pathlib.Path(config.get().FINISHED_STORAGE_DIR)
 
 
+def get_finished_dir_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> pathlib.Path:
+    return pathlib.Path(config.get().FINISHED_STORAGE_DIR) / str(project_key) / str(version_key)
+
+
 def get_quarantined_dir() -> pathlib.Path:
     return pathlib.Path(config.get().STATE_DIR) / "quarantined"
 
@@ -55,6 +59,12 @@ def get_tmp_dir() -> pathlib.Path:
 
 def get_unfinished_dir() -> pathlib.Path:
     return pathlib.Path(config.get().UNFINISHED_STORAGE_DIR)
+
+
+def get_unfinished_dir_for(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
+) -> pathlib.Path:
+    return pathlib.Path(config.get().UNFINISHED_STORAGE_DIR) / str(project_key) / str(version_key) / str(revision)
 
 
 def get_upload_staging_dir(session_token: str) -> pathlib.Path:

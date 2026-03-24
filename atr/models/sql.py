@@ -303,6 +303,44 @@ class UTCDateTime(sqlalchemy.types.TypeDecorator):
             return value
 
 
+class SafeJSON(sqlalchemy.types.TypeDecorator):
+    """JSON column that serialises SafeType values to plain strings.
+
+    Use instead of sqlalchemy.JSON whenever the stored value may contain
+    atr.models.safe.SafeType instances (which are not JSON-serialisable by
+    the standard library encoder).
+    """
+
+    impl = sqlalchemy.JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json")
+        return _safe_json_encode(value)
+
+    def process_result_value(self, value, dialect):
+        return value
+
+
+def _safe_json_encode(value: Any) -> Any:
+    """Recursively convert SafeType instances to plain strings."""
+    from . import safe
+
+    if isinstance(value, safe.SafeType):
+        return str(value)
+    if isinstance(value, dict):
+        for k in value:
+            if not isinstance(k, str):
+                raise TypeError(f"Dict key must be str, got {type(k).__name__!r}: {k!r}")
+        return {k: _safe_json_encode(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_safe_json_encode(v) for v in value]
+    return value
+
+
 class ResultsJSON(sqlalchemy.types.TypeDecorator):
     impl = sqlalchemy.JSON
     cache_ok = True
@@ -311,7 +349,7 @@ class ResultsJSON(sqlalchemy.types.TypeDecorator):
         if value is None:
             return None
         if hasattr(value, "model_dump"):
-            return value.model_dump()
+            return value.model_dump(mode="json")
         if isinstance(value, dict):
             return value
         raise ValueError("Unsupported value for Results column")
@@ -336,7 +374,7 @@ class QuarantineFileMetadataJSON(sqlalchemy.types.TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
-        return _QUARANTINE_FILE_METADATA_ADAPTER.dump_python(value)
+        return _QUARANTINE_FILE_METADATA_ADAPTER.dump_python(value, mode="json")
 
     def process_result_value(self, value, dialect):
         if value is None:
@@ -394,7 +432,7 @@ class Task(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True)
     status: TaskStatus = sqlmodel.Field(default=TaskStatus.QUEUED, index=True)
     task_type: TaskType
-    task_args: Any = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    task_args: Any = sqlmodel.Field(sa_column=sqlalchemy.Column(SafeJSON))
     inputs_hash: str | None = sqlmodel.Field(
         default=None,
         **example("blake3:7f83b1657ff1fc..."),

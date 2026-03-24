@@ -36,11 +36,11 @@ _SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
 class SvnImport(schema.Strict):
     """Arguments for the task to import files from SVN."""
 
-    svn_url: str
+    svn_url: safe.RelPath
     revision: str
     target_subdirectory: str | None
-    project_key: str
-    version_key: str
+    project_key: safe.ProjectKey
+    version_key: safe.VersionKey
     asf_uid: str
 
 
@@ -73,17 +73,16 @@ async def import_files(args: SvnImport) -> results.Results | None:
 async def _import_files_core(args: SvnImport) -> str:
     """Core logic to perform the SVN export."""
 
-    project = safe.ProjectKey(args.project_key)
-    version = safe.VersionKey(args.version_key)
-    svn_path = safe.RelPath(args.svn_url)
+    project_str = str(args.project_key)
+    version_str = str(args.version_key)
 
-    log.info(f"Starting SVN import for {args.project_key}-{args.version_key}")
+    log.info(f"Starting SVN import for {project_str}-{version_str}")
     # We have to use a temporary directory otherwise SVN thinks it's a pegged revision
     temp_export_dir_name = ".svn-export.tmp"
 
     description = "Import of files from subversion"
     async with storage.write(args.asf_uid) as write:
-        wacp = await write.as_project_committee_participant(project)
+        wacp = await write.as_project_committee_participant(args.project_key)
 
         async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
             log.debug(f"Created revision directory: {path}")
@@ -110,7 +109,7 @@ async def _import_files_core(args: SvnImport) -> str:
                 "-r",
                 args.revision,
                 "--",
-                f"{_SVN_BASE_URL}/{svn_path!s}",
+                f"{_SVN_BASE_URL}/{args.svn_url!s}",
                 str(temp_export_path),
             ]
 
@@ -132,11 +131,11 @@ async def _import_files_core(args: SvnImport) -> str:
             log.info(f"Removed temporary export directory: {temp_export_path}")
 
         result = await wacp.revision.create_revision_with_quarantine(
-            project, version, args.asf_uid, description=description, modify=modify
+            args.project_key, args.version_key, args.asf_uid, description=description, modify=modify
         )
         if isinstance(result, sql.Quarantined):
-            log.info(f"SVN import quarantined for {args.project_key}-{args.version_key}")
-            return f"SVN import received for {args.project_key}-{args.version_key}. Archive validation in progress."
+            log.info(f"SVN import quarantined for {project_str}-{version_str}")
+            return f"SVN import received for {project_str}-{version_str}. Archive validation in progress."
         return f"Successfully imported files from SVN into revision {result.number}"
 
 

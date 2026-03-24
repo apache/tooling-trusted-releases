@@ -463,7 +463,7 @@ def _report_header(
     ]
     if not is_release_candidate:
         block.p[
-            "This report is for revision ", htm.code[task_result.revision_number], "."
+            "This report is for revision ", htm.code[str(task_result.revision_number)], "."
         ]  # TODO: Mark if a subsequent score has failed
     elif release.phase == sql.ReleasePhase.RELEASE_CANDIDATE:
         block.p[f"This report is for the latest {release.version} release candidate."]
@@ -671,7 +671,9 @@ def _vulnerability_scan_button(block: htm.Block) -> None:
     )
 
 
-def _vulnerability_scan_find_completed_task(osv_tasks: Sequence[sql.Task], revision_number: str) -> sql.Task | None:
+def _vulnerability_scan_find_completed_task(
+    osv_tasks: Sequence[sql.Task], revision_number: safe.RevisionNumber
+) -> sql.Task | None:
     """Find the most recent completed OSV scan task for the given revision."""
     for task in osv_tasks:
         if (task.status == sql.TaskStatus.COMPLETED) and (task.result is not None):
@@ -681,10 +683,12 @@ def _vulnerability_scan_find_completed_task(osv_tasks: Sequence[sql.Task], revis
     return None
 
 
-def _vulnerability_scan_find_in_progress_task(osv_tasks: Sequence[sql.Task], revision_number: str) -> sql.Task | None:
+def _vulnerability_scan_find_in_progress_task(
+    osv_tasks: Sequence[sql.Task], revision_number: safe.RevisionNumber
+) -> sql.Task | None:
     """Find the most recent in-progress OSV scan task for the given revision."""
     for task in osv_tasks:
-        if task.revision_number == revision_number:
+        if task.revision_number == str(revision_number):
             if task.status in (sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE, sql.TaskStatus.FAILED):
                 return task
     return None
