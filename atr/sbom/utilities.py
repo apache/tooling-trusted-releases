@@ -17,13 +17,20 @@
 
 from __future__ import annotations
 
+import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import cvss
+from cyclonedx.model.bom import Bom
+from cyclonedx.output import BaseOutput, make_outputter
+from cyclonedx.schema import OutputFormat, SchemaVersion
+from defusedxml import ElementTree
 
 if TYPE_CHECKING:
     import pathlib
+
+    from cyclonedx.model import Property
 
     import atr.sbom.models.osv as osv
 
@@ -74,7 +81,7 @@ def apply_patch(
 async def bundle_to_ntia_patch(bundle_value: models.bundle.Bundle) -> models.patch.Patch:
     from .conformance import ntia_2021_issues, ntia_2021_patch
 
-    _warnings, errors = ntia_2021_issues(bundle_value.bom)
+    _warnings, errors = ntia_2021_issues(bundle_value)
     async with util.create_secure_session() as session:
         patch_ops = await ntia_2021_patch(session, bundle_value.doc, errors)
     return patch_ops
@@ -111,14 +118,10 @@ def get_pointer(doc: yyjson.Document, path: str) -> Any | None:
         raise
 
 
-def get_props_from_bundle(bundle_value: models.bundle.Bundle) -> tuple[int, list[dict[str, str]]]:
-    version: int | None = get_pointer(bundle_value.doc, "/version")
-    if version is None:
-        version = 0
-    properties: list[dict[str, str]] | None = get_pointer(bundle_value.doc, "/properties")
-    if properties is None:
-        return version, []
-    return version, [p for p in properties if "asf:atr:" in p.get("name", "")]
+def get_props_from_bundle(bundle_value: models.bundle.Bundle) -> tuple[int, list[Property]]:
+    version: int = bundle_value.bom.version
+    properties = bundle_value.bom.properties
+    return version, [p for p in properties if "asf:atr:" in p.name]
 
 
 def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> list[dict[str, str | float]] | None:
@@ -140,8 +143,35 @@ def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
 
 def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
     text = path.read_text(encoding="utf-8")
-    bom = models.bom.Bom.model_validate_json(text)
-    return models.bundle.Bundle(doc=yyjson.Document(text), bom=bom, path=path, text=text)
+    bom: Bom | None = None
+    source_type: Literal["json", "xml"] | None = None
+    # Default to latest schema version
+    spec_version: SchemaVersion | None = None
+    if path.name.endswith(".json"):
+        bom_json: dict[str, Any] = json.loads(text)
+        bom = Bom.from_json(data=bom_json)
+        source_type = "json"
+        version_str = bom_json.get("specVersion", "1.7")
+        spec_version = SchemaVersion.from_version(version_str)
+    elif path.name.endswith(".xml"):
+        bom_xml = ElementTree.fromstring(text)
+        bom = Bom.from_xml(bom_xml)
+        tag = re.match(r"\{http://cyclonedx.org/schema/bom/(.+)}", bom_xml.tag)
+        version = "1.7"
+        if tag:
+            version = tag.group(1)
+        spec_version = SchemaVersion.from_version(version)
+        source_type = "xml"
+        if bom:
+            outputter: BaseOutput = make_outputter(
+                bom=bom, output_format=OutputFormat.JSON, schema_version=spec_version
+            )
+            text: str = outputter.output_as_string()
+    if not bom or not source_type or not spec_version:
+        raise ValueError("Error importing BOM")
+    return models.bundle.Bundle(
+        doc=yyjson.Document(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
+    )
 
 
 def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:

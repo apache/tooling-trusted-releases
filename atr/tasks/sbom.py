@@ -83,12 +83,10 @@ class ScoreArgs(FileArgs):
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    project_str = str(args.project_key)
-    version_str = str(args.version_key)
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / project_str / version_str / revision_str
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -97,6 +95,8 @@ async def augment(args: FileArgs) -> results.Results | None:
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     # Read from the old revision
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScoringError("Could not load bundle")
     patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
     new_full_path: pathlib.Path | None = None
     new_full_path_str: str | None = None
@@ -159,6 +159,8 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScanningError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScanningError("Could not load bundle")
     vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
     patch_ops = await sbom.utilities.bundle_to_vuln_patch(bundle, vulnerabilities)
     components = []
@@ -259,8 +261,10 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScoringError("Could not load bundle")
     version, properties = sbom.utilities.get_props_from_bundle(bundle)
-    warnings, errors = sbom.conformance.ntia_2021_issues(bundle.bom)
+    warnings, errors = sbom.conformance.ntia_2021_issues(bundle)
     # TODO: Could update the ATR version with a constant showing last change to the augment/scan
     #  tools so we know if it's outdated
     outdated = sbom.tool.plugin_outdated_version(bundle.bom)
@@ -302,7 +306,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
         vulnerabilities=[v.model_dump_json() for v in vulnerabilities],
         prev_licenses=[w.model_dump_json() for w in prev_licenses] if prev_licenses else None,
         prev_vulnerabilities=[v.model_dump_json() for v in prev_vulnerabilities] if prev_vulnerabilities else None,
-        atr_props=properties,
+        atr_props=[{p.name: p.value or ""} for p in properties],
         cli_errors=cli_errors,
     )
 

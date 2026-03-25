@@ -18,19 +18,21 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     import pathlib
 
     import yyjson
-
-    from .bom import Bom
+    from cyclonedx.model.bom import Bom
+    from cyclonedx.schema import SchemaVersion
 
 
 @dataclasses.dataclass
 class Bundle:
-    doc: yyjson.Document
+    source_type: Literal["json", "xml"]
+    spec_version: SchemaVersion
     bom: Bom
+    doc: yyjson.Document
     path: pathlib.Path
     text: str

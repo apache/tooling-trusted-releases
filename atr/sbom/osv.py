@@ -20,6 +20,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
+from packageurl import PackageURL
+
 import atr.util as util
 
 from . import models
@@ -28,6 +30,7 @@ from .utilities import get_pointer, osv_severity_to_cdx
 if TYPE_CHECKING:
     import aiohttp
     import yyjson
+    from cyclonedx.model.component import Component
 
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
 _OSV_API_BASE: str = "https://api.osv.dev/v1"
@@ -82,7 +85,7 @@ _SOURCE_DATABASE_NAMES = {
 
 
 async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.ComponentVulnerabilities], list[str]]:
-    components = bundle.bom.components or []
+    components = list(bundle.bom.components)
     queries, ignored = _scan_bundle_build_queries(components)
     if _DEBUG:
         print(f"[DEBUG] Scanning {len(queries)} components for vulnerabilities")
@@ -165,27 +168,24 @@ def _assemble_vulnerabilities(doc: yyjson.Document, patch_ops: models.patch.Patc
     )
 
 
-def _component_purl_with_version(component: models.bom.Component) -> str | None:
+def _component_purl_with_version(component: Component) -> str | None:
+    # If we don't know the purl, we can't help
     if component.purl is None:
         return None
+    # If the component purl includes version information, return it
+    if component.purl.version is not None:
+        return str(component.purl)
+    # If not, and we don't have a component version, we still can't add anything
     if component.version is None:
         return None
     version = component.version.strip()
     if not version:
         return None
-    purl = component.purl
-    split_index = len(purl)
-    question_index = purl.find("?")
-    if (question_index != -1) and (question_index < split_index):
-        split_index = question_index
-    hash_index = purl.find("#")
-    if (hash_index != -1) and (hash_index < split_index):
-        split_index = hash_index
-    if "@" in purl[:split_index]:
-        return purl
-    base = purl[:split_index]
-    suffix = purl[split_index:]
-    return f"{base}@{version}{suffix}"
+    # Clone the purl so we don't affect the component definition
+    purl = str(component.purl)
+    new_purl = PackageURL.from_string(purl)
+    new_purl.version = version
+    return str(new_purl)
 
 
 async def _fetch_vulnerabilities_for_batch(
@@ -256,7 +256,7 @@ async def _paginate_query(
 
 
 def _scan_bundle_build_queries(
-    components: list[models.bom.Component],
+    components: list[Component],
 ) -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
     queries: list[tuple[str, dict[str, Any]]] = []
     ignored = []
@@ -266,8 +266,8 @@ def _scan_bundle_build_queries(
             ignored.append(component.name)
             continue
         query = {"package": {"purl": purl_with_version}}
-        if component.bom_ref is not None:
-            queries.append((component.bom_ref, query))
+        if component.bom_ref:
+            queries.append((str(component.bom_ref), query))
     return queries, ignored
 
 
