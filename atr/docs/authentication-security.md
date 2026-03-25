@@ -13,6 +13,7 @@
 * [Transport security](#transport-security)
 * [Web authentication](#web-authentication)
 * [API authentication](#api-authentication)
+* [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
 * [Token lifecycle](#token-lifecycle)
 * [Security properties](#security-properties)
 * [Implementation references](#implementation-references)
@@ -34,7 +35,7 @@ ATR participates in several authentication protocols but does not implement an O
 
 **OAuth Client.** ATR delegates user authentication to the ASF OAuth service at `oauth.apache.org` via the [ASFQuart](https://github.com/apache/infrastructure-asfquart) framework. ATR redirects users to the ASF authorization endpoint, receives an authorization code in the callback, and immediately exchanges that code for session data. ATR does not store authorization codes, issue OAuth tokens, or manage OAuth client registrations.
 
-**OIDC Relying Party.** For [trusted publishing](trusted-publishing) workflows, ATR validates OIDC ID tokens issued by GitHub Actions (`token.actions.githubusercontent.com`). ATR verifies the token signature using the provider's JWKS endpoint, and checks the issuer, audience, expiration, and expected claims. ATR does not issue OIDC tokens.
+**OIDC Relying Party.** For [trusted publishing](trusted-publishing) workflows, ATR validates OIDC ID tokens issued by GitHub Actions (`token.actions.githubusercontent.com`). ATR verifies the token signature using the provider's JWKS endpoint, checks the issuer, audience, expiration, and expected claims, and enforces actor identity requirements that differ between project TP and ATR distribution workflows. ATR does not issue OIDC tokens. See [GitHub Actions OIDC](#github-actions-oidc-trusted-publishing) below for full detail.
 
 **Resource Server.** ATR issues its own short-lived JWTs (30-minute TTL, HS256) for API access. These are a custom API authentication mechanism, not OAuth access tokens or refresh tokens. See [API authentication](#api-authentication) below.
 
@@ -141,6 +142,46 @@ Authorization: Bearer jwt_token_value
 
 The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints use the `@jwtoken.require` decorator, which extracts the JWT from the `Authorization` header, verifies its signature and expiration, and makes the user's ASF UID available to the handler.
 
+## GitHub Actions OIDC (Trusted Publishing)
+
+GitHub Actions workflows authenticate to ATR using OIDC tokens issued by GitHub (`token.actions.githubusercontent.com`). ATR uses this mechanism in two distinct contexts with different authorization requirements, described below.
+
+### Token validation
+
+All OIDC-authenticated endpoints share the same cryptographic validation, implemented in `jwtoken.verify_github_oidc`. The caller then applies context-specific checks on top.
+
+**Header safety.** Before any other processing, ATR inspects the unverified JWT header and rejects any token that contains `jku`, `x5u`, or `jwk` fields. These fields could redirect key lookup to an attacker-controlled endpoint.
+
+**JWKS retrieval.** ATR fetches the JWKS URI from GitHub's OIDC discovery document (`token.actions.githubusercontent.com/.well-known/openid-configuration`) over a hardened TLS session (`util.create_secure_session`). The resulting URI is then validated: its hostname must be `token.actions.githubusercontent.com` and its scheme must be `https`. This prevents a compromised or redirected discovery response from substituting a different key set.
+
+**Signature and standard claims.** The token is verified using RS256 with the key obtained from JWKS. The `iss` must be `https://token.actions.githubusercontent.com`, the `aud` must be `atr-test-v1`, and both `exp` and `iat` must be present.
+
+**Enterprise and environment claims.** Four additional claims are checked against hardcoded expected values: `enterprise` must be `the-asf`, `enterprise_id` must match the ASF GitHub enterprise, `repository_owner` must be `apache`, and `runner_environment` must be `github-hosted`. Together these constrain the token to workflows running inside the ASF GitHub enterprise, on official GitHub-hosted runners, under the `apache` organisation.
+
+### Project Trusted Publishing
+
+Project TP allows an `apache/*` project repository to upload release artifacts and perform actions on its own ATR project directly from a GitHub Actions workflow. The workflow is defined in [tooling-actions](https://github.com/apache/tooling-actions) and called from the project's own repository.
+
+**Actor requirement.** After cryptographic validation, `interaction.trusted_jwt` checks that `actor_id` resolves to a human committer: it performs an LDAP lookup to map the numeric GitHub user ID to an ASF UID. If `actor_id` belongs to the ASF Infrastructure service account instead, the request is rejected. The committer must have their GitHub account registered in LDAP.
+
+**Repository and workflow binding.** `interaction._trusted_project` further validates the `repository` and `workflow_ref` claims from the token against release policies stored in ATR. Only pre-registered workflow paths from pre-registered repositories are accepted, so an arbitrary workflow in an `apache/*` repo cannot invoke these endpoints.
+
+### ATR distribution workflows
+
+ATR uses a separate set of endpoints to orchestrate distribution to third-party platforms such as Maven Central. These workflows live in [tooling-actions](https://github.com/apache/tooling-actions) and are triggered by ATR itself, not by project committers.
+
+**Trust chain.** An authenticated committer initiates a release distribution through ATR. ATR dispatches the workflow via the ASF Infrastructure service account, passing the required context (including the SSH public key) into the workflow. The workflow runs on GitHub Actions and calls back to ATR with a GitHub OIDC token.
+
+**Actor requirement.** `interaction.trusted_jwt_for_dist` checks that `actor_id` matches `_GITHUB_TRUSTED_ROLE_NID`, the hardcoded numeric ID of the ASF Infrastructure service account. If `actor_id` belongs to a human committer instead, the request is rejected. The check uses the numeric ID, which is stable across account renames.
+
+The OIDC token proves that the callback came from a workflow ATR itself started. The original authorization is inherited from the committer who initiated the distribution in ATR — the service account carries no privileges of its own beyond triggering the workflow.
+
+The workflow also carries the originating committer's ASF UID as a parameter. ATR trusts this value because the service account gate already establishes that only ATR could have dispatched the workflow, and ATR embedded the UID when it did so.
+
+### SSH key scope
+
+In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH key bound to the specific project. The key cannot be used for any other project. The identity attached to the key differs: for project TP it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the committer's ASF UID passed through the workflow, trusted because only the service account — which only ATR can trigger — could have put it there.
+
 ## Token lifecycle
 
 The relationship between authentication methods and tokens:
@@ -192,5 +233,6 @@ Tokens must be protected by the user at all times:
 ## Implementation references
 
 * [`principal.py`](/ref/atr/principal.py) - Session caching and authorization data
-* [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators
+* [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators; `verify_github_oidc` implements the OIDC validation chain
+* [`db/interaction.py`](/ref/atr/db/interaction.py) - `validate_trusted_jwt` implements the service account authorisation, `trusted_jwt_for_dist` implements gating based on the service account
 * [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation

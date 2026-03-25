@@ -40,6 +40,8 @@ import atr.user as user
 import atr.util as util
 import atr.web as web
 
+# Infra-provided service account with permission to run ATR workflows
+# audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 
 
