@@ -753,12 +753,6 @@ Thanks,
         return policy.min_hours
 
     @property
-    def policy_pause_for_rm(self) -> bool:
-        if (policy := self.release_policy) is None:
-            return False
-        return policy.pause_for_rm
-
-    @property
     def policy_release_checklist(self) -> str:
         if ((policy := self.release_policy) is None) or (policy.release_checklist == ""):
             return ""
@@ -1300,7 +1294,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
     vote_comment_template: str = sqlmodel.Field(default="")
-    pause_for_rm: bool = sqlmodel.Field(default=False)
     start_vote_subject: str = sqlmodel.Field(default="")
     start_vote_template: str = sqlmodel.Field(default="")
     announce_release_subject: str = sqlmodel.Field(default="")
@@ -1347,7 +1340,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,
             vote_comment_template=self.vote_comment_template,
-            pause_for_rm=self.pause_for_rm,
             start_vote_subject=self.start_vote_subject,
             start_vote_template=self.start_vote_template,
             announce_release_subject=self.announce_release_subject,

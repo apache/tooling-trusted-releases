@@ -719,7 +719,6 @@ async def policy_get(
         policy_mailto_addresses=project.policy_mailto_addresses,
         policy_manual_vote=project.policy_manual_vote,
         policy_min_hours=project.policy_min_hours,
-        policy_pause_for_rm=project.policy_pause_for_rm,
         policy_preserve_download_files=project.policy_preserve_download_files,
         policy_release_checklist=project.policy_release_checklist,
         policy_source_artifact_paths=project.policy_source_artifact_paths,

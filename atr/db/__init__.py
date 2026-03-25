@@ -706,7 +706,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         manual_vote: Opt[bool] = NOT_SET,
         min_hours: Opt[int] = NOT_SET,
         release_checklist: Opt[str] = NOT_SET,
-        pause_for_rm: Opt[bool] = NOT_SET,
         github_repository_name: Opt[str] = NOT_SET,
         github_compose_workflow_path: Opt[list[str]] = NOT_SET,
         github_vote_workflow_path: Opt[list[str]] = NOT_SET,
@@ -729,8 +728,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.ReleasePolicy.min_hours == min_hours)
         if is_defined(release_checklist):
             query = query.where(sql.ReleasePolicy.release_checklist == release_checklist)
-        if is_defined(pause_for_rm):
-            query = query.where(sql.ReleasePolicy.pause_for_rm == pause_for_rm)
         if is_defined(github_repository_name):
             query = query.where(sql.ReleasePolicy.github_repository_name == github_repository_name)
         if is_defined(github_compose_workflow_path):

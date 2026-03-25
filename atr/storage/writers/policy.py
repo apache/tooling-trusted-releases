@@ -201,7 +201,6 @@ class CommitteeMember(CommitteeParticipant):
         if not release_policy.manual_vote:
             release_policy.mailto_addresses = [form.mailto_addresses]
             self.__set_min_hours(form.min_hours, project, release_policy)
-            release_policy.pause_for_rm = form.pause_for_rm
             release_policy.release_checklist = form.release_checklist or ""
             release_policy.vote_comment_template = form.vote_comment_template or ""
             self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)

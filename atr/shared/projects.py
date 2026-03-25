@@ -156,10 +156,6 @@ class VotePolicyForm(form.Form):
         "If 0, then wait until 3 +1 votes and more +1 than -1.",
         default=72,
     )
-    pause_for_rm: form.Bool = form.label(
-        "Pause for RM",
-        "If enabled, RM can confirm manually if the vote has passed.",
-    )
     release_checklist: str = form.label(
         "Release checklist",
         widget=form.Widget.CUSTOM,

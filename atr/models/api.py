@@ -302,7 +302,6 @@ class PolicyGetResults(schema.Strict):
     policy_mailto_addresses: list[str]
     policy_manual_vote: bool
     policy_min_hours: int
-    policy_pause_for_rm: bool
     policy_preserve_download_files: bool
     policy_release_checklist: str
     policy_source_artifact_paths: list[str]
@@ -327,7 +326,6 @@ class PolicyUpdateArgs(schema.Strict):
     mailto_addresses: list[str] | None = None
     manual_vote: bool | None = None
     min_hours: int | None = None
-    pause_for_rm: bool | None = None
     preserve_download_files: bool | None = None
     release_checklist: str | None = None
     source_artifact_paths: list[str] | None = None
