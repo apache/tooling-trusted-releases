@@ -5,7 +5,7 @@ aiofiles==25.1.0
     #   tooling-trusted-releases
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.13.3
+aiohttp==3.13.4
     # via
     #   asfpy
     #   asfquart
@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@788bbbcca5552644ed669cd0bbd4bee295da8f9a
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@fab20db357dd689ae5863c86d9eb1b07ae690b83
     # via tooling-trusted-releases
 asyncssh==2.22.0
     # via tooling-trusted-releases
@@ -72,7 +72,7 @@ colorama==0.4.6
     #   click
     #   djlint
     #   tqdm
-cryptography==46.0.5
+cryptography==46.0.6
     # via
     #   asfpy
     #   asyncssh
@@ -108,7 +108,7 @@ editorconfig==0.17.1
     #   jsbeautifier
 email-validator==2.3.0
     # via tooling-trusted-releases
-exarch==0.2.8
+exarch==0.2.9
     # via tooling-trusted-releases
 ezt==1.1
     # via
@@ -175,7 +175,7 @@ jsbeautifier==1.15.4
     # via
     #   cssbeautifier
     #   djlint
-json5==0.13.0
+json5==0.14.0
     # via djlint
 jsonpointer==3.1.1
     # via jsonschema
@@ -258,7 +258,7 @@ pydantic-core==2.41.5
     #   pydantic-xml
 pydantic-xml==2.19.0
     # via tooling-trusted-releases
-pygments==2.19.2
+pygments==2.20.0
     # via rich
 pyhumps==3.8.0
     # via quart-schema
@@ -271,7 +271,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.2.0
+python-discovery==1.2.1
     # via virtualenv
 python-gnupg==0.5.6
     # via tooling-trusted-releases
@@ -301,7 +301,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.2.28
+regex==2026.3.32
     # via djlint
 requests==2.33.0
     # via asfpy
@@ -317,7 +317,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-ruff==0.15.7
+ruff==0.15.8
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0

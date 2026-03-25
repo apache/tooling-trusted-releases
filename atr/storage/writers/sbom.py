@@ -105,6 +105,33 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.refresh(sbom_task)
         return sbom_task
 
+    async def convert_cyclonedx(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        revision_number: safe.RevisionNumber,
+        file_path: str,
+        sbom_path: str,
+    ) -> sql.Task:
+        sbom_task = sql.Task(
+            task_type=sql.TaskType.SBOM_CONVERT,
+            task_args=sbom.ConvertCycloneDX(
+                artifact_path=file_path,
+                revision=revision_number,
+                output_path=sbom_path,
+            ).model_dump(),
+            asf_uid=util.unwrap(self.__asf_uid),
+            added=datetime.datetime.now(datetime.UTC),
+            status=sql.TaskStatus.QUEUED,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(revision_number),
+        )
+        self.__data.add(sbom_task)
+        await self.__data.commit()
+        await self.__data.refresh(sbom_task)
+        return sbom_task
+
     async def generate_cyclonedx(
         self,
         project_key: safe.ProjectKey,

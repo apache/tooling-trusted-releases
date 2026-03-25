@@ -62,6 +62,7 @@ LICENSES: Final[dict[str, list[str]]] = {
         "PHP-3.01",
         "PostgreSQL",
         "Python-2.0",
+        "PSF-2.0",
         "SMLNJ",
         "TCL",
         "UPL-1.0",

@@ -134,6 +134,7 @@ SKIPPABLE_SUFFIXES: Final[list[str]] = [
 STANDALONE_METADATA_SUFFIXES: Final[frozenset[str]] = frozenset(
     {
         ".cdx.json",
+        ".cdx.xml",
     }
 )
 

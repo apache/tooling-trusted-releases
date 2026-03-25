@@ -163,6 +163,16 @@ class SBOMAugment(schema.Strict):
     )
 
 
+class SBOMConvert(schema.Strict):
+    kind: Literal["sbom_convert"] = schema.Field(alias="kind")
+    path: str = schema.description("The path to the converted SBOM file")
+    bom_version: int | None = schema.Field(
+        default=None,
+        strict=False,
+        description="BOM Version produced by the convert task",
+    )
+
+
 class SBOMQsScore(schema.Strict):
     kind: Literal["sbom_qs_score"] = schema.Field(alias="kind")
     project_key: safe.ProjectKey = schema.description("Project name")
@@ -241,6 +251,7 @@ Results = Annotated[
     | MessageSend
     | MetadataUpdate
     | SBOMAugment
+    | SBOMConvert
     | SBOMGenerateCycloneDX
     | SBOMOSVScan
     | SBOMQsScore

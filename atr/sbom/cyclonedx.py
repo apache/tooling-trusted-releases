@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import cyclonedx.exception
 import cyclonedx.schema
+import cyclonedx.validation
 import cyclonedx.validation.json
 
 from .utilities import get_pointer
@@ -39,7 +40,7 @@ def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
         "validate",
         "--fail-on-errors",
         "--input-format",
-        "json",
+        bundle_value.source_type,
         "--input-file",
         bundle_value.path.as_posix(),
     ]

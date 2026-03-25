@@ -17,19 +17,27 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from cyclonedx.model.license import DisjunctiveLicense, LicenseExpression
+
+if TYPE_CHECKING:
+    from cyclonedx.model.bom import Bom
+    from cyclonedx.model.component import Component
+
 from . import constants, models
 from .spdx import license_expression_atoms
 
 
 def check(
-    bom_value: models.bom.Bom,
+    bom_value: Bom,
     include_all: bool = False,
 ) -> tuple[list[models.licenses.Issue], list[models.licenses.Issue], list[models.licenses.Issue]]:
     warnings: list[models.licenses.Issue] = []
     errors: list[models.licenses.Issue] = []
     good: list[models.licenses.Issue] = []
 
-    components = bom_value.components or []
+    components: list[Component] = list(bom_value.components)
     if bom_value.metadata and bom_value.metadata.component:
         components = [bom_value.metadata.component, *components]
 
@@ -45,16 +53,16 @@ def check(
         for license_choice in component.licenses:
             license_expr = None
 
-            if license_choice.expression:
-                license_expr = license_choice.expression
-            elif license_choice.license and license_choice.license.id:
-                license_expr = license_choice.license.id
+            if isinstance(license_choice, LicenseExpression):
+                license_expr = license_choice.value
+            elif isinstance(license_choice, DisjunctiveLicense):
+                license_expr = license_choice.id
 
             if not license_expr:
                 continue
 
             parse_failed = False
-            if license_choice.expression:
+            if isinstance(license_choice, LicenseExpression):
                 try:
                     atoms = license_expression_atoms(license_expr)
                 except ValueError:
