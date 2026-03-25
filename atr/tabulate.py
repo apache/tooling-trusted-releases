@@ -390,13 +390,23 @@ def _vote_resolution_body_votes(
     binding_yes = summary["binding_votes_yes"]
     binding_no = summary["binding_votes_no"]
     binding_abstain = summary["binding_votes_abstain"]
-    yield f"Of these binding votes, {binding_yes} were +1, {binding_no} were -1, and {binding_abstain} were 0."
+    binding_vote_counts = [
+        _vote_resolution_count(binding_yes, "+1"),
+        _vote_resolution_count(binding_no, "-1"),
+        _vote_resolution_count(binding_abstain, "0"),
+    ]
+    yield f"Of these binding votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
     yield ""
 
     yield from _vote_resolution_votes(tabulated_votes, {models.tabulate.VoteStatus.COMMITTER})
     yield from _vote_resolution_votes(
         tabulated_votes, {models.tabulate.VoteStatus.CONTRIBUTOR, models.tabulate.VoteStatus.UNKNOWN}
     )
+
+
+def _vote_resolution_count(count: int, symbol: str) -> str:
+    were_word = "was" if (count == 1) else "were"
+    return f"{count} {were_word} {symbol}"
 
 
 def _vote_resolution_votes(
