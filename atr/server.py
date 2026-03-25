@@ -144,7 +144,7 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     """Create the base Quart application."""
     if asfquart.construct is ...:
         raise ValueError("asfquart.construct is not set")
-    app = asfquart.construct(__name__, token_file="secrets/generated/apptoken.txt")
+    app = asfquart.construct(__name__, token_file="secrets/generated/apptoken.txt", basic_auth=False)
     app.jinja_environment = template.SyncEnvironment
     # ASFQuart sets secret_key from apptoken.txt, or generates a new one
     # We must preserve this because from_object will overwrite it
