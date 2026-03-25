@@ -1517,7 +1517,7 @@ async def vote_resolve(
 
     Resolve a vote.
 
-    A vote can be resolved by passing or failing.
+    A vote can be resolved as passed, failed, or cancelled.
     """
     asf_uid = _jwt_asf_uid()
     # try:

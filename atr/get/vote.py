@@ -32,6 +32,8 @@ import atr.form as form
 import atr.get.checklist as checklist
 import atr.get.download as download
 import atr.get.keys as keys
+import atr.get.manual as manual
+import atr.get.resolve as resolve
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
@@ -460,16 +462,20 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
     else:
         page.p["When the voting period concludes, use the resolution page to tally votes and record the outcome."]
 
-        # POST form for resolve button
-        resolve_url = util.as_url(
-            post.resolve.selected,
-            project_key=release.project.key,
-            version_key=release.version,
-        )
-        page.form(".mb-0", method="post", action=resolve_url)[
-            form.csrf_input(),
-            htpy.input(type="hidden", name="variant", value="tabulate"),
-            htpy.button(".btn.btn-success", type="submit")[
+        if release.vote_manual:
+            resolve_url = util.as_url(
+                manual.resolve_selected,
+                project_key=release.project.key,
+                version_key=release.version,
+            )
+        else:
+            resolve_url = util.as_url(
+                resolve.selected,
+                project_key=release.project.key,
+                version_key=release.version,
+            )
+        page.div[
+            htpy.a(".btn.btn-success", href=resolve_url)[
                 htpy.i(".bi.bi-clipboard-check.me-1"),
                 "Resolve vote",
             ],

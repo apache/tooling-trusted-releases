@@ -15,25 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Annotated, Literal
+from typing import Literal
 
 import atr.form as form
 
-type SUBMIT = Literal["submit"]
-type TABULATE = Literal["tabulate"]
-
 
 class SubmitForm(form.Form):
-    variant: SUBMIT = form.value(SUBMIT)
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA)
-    vote_result: Literal["Passed", "Failed"] = form.label("Vote result", widget=form.Widget.RADIO)
-
-
-class TabulateForm(form.Empty):
-    variant: TABULATE = form.value(TABULATE)
-
-
-type ResolveForm = Annotated[
-    SubmitForm | TabulateForm,
-    form.DISCRIMINATOR,
-]
+    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)

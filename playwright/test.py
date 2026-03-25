@@ -225,16 +225,16 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_key:
     if not link_found:
         logging.warning("Vote thread link not detected after 15s, proceeding anyway")
 
-    logging.info("Locating the 'Resolve vote' button")
-    tabulate_form_locator = page.locator(f'form[action="/resolve/{TEST_PROJECT}/{version_key}"]')
-    expect(tabulate_form_locator).to_be_visible()
+    logging.info("Locating the 'Resolve vote' link")
+    resolve_link_locator = page.locator(
+        f'a[href="/resolve/{TEST_PROJECT}/{esc_id(version_key)}"]', has_text="Resolve vote"
+    )
+    expect(resolve_link_locator).to_be_visible()
 
-    tabulate_button_locator = tabulate_form_locator.get_by_role("button", name="Resolve vote")
-    expect(tabulate_button_locator).to_be_enabled()
-    logging.info("Clicking 'Tabulate votes' button")
-    tabulate_button_locator.click()
+    logging.info("Clicking 'Resolve vote' link")
+    resolve_link_locator.click()
 
-    logging.info("Waiting for navigation to tabulated votes page")
+    logging.info("Waiting for navigation to resolve page")
     wait_for_path(page, f"/resolve/{TEST_PROJECT}/{version_key}")
 
     logging.info("Locating the resolve vote form on the tabulated votes page")

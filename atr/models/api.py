@@ -415,7 +415,7 @@ class PublisherVoteResolveArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     version: safe.VersionKey = schema.example("0.0.1")
-    resolution: Literal["passed", "failed"] = schema.example("passed")
+    resolution: Literal["passed", "failed", "cancelled"] = schema.example("passed")
 
 
 class PublisherVoteResolveResults(schema.Strict):
@@ -600,7 +600,7 @@ class UsersListResults(schema.Strict):
 class VoteResolveArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
-    resolution: Literal["passed", "failed"] = schema.example("passed")
+    resolution: Literal["passed", "failed", "cancelled"] = schema.example("passed")
 
 
 class VoteResolveResults(schema.Strict):

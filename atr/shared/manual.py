@@ -23,7 +23,7 @@ import atr.form as form
 
 
 class ResolveVoteForm(form.Form):
-    vote_result: Literal["Passed", "Failed"] = form.label("Vote result", widget=form.Widget.RADIO)
+    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
     vote_thread_url: str = form.label("Vote thread URL")
     vote_result_url: str = form.label("Vote result URL")
 

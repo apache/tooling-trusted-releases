@@ -159,7 +159,11 @@ def _render_resolve_page(release: sql.Release) -> htm.Element:
     page.p[htm.a(".atr-back-link", href=back_url)[f"← Back to Vote for {release.short_display_name}"]]
 
     page.h1[f"Resolve vote for {release.short_display_name}"]
-    page.p["This is a manual vote resolution."]
+    page.p[
+        "This is a manual vote resolution. "
+        "Provide the vote thread URL and the URL of the thread where you posted the result. "
+        "For a cancellation, provide the URL of the thread where you sent the cancellation notice."
+    ]
 
     form.render_block(
         page,

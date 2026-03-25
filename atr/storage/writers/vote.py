@@ -243,7 +243,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        vote_result: Literal["passed", "failed"],
+        vote_result: Literal["passed", "failed", "cancelled"],
         asf_fullname: str,
         resolution_body: str,
     ) -> tuple[sql.Release, int | None, str, str | None]:
@@ -283,7 +283,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        vote_result: Literal["passed", "failed"],
+        vote_result: Literal["passed", "failed", "cancelled"],
     ) -> str:
         release = await self.__data.release(
             key=sql.release_key(str(project_key), str(version_key)),
@@ -301,24 +301,26 @@ class CommitteeMember(CommitteeParticipant):
         if (release.project.committee is not None) and release.project.committee.is_podling:
             raise ValueError("Podling releases require the standard two round vote process")
 
-        if vote_result == "passed":
-            release.phase = sql.ReleasePhase.RELEASE_PREVIEW
-            release.vote_resolved = datetime.datetime.now(datetime.UTC)
-            await self.__data.commit()
-            await self.__data.refresh(release)
-            success_message = "Vote marked as passed"
+        match vote_result:
+            case "passed":
+                release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+                release.vote_resolved = datetime.datetime.now(datetime.UTC)
+                await self.__data.commit()
+                await self.__data.refresh(release)
+                success_message = "Vote marked as passed"
 
-            description = "Create a preview revision from the last candidate draft"
-            await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, release.safe_version_key, self.__asf_uid, description=description
-            )
-        else:
-            release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-            # The vote_resolved property refers to when the vote succeeded only
-            release.vote_resolved = None
-            await self.__data.commit()
-            await self.__data.refresh(release)
-            success_message = "Vote marked as failed"
+                description = "Create a preview revision from the last candidate draft"
+                await self.__write_as.revision.create_revision_with_quarantine(
+                    project_key, release.safe_version_key, self.__asf_uid, description=description
+                )
+            case "failed" | "cancelled":
+                release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+                # The vote_resolved property refers to when the vote succeeded only
+                release.vote_resolved = None
+                release.podling_thread_id = None
+                await self.__data.commit()
+                await self.__data.refresh(release)
+                success_message = f"Vote marked as {vote_result}"
 
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
@@ -333,7 +335,7 @@ class CommitteeMember(CommitteeParticipant):
         project_key: safe.ProjectKey,
         release: sql.Release,
         voting_round: int | None,
-        vote_result: Literal["passed", "failed"],
+        vote_result: Literal["passed", "failed", "cancelled"],
         latest_vote_task: sql.Task,
         asf_fullname: str,
         resolution_body: str,
@@ -411,9 +413,10 @@ class CommitteeMember(CommitteeParticipant):
             release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
             # The vote_resolved property refers to when the vote succeeded only
             release.vote_resolved = None
+            release.podling_thread_id = None
             await self.__data.commit()
             await self.__data.refresh(release)
-            success_message = "Vote marked as failed"
+            success_message = f"Vote marked as {vote_result}"
 
         error_message = await self.send_resolution(
             release,
