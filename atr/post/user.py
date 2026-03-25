@@ -157,6 +157,7 @@ def _render_summary_table(block: htm.Block, summary: dict[str, int]) -> None:
 def _render_votes_table(block: htm.Block, tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> None:
     thead = htm.thead[
         htm.tr[
+            htm.th["Name"],
             htm.th["UID or email"],
             htm.th(".text-center")["Vote"],
             htm.th(".text-center")["Status"],
@@ -172,6 +173,7 @@ def _render_votes_table(block: htm.Block, tabulated_votes: dict[str, models.tabu
             vote_class = ".atr-red"
         tbody.append(
             htm.tr[
+                htm.td(".atr-nowrap")[vote_email.name],
                 htm.td(".atr-nowrap")[vote_email.asf_uid_or_email],
                 htm.td(f".atr-nowrap.text-center{vote_class}")[vote_email.vote.value],
                 htm.td(".atr-nowrap.text-center")[vote_email.status.value],

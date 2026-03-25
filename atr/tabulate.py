@@ -234,6 +234,17 @@ def _format_duration(duration_hours: float | int) -> str:
     return " and ".join(parts)
 
 
+def _name_from_raw(from_raw: str) -> str:
+    angle = from_raw.find("<")
+    if angle <= 0:
+        return ""
+    name = from_raw[:angle].strip().strip('"')
+    via_index = name.find(" via ")
+    if via_index >= 0:
+        name = name[:via_index]
+    return name.strip()
+
+
 def _vote_break(line: str) -> bool:
     if line == "-- ":
         # Start of a signature
@@ -297,16 +308,14 @@ def _vote_identity(
     from_email_lower = util.email_from_uid(from_raw)
     if not from_email_lower:
         return False, "", "", None
-    name = ""
+    name = _name_from_raw(from_raw)
     from_email_lower = from_email_lower.removesuffix(".invalid")
     asf_uid = None
     if from_email_lower.endswith("@apache.org"):
-        name = "-"
         asf_uid = from_email_lower.split("@")[0]
     else:
         if ("via" in from_raw) and (from_email_lower.replace("@", ".") in list_email):
             # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
-            name = from_raw[: from_raw.index("via") - 1]
             if cc:
                 from_email_lower = util.email_from_uid(cc[-1]) or from_email_lower
         if from_email_lower in email_to_uid:
