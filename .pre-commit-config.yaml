@@ -105,6 +105,9 @@ repos:
         - 'pip-audit.requirements'
         - '--disable-pip'
         - '--no-deps'
+        # TODO: Remove when #940 is complete
+        - '--ignore-vuln'
+        - 'CVE-2026-4539'
 - repo: https://github.com/oxc-project/mirrors-oxlint
   rev: v1.56.0
   hooks:
