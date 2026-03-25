@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import cyclonedx.exception
 import cyclonedx.schema
+import cyclonedx.validation
 import cyclonedx.validation.json
 
 from .utilities import get_pointer
@@ -35,19 +36,19 @@ if TYPE_CHECKING:
 
 def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
     args = [
-        "cyclonedx",
-        "validate",
-        "--fail-on-errors",
-        "--input-format",
-        "json",
-        "--input-file",
+        'cyclonedx',
+        'validate',
+        '--fail-on-errors',
+        '--input-format',
+        bundle_value.source_type,
+        '--input-file',
         bundle_value.path.as_posix(),
     ]
     env = os.environ.copy()
-    env["DOTNET_GCHeapHardLimitSOH"] = "0x03000000"
-    env["DOTNET_GCHeapHardLimitLOH"] = "0x01000000"
-    env["DOTNET_GCHeapHardLimitPOH"] = "0x01000000"
-    env["DOTNET_GCHeapCount"] = "1"
+    env['DOTNET_GCHeapHardLimitSOH'] = '0x03000000'
+    env['DOTNET_GCHeapHardLimitLOH'] = '0x01000000'
+    env['DOTNET_GCHeapHardLimitPOH'] = '0x01000000'
+    env['DOTNET_GCHeapCount'] = '1'
     proc = subprocess.run(
         args,
         text=True,
@@ -55,7 +56,7 @@ def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
         env=env,
     )
     if proc.returncode != 0:
-        err = proc.stdout.strip() or proc.stderr.strip() or "cyclonedx failed"
+        err = proc.stdout.strip() or proc.stderr.strip() or 'cyclonedx failed'
         return err.splitlines()
     return None
 
@@ -63,7 +64,7 @@ def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
 def validate_py(
     bundle_value: models.bundle.Bundle,
 ) -> Iterable[cyclonedx.validation.json.JsonValidationError] | None:
-    json_sv = get_pointer(bundle_value.doc, "/specVersion")
+    json_sv = get_pointer(bundle_value.doc, '/specVersion')
     schema_version = cyclonedx.schema.SchemaVersion.V1_6
     if isinstance(json_sv, str):
         schema_version = cyclonedx.schema.SchemaVersion.from_version(json_sv)

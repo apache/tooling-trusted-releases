@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 import urllib.parse
+from typing import TYPE_CHECKING
 
 import aiohttp
 import yyjson
@@ -26,6 +27,11 @@ import yyjson
 from . import constants, models
 from .maven import cache_read, cache_write
 from .utilities import get_pointer
+
+if TYPE_CHECKING:
+    from cyclonedx.model.component import Component
+
+    from .models.bundle import Bundle
 
 
 def assemble_component_identifier(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
@@ -234,7 +240,7 @@ def assemble_metadata_timestamp(doc: yyjson.Document, patch_ops: models.patch.Pa
 
 
 def ntia_2021_issues(
-    bom_value: models.bom.Bom,
+    bundle: Bundle,
 ) -> tuple[list[models.conformance.Missing], list[models.conformance.Missing]]:
     # 1. Supplier
     # ECMA-424 1st edition says that this is the supplier of the primary component
@@ -270,13 +276,15 @@ def ntia_2021_issues(
 
     warnings: list[models.conformance.Missing] = []
     errors: list[models.conformance.Missing] = []
+    bom_value = bundle.bom
+    original_metadata = bundle.doc.get_pointer("/metadata")
 
-    if bom_value.metadata is not None:
+    if bom_value.metadata:
         if bom_value.metadata.supplier is None:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_SUPPLIER))
 
         if bom_value.metadata.component is not None:
-            if bom_value.metadata.component.name is None:
+            if not bom_value.metadata.component.name:
                 errors.append(
                     models.conformance.MissingComponentProperty(property=models.conformance.ComponentProperty.NAME)
                 )
@@ -299,19 +307,19 @@ def ntia_2021_issues(
         else:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_COMPONENT))
 
-        if bom_value.metadata.author is None:
+        if len(bom_value.metadata.authors) < 1:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_AUTHOR))
-
-        if bom_value.metadata.timestamp is None:
+        if original_metadata.get("timestamp") is None:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_TIMESTAMP))
     else:
         errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA))
 
-    for index, component in enumerate(bom_value.components or []):
+    components: list[Component] = list(bom_value.components)
+    for index, component in enumerate(components):
         component_type = component.type
         component_friendly_name = component.name
-        if component_type is not None:
-            component_friendly_name = f"{component_type}: {component_friendly_name}"
+        if component_type:
+            component_friendly_name = f"{component_type.value}: {component_friendly_name}"
         if component.supplier is None:
             errors.append(
                 models.conformance.MissingComponentProperty(
@@ -321,7 +329,7 @@ def ntia_2021_issues(
                 )
             )
 
-        if component.name is None:
+        if not component.name:
             errors.append(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.NAME,
@@ -330,7 +338,7 @@ def ntia_2021_issues(
                 )
             )
 
-        if component.version is None:
+        if not component.version:
             errors.append(
                 models.conformance.MissingComponentProperty(
                     property=models.conformance.ComponentProperty.VERSION,

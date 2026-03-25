@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 @get.typed
 async def selected(
     session: web.Committer,
-    _compose: Literal["compose"],
+    _compose: Literal['compose'],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse | str:
@@ -62,7 +62,7 @@ async def selected(
             version=str(version_key),
             _committee=True,
             _project_release_policy=True,
-        ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        ).demand(base.ASFQuartException('Release does not exist', errorcode=404))
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         return await mapping.release_as_redirect(session, release)
 

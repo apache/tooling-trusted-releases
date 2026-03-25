@@ -20,6 +20,10 @@ import pathlib
 import sys
 
 import yyjson
+from cyclonedx.model.bom import Bom
+from cyclonedx.output import make_outputter
+from cyclonedx.schema import OutputFormat
+from cyclonedx.schema.schema import SCHEMA_VERSIONS
 
 from . import models, osv
 from .conformance import ntia_2021_issues
@@ -57,14 +61,21 @@ def command_merge(bundle: models.bundle.Bundle) -> None:
     patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
-        merged = bundle.doc.patch(yyjson.Document(patch_data))
-        print(merged.dumps())
+        output = bundle.doc.patch(yyjson.Document(patch_data))
     else:
-        print(bundle.doc.dumps())
+        output = bundle.doc
+    if bundle.source_type == "json":
+        print(output.dumps())
+    else:
+        bom: Bom | None = Bom.from_json(data=output.as_obj)
+        if bom is None:
+            print("Could not generate patched Bom")
+            return
+        print(make_outputter(bom, OutputFormat.XML, bundle.spec_version).output_as_string(indent=2))
 
 
 def command_missing(bundle: models.bundle.Bundle) -> None:
-    _warnings, errors = ntia_2021_issues(bundle.bom)
+    _warnings, errors = ntia_2021_issues(bundle)
     for error in errors:
         print(error)
 
@@ -145,7 +156,7 @@ def command_validate_py(bundle: models.bundle.Bundle) -> None:
 
 
 def command_where(bundle: models.bundle.Bundle) -> None:
-    _warnings, errors = ntia_2021_issues(bundle.bom)
+    _warnings, errors = ntia_2021_issues(bundle)
     for error in errors:
         match error:
             case models.conformance.MissingProperty():
@@ -154,11 +165,11 @@ def command_where(bundle: models.bundle.Bundle) -> None:
             case models.conformance.MissingComponentProperty():
                 components = bundle.bom.components
                 primary_component = bundle.bom.metadata.component if bundle.bom.metadata else None
-                if (error.index is not None) and (components is not None):
-                    print(components[error.index].model_dump_json(indent=2))
+                if (error.index is not None) and len(components) > 0:
+                    print(components[error.index].as_json(SCHEMA_VERSIONS[bundle.spec_version]))
                     print()
                 elif primary_component is not None:
-                    print(primary_component.model_dump_json(indent=2))
+                    print(primary_component.as_json(SCHEMA_VERSIONS[bundle.spec_version]))
                     print()
 
 
@@ -172,6 +183,8 @@ def main() -> None:  # noqa: C901
         sys.exit(1)
     path = pathlib.Path(sys.argv[2])
     bundle = path_to_bundle(path)
+    if not bundle:
+        raise RuntimeError("Could not load bundle")
     match sys.argv[1]:
         case "license":
             command_license(bundle)

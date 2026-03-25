@@ -164,3 +164,6 @@ select = [
 "atr/sbom/conformance.py" = ["C901"]
 "atr/sbom/licenses.py" = ["C901"]
 "migrations/env.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "single"

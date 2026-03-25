@@ -40,11 +40,27 @@ import atr.util as util
 _CONFIG: Final = config.get()
 
 
+class ConvertCycloneDX(schema.Strict):
+    """Arguments for the task to generate a CycloneDX SBOM."""
+
+    artifact_path: str = schema.description('Absolute path to the artifact')
+    output_path: str = schema.description('Absolute path where the generated SBOM JSON should be written')
+    revision: safe.RevisionNumber = schema.description('Revision number')
+
+
 class GenerateCycloneDX(schema.Strict):
     """Arguments for the task to generate a CycloneDX SBOM."""
 
-    artifact_path: str = schema.description("Absolute path to the artifact")
-    output_path: str = schema.description("Absolute path where the generated SBOM JSON should be written")
+    artifact_path: str = schema.description('Absolute path to the artifact')
+    output_path: str = schema.description('Absolute path where the generated SBOM JSON should be written')
+
+
+class SBOMConversionError(Exception):
+    """Custom exception for SBOM conversion failures."""
+
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.details = details or {}
 
 
 class SBOMGenerationError(Exception):
@@ -70,40 +86,40 @@ class SBOMScoringError(Exception):
 
 
 class FileArgs(schema.Strict):
-    project_key: safe.ProjectKey = schema.description("Project name")
-    version_key: safe.VersionKey = schema.description("Version name")
-    revision_number: safe.RevisionNumber = schema.description("Revision number")
-    file_path: safe.RelPath = schema.description("Relative path to the SBOM file")
+    project_key: safe.ProjectKey = schema.description('Project name')
+    version_key: safe.VersionKey = schema.description('Version name')
+    revision_number: safe.RevisionNumber = schema.description('Revision number')
+    file_path: safe.RelPath = schema.description('Relative path to the SBOM file')
     asf_uid: str | None = None
 
 
 class ScoreArgs(FileArgs):
-    previous_release_version: safe.VersionKey | None = schema.description("Previous release version")
+    previous_release_version: safe.VersionKey | None = schema.description('Previous release version')
 
 
 @checks.with_model(FileArgs)
 async def augment(args: FileArgs) -> results.Results | None:
-    project_str = str(args.project_key)
-    version_str = str(args.version_key)
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir() / project_str / version_str / revision_str
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
-        raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
+        raise SBOMScoringError('Revision directory does not exist', {'base_dir': str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
+    if not (full_path_str.endswith('.cdx.json') and await aiofiles.os.path.isfile(full_path)):
+        raise SBOMScoringError('SBOM file does not exist', {'file_path': path_str})
     # Read from the old revision
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScoringError('Could not load bundle')
     patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
     new_full_path: pathlib.Path | None = None
     new_full_path_str: str | None = None
     new_version = None
     if patch_ops:
-        new_version, merged = sbom.utilities.apply_patch("augment", revision_str, bundle, patch_ops)
-        description = "SBOM augmentation through web interface"
+        new_version, merged = sbom.utilities.apply_patch('augment', revision_str, bundle, patch_ops)
+        description = 'SBOM augmentation through web interface'
         async with storage.write(args.asf_uid) as write:
             wacp = await write.as_project_committee_participant(args.project_key)
 
@@ -112,20 +128,35 @@ async def augment(args: FileArgs) -> results.Results | None:
                 new_full_path = path / path_str
                 new_full_path_str = str(new_full_path)
                 # Write to the new revision
-                log.info(f"Writing augmented SBOM to {new_full_path_str}")
+                log.info(f'Writing augmented SBOM to {new_full_path_str}')
                 await aiofiles.os.remove(new_full_path)
-                async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
+                async with aiofiles.open(new_full_path, 'w', encoding='utf-8') as f:
                     await f.write(merged.dumps())
 
             await wacp.revision.create_revision_with_quarantine(
-                args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
+                args.project_key, args.version_key, args.asf_uid or 'unknown', description=description, modify=modify
             )
 
     return results.SBOMAugment(
-        kind="sbom_augment",
+        kind='sbom_augment',
         path=(new_full_path_str if (new_full_path_str is not None) else full_path_str),
         bom_version=new_version,
     )
+
+
+@checks.with_model(ConvertCycloneDX)
+async def convert_cyclonedx(args: ConvertCycloneDX) -> results.Results | None:
+    """Generate a JSON CycloneDX SBOM from a given XML SBOM."""
+    try:
+        result_data = await _convert_cyclonedx_core(args.artifact_path, args.output_path, str(args.revision))
+        log.info(f'Successfully converted CycloneDX SBOM for {args.artifact_path}')
+        msg = result_data['message']
+        if not isinstance(msg, str):
+            raise SBOMConversionError(f'Invalid message type: {type(msg)}')
+        return results.SBOMConvert(kind='sbom_convert', path=args.output_path, bom_version=result_data.get('version'))
+    except (archives.ExtractionError, SBOMGenerationError) as e:
+        log.error(f'SBOM conversion failed for {args.artifact_path}: {e}')
+        raise
 
 
 @checks.with_model(GenerateCycloneDX)
@@ -133,16 +164,16 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
     """Generate a CycloneDX SBOM for the given artifact and write it to the output path."""
     try:
         result_data = await _generate_cyclonedx_core(args.artifact_path, args.output_path)
-        log.info(f"Successfully generated CycloneDX SBOM for {args.artifact_path}")
-        msg = result_data["message"]
+        log.info(f'Successfully generated CycloneDX SBOM for {args.artifact_path}')
+        msg = result_data['message']
         if not isinstance(msg, str):
-            raise SBOMGenerationError(f"Invalid message type: {type(msg)}")
+            raise SBOMGenerationError(f'Invalid message type: {type(msg)}')
         return results.SBOMGenerateCycloneDX(
-            kind="sbom_generate_cyclonedx",
+            kind='sbom_generate_cyclonedx',
             msg=msg,
         )
     except (archives.ExtractionError, SBOMGenerationError) as e:
-        log.error(f"SBOM generation failed for {args.artifact_path}: {e}")
+        log.error(f'SBOM generation failed for {args.artifact_path}: {e}')
         raise
 
 
@@ -153,12 +184,14 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
     base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
-        raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
+        raise SBOMScanningError('Revision directory does not exist', {'base_dir': str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScanningError("SBOM file does not exist", {"file_path": path_str})
+    if not (full_path_str.endswith('.cdx.json') and await aiofiles.os.path.isfile(full_path)):
+        raise SBOMScanningError('SBOM file does not exist', {'file_path': path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScanningError('Could not load bundle')
     vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
     patch_ops = await sbom.utilities.bundle_to_vuln_patch(bundle, vulnerabilities)
     components = []
@@ -174,8 +207,8 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
 
     new_full_path: pathlib.Path | None = None
     new_full_path_str: str | None = None
-    new_version, merged = sbom.utilities.apply_patch("osv-scan", revision_str, bundle, patch_ops)
-    description = "SBOM vulnerability scan through web interface"
+    new_version, merged = sbom.utilities.apply_patch('osv-scan', revision_str, bundle, patch_ops)
+    description = 'SBOM vulnerability scan through web interface'
     async with storage.write(args.asf_uid) as write:
         wacp = await write.as_project_committee_participant(args.project_key)
 
@@ -184,17 +217,17 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
             new_full_path = path / str(args.file_path)
             new_full_path_str = str(new_full_path)
             # Write to the new revision
-            log.info(f"Writing updated SBOM to {new_full_path_str}")
+            log.info(f'Writing updated SBOM to {new_full_path_str}')
             await aiofiles.os.remove(new_full_path)
-            async with aiofiles.open(new_full_path, "w", encoding="utf-8") as f:
+            async with aiofiles.open(new_full_path, 'w', encoding='utf-8') as f:
                 await f.write(merged.dumps())
 
         await wacp.revision.create_revision_with_quarantine(
-            args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
+            args.project_key, args.version_key, args.asf_uid or 'unknown', description=description, modify=modify
         )
 
     return results.SBOMOSVScan(
-        kind="sbom_osv_scan",
+        kind='sbom_osv_scan',
         project_key=args.project_key,
         version_key=args.version_key,
         revision_number=args.revision_number,
@@ -212,16 +245,16 @@ async def score_qs(args: FileArgs) -> results.Results | None:
 
     base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
     if not await aiofiles.os.path.isdir(base_dir):
-        raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
+        raise SBOMScoringError('Revision directory does not exist', {'base_dir': str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
+    if not (full_path_str.endswith('.cdx.json') and await aiofiles.os.path.isfile(full_path)):
+        raise SBOMScoringError('SBOM file does not exist', {'file_path': path_str})
     proc = await asyncio.create_subprocess_exec(
-        "sbomqs",
-        "score",
+        'sbomqs',
+        'score',
         full_path.name,
-        "--json",
+        '--json',
         cwd=str(full_path.parent),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -230,12 +263,12 @@ async def score_qs(args: FileArgs) -> results.Results | None:
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
     if proc.returncode != 0:
         raise SBOMScoringError(
-            "sbomqs command failed",
-            {"returncode": proc.returncode, "stderr": stderr.decode("utf-8", "ignore")},
+            'sbomqs command failed',
+            {'returncode': proc.returncode, 'stderr': stderr.decode('utf-8', 'ignore')},
         )
-    report_obj = results.SbomQsReport.model_validate(json.loads(stdout.decode("utf-8")))
+    report_obj = results.SbomQsReport.model_validate(json.loads(stdout.decode('utf-8')))
     return results.SBOMQsScore(
-        kind="sbom_qs_score",
+        kind='sbom_qs_score',
         project_key=args.project_key,
         version_key=args.version_key,
         revision_number=args.revision_number,
@@ -253,14 +286,16 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     if args.previous_release_version is not None:
         previous_base_dir = paths.get_finished_dir_for(args.project_key, args.previous_release_version)
     if not await aiofiles.os.path.isdir(base_dir):
-        raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
+        raise SBOMScoringError('Revision directory does not exist', {'base_dir': str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
-        raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
+    if not (full_path_str.endswith('.cdx.json') and await aiofiles.os.path.isfile(full_path)):
+        raise SBOMScoringError('SBOM file does not exist', {'file_path': path_str})
     bundle = sbom.utilities.path_to_bundle(full_path)
+    if not bundle:
+        raise SBOMScoringError('Could not load bundle')
     version, properties = sbom.utilities.get_props_from_bundle(bundle)
-    warnings, errors = sbom.conformance.ntia_2021_issues(bundle.bom)
+    warnings, errors = sbom.conformance.ntia_2021_issues(bundle)
     # TODO: Could update the ATR version with a constant showing last change to the augment/scan
     #  tools so we know if it's outdated
     outdated = sbom.tool.plugin_outdated_version(bundle.bom)
@@ -287,7 +322,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
             prev_vulnerabilities = sbom.osv.vulns_from_bundle(previous_bundle)
 
     return results.SBOMToolScore(
-        kind="sbom_tool_score",
+        kind='sbom_tool_score',
         project_key=args.project_key,
         version_key=args.version_key,
         revision_number=args.revision_number,
@@ -302,7 +337,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
         vulnerabilities=[v.model_dump_json() for v in vulnerabilities],
         prev_licenses=[w.model_dump_json() for w in prev_licenses] if prev_licenses else None,
         prev_vulnerabilities=[v.model_dump_json() for v in prev_vulnerabilities] if prev_vulnerabilities else None,
-        atr_props=properties,
+        atr_props=[{p.name: p.value or ''} for p in properties],
         cli_errors=cli_errors,
     )
 
@@ -310,9 +345,9 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
 def _extracted_dir(temp_dir: str) -> str | None:
     # Loop through all the dirs in temp_dir
     extract_dir = None
-    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
+    log.info(f'Checking directories in {temp_dir}: {os.listdir(temp_dir)}')
     for dir_name in os.listdir(temp_dir):
-        if dir_name.startswith("."):
+        if dir_name.startswith('.'):
             continue
         dir_path = os.path.join(temp_dir, dir_name)
         if os.path.isdir(dir_path):
@@ -325,13 +360,41 @@ def _extracted_dir(temp_dir: str) -> str | None:
     return extract_dir
 
 
-async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict[str, Any]:
-    """Core logic to generate CycloneDX SBOM on failure."""
-    log.info(f"Generating CycloneDX SBOM for {artifact_path} -> {output_path}")
+async def _convert_cyclonedx_core(artifact_path: str, output_path: str, revision_str: str) -> dict[str, Any]:
+    """Core logic to convert XML CycloneDX SBOM to JSON."""
+    log.info(f'Generating CycloneDX JSON SBOM for {artifact_path} -> {output_path}')
 
     # TODO: Should create a new revision here rather than in the caller
-    async with util.async_temporary_directory(prefix="cyclonedx_sbom_") as temp_dir:
-        log.info(f"Created temporary directory: {temp_dir}")
+    bundle = sbom.utilities.path_to_bundle(pathlib.Path(artifact_path))
+    if not bundle:
+        raise SBOMConversionError('Could not load bundle')
+    sbom.utilities.apply_patch('conversion to JSON', revision_str, bundle, [])
+    outputter = sbom.utilities.bundle_outputter(bundle)
+    text = outputter.output_as_string(indent=2)
+
+    try:
+        async with aiofiles.open(output_path, 'w', encoding='utf-8') as f:
+            await f.write(text)
+        log.info(f'Successfully wrote JSON SBOM to {output_path}')
+    except Exception as write_err:
+        log.exception(f'Failed to write SBOM JSON to {output_path}: {write_err}')
+        raise SBOMConversionError(f'Failed to write SBOM to {output_path}: {write_err}') from write_err
+
+    return {
+        'message': 'Successfully generated and saved CycloneDX SBOM',
+        'sbom': text,
+        'format': 'CycloneDX',
+        'version': str(bundle.bom.version),
+    }
+
+
+async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict[str, Any]:
+    """Core logic to generate CycloneDX SBOM on failure."""
+    log.info(f'Generating CycloneDX SBOM for {artifact_path} -> {output_path}')
+
+    # TODO: Should create a new revision here rather than in the caller
+    async with util.async_temporary_directory(prefix='cyclonedx_sbom_') as temp_dir:
+        log.info(f'Created temporary directory: {temp_dir}')
 
         # # Find and validate the root directory
         # try:
@@ -347,7 +410,7 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
 
         # Extract the archive to the temporary directory
         # TODO: Ideally we'd have task dependencies or archive caching
-        log.info(f"Extracting {artifact_path} to {temp_dir}")
+        log.info(f'Extracting {artifact_path} to {temp_dir}')
         extracted_size, _extracted_paths = await asyncio.to_thread(
             archives.extract,
             artifact_path,
@@ -355,22 +418,22 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
             max_size=_CONFIG.MAX_EXTRACT_SIZE,
             chunk_size=_CONFIG.EXTRACT_CHUNK_SIZE,
         )
-        log.info(f"Extracted {extracted_size} bytes")
+        log.info(f'Extracted {extracted_size} bytes')
 
         # Find the root directory
         if (extract_dir := _extracted_dir(str(temp_dir))) is None:
-            log.error("No root directory found in archive")
+            log.error('No root directory found in archive')
             return {
-                "valid": False,
-                "message": "No root directory found in archive",
-                "errors": [],
+                'valid': False,
+                'message': 'No root directory found in archive',
+                'errors': [],
             }
 
-        log.info(f"Using root directory: {extract_dir}")
+        log.info(f'Using root directory: {extract_dir}')
 
         # Run syft to generate the CycloneDX SBOM
-        syft_command = ["syft", extract_dir, "-o", "cyclonedx-json", "--enrich", "all", "--base-path", f"{temp_dir!s}"]
-        log.info(f"Running syft: {' '.join(syft_command)}")
+        syft_command = ['syft', extract_dir, '-o', 'cyclonedx-json', '--enrich', 'all', '--base-path', f'{temp_dir!s}']
+        log.info(f'Running syft: {" ".join(syft_command)}')
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -380,48 +443,48 @@ async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
-            stdout_str = stdout.decode("utf-8").strip() if stdout else ""
-            stderr_str = stderr.decode("utf-8").strip() if stderr else ""
+            stdout_str = stdout.decode('utf-8').strip() if stdout else ''
+            stderr_str = stderr.decode('utf-8').strip() if stderr else ''
 
             if process.returncode != 0:
-                log.error(f"syft command failed with code {process.returncode}")
-                log.error(f"syft stderr: {stderr_str}")
-                log.error(f"syft stdout: {stdout_str[:1000]}...")
+                log.error(f'syft command failed with code {process.returncode}')
+                log.error(f'syft stderr: {stderr_str}')
+                log.error(f'syft stdout: {stdout_str[:1000]}...')
                 raise SBOMGenerationError(
-                    f"syft command failed with code {process.returncode}",
-                    {"returncode": process.returncode, "stderr": stderr_str, "stdout": stdout_str[:1000]},
+                    f'syft command failed with code {process.returncode}',
+                    {'returncode': process.returncode, 'stderr': stderr_str, 'stdout': stdout_str[:1000]},
                 )
 
             # Parse the JSON output from syft
             try:
                 sbom_data = json.loads(stdout_str)
-                log.info(f"Successfully parsed syft output for {artifact_path}")
+                log.info(f'Successfully parsed syft output for {artifact_path}')
 
                 # Write the SBOM data to the specified output path
                 try:
-                    async with aiofiles.open(output_path, "w", encoding="utf-8") as f:
+                    async with aiofiles.open(output_path, 'w', encoding='utf-8') as f:
                         await f.write(json.dumps(sbom_data, indent=2))
-                    log.info(f"Successfully wrote SBOM to {output_path}")
+                    log.info(f'Successfully wrote SBOM to {output_path}')
                 except Exception as write_err:
-                    log.exception(f"Failed to write SBOM JSON to {output_path}: {write_err}")
-                    raise SBOMGenerationError(f"Failed to write SBOM to {output_path}: {write_err}") from write_err
+                    log.exception(f'Failed to write SBOM JSON to {output_path}: {write_err}')
+                    raise SBOMGenerationError(f'Failed to write SBOM to {output_path}: {write_err}') from write_err
 
                 return {
-                    "message": "Successfully generated and saved CycloneDX SBOM",
-                    "sbom": sbom_data,
-                    "format": "CycloneDX",
-                    "components": len(sbom_data.get("components", [])),
+                    'message': 'Successfully generated and saved CycloneDX SBOM',
+                    'sbom': sbom_data,
+                    'format': 'CycloneDX',
+                    'components': len(sbom_data.get('components', [])),
                 }
             except json.JSONDecodeError as e:
-                log.error(f"Failed to parse syft output as JSON: {e}")
+                log.error(f'Failed to parse syft output as JSON: {e}')
                 raise SBOMGenerationError(
-                    f"Failed to parse syft output: {e}",
-                    {"error": str(e), "syft_output": stdout_str[:1000]},
+                    f'Failed to parse syft output: {e}',
+                    {'error': str(e), 'syft_output': stdout_str[:1000]},
                 ) from e
 
         except TimeoutError:
-            log.error("syft command timed out after 5 minutes")
-            raise SBOMGenerationError("syft command timed out after 5 minutes")
+            log.error('syft command timed out after 5 minutes')
+            raise SBOMGenerationError('syft command timed out after 5 minutes')
         except FileNotFoundError:
-            log.error("syft command not found. Is it installed and in PATH?")
-            raise SBOMGenerationError("syft command not found")
+            log.error('syft command not found. Is it installed and in PATH?')
+            raise SBOMGenerationError('syft command not found')

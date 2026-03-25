@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 import semver
@@ -26,6 +25,8 @@ from . import maven, models, utilities
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from cyclonedx.model.bom import Bom, BomMetaData
 
 
 _KNOWN_TOOLS: Final[dict[str, models.tool.Tool]] = {
@@ -59,22 +60,17 @@ def outdated_version_core(
     return None
 
 
-def plugin_outdated_version(bom_value: models.bom.Bom) -> list[models.tool.Outdated] | None:
-    if bom_value.metadata is None:
+def plugin_outdated_version(bom_value: Bom) -> list[models.tool.Outdated] | None:
+    if _metadata_is_empty(bom_value.metadata):
         return [models.tool.OutdatedMissingMetadata()]
-    timestamp = bom_value.metadata.timestamp
-    if timestamp is None:
-        # This quite often isn't available
-        # We could use the file mtime, but that's extremely heuristic
-        # return OutdatedMissingTimestamp()
-        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = bom_value.metadata.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
     tools: list[Any] = []
     tools_value = bom_value.metadata.tools
     if isinstance(tools_value, list):
         tools = tools_value
     elif tools_value:
-        tools = tools_value.components or []
-        services = tools_value.services or []
+        tools = list(tools_value.components)
+        services = list(tools_value.services)
         tools.extend(services)
     errors = []
     for tool in tools:
@@ -102,3 +98,9 @@ def version_parse(version_str: str) -> semver.VersionInfo | None:
         return semver.VersionInfo.parse(version_str.lstrip("v"))
     except ValueError:
         return None
+
+
+def _metadata_is_empty(metadata: BomMetaData) -> bool:
+    if metadata.component is None and metadata.supplier is None:
+        return True
+    return False
