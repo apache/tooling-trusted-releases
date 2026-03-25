@@ -132,10 +132,6 @@ class ComposePolicyForm(form.Form):
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
-    strict_checking: form.Bool = form.label(
-        "Strict checking",
-        "If enabled, then the release cannot be voted upon unless all checks pass.",
-    )
 
 
 class VotePolicyForm(form.Form):

@@ -811,14 +811,6 @@ Thanks,
         return policy.source_excludes_rat or []
 
     @property
-    def policy_strict_checking(self) -> bool:
-        # This is bool, so it should never be None
-        # TODO: Should we make it nullable for defaulting?
-        if (policy := self.release_policy) is None:
-            return False
-        return policy.strict_checking
-
-    @property
     def policy_tagging_spec(self) -> dict[str, Any] | None:
         if (policy := self.release_policy) is None:
             return None
@@ -1311,7 +1303,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     source_excludes_rat: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    strict_checking: bool = sqlmodel.Field(default=False)
     github_repository_name: str = sqlmodel.Field(default="")
     github_repository_branch: str = sqlmodel.Field(default="")
     github_compose_workflow_path: list[str] = sqlmodel.Field(
@@ -1349,7 +1340,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             license_check_mode=self.license_check_mode,
             source_excludes_lightweight=list(self.source_excludes_lightweight),
             source_excludes_rat=list(self.source_excludes_rat),
-            strict_checking=self.strict_checking,
             github_repository_name=self.github_repository_name,
             github_repository_branch=self.github_repository_branch,
             github_compose_workflow_path=list(self.github_compose_workflow_path),

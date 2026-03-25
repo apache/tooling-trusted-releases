@@ -132,7 +132,6 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.file_tag_mappings = atr_tags_dict
-        release_policy.strict_checking = form.strict_checking
 
         await self.__commit_and_log(str(project_key))
 

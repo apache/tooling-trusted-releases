@@ -132,10 +132,6 @@ Two separate sets of exclusion patterns let you skip files during license scanni
 
 You can [read more about license check exclusions](license-checks#project-policy-exclusions).
 
-### Strict checking
-
-When _Strict checking_ is enabled, ATR prevents a release from being promoted to a vote unless all checks pass. This setting does not change what the checks themselves do or what they report.
-
 ### Committee signing keys
 
 Signature verification depends on the public signing keys registered for the project's committee. ATR verifies each `.asc` signature against the set of keys linked to the committee, and accepts a signature only when the signing key has a valid ASF UID association or matches the committee's private email address pattern `private@`_committee_`.apache.org`. If a key has not been imported for the committee, or if it lacks an ASF UID, signature checks will fail for artifacts signed with that key. Committee members manage these keys through the committee keys page, and ATR regenerates the `KEYS` file when keys change. See [signing artifacts](signing-artifacts) for background on how to create and register keys.

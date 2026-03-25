@@ -240,15 +240,6 @@ async def has_blocker_checks(
     return count > 0
 
 
-async def has_failing_checks(
-    release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
-) -> bool:
-    count = await count_checks_for_revision_by_status(
-        sql.CheckResultStatus.FAILURE, release, revision_number, caller_data
-    )
-    return count > 0
-
-
 async def latest_info(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
@@ -296,7 +287,7 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
         return task
 
 
-async def release_ready_for_vote(  # noqa: C901
+async def release_ready_for_vote(
     session: web.Committer,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -331,10 +322,6 @@ async def release_ready_for_vote(  # noqa: C901
 
     if await has_blocker_checks(release, revision, caller_data=data):
         return "This release candidate draft has blockers. Please fix the blockers before starting a vote."
-
-    if release.project.policy_strict_checking:
-        if await has_failing_checks(release, revision, caller_data=data):
-            return "This release candidate draft has errors. Please fix the errors before starting a vote."
 
     if not (user.is_committee_member(committee, session.uid) or session.is_admin):
         return "You must be on the PMC of this project to start a vote"

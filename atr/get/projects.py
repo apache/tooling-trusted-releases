@@ -358,7 +358,6 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
                 "source_excludes_lightweight": "\n".join(project.policy_source_excludes_lightweight),
                 "source_excludes_rat": "\n".join(project.policy_source_excludes_rat),
                 "file_tag_mappings": atr_tag_yaml,
-                "strict_checking": project.policy_strict_checking,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
