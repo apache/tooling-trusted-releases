@@ -401,7 +401,7 @@ def task_recipient_get(latest_vote_task: sql.Task) -> str | None:
         return None
     if not result.email_to:
         return None
-    return result.email_to[0]
+    return result.email_to
 
 
 async def tasks_ongoing(
