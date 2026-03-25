@@ -74,14 +74,14 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.locator('a[title="Start a vote on this draft"]').click()
     page.wait_for_load_state()
 
+    page.locator("input#vote_duration").fill("0")
     page.get_by_role("button", name="Send vote email").click()
     page.wait_for_url(f"**/vote/{PROJECT_KEY}/{VERSION_KEY}")
 
     helpers.visit(page, f"/vote/{PROJECT_KEY}/{VERSION_KEY}")
     _poll_for_vote_thread_link(page)
 
-    resolve_form = page.locator(f'form[action="/resolve/{PROJECT_KEY}/{VERSION_KEY}"]')
-    resolve_form.get_by_role("button", name="Resolve vote").click()
+    page.get_by_role("link", name="Resolve vote").click()
     page.wait_for_url(f"**/resolve/{PROJECT_KEY}/{VERSION_KEY}")
 
     page.locator('input[name="vote_result"][value="Passed"]').check()

@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 import quart
 
+import atr.db.interaction as interaction
 import atr.get.manual as manual
 import atr.get.resolve as resolve
 import atr.get.vote
@@ -29,6 +30,7 @@ import atr.htm as htm
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage as storage
 import atr.storage.writers.vote as vote
 
 
@@ -289,6 +291,149 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writer allows Cancelled even before the end of the vote."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
+
+    future_task = _latest_vote_task_with_end(24)
+    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+
+    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as cancelled", None))
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "cancelled",
+        "Chair",
+        "The vote has been cancelled.",
+    )
+
+    assert success == "Vote marked as cancelled"
+
+
+@pytest.mark.asyncio
+async def test_resolve_allows_early_passed_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writer allows Passed before the end of the vote when bypass is active."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
+
+    future_task = _latest_vote_task_with_end(24)
+    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
+
+    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+    )
+
+    assert success == "Vote marked as passed"
+
+
+@pytest.mark.asyncio
+async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writer allows Passed after the end of the vote has elapsed."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
+
+    past_task = _latest_vote_task_with_end(-24)
+    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=past_task))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+
+    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+    )
+
+    assert success == "Vote marked as passed"
+
+
+@pytest.mark.asyncio
+async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writer rejects Failed when the end of the vote has not been reached and no bypass is active."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.merge = mock.AsyncMock(return_value=release)
+
+    future_task = _latest_vote_task_with_end(24)
+    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+
+    with pytest.raises(storage.AccessError, match="unless it is cancelled"):
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "failed",
+            "Chair",
+            "The vote has failed.",
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writer rejects Passed when the end of the vote has not been reached and no bypass is active."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    future_task = _latest_vote_task_with_end(24)
+    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+
+    with pytest.raises(storage.AccessError, match="voting period"):
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "passed",
+            "Chair",
+            "The vote has passed.",
+        )
+
+
+@pytest.mark.asyncio
 async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     """send_resolution accepts cancelled and builds a CANCELLED subject."""
     data = _mock_data()
@@ -318,6 +463,59 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     assert queued_task.task_args["email_to"] == "dev@project.apache.org"
     assert queued_task.task_args["email_cc"] == ["private@project.apache.org"]
     assert queued_task.task_args["email_bcc"] == ["secretary@project.apache.org"]
+
+
+def test_vote_end_get_returns_datetime_for_valid_task() -> None:
+    """vote_end_get returns a UTC datetime for a valid VoteInitiate task."""
+    task = _latest_vote_task()
+    vote_end = interaction.vote_end_get(task)
+    assert vote_end is not None
+    assert vote_end.tzinfo is datetime.UTC
+    assert vote_end == datetime.datetime(2026, 3, 31, 12, 0, 0, tzinfo=datetime.UTC)
+
+
+def test_vote_end_get_returns_none_for_malformed_date() -> None:
+    """vote_end_get returns None when the date string is malformed."""
+    task = SimpleNamespace(
+        result=results.VoteInitiate(
+            kind="vote_initiate",
+            message="ok",
+            email_to="dev@project.apache.org",
+            vote_end="not-a-date",
+            subject="[VOTE]",
+            mid=None,
+            mail_send_warnings=[],
+        ),
+    )
+    assert interaction.vote_end_get(task) is None
+
+
+def test_vote_end_get_returns_none_for_missing_task() -> None:
+    """vote_end_get returns None when given None."""
+    assert interaction.vote_end_get(None) is None
+
+
+def test_vote_end_get_returns_none_for_non_vote_initiate() -> None:
+    """vote_end_get returns None for a task with a non-VoteInitiate result."""
+    task = SimpleNamespace(result="not a VoteInitiate")
+    assert interaction.vote_end_get(task) is None
+
+
+def test_vote_pass_fail_allowed_returns_false_before_vote_end() -> None:
+    """vote_pass_fail_allowed returns False when the end of the vote is in the future."""
+    task = _latest_vote_task_with_end(24)
+    assert interaction.vote_pass_fail_allowed(task) is False
+
+
+def test_vote_pass_fail_allowed_returns_false_for_missing_task() -> None:
+    """vote_pass_fail_allowed returns False (fail closed) when given None."""
+    assert interaction.vote_pass_fail_allowed(None) is False
+
+
+def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
+    """vote_pass_fail_allowed returns True when the end of the vote has elapsed."""
+    task = _latest_vote_task_with_end(-24)
+    assert interaction.vote_pass_fail_allowed(task) is True
 
 
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
@@ -357,6 +555,26 @@ def _latest_vote_task() -> SimpleNamespace:
             message="Vote announcement email sent successfully",
             email_to="dev@project.apache.org",
             vote_end="2026-03-31 12:00:00 UTC",
+            subject="[VOTE] Release project 1.0.0",
+            mid="vote-thread@apache.org",
+            mail_send_warnings=[],
+        ),
+        task_args={
+            "email_to": "dev@project.apache.org",
+            "email_cc": ["private@project.apache.org"],
+            "email_bcc": ["secretary@project.apache.org"],
+        },
+    )
+
+
+def _latest_vote_task_with_end(offset_hours: int) -> SimpleNamespace:
+    vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=offset_hours)
+    return SimpleNamespace(
+        result=results.VoteInitiate(
+            kind="vote_initiate",
+            message="Vote announcement email sent successfully",
+            email_to="dev@project.apache.org",
+            vote_end=vote_end.strftime("%Y-%m-%d %H:%M:%S UTC"),
             subject="[VOTE] Release project 1.0.0",
             mid="vote-thread@apache.org",
             mail_send_warnings=[],

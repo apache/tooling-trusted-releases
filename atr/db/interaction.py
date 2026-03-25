@@ -27,6 +27,7 @@ import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.attestable as attestable
+import atr.config as config
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -281,9 +282,6 @@ async def previews(project: sql.Project) -> list[sql.Release]:
 
 async def release_latest_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
     """Find the most recent VOTE_INITIATE task for this release."""
-    disallowed_statuses = [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]
-    if util.is_dev_environment():
-        disallowed_statuses = []
     via = sql.validate_instrumented_attribute
     async with db.ensure_session(caller_data) as data:
         query = (
@@ -291,8 +289,6 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
             .where(sql.Task.project_key == release.project_key)
             .where(sql.Task.version_key == release.version)
             .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
-            .where(via(sql.Task.status).notin_(disallowed_statuses))
-            .where(via(sql.Task.result).is_not(None))
             .order_by(via(sql.Task.added).desc())
             .limit(1)
         )
@@ -567,6 +563,30 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
     else:
         asf_uid = None
     return payload, asf_uid
+
+
+def vote_duration_bypass() -> bool:
+    return (config.get_mode() == config.Mode.Debug) or config.get().ALLOW_TESTS
+
+
+def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
+    if latest_vote_task is None:
+        return None
+    result = latest_vote_task.result
+    if not isinstance(result, results.VoteInitiate):
+        return None
+    try:
+        naive = datetime.datetime.strptime(result.vote_end, "%Y-%m-%d %H:%M:%S UTC")
+        return naive.replace(tzinfo=datetime.UTC)
+    except (ValueError, AttributeError):
+        return None
+
+
+def vote_pass_fail_allowed(latest_vote_task: sql.Task | None) -> bool:
+    vote_end = vote_end_get(latest_vote_task)
+    if vote_end is None:
+        return False
+    return datetime.datetime.now(datetime.UTC) >= vote_end
 
 
 async def wait_for_task(

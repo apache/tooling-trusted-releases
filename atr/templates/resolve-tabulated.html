@@ -106,10 +106,30 @@
   {% endif %}
   {% if resolve_form %}
     <h2>Resolve vote</h2>
-    <div class="border rounded bg-warning-subtle p-3 mb-3">
-      <i class="bi bi-info-circle me-1"></i>
-      <strong>NOTE:</strong> We are allowing a vote to be resolved early in order to facilitate testing. This is not the final behaviour.
-    </div>
+    {% if not pass_fail_allowed %}
+      {% if bypass_active %}
+        <div class="border rounded bg-warning-subtle p-3 mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>Debug bypass:</strong>
+          {% if vote_end %}
+            The voting period has not ended yet (ends {{ vote_end.strftime('%Y-%m-%d %H:%M:%S UTC') }}).
+          {% else %}
+            The end of the vote could not be determined.
+          {% endif %}
+          Resolving as passed or failed is allowed because debug/test mode is active.
+        </div>
+      {% else %}
+        <div class="border rounded bg-info-subtle p-3 mb-3">
+          <i class="bi bi-clock me-1"></i>
+          {% if vote_end %}
+            The voting period has not ended yet. The vote ends <strong>{{ vote_end.strftime('%Y-%m-%d %H:%M:%S UTC') }}</strong>.
+          {% else %}
+            The end of the vote could not be determined.
+          {% endif %}
+          Resolving as passed or failed is not available. You may still cancel the vote.
+        </div>
+      {% endif %}
+    {% endif %}
     <p>
       If, after careful manual review of the information above, you concur with the automatically determined outcome of the vote, please enter the resolution email body here. Sending this will send the email to a new vote result thread, and the vote will be resolved.
     </p>

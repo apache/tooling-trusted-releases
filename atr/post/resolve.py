@@ -49,14 +49,23 @@ async def selected(
         case "Cancelled":
             writer_result = "cancelled"
 
-    async with storage.write_as_project_committee_member(project_key) as wacm:
-        _release, voting_round, success_message, error_message = await wacm.vote.resolve(
-            project_key,
-            version_key,
-            writer_result,
-            session.fullname,
-            email_body,
+    try:
+        async with storage.write_as_project_committee_member(project_key) as wacm:
+            _release, voting_round, success_message, error_message = await wacm.vote.resolve(
+                project_key,
+                version_key,
+                writer_result,
+                session.fullname,
+                email_body,
+            )
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.resolve.selected,
+            error=str(e),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
+
     if error_message is not None:
         await quart.flash(error_message, "error")
 

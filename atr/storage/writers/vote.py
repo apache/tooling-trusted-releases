@@ -263,6 +263,15 @@ class CommitteeMember(CommitteeParticipant):
         if latest_vote_task is None:
             raise RuntimeError("No vote task found, unable to send resolution message.")
 
+        if (
+            (vote_result != "cancelled")
+            and (not interaction.vote_pass_fail_allowed(latest_vote_task))
+            and (not interaction.vote_duration_bypass())
+        ):
+            raise storage.AccessError(
+                "The vote cannot be resolved before the voting period has ended unless it is cancelled."
+            )
+
         voting_round = None
         if is_podling is True:
             voting_round = 1 if (podling_thread_id is None) else 2

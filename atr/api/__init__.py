@@ -950,16 +950,19 @@ async def publisher_vote_resolve(
         data.jwt,
         interaction.TrustedProjectPhase.VOTE,
     )
-    async with storage.write_as_project_committee_member(project.safe_key, asf_uid) as wacm:
-        # TODO: Get fullname and use instead of asf_uid
-        # TODO: Add resolution templating to atr.construct
-        _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
-            project.safe_key,
-            data.version,
-            data.resolution,
-            asf_uid,
-            f"The vote {data.resolution}.",
-        )
+    try:
+        async with storage.write_as_project_committee_member(project.safe_key, asf_uid) as wacm:
+            # TODO: Get fullname and use instead of asf_uid
+            # TODO: Add resolution templating to atr.construct
+            _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
+                project.safe_key,
+                data.version,
+                data.resolution,
+                asf_uid,
+                f"The vote {data.resolution}.",
+            )
+    except storage.AccessError as e:
+        raise exceptions.BadRequest(str(e))
 
     return models.api.PublisherVoteResolveResults(
         endpoint="/publisher/vote/resolve",
@@ -1521,16 +1524,19 @@ async def vote_resolve(
     """
     asf_uid = _jwt_asf_uid()
     # try:
-    async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
-        # TODO: Get fullname and use instead of asf_uid
-        # TODO: Add resolution templating to atr.construct
-        _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
-            data.project,
-            data.version,
-            data.resolution,
-            asf_uid,
-            f"The vote {data.resolution}.",
-        )
+    try:
+        async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
+            # TODO: Get fullname and use instead of asf_uid
+            # TODO: Add resolution templating to atr.construct
+            _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
+                data.project,
+                data.version,
+                data.resolution,
+                asf_uid,
+                f"The vote {data.resolution}.",
+            )
+    except storage.AccessError as e:
+        raise exceptions.BadRequest(str(e))
     # except Exception as e:
     #     import atr.log as log
     #     import traceback

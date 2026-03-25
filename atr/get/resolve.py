@@ -83,6 +83,10 @@ async def selected(
     else:
         fetch_error = "The vote thread could not yet be found."
 
+    pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
+    bypass_active = interaction.vote_duration_bypass()
+    vote_end = interaction.vote_end_get(latest_vote_task)
+
     defaults = {}
     if (committee is not None) and (details is not None) and (thread_id is not None):
         defaults["email_body"] = tabulate.vote_resolution(
@@ -98,10 +102,16 @@ async def selected(
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
+    submit_label = "Resolve vote"
+    if pass_fail_allowed or bypass_active:
+        form_cls = shared.resolve.SubmitForm
+    else:
+        form_cls = shared.resolve.CancelSubmitForm
+
     resolve_form = atr.form.render(
-        model_cls=shared.resolve.SubmitForm,
+        model_cls=form_cls,
         action=util.as_url(post.resolve.selected, project_key=release.project.key, version_key=release.version),
-        submit_label="Resolve vote",
+        submit_label=submit_label,
         textarea_rows=24,
         defaults=defaults,
     )
@@ -115,4 +125,7 @@ async def selected(
         resolve_form=resolve_form,
         fetch_error=fetch_error,
         archive_url=archive_url,
+        vote_end=vote_end,
+        pass_fail_allowed=pass_fail_allowed,
+        bypass_active=bypass_active,
     )
