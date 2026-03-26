@@ -14,9 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import pathlib
 from typing import TYPE_CHECKING
 
+import aiofiles.os
 import htpy
+import quart_wtf.utils as utils
 
 import atr.db as db
 import atr.db.interaction as interaction
@@ -167,6 +170,23 @@ async def check(
         blocker_errors = await interaction.has_blocker_checks(release, revision_number)
 
     checks_summary_html = render_checks_summary(info, release.safe_project_key, release.safe_version_key)
+    move_file_html = _render_move_section(10)
+
+    csrf_token = utils.generate_csrf()
+    # Should be already validated, but check again
+    latest_revision_dir = paths.release_directory(release)
+    source_files_rel, target_dirs = await _sources_and_targets(latest_revision_dir)
+    safe_source_files_rel = [util.validate_path(f).as_posix() for f in sorted(source_files_rel)]
+    safe_target_dirs = [util.validate_path(d).as_posix() for d in sorted(target_dirs)]
+    scripts = htpy.fragment[
+        htpy.script(id="file-data", type="application/json")[util.json_for_script_element(safe_source_files_rel)],
+        htpy.script(id="dir-data", type="application/json")[util.json_for_script_element(safe_target_dirs)],
+        htpy.script(
+            id="main-script-data",
+            src=util.static_url("js/ts/finish-selected-move.js"),
+            **{"data-csrf-token": csrf_token},
+        )[""],
+    ]
 
     return await template.render(
         "check-selected.html",
@@ -204,6 +224,8 @@ async def check(
         can_vote=can_vote,
         can_resolve=can_resolve,
         checks_summary_html=checks_summary_html,
+        move_file_html=move_file_html,
+        scripts=str(scripts),
     )
 
 
@@ -262,6 +284,98 @@ def render_checks_summary(
 
 def _checker_display_name(checker: str) -> str:
     return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
+
+
+def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
+    """Render the move files section with JavaScript interaction."""
+    section = htm.Block()
+
+    section.h2["Move items to a different directory"]
+    section.p[
+        "You may ",
+        htm.strong["optionally"],
+        " move files between your directories here if you want change their location for the final release. "
+        "Note that files with associated metadata (e.g. ",
+        htm.code[".asc"],
+        " or ",
+        htm.code[".sha512"],
+        " files) are treated as a single unit and will be moved together if any one of them is selected for movement.",
+    ]
+
+    section.append(htm.div("#move-error-alert.alert.alert-danger.d-none", role="alert", **{"aria-live": "assertive"}))
+
+    left_card = htm.Block(htm.div, classes=".card.mb-4")
+    left_card.div(".card-header.bg-light")[htm.h3(".mb-0")["Select items to move"]]
+    left_card.div(".card-body")[
+        htpy.input(
+            "#file-filter.form-control.mb-2",
+            type="text",
+            placeholder="Search for an item to move...",
+        ),
+        htm.table(".table.table-sm.table-striped.border.mt-3")[htm.tbody("#file-list-table-body")],
+        htm.div("#file-list-more-info.text-muted.small.mt-1"),
+        htpy.button(
+            "#select-files-toggle-button.btn.btn-outline-secondary.w-100.mt-2",
+            type="button",
+        )["Select these files"],
+    ]
+
+    right_card = htm.Block(htm.div, classes=".card.mb-4")
+    right_card.div(".card-header.bg-light")[
+        htm.h3(".mb-0")[htm.span("#selected-file-name-title")["Select a destination for the file"]]
+    ]
+    right_card.div(".card-body")[
+        htpy.input(
+            "#dir-filter-input.form-control.mb-2",
+            type="text",
+            placeholder="Search for a directory to move to...",
+        ),
+        htm.table(".table.table-sm.table-striped.border.mt-3")[htm.tbody("#dir-list-table-body")],
+        htm.div("#dir-list-more-info.text-muted.small.mt-1"),
+    ]
+
+    section.form(".atr-canary")[
+        htm.div(".row")[
+            htm.div(".col-lg-6")[left_card.collect()],
+            htm.div(".col-lg-6")[right_card.collect()],
+        ],
+        htm.div(".mb-3")[
+            htpy.label(".form-label", for_="maxFilesInput")["Items to show per list:"],
+            htpy.input(
+                "#max-files-input.form-control.form-control-sm.w-25",
+                type="number",
+                value=str(max_files_to_show),
+                min="1",
+            ),
+        ],
+        htm.div("#current-move-selection-info.text-muted")["Please select a file and a destination."],
+        htm.div[htpy.button("#confirm-move-button.btn.btn-success.mt-2", type="button")["Move to selected directory"]],
+    ]
+
+    return section.collect()
+
+
+async def _sources_and_targets(latest_revision_dir: pathlib.Path) -> tuple[list[pathlib.Path], set[pathlib.Path]]:
+    source_items_rel: list[pathlib.Path] = []
+    target_dirs: set[pathlib.Path] = {pathlib.Path(".")}
+
+    async for item_rel_path in util.paths_recursive_all(latest_revision_dir):
+        current_parent = item_rel_path.parent
+        source_items_rel.append(item_rel_path)
+
+        while True:
+            target_dirs.add(current_parent)
+            if current_parent == pathlib.Path("."):
+                break
+            current_parent = current_parent.parent
+
+        item_abs_path = latest_revision_dir / item_rel_path
+        if await aiofiles.os.path.isfile(item_abs_path):
+            pass
+        elif await aiofiles.os.path.isdir(item_abs_path):
+            target_dirs.add(item_rel_path)
+
+    return source_items_rel, target_dirs
 
 
 def _warnings_from_vote_result(vote_task: sql.Task | None) -> list[str]:

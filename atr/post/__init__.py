@@ -18,6 +18,7 @@
 from typing import Final, Literal
 
 import atr.post.announce as announce
+import atr.post.compose as compose
 import atr.post.distribution as distribution
 import atr.post.draft as draft
 import atr.post.finish as finish
@@ -40,6 +41,7 @@ ROUTES_MODULE: Final[Literal[True]] = True
 
 __all__ = [
     "announce",
+    "compose",
     "distribution",
     "draft",
     "finish",

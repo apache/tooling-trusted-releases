@@ -175,6 +175,11 @@
       <a class="btn btn-primary"
          href="{{ as_url(get.distribution.stage_record, project_key=release.project.key, version_key=release.version) }}">Record a manual distribution</a>
     </p>
+    <div id="move-files-container">
+      {% if move_file_html %}
+        {{ move_file_html|safe }}
+      {% endif %}
+    </div>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>
     {% if info.ignored_errors or info.ignored_warnings %}
@@ -248,4 +253,7 @@
 {% block javascripts %}
   {{ super() }}
   <script src="{{ static_url('js/src/ongoing-tasks-poll.js') }}"></script>
+  {% if scripts %}
+    {{ scripts }}
+  {% endif %}
 {% endblock javascripts %}
