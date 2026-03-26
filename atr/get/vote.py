@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import datetime
 import enum
 import urllib.parse
 from typing import TYPE_CHECKING, Literal
@@ -116,7 +117,7 @@ async def render_options_page(
     archive_url = await _get_archive_url(release, session, latest_vote_task)
 
     page = htm.Block()
-    _render_header(page, release, show_resolve_section)
+    _render_header(page, release, show_resolve_section, latest_vote_task)
     _render_section_download(page, release, session, user_category)
     _render_section_checks(page, release, file_totals)
     await _render_section_vote(page, release, session, user_category, archive_url)
@@ -277,6 +278,29 @@ def _download_zip(release: sql.Release) -> htm.Element:
     ]
 
 
+def _format_vote_end(vote_end: datetime.datetime) -> str:
+    now = datetime.datetime.now(datetime.UTC)
+    timestamp = vote_end.strftime("%a %Y-%m-%d at %H:%M UTC")
+
+    remaining = vote_end - now
+    total_seconds = int(remaining.total_seconds())
+    if total_seconds <= 0:
+        return f"The vote ended on {timestamp}."
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    parts: list[str] = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if (days > 0) or (hours > 0):
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+
+    return f"The vote ends in {' '.join(parts)}, on {timestamp}."
+
+
 async def _get_archive_url(
     release: sql.Release, session: web.Committer | None, latest_vote_task: sql.Task | None
 ) -> str | None:
@@ -314,7 +338,9 @@ def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
     page.append(card.collect())
 
 
-def _render_header(page: htm.Block, release: sql.Release, show_resolve_section: bool) -> None:
+def _render_header(
+    page: htm.Block, release: sql.Release, show_resolve_section: bool, latest_vote_task: sql.Task | None
+) -> None:
     render.html_nav(
         page,
         back_url=util.as_url(root.index),
@@ -338,6 +364,10 @@ def _render_header(page: htm.Block, release: sql.Release, show_resolve_section: 
         " committee is currently voting on the release candidate for"
         f" {release.project.display_name} {release.version}.",
     ]
+
+    vote_end = interaction.vote_end_get(latest_vote_task)
+    if vote_end is not None:
+        page.p[_format_vote_end(vote_end)]
 
     page.p["To participate in this vote, please select your next step:"]
 
