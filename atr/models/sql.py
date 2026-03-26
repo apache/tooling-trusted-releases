@@ -214,6 +214,7 @@ class TaskType(enum.StrEnum):
     QUARANTINE_VALIDATE = "quarantine_validate"
     RAT_CHECK = "rat_check"
     SBOM_AUGMENT = "sbom_augment"
+    SBOM_CONVERT = "sbom_convert"
     SBOM_GENERATE_CYCLONEDX = "sbom_generate_cyclonedx"
     SBOM_OSV_SCAN = "sbom_osv_scan"
     SBOM_QS_SCORE = "sbom_qs_score"

@@ -96,6 +96,12 @@ async def bundle_to_vuln_patch(
     return patch_ops
 
 
+def bundle_outputter(bundle_value: models.bundle.Bundle) -> BaseOutput:
+    return make_outputter(
+        bom=bundle_value.bom, output_format=OutputFormat.JSON, schema_version=bundle_value.spec_version
+    )
+
+
 def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | None, list[dict[str, str]]]:
     severities = [
         {
