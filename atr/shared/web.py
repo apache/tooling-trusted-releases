@@ -322,7 +322,10 @@ def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
 
     right_card = htm.Block(htm.div, classes=".card.mb-4")
     right_card.div(".card-header.bg-light")[
-        htm.h3(".mb-0")[htm.span("#selected-file-name-title")["Select a destination for the file"]]
+        htm.h3(".mb-0")[
+            htm.span("#selected-file-name-title")["Select a destination for the file"],
+            htm.span(".text-muted.small")[" (enter a new directory name to create it)"],
+        ]
     ]
     right_card.div(".card-body")[
         htpy.input(
