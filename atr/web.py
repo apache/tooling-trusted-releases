@@ -99,15 +99,18 @@ class Committer:
                 return
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 
-    async def check_access_committee(self, committee_key: safe.CommitteeKey) -> None:
+    async def check_access_committee(self, committee_key: safe.CommitteeKey, die: bool = True) -> bool:
         if str(committee_key) not in self.committees:
             if self.is_admin:
                 # Admins can view all committees
                 # But we must warn them when the committee is not one of their own
                 # TODO: As above, this code is difficult to test locally
                 await quart.flash("This is not your committee, but you have access as an admin", "warning")
-                return
-            raise base.ASFQuartException("You do not have access to this committee", errorcode=403)
+                return True
+            if die:
+                raise base.ASFQuartException("You do not have access to this committee", errorcode=403)
+            return False
+        return True
 
     async def form_data(self) -> dict[str, Any]:
         if self.__form_data is None:

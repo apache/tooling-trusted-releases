@@ -2,7 +2,7 @@
 
 {%- block title -%}Committee ~ ATR{%- endblock title -%}
 
-{%- block description -%}Information regarding an Apachommittee.{%- endblock description -%}
+{%- block description -%}Information regarding an Apache committee.{%- endblock description -%}
 
 {% block content %}
   <h1>{{ committee.display_name }}</h1>
@@ -43,9 +43,11 @@
         <h3 class="mb-2">Signing keys</h3>
       </div>
       <div class="card-body">
-        <div class="mb-4">
-          <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary">Upload a KEYS file</a>
-        </div>
+        {%  if is_committee_member %}
+          <div class="mb-4">
+            <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary">Upload a KEYS file</a>
+          </div>
+        {% endif %}
         {% if committee.public_signing_keys %}
           <div class="table-responsive mb-2">
             <table class="table border table-striped table-sm">
@@ -69,10 +71,13 @@
               </tbody>
             </table>
           </div>
-          <p class="text-muted">
-            The <code>KEYS</code> file is automatically generated when you add or remove a key, but you can also use the form below to manually regenerate it.
-          </p>
-          {{ update_committee_keys_form }}
+
+          {%  if is_committee_member %}
+            <p class="text-muted">
+              The <code>KEYS</code> file is automatically generated when you add or remove a key, but you can also use the form below to manually regenerate it.
+            </p>
+            {{ update_committee_keys_form }}
+          {% endif %}
         {% else %}
           <p class="mb-4">No keys uploaded for this committee yet.</p>
         {% endif %}

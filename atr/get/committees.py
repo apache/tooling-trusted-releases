@@ -49,7 +49,7 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
 
 
 @get.typed
-async def view(_session: web.Public, _committees: Literal["committees"], name: safe.CommitteeKey) -> str:
+async def view(session: web.Public, _committees: Literal["committees"], name: safe.CommitteeKey) -> str:
     """
     URL: /committees/<name>
     """
@@ -61,6 +61,9 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
             _public_signing_keys=True,
         ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
     project_list = list(committee.projects)
+    committee_member = False
+    if isinstance(session, web.Committer):
+        committee_member = await session.check_access_committee(name, False)
     for project in project_list:
         # Workaround for the usual loading problem
         project.committee = committee
@@ -71,6 +74,7 @@ async def view(_session: web.Public, _committees: Literal["committees"], name: s
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
+        is_committee_member=committee_member,
         update_committee_keys_form=form.render(
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
