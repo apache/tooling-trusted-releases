@@ -16,7 +16,9 @@
 # under the License.
 
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Literal
+from typing import Literal
+
+import pydantic
 
 import atr.form as form
 import atr.models.safe as safe
@@ -24,20 +26,22 @@ import atr.web as web
 
 type Respond = Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]]
 
-type DELETE_DIR = Literal["DELETE_DIR"]
-type REMOVE_RC_TAGS = Literal["REMOVE_RC_TAGS"]
+type MOVE_FILE = Literal["MOVE_FILE"]
 
 
-class DeleteEmptyDirectoryForm(form.Form):
-    variant: DELETE_DIR = form.value(DELETE_DIR)
-    directory_to_delete: safe.RelPath = form.label("Directory to delete", widget=form.Widget.SELECT)
+class MoveFileForm(form.Form):
+    variant: MOVE_FILE = form.value(MOVE_FILE)
+    source_files: form.RelPathList = form.label("Files to move")
+    target_directory: safe.RelPath = form.label("Target directory")
 
+    @pydantic.model_validator(mode="after")
+    def validate_move(self) -> "MoveFileForm":
+        if not self.source_files:
+            raise ValueError("Please select at least one file to move.")
 
-class RemoveRCTagsForm(form.Empty):
-    variant: REMOVE_RC_TAGS = form.value(REMOVE_RC_TAGS)
-
-
-type FinishForm = Annotated[
-    DeleteEmptyDirectoryForm | RemoveRCTagsForm,
-    form.DISCRIMINATOR,
-]
+        target_dir_path = self.target_directory.as_path()
+        for source_path in self.source_files:
+            source = source_path.as_path()
+            if source.parent == target_dir_path:
+                raise ValueError(f"Target directory cannot be the same as the source directory for {source.name}.")
+        return self

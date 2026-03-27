@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import quart
@@ -34,7 +33,7 @@ async def selected(
     _compose: Literal["compose"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    move_form: shared.finish.MoveFileForm,
+    move_form: shared.compose.MoveFileForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
     URL: /compose/<project_key>/<version_key>
@@ -46,11 +45,11 @@ async def selected(
 
 
 async def _move_file_to_revision(
-    move_form: shared.finish.MoveFileForm,
+    move_form: shared.compose.MoveFileForm,
     session: web.Committer,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    respond: Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]],
+    respond: shared.compose.Respond,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     source_files_rel = move_form.source_files
     target_dir_rel = move_form.target_directory
@@ -91,7 +90,7 @@ async def _move_file_to_revision(
 
 def _respond_helper(
     session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, wants_json: bool
-) -> Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]]:
+) -> shared.compose.Respond:
     """Create a response helper function for the compose route."""
     import atr.get as get
 

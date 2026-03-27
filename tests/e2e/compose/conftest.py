@@ -75,6 +75,6 @@ def page_compose(compose_context: BrowserContext) -> Generator[Page]:
     """Navigate to the compose page with a fresh page for each test."""
     page = compose_context.new_page()
     helpers.visit(page, COMPOSE_URL)
-    page.get_by_role("cell", name=FILE_NAME, exact=True).wait_for(timeout=60000)
+    page.locator("#files-table-container").get_by_role("cell", name=FILE_NAME, exact=True).wait_for(timeout=60000)
     yield page
     page.close()

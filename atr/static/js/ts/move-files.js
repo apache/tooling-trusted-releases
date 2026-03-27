@@ -486,4 +486,4 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     renderAllLists();
 });
-//# sourceMappingURL=finish-selected-move.js.map
+//# sourceMappingURL=move-files.js.map
