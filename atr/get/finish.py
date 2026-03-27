@@ -23,10 +23,8 @@ from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
-import htpy
 import markupsafe
 import quart
-import quart_wtf.utils as utils
 
 import atr.analysis as analysis
 import atr.blueprints.get as get
@@ -71,9 +69,7 @@ async def selected(
     """
     await session.check_access(project_key)
     try:
-        (release, source_files_rel, target_dirs, deletable_dirs, rc_analysis, tasks) = await _get_page_data(
-            project_key, version_key
-        )
+        (release, deletable_dirs, rc_analysis, tasks) = await _get_page_data(project_key, version_key)
     except ValueError:
         async with db.session() as data:
             release_fallback = await data.release(
@@ -105,8 +101,6 @@ async def selected(
 
     return await _render_page(
         release=release,
-        source_files_rel=source_files_rel,
-        target_dirs=target_dirs,
         deletable_dirs=deletable_dirs,
         rc_analysis=rc_analysis,
         distribution_tasks=tasks,
@@ -156,9 +150,7 @@ async def _deletable_choices(
 
 async def _get_page_data(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
-) -> tuple[
-    sql.Release, list[pathlib.Path], set[pathlib.Path], list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]
-]:
+) -> tuple[sql.Release, list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]]:
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
@@ -189,11 +181,11 @@ async def _get_page_data(
         raise ValueError("Release is not in preview phase")
 
     latest_revision_dir = paths.release_directory(release)
-    source_files_rel, target_dirs = await _sources_and_targets(latest_revision_dir)
+    _, target_dirs = await _sources_and_targets(latest_revision_dir)
     deletable_dirs = await _deletable_choices(latest_revision_dir, target_dirs)
     rc_analysis_result = await _analyse_rc_tags(latest_revision_dir)
 
-    return release, source_files_rel, target_dirs, deletable_dirs, rc_analysis_result, tasks
+    return release, deletable_dirs, rc_analysis_result, tasks
 
 
 def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
@@ -293,79 +285,8 @@ def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) 
     return block.collect()
 
 
-def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
-    """Render the move files section with JavaScript interaction."""
-    section = htm.Block()
-
-    section.h2["Move items to a different directory"]
-    section.p[
-        "You may ",
-        htm.strong["optionally"],
-        " move files between your directories here if you want change their location for the final release. "
-        "Note that files with associated metadata (e.g. ",
-        htm.code[".asc"],
-        " or ",
-        htm.code[".sha512"],
-        " files) are treated as a single unit and will be moved together if any one of them is selected for movement.",
-    ]
-
-    section.append(htm.div("#move-error-alert.alert.alert-danger.d-none", role="alert", **{"aria-live": "assertive"}))
-
-    left_card = htm.Block(htm.div, classes=".card.mb-4")
-    left_card.div(".card-header.bg-light")[htm.h3(".mb-0")["Select items to move"]]
-    left_card.div(".card-body")[
-        htpy.input(
-            "#file-filter.form-control.mb-2",
-            type="text",
-            placeholder="Search for an item to move...",
-        ),
-        htm.table(".table.table-sm.table-striped.border.mt-3")[htm.tbody("#file-list-table-body")],
-        htm.div("#file-list-more-info.text-muted.small.mt-1"),
-        htpy.button(
-            "#select-files-toggle-button.btn.btn-outline-secondary.w-100.mt-2",
-            type="button",
-        )["Select these files"],
-    ]
-
-    right_card = htm.Block(htm.div, classes=".card.mb-4")
-    right_card.div(".card-header.bg-light")[
-        htm.h3(".mb-0")[htm.span("#selected-file-name-title")["Select a destination for the file"]]
-    ]
-    right_card.div(".card-body")[
-        htpy.input(
-            "#dir-filter-input.form-control.mb-2",
-            type="text",
-            placeholder="Search for a directory to move to...",
-        ),
-        htm.table(".table.table-sm.table-striped.border.mt-3")[htm.tbody("#dir-list-table-body")],
-        htm.div("#dir-list-more-info.text-muted.small.mt-1"),
-    ]
-
-    section.form(".atr-canary")[
-        htm.div(".row")[
-            htm.div(".col-lg-6")[left_card.collect()],
-            htm.div(".col-lg-6")[right_card.collect()],
-        ],
-        htm.div(".mb-3")[
-            htpy.label(".form-label", for_="maxFilesInput")["Items to show per list:"],
-            htpy.input(
-                "#max-files-input.form-control.form-control-sm.w-25",
-                type="number",
-                value=str(max_files_to_show),
-                min="1",
-            ),
-        ],
-        htm.div("#current-move-selection-info.text-muted")["Please select a file and a destination."],
-        htm.div[htpy.button("#confirm-move-button.btn.btn-success.mt-2", type="button")["Move to selected directory"]],
-    ]
-
-    return section.collect()
-
-
 async def _render_page(
     release: sql.Release,
-    source_files_rel: list,
-    target_dirs: set,
     deletable_dirs: list[tuple[str, str]],
     rc_analysis: RCTagAnalysisResult,
     distribution_tasks: Sequence[sql.Task],
@@ -405,9 +326,6 @@ async def _render_page(
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release))
 
-    # Move files section
-    page.append(_render_move_section(max_files_to_show=10))
-
     # Delete directory form
     if deletable_dirs:
         page.append(_render_delete_directory_form(deletable_dirs))
@@ -441,24 +359,6 @@ async def _render_page(
         }
     """
     page.style[markupsafe.Markup(page_styles)]
-
-    # JavaScript data
-    # TODO: Add htm.script
-    csrf_token = utils.generate_csrf()
-    # Should be already validated, but check again
-    safe_source_files_rel = [util.validate_path(f).as_posix() for f in sorted(source_files_rel)]
-    safe_target_dirs = [util.validate_path(d).as_posix() for d in sorted(target_dirs)]
-    page.append(
-        htpy.script(id="file-data", type="application/json")[util.json_for_script_element(safe_source_files_rel)]
-    )
-    page.append(htpy.script(id="dir-data", type="application/json")[util.json_for_script_element(safe_target_dirs)])
-    page.append(
-        htpy.script(
-            id="main-script-data",
-            src=util.static_url("js/ts/finish-selected-move.js"),
-            **{"data-csrf-token": csrf_token},
-        )[""]
-    )
 
     content = page.collect()
 

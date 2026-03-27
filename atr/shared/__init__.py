@@ -18,6 +18,7 @@
 from typing import Final
 
 import atr.shared.announce as announce
+import atr.shared.compose as compose
 import atr.shared.distribution as distribution
 import atr.shared.draft as draft
 import atr.shared.finish as finish
@@ -66,6 +67,7 @@ algorithms: Final[dict[int, str]] = {
 __all__ = [
     "algorithms",
     "announce",
+    "compose",
     "distribution",
     "draft",
     "finish",

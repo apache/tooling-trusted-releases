@@ -43,6 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
             timeoutObj = setTimeout(() => {
                 output.textContent = "";
                 outputContainer.classList.add("d-none");
+                clearInterval(intervalObj);
             }, 60000);
             intervalObj = setInterval(() => {
                 time = time - 1;

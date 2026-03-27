@@ -45,8 +45,6 @@ async def selected(
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
             return await _delete_empty_directory(delete_form, session, project_key, version_key, respond)
-        case shared.finish.MoveFileForm() as move_form:
-            return await _move_file_to_revision(move_form, session, project_key, version_key, respond)
         case shared.finish.RemoveRCTagsForm():
             return await _remove_rc_tags(session, project_key, version_key, respond)
 
@@ -72,50 +70,6 @@ async def _delete_empty_directory(
     if creation_error is not None:
         return await respond(400, creation_error)
     return await respond(200, f"Deleted empty directory '{dir_to_delete_rel}'.")
-
-
-async def _move_file_to_revision(
-    move_form: shared.finish.MoveFileForm,
-    session: web.Committer,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    respond: shared.finish.Respond,
-) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
-    source_files_rel = move_form.source_files
-    target_dir_rel = move_form.target_directory
-    try:
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_key)
-            creation_error, moved_files_names, skipped_files_names = await wacp.release.move_file(
-                project_key, version_key, source_files_rel, target_dir_rel
-            )
-
-        if creation_error is not None:
-            return await respond(409, creation_error)
-
-        response_messages = []
-        if moved_files_names:
-            response_messages.append(f"Moved {', '.join(moved_files_names)}")
-        if skipped_files_names:
-            response_messages.append(f"Skipped {', '.join(skipped_files_names)} (already in target directory)")
-
-        if not response_messages:
-            if not source_files_rel:
-                return await respond(400, "No source files specified for move.")
-            msg = f"No files were moved. {', '.join(skipped_files_names)} already in '{target_dir_rel}'."
-            return await respond(200, msg)
-
-        return await respond(200, ". ".join(response_messages) + ".")
-
-    except FileNotFoundError:
-        log.exception("File not found during move operation in new revision")
-        return await respond(400, "Error: Source file not found during move operation.")
-    except OSError as e:
-        log.exception("Error moving file in new revision")
-        return await respond(500, f"Error moving file: {e}")
-    except Exception as e:
-        log.exception("Unexpected error during file move")
-        return await respond(500, f"ERROR: {e!s}")
 
 
 async def _remove_rc_tags(

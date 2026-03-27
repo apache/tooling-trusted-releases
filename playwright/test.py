@@ -1152,7 +1152,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     start_time = time.monotonic()
     while True:
         go_to_path(page, compose_path)
-        file1_locator = page.get_by_role("cell", name=file1, exact=True)
+        file1_locator = page.locator("#files-table-container").get_by_role("cell", name=file1, exact=True)
         if file1_locator.count() > 0:
             break
         elapsed = time.monotonic() - start_time
@@ -1161,7 +1161,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
         time.sleep(1)
 
     logging.info(f"Found file: {file1}")
-    file2_locator = page.get_by_role("cell", name=file2, exact=True)
+    file2_locator = page.locator("#files-table-container").get_by_role("cell", name=file2, exact=True)
     expect(file2_locator).to_be_visible()
     logging.info(f"Found file: {file2}")
     logging.info("rsync upload test completed successfully")

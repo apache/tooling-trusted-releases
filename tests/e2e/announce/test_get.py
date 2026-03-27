@@ -19,19 +19,6 @@ import e2e.announce.helpers as helpers  # type: ignore[reportMissingImports]
 from playwright.sync_api import Page, expect
 
 
-def test_finish_move_form_populates_from_json(page_finish: Page) -> None:
-    """The finish move form should populate rows from script JSON data."""
-    file_option = page_finish.locator("#file-list-table-body input[type='checkbox'][data-item-path]").first
-    dir_option = page_finish.locator("#dir-list-table-body input[type='radio'][name='target-directory-radio']").first
-    expect(file_option).to_be_visible()
-    expect(dir_option).to_be_visible()
-
-    toggle_button = page_finish.locator("#select-files-toggle-button")
-    expect(toggle_button).to_have_text("Select these files")
-    toggle_button.click()
-    expect(toggle_button).to_have_text("Unselect all")
-
-
 def test_path_adds_leading_slash(page_announce: Page) -> None:
     """Paths without a leading '/' should have one added."""
     help_text = helpers.fill_path_suffix(page_announce, "apple/banana")
