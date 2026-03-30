@@ -59,8 +59,8 @@ import atr.manager as manager
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.preload as preload
+import atr.pubsub as pubsub
 import atr.ssh as ssh
-import atr.svn.pubsub as pubsub
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
 import atr.template as template
@@ -329,7 +329,7 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         if ssh_server:
             await ssh.server_stop(ssh_server)
 
-        if task := app.extensions.get("svn_listener"):
+        if task := app.extensions.get("pubsub_listener"):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -708,19 +708,19 @@ async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
     valid_pubsub_url = bool(parsed_pubsub_url and parsed_pubsub_url.scheme and parsed_pubsub_url.netloc)
 
     if valid_pubsub_url and pubsub_url and pubsub_user and pubsub_password:
-        log.info("Starting PubSub SVN listener")
-        listener = pubsub.SVNListener(
-            working_copy_root=conf.SVN_STORAGE_DIR,
+        log.info("Starting PubSub listener")
+        listener = pubsub.PubSubListener(
+            svn_working_copy_root=conf.SVN_STORAGE_DIR,
             url=pubsub_url,
             username=pubsub_user,
             password=pubsub_password,
         )
         task = asyncio.create_task(listener.start())
-        app.extensions["svn_listener"] = task
-        log.info("PubSub SVN listener task created")
+        app.extensions["pubsub_listener"] = task
+        log.info("PubSub listener task created")
     else:
         log.info(
-            "PubSub SVN listener not started: "
+            "PubSub listener not started: "
             f"pubsub_url={bool(valid_pubsub_url)} "
             f"pubsub_user={bool(pubsub_user)} "
             # Essential to use bool(...) here to avoid logging the password
