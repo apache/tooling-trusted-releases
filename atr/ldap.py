@@ -242,6 +242,10 @@ async def github_to_apache(github_numeric_uid: int) -> str:
     return ldap_params.results_list[0].uid[0]
 
 
+async def handle_update(payload: dict):
+    return
+
+
 async def is_active(asf_uid: str) -> bool:
     import atr.config as config
 

@@ -19,33 +19,33 @@ import asyncio
 import os
 import pathlib
 import urllib.parse
-from typing import TYPE_CHECKING, Final
+from typing import Any
 
 import asfpy.pubsub
 
+import atr.ldap as ldap
 import atr.log as log
-import atr.svn as svn
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-# TODO: Check that these prefixes are correct
-_WATCHED_PREFIXES: Final[tuple[str, ...]] = (
-    "/svn/dist/dev",
-    "/svn/dist/release",
-)
+import atr.svn.commits as commits
 
 
-class SVNListener:
+def is_ldap_payload(payload: dict[str, Any]) -> bool:
+    return "ldap" in payload.get("pubsub_topics", [])
+
+
+def is_commit_payload(payload: dict[str, Any]) -> bool:
+    return "commit" in payload.get("pubsub_topics", [])
+
+
+class PubSubListener:
     def __init__(
         self,
-        working_copy_root: os.PathLike | str,
+        svn_working_copy_root: os.PathLike | str,
         url: str,
         username: str,
         password: str,
-        topics: str = "commit/svn",
+        topics: str = "commit/svn,private/ldap",
     ) -> None:
-        self.working_copy_root = pathlib.Path(working_copy_root)
+        self.svn_working_copy_root = pathlib.Path(svn_working_copy_root)
         self.url = url
         self.username = username
         self.password = password
@@ -57,23 +57,23 @@ class SVNListener:
         # Or does asfpy.pubsub.listen() already do this?
         if not self.url:
             log.error("PubSub URL is not configured")
-            log.warning("SVNListener disabled: no URL provided")
+            log.warning("PubSubListener disabled: no URL provided")
             return
 
         if (not self.username) or (not self.password):
             log.error("PubSub credentials not configured")
-            log.warning("SVNListener disabled: missing credentials")
+            log.warning("PubSubListener disabled: missing credentials")
             return
 
         if not self.url.startswith("https://"):
             log.error(
                 f"PubSub URL must use HTTPS protocol: {self.url!r}. Example: 'https://pubsub.apache.org:2069'",
             )
-            log.warning("SVNListener disabled due to invalid URL")
+            log.warning("PubSubListener disabled due to invalid URL")
             return
 
         full_url = urllib.parse.urljoin(self.url, self.topics)
-        log.info(f"SVNListener starting with URL: {full_url}")
+        log.info(f"PubSubListener starting with URL: {full_url}")
 
         try:
             async for payload in asfpy.pubsub.listen(
@@ -84,40 +84,16 @@ class SVNListener:
                 if (payload is None) or ("stillalive" in payload):
                     continue
 
-                pubsub_path = str(payload.get("pubsub_path", ""))
-                if not pubsub_path.startswith(_WATCHED_PREFIXES):
-                    # Ignore commits outside dist/dev or dist/release
+                if is_commit_payload(payload):
+                    await commits.handle(payload, self.svn_working_copy_root)
+                elif is_ldap_payload(payload):
+                    await ldap.handle_update(payload)
+                else:
                     continue
-                log.debug(f"PubSub payload: {payload}")
-                await self._process_payload(payload)
         except asyncio.CancelledError:
-            log.info("SVNListener cancelled, shutting down gracefully")
+            log.info("PubSubListener cancelled, shutting down gracefully")
             raise
         except Exception as exc:
-            log.exception(f"SVNListener error: {exc}")
+            log.exception(f"PubSubListener error: {exc}")
         finally:
-            log.info("SVNListener.start() finished")
-
-    async def _process_payload(self, payload: dict) -> None:
-        """
-        Update each changed file in the local working copy.
-
-        Payload format that we listen to:
-            {
-              "commit": {
-                 "changed": ["/path/inside/repo/foo.txt", ...]
-              },
-              ...
-            }
-        """
-        changed: Sequence[str] = payload.get("commit", {}).get("changed", [])
-        for repo_path in changed:
-            prefix = next((p for p in _WATCHED_PREFIXES if repo_path.startswith(p)), "")
-            if not prefix:
-                continue
-            local_path = self.working_copy_root / repo_path[len(prefix) :].lstrip("/")
-            try:
-                await svn.update(local_path)
-                log.info(f"svn updated {local_path}")
-            except Exception as exc:
-                log.warning(f"failed svn update {local_path}: {exc}")
+            log.info("PubSubListener.start() finished")
