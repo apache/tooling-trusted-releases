@@ -362,8 +362,9 @@ async def distribution_record_from_workflow(
     URL: POST /distribute/record_from_workflow
 
     Record the result of an automated distribution from the GH tooling-actions workflow.
+    Validates the caller is a Github workflow, triggered by ATR itself
     """
-    _payload, asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
+    _payload, _asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
         data.publisher,
         data.jwt,
         data.asf_uid,
@@ -381,7 +382,7 @@ async def distribution_record_from_workflow(
         version=data.distribution_version,
         details=data.details,
     )
-    async with storage.write_as_committee_member(release.committee.key, asf_uid) as wacm:
+    async with storage.write_as_committee_member(release.committee.key, data.asf_uid) as wacm:
         _dist, _added, metadata = await wacm.distributions.record_from_data(
             release.safe_key, data.staging, dd, allow_retries=True
         )
@@ -543,6 +544,7 @@ async def key_add(
 
 
 @api.typed
+@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.KeyDeleteResults, 200)
@@ -970,6 +972,7 @@ async def publisher_vote_resolve(
 
 
 @api.typed
+@rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseAnnounceResults, 201)
@@ -1012,6 +1015,7 @@ async def release_announce(
 
 
 @api.typed
+@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseCreateResults, 201)
@@ -1159,6 +1163,8 @@ async def release_upload(
     URL: POST /release/upload
 
     Upload a file to a release.
+    This endpoint could theoretically be more rate limited but we may wish to allow a project/user to upload
+    multiple files in a short period of time.
     """
     asf_uid = _jwt_asf_uid()
 
@@ -1422,8 +1428,12 @@ async def update_distribution_task_status(
     URL: POST /distribute/task/status
 
     Update the status of a distribution task
+    Validates the caller is a Github workflow, triggered by ATR itself
     """
-    _payload, _asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    _payload, asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    # If UID is not none, this is a non-ATR workflow, which is unsupported.
+    if asf_uid is not None:
+        raise exceptions.Forbidden("This endpoint may only be called by ATR")
     async with db.session() as db_data:
         status = await db_data.workflow_status(
             workflow_id=data.workflow,
@@ -1507,6 +1517,7 @@ async def users_list(
 
 # TODO: Add endpoints to allow users to vote
 @api.typed
+@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.VoteResolveResults, 200)
@@ -1549,6 +1560,7 @@ async def vote_resolve(
 
 
 @api.typed
+@rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.VoteStartResults, 201)
