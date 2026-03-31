@@ -25,46 +25,46 @@ import atr.models.sql as sql
 def base_path_for_revision(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> pathlib.Path:
-    return pathlib.Path(get_unfinished_dir(), str(project_key), str(version_key), str(revision))
+    return get_unfinished_dir() / project_key / version_key / revision
 
 
-def get_archives_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().ARCHIVES_STORAGE_DIR)
+def get_archives_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().ARCHIVES_STORAGE_DIR))
 
 
-def get_attestable_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR)
+def get_attestable_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR))
 
 
-def get_downloads_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().DOWNLOADS_STORAGE_DIR)
+def get_downloads_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().DOWNLOADS_STORAGE_DIR))
 
 
-def get_finished_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().FINISHED_STORAGE_DIR)
+def get_finished_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().FINISHED_STORAGE_DIR))
 
 
 def get_finished_dir_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> pathlib.Path:
-    return pathlib.Path(config.get().FINISHED_STORAGE_DIR) / str(project_key) / str(version_key)
+    return get_finished_dir() / project_key / version_key
 
 
-def get_quarantined_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().STATE_DIR) / "quarantined"
+def get_quarantined_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "quarantined")
 
 
-def get_tmp_dir() -> pathlib.Path:
+def get_tmp_dir() -> safe.StatePath:
     # This must be on the same filesystem as the other state subdirectories
-    return pathlib.Path(config.get().STATE_DIR) / "temporary"
+    return safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "temporary")
 
 
-def get_unfinished_dir() -> pathlib.Path:
-    return pathlib.Path(config.get().UNFINISHED_STORAGE_DIR)
+def get_unfinished_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().UNFINISHED_STORAGE_DIR))
 
 
 def get_unfinished_dir_for(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> pathlib.Path:
-    return pathlib.Path(config.get().UNFINISHED_STORAGE_DIR) / str(project_key) / str(version_key) / str(revision)
+    return get_unfinished_dir() / project_key / version_key / revision
 
 
 def get_upload_staging_dir(session_token: str) -> pathlib.Path:
@@ -94,7 +94,7 @@ def release_directory_base(release: sql.Release) -> pathlib.Path:
     project_key = release.project.key
     version_key = release.version
 
-    base_dir: pathlib.Path | None = None
+    base_dir: safe.StatePath | None = None
     match phase:
         case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             base_dir = get_unfinished_dir()
@@ -120,9 +120,9 @@ def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
         ):
             if (path_revision := release.latest_revision_number) is None:
                 return None
-            path = get_unfinished_dir() / str(path_project) / str(path_version) / path_revision
+            path = get_unfinished_dir() / path_project / path_version / path_revision
         case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / str(path_project) / str(path_version)
+            path = get_finished_dir() / path_project / path_version
         # Do not add "case _" here
     return path
 
@@ -137,9 +137,9 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
             | sql.ReleasePhase.RELEASE_CANDIDATE
             | sql.ReleasePhase.RELEASE_PREVIEW
         ):
-            path = get_unfinished_dir() / str(path_project) / str(path_version)
+            path = get_unfinished_dir() / path_project / path_version
         case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / str(path_project) / str(path_version)
+            path = get_finished_dir() / path_project / path_version
         # Do not add "case _" here
     return path
 

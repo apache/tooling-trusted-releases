@@ -57,6 +57,9 @@ class SafeType:
     def __bool__(self) -> bool:
         return True
 
+    def __fspath__(self) -> str:
+        return self._value
+
     def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self._value == other._value
@@ -85,6 +88,30 @@ class SafeType:
         return {"type": "string"}
 
 
+class StatePath:
+    """An absolute path within the managed storage system."""
+
+    __slots__ = ("_path",)
+
+    def __init__(self, path: pathlib.Path) -> None:
+        if not path.is_absolute():
+            raise ValueError("Path must be absolute")
+        self._path = path
+
+    def __fspath__(self) -> str:
+        return str(self._path)
+
+    def __str__(self) -> str:
+        return str(self._path)
+
+    def __truediv__(self, other: str | pathlib.Path | SafeType) -> pathlib.Path:
+        return self._path / str(other) if isinstance(other, SafeType) else self._path / other
+
+    @property
+    def path(self) -> pathlib.Path:
+        return self._path
+
+
 class Alphanumeric(SafeType):
     @classmethod
     def _valid_chars(cls) -> frozenset[str]:
@@ -93,8 +120,7 @@ class Alphanumeric(SafeType):
 
 
 class CommitteeKey(Alphanumeric):
-    def _additional_validations(self, value: str):
-        pass
+    pass
 
 
 class Numeric(SafeType):
