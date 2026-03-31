@@ -67,7 +67,7 @@ def _config_secrets_get(
 
 
 class AppConfig:
-    ABSOLUTE_SESSION_MAX_SECONDS = decouple.config("ABSOLUTE_SESSION_MAX_SECONDS", default=60 * 60 * 72, cast=int)
+    ACCOUNT_CHECK_INTERVAL = decouple.config("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
     ALLOW_TESTS = decouple.config("ALLOW_TESTS", default=False, cast=bool)
     ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
     DISABLE_CHECK_CACHE = decouple.config("DISABLE_CHECK_CACHE", default=False, cast=bool)
@@ -81,6 +81,7 @@ class AppConfig:
     LOG_LEVEL = decouple.config("LOG_LEVEL", default="INFO", cast=lambda x: x.upper())
     LOG_JSON = decouple.config("LOG_JSON", default=False, cast=bool)
     LOG_PUBLIC_KEY = _config_secrets("LOG_PUBLIC_KEY", STATE_DIR, default=None, cast=str)
+    MAX_SESSION_AGE = decouple.config("MAX_SESSION_AGE", default=60 * 60 * 72, cast=int)
     PUBSUB_URL = _config_secrets("PUBSUB_URL", STATE_DIR, default=None, cast=str)
     PUBSUB_USER = _config_secrets("PUBSUB_USER", STATE_DIR, default=None, cast=str)
     PUBSUB_PASSWORD = _config_secrets("PUBSUB_PASSWORD", STATE_DIR, default=None, cast=str)

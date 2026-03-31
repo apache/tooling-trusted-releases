@@ -249,9 +249,12 @@ async def handle_update(payload: dict):
 async def is_active(asf_uid: str) -> bool:
     import atr.config as config
 
+    if config.get().ALLOW_TESTS:
+        if asf_uid == "test":
+            return True
+        if asf_uid == "test-banned":
+            return False
     if get_bind_credentials() is None:
-        return True
-    if config.get().ALLOW_TESTS and (asf_uid == "test"):
         return True
     account = await account_lookup(asf_uid)
     if account is None:
