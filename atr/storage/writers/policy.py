@@ -27,6 +27,7 @@ import atr.db as db
 import atr.hashes as hashes
 import atr.models as models
 import atr.storage as storage
+import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
@@ -321,7 +322,6 @@ def _normalise_trusted_publishing_update(
     release_policy: models.sql.ReleasePolicy,
     values: dict[str, Any],
 ) -> dict[str, Any]:
-    # TODO: Ideally we would use this function in the form validation too
     normalised_values: dict[str, Any] = {}
 
     github_repository_name = release_policy.github_repository_name
@@ -342,18 +342,7 @@ def _normalise_trusted_publishing_update(
             normalised_values[field] = paths
         all_paths.extend(paths)
 
-    if all_paths and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when any workflow path is set.")
-
-    if github_repository_branch and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
-
-    if github_repository_name and ("/" in github_repository_name):
-        raise ValueError("GitHub repository name must not contain a slash.")
-
-    for path in all_paths:
-        if not path.startswith(".github/workflows/"):
-            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+    util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
 
     return normalised_values
 
