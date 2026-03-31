@@ -14,7 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 import asyncio
 import base64
 import binascii
@@ -705,6 +704,25 @@ def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
     if negate:
         return not matched
     return matched
+
+
+def validate_trusted_publishing_constraints(
+    github_repository_name: str | None,
+    github_repository_branch: str | None,
+    all_paths: list[str],
+) -> None:
+    if all_paths and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when any workflow path is set.")
+
+    if github_repository_branch and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
+
+    if github_repository_name and ("/" in github_repository_name):
+        raise ValueError("GitHub repository name must not contain a slash.")
+
+    for path in all_paths:
+        if not path.startswith(".github/workflows/"):
+            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
 
 
 async def number_of_release_files(release: sql.Release) -> int:

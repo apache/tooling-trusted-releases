@@ -242,18 +242,7 @@ class TrustedPublishingPolicyForm(form.Form):
         ):
             all_paths.extend(p.strip() for p in (raw or "").split("\n") if p.strip())
 
-        if all_paths and (not github_repository_name):
-            raise ValueError("GitHub repository name is required when any workflow path is set.")
-
-        if github_repository_branch and (not github_repository_name):
-            raise ValueError("GitHub repository name is required when a GitHub branch is set.")
-
-        if github_repository_name and ("/" in github_repository_name):
-            raise ValueError("GitHub repository name must not contain a slash.")
-
-        for p in all_paths:
-            if not p.startswith(".github/workflows/"):
-                raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+        util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
 
         return self
 
