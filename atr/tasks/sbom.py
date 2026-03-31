@@ -253,8 +253,9 @@ async def score_qs(args: FileArgs) -> results.Results | None:
     proc = await asyncio.create_subprocess_exec(
         "sbomqs",
         "score",
-        full_path.name,
         "--json",
+        "--",
+        full_path.name,
         cwd=str(full_path.parent),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
