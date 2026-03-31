@@ -28,6 +28,7 @@ import pathlib
 import queue
 import stat
 import sys
+import time
 import urllib.parse
 import uuid
 from collections.abc import Iterable
@@ -54,6 +55,7 @@ import atr.db.interaction as interaction
 import atr.filters as filters
 import atr.form as form
 import atr.jwtoken as jwtoken
+import atr.ldap as ldap
 import atr.log as log
 import atr.manager as manager
 import atr.models.sql as sql
@@ -151,6 +153,7 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     # Our AppConfig.SECRET_KEY is None since we no longer support that setting
     asfquart_secret_key = app.secret_key
     app.config.from_object(app_config)
+    app.cfg["MAX_SESSION_AGE"] = app.config.get("MAX_SESSION_AGE", 0)
     app.secret_key = asfquart_secret_key
 
     if not util.is_dev_environment():
@@ -451,40 +454,34 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
         await _reset_request_log_context()
 
     @app.before_request
-    async def validate_session_lifetime() -> None:
-        """Enforce absolute maximum session lifetime per ASVS 7.3.2."""
+    async def validate_session() -> None:
+        """
+        Check account is still active and augment cookie with additional information
+        Note - absolute session max lifetime (MAX_SESSION_AGE) is handled by asfquart
+        """
         session = await asfquart.session.read()
-        if session is None:
+        if session is None or session.uid is None:
             return
 
         conf = config.get()
-        max_lifetime_seconds = conf.ABSOLUTE_SESSION_MAX_SECONDS
-        max_lifetime = datetime.timedelta(seconds=max_lifetime_seconds)
+        account_check_interval = conf.ACCOUNT_CHECK_INTERVAL
 
-        # Check if session has a creation timestamp in metadata
-        created_at_str = session.metadata.get("created_at")
+        # Check if session has a check timestamp in metadata
+        last_check = session.metadata.get("last_account_check")
+        current_time = time.time()
 
-        if created_at_str is None:
-            # First time seeing this session, record creation time
-            session.metadata["created_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+        if last_check is None or (current_time - last_check > account_check_interval):
+            # First time checking this session, record time
+            session.metadata["last_account_check"] = current_time
+            if not await ldap.is_active(str(session.uid)):
+                asfquart.session.clear()
+                raise base.ASFQuartException("Session expired", errorcode=401)
+
+        if last_check is None:
+            # If this was the first time we saw the session, make sure it contains the right data
             pmcs = util.cookie_pmcs_or_session_pmcs(session)
             session_data = util.session_cookie_data_from_client(session, pmcs)
             util.write_quart_session_cookie(session_data)
-            return
-
-        # Parse the creation timestamp and check session age
-        try:
-            created_at = datetime.datetime.fromisoformat(created_at_str)
-        except (ValueError, TypeError):
-            # Invalid timestamp, treat as expired
-            asfquart.session.clear()
-            raise base.ASFQuartException("Session expired", errorcode=401)
-
-        session_age = datetime.datetime.now(datetime.UTC) - created_at
-
-        if session_age > max_lifetime:
-            asfquart.session.clear()
-            raise base.ASFQuartException("Session expired", errorcode=401)
 
     @app.after_request
     async def log_request(response: quart.Response) -> quart.Response:

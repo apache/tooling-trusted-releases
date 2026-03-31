@@ -142,8 +142,9 @@ def lifecycle_03_add_file(page: Page, credentials: Credentials, version_key: str
     file_input_locator = page.locator('input[name="file_data"]')
     expect(file_input_locator).to_be_visible()
 
-    logging.info("Setting the input file to /run/tests/example.txt")
-    file_input_locator.set_input_files("/run/tests/example.txt")
+    example_txt = os.path.join(os.getcwd(), "example.txt")
+    logging.info(f"Setting the input file to {example_txt}")
+    file_input_locator.set_input_files(example_txt)
 
     logging.info("Locating and activating the add files button")
     submit_button_locator = page.get_by_role("button", name="Add files")
@@ -557,6 +558,10 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
         test_checks_06_targz,
         test_checks_07_cache,
     ]
+    tests["session"] = [
+        test_session_01_banned_user_is_rejected,
+        test_session_02_recheck_allows_active_user,
+    ]
 
     # Order between our tests must be preserved
     # Insertion order is reliable since Python 3.6
@@ -758,8 +763,9 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
     file_input_locator = page.locator('input[name="file_data"]')
     expect(file_input_locator).to_be_visible()
 
-    logging.info("Setting the input file to /run/tests/example.txt")
-    file_input_locator.set_input_files("/run/tests/example.txt")
+    example_txt = os.path.join(os.getcwd(), "example.txt")
+    logging.info(f"Setting the input file to {example_txt}")
+    file_input_locator.set_input_files(example_txt)
 
     logging.info("Locating and activating the add files button")
     submit_button_locator = page.get_by_role("button", name="Add files")
@@ -793,7 +799,7 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
 
 
 def test_openpgp_01_upload(page: Page, credentials: Credentials) -> None:
-    for key_path in glob.glob("/run/tests/*.asc"):
+    for key_path in glob.glob(os.path.join(os.getcwd(), "*.asc")):
         key_fingerprint_lower = os.path.basename(key_path).split(".")[0].lower()
         key_fingerprint_upper = key_fingerprint_lower.upper()
         break
@@ -1040,6 +1046,36 @@ def test_projects_03_add_project(page: Page, credentials: Credentials) -> None:
     logging.info("Project title confirmed on view page")
 
 
+def test_session_01_banned_user_is_rejected(page: Page, credentials: Credentials) -> None:
+    logging.info("Navigating to test login as banned user")
+    go_to_path(page, "/test/login-banned", wait=False)
+    wait_for_path(page, "/")
+
+    logging.info("Verifying that the session expired error is shown")
+    error_locator = page.locator("h2.text-danger-emphasis:has-text('Session expired')")
+    expect(error_locator).to_be_visible()
+    logging.info("Session expired error confirmed for banned user")
+
+    logging.info("Clearing cookies to recover from banned session")
+    page.context.clear_cookies()
+
+    logging.info("Re-logging in as normal test user")
+    go_to_path(page, "/test/login", wait=False)
+    wait_for_path(page, "/")
+    logging.info("Banned user rejection test completed successfully")
+
+
+def test_session_02_recheck_allows_active_user(page: Page, credentials: Credentials) -> None:
+    logging.info("Navigating to recheck-session to reset last_account_check to epoch")
+    go_to_path(page, "/test/recheck-session", wait=False)
+    wait_for_path(page, "/")
+
+    logging.info("Verifying that active user passes the re-check (no error heading)")
+    error_locator = page.locator("h2.text-danger-emphasis")
+    expect(error_locator).not_to_be_visible()
+    logging.info("Active user recheck test completed successfully")
+
+
 def test_ssh_01_add_key(page: Page, credentials: Credentials) -> None:
     logging.info("Starting SSH key addition test")
     go_to_path(page, "/keys")
@@ -1103,7 +1139,7 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     project_key = TEST_PROJECT
     version_key = "0.2"
     source_dir_rel = f"apache-{project_key}-{version_key}"
-    source_dir_abs = f"/run/tests/{source_dir_rel}"
+    source_dir_abs = os.path.join(os.getcwd(), source_dir_rel)
     file1 = f"apache-{project_key}-{version_key}.tar.gz"
     file2 = f"{file1}.sha512"
 
