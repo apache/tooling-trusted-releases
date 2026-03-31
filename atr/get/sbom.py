@@ -564,6 +564,7 @@ def _vulnerability_component_details_osv(
                 vuln_header.append(htm.span(".badge.bg-info.text-light")["new"])
 
         # cmarkgfm will refuse to write unsafe strings into the html
+        # audit_guidance CMARK_OPT_SAFE is the default option in cmarkgfm and it can't be set
         details = markupsafe.Markup(cmarkgfm.github_flavored_markdown_to_html(vuln.details))
         vuln_div = htm.div(".ms-3.mb-3.border-start.border-warning.border-3.ps-3")[
             htm.div(".d-flex.align-items-center.mb-2")[*vuln_header],
