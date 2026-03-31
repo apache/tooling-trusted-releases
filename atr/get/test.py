@@ -87,6 +87,54 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
 
 
 @get.typed
+async def test_login_banned(
+    _session: web.Public, _test_login_banned: Literal["test/login-banned"]
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/login-banned
+    """
+    if not config.get().ALLOW_TESTS:
+        return quart.abort(404)
+
+    session_data = atr.models.session.CookieData(
+        uid="test-banned",
+        fullname="Banned Test User",
+        pmcs=[],
+        projects=[],
+        isMember=False,
+        isChair=False,
+        roleaccount=False,
+        metadata={},
+    )
+
+    util.write_quart_session_cookie(session_data)
+    return await web.redirect(root.index)
+
+
+@get.typed
+async def test_recheck_session(
+    _session: web.Public, _test_recheck_session: Literal["test/recheck-session"]
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/recheck-session
+
+    Reset the last_account_check to epoch so the next request triggers a re-check.
+    """
+    if not config.get().ALLOW_TESTS:
+        return quart.abort(404)
+
+    import asfquart.session as asfquart_session
+
+    existing = await asfquart_session.read()
+    if existing is None:
+        raise base.ASFQuartException("No session to recheck", errorcode=400)
+
+    existing["metadata"]["last_account_check"] = 0
+    asfquart_session.write(existing)
+    return await web.redirect(root.index)
+
+
+@get.typed
 async def test_merge(
     session: web.Committer,
     _test_merge: Literal["test/merge"],

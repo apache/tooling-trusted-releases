@@ -16,6 +16,7 @@
 # under the License.
 
 import pathlib
+import unittest.mock as mock
 from typing import TYPE_CHECKING
 
 import pytest
@@ -33,10 +34,17 @@ class MockApp:
 
 
 class MockConfig:
-    def __init__(self, state_dir: pathlib.Path, ldap_bind_dn: str | None, ldap_bind_password: str | None):
-        self.STATE_DIR = str(state_dir)
+    def __init__(
+        self,
+        state_dir: pathlib.Path | None = None,
+        ldap_bind_dn: str | None = None,
+        ldap_bind_password: str | None = None,
+        allow_tests: bool = False,
+    ):
+        self.STATE_DIR = str(state_dir) if state_dir else ""
         self.LDAP_BIND_DN = ldap_bind_dn
         self.LDAP_BIND_PASSWORD = ldap_bind_password
+        self.ALLOW_TESTS = allow_tests
 
 
 @pytest.fixture
@@ -107,6 +115,66 @@ async def test_fetch_admin_users_returns_reasonable_count(ldap_configured: bool)
     admins = await ldap.fetch_admin_users()
     assert len(admins) > 1
     assert len(admins) < 100
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_true_when_ldap_not_configured(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: None)
+    assert await ldap.is_active("anyone") is True
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_true_for_test_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=True))
+    assert await ldap.is_active("test") is True
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_false_for_test_banned_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=True))
+    assert await ldap.is_active("test-banned") is False
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_false_when_account_not_found(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=False))
+    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=None))
+    assert await ldap.is_active("ghost") is False
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_true_for_active_account(monkeypatch: "MonkeyPatch"):
+    account = ldap.Result(dn="uid=alice,ou=people,dc=apache,dc=org", uid=["alice"])
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=False))
+    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=account))
+    assert await ldap.is_active("alice") is True
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_false_for_banned_account(monkeypatch: "MonkeyPatch"):
+    account = ldap.Result.model_validate(
+        {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
+    )
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=False))
+    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=account))
+    assert await ldap.is_active("bad") is False
+
+
+def test_is_banned_returns_false_for_account_without_flag():
+    account = ldap.Result(dn="uid=alice,ou=people,dc=apache,dc=org", uid=["alice"])
+    assert ldap.is_banned(account) is False
+
+
+def test_is_banned_returns_true_for_account_with_flag():
+    account = ldap.Result.model_validate(
+        {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
+    )
+    assert ldap.is_banned(account) is True
 
 
 def _skip_if_unavailable(ldap_configured: bool) -> None:
