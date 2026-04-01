@@ -131,7 +131,12 @@ async def _import_files_core(args: SvnImport) -> str:
             log.info(f"Removed temporary export directory: {temp_export_path}")
 
         result = await wacp.revision.create_revision_with_quarantine(
-            args.project_key, args.version_key, args.asf_uid, description=description, modify=modify
+            args.project_key,
+            args.version_key,
+            args.asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
         )
         if isinstance(result, sql.Quarantined):
             log.info(f"SVN import quarantined for {project_str}-{version_str}")

@@ -112,29 +112,6 @@ async def test_login_banned(
 
 
 @get.typed
-async def test_recheck_session(
-    _session: web.Public, _test_recheck_session: Literal["test/recheck-session"]
-) -> web.WerkzeugResponse:
-    """
-    URL: /test/recheck-session
-
-    Reset the last_account_check to epoch so the next request triggers a re-check.
-    """
-    if not config.get().ALLOW_TESTS:
-        return quart.abort(404)
-
-    import asfquart.session as asfquart_session
-
-    existing = await asfquart_session.read()
-    if existing is None:
-        raise base.ASFQuartException("No session to recheck", errorcode=400)
-
-    existing["metadata"]["last_account_check"] = 0
-    asfquart_session.write(existing)
-    return await web.redirect(root.index)
-
-
-@get.typed
 async def test_merge(
     session: web.Committer,
     _test_merge: Literal["test/merge"],
@@ -165,6 +142,7 @@ async def test_merge(
                     project_key,
                     version_key,
                     session.uid,
+                    allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
                     description="Test merge: prior revision",
                     modify=modify_prior,
                 )
@@ -173,6 +151,7 @@ async def test_merge(
             project_key,
             version_key,
             session.uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description="Test merge: new revision",
             modify=modify_new,
         )
@@ -217,6 +196,29 @@ async def test_multiple(_session: web.Public, _test_multiple: Literal["test/mult
     ]
 
     return await template.blank(title="Test multiple forms", content=forms_html)
+
+
+@get.typed
+async def test_recheck_session(
+    _session: web.Public, _test_recheck_session: Literal["test/recheck-session"]
+) -> web.WerkzeugResponse:
+    """
+    URL: /test/recheck-session
+
+    Reset the last_account_check to epoch so the next request triggers a re-check.
+    """
+    if not config.get().ALLOW_TESTS:
+        return quart.abort(404)
+
+    import asfquart.session as asfquart_session
+
+    existing = await asfquart_session.read()
+    if existing is None:
+        raise base.ASFQuartException("No session to recheck", errorcode=400)
+
+    existing["metadata"]["last_account_check"] = 0
+    asfquart_session.write(existing)
+    return await web.redirect(root.index)
 
 
 @get.typed

@@ -23,6 +23,7 @@ from typing import Final
 import pytest
 
 import atr.models.sql as sql
+import atr.storage.types as types
 import atr.storage.writers.revision as revision
 
 _QUARANTINE_TOKEN_ALPHABET: Final[str] = "qpzry9x8gf2tvdw0s3jn54khce6mua7b"
@@ -150,9 +151,86 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
 
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
-        result = await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        result = await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
 
     assert result is fake_revision
+
+
+@pytest.mark.asyncio
+async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.release_policy = None
+    release.release_policy = None
+    release.key = sql.release_key("proj", "1.0")
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    fake_revision = mock.MagicMock(spec=sql.Revision)
+
+    patches = [
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(
+            revision.attestable,
+            "paths_to_hashes_and_sizes",
+            new_callable=mock.AsyncMock,
+            return_value=({"README.md": "hash1"}, {"README.md": 100}),
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
+        mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
+        mock.patch.object(revision, "_commit_new_revision", new_callable=mock.AsyncMock, return_value=fake_revision),
+        mock.patch.object(
+            revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, None, release)
+        ),
+        mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(MockQuarantineData(None))),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=None),
+    ]
+
+    with contextlib.ExitStack() as stack:
+        _apply_patches(stack, patches)
+        result = await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
+
+    assert result is fake_revision
+
+
+@pytest.mark.asyncio
+async def test_phase_gate_rejects_mismatched_phase():
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+
+    with mock.patch.object(revision.db, "session", return_value=mock_session):
+        with pytest.raises(
+            types.PhaseMismatchError,
+            match="release phase is release_candidate",
+        ):
+            await participant.create_revision_with_quarantine(
+                "proj",
+                "1.0",
+                "test",
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            )
 
 
 @pytest.mark.asyncio
@@ -204,7 +282,12 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
 
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
-        result = await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        result = await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
 
     assert isinstance(result, FakeQuarantined)
     assert result.status == sql.QuarantineStatus.PENDING
@@ -273,7 +356,12 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
 
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
-        result = await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        result = await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
 
     assert isinstance(result, FakeQuarantined)
 
@@ -354,7 +442,12 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
 
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
-        result = await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        result = await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
 
     assert isinstance(result, FakeQuarantined)
     assert result.prior_revision_key == f"{release.key} 00003"

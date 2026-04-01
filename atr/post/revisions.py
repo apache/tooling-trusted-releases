@@ -74,7 +74,12 @@ async def _set_revision(
     async with storage.write(session) as write:
         wacp = await write.as_project_committee_participant(project_key)
         result = await wacp.revision.create_revision_with_quarantine(
-            project_key, version_key, session.uid, description=description, clone_from=selected_revision_number
+            project_key,
+            version_key,
+            session.uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}),
+            description=description,
+            clone_from=selected_revision_number,
         )
         if isinstance(result, sql.Quarantined):
             success = f"Revision copy from {selected_revision_number} received. Archive validation in progress."

@@ -122,3 +122,7 @@ class PublicKeyError(Exception):
 
 class FailedError(Exception):
     pass
+
+
+class PhaseMismatchError(FailedError):
+    pass

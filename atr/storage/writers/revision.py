@@ -373,6 +373,8 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         asf_uid: str,
+        *,
+        allowed_phases: frozenset[sql.ReleasePhase],
         description: str | None = None,
         set_local_cache: bool = False,
         reset_to_global_cache: bool = False,
@@ -385,6 +387,11 @@ class CommitteeParticipant(FoundationCommitter):
             release = await data.release(key=release_key, _release_policy=True, _project_release_policy=True).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
+            if release.phase not in allowed_phases:
+                raise types.PhaseMismatchError(
+                    f"Cannot create revision: release phase is {release.phase.value}, "
+                    f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
+                )
             if clone_from is not None:
                 old_revision = await data.revision(release_key=release_key, number=str(clone_from)).demand(
                     RuntimeError(f"Revision {clone_from} does not exist")
@@ -482,6 +489,13 @@ class CommitteeParticipant(FoundationCommitter):
             except Exception:
                 await aioshutil.rmtree(temp_dir)
                 raise
+
+            if merged_release.phase not in allowed_phases:
+                await aioshutil.rmtree(temp_dir)
+                raise types.PhaseMismatchError(
+                    f"Cannot create revision: release phase is {merged_release.phase.value}, "
+                    f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
+                )
 
             if set_local_cache:
                 merged_release.check_cache_key = str(uuid.uuid4())

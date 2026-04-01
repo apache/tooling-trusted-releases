@@ -183,7 +183,12 @@ class CommitteeParticipant(FoundationCommitter):
 
         try:
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, version_key, self.__asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+                description=description,
+                modify=modify,
             )
         except types.FailedError as e:
             return str(e)
@@ -225,7 +230,12 @@ class CommitteeParticipant(FoundationCommitter):
             await aiofiles.os.remove(path_in_new_revision)
 
         await self.__write_as.revision.create_revision_with_quarantine(
-            project_key, version, self.__asf_uid, description=description, modify=modify
+            project_key,
+            version,
+            self.__asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
         )
         return metadata_files_deleted
 
@@ -266,7 +276,12 @@ class CommitteeParticipant(FoundationCommitter):
                 await f.write(f"{hash_value}  {rel_path.name}\n")
 
         await self.__write_as.revision.create_revision_with_quarantine(
-            project_key, version_key, self.__asf_uid, description=description, modify=modify
+            project_key,
+            version_key,
+            self.__asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
         )
 
     async def import_from_svn(
@@ -321,7 +336,12 @@ class CommitteeParticipant(FoundationCommitter):
 
         try:
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, version_key, self.__asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
         except types.FailedError as e:
             return str(e), moved_files_names, skipped_files_names
@@ -405,7 +425,12 @@ class CommitteeParticipant(FoundationCommitter):
 
         try:
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, version_key, self.__asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+                description=description,
+                modify=modify,
             )
         except types.FailedError as e:
             return str(e), renamed_count, error_messages
@@ -473,7 +498,11 @@ class CommitteeParticipant(FoundationCommitter):
 
         description = "Creation of empty release candidate draft through web interface"
         await self.__write_as.revision.create_revision_with_quarantine(
-            project_key, version, self.__asf_uid, description=description
+            project_key,
+            version,
+            self.__asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
         )
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
@@ -497,7 +526,12 @@ class CommitteeParticipant(FoundationCommitter):
                 await f.write(file_bytes)
 
         result = await self.__write_as.revision.create_revision_with_quarantine(
-            args.project, args.version, self.__asf_uid, description=description, modify=modify
+            args.project,
+            args.version,
+            self.__asf_uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
         )
         if isinstance(result, sql.Quarantined):
             return result
@@ -529,7 +563,12 @@ class CommitteeParticipant(FoundationCommitter):
 
         try:
             result = await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, version_key, self.__asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
         except types.FailedError as e:
             return str(e), len(files), False

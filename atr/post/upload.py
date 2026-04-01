@@ -84,7 +84,12 @@ async def finalise(
                     await aioshutil.move(str(src), str(dst))
 
             result = await wacp.revision.create_revision_with_quarantine(
-                project_key, version_key, session.uid, description=description, modify=modify
+                project_key,
+                version_key,
+                session.uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
 
         await aioshutil.rmtree(staging_dir)

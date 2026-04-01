@@ -134,7 +134,12 @@ async def augment(args: FileArgs) -> results.Results | None:
                     await f.write(merged.dumps())
 
             await wacp.revision.create_revision_with_quarantine(
-                args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
+                args.project_key,
+                args.version_key,
+                args.asf_uid or "unknown",
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
 
     return results.SBOMAugment(
@@ -223,7 +228,12 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
                 await f.write(merged.dumps())
 
         await wacp.revision.create_revision_with_quarantine(
-            args.project_key, args.version_key, args.asf_uid or "unknown", description=description, modify=modify
+            args.project_key,
+            args.version_key,
+            args.asf_uid or "unknown",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
         )
 
     return results.SBOMOSVScan(
@@ -343,24 +353,6 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     )
 
 
-def _extracted_dir(temp_dir: str) -> str | None:
-    # Loop through all the dirs in temp_dir
-    extract_dir = None
-    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
-    for dir_name in os.listdir(temp_dir):
-        if dir_name.startswith("."):
-            continue
-        dir_path = os.path.join(temp_dir, dir_name)
-        if os.path.isdir(dir_path):
-            if extract_dir is None:
-                extract_dir = dir_path
-            else:
-                return temp_dir
-    if extract_dir is None:
-        extract_dir = temp_dir
-    return extract_dir
-
-
 async def _convert_cyclonedx_core(artifact_path: str, output_path: str, revision_str: str) -> dict[str, Any]:
     """Core logic to convert XML CycloneDX SBOM to JSON."""
     log.info(f"Generating CycloneDX JSON SBOM for {artifact_path} -> {output_path}")
@@ -387,6 +379,24 @@ async def _convert_cyclonedx_core(artifact_path: str, output_path: str, revision
         "format": "CycloneDX",
         "version": str(bundle.bom.version),
     }
+
+
+def _extracted_dir(temp_dir: str) -> str | None:
+    # Loop through all the dirs in temp_dir
+    extract_dir = None
+    log.info(f"Checking directories in {temp_dir}: {os.listdir(temp_dir)}")
+    for dir_name in os.listdir(temp_dir):
+        if dir_name.startswith("."):
+            continue
+        dir_path = os.path.join(temp_dir, dir_name)
+        if os.path.isdir(dir_path):
+            if extract_dir is None:
+                extract_dir = dir_path
+            else:
+                return temp_dir
+    if extract_dir is None:
+        extract_dir = temp_dir
+    return extract_dir
 
 
 async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict[str, Any]:

@@ -494,7 +494,12 @@ class CommitteeParticipant(FoundationCommitter):
                 await aiofiles.os.remove(path_in_new_revision)
 
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, version_key, self.__asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
         return outcomes
 

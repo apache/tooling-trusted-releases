@@ -320,7 +320,11 @@ class CommitteeMember(CommitteeParticipant):
 
                 description = "Create a preview revision from the last candidate draft"
                 await self.__write_as.revision.create_revision_with_quarantine(
-                    project_key, release.safe_version_key, self.__asf_uid, description=description
+                    project_key,
+                    release.safe_version_key,
+                    self.__asf_uid,
+                    allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+                    description=description,
                 )
             case "failed" | "cancelled":
                 release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -411,7 +415,11 @@ class CommitteeMember(CommitteeParticipant):
 
             description = "Create a preview revision from the last candidate draft"
             await self.__write_as.revision.create_revision_with_quarantine(
-                project_key, release.safe_version_key, self.__asf_uid, description=description
+                project_key,
+                release.safe_version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+                description=description,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(

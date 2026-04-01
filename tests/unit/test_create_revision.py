@@ -159,7 +159,11 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
         await participant.create_revision_with_quarantine(
-            safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", clone_from=safe.RevisionNumber("00002")
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+            clone_from=safe.RevisionNumber("00002"),
         )
 
     if merge_mock.called:
@@ -251,7 +255,10 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
     ):
         created_revision = await participant.create_revision_with_quarantine(
-            safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test"
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
         )
 
     assert isinstance(created_revision, FakeRevision)
@@ -273,7 +280,9 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         (path / "file.txt").write_text("Should be cleaned up.")
         raise types.FailedError("Intentional error")
 
-    mock_session = _mock_db_session(mock.MagicMock())
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    mock_session = _mock_db_session(release)
     participant = _make_participant()
 
     with (
@@ -283,7 +292,11 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
             await participant.create_revision_with_quarantine(
-                safe.ProjectKey("proj"), safe.VersionKey("1.0"), "test", modify=modify
+                safe.ProjectKey("proj"),
+                safe.VersionKey("1.0"),
+                "test",
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                modify=modify,
             )
 
     assert isinstance(received_args["path"], pathlib.Path)
@@ -349,7 +362,12 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     with contextlib.ExitStack() as stack:
         for patch in patches:
             stack.enter_context(patch)
-        await participant.create_revision_with_quarantine("proj", "1.0", "test")
+        await participant.create_revision_with_quarantine(
+            "proj",
+            "1.0",
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+        )
 
     added_objects = [call.args[0] for call in safe_data.add.call_args_list]
     file_state_rows = [obj for obj in added_objects if isinstance(obj, sql.ReleaseFileState)]

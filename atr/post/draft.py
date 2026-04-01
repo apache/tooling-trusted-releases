@@ -61,6 +61,7 @@ async def cache_reset(
             project_key,
             version_key,
             session.uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
             reset_to_global_cache=True,
         )
@@ -215,6 +216,7 @@ async def recheck(
             project_key,
             version_key,
             session.uid,
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
             set_local_cache=True,
         )
@@ -227,6 +229,85 @@ async def recheck(
         project_key=str(project_key),
         version_key=str(version_key),
         success=success,
+    )
+
+
+@post.typed
+async def sbomconvert(
+    session: web.Committer,
+    _draft_sbomconvert: Literal["draft/sbomconvert"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    file_path: safe.RelPath,
+    empty_form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: /draft/sbomconvert/<project_key>/<version_key>/<file_path>
+    Convert an XML CycloneDX SBOM file into JSON, creating a new revision.
+    """
+    rel_path = file_path.as_path()
+
+    # Check that the file is a .cdx.xml file before continuing
+    if not rel_path.name.endswith(".cdx.xml"):
+        raise base.ASFQuartException(f"SBOM converter requires .cdx.xml file. Received: {rel_path.name}", errorcode=400)
+
+    try:
+        description = "SBOM conversion through web interface"
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+
+            async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
+                path_in_new_revision = path / rel_path
+                sbom_path_rel = rel_path.with_suffix(".cdx.json").name
+                sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
+
+                # Check that the source file exists in the new revision
+                if not await aiofiles.os.path.exists(path_in_new_revision):
+                    log.error(f"Source file {rel_path} not found in new revision for SBOM generation.")
+                    raise web.FlashError("Source artifact file not found in the new revision.")
+
+                # Check that the SBOM file does not already exist in the new revision
+                if await aiofiles.os.path.exists(sbom_path_in_new_revision):
+                    raise base.ASFQuartException("SBOM file already exists", errorcode=400)
+
+                # This shouldn't happen as we need a revision to kick the task off from
+                if old_rev is None:
+                    raise web.FlashError("Internal error: Revision not found")
+
+                # Create and queue the task, using paths within the new revision
+                sbom_task = await wacp.sbom.convert_cyclonedx(
+                    project_key,
+                    version_key,
+                    old_rev.safe_number,
+                    str(path_in_new_revision),
+                    str(sbom_path_in_new_revision),
+                )
+                success = await interaction.wait_for_task(sbom_task)
+                if not success:
+                    raise web.FlashError("Internal error: SBOM conversion timed out")
+
+            result = await wacp.revision.create_revision_with_quarantine(
+                project_key,
+                version_key,
+                session.uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
+            )
+
+    except Exception as e:
+        log.exception("Error generating SBOM:")
+        await quart.flash(f"Error generating SBOM: {e!s}", "error")
+        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
+
+    success = f"SBOM generated for {rel_path.name}"
+    if isinstance(result, sql.Quarantined):
+        success += ". Archive validation in progress."
+    return await session.redirect(
+        get.compose.selected,
+        success=success,
+        project_key=str(project_key),
+        version_key=str(version_key),
     )
 
 
@@ -292,81 +373,12 @@ async def sbomgen(
                     raise web.FlashError("Internal error: SBOM generation timed out")
 
             result = await wacp.revision.create_revision_with_quarantine(
-                project_key, version_key, session.uid, description=description, modify=modify
-            )
-
-    except Exception as e:
-        log.exception("Error generating SBOM:")
-        await quart.flash(f"Error generating SBOM: {e!s}", "error")
-        return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
-
-    success = f"SBOM generated for {rel_path.name}"
-    if isinstance(result, sql.Quarantined):
-        success += ". Archive validation in progress."
-    return await session.redirect(
-        get.compose.selected,
-        success=success,
-        project_key=str(project_key),
-        version_key=str(version_key),
-    )
-
-
-@post.typed
-async def sbomconvert(
-    session: web.Committer,
-    _draft_sbomconvert: Literal["draft/sbomconvert"],
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    file_path: safe.RelPath,
-    empty_form: form.Empty,
-) -> web.WerkzeugResponse:
-    """
-    URL: /draft/sbomconvert/<project_key>/<version_key>/<file_path>
-    Convert an XML CycloneDX SBOM file into JSON, creating a new revision.
-    """
-    rel_path = file_path.as_path()
-
-    # Check that the file is a .cdx.xml file before continuing
-    if not rel_path.name.endswith(".cdx.xml"):
-        raise base.ASFQuartException(f"SBOM converter requires .cdx.xml file. Received: {rel_path.name}", errorcode=400)
-
-    try:
-        description = "SBOM conversion through web interface"
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_key)
-
-            async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
-                path_in_new_revision = path / rel_path
-                sbom_path_rel = rel_path.with_suffix(".cdx.json").name
-                sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
-
-                # Check that the source file exists in the new revision
-                if not await aiofiles.os.path.exists(path_in_new_revision):
-                    log.error(f"Source file {rel_path} not found in new revision for SBOM generation.")
-                    raise web.FlashError("Source artifact file not found in the new revision.")
-
-                # Check that the SBOM file does not already exist in the new revision
-                if await aiofiles.os.path.exists(sbom_path_in_new_revision):
-                    raise base.ASFQuartException("SBOM file already exists", errorcode=400)
-
-                # This shouldn't happen as we need a revision to kick the task off from
-                if old_rev is None:
-                    raise web.FlashError("Internal error: Revision not found")
-
-                # Create and queue the task, using paths within the new revision
-                sbom_task = await wacp.sbom.convert_cyclonedx(
-                    project_key,
-                    version_key,
-                    old_rev.safe_number,
-                    str(path_in_new_revision),
-                    str(sbom_path_in_new_revision),
-                )
-                success = await interaction.wait_for_task(sbom_task)
-                if not success:
-                    raise web.FlashError("Internal error: SBOM conversion timed out")
-
-            result = await wacp.revision.create_revision_with_quarantine(
-                project_key, version_key, session.uid, description=description, modify=modify
+                project_key,
+                version_key,
+                session.uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
 
     except Exception as e:

@@ -593,7 +593,12 @@ async def _step_07b_process_validated_rsync_write(
 
         try:
             result = await wacp.revision.create_revision_with_quarantine(
-                project_key, version_key, asf_uid, description=description, modify=modify
+                project_key,
+                version_key,
+                asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                modify=modify,
             )
             if isinstance(result, sql.Quarantined):
                 log.info(f"rsync upload quarantined for release {release_key}")
