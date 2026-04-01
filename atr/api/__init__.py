@@ -1174,9 +1174,12 @@ async def release_upload(
     #     if not (user.is_committee_member(project.committee, asf_uid) or user.is_admin(asf_uid)):
     #         raise exceptions.Forbidden("You do not have permission to upload to this project")
 
-    async with storage.write(asf_uid) as write:
-        wacp = await write.as_project_committee_participant(data.project)
-        result = await wacp.release.upload_file(data)
+    try:
+        async with storage.write(asf_uid) as write:
+            wacp = await write.as_project_committee_participant(data.project)
+            result = await wacp.release.upload_file(data)
+    except types.PhaseMismatchError as e:
+        raise exceptions.Conflict(str(e))
     if isinstance(result, sql.Quarantined):
         return {
             "endpoint": "/release/upload",

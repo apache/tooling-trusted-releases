@@ -23,7 +23,6 @@ import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
-import atr.db as db
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
@@ -64,12 +63,9 @@ async def _augment(
         raise base.ASFQuartException("SBOM augmentation is only supported for .cdx.json files", errorcode=400)
 
     try:
-        async with db.session() as data:
-            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-                RuntimeError("Release does not exist for new revision creation")
-            )
-            revision_number = release.safe_latest_revision_number
-            log.info(f"Augmenting SBOM for {project_key} {version_key} {revision_number!s} {rel_path!s}")
+        release = await session.release(project_key, version_key, with_committee=False, with_project=False)
+        revision_number = release.safe_latest_revision_number
+        log.info(f"Augmenting SBOM for {project_key} {version_key} {revision_number!s} {rel_path!s}")
         async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.augment_cyclonedx(
                 project_key,
@@ -105,12 +101,9 @@ async def _scan(
         raise base.ASFQuartException("OSV scanning is only supported for .cdx.json files", errorcode=400)
 
     try:
-        async with db.session() as data:
-            release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
-                RuntimeError("Release does not exist for OSV scan")
-            )
-            revision_number = release.safe_latest_revision_number
-            log.info(f"Starting OSV scan for {project_key!s} {version_key!s} {revision_number!s} {rel_path!s}")
+        release = await session.release(project_key, version_key, with_committee=False, with_project=False)
+        revision_number = release.safe_latest_revision_number
+        log.info(f"Starting OSV scan for {project_key!s} {version_key!s} {revision_number!s} {rel_path!s}")
         async with storage.write_as_project_committee_member(project_key) as wacm:
             sbom_task = await wacm.sbom.osv_scan_cyclonedx(
                 project_key,

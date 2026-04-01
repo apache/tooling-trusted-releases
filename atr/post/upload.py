@@ -43,7 +43,7 @@ import atr.web as web
 
 
 @post.typed
-async def finalise(
+async def finalise(  # noqa: C901
     session: web.Committer,
     _upload_finalise: Literal["upload/finalise"],
     project_key: safe.ProjectKey,
@@ -105,6 +105,13 @@ async def finalise(
         return await session.redirect(
             get.compose.selected,
             success=f"{util.plural(number_of_files, 'file')} added successfully",
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+    except types.PhaseMismatchError as e:
+        return await session.redirect(
+            get.compose.selected,
+            error=str(e),
             project_key=str(project_key),
             version_key=str(version_key),
         )

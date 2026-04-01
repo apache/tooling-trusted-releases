@@ -32,6 +32,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
+import atr.storage.types as types
 import atr.util as util
 import atr.web as web
 
@@ -55,15 +56,23 @@ async def cache_reset(
         raise base.ASFQuartException("Admin access required", errorcode=403)
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
-    async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_key)
-        result = await wacp.revision.create_revision_with_quarantine(
-            project_key,
-            version_key,
-            session.uid,
-            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
-            description=description,
-            reset_to_global_cache=True,
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            result = await wacp.revision.create_revision_with_quarantine(
+                project_key,
+                version_key,
+                session.uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                reset_to_global_cache=True,
+            )
+    except types.PhaseMismatchError as e:
+        return await session.redirect(
+            get.compose.selected,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            error=str(e),
         )
 
     success = "Release set back to global caching"
@@ -210,15 +219,23 @@ async def recheck(
         raise base.ASFQuartException("Admin access required", errorcode=403)
 
     description = "Empty revision to restart all checks without cache for the whole release candidate draft"
-    async with storage.write(session) as write:
-        wacp = await write.as_project_committee_participant(project_key)
-        result = await wacp.revision.create_revision_with_quarantine(
-            project_key,
-            version_key,
-            session.uid,
-            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
-            description=description,
-            set_local_cache=True,
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            result = await wacp.revision.create_revision_with_quarantine(
+                project_key,
+                version_key,
+                session.uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+                description=description,
+                set_local_cache=True,
+            )
+    except types.PhaseMismatchError as e:
+        return await session.redirect(
+            get.compose.selected,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            error=str(e),
         )
 
     success = "All checks restarted with release-local cache"
