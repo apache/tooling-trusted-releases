@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.mail as mail
@@ -53,7 +54,7 @@ class FoundationCommitter(GeneralPublic):
         self.__asf_uid = asf_uid
 
     async def send(self, message: mail.Message, category: mail.MailFooterCategory) -> tuple[str, list[str]]:
-        is_dev = util.is_dev_environment()
+        is_dev = config.is_dev_environment()
 
         if is_dev:
             log.info(f"Dev environment detected, not sending email to {message.email_to}")

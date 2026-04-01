@@ -128,15 +128,15 @@ async def select(session: web.Committer, _project_select: Literal["project/selec
     if session.uid:
         async with db.session() as data:
             # TODO: Move this filtering logic somewhere else
-            # The ALLOW_TESTS line allows test projects to be shown
-            conf = config.get()
+            # Test mode allows test projects to be shown
+            test_mode = config.is_test_mode()
             all_projects = await data.project(status=sql.ProjectStatus.ACTIVE, _committee=True).all()
             user_projects = [
                 p
                 for p in all_projects
                 if p.committee
                 and (
-                    (conf.ALLOW_TESTS and (p.committee.key == "test"))
+                    (test_mode and (p.committee.key == "test"))
                     or (session.uid in p.committee.committee_members)
                     or (session.uid in p.committee.committers)
                     or (session.uid in p.committee.release_managers)

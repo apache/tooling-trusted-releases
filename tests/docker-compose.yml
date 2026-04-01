@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: Dockerfile.alpine
     environment:
-      - ALLOW_TESTS=1
+      - TESTS=1
       - APP_HOST=atr:8080
       - BIND=0.0.0.0:8080
       - SSH_HOST=0.0.0.0
@@ -22,7 +22,7 @@ services:
       context: ..
       dockerfile: Dockerfile.alpine
     environment:
-      - ALLOW_TESTS=1
+      - TESTS=1
       - APP_HOST=atr-dev:8080
       - BIND=0.0.0.0:8080
       - SSH_HOST=0.0.0.0

@@ -594,14 +594,6 @@ def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes
     return [a for a in algs if isinstance(a, str) and (a.encode("ascii") in supported)]
 
 
-def is_dev_environment() -> bool:
-    conf = config.get()
-    for development_host in ("127.0.0.1", "atr", "atr-dev", "localhost.apache.org"):
-        if (conf.APP_HOST == development_host) or conf.APP_HOST.startswith(f"{development_host}:"):
-            return True
-    return False
-
-
 async def is_dir_resolve(path: pathlib.Path) -> pathlib.Path | None:
     try:
         resolved_path = await asyncio.to_thread(path.resolve)
@@ -621,10 +613,6 @@ def is_disallowed_dotfile(segment: str) -> bool:
     if segment == ".gitkeep":
         return False
     return True
-
-
-def is_ldap_configured() -> bool:
-    return ldap.get_bind_credentials() is not None
 
 
 def is_user_session_downgraded() -> bool:
@@ -1024,7 +1012,7 @@ async def task_archive_url(task_mid: str, recipient: str | None = None) -> str |
     if "@" not in task_mid:
         return None
 
-    if is_dev_environment() and (task_mid in DEV_THREAD_URLS):
+    if config.is_dev_environment() and (task_mid in DEV_THREAD_URLS):
         return DEV_THREAD_URLS[task_mid]
 
     recipient_address = recipient or USER_TESTS_ADDRESS

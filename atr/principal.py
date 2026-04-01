@@ -280,7 +280,7 @@ class AuthoriserLDAP:
         if not self.__cache.outdated(asf_uid):
             return
 
-        if config.get().ALLOW_TESTS and (asf_uid == "test"):
+        if config.is_test_mode() and (asf_uid == "test"):
             # The test user does not exist in LDAP, so we hardcode their data
             committees = frozenset({"test"})
             projects = frozenset({"test"})
@@ -411,7 +411,7 @@ def _augment_test_membership(
     committees: frozenset[str],
     projects: frozenset[str],
 ) -> tuple[frozenset[str], frozenset[str]]:
-    if config.get().ALLOW_TESTS:
+    if config.is_test_mode():
         committees = committees.union({"test"})
         projects = projects.union({"test"})
     return committees, projects

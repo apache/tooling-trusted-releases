@@ -156,7 +156,7 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     app.cfg["MAX_SESSION_AGE"] = app.config.get("MAX_SESSION_AGE", 0)
     app.secret_key = asfquart_secret_key
 
-    if not util.is_dev_environment():
+    if not config.is_dev_environment():
         app.asgi_app = proxy_fix.ProxyFixMiddleware(app.asgi_app, mode="legacy", trusted_hops=1)
 
     return app
@@ -270,7 +270,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "is_admin_fn": user.is_admin,
             "is_viewing_as_admin_fn": util.is_user_viewing_as_admin,
             "is_committee_member_fn": user.is_committee_member,
-            "is_test_mode": config.get().ALLOW_TESTS,
+            "is_test_mode": config.is_test_mode(),
             "post": post,
             "static_url": util.static_url,
             "topnav_unfinished_releases": topnav_unfinished_releases,
@@ -361,7 +361,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
 
     # Output handler: pretty console for dev (Debug and Allow Tests), JSON for non-dev (Docker, etc.)
     output_handler = logging.StreamHandler(sys.stderr)
-    use_json_output = app_config.LOG_JSON or (not util.is_dev_environment())
+    use_json_output = app_config.LOG_JSON or (not config.is_dev_environment())
     if use_json_output:
         # JSON output should include rendered exceptions
         output_handler.setFormatter(loggers.create_json_formatter(shared_processors))
@@ -372,7 +372,7 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
 
     log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)
     handlers: list[logging.Handler] = [output_handler]
-    if util.is_dev_environment():
+    if config.is_dev_environment():
         handlers.append(log.create_debug_handler())
 
     listener = logging.handlers.QueueListener(log_queue, *handlers, respect_handler_level=True)
@@ -432,7 +432,7 @@ def _app_setup_rate_limits(app: base.QuartApp, conf: type[config.AppConfig]):
             return f"user:{session.uid}"
         return f"ip:{quart.request.remote_addr}"
 
-    if not conf.ALLOW_TESTS:
+    if not config.is_test_mode():
         rate_limiter.RateLimiter(
             app,
             default_limits=[
@@ -595,8 +595,6 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     if os.sep != "/":
         raise RuntimeError('ATR requires a POSIX compatible filesystem where os.sep is "/"')
     config_mode = config.get_mode()
-    if (not util.is_dev_environment()) and (config_mode == config.Mode.Debug):
-        raise RuntimeError("Debug mode can only be set in development environment")
     hot_reload = _is_hot_reload()
     _validate_config(app_config, hot_reload)
     _migrate_state(app_config.STATE_DIR, hot_reload)
@@ -727,7 +725,7 @@ async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
 
 
 async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
-    if not conf.ALLOW_TESTS:
+    if not config.is_test_mode():
         return
 
     async with db.session() as data:
@@ -934,7 +932,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
 
         exc_info = (type(error), error, error.__traceback__)
         log.error("Unhandled exception", exc_info=exc_info)
-        if util.is_dev_environment():
+        if config.is_dev_environment():
             return await template.render(
                 "error.html",
                 error=str(error),
@@ -1022,6 +1020,8 @@ def _set_file_permissions_to_read_only() -> None:
 
 
 def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> None:
+    config.validate()
+
     # Custom configuration for the database path is no longer supported
     configured_path = app_config.SQLITE_DB_PATH
     if configured_path != "database/atr.db":

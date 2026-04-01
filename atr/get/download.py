@@ -124,7 +124,7 @@ async def sh_selected(
         content = await f.read()
     download_urls_selected = util.as_url(urls_selected, project_key=str(project_key), version_key=str(version_key))
     download_path = util.as_url(path, project_key=str(project_key), version_key=str(version_key), file_path="")
-    curl_options = "--insecure" if util.is_dev_environment() else "--proto =https --tlsv1.2"
+    curl_options = "--insecure" if config.is_dev_environment() else "--proto =https --tlsv1.2"
     content = content.replace("[CURL_EXTRA]", curl_options)
     content = content.replace("[URL_OF_URLS]", f"https://{app_host}{download_urls_selected}")
     content = content.replace("[URLS_PREFIX]", f"https://{app_host}{download_path}")

@@ -185,7 +185,7 @@ class FoundationCommitter(GeneralPublic):
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
         """Delete all OpenPGP keys and their links for a test user."""
-        if not config.get().ALLOW_TESTS:
+        if not config.is_test_mode():
             return outcome.Error(storage.AccessError("Test key deletion not enabled"))
 
         try:
@@ -341,7 +341,7 @@ and was published by the committee.\
 
         if uids == test_key_uids:
             # Allow the test key
-            if config.get().ALLOW_TESTS and (self.__asf_uid == "test"):
+            if config.is_test_mode() and (self.__asf_uid == "test"):
                 # TODO: "test" is already an admin user
                 # But we want to narrow that down to only actions like this
                 # TODO: Add include_test: bool to user.is_admin?

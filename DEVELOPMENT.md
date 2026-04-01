@@ -62,7 +62,7 @@ Visit [`https://127.0.0.1:8080/`](https://127.0.0.1:8080/) and accept the self-s
 
 The container:
 
-- Runs in test mode (`ALLOW_TESTS=1`) with mock authentication
+- Runs in test mode (`TESTS=1`) with mock authentication
 - Mounts `atr/` for live code changes without rebuilding
 - Auto-reloads when files change
 

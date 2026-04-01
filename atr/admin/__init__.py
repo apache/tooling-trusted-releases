@@ -449,7 +449,7 @@ async def delete_test_openpgp_keys_get(
 
     Display the form to delete test user OpenPGP keys.
     """
-    if not config.get().ALLOW_TESTS:
+    if not config.is_test_mode():
         return quart.abort(404)
 
     rendered_form = form.render(
@@ -469,7 +469,7 @@ async def delete_test_openpgp_keys_post(
 
     Delete all test user OpenPGP keys and their links.
     """
-    if not config.get().ALLOW_TESTS:
+    if not config.is_test_mode():
         return quart.abort(404)
 
     test_uid = "test"
@@ -683,7 +683,7 @@ async def logs(_session: web.Committer, _logs: Literal["logs"]) -> web.QuartResp
     """
     URL: GET /logs
     """
-    _require_debug_and_allow_tests()
+    _require_non_production_mode()
     recent_logs = log.get_recent_logs()
     if recent_logs is None:
         raise base.ASFQuartException("Debug logging not initialised", errorcode=404)
@@ -1129,10 +1129,7 @@ async def validate_jwt_get(_session: web.Committer, _validate_jwt: Literal["vali
     """
     URL: GET /validate-jwt
     """
-    try:
-        _require_debug_and_allow_tests()
-    except base.ASFQuartException:
-        return quart.abort(404)
+    _require_non_production_mode()
     rendered_form = form.render(
         model_cls=ValidateJwtForm,
         submit_label="Validate JWT",
@@ -1148,11 +1145,7 @@ async def validate_jwt_post(
     """
     URL: POST /validate-jwt
     """
-    try:
-        _require_debug_and_allow_tests()
-    except base.ASFQuartException:
-        return quart.abort(404)
-
+    _require_non_production_mode()
     token = validate_form.token
     result: dict[str, Any] = {"token_length": len(token), "valid": False}
 
@@ -1352,11 +1345,9 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                         filesystem_dirs.append(version_dir_path)
 
 
-def _require_debug_and_allow_tests() -> None:
-    conf = config.get()
-    debug_and_allow_tests = (config.get_mode() == config.Mode.Debug) and conf.ALLOW_TESTS
-    if not debug_and_allow_tests:
-        raise base.ASFQuartException("Not available without ALLOW_TESTS", errorcode=403)
+def _require_non_production_mode() -> None:
+    if config.is_production_mode():
+        quart.abort(404)
 
 
 async def _rotate_jwt_key_page(rendered_form: htm.Element) -> str:
