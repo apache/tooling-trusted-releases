@@ -39,7 +39,7 @@ type DELETE_PROJECT = Literal["delete_project"]
 
 
 class AddProjectForm(form.Form):
-    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    committee_key: safe.CommitteeKey = form.label("Committee name", widget=form.Widget.HIDDEN)
     display_name: str = form.label(
         "Display name",
         'For example, "Apache Example" or "Apache Example Components". '
@@ -53,7 +53,7 @@ class AddProjectForm(form.Form):
 
     @pydantic.model_validator(mode="after")
     def validate_fields(self) -> AddProjectForm:
-        committee_key = self.committee_key
+        committee_key = str(self.committee_key)
         display_name = self.display_name.strip()
         label = self.label.strip()
 
