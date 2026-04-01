@@ -48,6 +48,7 @@ dependencies = [
   "quart-rate-limiter>=0.12.1",
   "quart-schema[pydantic]~=0.21",
   "quart-wtforms~=1.0.3",
+  "requests>=2.33.0",
   "rich>=14.0.0,<15.0.0",
   "semver>=3.0.4",
   "sqlmodel~=0.0.24",
