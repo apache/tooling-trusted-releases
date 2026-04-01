@@ -19,6 +19,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.form as form
 import atr.get as get
 import atr.log as log
@@ -33,6 +34,9 @@ async def test_empty(
     """
     URL: /test/empty
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     msg = "Empty form submitted successfully"
     log.info(msg)
     await quart.flash(msg, "success")
@@ -46,6 +50,9 @@ async def test_multiple(
     """
     URL: /test/multiple
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     match multiple_form:
         case shared.test.AppleForm() as apple:
             msg = f"Apple order received: variety={apple.variety}, quantity={apple.quantity}, organic={apple.organic}"
@@ -67,6 +74,9 @@ async def test_single(
     """
     URL: /test/single
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     file_names = [f.filename for f in single_form.files] if single_form.files else []
     compatibility_names = [f.value for f in single_form.compatibility] if single_form.compatibility else []
     if (single_form.message == "Forbidden message!") and (session is not None):

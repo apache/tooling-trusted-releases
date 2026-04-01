@@ -68,7 +68,6 @@ def _config_secrets_get(
 
 class AppConfig:
     ACCOUNT_CHECK_INTERVAL = decouple.config("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
-    ALLOW_TESTS = decouple.config("ALLOW_TESTS", default=False, cast=bool)
     ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
     DISABLE_CHECK_CACHE = decouple.config("DISABLE_CHECK_CACHE", default=False, cast=bool)
     APP_HOST = decouple.config("APP_HOST", default="127.0.0.1")
@@ -141,6 +140,7 @@ class DebugConfig(AppConfig):
 
 class Mode(enum.Enum):
     Debug = "Debug"
+    Test = "Test"
     Production = "Production"
     Profiling = "Profiling"
 
@@ -158,37 +158,96 @@ class ProfilingConfig(AppConfig):
     USE_BLOCKBUSTER = True
 
 
+class TestConfig(DebugConfig):
+    pass
+
+
 # Load all possible configurations
 _CONFIG_DICT: Final = {
     Mode.Debug: DebugConfig,
+    Mode.Test: TestConfig,
     Mode.Production: ProductionConfig,
     Mode.Profiling: ProfilingConfig,
 }
 
 
 def get() -> type[AppConfig]:
-    try:
-        config = _CONFIG_DICT[get_mode()]
-    except KeyError:
-        exit("Error: Invalid mode. Expected values Debug, Production, or Profiling.")
+    return _CONFIG_DICT[get_mode()]
 
-    if config.ALLOW_TESTS and (get_mode() != Mode.Debug):
-        raise RuntimeError("ALLOW_TESTS can only be enabled in Debug mode")
+
+def get_mode() -> Mode:
+    global _global_mode
+
+    profiling = decouple.config("PROFILING", default=False, cast=bool)
+    production = decouple.config("PRODUCTION", default=False, cast=bool)
+    test = decouple.config("TESTS", default=False, cast=bool)
+
+    # Make sure we don't set more than one - which would fall back into whichever is first in the next conditional
+    # This prevents accidental production in test mode, for example
+    enabled = [name for name, val in [("PROFILING", profiling), ("PRODUCTION", production), ("TESTS", test)] if val]
+    if len(enabled) > 1:
+        exit(f"Only one mode flag may be set, but got: {', '.join(enabled)}")
+
+    if _global_mode is None:
+        if profiling:
+            _global_mode = Mode.Profiling
+        elif production:
+            _global_mode = Mode.Production
+        elif test:
+            _global_mode = Mode.Test
+        else:
+            _global_mode = Mode.Debug
+
+    return _global_mode
+
+
+def is_dev_environment() -> bool:
+    conf = get()
+    for development_host in ("127.0.0.1", "atr", "atr-dev", "localhost.apache.org"):
+        if (conf.APP_HOST == development_host) or conf.APP_HOST.startswith(f"{development_host}:"):
+            return True
+    return False
+
+
+def is_ldap_configured() -> bool:
+    conf = get()
+    return bool(conf.LDAP_BIND_DN and conf.LDAP_BIND_PASSWORD)
+
+
+def is_production_mode() -> bool:
+    return get_mode() == Mode.Production
+
+
+def is_test_mode() -> bool:
+    return get_mode() == Mode.Test
+
+
+def validate() -> None:
+    """
+    Runs validity and safety checks to ensure configuration is consistent and secure:
+
+    Path checks - absolute and relative paths are set correctly
+    Debug mode can only be set on a development URL (127.0.0.1, atr, etc.)
+    LDAP must be configured in production
+    Cannot set additional admins at runtime in production
+    Dev URLs cannot be set in production mode
+    """
+    conf = get()
 
     absolute_paths = [
-        (config.PROJECT_ROOT, "PROJECT_ROOT"),
-        (config.STATE_DIR, "STATE_DIR"),
-        (config.DOWNLOADS_STORAGE_DIR, "DOWNLOADS_STORAGE_DIR"),
-        (config.FINISHED_STORAGE_DIR, "FINISHED_STORAGE_DIR"),
-        (config.UNFINISHED_STORAGE_DIR, "UNFINISHED_STORAGE_DIR"),
-        (config.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),
-        (config.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
-        (config.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),
-        (config.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
-        (config.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
+        (conf.PROJECT_ROOT, "PROJECT_ROOT"),
+        (conf.STATE_DIR, "STATE_DIR"),
+        (conf.DOWNLOADS_STORAGE_DIR, "DOWNLOADS_STORAGE_DIR"),
+        (conf.FINISHED_STORAGE_DIR, "FINISHED_STORAGE_DIR"),
+        (conf.UNFINISHED_STORAGE_DIR, "UNFINISHED_STORAGE_DIR"),
+        (conf.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),
+        (conf.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
+        (conf.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),
+        (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
+        (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
     ]
     relative_paths = [
-        (config.SQLITE_DB_PATH, "SQLITE_DB_PATH"),
+        (conf.SQLITE_DB_PATH, "SQLITE_DB_PATH"),
     ]
 
     for path, name in absolute_paths:
@@ -198,18 +257,14 @@ def get() -> type[AppConfig]:
         if path.startswith("/"):
             raise RuntimeError(f"{name} must be a relative path")
 
-    return config
+    if (not is_dev_environment()) and (get_mode() == Mode.Debug):
+        raise RuntimeError("Debug mode can only be set in development environment")
 
-
-def get_mode() -> Mode:
-    global _global_mode
-
-    if _global_mode is None:
-        if decouple.config("PROFILING", default=False, cast=bool):
-            _global_mode = Mode.Profiling
-        elif decouple.config("PRODUCTION", default=False, cast=bool):
-            _global_mode = Mode.Production
-        else:
-            _global_mode = Mode.Debug
-
-    return _global_mode
+    # Production-specific guards
+    if is_production_mode():
+        if not (conf.LDAP_BIND_DN and conf.LDAP_BIND_PASSWORD):
+            raise RuntimeError("LDAP bind credentials must be configured in production mode")
+        if conf.ADMIN_USERS_ADDITIONAL or conf.TOOLING_USERS_ADDITIONAL:
+            raise RuntimeError("Cannot manually configure additional users in production")
+        if is_dev_environment():
+            raise RuntimeError("Production mode cannot use a development APP_HOST")

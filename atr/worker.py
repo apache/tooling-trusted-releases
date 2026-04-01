@@ -43,7 +43,6 @@ import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.tasks.task as task
-import atr.util as util
 
 # Resource limits, 5 minutes and 3GB
 _CPU_LIMIT_SECONDS: Final = 300
@@ -230,8 +229,6 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
     """Process a claimed task."""
     import atr.config as config
 
-    conf = config.get()
-
     log.info(f"Processing task {task_id} ({task_type}) with raw args {task_args}")
     try:
         task_type_member = sql.TaskType(task_type)
@@ -242,11 +239,11 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
 
     task_results: results.Results | None
     try:
-        # In any of these three cases, we will skip the LDAP check
-        is_system = asf_uid == "system"
-        is_test = conf.ALLOW_TESTS and (asf_uid == "test")
-        is_dev_without_ldap = util.is_dev_environment() and (not util.is_ldap_configured())
-        if not (is_system or is_test or is_dev_without_ldap):
+        if (
+            asf_uid != "system"
+            and not (config.is_test_mode() and asf_uid == "test")
+            and (config.is_production_mode() or config.is_ldap_configured())
+        ):
             user_account = await ldap.account_lookup(asf_uid)
             if (user_account is None) or ldap.is_banned(user_account):
                 raise RuntimeError(f"Account '{asf_uid}' is banned or does not exist")

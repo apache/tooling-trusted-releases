@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import atr.config as config
 import atr.user as user
 
 if TYPE_CHECKING:
@@ -31,8 +32,7 @@ class MockApp:
 
 
 class MockConfig:
-    def __init__(self, allow_tests: bool = False, admin_users_additional: str = ""):
-        self.ALLOW_TESTS = allow_tests
+    def __init__(self, admin_users_additional: str = ""):
         self.ADMIN_USERS_ADDITIONAL = admin_users_additional
 
 
@@ -61,7 +61,7 @@ async def test_is_admin_async_returns_true_for_cached_admin(mock_app: MockApp, m
 @pytest.mark.asyncio
 async def test_is_admin_async_returns_true_for_test_user(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
     user._get_additional_admin_users.cache_clear()
-    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=True))
+    monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Test)
     mock_app.extensions["admins"] = frozenset()
     assert await user.is_admin_async("test") is True
 
@@ -74,7 +74,8 @@ def test_is_admin_returns_false_for_none(mock_app: MockApp, monkeypatch: "Monkey
 
 def test_is_admin_returns_false_for_test_user_when_not_allowed(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
     user._get_additional_admin_users.cache_clear()
-    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=False))
+    monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Debug)
+    monkeypatch.setattr("atr.config.get", lambda: MockConfig())
     mock_app.extensions["admins"] = frozenset()
     assert user.is_admin("test") is False
 
@@ -102,6 +103,6 @@ def test_is_admin_returns_true_for_cached_admin(mock_app: MockApp, monkeypatch: 
 
 def test_is_admin_returns_true_for_test_user_when_allowed(mock_app: MockApp, monkeypatch: "MonkeyPatch"):
     user._get_additional_admin_users.cache_clear()
-    monkeypatch.setattr("atr.config.get", lambda: MockConfig(allow_tests=True))
+    monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Test)
     mock_app.extensions["admins"] = frozenset()
     assert user.is_admin("test") is True

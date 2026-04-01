@@ -48,6 +48,9 @@ async def test_empty(_session: web.Public, _test_empty: Literal["test/empty"]) -
     """
     URL: /test/empty
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     empty_form = form.render(
         model_cls=form.Empty,
         submit_label="Submit empty form",
@@ -68,7 +71,9 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
     """
     URL: /test/login
     """
-    if not config.get().ALLOW_TESTS:
+    # Some test routes work anywhere outside of production
+    # but test logins should be Test mode only
+    if not config.is_test_mode():
         return quart.abort(404)
 
     session_data = atr.models.session.CookieData(
@@ -121,7 +126,7 @@ async def test_merge(
     """
     URL: /test/merge/<project_key>/<version_key>
     """
-    if not config.get().ALLOW_TESTS:
+    if config.is_production_mode():
         return quart.abort(404)
 
     async with storage.write(session) as write_n:
@@ -176,6 +181,9 @@ async def test_multiple(_session: web.Public, _test_multiple: Literal["test/mult
     """
     URL: /test/multiple
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     apple_form = form.render(
         model_cls=shared.test.AppleForm,
         submit_label="Order apples",
@@ -226,6 +234,9 @@ async def test_single(session: web.Public, _test_single: Literal["test/single"])
     """
     URL: /test/single
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     import htpy
 
     vote_widget = htpy.div(class_="btn-group", role="group")[
@@ -263,7 +274,7 @@ async def test_vote(
     """
     URL: /test/vote/<category>/<project_key>/<version_key>
     """
-    if not config.get().ALLOW_TESTS:
+    if config.is_production_mode():
         return quart.abort(404)
 
     category_map = {

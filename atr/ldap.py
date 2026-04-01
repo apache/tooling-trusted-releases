@@ -249,7 +249,7 @@ async def handle_update(payload: dict):
 async def is_active(asf_uid: str) -> bool:
     import atr.config as config
 
-    if config.get().ALLOW_TESTS:
+    if config.is_test_mode():
         if asf_uid == "test":
             return True
         if asf_uid == "test-banned":

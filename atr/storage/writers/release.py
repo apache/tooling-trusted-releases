@@ -142,7 +142,7 @@ class CommitteeParticipant(FoundationCommitter):
         # In test mode, delete the counter for test committee releases
         # This allows revision numbers to be reused in testing
         committee = release.project.committee
-        is_test_release = config.get().ALLOW_TESTS and (committee is not None) and (committee.key == "test")
+        is_test_release = config.is_test_mode() and (committee is not None) and (committee.key == "test")
         if is_test_release:
             counter_delete_stmt = sqlmodel.delete(sql.RevisionCounter).where(
                 via(sql.RevisionCounter.release_key) == release_key
@@ -445,7 +445,7 @@ class CommitteeParticipant(FoundationCommitter):
         if not project:
             raise storage.AccessError(f"Project {project_key} not found")
 
-        tests_allowed = config.get().ALLOW_TESTS
+        tests_allowed = config.is_test_mode()
         committee = project.committee
         is_test_committee = tests_allowed and (committee is not None) and (committee.key == "test")
         should_skip_auth = is_test_committee

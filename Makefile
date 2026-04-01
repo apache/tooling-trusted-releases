@@ -100,7 +100,7 @@ run-alpine:
 	  -v "$$PWD/$(STATE_DIR):/opt/atr/state" \
 	  -v "$$PWD/$(STATE_DIR)/hypercorn/secrets/localhost.apache.org+2-key.pem:/opt/atr/state/hypercorn/secrets/key.pem" \
 	  -v "$$PWD/$(STATE_DIR)/hypercorn/secrets/localhost.apache.org+2.pem:/opt/atr/state/hypercorn/secrets/cert.pem" \
-	  -e APP_HOST=localhost.apache.org:8080 -e ALLOW_TESTS=1 \
+	  -e APP_HOST=localhost.apache.org:8080 -e TESTS=1 \
 	  -e SSH_HOST=0.0.0.0 -e BIND=0.0.0.0:8080 \
 	  tooling-trusted-release
 
@@ -121,7 +121,7 @@ serve:
 serve-local:
 	@scripts/check-certs
 	@scripts/check-perms
-	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 ALLOW_TESTS=1 \
+	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
 	  SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
 	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
 	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \

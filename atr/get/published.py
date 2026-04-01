@@ -41,7 +41,7 @@ async def path(session: web.Committer, _published: Literal["published"], file_pa
     # This route is for debugging
     # When developing locally, there is no proxy to view the downloads directory
     # Therefore this path acts as a way to check the contents of that directory
-    if not config.get().ALLOW_TESTS:
+    if not config.is_test_mode():
         return quart.abort(404)
     return await _path(session, str(file_path))
 
@@ -51,7 +51,7 @@ async def root(session: web.Committer, _published: Literal["published/"]) -> web
     """
     URL: /published/
     """
-    if not config.get().ALLOW_TESTS:
+    if not config.is_test_mode():
         return quart.abort(404)
     return await _path(session, "")
 

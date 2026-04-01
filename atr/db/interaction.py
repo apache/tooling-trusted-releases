@@ -555,7 +555,7 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
 
 
 def vote_duration_bypass() -> bool:
-    return (config.get_mode() == config.Mode.Debug) or config.get().ALLOW_TESTS
+    return not config.is_production_mode()
 
 
 def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:

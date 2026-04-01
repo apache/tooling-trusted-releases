@@ -67,8 +67,8 @@ ATR serves on multiple hosts, but we recommend using `localhost.apache.org` cons
 
 ### Environment variables
 
-* `ADMIN_USERS_ADDITIONAL` : Enable additional users as admins
-* `ALLOW_TESTS=1`: Enable test mode with mock authentication
+* `ADMIN_USERS_ADDITIONAL` : Enable additional users as admins (inoperative in production)
+* `TESTS=1`: Enable test mode with mock authentication
 * `APP_HOST`: Hostname for the application
 * `BIND`: Address and port to bind (default: `127.0.0.1:8080`)
 * `LDAP_BIND_DN`: LDAP bind DN for rsync writes

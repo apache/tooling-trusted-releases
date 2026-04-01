@@ -42,7 +42,7 @@ async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = N
 def is_admin(user_id: str | None) -> bool:
     if user_id is None:
         return False
-    if config.get().ALLOW_TESTS and (user_id == "test"):
+    if config.is_test_mode() and (user_id == "test"):
         return True
     if util.is_user_session_downgraded():
         return False
@@ -54,7 +54,7 @@ def is_admin(user_id: str | None) -> bool:
 async def is_admin_async(user_id: str | None) -> bool:
     if user_id is None:
         return False
-    if config.get().ALLOW_TESTS and (user_id == "test"):
+    if config.is_test_mode() and (user_id == "test"):
         return True
     if util.is_user_session_downgraded():
         return False
@@ -86,9 +86,9 @@ async def projects(uid: str, committee_only: bool = False, super_project: bool =
             if p.committee is None:
                 continue
 
-            # Allow access to test project when ALLOW_TESTS is enabled
+            # Allow access to test project in Test mode
             # This means that the Test project will show in the user interface for everyone
-            if config.get().ALLOW_TESTS and (p.committee.key == "test"):
+            if config.is_test_mode() and (p.committee.key == "test"):
                 user_projects.append(p)
                 continue
 

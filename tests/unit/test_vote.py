@@ -30,8 +30,7 @@ class MockApp:
 
 
 class MockConfig:
-    def __init__(self, allow_tests: bool = False, admin_users_additional: str = "") -> None:
-        self.ALLOW_TESTS = allow_tests
+    def __init__(self, admin_users_additional: str = "") -> None:
         self.ADMIN_USERS_ADDITIONAL = admin_users_additional
 
 

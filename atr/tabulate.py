@@ -18,6 +18,7 @@
 import time
 from collections.abc import Generator
 
+import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.models as models
@@ -29,7 +30,7 @@ MAX_THREAD_MESSAGES = 10000
 
 async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee | None:
     committee = release.project.committee
-    if util.is_dev_environment():
+    if config.is_dev_environment():
         message_count = 0
         async for _mid, msg in util.thread_messages(thread_id):
             message_count += 1
@@ -450,7 +451,7 @@ def _vote_resolution_votes(
 async def _vote_status(asf_uid: str, list_raw: str, committee: sql.Committee | None) -> models.tabulate.VoteStatus:
     status = models.tabulate.VoteStatus.UNKNOWN
 
-    if util.is_dev_environment():
+    if config.is_dev_environment():
         committee_label = list_raw.split(".apache.org", 1)[0].split(".", 1)[-1]
         async with db.session() as data:
             committee = await data.committee(key=committee_label).get()

@@ -58,7 +58,7 @@ docker compose up --build
 The compose configuration:
 
 - Mounts `atr/` for live code changes
-- Enables test mode (`ALLOW_TESTS=1`)
+- Enables test mode (`TESTS=1`)
 - Exposes port 8080
 
 ## Documentation build
