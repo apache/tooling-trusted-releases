@@ -88,7 +88,7 @@ class UpdateIgnoreForm(form.Form):
     variant: UPDATE = form.value(UPDATE)
     id: int = form.label("ID", widget=form.Widget.HIDDEN)
     release_glob: str = form.label("Release pattern", default="")
-    revision_number: str = form.label("Revision number (literal)", default="")
+    revision_number: safe.OptionalRevisionNumber = form.label("Revision number (literal)", default="")
     checker_glob: str = form.label("Checker pattern", default="")
     primary_rel_path_glob: str = form.label("Primary rel path pattern", default="")
     member_rel_path_glob: str = form.label("Member rel path pattern", default="")

@@ -115,7 +115,7 @@ class CommitteeMember(CommitteeParticipant):
             created=datetime.datetime.now(datetime.UTC),
             project_key=str(project_key),
             release_glob=release_glob,
-            revision_number=str(revision_number),
+            revision_number=str(revision_number) if revision_number is not None else None,
             checker_glob=checker_glob,
             primary_rel_path_glob=primary_rel_path_glob,
             member_rel_path_glob=member_rel_path_glob,
@@ -146,7 +146,7 @@ class CommitteeMember(CommitteeParticipant):
         self,
         id: int,
         release_glob: str | None = None,
-        revision_number: str | None = None,
+        revision_number: safe.RevisionNumber | None = None,
         checker_glob: str | None = None,
         primary_rel_path_glob: str | None = None,
         member_rel_path_glob: str | None = None,
@@ -167,7 +167,7 @@ class CommitteeMember(CommitteeParticipant):
         # The updating ASF UID is now responsible for the whole ignore
         cri.asf_uid = self.__asf_uid
         cri.release_glob = release_glob
-        cri.revision_number = revision_number
+        cri.revision_number = str(revision_number) if revision_number is not None else None
         cri.checker_glob = checker_glob
         cri.primary_rel_path_glob = primary_rel_path_glob
         cri.member_rel_path_glob = member_rel_path_glob
