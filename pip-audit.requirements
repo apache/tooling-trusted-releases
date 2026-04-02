@@ -5,7 +5,7 @@ aiofiles==25.1.0
     #   tooling-trusted-releases
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.13.4
+aiohttp==3.13.5
     # via
     #   asfpy
     #   asfquart
@@ -58,7 +58,7 @@ cffi==2.0.0
     #   cryptography
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.6
+charset-normalizer==3.4.7
     # via requests
 click==8.3.1
     # via
@@ -303,8 +303,10 @@ referencing==0.37.0
     #   jsonschema-specifications
 regex==2026.3.32
     # via djlint
-requests==2.33.0
-    # via asfpy
+requests==2.33.1
+    # via
+    #   asfpy
+    #   tooling-trusted-releases
 rfc3339-validator==0.1.4
     # via jsonschema
 rfc3986-validator==0.1.1

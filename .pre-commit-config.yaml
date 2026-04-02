@@ -106,7 +106,7 @@ repos:
         - '--disable-pip'
         - '--no-deps'
 - repo: https://github.com/oxc-project/mirrors-oxlint
-  rev: v1.57.0
+  rev: v1.58.0
   hooks:
     - id: oxlint
       name: lint JS files with Oxlint
