@@ -84,13 +84,11 @@ class FoundationCommitter(GeneralPublic):
                 apache_uid=self.__asf_uid,
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}"))
+            affected_committee_keys = {committee.key for committee in key.committees}
             await self.__data.delete(key)
             await self.__data.commit()
-            for committee in key.committees:
-                wacm = self.__write.as_committee_member_outcome(committee.key).result_or_none()
-                if wacm is None:
-                    continue
-                await wacm.keys.autogenerate_keys_file()
+            for committee_key in sorted(affected_committee_keys):
+                await self._sync_committee_keys_file(committee_key)
             return outcome.Result(key)
         except Exception as e:
             return outcome.Error(e)
@@ -144,8 +142,11 @@ class FoundationCommitter(GeneralPublic):
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
             storage.AccessError(f"Committee not found: {committee_key}")
         )
+        return await self._keys_file_text(committee)
+
+    async def _keys_file_text(self, committee: sql.Committee) -> str:
         if not committee.public_signing_keys:
-            raise storage.AccessError(f"No keys found for committee {committee_key} to generate KEYS file.")
+            raise storage.AccessError(f"No keys found for committee {committee.key} to generate KEYS file.")
 
         sorted_keys = sorted(committee.public_signing_keys, key=lambda k: k.fingerprint)
 
@@ -178,10 +179,45 @@ class FoundationCommitter(GeneralPublic):
         key_count_for_header = len(committee.public_signing_keys)
 
         return await self.__keys_file_format(
-            committee_key=committee_key,
+            committee_key=committee.key,
             key_count_for_header=key_count_for_header,
             key_blocks_str=key_blocks_str,
         )
+
+    def _committee_keys_path(self, committee: sql.Committee) -> pathlib.Path:
+        base_downloads_dir = paths.get_downloads_dir()
+        if committee.is_podling:
+            return base_downloads_dir / "incubator" / committee.key / "KEYS"
+        return base_downloads_dir / committee.key / "KEYS"
+
+    async def _sync_committee_keys_file(self, committee_key: str) -> str | None:
+        committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
+            storage.AccessError(f"Committee not found: {committee_key}")
+        )
+        committee_keys_path = self._committee_keys_path(committee)
+        committee_keys_dir = committee_keys_path.parent
+
+        if not committee.public_signing_keys:
+            try:
+                if await aiofiles.os.path.exists(committee_keys_path):
+                    await aiofiles.os.remove(committee_keys_path)
+            except OSError as e:
+                raise storage.AccessError(f"Failed to remove KEYS file for committee {committee_key}: {e}") from e
+            return None
+
+        full_keys_file_content = await self._keys_file_text(committee)
+        try:
+            await aiofiles.os.makedirs(committee_keys_dir, exist_ok=True)
+            await asyncio.to_thread(util.chmod_directories, committee_keys_dir, permissions=0o755)
+            await asyncio.to_thread(committee_keys_path.write_text, full_keys_file_content, encoding="utf-8")
+        except OSError as e:
+            raise storage.AccessError(f"Failed to write KEYS file for committee {committee_key}: {e}") from e
+        except Exception as e:
+            log.exception(f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}")
+            raise storage.AccessError(
+                f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}"
+            ) from e
+        return str(committee_keys_path)
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
         """Delete all OpenPGP keys and their links for a test user."""
@@ -259,9 +295,7 @@ class FoundationCommitter(GeneralPublic):
         await self.__data.commit()
 
         for committee_key in sorted(affected):
-            wacp = self.__write.as_committee_participant_outcome(committee_key).result_or_none()
-            if wacp is not None:
-                await wacp.keys.autogenerate_keys_file()
+            await self._sync_committee_keys_file(committee_key)
 
         return affected
 
@@ -472,32 +506,19 @@ class CommitteeParticipant(FoundationCommitter):
         self,
     ) -> outcome.Outcome[str]:
         try:
-            base_downloads_dir = paths.get_downloads_dir()
-
             committee = await self.committee()
-            is_podling = committee.is_podling
-
-            full_keys_file_content = await self.keys_file_text(self.__committee_key)
-            if is_podling:
-                committee_keys_dir = base_downloads_dir / "incubator" / self.__committee_key
-            else:
-                committee_keys_dir = base_downloads_dir / self.__committee_key
-            committee_keys_path = committee_keys_dir / "KEYS"
+            if not committee.public_signing_keys:
+                return outcome.Error(
+                    storage.AccessError(f"No keys found for committee {self.__committee_key} to generate KEYS file.")
+                )
+            synced_path = await self._sync_committee_keys_file(self.__committee_key)
         except Exception as e:
             return outcome.Error(e)
-
-        try:
-            await aiofiles.os.makedirs(committee_keys_dir, exist_ok=True)
-            await asyncio.to_thread(util.chmod_directories, committee_keys_dir, permissions=0o755)
-            await asyncio.to_thread(committee_keys_path.write_text, full_keys_file_content, encoding="utf-8")
-        except OSError as e:
-            error_msg = f"Failed to write KEYS file for committee {self.__committee_key}: {e}"
-            return outcome.Error(storage.AccessError(error_msg))
-        except Exception as e:
-            error_msg = f"An unexpected error occurred writing KEYS for committee {self.__committee_key}: {e}"
-            log.exception(f"An unexpected error occurred writing KEYS for committee {self.__committee_key}: {e}")
-            return outcome.Error(storage.AccessError(error_msg))
-        return outcome.Result(str(committee_keys_path))
+        if synced_path is None:
+            return outcome.Error(
+                storage.AccessError(f"No keys found for committee {self.__committee_key} to generate KEYS file.")
+            )
+        return outcome.Result(synced_path)
 
     async def committee(self) -> sql.Committee:
         return await self.__data.committee(key=self.__committee_key, _public_signing_keys=True).demand(
