@@ -15,46 +15,48 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pathlib
 
 import atr.classify as classify
+import atr.models.safe as safe
 
 
 def test_archive_defaults_to_source():
-    path = pathlib.Path("apache-widget-1.0.tar.gz")
+    path = safe.RelPath("apache-widget-1.0.tar.gz")
     assert classify.classify(path) == classify.FileType.SOURCE
 
 
 def test_archive_tgz_defaults_to_source():
-    path = pathlib.Path("apache-widget-1.0.tgz")
+    path = safe.RelPath("apache-widget-1.0.tgz")
     assert classify.classify(path) == classify.FileType.SOURCE
 
 
 def test_archive_zip_defaults_to_source():
-    path = pathlib.Path("apache-widget-1.0.zip")
+    path = safe.RelPath("apache-widget-1.0.zip")
     assert classify.classify(path) == classify.FileType.SOURCE
 
 
 def test_binary_matcher_classifies_as_binary(tmp_path):
-    path = pathlib.Path("maven-mvnd-1.0.4-windows-amd64.zip")
-    result = classify.classify(path, base_path=tmp_path, binary_matcher=_matches_windows)
+    path = safe.RelPath("maven-mvnd-1.0.4-windows-amd64.zip")
+    result = classify.classify(path, base_path=safe.StatePath(tmp_path), binary_matcher=_matches_windows)
     assert result == classify.FileType.BINARY
 
 
 def test_binary_matcher_does_not_override_source_matcher(tmp_path):
-    path = pathlib.Path("apache-widget-1.0.tar.gz")
-    result = classify.classify(path, base_path=tmp_path, source_matcher=_always_true, binary_matcher=_always_true)
+    path = safe.RelPath("apache-widget-1.0.tar.gz")
+    result = classify.classify(
+        path, base_path=safe.StatePath(tmp_path), source_matcher=_always_true, binary_matcher=_always_true
+    )
     assert result == classify.FileType.SOURCE
 
 
 def test_binary_matcher_wins_over_stem_heuristic(tmp_path):
-    path = pathlib.Path("apache-widget-1.0-src.tar.gz")
-    result = classify.classify(path, base_path=tmp_path, binary_matcher=_always_true)
+    path = safe.RelPath("apache-widget-1.0-src.tar.gz")
+    result = classify.classify(path, base_path=safe.StatePath(tmp_path), binary_matcher=_always_true)
     assert result == classify.FileType.BINARY
 
 
 def test_binary_stem_heuristic():
-    path = pathlib.Path("apache-widget-1.0-binary.zip")
+    path = safe.RelPath("apache-widget-1.0-binary.zip")
     assert classify.classify(path) == classify.FileType.BINARY
 
 
@@ -71,61 +73,63 @@ def test_counts_docs_with_source():
 
 
 def test_disallowed_files_detected():
-    path = pathlib.Path(".DS_Store")
+    path = safe.RelPath("desktop.ini")
     assert classify.classify(path) == classify.FileType.DISALLOWED
 
 
 def test_docs_stem_heuristic():
-    path = pathlib.Path("apache-widget-1.0-docs.tar.gz")
+    path = safe.RelPath("apache-widget-1.0-docs.tar.gz")
     assert classify.classify(path) == classify.FileType.DOCS
 
 
 def test_docs_stem_heuristic_javadoc():
-    path = pathlib.Path("apache-widget-1.0-javadoc.zip")
+    path = safe.RelPath("apache-widget-1.0-javadoc.zip")
     assert classify.classify(path) == classify.FileType.DOCS
 
 
 def test_docs_stem_heuristic_site():
-    path = pathlib.Path("apache-widget-1.0-site.tar.gz")
+    path = safe.RelPath("apache-widget-1.0-site.tar.gz")
     assert classify.classify(path) == classify.FileType.DOCS
 
 
 def test_jar_defaults_to_binary():
-    path = pathlib.Path("apache-widget-1.0.jar")
+    path = safe.RelPath("apache-widget-1.0.jar")
     assert classify.classify(path) == classify.FileType.BINARY
 
 
 def test_matchers_from_policy_builds_both(tmp_path):
-    source_matcher, binary_matcher = classify.matchers_from_policy(["*-src.*"], ["*-bin.*"], tmp_path)
+    source_matcher, binary_matcher = classify.matchers_from_policy(["*-src.*"], ["*-bin.*"], safe.StatePath(tmp_path))
     assert source_matcher is not None
     assert binary_matcher is not None
 
 
 def test_matchers_from_policy_empty(tmp_path):
-    source_matcher, binary_matcher = classify.matchers_from_policy([], [], tmp_path)
+    source_matcher, binary_matcher = classify.matchers_from_policy([], [], safe.StatePath(tmp_path))
     assert source_matcher is None
     assert binary_matcher is None
 
 
 def test_metadata_suffix_detected():
-    path = pathlib.Path("apache-widget-1.0.tar.gz.sha512")
+    path = safe.RelPath("apache-widget-1.0.tar.gz.sha512")
     assert classify.classify(path) == classify.FileType.METADATA
 
 
 def test_source_matcher_wins_over_stem_binary(tmp_path):
-    path = pathlib.Path("apache-widget-1.0-bin.tar.gz")
-    result = classify.classify(path, base_path=tmp_path, source_matcher=_always_true)
+    path = safe.RelPath("apache-widget-1.0-bin.tar.gz")
+    result = classify.classify(path, base_path=safe.StatePath(tmp_path), source_matcher=_always_true)
     assert result == classify.FileType.SOURCE
 
 
 def test_source_stem_heuristic():
-    path = pathlib.Path("apache-widget-1.0-source.tar.gz")
+    path = safe.RelPath("apache-widget-1.0-source.tar.gz")
     assert classify.classify(path) == classify.FileType.SOURCE
 
 
 def test_stem_heuristics_are_fallback_after_policy(tmp_path):
-    path = pathlib.Path("apache-widget-1.0-src.tar.gz")
-    result = classify.classify(path, base_path=tmp_path, source_matcher=_always_false, binary_matcher=_always_false)
+    path = safe.RelPath("apache-widget-1.0-src.tar.gz")
+    result = classify.classify(
+        path, base_path=safe.StatePath(tmp_path), source_matcher=_always_false, binary_matcher=_always_false
+    )
     assert result == classify.FileType.SOURCE
 
 

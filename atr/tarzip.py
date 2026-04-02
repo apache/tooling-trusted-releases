@@ -16,6 +16,7 @@
 # under the License.
 
 import contextlib
+import os
 import tarfile
 import zipfile
 from collections.abc import Generator, Iterator
@@ -188,7 +189,7 @@ type Archive = TarArchive | ZipArchive
 
 @contextlib.contextmanager
 def open_archive(
-    archive_path: str,
+    archive_path: os.PathLike,
     max_members: int = MAX_ARCHIVE_MEMBERS,
 ) -> Generator[Archive]:
     """Open an archive file (tar or zip) and yield an ArchiveContext.

@@ -17,7 +17,6 @@
 
 import asyncio
 import os
-import pathlib
 import shlex
 import subprocess
 import tempfile
@@ -30,6 +29,7 @@ import atr.constants as constants
 import atr.log as log
 import atr.models.checkdata as checkdata
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.util as util
@@ -160,7 +160,7 @@ def _build_rat_command(
 async def _check_core(
     args: checks.FunctionArguments,
     recorder: checks.Recorder,
-    archive_dir: pathlib.Path,
+    archive_dir: safe.StatePath,
     policy_excludes: list[str],
 ) -> None:
     result = await asyncio.to_thread(

@@ -69,12 +69,13 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
 async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
+    temp_dir = safe.StatePath(tmp_path)
+    quarantine_dir = temp_dir / "quarantine"
+    quarantine_dir.path.mkdir()
     archive_rel_path = "artifact.tar.gz"
-    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
-    cache_root = tmp_path / "cache"
-    tmp_root = tmp_path / "temporary"
+    (quarantine_dir / archive_rel_path).path.write_bytes(b"archive")
+    cache_root = temp_dir / "cache"
+    tmp_root = temp_dir / "temporary"
     recorded: dict[str, pathlib.Path] = {}
 
     def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
@@ -98,15 +99,15 @@ async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
     await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:ghi")],
         quarantine_dir,
-        "proj",
-        "1.0",
+        safe.ProjectKey("proj"),
+        safe.VersionKey("1.0"),
         entries,
     )
 
     cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_archives_key("blake3:ghi")
 
-    assert cache_dir.is_dir()
-    assert (cache_dir / "winner.txt").read_text() == "winner"
+    assert cache_dir.path.is_dir()
+    assert (cache_dir / "winner.txt").path.read_text() == "winner"
     assert not recorded["staging_dir"].exists()
 
 
@@ -114,12 +115,13 @@ async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
 async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
+    temp_dir = safe.StatePath(tmp_path)
+    quarantine_dir = temp_dir / "quarantine"
+    quarantine_dir.path.mkdir()
     archive_rel_path = "artifact.tar.gz"
-    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
-    cache_root = tmp_path / "cache"
-    tmp_root = tmp_path / "temporary"
+    (quarantine_dir / archive_rel_path).path.write_bytes(b"archive")
+    cache_root = temp_dir / "cache"
+    tmp_root = temp_dir / "temporary"
     recorded: dict[str, pathlib.Path] = {}
 
     def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
@@ -143,15 +145,15 @@ async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
     await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
         quarantine_dir,
-        "proj",
-        "1.0",
+        safe.ProjectKey("proj"),
+        safe.VersionKey("1.0"),
         entries,
     )
 
     cache_dir = cache_root / "proj" / "1.0" / quarantine.hashes.filesystem_archives_key("blake3:def")
 
-    assert cache_dir.is_dir()
-    assert (cache_dir / "winner.txt").read_text() == "winner"
+    assert cache_dir.path.is_dir()
+    assert (cache_dir / "winner.txt").path.read_text() == "winner"
     assert not recorded["staging_dir"].exists()
 
 
@@ -159,12 +161,13 @@ async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
 async def test_extract_archives_propagates_exarch_error_to_file_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
+    temp_dir = safe.StatePath(tmp_path)
+    quarantine_dir = temp_dir / "quarantine"
+    quarantine_dir.path.mkdir()
     archive_rel_path = "artifact.tar.gz"
-    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
-    cache_root = tmp_path / "cache"
-    tmp_root = tmp_path / "temporary"
+    (quarantine_dir / archive_rel_path).path.write_bytes(b"archive")
+    cache_root = temp_dir / "cache"
+    tmp_root = temp_dir / "temporary"
 
     def extract_archive(_archive_path: str, _extract_dir: str, _config: object) -> None:
         raise RuntimeError("unsafe zip detected")
@@ -179,8 +182,8 @@ async def test_extract_archives_propagates_exarch_error_to_file_entry(
         await quarantine._extract_archives(
             [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:bad")],
             quarantine_dir,
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             entries,
         )
 
@@ -192,12 +195,13 @@ async def test_extract_archives_propagates_exarch_error_to_file_entry(
 async def test_extract_archives_stages_in_temporary_then_promotes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
+    temp_dir = safe.StatePath(tmp_path)
+    quarantine_dir = temp_dir / "quarantine"
+    quarantine_dir.path.mkdir()
     archive_rel_path = "artifact.tar.gz"
-    (quarantine_dir / archive_rel_path).write_bytes(b"archive")
-    cache_root = tmp_path / "cache"
-    tmp_root = tmp_path / "temporary"
+    (quarantine_dir / archive_rel_path).path.write_bytes(b"archive")
+    cache_root = temp_dir / "cache"
+    tmp_root = temp_dir / "temporary"
     recorded: dict[str, str] = {}
 
     def extract_archive(archive_path: str, extract_dir: str, _config: object) -> None:
@@ -215,8 +219,8 @@ async def test_extract_archives_stages_in_temporary_then_promotes(
     await quarantine._extract_archives(
         [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:abc")],
         quarantine_dir,
-        "proj",
-        "1.0",
+        safe.ProjectKey("proj"),
+        safe.VersionKey("1.0"),
         entries,
     )
 
@@ -224,13 +228,13 @@ async def test_extract_archives_stages_in_temporary_then_promotes(
     staging_base = tmp_root
 
     assert recorded["archive_path"] == str(quarantine_dir / archive_rel_path)
-    assert pathlib.Path(recorded["extract_dir"]).parent == staging_base
+    assert pathlib.Path(recorded["extract_dir"]).parent == staging_base.path
     assert pathlib.Path(recorded["extract_dir"]) != cache_dir
-    assert cache_dir.is_dir()
-    assert (cache_dir / "content.txt").read_text() == "cached"
-    assert list(staging_base.iterdir()) == []
-    assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o555
-    assert stat.S_IMODE((cache_dir / "content.txt").stat().st_mode) == 0o444
+    assert cache_dir.path.is_dir()
+    assert (cache_dir / "content.txt").path.read_text() == "cached"
+    assert list(staging_base.path.iterdir()) == []
+    assert stat.S_IMODE(cache_dir.path.stat().st_mode) == 0o555
+    assert stat.S_IMODE((cache_dir / "content.txt").path.stat().st_mode) == 0o444
 
 
 @pytest.mark.asyncio

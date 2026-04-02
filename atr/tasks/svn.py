@@ -16,7 +16,6 @@
 # under the License.
 
 import asyncio
-import pathlib
 from typing import Any, Final
 
 import aiofiles.os
@@ -84,12 +83,12 @@ async def _import_files_core(args: SvnImport) -> str:
     async with storage.write(args.asf_uid) as write:
         wacp = await write.as_project_committee_participant(args.project_key)
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             log.debug(f"Created revision directory: {path}")
 
-            final_target_path = path
+            final_target_path = path.path
             if args.target_subdirectory:
-                final_target_path = path / args.target_subdirectory
+                final_target_path = (path / args.target_subdirectory).path
                 # Validate that final_target_path is a subdirectory of new_revision_dir
                 if not final_target_path.is_relative_to(path):
                     raise SvnImportError(
@@ -142,7 +141,7 @@ async def _import_files_core(args: SvnImport) -> str:
         return f"Successfully imported files from SVN into revision {result.number}"
 
 
-async def _import_files_core_run_svn_export(svn_command: list[str], temp_export_path: pathlib.Path) -> None:
+async def _import_files_core_run_svn_export(svn_command: list[str], temp_export_path: safe.StatePath) -> None:
     """Execute the svn export command and handle errors."""
     log.info(f"Executing SVN command: {' '.join(svn_command)}")
 

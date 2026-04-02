@@ -22,6 +22,7 @@ from typing import Final
 
 import pytest
 
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.types as types
 import atr.storage.writers.revision as revision
@@ -111,12 +112,16 @@ def test_generate_quarantine_token_uniqueness():
 
 @pytest.mark.asyncio
 async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
     release.project.release_policy = None
+    release.project.key = "proj"
+    release.version = "1.0"
     release.release_policy = None
-    release.key = sql.release_key("proj", "1.0")
+    release.key = sql.release_key(release.project.key, release.version)
+    release.latest_revision_number = "00001"
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
@@ -130,7 +135,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
             revision.attestable,
             "paths_to_hashes_and_sizes",
             new_callable=mock.AsyncMock,
-            return_value=({"README.md": "hash1"}, {"README.md": 100}),
+            return_value=({safe.RelPath("README.md"): "hash1"}, {safe.RelPath("README.md"): 100}),
         ),
         mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
         mock.patch.object(revision.db, "session", return_value=mock_session),
@@ -142,7 +147,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
             revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, None, release)
         ),
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(MockQuarantineData(None))),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
@@ -152,8 +157,8 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
         result = await participant.create_revision_with_quarantine(
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
         )
@@ -163,12 +168,16 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
 
 @pytest.mark.asyncio
 async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
     release.project.release_policy = None
+    release.project.key = "proj"
+    release.version = "1.0"
     release.release_policy = None
     release.key = sql.release_key("proj", "1.0")
+    release.latest_revision_number = "00001"
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
@@ -193,7 +202,7 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
             revision, "_lock_and_merge", new_callable=mock.AsyncMock, return_value=(None, None, None, release)
         ),
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(MockQuarantineData(None))),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
@@ -203,8 +212,8 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
         result = await participant.create_revision_with_quarantine(
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
         )
@@ -235,16 +244,20 @@ async def test_phase_gate_rejects_mismatched_phase():
 
 @pytest.mark.asyncio
 async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.key = "proj"
+    release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
+    release.latest_revision_number = "00001"
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
     safe_data = MockQuarantineData(latest_revision_key=None)
 
-    quarantine_dir = tmp_path / "quarantine" / "proj" / "1.0" / "testtoken"
+    quarantine_dir = temp_dir / "quarantine" / "proj" / "1.0" / "testtoken"
 
     patches = [
         mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
@@ -253,19 +266,22 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
             revision.attestable,
             "paths_to_hashes_and_sizes",
             new_callable=mock.AsyncMock,
-            return_value=({"dist/apache-test-1.0.tar.gz": "hash1"}, {"dist/apache-test-1.0.tar.gz": 1000}),
+            return_value=(
+                {safe.RelPath("dist/apache-test-1.0.tar.gz"): "hash1"},
+                {safe.RelPath("dist/apache-test-1.0.tar.gz"): 1000},
+            ),
         ),
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),
         mock.patch.object(
             revision.detection,
             "detect_archives_requiring_quarantine",
-            return_value=["dist/apache-test-1.0.tar.gz"],
+            return_value=[safe.RelPath("dist/apache-test-1.0.tar.gz")],
         ),
         mock.patch.object(
             revision.detection,
             "deduplicate_quarantine_archives",
-            return_value=[("dist/apache-test-1.0.tar.gz", "hash1")],
+            return_value=[(safe.RelPath("dist/apache-test-1.0.tar.gz"), "hash1")],
         ),
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
         mock.patch.object(revision.sql, "Quarantined", side_effect=FakeQuarantined),
@@ -273,7 +289,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(safe_data)),
         mock.patch.object(revision, "_generate_quarantine_token", return_value="aaaaaaaaaaaaaaaa"),
         mock.patch.object(revision.paths, "quarantine_directory", return_value=quarantine_dir),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
@@ -283,8 +299,8 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
         result = await participant.create_revision_with_quarantine(
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
         )
@@ -306,10 +322,14 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
 
 @pytest.mark.asyncio
 async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.key = "proj"
+    release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
+    release.latest_revision_number = "00001"
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
@@ -325,8 +345,16 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
             "paths_to_hashes_and_sizes",
             new_callable=mock.AsyncMock,
             return_value=(
-                {"a/test.tar.gz": "h1", "b/test.tar.gz": "h1", "c/other.zip": "h2"},
-                {"a/test.tar.gz": 100, "b/test.tar.gz": 100, "c/other.zip": 200},
+                {
+                    safe.RelPath("a/test.tar.gz"): "h1",
+                    safe.RelPath("b/test.tar.gz"): "h1",
+                    safe.RelPath("c/other.zip"): "h2",
+                },
+                {
+                    safe.RelPath("a/test.tar.gz"): 100,
+                    safe.RelPath("b/test.tar.gz"): 100,
+                    safe.RelPath("c/other.zip"): 200,
+                },
             ),
         ),
         mock.patch.object(revision.db, "session", return_value=mock_session),
@@ -334,12 +362,12 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
         mock.patch.object(
             revision.detection,
             "detect_archives_requiring_quarantine",
-            return_value=["a/test.tar.gz", "b/test.tar.gz", "c/other.zip"],
+            return_value=[safe.RelPath("a/test.tar.gz"), safe.RelPath("b/test.tar.gz"), safe.RelPath("c/other.zip")],
         ),
         mock.patch.object(
             revision.detection,
             "deduplicate_quarantine_archives",
-            return_value=[("a/test.tar.gz", "h1"), ("c/other.zip", "h2")],
+            return_value=[(safe.RelPath("a/test.tar.gz"), "h1"), (safe.RelPath("c/other.zip"), "h2")],
         ),
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
         mock.patch.object(revision.sql, "Quarantined", side_effect=FakeQuarantined),
@@ -347,7 +375,7 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(safe_data)),
         mock.patch.object(revision, "_generate_quarantine_token", return_value="cccccccccccccccc"),
         mock.patch.object(revision.paths, "quarantine_directory", return_value=quarantine_dir),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
@@ -357,8 +385,8 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
         result = await participant.create_revision_with_quarantine(
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
         )
@@ -381,6 +409,7 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
 
 @pytest.mark.asyncio
 async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
@@ -403,19 +432,19 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
             revision.attestable,
             "paths_to_hashes_and_sizes",
             new_callable=mock.AsyncMock,
-            return_value=({"dist/archive.tar.gz": "newhash"}, {"dist/archive.tar.gz": 500}),
+            return_value=({safe.RelPath("dist/archive.tar.gz"): "newhash"}, {safe.RelPath("dist/archive.tar.gz"): 500}),
         ),
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),
         mock.patch.object(
             revision.detection,
             "detect_archives_requiring_quarantine",
-            return_value=["dist/archive.tar.gz"],
+            return_value=[safe.RelPath("dist/archive.tar.gz")],
         ),
         mock.patch.object(
             revision.detection,
             "deduplicate_quarantine_archives",
-            return_value=[("dist/archive.tar.gz", "newhash")],
+            return_value=[(safe.RelPath("dist/archive.tar.gz"), "newhash")],
         ),
         mock.patch.object(
             revision.interaction,
@@ -428,7 +457,7 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
         mock.patch.object(revision, "SafeSession", return_value=MockQuarantineSession(safe_data)),
         mock.patch.object(revision, "_generate_quarantine_token", return_value="bbbbbbbbbbbbbbbb"),
         mock.patch.object(revision.paths, "quarantine_directory", return_value=quarantine_dir),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
@@ -436,15 +465,15 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
         mock.patch.object(
             revision.attestable, "load", new_callable=mock.AsyncMock, return_value=mock.MagicMock(paths={})
         ),
-        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
-        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00003"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00003"),
     ]
 
     with contextlib.ExitStack() as stack:
         _apply_patches(stack, patches)
         result = await participant.create_revision_with_quarantine(
-            "proj",
-            "1.0",
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
             "test",
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
         )

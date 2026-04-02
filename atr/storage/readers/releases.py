@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 
 import atr.classify as classify
 import atr.db as db
@@ -55,7 +54,7 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def path_info(self, release: sql.Release, all_paths: list[pathlib.Path]) -> types.PathInfo | None:
+    async def path_info(self, release: sql.Release, all_paths: list[safe.RelPath]) -> types.PathInfo | None:
         info = types.PathInfo()
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
@@ -84,8 +83,8 @@ class GeneralPublic:
 
     def __accumulate_results(
         self,
-        results: dict[pathlib.Path, list[sql.CheckResult]],
-        paths_set: set[pathlib.Path],
+        results: dict[safe.RelPath, list[sql.CheckResult]],
+        paths_set: set[safe.RelPath],
         checker_data: dict[str, CheckerAccumulator],
         kind: str,
     ) -> None:
@@ -107,7 +106,7 @@ class GeneralPublic:
                     acc.failure += 1
                     acc.failure_files[path_str] = acc.failure_files.get(path_str, 0) + 1
 
-    def __compute_checker_stats(self, info: types.PathInfo, paths: list[pathlib.Path]) -> None:
+    def __compute_checker_stats(self, info: types.PathInfo, paths: list[safe.RelPath]) -> None:
         paths_set = set(paths)
         checker_data: dict[str, CheckerAccumulator] = {}
 
@@ -154,8 +153,8 @@ class GeneralPublic:
     async def __blocker(self, cs: types.ChecksSubset) -> None:
         blocker = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.BLOCKER]
         for result in blocker:
-            if primary_rel_path := result.primary_rel_path:
-                cs.info.errors.setdefault(pathlib.Path(primary_rel_path), []).append(result)
+            if path := result.safe_primary_rel_path:
+                cs.info.errors.setdefault(path, []).append(result)
 
     async def __errors(self, cs: types.ChecksSubset) -> None:
         errors = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.FAILURE]
@@ -163,15 +162,15 @@ class GeneralPublic:
             if cs.match_ignore(error):
                 cs.info.ignored_errors.append(error)
                 continue
-            if primary_rel_path := error.primary_rel_path:
-                cs.info.errors.setdefault(pathlib.Path(primary_rel_path), []).append(error)
+            if path := error.safe_primary_rel_path:
+                cs.info.errors.setdefault(path, []).append(error)
 
     async def __successes(self, cs: types.ChecksSubset) -> None:
         successes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUCCESS]
         for success in successes:
             # Successes cannot be ignored
-            if primary_rel_path := success.primary_rel_path:
-                cs.info.successes.setdefault(pathlib.Path(primary_rel_path), []).append(success)
+            if path := success.safe_primary_rel_path:
+                cs.info.successes.setdefault(path, []).append(success)
 
     async def __warnings(self, cs: types.ChecksSubset) -> None:
         warnings = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.WARNING]
@@ -179,5 +178,5 @@ class GeneralPublic:
             if cs.match_ignore(warning):
                 cs.info.ignored_warnings.append(warning)
                 continue
-            if primary_rel_path := warning.primary_rel_path:
-                cs.info.warnings.setdefault(pathlib.Path(primary_rel_path), []).append(warning)
+            if path := warning.safe_primary_rel_path:
+                cs.info.warnings.setdefault(path, []).append(warning)

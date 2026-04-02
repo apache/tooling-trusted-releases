@@ -179,13 +179,11 @@ def _component_purl_with_version(component: Component) -> str | None:
     if component.version is None:
         return None
     version = component.version.strip()
-    if not version:
+    if (not version) or version == "UNKNOWN":
         return None
-    # Clone the purl so we don't affect the component definition
-    purl = str(component.purl)
-    new_purl = PackageURL.from_string(purl)
-    new_purl.version = version
-    return str(new_purl)
+    # Make a new purl so we don't affect the component definition
+    purl = PackageURL.from_string(str(component.purl))
+    return str(PackageURL(purl.type, purl.namespace, purl.name, version, purl.qualifiers, purl.subpath))
 
 
 async def _fetch_vulnerabilities_for_batch(

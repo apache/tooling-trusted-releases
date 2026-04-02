@@ -25,10 +25,7 @@ import asyncio
 import datetime
 import tempfile
 import textwrap
-from typing import TYPE_CHECKING, NoReturn
-
-if TYPE_CHECKING:
-    import pathlib
+from typing import NoReturn
 
 import aiofiles
 import aiofiles.os
@@ -184,7 +181,7 @@ class FoundationCommitter(GeneralPublic):
             key_blocks_str=key_blocks_str,
         )
 
-    def _committee_keys_path(self, committee: sql.Committee) -> pathlib.Path:
+    def _committee_keys_path(self, committee: sql.Committee) -> safe.StatePath:
         base_downloads_dir = paths.get_downloads_dir()
         if committee.is_podling:
             return base_downloads_dir / "incubator" / committee.key / "KEYS"
@@ -209,7 +206,7 @@ class FoundationCommitter(GeneralPublic):
         try:
             await aiofiles.os.makedirs(committee_keys_dir, exist_ok=True)
             await asyncio.to_thread(util.chmod_directories, committee_keys_dir, permissions=0o755)
-            await asyncio.to_thread(committee_keys_path.write_text, full_keys_file_content, encoding="utf-8")
+            await asyncio.to_thread(committee_keys_path.path.write_text, full_keys_file_content, encoding="utf-8")
         except OSError as e:
             raise storage.AccessError(f"Failed to write KEYS file for committee {committee_key}: {e}") from e
         except Exception as e:
@@ -564,7 +561,7 @@ class CommitteeParticipant(FoundationCommitter):
         if (outcomes.result_count > 0) and (outcomes.error_count == 0):
             description = "Removed KEYS file after successful import through web interface"
 
-            async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+            async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / "KEYS"
                 await aiofiles.os.remove(path_in_new_revision)
 

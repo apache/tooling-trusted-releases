@@ -29,10 +29,10 @@ import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
+import atr.tasks.gha as gha
 import atr.template as template
 import atr.util as util
 import atr.web as web
-from atr.tasks import gha
 
 
 @get.typed

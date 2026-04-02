@@ -26,7 +26,7 @@ import atr.paths as paths
 def test_get_quarantined_dir_uses_state_dir(monkeypatch, tmp_path: pathlib.Path):
     mock_config = types.SimpleNamespace(STATE_DIR=str(tmp_path))
     monkeypatch.setattr("atr.config.get", lambda: mock_config)
-    assert paths.get_quarantined_dir() == tmp_path / "quarantined"
+    assert paths.get_quarantined_dir().path == tmp_path / "quarantined"
 
 
 def test_quarantine_directory_builds_deterministic_path(monkeypatch, tmp_path: pathlib.Path):
@@ -35,7 +35,8 @@ def test_quarantine_directory_builds_deterministic_path(monkeypatch, tmp_path: p
     mock_release = types.SimpleNamespace(project_key="example", version="1.2.3")
     quarantined = types.SimpleNamespace(release=mock_release, token="0123456789abcdef")
     assert (
-        paths.quarantine_directory(quarantined) == tmp_path / "quarantined" / "example" / "1.2.3" / "0123456789abcdef"
+        paths.quarantine_directory(quarantined).path
+        == tmp_path / "quarantined" / "example" / "1.2.3" / "0123456789abcdef"
     )
 
 

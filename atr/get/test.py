@@ -16,7 +16,6 @@
 # under the License.
 
 import json
-import pathlib
 from typing import Literal
 
 import aiofiles
@@ -132,14 +131,14 @@ async def test_merge(
     async with storage.write(session) as write_n:
         wacp_n = await write_n.as_project_committee_participant(project_key)
 
-        async def modify_new(path_new: pathlib.Path, _old_rev_new: sql.Revision | None) -> None:
+        async def modify_new(path_new: safe.StatePath, _old_rev_new: sql.Revision | None) -> None:
             async with aiofiles.open(path_new / "from_new.txt", "w") as f:
                 await f.write("new content")
 
             async with storage.write(session) as write_p:
                 wacp_p = await write_p.as_project_committee_participant(project_key)
 
-                async def modify_prior(path_prior: pathlib.Path, _old_rev_prior: sql.Revision | None) -> None:
+                async def modify_prior(path_prior: safe.StatePath, _old_rev_prior: sql.Revision | None) -> None:
                     async with aiofiles.open(path_prior / "from_prior.txt", "w") as f:
                         await f.write("prior content")
 

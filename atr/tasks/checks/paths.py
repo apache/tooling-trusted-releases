@@ -25,6 +25,7 @@ import aiofiles.os
 import atr.analysis as analysis
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
@@ -111,8 +112,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
 
 async def _check_artifact_rules(
-    base_path: pathlib.Path,
-    relative_path: pathlib.Path,
+    base_path: safe.StatePath,
+    relative_path: safe.RelPath,
     relative_paths: set[str],
     errors: list[str],
     blockers: list[str],
@@ -122,13 +123,14 @@ async def _check_artifact_rules(
     full_path = base_path / relative_path
 
     # RDP says that .asc is required
-    asc_path = full_path.with_suffix(full_path.suffix + ".asc")
+    asc_path = full_path.path.with_suffix(full_path.path.suffix + ".asc")
     if not await aiofiles.os.path.exists(asc_path):
         blockers.append(f"Missing corresponding signature file ({relative_path}.asc)")
 
     # RDP requires one of .sha256 or .sha512
-    relative_sha256_path = relative_path.with_suffix(relative_path.suffix + ".sha256")
-    relative_sha512_path = relative_path.with_suffix(relative_path.suffix + ".sha512")
+    path = relative_path.as_path()
+    relative_sha256_path = path.with_suffix(path.suffix + ".sha256")
+    relative_sha512_path = path.with_suffix(path.suffix + ".sha512")
     has_sha256 = str(relative_sha256_path) in relative_paths
     has_sha512 = str(relative_sha512_path) in relative_paths
     if not (has_sha256 or has_sha512):
@@ -137,13 +139,13 @@ async def _check_artifact_rules(
     # IP requires "incubating" in the filename
     if is_podling is True:
         # TODO: Allow "incubator" too as #114 requests?
-        if "incubating" not in full_path.name:
+        if "incubating" not in full_path.path.name:
             blockers.append("Podling artifact filenames must include 'incubating'")
 
 
 async def _check_metadata_rules(
-    _base_path: pathlib.Path,
-    relative_path: pathlib.Path,
+    _base_path: safe.StatePath,
+    relative_path: safe.RelPath,
     relative_paths: set[str],
     ext_metadata: str,
     errors: list[str],
@@ -153,7 +155,7 @@ async def _check_metadata_rules(
     is_standalone: bool = False,
 ) -> None:
     """Check rules specific to metadata files (.asc, .sha*, etc.)."""
-    suffixes = set(relative_path.suffixes)
+    suffixes = set(relative_path.as_path().suffixes)
 
     if ".md5" in suffixes:
         # Forbidden by RCP, deprecated by RDP
@@ -189,8 +191,8 @@ async def _check_metadata_rules(
 
 async def _check_path_process_single(  # noqa: C901
     asf_uid: str,
-    base_path: pathlib.Path,
-    relative_path: pathlib.Path,
+    base_path: safe.StatePath,
+    relative_path: safe.RelPath,
     recorder_errors: checks.Recorder,
     recorder_warnings: checks.Recorder,
     recorder_success: checks.Recorder,
@@ -202,7 +204,7 @@ async def _check_path_process_single(  # noqa: C901
     relative_path_str = str(relative_path)
 
     # For debugging and testing
-    if (await user.is_admin_async(asf_uid)) and (full_path.name == "deliberately_slow_ATR_task_filename.txt"):
+    if (await user.is_admin_async(asf_uid)) and (full_path.path.name == "deliberately_slow_ATR_task_filename.txt"):
         await asyncio.sleep(20)
 
     errors: list[str] = []
@@ -211,31 +213,32 @@ async def _check_path_process_single(  # noqa: C901
 
     # The Release Distribution Policy specifically allows README and CHANGES, etc.
     # We assume that LICENSE and NOTICE are permitted also
-    if relative_path.name == "KEYS":
+    path = relative_path.as_path()
+    if path.name == "KEYS":
         errors.append("The KEYS file should be uploaded via the 'Keys' section, not included in the artifact bundle")
-    if relative_path.name in analysis.DISALLOWED_FILENAMES:
+    if path.name in analysis.DISALLOWED_FILENAMES:
         await _record(
             recorder_errors,
             recorder_warnings,
             recorder_success,
-            relative_path_str,
+            relative_path,
             errors,
-            [f"Disallowed file: {relative_path.name}"],
+            [f"Disallowed file: {path.name}"],
             warnings,
         )
         return
-    elif relative_path.suffix in analysis.DISALLOWED_SUFFIXES:
+    elif path.suffix in analysis.DISALLOWED_SUFFIXES:
         await _record(
             recorder_errors,
             recorder_warnings,
             recorder_success,
-            relative_path_str,
+            relative_path,
             errors,
-            [f"Disallowed file type: {relative_path.suffix}"],
+            [f"Disallowed file type: {path.suffix}"],
             warnings,
         )
         return
-    elif any(util.is_disallowed_dotfile(part) for part in relative_path.parts):
+    elif any(util.is_disallowed_dotfile(part) for part in path.parts):
         # TODO: There is not a a policy for this
         # We should enquire as to whether such a policy should be instituted
         # We're forbidding dotfiles to catch accidental uploads of e.g. .git or .htaccess
@@ -272,14 +275,14 @@ async def _check_path_process_single(  # noqa: C901
         )
     else:
         log.info(f"Checking general rules for {full_path}")
-        if (relative_path.parent == pathlib.Path(".")) and (relative_path.name not in _ALLOWED_TOP_LEVEL):
-            errors.append(f"Unknown top level file: {relative_path.name}")
+        if (path.parent == pathlib.Path(".")) and (path.name not in _ALLOWED_TOP_LEVEL):
+            errors.append(f"Unknown top level file: {path.name}")
 
     await _record(
         recorder_errors,
         recorder_warnings,
         recorder_success,
-        relative_path_str,
+        relative_path,
         errors,
         blockers,
         warnings,
@@ -290,20 +293,20 @@ async def _record(
     recorder_errors: checks.Recorder,
     recorder_warnings: checks.Recorder,
     recorder_success: checks.Recorder,
-    relative_path_str: str,
+    relative_path: safe.RelPath,
     errors: list[str],
     blockers: list[str],
     warnings: list[str],
 ) -> None:
     for error in errors:
-        await recorder_errors.failure(f"{relative_path_str}: {error}", {}, primary_rel_path=relative_path_str)
+        await recorder_errors.failure(f"{relative_path}: {error}", {}, primary_rel_path=relative_path)
     for item in blockers:
-        await recorder_errors.blocker(f"{relative_path_str}: {item}", {}, primary_rel_path=relative_path_str)
+        await recorder_errors.blocker(f"{relative_path}: {item}", {}, primary_rel_path=relative_path)
     for warning in warnings:
-        await recorder_warnings.warning(f"{relative_path_str}: {warning}", {}, primary_rel_path=relative_path_str)
+        await recorder_warnings.warning(f"{relative_path}: {warning}", {}, primary_rel_path=relative_path)
     if not (errors or blockers or warnings):
         await recorder_success.success(
-            f"{relative_path_str}: Path structure and naming conventions conform to policy",
+            f"{relative_path}: Path structure and naming conventions conform to policy",
             {},
-            primary_rel_path=relative_path_str,
+            primary_rel_path=relative_path,
         )

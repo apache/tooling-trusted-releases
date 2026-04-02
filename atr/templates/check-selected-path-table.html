@@ -69,7 +69,7 @@
                   <button type="submit" class="btn btn-sm btn-outline-primary">Import keys</button>
                 </form>
               {% endif %}
-              {% if path.suffixes[-2:] == [".cdx", ".json"] %}
+              {% if path.as_path().suffixes[-2:] == [".cdx", ".json"] %}
                 <a href="{{ as_url(get.sbom.report, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">SBOM report</a>
               {% endif %}

@@ -21,6 +21,7 @@ import tarfile
 import zipfile
 
 import atr.log as log
+import atr.models.safe as safe
 import atr.tarzip as tarzip
 
 
@@ -29,7 +30,7 @@ class ExtractionError(Exception):
 
 
 def extract(
-    archive_path: str,
+    archive_path: safe.StatePath,
     extract_dir: str,
     max_size: int,
     chunk_size: int,
@@ -79,7 +80,7 @@ def extract(
     return total_extracted, extracted_paths
 
 
-def total_size(tgz_path: str, chunk_size: int = 4096) -> int:
+def total_size(tgz_path: safe.StatePath, chunk_size: int = 4096) -> int:
     with tarzip.open_archive(tgz_path) as archive:
         match archive.specific():
             case tarfile.TarFile():

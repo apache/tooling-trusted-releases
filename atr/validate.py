@@ -17,11 +17,11 @@
 
 import asyncio
 import datetime
-import pathlib
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Sequence
 from typing import NamedTuple, TypeVar
 
 import atr.db as db
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 
@@ -332,9 +332,9 @@ def release_on_disk(r: sql.Release) -> Divergences:
     """Check that the release is on disk."""
     path = paths.release_directory(r)
 
-    def okay(p: pathlib.Path) -> bool:
+    def okay(p: safe.StatePath) -> bool:
         # The release directory must exist and contain at least one entry
-        return p.exists() and any(p.iterdir())
+        return p.path.exists() and any(p.path.iterdir())
 
     expected = "directory to exist and contain files"
     yield from divergences_predicate(okay, expected, path)

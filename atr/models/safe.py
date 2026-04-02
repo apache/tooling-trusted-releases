@@ -89,14 +89,23 @@ class SafeType:
 
 
 class StatePath:
-    """An absolute path within the managed storage system."""
+    """An absolute path within the managed storage system.
 
-    __slots__ = ("_path",)
+    Tracks the managed root directory and ensures all derived paths remain within it.
+    The initial path (from get_*_dir) is the root; paths created via / carry it forward.
+    """
 
-    def __init__(self, path: pathlib.Path) -> None:
+    __slots__ = ("_path", "_root")
+
+    def __init__(self, path: pathlib.Path, root: pathlib.Path | None = None) -> None:
         if not path.is_absolute():
             raise ValueError("Path must be absolute")
+        resolved = path.resolve()
+        managed_root = (root or path).resolve()
+        if not resolved.is_relative_to(managed_root):
+            raise ValueError(f"Path {resolved} is not within managed root {managed_root}")
         self._path = path
+        self._root = root or path
 
     def __fspath__(self) -> str:
         return str(self._path)
@@ -104,12 +113,62 @@ class StatePath:
     def __str__(self) -> str:
         return str(self._path)
 
-    def __truediv__(self, other: str | pathlib.Path | SafeType) -> pathlib.Path:
-        return self._path / str(other) if isinstance(other, SafeType) else self._path / other
+    def __truediv__(self, other: str | pathlib.Path | SafeType) -> StatePath:
+        validated = other if isinstance(other, SafeType) else RelPath(str(other))
+        return StatePath(self._path / validated, self._root)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, self.__class__):
+            return self._path == other._path
+        return NotImplemented
+
+    @property
+    def parent(self) -> StatePath:
+        """Root-safe parent - cannot traverse outside the original root path"""
+        return StatePath(self._path.parent, self._root)
 
     @property
     def path(self) -> pathlib.Path:
         return self._path
+
+    @property
+    def root(self) -> pathlib.Path:
+        return self._root
+
+    @property
+    def name(self) -> str:
+        return self._path.name
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, _source_type: Any, _handler: Any) -> Any:
+        import pydantic_core.core_schema as core_schema
+
+        def _validate(v: Any) -> Any:
+            if isinstance(v, str):
+                return cls(pathlib.Path(v))
+            if isinstance(v, dict) and v.get("__type__") == "StatePath":
+                return cls(pathlib.Path(v["path"]), pathlib.Path(v["root"]))
+            return v
+
+        def _serialize(v: Any) -> Any:
+            return {"__type__": "StatePath", "path": str(v.path), "root": str(v.root)}
+
+        return core_schema.no_info_plain_validator_function(
+            _validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(_serialize),
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, _core_schema: Any, _handler: Any) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "__type__": {"type": "string", "const": "StatePath"},
+                "path": {"type": "string", "format": "path"},
+                "root": {"type": "string", "format": "path"},
+            },
+            "required": ["__type__", "path", "root"],
+        }
 
 
 class Alphanumeric(SafeType):
@@ -168,6 +227,10 @@ class RelPath(SafeType):
         """Return the validated path as a pathlib.Path."""
         return pathlib.Path(self._value)
 
+    @classmethod
+    def from_path(cls, value: pathlib.Path) -> RelPath:
+        return cls(str(value))
+
     def append(self, path: str | pathlib.Path) -> RelPath:
         return RelPath(f"{self!s}/{path!s}")
 
@@ -176,6 +239,26 @@ class RelPath(SafeType):
 
     def removeprefix(self, prefix: str):
         return RelPath(self._value.removeprefix(prefix))
+
+    def __lt__(self, other):
+        if not isinstance(other, RelPath):
+            return NotImplemented
+        return self.as_path() < other.as_path()
+
+    def __le__(self, other):
+        if not isinstance(other, RelPath):
+            return NotImplemented
+        return self.as_path() <= other.as_path()
+
+    def __gt__(self, other):
+        if not isinstance(other, RelPath):
+            return NotImplemented
+        return self.as_path() > other.as_path()
+
+    def __ge__(self, other):
+        if not isinstance(other, RelPath):
+            return NotImplemented
+        return self.as_path() >= other.as_path()
 
 
 class RevisionNumber(Numeric):

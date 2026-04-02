@@ -40,7 +40,7 @@ async def test_targz_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> 
     )
     recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
@@ -52,7 +52,7 @@ async def test_targz_structure_accepts_source_suffix_variant(tmp_path: pathlib.P
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
@@ -63,7 +63,7 @@ async def test_targz_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-src.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
@@ -91,7 +91,7 @@ async def test_targz_structure_rejects_npm_pack_filename_mismatch(tmp_path: path
     )
     recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -108,7 +108,7 @@ async def test_targz_structure_rejects_package_root_without_package_json(tmp_pat
     )
     recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -119,7 +119,7 @@ async def test_targz_structure_rejects_source_root_when_filename_has_no_suffix(t
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-source/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -130,7 +130,7 @@ async def test_targz_structure_rejects_source_root_when_filename_has_src_suffix(
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-source/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-src.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -141,7 +141,7 @@ async def test_targz_structure_rejects_src_root_when_filename_has_no_suffix(tmp_
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-src/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -152,7 +152,7 @@ async def test_targz_structure_rejects_src_root_when_filename_has_source_suffix(
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-src/README.txt"])
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -165,7 +165,7 @@ async def test_targz_structure_rejects_symlink_root(tmp_path: pathlib.Path) -> N
     (cache_dir / "apache-example-1.2.3").symlink_to(cache_dir / "missing-target")
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -183,7 +183,7 @@ async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.
     (cache_dir / "package" / "package.json").symlink_to(cache_dir / "metadata.json")
     recorder, args = await _targz_structure_args(tmp_path, "example-1.2.3.tgz")
 
-    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=cache_dir)):
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
     assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
@@ -198,7 +198,7 @@ def test_zipformat_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> No
         },
     )
 
-    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "example-1.2.3.zip")
 
     assert result.get("error") is None
     assert result.get("root_dir") == "package"
@@ -207,7 +207,7 @@ def test_zipformat_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> No
 def test_zipformat_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path) -> None:
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
 
-    result = zipformat._structure_check_core_logic(cache_dir, "apache-example-1.2.3-src.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "apache-example-1.2.3-src.zip")
 
     assert result.get("error") is None
     assert result.get("root_dir") == "apache-example-1.2.3"
@@ -216,7 +216,7 @@ def test_zipformat_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path) 
 def test_zipformat_structure_rejects_dated_src_suffix(tmp_path: pathlib.Path) -> None:
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
 
-    result = zipformat._structure_check_core_logic(cache_dir, "apache-example-1.2.3-src-20251202.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "apache-example-1.2.3-src-20251202.zip")
 
     assert "error" in result
     assert "Root directory mismatch" in result["error"]
@@ -231,7 +231,7 @@ def test_zipformat_structure_rejects_npm_pack_filename_mismatch(tmp_path: pathli
         },
     )
 
-    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "example-1.2.3.zip")
 
     assert result.get("error") is not None
     assert "npm pack layout detected" in result["error"]
@@ -246,7 +246,7 @@ def test_zipformat_structure_rejects_package_root_without_package_json(tmp_path:
         },
     )
 
-    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "example-1.2.3.zip")
 
     assert result.get("error") is not None
     assert "Root directory mismatch" in result["error"]
@@ -256,7 +256,7 @@ def test_zipformat_structure_rejects_top_level_symlink(tmp_path: pathlib.Path) -
     cache_dir = _make_cache_tree(tmp_path, ["example-1.2.3/README.txt"])
     (cache_dir / "link").symlink_to(cache_dir / "missing-target")
 
-    result = zipformat._structure_check_core_logic(cache_dir, "example-1.2.3.zip")
+    result = zipformat._structure_check_core_logic(safe.StatePath(cache_dir), "example-1.2.3.zip")
 
     assert result.get("error") is not None
     assert "Files found directly in root" in result["error"]
@@ -287,7 +287,8 @@ def _make_cache_tree_with_contents(base: pathlib.Path, members: dict[str, str]) 
 async def _targz_structure_args(
     tmp_path: pathlib.Path, archive_filename: str
 ) -> tuple[recorders.RecorderStub, checks.FunctionArguments]:
-    archive_path = tmp_path / archive_filename
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / archive_filename
     recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
     args = checks.FunctionArguments(
         recorder=recorders.get_recorder(recorder),
@@ -295,7 +296,7 @@ async def _targz_structure_args(
         project_key=safe.ProjectKey("test"),
         version_key=safe.VersionKey("test"),
         revision_number=safe.RevisionNumber("00001"),
-        primary_rel_path=archive_filename,
+        primary_rel_path=safe.RelPath(archive_filename),
         extra_args={},
     )
     return recorder, args

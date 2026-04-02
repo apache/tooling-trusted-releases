@@ -301,7 +301,7 @@ def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
     return section.collect()
 
 
-async def _sources_and_targets(latest_revision_dir: pathlib.Path) -> tuple[list[pathlib.Path], set[pathlib.Path]]:
+async def _sources_and_targets(latest_revision_dir: safe.StatePath) -> tuple[list[pathlib.Path], set[pathlib.Path]]:
     source_items_rel: list[pathlib.Path] = []
     target_dirs: set[pathlib.Path] = {pathlib.Path(".")}
 

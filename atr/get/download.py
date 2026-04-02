@@ -247,15 +247,15 @@ async def _generate_file_url_list(release: sql.Release) -> str:
 
 
 async def _list(
-    original_path: pathlib.Path, full_path: pathlib.Path, project_key: str, version_key: str, file_path: str
+    original_path: pathlib.Path, safe_path: safe.StatePath, project_key: str, version_key: str, file_path: str
 ) -> web.Response:
     # Build a list of files in the directory
     files: list[pathlib.Path] = []
-    for file in await aiofiles.os.listdir(full_path):
+    for file in await aiofiles.os.listdir(safe_path):
         file_in_dir = pathlib.Path(file)
         # Include subdirectories in listing
-        is_file = await aiofiles.os.path.isfile(full_path / file_in_dir)
-        is_dir = await aiofiles.os.path.isdir(full_path / file_in_dir)
+        is_file = await aiofiles.os.path.isfile(safe_path / file_in_dir)
+        is_dir = await aiofiles.os.path.isdir(safe_path / file_in_dir)
         if is_file or is_dir:
             files.append(file_in_dir)
     files.sort()
@@ -283,7 +283,7 @@ async def _list(
             version_key=version_key,
             file_path=relative_path_str,
         )
-        display_name = f"{item_in_dir}/" if await aiofiles.os.path.isdir(full_path / item_in_dir) else str(item_in_dir)
+        display_name = f"{item_in_dir}/" if await aiofiles.os.path.isdir(safe_path / item_in_dir) else str(item_in_dir)
         div.a(href=link_url)[display_name]
     html.body[div.collect(separator=htm.br)]
     response_body = html.collect()

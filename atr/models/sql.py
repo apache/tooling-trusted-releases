@@ -305,11 +305,12 @@ class UTCDateTime(sqlalchemy.types.TypeDecorator):
 
 
 class SafeJSON(sqlalchemy.types.TypeDecorator):
-    """JSON column that serialises SafeType values to plain strings.
+    """JSON column that serialises SafeType and StatePath values.
 
     Use instead of sqlalchemy.JSON whenever the stored value may contain
     atr.models.safe.SafeType instances (which are not JSON-serialisable by
-    the standard library encoder).
+    the standard library encoder) or atr.models.safe.StatePath instances
+    (which include a managed root that must survive the round-trip).
     """
 
     impl = sqlalchemy.JSON
@@ -323,13 +324,17 @@ class SafeJSON(sqlalchemy.types.TypeDecorator):
         return _safe_json_encode(value)
 
     def process_result_value(self, value, dialect):
-        return value
+        if value is None:
+            return None
+        return _safe_json_decode(value)
 
 
 def _safe_json_encode(value: Any) -> Any:
-    """Recursively convert SafeType instances to plain strings."""
+    """Recursively convert SafeType/StatePath instances to JSON-serialisable form."""
     from . import safe
 
+    if isinstance(value, safe.StatePath):
+        return {"__type__": "StatePath", "path": str(value.path), "root": str(value.root)}
     if isinstance(value, safe.SafeType):
         return str(value)
     if isinstance(value, dict):
@@ -339,6 +344,24 @@ def _safe_json_encode(value: Any) -> Any:
         return {k: _safe_json_encode(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_safe_json_encode(v) for v in value]
+    return value
+
+
+def _safe_json_decode(value: Any) -> Any:
+    """
+    Reconstruct StatePath instances from tagged dicts produced by _safe_json_encode.
+    Other types are handled cleanly by Pydantic so just return the value
+    """
+    import pathlib
+
+    from . import safe
+
+    if isinstance(value, dict):
+        if value.get("__type__") == "StatePath":
+            return safe.StatePath(pathlib.Path(value["path"]), pathlib.Path(value["root"]))
+        return {k: _safe_json_decode(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_safe_json_decode(v) for v in value]
     return value
 
 
@@ -485,6 +508,11 @@ class Task(sqlmodel.SQLModel, table=True):
 
         if isinstance(self.completed, str):
             self.completed = datetime.datetime.fromisoformat(self.completed.rstrip("Z"))
+
+    @property
+    def safe_primary_rel_path(self) -> safe.RelPath | None:
+        """Get the typesafe validated relative path for the task, if set."""
+        return safe.RelPath(self.primary_rel_path) if self.primary_rel_path else None
 
     # Create an index on status and added for efficient task claiming
     __table_args__ = (
@@ -1057,6 +1085,11 @@ class CheckResult(sqlmodel.SQLModel, table=True):
     )
     inputs_hash: str | None = sqlmodel.Field(default=None, index=True, **example("blake3:7f83b1657ff1fc..."))
     cached: bool = sqlmodel.Field(default=False, **example(False))
+
+    @property
+    def safe_primary_rel_path(self) -> safe.RelPath | None:
+        """Get the typesafe validated relative path for the check result, if set."""
+        return safe.RelPath(self.primary_rel_path) if self.primary_rel_path else None
 
 
 class CheckResultIgnore(sqlmodel.SQLModel, table=True):

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from typing import TYPE_CHECKING
 
 import atr.db as db
 import atr.models.safe as safe
@@ -28,9 +27,6 @@ import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.sbom as sbom
 import atr.util as util
-
-if TYPE_CHECKING:
-    import pathlib
 
 
 class GeneralPublic:
@@ -110,8 +106,8 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         revision_number: safe.RevisionNumber,
-        file_path: str,
-        sbom_path: str,
+        file_path: safe.StatePath,
+        sbom_path: safe.StatePath,
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_CONVERT,
@@ -136,9 +132,9 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        revision_number: str,
-        path_in_new_revision: pathlib.Path,
-        sbom_path_in_new_revision: pathlib.Path,
+        revision_number: safe.RevisionNumber,
+        path_in_new_revision: safe.StatePath,
+        sbom_path_in_new_revision: safe.StatePath,
     ) -> sql.Task:
         # Create and queue the task, using paths within the new revision
         # We still need release.name for the task metadata
@@ -155,7 +151,7 @@ class CommitteeParticipant(FoundationCommitter):
             status=sql.TaskStatus.QUEUED,
             project_key=str(project_key),
             version_key=str(version_key),
-            revision_number=revision_number,
+            revision_number=str(revision_number),
         )
         self.__data.add(sbom_task)
         await self.__data.commit()
@@ -211,5 +207,5 @@ class CommitteeMember(CommitteeParticipant):
         self.__committee_key = committee_key
 
 
-def _resolved_path_str(path: pathlib.Path) -> str:
-    return str(path.resolve())
+def _resolved_path_str(path: safe.StatePath) -> safe.StatePath:
+    return safe.StatePath(path.path.resolve(), path.root)

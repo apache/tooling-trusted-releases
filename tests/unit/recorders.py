@@ -16,7 +16,6 @@
 # under the License.
 
 import datetime
-import pathlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -26,7 +25,7 @@ import atr.tasks.checks as checks
 
 
 class RecorderStub(checks.Recorder):
-    def __init__(self, path: pathlib.Path, checker: str, checker_version: str | None = None) -> None:
+    def __init__(self, path: safe.StatePath, checker: str, checker_version: str | None = None) -> None:
         super().__init__(
             checker=checker,
             checker_version=checker_version,
@@ -41,7 +40,7 @@ class RecorderStub(checks.Recorder):
         self._path = path
         self.messages: list[tuple[str, str, dict | None]] = []
 
-    async def abs_path(self, rel_path: str | None = None) -> pathlib.Path | None:
+    async def abs_path(self, rel_path: str | None = None) -> safe.StatePath | None:
         return self._path if (rel_path is None) else self._path / rel_path
 
     async def primary_path_is_source(self) -> bool:

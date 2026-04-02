@@ -31,8 +31,8 @@ import atr.models.basic as basic
 import atr.models.distribution as distribution
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage.outcome as outcome
 import atr.util as util
-from atr.storage import outcome
 
 # async def __json_from_maven_cdn(
 #     self, api_url: str, group_id: str, artifact_id: str, version: str

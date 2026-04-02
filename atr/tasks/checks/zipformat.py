@@ -17,12 +17,12 @@
 
 import asyncio
 import os
-import pathlib
 import stat
 from typing import Any, Final
 
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -67,7 +67,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
     return None
 
 
-def _structure_check_core_logic(archive_dir: pathlib.Path, artifact_path: str) -> dict[str, Any]:
+def _structure_check_core_logic(archive_dir: safe.StatePath, artifact_path: str) -> dict[str, Any]:
     """Verify the internal structure of the zip archive."""
     # The ._ prefix is a metadata convention
     entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
@@ -81,7 +81,7 @@ def _structure_check_core_logic(archive_dir: pathlib.Path, artifact_path: str) -
     root_dirs: list[str] = []
     non_rooted_entries: list[str] = []
     for entry in entries:
-        entry_path = archive_dir / entry
+        entry_path = (archive_dir / entry).path
         try:
             entry_stat = entry_path.lstat()
         except OSError as e:
@@ -117,9 +117,9 @@ def _structure_check_core_logic(archive_dir: pathlib.Path, artifact_path: str) -
 
 
 def _structure_npm_result(
-    archive_dir: pathlib.Path, basename_from_filename: str, actual_root: str, expected_roots: list[str]
+    archive_dir: safe.StatePath, basename_from_filename: str, actual_root: str, expected_roots: list[str]
 ) -> dict[str, Any] | None:
-    package_json_path = archive_dir / "package" / "package.json"
+    package_json_path = (archive_dir / "package" / "package.json").path
     try:
         package_json_stat = package_json_path.lstat()
     except (FileNotFoundError, OSError):

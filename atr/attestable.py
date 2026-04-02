@@ -18,8 +18,7 @@
 from __future__ import annotations
 
 import json
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiofiles
 import aiofiles.os
@@ -35,16 +34,19 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
 
+if TYPE_CHECKING:
+    import pathlib
+
 
 def attestable_checks_path(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
-) -> pathlib.Path:
+) -> safe.StatePath:
     return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.checks.json"
 
 
 def attestable_path(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
-) -> pathlib.Path:
+) -> safe.StatePath:
     return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.json"
 
 
@@ -58,10 +60,10 @@ def can_write_file_state_rows(
 
 
 def compute_classifications(
-    path_to_hash: dict[str, str],
+    path_to_hash: dict[safe.RelPath, str],
     release_policy: dict[str, Any] | None,
-    base_path: pathlib.Path,
-) -> dict[str, str]:
+    base_path: safe.StatePath,
+) -> dict[safe.RelPath, str]:
     policy = release_policy or {}
     source_matcher, binary_matcher = classify.matchers_from_policy(
         policy.get("source_artifact_paths", []),
@@ -69,7 +71,7 @@ def compute_classifications(
         base_path,
     )
     return {
-        path_key: classify.classify(pathlib.Path(path_key), base_path, source_matcher, binary_matcher).value
+        path_key: classify.classify(path_key, base_path, source_matcher, binary_matcher).value
         for path_key in path_to_hash
     }
 
@@ -77,8 +79,8 @@ def compute_classifications(
 def compute_file_state_rows(
     release_key: str,
     since_revision_seq: int,
-    path_to_hash: dict[str, str],
-    classifications: dict[str, str],
+    path_to_hash: dict[safe.RelPath, str],
+    classifications: dict[safe.RelPath, str],
     previous: models.Attestable | None,
 ) -> list[sql.ReleaseFileState]:
     prev_hashes: dict[str, str] = {}
@@ -90,25 +92,26 @@ def compute_file_state_rows(
 
     rows: list[sql.ReleaseFileState] = []
 
-    for path_key in sorted(path_to_hash):
+    for path_key in sorted(path_to_hash, key=str):
+        path_str = str(path_key)
         content_hash = path_to_hash[path_key]
         classification = classifications[path_key]
         # If all prior metadata properties are the same, we skip recording an event
-        if (prev_hashes.get(path_key) == content_hash) and (prev_classifications.get(path_key) == classification):
+        if (prev_hashes.get(path_str) == content_hash) and (prev_classifications.get(path_str) == classification):
             continue
         rows.append(
             sql.ReleaseFileState(
                 release_key=release_key,
-                path=path_key,
+                path=path_str,
                 since_revision_seq=since_revision_seq,
                 present=True,
                 content_hash=content_hash,
                 classification=classification,
             )
         )
-
+    str_keys = {str(k) for k in path_to_hash}
     for path_key in sorted(prev_hashes):
-        if path_key not in path_to_hash:
+        if path_key not in str_keys:
             rows.append(
                 sql.ReleaseFileState(
                     release_key=release_key,
@@ -125,7 +128,7 @@ def compute_file_state_rows(
 
 def github_tp_payload_path(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
-) -> pathlib.Path:
+) -> safe.StatePath:
     return paths.get_attestable_dir() / str(project_key) / str(version_key) / f"{revision_number!s}.github-tp.json"
 
 
@@ -166,7 +169,9 @@ async def github_tp_payload_write(
     # Dump the workflow payload, excluding exp and nbf - which shouldn't have made it this far. If they do,
     # it's safe to remove them as they've been validated by the model already, and we should never store
     # stale dates
-    await util.atomic_write_file(payload_path, json.dumps(github_payload.model_dump(exclude={"exp", "nbf"}), indent=2))
+    await util.atomic_write_file(
+        payload_path.path, json.dumps(github_payload.model_dump(exclude={"exp", "nbf"}), indent=2)
+    )
 
 
 async def load(
@@ -228,17 +233,16 @@ def path_hashes(attestable: models.Attestable) -> dict[str, str]:
     return dict(attestable.paths)
 
 
-async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[str, str], dict[str, int]]:
-    path_to_hash: dict[str, str] = {}
-    path_to_size: dict[str, int] = {}
+async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[safe.RelPath, str], dict[safe.RelPath, int]]:
+    path_to_hash: dict[safe.RelPath, str] = {}
+    path_to_size: dict[safe.RelPath, int] = {}
     async for rel_path in util.paths_recursive(directory):
         full_path = directory / rel_path
-        path_key = str(rel_path)
-        if "\\" in path_key:
+        if "\\" in str(rel_path):
             # TODO: We should centralise this, and forbid some other characters too
-            raise ValueError(f"Backslash in path is forbidden: {path_key}")
-        path_to_hash[path_key] = await hashes.compute_file_hash(full_path)
-        path_to_size[path_key] = (await aiofiles.os.stat(full_path)).st_size
+            raise ValueError(f"Backslash in path is forbidden: {rel_path!s}")
+        path_to_hash[rel_path] = await hashes.compute_file_hash(full_path)
+        path_to_size[rel_path] = (await aiofiles.os.stat(full_path)).st_size
     return path_to_hash, path_to_size
 
 
@@ -263,7 +267,7 @@ async def write_checks_data(
         result = models.AttestableChecksV2(checks=current)
         return result.model_dump_json(indent=2)
 
-    await util.atomic_modify_file(attestable_checks_path(project_key, version_key, revision_number), modify)
+    await util.atomic_modify_file(attestable_checks_path(project_key, version_key, revision_number).path, modify)
 
 
 async def write_files_data(
@@ -273,10 +277,10 @@ async def write_files_data(
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
     previous: models.Attestable | None,
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
-    base_path: pathlib.Path,
-    classifications: dict[str, str] | None = None,
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
+    base_path: safe.StatePath,
+    classifications: dict[safe.RelPath, str] | None = None,
 ) -> None:
     result = _generate_files_data(
         path_to_hash,
@@ -289,16 +293,16 @@ async def write_files_data(
         classifications=classifications,
     )
     file_path = attestable_path(project_key, version_key, revision_number)
-    await util.atomic_write_file(file_path, result.model_dump_json(indent=2))
+    await util.atomic_write_file(file_path.path, result.model_dump_json(indent=2))
     checks_file_path = attestable_checks_path(project_key, version_key, revision_number)
-    if not checks_file_path.exists():
+    if not checks_file_path.path.exists():
         async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
             await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
 
 
 def _compute_hashes_with_attribution(  # noqa: C901
-    current_hash_to_paths: dict[str, set[str]],
-    path_to_size: dict[str, int],
+    current_hash_to_paths: dict[str, set[safe.RelPath]],
+    path_to_size: dict[safe.RelPath, int],
     previous: models.Attestable | None,
     uploader_uid: str,
     revision_number: safe.RevisionNumber,
@@ -317,7 +321,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
         previous_paths = previous_hash_to_paths.get(hash_ref, set())
         sample_path = next(iter(current_paths))
         file_size = path_to_size[sample_path]
-        current_basenames = {_path_basename(path_key) for path_key in current_paths}
+        current_basenames = {_path_basename(str(path_key)) for path_key in current_paths}
 
         if hash_ref not in new_hashes:
             new_hashes[hash_ref] = models.HashEntry(
@@ -342,16 +346,16 @@ def _compute_hashes_with_attribution(  # noqa: C901
 
 
 def _generate_files_data(
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
     revision_number: safe.RevisionNumber,
     release_policy: dict[str, Any] | None,
     uploader_uid: str,
     previous: models.Attestable | None,
-    base_path: pathlib.Path,
-    classifications: dict[str, str] | None = None,
+    base_path: safe.StatePath,
+    classifications: dict[safe.RelPath, str] | None = None,
 ) -> models.AttestableV2:
-    current_hash_to_paths: dict[str, set[str]] = {}
+    current_hash_to_paths: dict[str, set[safe.RelPath]] = {}
     for path_key, hash_ref in path_to_hash.items():
         current_hash_to_paths.setdefault(hash_ref, set()).add(path_key)
 
@@ -364,7 +368,7 @@ def _generate_files_data(
     return models.AttestableV2(
         hashes=dict(new_hashes),
         paths={
-            path_key: models.PathEntryV2(content_hash=hash_ref, classification=classifications[path_key])
+            str(path_key): models.PathEntryV2(content_hash=hash_ref, classification=classifications[path_key])
             for path_key, hash_ref in path_to_hash.items()
         },
         policy=release_policy or {},

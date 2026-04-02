@@ -43,16 +43,16 @@ _CONFIG: Final = config.get()
 class ConvertCycloneDX(schema.Strict):
     """Arguments for the task to generate a CycloneDX SBOM."""
 
-    artifact_path: str = schema.description("Absolute path to the artifact")
-    output_path: str = schema.description("Absolute path where the generated SBOM JSON should be written")
+    artifact_path: safe.StatePath = schema.description("Absolute path to the artifact")
+    output_path: safe.StatePath = schema.description("Absolute path where the generated SBOM JSON should be written")
     revision: safe.RevisionNumber = schema.description("Revision number")
 
 
 class GenerateCycloneDX(schema.Strict):
     """Arguments for the task to generate a CycloneDX SBOM."""
 
-    artifact_path: str = schema.description("Absolute path to the artifact")
-    output_path: str = schema.description("Absolute path where the generated SBOM JSON should be written")
+    artifact_path: safe.StatePath = schema.description("Absolute path to the artifact")
+    output_path: safe.StatePath = schema.description("Absolute path where the generated SBOM JSON should be written")
 
 
 class SBOMConversionError(Exception):
@@ -110,7 +110,7 @@ async def augment(args: FileArgs) -> results.Results | None:
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     # Read from the old revision
-    bundle = sbom.utilities.path_to_bundle(full_path)
+    bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:
         raise SBOMScoringError("Could not load bundle")
     patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
@@ -123,9 +123,9 @@ async def augment(args: FileArgs) -> results.Results | None:
         async with storage.write(args.asf_uid) as write:
             wacp = await write.as_project_committee_participant(args.project_key)
 
-            async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+            async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
                 nonlocal new_full_path, new_full_path_str
-                new_full_path = path / path_str
+                new_full_path = (path / path_str).path
                 new_full_path_str = str(new_full_path)
                 # Write to the new revision
                 log.info(f"Writing augmented SBOM to {new_full_path_str}")
@@ -153,12 +153,14 @@ async def augment(args: FileArgs) -> results.Results | None:
 async def convert_cyclonedx(args: ConvertCycloneDX) -> results.Results | None:
     """Generate a JSON CycloneDX SBOM from a given XML SBOM."""
     try:
-        result_data = await _convert_cyclonedx_core(args.artifact_path, args.output_path, str(args.revision))
+        result_data = await _convert_cyclonedx_core(args.artifact_path, args.output_path, args.revision)
         log.info(f"Successfully converted CycloneDX SBOM for {args.artifact_path}")
         msg = result_data["message"]
         if not isinstance(msg, str):
             raise SBOMConversionError(f"Invalid message type: {type(msg)}")
-        return results.SBOMConvert(kind="sbom_convert", path=args.output_path, bom_version=result_data.get("version"))
+        return results.SBOMConvert(
+            kind="sbom_convert", path=str(args.output_path), bom_version=result_data.get("version")
+        )
     except (archives.ExtractionError, SBOMGenerationError) as e:
         log.error(f"SBOM conversion failed for {args.artifact_path}: {e}")
         raise
@@ -194,7 +196,7 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScanningError("SBOM file does not exist", {"file_path": path_str})
-    bundle = sbom.utilities.path_to_bundle(full_path)
+    bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:
         raise SBOMScanningError("Could not load bundle")
     vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
@@ -217,9 +219,9 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     async with storage.write(args.asf_uid) as write:
         wacp = await write.as_project_committee_participant(args.project_key)
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             nonlocal new_full_path, new_full_path_str
-            new_full_path = path / str(args.file_path)
+            new_full_path = (path / str(args.file_path)).path
             new_full_path_str = str(new_full_path)
             # Write to the new revision
             log.info(f"Writing updated SBOM to {new_full_path_str}")
@@ -302,7 +304,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     full_path_str = str(full_path)
     if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
-    bundle = sbom.utilities.path_to_bundle(full_path)
+    bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:
         raise SBOMScoringError("Could not load bundle")
     version, properties = sbom.utilities.get_props_from_bundle(bundle)
@@ -320,7 +322,7 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     if previous_base_dir is not None:
         previous_full_path = previous_base_dir / path_str
         try:
-            previous_bundle = sbom.utilities.path_to_bundle(previous_full_path)
+            previous_bundle = sbom.utilities.path_to_bundle(previous_full_path.path)
         except FileNotFoundError:
             # Previous release didn't include this file
             previous_bundle = None
@@ -353,7 +355,9 @@ async def score_tool(args: ScoreArgs) -> results.Results | None:
     )
 
 
-async def _convert_cyclonedx_core(artifact_path: str, output_path: str, revision_str: str) -> dict[str, Any]:
+async def _convert_cyclonedx_core(
+    artifact_path: safe.StatePath, output_path: safe.StatePath, revision_str: safe.RevisionNumber
+) -> dict[str, Any]:
     """Core logic to convert XML CycloneDX SBOM to JSON."""
     log.info(f"Generating CycloneDX JSON SBOM for {artifact_path} -> {output_path}")
 
@@ -361,7 +365,7 @@ async def _convert_cyclonedx_core(artifact_path: str, output_path: str, revision
     bundle = sbom.utilities.path_to_bundle(pathlib.Path(artifact_path))
     if not bundle:
         raise SBOMConversionError("Could not load bundle")
-    sbom.utilities.apply_patch("conversion to JSON", revision_str, bundle, [])
+    sbom.utilities.apply_patch("conversion to JSON", str(revision_str), bundle, [])
     outputter = sbom.utilities.bundle_outputter(bundle)
     text = outputter.output_as_string(indent=2)
 
@@ -399,7 +403,7 @@ def _extracted_dir(temp_dir: str) -> str | None:
     return extract_dir
 
 
-async def _generate_cyclonedx_core(artifact_path: str, output_path: str) -> dict[str, Any]:
+async def _generate_cyclonedx_core(artifact_path: safe.StatePath, output_path: safe.StatePath) -> dict[str, Any]:
     """Core logic to generate CycloneDX SBOM on failure."""
     log.info(f"Generating CycloneDX SBOM for {artifact_path} -> {output_path}")
 

@@ -46,7 +46,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.exception("Primary relative path is required", {"primary_rel_path": primary_rel_path})
         return None
 
-    artifact_rel_path = primary_rel_path.removesuffix(".asc")
+    artifact_rel_path = str(primary_rel_path).removesuffix(".asc")
     if not (artifact_abs_path := await recorder.abs_path(artifact_rel_path)):
         return None
 

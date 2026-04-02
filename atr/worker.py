@@ -130,7 +130,7 @@ async def _execute_check_task(
             project_key=project_key,
             version_key=version_key,
             revision_number=revision_number,
-            primary_rel_path=task_obj.primary_rel_path,
+            primary_rel_path=task_obj.safe_primary_rel_path,
         )
 
     function_arguments = checks.FunctionArguments(
@@ -139,7 +139,7 @@ async def _execute_check_task(
         project_key=project_key,
         version_key=version_key,
         revision_number=revision_number,
-        primary_rel_path=task_obj.primary_rel_path,
+        primary_rel_path=task_obj.safe_primary_rel_path,
         extra_args=task_args,
     )
     log.debug(f"Calling {handler.__name__} with structured arguments: {function_arguments}")
