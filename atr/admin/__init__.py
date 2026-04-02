@@ -492,19 +492,6 @@ async def delete_test_openpgp_keys_post(
 
 
 @admin.typed
-async def env(_session: web.Committer, _env: Literal["env"]) -> web.QuartResponse:
-    """
-    URL: GET /env
-
-    Display the environment variables.
-    """
-    env_vars = []
-    for key, value in os.environ.items():
-        env_vars.append(f"{key}={value}")
-    return web.TextResponse("\n".join(env_vars))
-
-
-@admin.typed
 async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/check"]) -> web.QuartResponse:
     """
     URL: GET /keys/check

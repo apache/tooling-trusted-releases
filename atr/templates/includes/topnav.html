@@ -300,11 +300,6 @@
               </li>
               <li>
                 <a class="dropdown-item"
-                   href="{{ as_url(admin.env) }}"
-                   {% if request.endpoint == 'atr_admin_env' %}class="active"{% endif %}><i class="bi bi-gear"></i> Environment</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
                    href="{{ as_url(admin.performance) }}"
                    {% if request.endpoint == 'atr_admin_performance' %}class="active"{% endif %}><i class="bi bi-speedometer2"></i> Page performance</a>
               </li>
