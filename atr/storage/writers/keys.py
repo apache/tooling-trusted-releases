@@ -211,6 +211,60 @@ class FoundationCommitter(GeneralPublic):
         except Exception as e:
             return outcome.Error(e)
 
+    async def update_committee_associations(
+        self,
+        fingerprint: str,
+        selected_committee_keys: list[str],
+    ) -> set[str]:
+        via = sql.validate_instrumented_attribute
+
+        key = await self.__data.public_signing_key(
+            fingerprint=fingerprint,
+            apache_uid=self.__asf_uid,
+            _committees=True,
+        ).get()
+        if not key:
+            raise storage.AccessError("Key not found or not owned by you")
+
+        old_committee_keys = {c.key for c in key.committees}
+        new_committee_keys = set(selected_committee_keys)
+        to_add = new_committee_keys - old_committee_keys
+        to_remove = old_committee_keys - new_committee_keys
+        affected = to_add | to_remove
+
+        if not affected:
+            return affected
+
+        for committee_key in sorted(to_add):
+            self.__write.as_committee_participant(committee_key)
+
+        await self.__data.begin_immediate()
+
+        if to_add:
+            link_values = [{"committee_key": ck, "key_fingerprint": fingerprint} for ck in to_add]
+            await self.__data.execute(
+                sqlite.insert(sql.KeyLink)
+                .values(link_values)
+                .on_conflict_do_nothing(index_elements=["committee_key", "key_fingerprint"])
+            )
+
+        if to_remove:
+            await self.__data.execute(
+                sqlmodel.delete(sql.KeyLink).where(
+                    via(sql.KeyLink.key_fingerprint) == fingerprint,
+                    via(sql.KeyLink.committee_key).in_(to_remove),
+                )
+            )
+
+        await self.__data.commit()
+
+        for committee_key in sorted(affected):
+            wacp = self.__write.as_committee_participant_outcome(committee_key).result_or_none()
+            if wacp is not None:
+                await wacp.keys.autogenerate_keys_file()
+
+        return affected
+
     def __block_model(self, key_block: str, ldap_data: dict[str, str]) -> types.Key:
         # This cache is only held for the session
         if key_block in self.__key_block_models_cache:

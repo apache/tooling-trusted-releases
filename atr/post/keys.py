@@ -107,34 +107,16 @@ async def details(
     key_fingerprint = str(fingerprint).lower()
 
     try:
-        async with db.session() as data:
-            key = await data.public_signing_key(fingerprint=key_fingerprint, _committees=True).get()
-            if not key:
-                await quart.flash("OpenPGP key not found", "error")
-                return await session.redirect(get.keys.keys)
+        async with storage.write() as write:
+            wafc = write.as_foundation_committer()
+            await wafc.keys.update_committee_associations(
+                key_fingerprint,
+                update_form.selected_committees,
+            )
 
-            if not (key.apache_uid and session.uid and (key.apache_uid.lower() == session.uid.lower())):
-                await quart.flash("You are not authorized to modify this key", "error")
-                return await session.redirect(get.keys.keys)
-
-            selected_committee_keys = update_form.selected_committees
-            old_committee_keys = {c.key for c in key.committees}
-
-            new_committees = await data.committee(name_in=selected_committee_keys).all()
-            key.committees = list(new_committees)
-            data.add(key)
-            await data.commit()
-
-            affected_committee_keys = old_committee_keys.union(set(selected_committee_keys))
-            if affected_committee_keys:
-                async with storage.write() as write:
-                    for affected_committee_key in affected_committee_keys:
-                        wacm = write.as_committee_member_outcome(affected_committee_key).result_or_none()
-                        if wacm is None:
-                            continue
-                        await wacm.keys.autogenerate_keys_file()
-
-            await quart.flash("Key committee associations updated successfully.", "success")
+        await quart.flash("Key committee associations updated successfully.", "success")
+    except storage.AccessError as e:
+        await quart.flash(str(e), "error")
     except Exception as e:
         log.exception("Error updating key committee associations:")
         await quart.flash(f"An unexpected error occurred: {e!s}", "error")
