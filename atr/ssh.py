@@ -39,6 +39,7 @@ import ssh_audit.builtin_policies as builtin_policies
 import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
+import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
 import atr.models.safe as safe
@@ -102,6 +103,10 @@ class SSHServer(asyncssh.SSHServer):
             log.info("GitHub authentication will use validate_public_key")
             return True
 
+        if not await ldap.is_active(username):
+            log.failed_authentication("ssh_account_disabled")
+            raise asyncssh.PermissionDenied("Account disabled")
+
         try:
             # Load SSH keys for this user from the database
             async with db.session() as data:
@@ -154,18 +159,22 @@ class SSHServer(asyncssh.SSHServer):
             if workflow_key is None:
                 return False
 
-            # In some cases this will be a service account
-            self._github_asf_uid = workflow_key.asf_uid
-            log.set_asf_uid(self._github_asf_uid)
+        # In some cases this will be a service account
+        self._github_asf_uid = workflow_key.asf_uid
+        log.set_asf_uid(self._github_asf_uid)
 
-            now = int(time.time())
-            # audit_guidance this application is not concerned with checking for a not_before flag on the workflow_key
-            if workflow_key.expires < now:
-                log.failed_authentication("public_key_expired")
-                return False
+        if not await ldap.is_active(self._github_asf_uid):
+            log.failed_authentication("ssh_workflow_account_disabled")
+            return False
 
-            self._github_payload = github.TrustedPublisherPayload.model_validate(workflow_key.github_payload)
-            return True
+        now = int(time.time())
+        # audit_guidance this application is not concerned with checking for a not_before flag on the workflow_key
+        if workflow_key.expires < now:
+            log.failed_authentication("public_key_expired")
+            return False
+
+        self._github_payload = github.TrustedPublisherPayload.model_validate(workflow_key.github_payload)
+        return True
 
     def _get_asf_uid(self, process: asyncssh.SSHServerProcess) -> str:
         username = process.get_extra_info("username")
@@ -260,6 +269,9 @@ async def _step_02_handle_safely(process: asyncssh.SSHServerProcess, server: SSH
     asf_uid = server._get_asf_uid(process)
     log.set_asf_uid(asf_uid)
     log.info(f"Handling command for authenticated user: {asf_uid}")
+
+    if not await ldap.is_active(asf_uid):
+        raise RsyncArgsError("Account disabled")
 
     if not process.command:
         raise RsyncArgsError("No command specified")
@@ -452,7 +464,6 @@ async def _step_06a_validate_read_permissions(
         sql.ReleasePhase.RELEASE_CANDIDATE,
         sql.ReleasePhase.RELEASE_PREVIEW,
     }
-    print(release)
     if release.phase not in allowed_read_phases:
         raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
 
