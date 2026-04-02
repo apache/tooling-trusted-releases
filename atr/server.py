@@ -117,8 +117,8 @@ _SWAGGER_UI_TEMPLATE: Final[str] = """<!DOCTYPE html>
 """
 
 # Avoid OIDC
-asfquart.generics.OAUTH_URL_INIT = "https://oauth.apache.org/auth?state=%s&redirect_uri=%s"
-asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.apache.org/token?code=%s"
+asfquart.generics.OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
+asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 
 
 class ApiOnlyOpenAPIProvider(quart_schema.OpenAPIProvider):
