@@ -562,6 +562,8 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
     # TODO: We could automatically include a form field noting the form action URL
     @app.after_request
     async def add_security_headers(response: quart.Response) -> quart.Response:
+        if response.headers.get("Cache-Control") is None:
+            response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = csp_header
         response.headers["Permissions-Policy"] = permissions_policy
         # audit_guidance we set Referrer-Policy: same-origin in our frontend proxy
