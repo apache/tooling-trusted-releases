@@ -46,6 +46,9 @@ async def add_project(
     display_name = project_form.display_name
     label = project_form.label
 
+    if committee_key != project_form.committee_key:
+        raise ValueError(f"Invalid committee key: {committee_key}")
+
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_key)))
         try:
