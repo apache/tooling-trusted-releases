@@ -21,6 +21,8 @@ from __future__ import annotations
 import datetime
 from typing import Literal
 
+import sqlmodel
+
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -312,8 +314,14 @@ class CommitteeMember(CommitteeParticipant):
 
         match vote_result:
             case "passed":
-                release.phase = sql.ReleasePhase.RELEASE_PREVIEW
-                release.vote_resolved = datetime.datetime.now(datetime.UTC)
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=None,
+                    new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                    new_vote_resolved=datetime.datetime.now(datetime.UTC),
+                    new_podling_thread_id=None,
+                )
                 await self.__data.commit()
                 await self.__data.refresh(release)
                 success_message = "Vote marked as passed"
@@ -327,10 +335,15 @@ class CommitteeMember(CommitteeParticipant):
                     description=description,
                 )
             case "failed" | "cancelled":
-                release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
                 # The vote_resolved property refers to when the vote succeeded only
-                release.vote_resolved = None
-                release.podling_thread_id = None
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=None,
+                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                    new_vote_resolved=None,
+                    new_podling_thread_id=None,
+                )
                 await self.__data.commit()
                 await self.__data.refresh(release)
                 success_message = f"Vote marked as {vote_result}"
@@ -369,7 +382,15 @@ class CommitteeMember(CommitteeParticipant):
             if archive_url is None:
                 raise ValueError("No archive URL found for podling vote")
             thread_id = archive_url.split("/")[-1]
-            release.podling_thread_id = thread_id
+            await self._resolve_transition(
+                release,
+                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                expected_podling_thread_id=None,
+                new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                new_vote_resolved=None,
+                new_podling_thread_id=thread_id,
+            )
+            await self.__data.refresh(release)
             # incubator_vote_address = "general@incubator.apache.org"
             incubator_vote_address = util.USER_TESTS_ADDRESS
             if not release.project.committee:
@@ -407,8 +428,14 @@ class CommitteeMember(CommitteeParticipant):
             )
             success_message = "Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
         elif vote_result == "passed":
-            release.phase = sql.ReleasePhase.RELEASE_PREVIEW
-            release.vote_resolved = datetime.datetime.now(datetime.UTC)
+            await self._resolve_transition(
+                release,
+                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                expected_podling_thread_id=release.podling_thread_id,
+                new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                new_vote_resolved=datetime.datetime.now(datetime.UTC),
+                new_podling_thread_id=release.podling_thread_id,
+            )
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = "Vote marked as passed"
@@ -427,10 +454,15 @@ class CommitteeMember(CommitteeParticipant):
                 )
                 extra_destination = (round_one_email_address, round_one_message_id)
         else:
-            release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
             # The vote_resolved property refers to when the vote succeeded only
-            release.vote_resolved = None
-            release.podling_thread_id = None
+            await self._resolve_transition(
+                release,
+                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                expected_podling_thread_id=release.podling_thread_id,
+                new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                new_vote_resolved=None,
+                new_podling_thread_id=None,
+            )
             await self.__data.commit()
             await self.__data.refresh(release)
             success_message = f"Vote marked as {vote_result}"
@@ -531,6 +563,36 @@ class CommitteeMember(CommitteeParticipant):
         await self.__data.flush()
         await self.__data.commit()
         return None
+
+    async def _resolve_transition(
+        self,
+        release: sql.Release,
+        *,
+        expected_phase: sql.ReleasePhase,
+        expected_podling_thread_id: str | None,
+        new_phase: sql.ReleasePhase,
+        new_vote_resolved: datetime.datetime | None,
+        new_podling_thread_id: str | None,
+    ) -> None:
+        via = sql.validate_instrumented_attribute
+        stmt = sqlmodel.update(sql.Release).where(
+            via(sql.Release.key) == release.key,
+            via(sql.Release.phase) == expected_phase,
+        )
+        if expected_podling_thread_id is None:
+            stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
+        else:
+            stmt = stmt.where(via(sql.Release.podling_thread_id) == expected_podling_thread_id)
+        result = await self.__data.execute(
+            stmt.values(
+                phase=new_phase,
+                vote_resolved=new_vote_resolved,
+                podling_thread_id=new_podling_thread_id,
+            )
+        )
+        if getattr(result, "rowcount", 0) != 1:
+            await self.__data.rollback()
+            raise storage.AccessError("The release state has changed, please refresh and try again")
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

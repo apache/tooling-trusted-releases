@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 import quart
+import sqlalchemy.engine as engine
 
 import atr.db.interaction as interaction
 import atr.get.manual as manual
@@ -77,6 +78,9 @@ async def test_cancelled_resolve_release_clears_podling_thread_id() -> None:
 
     release = _candidate_release(podling_thread_id="abc123")
     data.merge = mock.AsyncMock(return_value=release)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     await writer.resolve_release(
         _project_key(),
@@ -100,6 +104,9 @@ async def test_cancelled_resolve_release_produces_correct_message() -> None:
 
     release = _candidate_release()
     data.merge = mock.AsyncMock(return_value=release)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     _release, _round, success, _error = await writer.resolve_release(
         _project_key(),
@@ -123,6 +130,9 @@ async def test_cancelled_resolve_release_returns_to_draft() -> None:
 
     release = _candidate_release()
     data.merge = mock.AsyncMock(return_value=release)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     _release, _round, success, _error = await writer.resolve_release(
         _project_key(),
@@ -149,6 +159,9 @@ async def test_failed_resolve_release_clears_podling_thread_id() -> None:
 
     release = _candidate_release(podling_thread_id="abc123")
     data.merge = mock.AsyncMock(return_value=release)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     await writer.resolve_release(
         _project_key(),
@@ -176,6 +189,9 @@ async def test_manual_cancelled_returns_to_draft_and_clears_podling_thread_id() 
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     success = await writer.resolve_manually(
         _project_key(),
@@ -201,6 +217,9 @@ async def test_manual_failed_returns_to_draft_and_clears_podling_thread_id() -> 
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+    )
 
     success = await writer.resolve_manually(
         _project_key(),
@@ -225,6 +244,9 @@ async def test_manual_passed_creates_preview_revision() -> None:
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
+    data.refresh = _refresh_as(
+        phase=sql.ReleasePhase.RELEASE_PREVIEW, vote_resolved=datetime.datetime.now(datetime.UTC)
+    )
 
     success = await writer.resolve_manually(
         _project_key(),
@@ -264,6 +286,30 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
     assert "cancellation notice" in html
 
 
+@pytest.mark.asyncio
+async def test_manual_resolve_rejects_concurrent_modification() -> None:
+    """Manual resolve raises AccessError when the release was modified concurrently."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _manual_candidate_release()
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+    data.execute = mock.AsyncMock(return_value=_mock_cursor_result(rowcount=0))
+
+    with pytest.raises(storage.AccessError, match="release state has changed"):
+        await writer.resolve_manually(
+            _project_key(),
+            _version_key(),
+            "passed",
+        )
+
+    data.rollback.assert_awaited()
+    write_as.revision.create_revision_with_quarantine.assert_not_awaited()
+
+
 def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest.MonkeyPatch) -> None:
     """Manual vote releases link to the manual resolution page."""
 
@@ -288,6 +334,57 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
     html = str(page.collect())
     assert 'href="/manual/resolve/project/1.0.0"' in html
     assert 'href="/resolve/project/1.0.0"' not in html
+
+
+@pytest.mark.asyncio
+async def test_podling_double_pass_raises_error() -> None:
+    """A second podling round 1 pass raises AccessError when the first already set podling_thread_id."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    data.merge = mock.AsyncMock(return_value=release)
+    data.execute = mock.AsyncMock(return_value=_mock_cursor_result(rowcount=0))
+    write_as.cache.get_message_archive_url = mock.AsyncMock(return_value="https://lists.apache.org/thread/abc123")
+
+    with pytest.raises(storage.AccessError, match="release state has changed"):
+        await writer.resolve_release(
+            _project_key(),
+            release,
+            1,
+            "passed",
+            _latest_vote_task(),
+            "Chair",
+            "The vote has passed.",
+        )
+
+    data.rollback.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_podling_stale_round_one_cancel_after_pass() -> None:
+    """A stale cancel after another user passes podling round 1 raises AccessError."""
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    data.merge = mock.AsyncMock(return_value=release)
+    data.execute = mock.AsyncMock(return_value=_mock_cursor_result(rowcount=0))
+
+    with pytest.raises(storage.AccessError, match="release state has changed"):
+        await writer.resolve_release(
+            _project_key(),
+            release,
+            1,
+            "cancelled",
+            _latest_vote_task(),
+            "Chair",
+            "The vote has been cancelled.",
+        )
+
+    data.rollback.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -589,6 +686,7 @@ def _latest_vote_task_with_end(offset_hours: int) -> SimpleNamespace:
 
 def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
+        key="project-1.0.0",
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         vote_manual=True,
         vote_started=datetime.datetime.now(datetime.UTC),
@@ -607,12 +705,20 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
     )
 
 
+def _mock_cursor_result(rowcount: int = 1) -> mock.MagicMock:
+    result = mock.MagicMock(spec=engine.CursorResult)
+    result.rowcount = rowcount
+    return result
+
+
 def _mock_data() -> mock.MagicMock:
     data = mock.MagicMock()
     data.commit = mock.AsyncMock()
+    data.execute = mock.AsyncMock(return_value=_mock_cursor_result())
     data.flush = mock.AsyncMock()
     data.merge = mock.AsyncMock()
     data.refresh = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
     return data
 
 
@@ -625,6 +731,14 @@ def _mock_write_as() -> mock.MagicMock:
 
 def _project_key() -> safe.ProjectKey:
     return safe.ProjectKey("project")
+
+
+def _refresh_as(**attrs: object) -> mock.AsyncMock:
+    def _apply(obj: SimpleNamespace) -> None:
+        for k, v in attrs.items():
+            setattr(obj, k, v)
+
+    return mock.AsyncMock(side_effect=_apply)
 
 
 def _version_key() -> safe.VersionKey:
