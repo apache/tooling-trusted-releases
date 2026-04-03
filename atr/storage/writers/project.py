@@ -19,6 +19,9 @@
 from __future__ import annotations
 
 import datetime
+import sqlite3
+
+import sqlalchemy.exc
 
 import atr.db as db
 import atr.models.safe as safe
@@ -150,7 +153,6 @@ class CommitteeMember(CommitteeParticipant):
         if await self.__data.project(key=label).get():
             raise storage.AccessError(f"Project {label} already exists")
 
-        # TODO: Fix the potential race condition here
         project = sql.Project(
             key=label,
             name=display_name,
@@ -167,13 +169,23 @@ class CommitteeMember(CommitteeParticipant):
         if super_project and super_project.release_policy:
             project.release_policy = super_project.release_policy.duplicate()
 
-        self.__data.add(project)
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            committee_key=str(committee_key),
-            project_key=label,
-        )
+        try:
+            self.__data.add(project)
+            await self.__data.commit()
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                committee_key=str(committee_key),
+                project_key=label,
+            )
+        except sqlalchemy.exc.IntegrityError as e:
+            if (
+                isinstance(e.orig, sqlite3.IntegrityError)
+                and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
+                and ("project.key" in str(e.orig))
+            ):
+                raise storage.AccessError(f"Project {label} already exists")
+            else:
+                raise
 
     async def delete(self, project_key: safe.ProjectKey) -> None:
         project = await self.__data.project(
