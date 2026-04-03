@@ -16,7 +16,6 @@
 # under the License.
 
 import asyncio
-import pathlib
 from typing import Literal
 
 import aiofiles.os
@@ -44,9 +43,9 @@ import atr.web as web
 
 
 class FilesDiff(schema.Strict):
-    added: list[pathlib.Path]
-    removed: list[pathlib.Path]
-    modified: list[pathlib.Path]
+    added: list[safe.RelPath]
+    removed: list[safe.RelPath]
+    modified: list[safe.RelPath]
 
 
 @get.typed
@@ -87,7 +86,7 @@ async def selected(
         revisions_list: list[sql.Revision] = list(revisions_result.scalars().all())
 
     revision_history = []
-    loop_prev_revision_files: set[pathlib.Path] | None = None
+    loop_prev_revision_files: set[safe.RelPath] | None = None
     loop_prev_revision_number: str | None = None
     for current_db_revision in revisions_list:
         current_files_for_diff, files_diff_for_current = await _revision_files_diff(
@@ -303,17 +302,17 @@ def _render_tag_form(body: htm.Block, revision: sql.Revision, project_key: str, 
 
 async def _revision_files_diff(
     revision_number: str,
-    release_dir: pathlib.Path,
-    prev_revision_files: set[pathlib.Path] | None,
+    release_dir: safe.StatePath,
+    prev_revision_files: set[safe.RelPath] | None,
     prev_revision_number: str | None,
-) -> tuple[set[pathlib.Path], FilesDiff]:
+) -> tuple[set[safe.RelPath], FilesDiff]:
     """Process a single revision and calculate its diff from the previous."""
     latest_revision_dir = release_dir / revision_number
     latest_revision_files = {path async for path in util.paths_recursive(latest_revision_dir)}
 
-    added_files: set[pathlib.Path] = set()
-    removed_files: set[pathlib.Path] = set()
-    modified_files: set[pathlib.Path] = set()
+    added_files: set[safe.RelPath] = set()
+    removed_files: set[safe.RelPath] = set()
+    modified_files: set[safe.RelPath] = set()
 
     if (prev_revision_files is not None) and (prev_revision_number is not None):
         added_files = latest_revision_files - prev_revision_files
@@ -325,7 +324,7 @@ async def _revision_files_diff(
         mtime_tasks = []
         for common_file in common_files:
 
-            async def check_mtime(file_path: pathlib.Path) -> tuple[pathlib.Path, bool]:
+            async def check_mtime(file_path: safe.RelPath) -> tuple[safe.RelPath, bool]:
                 try:
                     parent_mtime = await aiofiles.os.path.getmtime(parent_revision_dir / file_path)
                     latest_mtime = await aiofiles.os.path.getmtime(latest_revision_dir / file_path)

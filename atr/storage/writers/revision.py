@@ -80,8 +80,8 @@ async def finalise_revision(
     merge_enabled: bool,
     n_inodes: dict[str, int],
     old_revision: sql.Revision | None,
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
     previous_attestable: atr.models.attestable.Attestable | None,
     project_key: safe.ProjectKey,
     release: sql.Release,
@@ -135,8 +135,8 @@ async def _commit_new_revision(
     asf_uid: str,
     description: str | None,
     merge_base_revision_key: str | None,
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
     previous_attestable: atr.models.attestable.Attestable | None,
     project_key: safe.ProjectKey,
     release: sql.Release,
@@ -189,7 +189,7 @@ async def _commit_new_revision(
     # This must be done after the rename, otherwise the rename will fail
     # The ".." entry in a directory is modified when it is moved between parents
     # (Additionally, on macOS a 555 directory cannot be renamed within the same parent)
-    await asyncio.to_thread(util.chmod_directories, new_revision_dir, 0o555)
+    await asyncio.to_thread(util.chmod_directories, new_revision_dir.path, 0o555)
 
     policy = release.release_policy or release.project.release_policy
     policy_dict = policy.model_dump() if policy else None
@@ -254,8 +254,8 @@ async def _lock_and_merge(
     merge_enabled: bool,
     n_inodes: dict[str, int],
     old_revision: sql.Revision | None,
-    path_to_hash: dict[str, str],
-    path_to_size: dict[str, int],
+    path_to_hash: dict[safe.RelPath, str],
+    path_to_size: dict[safe.RelPath, int],
     previous_attestable: atr.models.attestable.Attestable | None,
     project_key: safe.ProjectKey,
     release: sql.Release,
@@ -290,14 +290,14 @@ async def _lock_and_merge(
             data,
             base_inodes,
             base_hashes,
-            prior_dir,
+            prior_dir.path,
             project_key,
             version_key,
             latest.seq,
             temp_dir_path,
             n_inodes,
-            path_to_hash,
-            path_to_size,
+            {str(k): v for k, v in path_to_hash.items()},
+            {str(k): v for k, v in path_to_size.items()},
         )
         previous_attestable = await attestable.load(project_key, version_key, prior_number)
 
@@ -378,7 +378,7 @@ class CommitteeParticipant(FoundationCommitter):
         description: str | None = None,
         set_local_cache: bool = False,
         reset_to_global_cache: bool = False,
-        modify: Callable[[pathlib.Path, sql.Revision | None], Awaitable[None]] | None = None,
+        modify: Callable[[safe.StatePath, sql.Revision | None], Awaitable[None]] | None = None,
         clone_from: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
@@ -410,7 +410,7 @@ class CommitteeParticipant(FoundationCommitter):
         # Use the tmp subdirectory of state, to ensure that it is on the same filesystem
         prefix_token = secrets.token_hex(16)
         temp_dir: str = await asyncio.to_thread(tempfile.mkdtemp, prefix=prefix_token + "-", dir=paths.get_tmp_dir())
-        temp_dir_path = pathlib.Path(temp_dir)
+        temp_dir_path = safe.StatePath(pathlib.Path(temp_dir), paths.get_tmp_dir().path)
 
         try:
             # The directory was created by mkdtemp, but it's empty
@@ -427,27 +427,27 @@ class CommitteeParticipant(FoundationCommitter):
             await aioshutil.rmtree(temp_dir)
             raise
 
-        validation_errors = await asyncio.to_thread(detection.validate_directory, temp_dir_path)
+        validation_errors = await asyncio.to_thread(detection.validate_directory, temp_dir_path.path)
         if validation_errors:
             await aioshutil.rmtree(temp_dir)
             raise types.FailedError("File validation failed:\n" + "\n".join(validation_errors))
 
         # Ensure that the permissions of every directory are 755
         try:
-            await asyncio.to_thread(util.chmod_directories, temp_dir_path)
+            await asyncio.to_thread(util.chmod_directories, temp_dir_path.path)
         except Exception:
             await aioshutil.rmtree(temp_dir)
             raise
 
         # Make files read only to prevent them from being modified through hard links
         try:
-            await asyncio.to_thread(util.chmod_files, temp_dir_path, 0o444)
+            await asyncio.to_thread(util.chmod_files, temp_dir_path.path, 0o444)
         except Exception:
             await aioshutil.rmtree(temp_dir)
             raise
 
         try:
-            path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(temp_dir_path)
+            path_to_hash, path_to_size = await attestable.paths_to_hashes_and_sizes(temp_dir_path.path)
             parent_revision_number = old_revision.safe_number if old_revision else None
             previous_attestable = None
             if parent_revision_number is not None:
@@ -456,9 +456,9 @@ class CommitteeParticipant(FoundationCommitter):
             base_hashes: dict[str, str] = {}
             if merge_enabled and (old_revision is not None):
                 base_dir = old_release_dir
-                base_inodes = await asyncio.to_thread(util.paths_to_inodes, base_dir)
+                base_inodes = await asyncio.to_thread(util.paths_to_inodes, base_dir.path)
                 base_hashes = attestable.path_hashes(previous_attestable) if (previous_attestable is not None) else {}
-            n_inodes = await asyncio.to_thread(util.paths_to_inodes, temp_dir_path)
+            n_inodes = await asyncio.to_thread(util.paths_to_inodes, temp_dir_path.path)
         except Exception:
             await aioshutil.rmtree(temp_dir)
             raise
@@ -483,7 +483,7 @@ class CommitteeParticipant(FoundationCommitter):
                     project_key=project_key,
                     release=release,
                     _release_key=release.safe_key,
-                    temp_dir_path=temp_dir_path,
+                    temp_dir_path=temp_dir_path.path,
                     version_key=version_key,
                 )
             except Exception:
@@ -539,9 +539,9 @@ class CommitteeParticipant(FoundationCommitter):
         data: db.Session,
         *,
         asf_uid: str,
-        deduped_archives: list[tuple[str, str]],
+        deduped_archives: list[tuple[safe.RelPath, str]],
         description: str | None,
-        path_to_size: dict[str, int],
+        path_to_size: dict[safe.RelPath, int],
         prior_revision_key: str | None,
         project_key: safe.ProjectKey,
         release_key: str,
@@ -550,7 +550,7 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Quarantined:
         file_metadata = [
             sql.QuarantineFileEntryV1(
-                rel_path=rel_path,
+                rel_path=str(rel_path),
                 size_bytes=path_to_size[rel_path],
                 content_hash=content_hash,
                 errors=[],

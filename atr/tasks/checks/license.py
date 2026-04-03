@@ -27,6 +27,7 @@ from typing import Any, Final
 import atr.constants as constants
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.tasks.checks as checks
@@ -240,7 +241,7 @@ def headers_validate(content: bytes, _filename: str) -> tuple[bool, str | None]:
     return False, "Could not find Apache License header"
 
 
-def _files_check_binary(root_path: pathlib.Path) -> Iterator[Result]:
+def _files_check_binary(root_path: safe.StatePath) -> Iterator[Result]:
     license_paths: list[pathlib.Path] = []
     notice_paths: list[pathlib.Path] = []
 
@@ -257,8 +258,8 @@ def _files_check_binary(root_path: pathlib.Path) -> Iterator[Result]:
             if filename in _BINARY_NOTICE_FILENAMES:
                 notice_paths.append(pathlib.Path(dirpath) / filename)
 
-    yield _files_check_binary_license(license_paths, root_path)
-    yield _files_check_binary_notice(notice_paths, root_path)
+    yield _files_check_binary_license(license_paths, root_path.path)
+    yield _files_check_binary_notice(notice_paths, root_path.path)
 
 
 def _files_check_binary_license(paths: list[pathlib.Path], root_path: pathlib.Path) -> ArtifactResult:
@@ -306,8 +307,8 @@ def _files_check_binary_notice(paths: list[pathlib.Path], root_path: pathlib.Pat
     )
 
 
-def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool, is_binary: bool) -> Iterator[Result]:
-    if not archive_dir.is_dir():
+def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_binary: bool) -> Iterator[Result]:
+    if not archive_dir.path.is_dir():
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
         yield ArtifactResult(
@@ -319,7 +320,7 @@ def _files_check_core_logic(archive_dir: pathlib.Path, is_podling: bool, is_bina
 
     # Check for license files in the root directory
     top_entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
-    root_dirs = [e for e in top_entries if (archive_dir / e).is_dir()]
+    root_dirs = [e for e in top_entries if (archive_dir / e).path.is_dir()]
     if len(root_dirs) != 1:
         yield ArtifactResult(
             status=sql.CheckResultStatus.FAILURE,
@@ -396,7 +397,7 @@ def _files_check_core_logic_notice(file_path: pathlib.Path) -> tuple[bool, list[
     return len(issues) == 0, issues, preamble
 
 
-def _files_check_source(root_path: pathlib.Path, is_podling: bool) -> Iterator[Result]:
+def _files_check_source(root_path: safe.StatePath, is_podling: bool) -> Iterator[Result]:
     license_results: dict[str, str | None] = {}
     notice_results: dict[str, tuple[bool, list[str], str]] = {}
     disclaimer_found = False
@@ -405,7 +406,9 @@ def _files_check_source(root_path: pathlib.Path, is_podling: bool) -> Iterator[R
         if entry.startswith("._"):
             continue
 
-        entry_path = root_path / entry
+        # We explicitly escape the StatePath safety here as archives *can* contain prohibited files
+        # TODO: Should they?
+        entry_path = root_path.path / entry
         if not entry_path.is_file():
             continue
 
@@ -439,7 +442,7 @@ def _get_file_extension(filename: str) -> str | None:
 
 
 def _headers_check_core_logic(  # noqa: C901
-    archive_dir: pathlib.Path, artifact_basename: str, ignore_lines: list[str], excludes_source: str
+    archive_dir: safe.StatePath, artifact_basename: str, ignore_lines: list[str], excludes_source: str
 ) -> Iterator[Result]:
     """Verify Apache License headers in source files within an extracted cache tree."""
     # We could modify @Lucas-C/pre-commit-hooks instead for this
@@ -457,7 +460,7 @@ def _headers_check_core_logic(  # noqa: C901
     #         data=None,
     #     )
 
-    if not archive_dir.is_dir():
+    if not archive_dir.path.is_dir():
         yield ArtifactResult(
             status=sql.CheckResultStatus.FAILURE,
             message="Cache directory is not available",
@@ -579,7 +582,7 @@ def _headers_check_core_logic_should_check(filepath: str) -> bool:
 
 async def _headers_core(
     recorder: checks.Recorder,
-    archive_dir: pathlib.Path,
+    archive_dir: safe.StatePath,
     artifact_basename: str,
     ignore_lines: list[str],
     excludes_source: str,

@@ -20,7 +20,6 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import functools
-import pathlib
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles
@@ -52,7 +51,7 @@ class FunctionArguments:
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
-    primary_rel_path: str | None
+    primary_rel_path: safe.RelPath | None
     extra_args: dict[str, Any]
 
 
@@ -62,7 +61,7 @@ class Recorder:
     release_key: safe.ReleaseKey
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
-    primary_rel_path: str | None
+    primary_rel_path: safe.RelPath | None
     member_rel_path: str | None
     revision_number: safe.RevisionNumber
     afresh: bool
@@ -77,7 +76,7 @@ class Recorder:
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         revision_number: safe.RevisionNumber,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
         afresh: bool = True,
     ) -> None:
@@ -105,7 +104,7 @@ class Recorder:
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         revision_number: safe.RevisionNumber,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
         afresh: bool = True,
     ) -> Recorder:
@@ -122,7 +121,9 @@ class Recorder:
         )
         if afresh is True:
             # Clear outer path whether it's specified or not
-            await recorder.clear(primary_rel_path=primary_rel_path, member_rel_path=member_rel_path)
+            await recorder.clear(
+                primary_rel_path=str(primary_rel_path) if primary_rel_path else None, member_rel_path=member_rel_path
+            )
         recorder.constructed = True
         return recorder
 
@@ -131,7 +132,7 @@ class Recorder:
         status: sql.CheckResultStatus,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         if self.constructed is False:
@@ -154,7 +155,9 @@ class Recorder:
             revision_number=str(self.revision_number),
             checker=self.checker,
             checker_version=self.checker_version,
-            primary_rel_path=primary_rel_path or self.primary_rel_path,
+            primary_rel_path=str(primary_rel_path or self.primary_rel_path)
+            if (primary_rel_path or self.primary_rel_path)
+            else None,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
             status=status,
@@ -172,10 +175,10 @@ class Recorder:
             await session.commit()
         return result
 
-    async def abs_path(self, rel_path: str | None = None) -> pathlib.Path | None:
+    async def abs_path(self, rel_path: safe.RelPath | str | None = None) -> safe.StatePath | None:
         """Construct the absolute path using the required revision."""
         # Determine the relative path part
-        rel_path_part: str | None = None
+        rel_path_part: safe.RelPath | str | None = None
         if rel_path is not None:
             rel_path_part = rel_path
         elif self.primary_rel_path is not None:
@@ -185,7 +188,7 @@ class Recorder:
             return self.abs_path_base()
         return self.abs_path_base() / rel_path_part
 
-    def abs_path_base(self) -> pathlib.Path:
+    def abs_path_base(self) -> safe.StatePath:
         return file_paths.base_path_for_revision(self.project_key, self.version_key, self.revision_number)
 
     async def project(self) -> sql.Project:
@@ -212,7 +215,9 @@ class Recorder:
         release_key = str(self.release_key)
         revision_seq = int(str(self.revision_number))
         async with db.session() as data:
-            classification = await data.release_file_classification_at(release_key, self.primary_rel_path, revision_seq)
+            classification = await data.release_file_classification_at(
+                release_key, str(self.primary_rel_path), revision_seq
+            )
         if classification is not None:
             return classify.FileType(classification)
         project = await self.project()
@@ -225,7 +230,7 @@ class Recorder:
             base_path,
         )
         return classify.classify(
-            pathlib.Path(self.primary_rel_path),
+            self.primary_rel_path,
             base_path=base_path,
             source_matcher=source_matcher,
             binary_matcher=binary_matcher,
@@ -252,7 +257,7 @@ class Recorder:
         self,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
@@ -268,7 +273,7 @@ class Recorder:
         self,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
@@ -284,7 +289,7 @@ class Recorder:
         self,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
@@ -300,7 +305,7 @@ class Recorder:
         self,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
@@ -316,7 +321,7 @@ class Recorder:
         self,
         message: str,
         data: Any,
-        primary_rel_path: str | None = None,
+        primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
@@ -333,17 +338,17 @@ def function_key(func: Callable[..., Any] | str) -> str:
     return func.__module__ + "." + func.__name__ if callable(func) else func
 
 
-async def resolve_archive_dir(args: FunctionArguments) -> pathlib.Path | None:
+async def resolve_archive_dir(args: FunctionArguments) -> safe.StatePath | None:
     """Resolve the extracted archive directory for the primary archive."""
     if args.primary_rel_path is None:
         return None
     release_key = sql.release_key(str(args.project_key), str(args.version_key))
     revision_seq = int(str(args.revision_number))
     async with db.session() as data:
-        content_hash = await data.release_file_hash_at(release_key, args.primary_rel_path, revision_seq)
+        content_hash = await data.release_file_hash_at(release_key, str(args.primary_rel_path), revision_seq)
     if content_hash is None:
         abs_path = file_paths.revision_path_for_file(
-            args.project_key, args.version_key, args.revision_number, args.primary_rel_path
+            args.project_key, args.version_key, args.revision_number, str(args.primary_rel_path)
         )
         if await aiofiles.os.path.isfile(abs_path):
             content_hash = await hashes.compute_file_hash(abs_path)
@@ -364,7 +369,7 @@ async def resolve_cache_key(  # noqa: C901
     revision: safe.RevisionNumber,
     args: dict[str, Any] | None = None,
     file: str | None = None,
-    path: pathlib.Path | None = None,
+    path: safe.StatePath | None = None,
     ignore_path: bool = False,
 ) -> dict[str, Any] | None:
     if not args:
@@ -488,7 +493,7 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
     abs_path = file_paths.revision_path_for_file(
         release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, rel_path
     )
-    plain_path = abs_path.with_suffix("")
+    plain_path = abs_path.path.with_suffix("")
     if await aiofiles.os.path.isfile(plain_path):
         return await hashes.compute_file_hash(plain_path)
     else:

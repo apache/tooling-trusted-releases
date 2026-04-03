@@ -181,15 +181,15 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "runtime",
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
-        paths.get_archives_dir(),
-        paths.get_downloads_dir(),
-        paths.get_finished_dir(),
-        paths.get_quarantined_dir(),
-        paths.get_tmp_dir(),
-        paths.get_unfinished_dir(),
+        pathlib.Path(paths.get_archives_dir()),
+        pathlib.Path(paths.get_downloads_dir()),
+        pathlib.Path(paths.get_finished_dir()),
+        pathlib.Path(paths.get_quarantined_dir()),
+        pathlib.Path(paths.get_tmp_dir()),
+        pathlib.Path(paths.get_unfinished_dir()),
     ]
-    archives_dir = paths.get_archives_dir()
-    unfinished_dir = paths.get_unfinished_dir()
+    archives_dir = pathlib.Path(paths.get_archives_dir())
+    unfinished_dir = pathlib.Path(paths.get_unfinished_dir())
     for directory in directories_to_ensure:
         directory.mkdir(parents=True, exist_ok=True)
         # Some directories need custom permissions
@@ -1005,7 +1005,7 @@ async def _reset_request_log_context():
 def _set_file_permissions_to_read_only() -> None:
     """Set permissions of all files in the unfinished and finished directories to read only."""
     # TODO: After a migration period, incorrect permissions should be an error
-    directories = [paths.get_unfinished_dir(), paths.get_finished_dir()]
+    directories = [pathlib.Path(paths.get_unfinished_dir()), pathlib.Path(paths.get_finished_dir())]
     fixed_count = 0
     for directory in directories:
         if not directory.exists():

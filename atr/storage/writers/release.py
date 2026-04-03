@@ -171,10 +171,10 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> str | None:
         description = f"Delete empty directory {dir_to_delete_rel} via web interface"
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             path_to_remove = path / dir_to_delete_rel
-            resolved = await asyncio.to_thread(path_to_remove.resolve)
-            resolved.relative_to(await asyncio.to_thread(path.resolve))
+            resolved = await asyncio.to_thread(path_to_remove.path.resolve)
+            resolved.relative_to(await asyncio.to_thread(path.path.resolve))
             if not await aiofiles.os.path.isdir(path_to_remove):
                 raise types.FailedError(f"Path '{dir_to_delete_rel}' is not a directory.")
             if await aiofiles.os.listdir(path_to_remove):
@@ -200,15 +200,15 @@ class CommitteeParticipant(FoundationCommitter):
         metadata_files_deleted = 0
         description = "File deletion through web interface"
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             nonlocal metadata_files_deleted
             # Uses new_revision_number for logging only
             # Path to delete within the new revision directory
             path_in_new_revision = path / rel_path_to_delete
 
             # Make sure the requested path is relative to the actual path
-            resolved = await asyncio.to_thread(path_in_new_revision.resolve)
-            resolved.relative_to(await asyncio.to_thread(path.resolve))
+            resolved = await asyncio.to_thread(path_in_new_revision.path.resolve)
+            resolved.relative_to(await asyncio.to_thread(path.path.resolve))
 
             # Check that the file exists in the new revision
             if not await aiofiles.os.path.exists(path_in_new_revision):
@@ -217,12 +217,12 @@ class CommitteeParticipant(FoundationCommitter):
                 raise storage.AccessError("File to delete was not found in the new revision")
 
             # Check whether the file is an artifact
-            if analysis.is_artifact(path_in_new_revision):
+            if analysis.is_artifact(path_in_new_revision.path):
                 # If so, delete all associated metadata files in the new revision
                 async for p in util.paths_recursive(path_in_new_revision.parent):
                     # Construct full path within the new revision
                     metadata_path_obj = path / p
-                    if p.name.startswith(rel_path_to_delete.name + "."):
+                    if p.as_path().name.startswith(rel_path_to_delete.name + "."):
                         await aiofiles.os.remove(metadata_path_obj)
                         metadata_files_deleted += 1
 
@@ -244,13 +244,13 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> None:
         description = "Hash generation through web interface"
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             # Uses new_revision_number for logging only
             path_in_new_revision = path / rel_path
 
             # Make sure the requested path is relative to the actual path
-            resolved = await asyncio.to_thread(path_in_new_revision.resolve)
-            resolved.relative_to(await asyncio.to_thread(path.resolve))
+            resolved = await asyncio.to_thread(path_in_new_revision.path.resolve)
+            resolved.relative_to(await asyncio.to_thread(path.path.resolve))
 
             hash_path_rel = rel_path.name + ".sha512"
             hash_path_in_new_revision = path / rel_path.parent / hash_path_rel
@@ -325,7 +325,7 @@ class CommitteeParticipant(FoundationCommitter):
         moved_files_names: list[str] = []
         skipped_files_names: list[str] = []
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             await self.__setup_revision(
                 source_files_rel,
                 target_dir_rel,
@@ -419,7 +419,7 @@ class CommitteeParticipant(FoundationCommitter):
         error_messages: list[str] = []
         renamed_count = 0
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             nonlocal renamed_count
             renamed_count = await self.__remove_rc_tags_revision(path, error_messages)
 
@@ -517,7 +517,7 @@ class CommitteeParticipant(FoundationCommitter):
         validated_path = args.relpath.as_path()
         description = f"Upload via API: {validated_path}"
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             target_path = path / validated_path
             await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
             if await aiofiles.os.path.exists(target_path):
@@ -552,14 +552,14 @@ class CommitteeParticipant(FoundationCommitter):
         number_of_files = len(files)
         description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
 
-        async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             for file in files:
                 if not file.filename:
                     raise storage.AccessError("No filename provided")
                 # Validate the filename from multipart upload and construct the new path
                 target_path = path / str(safe.RelPath(file.filename))
                 await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
-                await self.__save_file(file, target_path)
+                await self.__save_file(file, target_path.path)
 
         try:
             result = await self.__write_as.revision.create_revision_with_quarantine(
@@ -574,7 +574,7 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), len(files), False
         return None, len(files), isinstance(result, sql.Quarantined)
 
-    async def __current_paths(self, interim_path: pathlib.Path) -> list[pathlib.Path]:
+    async def __current_paths(self, interim_path: safe.StatePath) -> list[pathlib.Path]:
         all_current_paths_interim: list[pathlib.Path] = []
         async for p_rel_interim in util.paths_recursive_all(interim_path):
             all_current_paths_interim.append(p_rel_interim)
@@ -608,7 +608,7 @@ class CommitteeParticipant(FoundationCommitter):
                         continue
 
     async def __delete_release_data_filesystem(
-        self, release_dirs: Sequence[pathlib.Path], project_key: safe.ProjectKey, version: safe.VersionKey
+        self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
     ) -> str | None:
         delete_errors: list[str] = []
         for release_dir in release_dirs:
@@ -644,7 +644,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __remove_rc_tags_revision(
         self,
-        interim_path: pathlib.Path,
+        interim_path: safe.StatePath,
         error_messages: list[str],
     ) -> int:
         all_current_paths_interim = await self.__current_paths(interim_path)
@@ -658,7 +658,7 @@ class CommitteeParticipant(FoundationCommitter):
                 full_stripped_path = interim_path / path_rel_stripped_interim
 
                 skip, renamed_count_local = await self.__remove_rc_tags_revision_item(
-                    path_rel_original_interim,
+                    safe.RelPath.from_path(path_rel_original_interim),
                     full_original_path,
                     full_stripped_path,
                     error_messages,
@@ -687,9 +687,9 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __remove_rc_tags_revision_item(
         self,
-        path_rel_original_interim: pathlib.Path,
-        full_original_path: pathlib.Path,
-        full_stripped_path: pathlib.Path,
+        path_rel_original_interim: safe.RelPath,
+        full_original_path: safe.StatePath,
+        full_stripped_path: safe.StatePath,
         error_messages: list[str],
         renamed_count_local: int,
     ) -> tuple[bool, int]:
@@ -722,20 +722,20 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         source_files_rel: list[safe.RelPath],
         target_dir_rel: safe.RelPath,
-        interim_path: pathlib.Path,
+        interim_path: safe.StatePath,
         moved_files_names: list[str],
         skipped_files_names: list[str],
     ) -> None:
-        target_path = interim_path / target_dir_rel.as_path()
+        target_path = interim_path / target_dir_rel
         try:
-            resolved = await asyncio.to_thread(target_path.resolve)
-            resolved.relative_to(await asyncio.to_thread(interim_path.resolve))
+            resolved = await asyncio.to_thread(target_path.path.resolve)
+            resolved.relative_to(await asyncio.to_thread(interim_path.path.resolve))
         except ValueError:
             # Path traversal detected
             raise types.FailedError("Paths must be restricted to the release directory")
 
         if not await aiofiles.os.path.exists(target_path):
-            for part in target_path.parts:
+            for part in target_path.path.parts:
                 # TODO: This .prefix check could include some existing directory segment
                 # TODO: The second check probably isn't needed now since this came from a safe RelPath type.
                 if util.is_disallowed_dotfile(part):
@@ -759,10 +759,10 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         source_file_rel: safe.RelPath,
         target_dir_rel: safe.RelPath,
-        interim_path: pathlib.Path,
+        interim_path: safe.StatePath,
         moved_files_names: list[str],
         skipped_files_names: list[str],
-        target_path: pathlib.Path,
+        target_path: safe.StatePath,
     ) -> None:
         source_path = source_file_rel.as_path()
         target_dir_path = target_dir_rel.as_path()
@@ -770,11 +770,11 @@ class CommitteeParticipant(FoundationCommitter):
             skipped_files_names.append(source_path.name)
             return
 
-        full_source_item_path = interim_path / source_path
+        full_source_item_path: safe.StatePath = interim_path / source_path
 
         if await aiofiles.os.path.isdir(full_source_item_path):
-            if (target_dir_rel == source_file_rel) or (interim_path / target_dir_path).resolve().is_relative_to(
-                full_source_item_path.resolve()
+            if (target_dir_rel == source_file_rel) or (interim_path / target_dir_path).path.resolve().is_relative_to(
+                full_source_item_path.path.resolve()
             ):
                 raise types.FailedError("Cannot move a directory into itself or a subdirectory of itself")
 

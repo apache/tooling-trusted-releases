@@ -56,7 +56,7 @@ async def root(session: web.Committer, _published: Literal["published/"]) -> web
     return await _path(session, "")
 
 
-async def _directory_listing(full_path: pathlib.Path, current_path: str) -> web.ElementResponse:
+async def _directory_listing(full_path: safe.StatePath, current_path: str) -> web.ElementResponse:
     html = htm.Block(htm.html)
     html.title[f"Index of /{current_path}"]
     html.style["body { margin: 1rem; }"]
@@ -67,7 +67,7 @@ async def _directory_listing(full_path: pathlib.Path, current_path: str) -> web.
     return web.ElementResponse(html.collect())
 
 
-async def _directory_listing_pre(full_path: pathlib.Path, current_path: str, pre: htm.Block) -> None:
+async def _directory_listing_pre(full_path: safe.StatePath, current_path: str, pre: htm.Block) -> None:
     if current_path:
         parent_path = pathlib.Path(current_path).parent
         parent_url_path = str(parent_path) if (str(parent_path) != ".") else ""
@@ -105,7 +105,7 @@ async def _directory_listing_pre(full_path: pathlib.Path, current_path: str, pre
             pre.text("\n")
 
 
-async def _file_content(full_path: pathlib.Path) -> web.QuartResponse:
+async def _file_content(full_path: safe.StatePath) -> web.QuartResponse:
     return await quart.send_file(
         full_path,
         as_attachment=True,

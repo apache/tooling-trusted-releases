@@ -57,25 +57,28 @@ class QuarantineValidate(schema.Strict):
     archives: list[QuarantineArchiveEntry]
 
 
-def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
+def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
     done_file = _backfill_done_file()
-    if done_file.exists():
+    done_file_path = done_file.path
+    if done_file_path.exists():
         return []
 
     unfinished_dir = paths.get_unfinished_dir()
-    if not unfinished_dir.is_dir():
-        done_file.parent.mkdir(parents=True, exist_ok=True)
-        done_file.touch()
+    unfinished_dir_path = unfinished_dir.path
+    if not unfinished_dir_path.is_dir():
+        done_file_path.parent.mkdir(parents=True, exist_ok=True)
+        done_file_path.touch()
         return []
 
     archives_dir = paths.get_archives_dir()
     staging_base = paths.get_tmp_dir()
-    staging_base.mkdir(parents=True, exist_ok=True)
+    staging_base_path = staging_base.path
+    staging_base_path.mkdir(parents=True, exist_ok=True)
     extraction_cfg = _extraction_config()
     seen_archive_keys: set[str] = set()
-    results_list: list[tuple[str, pathlib.Path, float]] = []
+    results_list: list[tuple[str, safe.StatePath, float]] = []
 
-    for project_dir in sorted(unfinished_dir.iterdir()):
+    for project_dir in sorted(unfinished_dir_path.iterdir()):
         if not project_dir.is_dir():
             continue
         for version_dir in sorted(project_dir.iterdir()):
@@ -85,7 +88,7 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
                 if not revision_dir.is_dir():
                     continue
                 _backfill_revision(
-                    revision_dir,
+                    safe.StatePath(revision_dir, unfinished_dir_path),
                     project_dir.name,
                     version_dir.name,
                     archives_dir,
@@ -95,8 +98,8 @@ def backfill_archive_cache() -> list[tuple[str, pathlib.Path, float]]:
                     results_list,
                 )
 
-    done_file.parent.mkdir(parents=True, exist_ok=True)
-    done_file.touch()
+    done_file_path.parent.mkdir(parents=True, exist_ok=True)
+    done_file_path.touch()
     return results_list
 
 
@@ -130,7 +133,7 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives(args.archives, quarantine_dir, str(project_key), str(version_key), file_entries)
+        await _extract_archives(args.archives, quarantine_dir, project_key, version_key, file_entries)
     except Exception as exc:
         await _mark_failed(quarantined, file_entries, f"Archive extraction failed: {exc}")
         await aioshutil.rmtree(quarantine_dir)
@@ -140,16 +143,16 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
     return None
 
 
-def _backfill_done_file() -> pathlib.Path:
-    return pathlib.Path(config.get().STATE_DIR) / "cache" / "archive-backfill.done"
+def _backfill_done_file() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().STATE_DIR)) / "cache" / "archive-backfill.done"
 
 
 def _backfill_extract_archive(
-    archive_path: pathlib.Path,
-    archive_dir: pathlib.Path,
-    staging_base: pathlib.Path,
+    archive_path: safe.StatePath,
+    archive_dir: safe.StatePath,
+    staging_base: safe.StatePath,
     extraction_cfg: exarch.SecurityConfig,
-    results_list: list[tuple[str, pathlib.Path, float]],
+    results_list: list[tuple[str, safe.StatePath, float]],
 ) -> None:
     try:
         elapsed = _extract_archive_to_dir(archive_path, archive_dir, staging_base, extraction_cfg)
@@ -159,17 +162,18 @@ def _backfill_extract_archive(
 
 
 def _backfill_revision(
-    revision_dir: pathlib.Path,
+    revision_dir: safe.StatePath,
     project_key: str,
     version_key: str,
-    archives_dir: pathlib.Path,
-    staging_base: pathlib.Path,
+    archives_dir: safe.StatePath,
+    staging_base: safe.StatePath,
     extraction_cfg: exarch.SecurityConfig,
     seen_archive_keys: set[str],
-    results_list: list[tuple[str, pathlib.Path, float]],
+    results_list: list[tuple[str, safe.StatePath, float]],
 ) -> None:
+    revision_dir_path = revision_dir.path
     archives_base = archives_dir / project_key / version_key
-    for archive_path in sorted(revision_dir.rglob("*")):
+    for archive_path in sorted(revision_dir_path.rglob("*")):
         if not archive_path.is_file():
             continue
         if not _is_archive_suffix(archive_path.name):
@@ -181,23 +185,31 @@ def _backfill_revision(
             continue
         seen_archive_keys.add(dedupe_key)
         archive_dir = archives_base / archive_key
-        if archive_dir.is_dir():
+        if archive_dir.path.is_dir():
             continue
-        _backfill_extract_archive(archive_path, archive_dir, staging_base, extraction_cfg, results_list)
+        _backfill_extract_archive(
+            safe.StatePath(archive_path, root=revision_dir_path),
+            archive_dir,
+            staging_base,
+            extraction_cfg,
+            results_list,
+        )
 
 
 def _extract_archive_to_dir(
-    archive_path: pathlib.Path,
-    archive_dir: pathlib.Path,
-    staging_base: pathlib.Path,
+    archive_path: safe.StatePath,
+    archive_dir: safe.StatePath,
+    staging_base: safe.StatePath,
     extraction_cfg: exarch.SecurityConfig,
 ) -> float:
+    archive_dir_path = archive_dir.path
     staging_dir = staging_base / f"archive-extract-{uuid.uuid4().hex}"
+    staging_dir_path = staging_dir.path
     try:
-        staging_dir.mkdir(parents=False, exist_ok=False)
+        staging_dir_path.mkdir(parents=False, exist_ok=False)
         start = time.monotonic()
         exarch.extract_archive(str(archive_path), str(staging_dir), extraction_cfg)
-        archive_dir.parent.mkdir(parents=True, exist_ok=True)
+        archive_dir_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             os.rename(staging_dir, archive_dir)
         except OSError as err:
@@ -214,9 +226,9 @@ def _extract_archive_to_dir(
 
 async def _extract_archives(
     archives: list[QuarantineArchiveEntry],
-    quarantine_dir: pathlib.Path,
-    project_key: str,
-    version_key: str,
+    quarantine_dir: safe.StatePath,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
     file_entries: list[sql.QuarantineFileEntryV1],
 ) -> None:
     archives_base = paths.get_archives_dir() / project_key / version_key
@@ -357,12 +369,12 @@ async def _promote(
 
 
 async def _run_safety_checks(
-    archives: list[QuarantineArchiveEntry], quarantine_dir: pathlib.Path
+    archives: list[QuarantineArchiveEntry], quarantine_dir: safe.StatePath
 ) -> tuple[list[sql.QuarantineFileEntryV1], bool]:
     file_entries: list[sql.QuarantineFileEntryV1] = []
     any_failed = False
     for archive in archives:
-        archive_path = str(quarantine_dir / archive.rel_path)
+        archive_path = quarantine_dir / archive.rel_path
         stat = await aiofiles.os.stat(archive_path)
         errors = await asyncio.to_thread(detection.check_archive_safety, archive_path)
         entry = sql.QuarantineFileEntryV1(
@@ -377,6 +389,6 @@ async def _run_safety_checks(
     return file_entries, any_failed
 
 
-def _set_archive_permissions(archive_dir: pathlib.Path) -> None:
+def _set_archive_permissions(archive_dir: os.PathLike) -> None:
     util.chmod_files(archive_dir, 0o444)
     util.chmod_directories(archive_dir, 0o555)

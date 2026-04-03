@@ -61,10 +61,6 @@ ARTIFACT_SUFFIXES: Final[list[str]] = [
 
 DISALLOWED_FILENAMES: Final[frozenset[str]] = frozenset(
     {
-        ".DS_Store",
-        ".git",
-        ".htaccess",
-        ".htpasswd",
         "desktop.ini",
         "id_dsa",
         "id_ecdsa",

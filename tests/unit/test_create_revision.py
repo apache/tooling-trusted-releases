@@ -106,6 +106,7 @@ class MockSafeSession:
 
 @pytest.mark.asyncio
 async def test_clone_from_older_revision_skips_merge_without_intervening_change(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_PREVIEW
     release.project = mock.MagicMock()
@@ -153,10 +154,10 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
         mock.patch.object(
             revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock
         ) as create_hard_link_clone_mock,
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}) as paths_to_inodes_mock,
-        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00006"),
-        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00006"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
     ):
         await participant.create_revision_with_quarantine(
             safe.ProjectKey("proj"),
@@ -186,18 +187,19 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     clone_destination = clone_await_args.args[1]
     clone_kwargs = clone_await_args.kwargs
     inodes_input = inodes_call_args.args[0]
-    expected_clone_source = tmp_path / "releases" / "00002"
+    expected_clone_source = temp_dir / "releases" / "00002"
 
     if clone_source != expected_clone_source:
         raise AssertionError("Expected hard-link clone source to match clone_from revision directory")
     if clone_kwargs.get("do_not_create_dest_dir") is not True:
         raise AssertionError("Expected hard-link clone to use do_not_create_dest_dir=True")
-    if clone_destination != inodes_input:
+    if clone_destination.path != inodes_input:
         raise AssertionError("Expected inode scan to run only for the temporary working directory")
 
 
 @pytest.mark.asyncio
 async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_PREVIEW
     release.project = mock.MagicMock()
@@ -249,10 +251,10 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
-        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00007"),
-        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00007"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
     ):
         created_revision = await participant.create_revision_with_quarantine(
             safe.ProjectKey("proj"),
@@ -272,23 +274,27 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
 
 @pytest.mark.asyncio
 async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     received_args: dict[str, object] = {}
 
-    async def modify(path: pathlib.Path, old_rev: object) -> None:
+    async def modify(path: safe.StatePath, old_rev: object) -> None:
         received_args["path"] = path
         received_args["old_rev"] = old_rev
-        (path / "file.txt").write_text("Should be cleaned up.")
+        (path / "file.txt").path.write_text("Should be cleaned up.")
         raise types.FailedError("Intentional error")
 
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project.key = "proj"
+    release.version = "1.0"
+    release.latest_revision_number = "00001"
     mock_session = _mock_db_session(release)
     participant = _make_participant()
 
     with (
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
     ):
         with pytest.raises(types.FailedError, match="Intentional error"):
             await participant.create_revision_with_quarantine(
@@ -299,13 +305,14 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
                 modify=modify,
             )
 
-    assert isinstance(received_args["path"], pathlib.Path)
+    assert isinstance(received_args["path"], safe.StatePath)
     assert received_args["old_rev"] is None
     assert not os.listdir(tmp_path)
 
 
 @pytest.mark.asyncio
 async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
@@ -353,10 +360,10 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
         mock.patch.object(revision.util, "chmod_directories"),
         mock.patch.object(revision.util, "chmod_files"),
         mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
-        mock.patch.object(revision.paths, "get_tmp_dir", return_value=tmp_path),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
         mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
-        mock.patch.object(revision.paths, "release_directory", return_value=tmp_path / "releases" / "00002"),
-        mock.patch.object(revision.paths, "release_directory_base", return_value=tmp_path / "releases"),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00002"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
     ]
 
     with contextlib.ExitStack() as stack:

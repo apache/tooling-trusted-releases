@@ -23,6 +23,7 @@ from typing import Final
 import puremagic
 
 import atr.models.attestable as models
+import atr.models.safe as safe
 import atr.tarzip as tarzip
 
 # TODO: Widen the range of types checked here
@@ -66,7 +67,7 @@ _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
 _QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
 
 
-def check_archive_safety(archive_path: str) -> list[str]:
+def check_archive_safety(archive_path: safe.StatePath) -> list[str]:
     errors: list[str] = []
     try:
         with tarzip.open_archive(archive_path) as archive:
@@ -85,26 +86,28 @@ def check_archive_safety(archive_path: str) -> list[str]:
     return errors
 
 
-def deduplicate_quarantine_archives(archive_paths: list[str], path_to_hash: dict[str, str]) -> list[tuple[str, str]]:
-    seen: dict[tuple[str, str], str] = {}
+def deduplicate_quarantine_archives(
+    archive_paths: list[safe.RelPath], path_to_hash: dict[safe.RelPath, str]
+) -> list[tuple[safe.RelPath, str]]:
+    seen: dict[tuple[str, str], safe.RelPath] = {}
     for rel_path in archive_paths:
         content_hash = path_to_hash[rel_path]
-        basename = _path_basename(rel_path)
+        basename = _path_basename(str(rel_path))
         suffix = _quarantine_archive_suffix(basename)
         if suffix is None:
             continue
         key = (content_hash, suffix)
-        if (key not in seen) or (rel_path < seen[key]):
+        if (key not in seen) or (str(rel_path) < str(seen[key])):
             seen[key] = rel_path
-    return [(rel_path, path_to_hash[rel_path]) for rel_path in sorted(seen.values())]
+    return [(rel_path, path_to_hash[rel_path]) for rel_path in sorted(seen.values(), key=str)]
 
 
 def detect_archives_requiring_quarantine(
-    path_to_hash: dict[str, str], previous_attestable: models.Attestable | None
-) -> list[str]:
-    quarantine_paths: list[str] = []
+    path_to_hash: dict[safe.RelPath, str], previous_attestable: models.Attestable | None
+) -> list[safe.RelPath]:
+    quarantine_paths: list[safe.RelPath] = []
     for path_key, hash_ref in path_to_hash.items():
-        basename = _path_basename(path_key)
+        basename = _path_basename(str(path_key))
         suffix = _quarantine_archive_suffix(basename)
         if suffix is None:
             continue

@@ -39,6 +39,7 @@ import atr.config as config
 import atr.log as log
 import atr.models.github as github_models
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.paths as paths
 import atr.tasks.checks as checks
 import atr.util as util
@@ -108,7 +109,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
         tmp_dir = paths.get_tmp_dir()
         await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
         async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
-            github_dir = temp_dir / "github"
+            github_dir = safe.StatePath(temp_dir) / "github"
             await aiofiles.os.makedirs(github_dir, exist_ok=True)
             checkout_dir = await _checkout_github_source(payload, github_dir)
             if checkout_dir is None:
@@ -149,7 +150,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                 required = _PERMITTED_ADDED_PATHS.get(path)
                 if required is None:
                     invalid_filtered.add(path)
-                elif not all((archive_content_dir / r).is_file() for r in required):
+                elif not all((archive_content_dir / r).path.is_file() for r in required):
                     invalid_filtered.add(path)
             if invalid_filtered:
                 invalid_list = sorted(invalid_filtered)
@@ -181,7 +182,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
 
 
 async def _checkout_github_source(
-    payload: github_models.TrustedPublisherPayload, checkout_dir: pathlib.Path
+    payload: github_models.TrustedPublisherPayload, checkout_dir: safe.StatePath
 ) -> str | None:
     repo_url = f"https://github.com/{payload.repository}.git"
     started_ns = time.perf_counter_ns()
@@ -215,7 +216,7 @@ async def _checkout_github_source(
     return str(checkout_dir)
 
 
-def _clone_repo(repo_url: str, sha: str, checkout_dir: pathlib.Path) -> None:
+def _clone_repo(repo_url: str, sha: str, checkout_dir: safe.StatePath) -> None:
     _ensure_clone_identity_env()
     repo = dulwich.porcelain.init(str(checkout_dir))
     git_client, path = dulwich.client.get_transport_and_path(repo_url, operation="pull")
@@ -235,11 +236,11 @@ def _clone_repo(repo_url: str, sha: str, checkout_dir: pathlib.Path) -> None:
         shutil.rmtree(git_dir)
 
 
-async def _compare_trees(repo_dir: pathlib.Path, archive_dir: pathlib.Path) -> TreeComparisonResult:
+async def _compare_trees(repo_dir: safe.StatePath, archive_dir: safe.StatePath) -> TreeComparisonResult:
     return await asyncio.to_thread(_compare_trees_rsync, repo_dir, archive_dir)
 
 
-def _compare_trees_rsync(repo_dir: pathlib.Path, archive_dir: pathlib.Path) -> TreeComparisonResult:  # noqa: C901
+def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) -> TreeComparisonResult:  # noqa: C901
     if shutil.which("rsync") is None:
         raise RuntimeError("rsync is not available on PATH")
     command = [
@@ -289,7 +290,7 @@ def _compare_trees_rsync(repo_dir: pathlib.Path, archive_dir: pathlib.Path) -> T
             continue
         full_repo = repo_dir / rel_path
         full_archive = archive_dir / rel_path
-        if full_repo.is_file() or full_archive.is_file():
+        if full_repo.path.is_file() or full_archive.path.is_file():
             if is_repo_only:
                 repo_only.add(rel_path)
             elif is_content_diff:
@@ -302,7 +303,7 @@ def _ensure_clone_identity_env() -> None:
     os.environ["EMAIL"] = _DEFAULT_EMAIL
 
 
-async def _find_archive_root(archive_path: pathlib.Path, extract_dir: pathlib.Path) -> ArchiveRootResult:
+async def _find_archive_root(archive_path: safe.StatePath, extract_dir: safe.StatePath) -> ArchiveRootResult:
     entries = await aiofiles.os.listdir(extract_dir)
     directories: list[str] = []
     for entry in entries:

@@ -52,6 +52,7 @@ import quart
 import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.session
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -114,7 +115,7 @@ class FetchError(RuntimeError):
         self.url = url
 
 
-async def archive_listing(file_path: pathlib.Path) -> list[str] | None:
+async def archive_listing(file_path: safe.StatePath) -> list[str] | None:
     """Attempt to list contents of supported archive files."""
     if not await aiofiles.os.path.isfile(file_path):
         return None
@@ -124,7 +125,7 @@ async def archive_listing(file_path: pathlib.Path) -> list[str] | None:
 
             def _read_archive() -> list[str] | None:
                 with contextlib.suppress(tarfile.ReadError, zipfile.BadZipFile, EOFError, ValueError, OSError):
-                    with tarzip.open_archive(str(file_path)) as archive:
+                    with tarzip.open_archive(file_path) as archive:
                         # TODO: Skip metadata files
                         return sorted(member.name for member in archive)
                 return None
@@ -184,7 +185,7 @@ async def asf_uid_from_uids(
 
 @contextlib.asynccontextmanager
 async def async_temporary_directory(
-    suffix: str | None = None, prefix: str | None = None, dir: str | pathlib.Path | None = None
+    suffix: str | None = None, prefix: str | None = None, dir: str | os.PathLike | None = None
 ) -> AsyncGenerator[pathlib.Path]:
     """Create an async temporary directory similar to tempfile.TemporaryDirectory."""
     temp_dir_path: str = await asyncio.to_thread(tempfile.mkdtemp, suffix=suffix, prefix=prefix, dir=dir)
@@ -234,16 +235,16 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
         raise
 
 
-def chmod_directories(path: pathlib.Path, permissions: int = DIRECTORY_PERMISSIONS) -> None:
+def chmod_directories(path: os.PathLike, permissions: int = DIRECTORY_PERMISSIONS) -> None:
     os.chmod(path, permissions)
-    for dir_path in path.rglob("*"):
+    for dir_path in pathlib.Path(path).rglob("*"):
         if dir_path.is_dir():
             os.chmod(dir_path, permissions)
 
 
-def chmod_files(path: pathlib.Path, permissions: int) -> None:
+def chmod_files(path: os.PathLike, permissions: int) -> None:
     """Set permissions on all files in a directory tree."""
-    for file_path in path.rglob("*"):
+    for file_path in pathlib.Path(path).rglob("*"):
         if file_path.is_file():
             os.chmod(file_path, permissions)
 
@@ -267,7 +268,10 @@ def conjunction(items: Sequence[str], empty: str | None = None) -> str:
 
 
 async def content_list(
-    phase_subdir: pathlib.Path, project_key: str, version_key: str, revision_name: str | None = None
+    phase_subdir: safe.StatePath,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_name: safe.RevisionNumber | None = None,
 ) -> AsyncGenerator[FileStat]:
     """List all the files in the given path."""
     base_path = phase_subdir / project_key / version_key
@@ -312,8 +316,8 @@ def cookie_pmcs_or_session_pmcs(session_data: session.ClientSession) -> list[str
 
 
 async def create_hard_link_clone(
-    source_dir: pathlib.Path,
-    dest_dir: pathlib.Path,
+    source_dir: safe.StatePath,
+    dest_dir: safe.StatePath,
     do_not_create_dest_dir: bool = False,
     exist_ok: bool = False,
     dry_run: bool = False,
@@ -321,7 +325,7 @@ async def create_hard_link_clone(
     """Recursively create a clone of source_dir in dest_dir using hard links for files."""
     await _create_hard_link_clone_checks(source_dir, dest_dir, do_not_create_dest_dir, exist_ok, dry_run)
 
-    async def _clone_recursive(current_source: pathlib.Path, current_dest: pathlib.Path) -> None:
+    async def _clone_recursive(current_source: safe.StatePath, current_dest: safe.StatePath) -> None:
         for entry in await aiofiles.os.scandir(current_source):
             source_entry_path = current_source / entry.name
             dest_entry_path = current_dest / entry.name
@@ -350,7 +354,7 @@ async def create_hard_link_clone(
 
 
 def create_path_matcher(
-    lines: Iterable[str], full_path: pathlib.Path | None, base_dir: pathlib.Path
+    lines: Iterable[str], full_path: pathlib.Path | None, base_dir: pathlib.Path | safe.StatePath
 ) -> Callable[[str], bool]:
     rules = []
     negation = False
@@ -389,7 +393,7 @@ def create_secure_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-async def delete_immutable_directory(path: pathlib.Path, reason: str) -> None:
+async def delete_immutable_directory(path: safe.StatePath, reason: str) -> None:
     if not reason:
         raise ValueError("Reason is required to delete an immutable directory")
     log.info(f"Deleting immutable directory {path} because {reason}")
@@ -594,9 +598,9 @@ def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes
     return [a for a in algs if isinstance(a, str) and (a.encode("ascii") in supported)]
 
 
-async def is_dir_resolve(path: pathlib.Path) -> pathlib.Path | None:
+async def is_dir_resolve(path: os.PathLike) -> pathlib.Path | None:
     try:
-        resolved_path = await asyncio.to_thread(path.resolve)
+        resolved_path = await asyncio.to_thread(pathlib.Path(path).resolve)
         if not await aiofiles.os.path.isdir(resolved_path):
             return None
     except (FileNotFoundError, OSError):
@@ -777,7 +781,7 @@ def parse_npm_pack_info(raw: bytes, filename_basename: str | None = None) -> tup
     return NpmPackInfo(name=name, version=version, filename_match=filename_match), None
 
 
-async def paths_recursive(base_path: pathlib.Path) -> AsyncGenerator[pathlib.Path]:
+async def paths_recursive(base_path: pathlib.Path | safe.StatePath) -> AsyncGenerator[safe.RelPath]:
     """Yield all file paths recursively within a base path, relative to the base path."""
     if (resolved_base_path := await is_dir_resolve(base_path)) is None:
         return
@@ -785,10 +789,10 @@ async def paths_recursive(base_path: pathlib.Path) -> AsyncGenerator[pathlib.Pat
         abs_path_to_check = resolved_base_path / rel_path
         with contextlib.suppress(FileNotFoundError, OSError):
             if await aiofiles.os.path.isfile(abs_path_to_check):
-                yield rel_path
+                yield safe.RelPath.from_path(rel_path)
 
 
-async def paths_recursive_all(base_path: pathlib.Path) -> AsyncGenerator[pathlib.Path]:
+async def paths_recursive_all(base_path: os.PathLike) -> AsyncGenerator[pathlib.Path]:
     """Yield all file and directory paths recursively within a base path, relative to the base path."""
     if (resolved_base_path := await is_dir_resolve(base_path)) is None:
         return
@@ -812,7 +816,8 @@ async def paths_recursive_all(base_path: pathlib.Path) -> AsyncGenerator[pathlib
                     queue.append(entry_abs_path)
 
 
-def paths_to_inodes(directory: pathlib.Path) -> dict[str, int]:
+def paths_to_inodes(directory: os.PathLike) -> dict[str, int]:
+    directory = pathlib.Path(directory)
     result: dict[str, int] = {}
     stack: list[pathlib.Path] = [directory]
     while stack:
@@ -869,7 +874,7 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     return word
 
 
-async def read_file_for_viewer(full_path: pathlib.Path, max_size: int) -> tuple[str | None, bool, bool, str | None]:
+async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tuple[str | None, bool, bool, str | None]:
     """Read file content for viewer."""
     content: str | None = None
     is_text = False
@@ -1285,8 +1290,8 @@ def write_quart_session_cookie(session_data: atr.models.session.CookieData) -> N
 
 
 async def _create_hard_link_clone_checks(
-    source_dir: pathlib.Path,
-    dest_dir: pathlib.Path,
+    source_dir: safe.StatePath,
+    dest_dir: safe.StatePath,
     do_not_create_dest_dir: bool = False,
     exist_ok: bool = False,
     dry_run: bool = False,

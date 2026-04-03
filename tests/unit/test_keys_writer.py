@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import atr.models.safe as safe
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
 
@@ -110,6 +111,7 @@ async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp
 
 @pytest.mark.asyncio
 async def test_update_committee_associations_removal_rewrites_keys_file_with_remaining_keys(tmp_path):
+    temp_dir = safe.StatePath(tmp_path)
     owned_key = SimpleNamespace(fingerprint="fp1", committees=[SimpleNamespace(key="alpha")])
     remaining_key = _public_key("bbbbccccdddd1111")
     data = MockData(
@@ -118,19 +120,19 @@ async def test_update_committee_associations_removal_rewrites_keys_file_with_rem
     )
     writer, write = _make_foundation_committer(data)
 
-    keys_path = tmp_path / "alpha" / "KEYS"
-    keys_path.parent.mkdir(parents=True)
-    keys_path.write_text("stale content", encoding="utf-8")
+    keys_path = temp_dir / "alpha" / "KEYS"
+    keys_path.parent.path.mkdir(parents=True)
+    keys_path.path.write_text("stale content", encoding="utf-8")
 
     with (
-        mock.patch.object(keys_writer.paths, "get_downloads_dir", return_value=tmp_path),
+        mock.patch.object(keys_writer.paths, "get_downloads_dir", return_value=temp_dir),
         mock.patch.object(keys_writer.util, "chmod_directories"),
     ):
         affected = await writer.update_committee_associations("fp1", [])
 
     assert affected == {"alpha"}
-    assert keys_path.exists()
-    content = keys_path.read_text(encoding="utf-8")
+    assert keys_path.path.exists()
+    content = keys_path.path.read_text(encoding="utf-8")
     assert "stale content" not in content
     assert remaining_key.fingerprint.upper() in content
     assert "Signing keys for the alpha committee" in content

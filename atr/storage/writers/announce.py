@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
-from typing import TYPE_CHECKING
 
 import aiofiles.os
 import aioshutil
@@ -37,9 +36,6 @@ import atr.paths as paths
 import atr.storage as storage
 import atr.tasks.message as message
 import atr.util as util
-
-if TYPE_CHECKING:
-    import pathlib
 
 
 class GeneralPublic:
@@ -265,7 +261,7 @@ class CommitteeMember(CommitteeParticipant):
     async def __hard_link_downloads(
         self,
         committee: sql.Committee,
-        unfinished_path: pathlib.Path,
+        unfinished_path: safe.StatePath,
         download_path_suffix: safe.RelPath | None,
         dry_run: bool = False,
         preserve: bool = False,

@@ -46,21 +46,15 @@ async def selected(
     """
     release = await session.release(project_key, version_key, phase=None)
 
-    revision_number = release.latest_revision_number
+    revision_number = release.safe_latest_revision_number
     file_stats = []
     if release.phase == sql.ReleasePhase.RELEASE:
-        file_stats = [
-            stat async for stat in util.content_list(paths.get_finished_dir(), str(project_key), str(version_key))
-        ]
-    elif revision_number is not None:
+        file_stats = [stat async for stat in util.content_list(paths.get_finished_dir(), project_key, version_key)]
+    else:
         file_stats = [
             stat
-            async for stat in util.content_list(
-                paths.get_unfinished_dir(), str(project_key), str(version_key), revision_number
-            )
+            async for stat in util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
         ]
-    else:
-        raise ValueError("No revision number found for unfinished release")
     file_stats.sort(key=lambda fs: fs.path)
 
     block = htm.Block()
@@ -147,11 +141,10 @@ async def selected_path(
     URL: /file/<project_key>/<version_key>/<path:file_path>
     View the content of a specific file in a release (any phase).
     """
-    validated_path = file_path.as_path()
 
     release = await session.release(project_key, version_key, phase=None)
     _max_view_size = 512 * 1024
-    full_path = paths.release_directory(release) / validated_path
+    full_path = paths.release_directory(release) / file_path
     content_listing = await util.archive_listing(full_path)
     content, is_text, is_truncated, error_message = await util.read_file_for_viewer(full_path, _max_view_size)
 
@@ -162,7 +155,7 @@ async def selected_path(
     block.a(href=back_url, class_="atr-back-link")[f"← Back to {phase_name} files"]
 
     block.div(".p-3.mt-4.mb-4.bg-light.border.rounded")[
-        htm.h2(".mt-0")[f"Viewing file: {validated_path}"],
+        htm.h2(".mt-0")[f"Viewing file: {file_path}"],
         htm.p(".mb-0")[htm.strong["Release:"], " ", release.key],
     ]
 
@@ -187,7 +180,7 @@ async def selected_path(
         block.div(".alert.alert-secondary")["No content available for this file."]
 
     return await template.blank(
-        f"View {release.project.short_display_name}/{release.version}/{validated_path}", content=block.collect()
+        f"View {release.project.short_display_name}/{release.version}/{file_path}", content=block.collect()
     )
 
 

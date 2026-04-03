@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import hashlib
+import os
 import pathlib
 from typing import Any, Final
 
@@ -33,7 +34,7 @@ def compute_dict_hash(to_hash: dict[Any, Any]) -> str:
     return f"blake3:{hasher.hexdigest()}"
 
 
-async def compute_file_hash(path: str | pathlib.Path) -> str:
+async def compute_file_hash(path: str | os.PathLike) -> str:
     path = pathlib.Path(path)
     hasher = blake3.blake3()
     async with aiofiles.open(path, "rb") as f:
@@ -42,7 +43,7 @@ async def compute_file_hash(path: str | pathlib.Path) -> str:
     return f"blake3:{hasher.hexdigest()}"
 
 
-def compute_file_hash_sync(path: str | pathlib.Path) -> str:
+def compute_file_hash_sync(path: str | os.PathLike) -> str:
     path = pathlib.Path(path)
     hasher = blake3.blake3()
     with open(path, "rb") as f:

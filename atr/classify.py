@@ -133,13 +133,15 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
 
 
 def classify(
-    path: pathlib.Path,
-    base_path: pathlib.Path | None = None,
+    path: safe.RelPath,
+    base_path: safe.StatePath | None = None,
     source_matcher: Callable[[str], bool] | None = None,
     binary_matcher: Callable[[str], bool] | None = None,
     _project_key: safe.ProjectKey | None = None,
 ) -> FileType:
-    if (path.name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
+    if (path.as_path().name in analysis.DISALLOWED_FILENAMES) or (
+        path.as_path().suffix in analysis.DISALLOWED_SUFFIXES
+    ):
         return FileType.DISALLOWED
 
     path_str = str(path)
@@ -162,7 +164,7 @@ def classify(
     stem = path_str[: search.start()]
     if not any(path_str.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
         return FileType.BINARY
-    return classify_from_counts(*archive_marker_counts(stem, path))
+    return classify_from_counts(*archive_marker_counts(stem, path.as_path()))
 
 
 def classify_from_counts(source_count: int, binary_count: int, docs_count: int) -> FileType:
@@ -178,7 +180,7 @@ def classify_from_counts(source_count: int, binary_count: int, docs_count: int) 
 def matchers_from_policy(
     source_artifact_paths: list[str],
     binary_artifact_paths: list[str],
-    base_path: pathlib.Path,
+    base_path: safe.StatePath,
 ) -> tuple[Callable[[str], bool] | None, Callable[[str], bool] | None]:
     # TODO: Arguably this should just go into classify(...)
     # Then it could take a release policy or None

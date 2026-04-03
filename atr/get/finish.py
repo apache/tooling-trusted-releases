@@ -17,6 +17,7 @@
 
 
 import dataclasses
+import os
 import pathlib
 from collections.abc import Sequence
 from typing import Literal
@@ -108,7 +109,7 @@ async def selected(
     )
 
 
-async def _analyse_rc_tags(latest_revision_dir: pathlib.Path) -> RCTagAnalysisResult:
+async def _analyse_rc_tags(latest_revision_dir: os.PathLike) -> RCTagAnalysisResult:
     r = RCTagAnalysisResult(
         affected_paths_preview=[],
         affected_count=0,
@@ -134,9 +135,9 @@ async def _analyse_rc_tags(latest_revision_dir: pathlib.Path) -> RCTagAnalysisRe
 
 
 async def _deletable_choices(
-    latest_revision_dir: pathlib.Path, target_dirs: set[pathlib.Path]
+    latest_revision_dir: safe.StatePath, target_dirs: set[safe.RelPath]
 ) -> list[tuple[str, str]]:
-    empty_deletable_dirs: list[pathlib.Path] = []
+    empty_deletable_dirs: list[safe.RelPath] = []
     if await aiofiles.os.path.exists(latest_revision_dir):
         for d_rel in target_dirs:
             if d_rel == pathlib.Path("."):
@@ -497,16 +498,16 @@ def _render_task(task: sql.Task) -> htm.Element:
         ]
 
 
-async def _sources_and_targets(latest_revision_dir: pathlib.Path) -> tuple[list[pathlib.Path], set[pathlib.Path]]:
+async def _sources_and_targets(latest_revision_dir: safe.StatePath) -> tuple[list[pathlib.Path], set[safe.RelPath]]:
     source_items_rel: list[pathlib.Path] = []
-    target_dirs: set[pathlib.Path] = {pathlib.Path(".")}
+    target_dirs: set[safe.RelPath] = {safe.RelPath(".")}
 
     async for item_rel_path in util.paths_recursive_all(latest_revision_dir):
         current_parent = item_rel_path.parent
         source_items_rel.append(item_rel_path)
 
         while True:
-            target_dirs.add(current_parent)
+            target_dirs.add(safe.RelPath.from_path(current_parent))
             if current_parent == pathlib.Path("."):
                 break
             current_parent = current_parent.parent
@@ -515,6 +516,6 @@ async def _sources_and_targets(latest_revision_dir: pathlib.Path) -> tuple[list[
         if await aiofiles.os.path.isfile(item_abs_path):
             pass
         elif await aiofiles.os.path.isdir(item_abs_path):
-            target_dirs.add(item_rel_path)
+            target_dirs.add(safe.RelPath.from_path(item_rel_path))
 
     return source_items_rel, target_dirs

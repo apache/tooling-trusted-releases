@@ -17,7 +17,6 @@
 
 import asyncio
 import datetime
-import pathlib
 import sqlite3
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Final
@@ -569,7 +568,7 @@ async def _draft_file_checks(
     asf_uid: str,
     caller_data: db.Session | None,
     data: db.Session,
-    path: pathlib.Path,
+    path: safe.RelPath,
     previous_version: sql.Release | None,
     project_key: safe.ProjectKey,
     release: sql.Release,
@@ -579,7 +578,7 @@ async def _draft_file_checks(
     path_str = str(path)
     task_function: Callable[[str, sql.Release, str, str, db.Session], Awaitable[list[sql.Task | None]]] | None = None
     for suffix, func in TASK_FUNCTIONS.items():
-        if path.name.endswith(suffix):
+        if path.as_path().name.endswith(suffix):
             task_function = func
             break
     if task_function:
@@ -589,7 +588,7 @@ async def _draft_file_checks(
                 await _add_task(data, task)
     # TODO: Should we check .json files for their content?
     # Ideally we would not have to do that
-    if path.name.endswith(".cdx.json"):
+    if path.as_path().name.endswith(".cdx.json"):
         cdx_task = await queued(
             asf_uid,
             sql.TaskType.SBOM_TOOL_SCORE,

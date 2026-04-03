@@ -22,7 +22,6 @@ import asyncio.subprocess
 import datetime
 import glob
 import os
-import pathlib
 import stat
 import string
 import time
@@ -580,7 +579,7 @@ async def _step_07b_process_validated_rsync_write(
     async with storage.write(asf_uid) as write:
         wacp = await write.as_project_committee_participant(project_key)
 
-        async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
+        async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
             nonlocal exit_status
             if old_rev is not None:
                 log.info(f"Using old revision {old_rev.number} and interim path {path}")

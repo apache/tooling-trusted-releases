@@ -18,12 +18,12 @@
 import asyncio
 import contextlib
 import os
-import pathlib
 import stat
 from typing import Final
 
 import atr.log as log
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -39,7 +39,7 @@ class RootDirectoryError(Exception):
     ...
 
 
-def root_directory(archive_dir: pathlib.Path) -> tuple[str, bytes | None]:
+def root_directory(archive_dir: safe.StatePath) -> tuple[str, bytes | None]:
     """Find root directory and read package/package.json from the extracted tree."""
     # The ._ prefix is a metadata convention
     entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
@@ -52,7 +52,7 @@ def root_directory(archive_dir: pathlib.Path) -> tuple[str, bytes | None]:
     root = entries[0]
     root_path = archive_dir / root
     try:
-        root_stat = root_path.lstat()
+        root_stat = root_path.path.lstat()
     except OSError as e:
         raise RootDirectoryError(f"Unable to inspect root entry '{root}': {e}") from e
     if not stat.S_ISDIR(root_stat.st_mode):
@@ -63,12 +63,12 @@ def root_directory(archive_dir: pathlib.Path) -> tuple[str, bytes | None]:
     if root == "package":
         package_json_path = archive_dir / "package" / "package.json"
         with contextlib.suppress(FileNotFoundError, OSError):
-            package_json_stat = package_json_path.lstat()
+            package_json_stat = package_json_path.path.lstat()
             # We do this to avoid allowing package.json to be a symlink
             if stat.S_ISREG(package_json_stat.st_mode):
                 size = package_json_stat.st_size
                 if (size > 0) and (size <= util.NPM_PACKAGE_JSON_MAX_SIZE):
-                    package_json = package_json_path.read_bytes()
+                    package_json = package_json_path.path.read_bytes()
 
     return root, package_json
 
@@ -89,7 +89,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
         )
         return None
 
-    filename = artifact_abs_path.name
+    filename = artifact_abs_path.path.name
     basename_from_filename: Final[str] = (
         filename.removesuffix(".tar.gz") if filename.endswith(".tar.gz") else filename.removesuffix(".tgz")
     )

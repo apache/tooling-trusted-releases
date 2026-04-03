@@ -29,6 +29,7 @@ import pytest
 import atr.attestable
 import atr.models.github
 import atr.models.safe
+import atr.models.safe as safe
 import atr.models.sql
 import atr.tasks.checks
 import atr.tasks.checks.compare
@@ -36,13 +37,13 @@ import atr.tasks.checks.compare
 
 class CheckoutRecorder:
     def __init__(self, return_value: str | None = None) -> None:
-        self.checkout_dir: pathlib.Path | None = None
+        self.checkout_dir: safe.StatePath | None = None
         self.return_value = return_value
 
     async def __call__(
         self,
         payload: atr.models.github.TrustedPublisherPayload,
-        checkout_dir: pathlib.Path,
+        checkout_dir: safe.StatePath,
     ) -> str | None:
         self.checkout_dir = checkout_dir
         assert await aiofiles.os.path.exists(checkout_dir)
@@ -82,7 +83,7 @@ class CompareRecorder:
 
 
 class ArchiveDirResolver:
-    def __init__(self, cache_dir: pathlib.Path | None) -> None:
+    def __init__(self, cache_dir: safe.StatePath | None) -> None:
         self.cache_dir = cache_dir
 
     async def __call__(self, args: object) -> pathlib.Path | None:
@@ -269,10 +270,10 @@ class RepoStub:
 
 
 class ReturnValue:
-    def __init__(self, value: pathlib.Path) -> None:
+    def __init__(self, value: safe.StatePath) -> None:
         self.value = value
 
-    def __call__(self) -> pathlib.Path:
+    def __call__(self) -> safe.StatePath:
         return self.value
 
 
@@ -299,8 +300,9 @@ class WorktreeStub:
 async def test_checkout_github_source_uses_provided_dir(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     payload = _make_payload()
-    checkout_dir = tmp_path / "checkout"
+    checkout_dir = temp_dir / "checkout"
     clone_recorder = CloneRecorder()
 
     monkeypatch.setattr(atr.tasks.checks.compare, "_clone_repo", clone_recorder)
@@ -316,8 +318,9 @@ async def test_checkout_github_source_uses_provided_dir(
 
 
 def test_clone_repo_fetches_requested_sha(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    checkout_dir = tmp_path / "checkout"
-    git_dir = checkout_dir / ".git"
+    temp_dir = safe.StatePath(tmp_path)
+    checkout_dir = temp_dir / "checkout"
+    git_dir = pathlib.Path(checkout_dir) / ".git"
     git_dir.mkdir(parents=True)
     worktree = WorktreeStub()
     repo = RepoStub(git_dir, worktree)
@@ -345,8 +348,9 @@ def test_clone_repo_fetches_requested_sha(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 def test_clone_repo_raises_when_commit_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    checkout_dir = tmp_path / "checkout"
-    git_dir = checkout_dir / ".git"
+    temp_dir = safe.StatePath(tmp_path)
+    checkout_dir = temp_dir / "checkout"
+    git_dir = pathlib.Path(checkout_dir) / ".git"
     git_dir.mkdir(parents=True)
     worktree = WorktreeStub()
     repo = RepoStub(git_dir, worktree)
@@ -372,10 +376,11 @@ def test_clone_repo_raises_when_commit_missing(monkeypatch: pytest.MonkeyPatch, 
 
 
 def test_compare_trees_rsync_archive_has_extra_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt"])
-    _make_tree(archive_dir, ["a.txt", "b.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt"])
+    _make_tree(archive_dir.path, ["a.txt", "b.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -394,10 +399,11 @@ def test_compare_trees_rsync_archive_has_extra_file(monkeypatch: pytest.MonkeyPa
 
 
 def test_compare_trees_rsync_content_differs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt", "b.txt"])
-    _make_tree(archive_dir, ["a.txt", "b.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt", "b.txt"])
+    _make_tree(archive_dir.path, ["a.txt", "b.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -416,10 +422,11 @@ def test_compare_trees_rsync_content_differs(monkeypatch: pytest.MonkeyPatch, tm
 
 
 def test_compare_trees_rsync_distinct_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt"])
-    _make_tree(archive_dir, ["b.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt"])
+    _make_tree(archive_dir.path, ["b.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -438,10 +445,11 @@ def test_compare_trees_rsync_distinct_files(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_compare_trees_rsync_ignores_timestamp_only(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt"])
-    _make_tree(archive_dir, ["a.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt"])
+    _make_tree(archive_dir.path, ["a.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -460,10 +468,11 @@ def test_compare_trees_rsync_ignores_timestamp_only(monkeypatch: pytest.MonkeyPa
 
 
 def test_compare_trees_rsync_repo_has_extra_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt", "b.txt"])
-    _make_tree(archive_dir, ["a.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt", "b.txt"])
+    _make_tree(archive_dir.path, ["a.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -482,10 +491,11 @@ def test_compare_trees_rsync_repo_has_extra_file(monkeypatch: pytest.MonkeyPatch
 
 
 def test_compare_trees_rsync_trees_match(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    repo_dir = tmp_path / "repo"
-    archive_dir = tmp_path / "archive"
-    _make_tree(repo_dir, ["a.txt", "b.txt"])
-    _make_tree(archive_dir, ["a.txt", "b.txt"])
+    temp_dir = safe.StatePath(tmp_path)
+    repo_dir = temp_dir / "repo"
+    archive_dir = temp_dir / "archive"
+    _make_tree(repo_dir.path, ["a.txt", "b.txt"])
+    _make_tree(archive_dir.path, ["a.txt", "b.txt"])
     completed = subprocess.CompletedProcess(
         args=["rsync"],
         returncode=0,
@@ -505,11 +515,12 @@ def test_compare_trees_rsync_trees_match(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 @pytest.mark.asyncio
 async def test_find_archive_root_accepts_any_single_directory(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
-    extract_dir.mkdir(parents=True)
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
+    extract_dir.path.mkdir(parents=True)
     root_dir = extract_dir / "package"
-    root_dir.mkdir()
+    root_dir.path.mkdir()
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -519,12 +530,13 @@ async def test_find_archive_root_accepts_any_single_directory(tmp_path: pathlib.
 
 @pytest.mark.asyncio
 async def test_find_archive_root_detects_extra_file_entries(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
     root_dir = extract_dir / "my-project-1.0.0"
-    root_dir.mkdir(parents=True)
-    (extract_dir / "extra.txt").write_text("extra")
-    (extract_dir / "README").write_text("readme")
+    root_dir.path.mkdir(parents=True)
+    (extract_dir / "extra.txt").path.write_text("extra")
+    (extract_dir / "README").path.write_text("readme")
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -534,10 +546,11 @@ async def test_find_archive_root_detects_extra_file_entries(tmp_path: pathlib.Pa
 
 @pytest.mark.asyncio
 async def test_find_archive_root_finds_expected_root(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
     root_dir = extract_dir / "my-project-1.0.0"
-    root_dir.mkdir(parents=True)
+    root_dir.path.mkdir(parents=True)
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -547,10 +560,11 @@ async def test_find_archive_root_finds_expected_root(tmp_path: pathlib.Path) -> 
 
 @pytest.mark.asyncio
 async def test_find_archive_root_finds_root_with_source_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0-source.tar.gz"
-    extract_dir = tmp_path / "extracted"
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0-source.tar.gz"
+    extract_dir = temp_dir / "extracted"
     root_dir = extract_dir / "my-project-1.0.0-source"
-    root_dir.mkdir(parents=True)
+    root_dir.path.mkdir(parents=True)
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -560,10 +574,11 @@ async def test_find_archive_root_finds_root_with_source_suffix(tmp_path: pathlib
 
 @pytest.mark.asyncio
 async def test_find_archive_root_finds_root_without_source_suffix(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0-source.tar.gz"
-    extract_dir = tmp_path / "extracted"
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0-source.tar.gz"
+    extract_dir = temp_dir / "extracted"
     root_dir = extract_dir / "my-project-1.0.0"
-    root_dir.mkdir(parents=True)
+    root_dir.path.mkdir(parents=True)
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -573,11 +588,12 @@ async def test_find_archive_root_finds_root_without_source_suffix(tmp_path: path
 
 @pytest.mark.asyncio
 async def test_find_archive_root_ignores_macos_metadata(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
     root_dir = extract_dir / "my-project-1.0.0"
-    root_dir.mkdir(parents=True)
-    metadata_file = extract_dir / "._my-project-1.0.0"
+    root_dir.path.mkdir(parents=True)
+    metadata_file = pathlib.Path(extract_dir) / "._my-project-1.0.0"
     metadata_file.write_text("metadata")
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
@@ -588,11 +604,12 @@ async def test_find_archive_root_ignores_macos_metadata(tmp_path: pathlib.Path) 
 
 @pytest.mark.asyncio
 async def test_find_archive_root_returns_none_when_multiple_directories(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
-    extract_dir.mkdir(parents=True)
-    (extract_dir / "dir1").mkdir()
-    (extract_dir / "dir2").mkdir()
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
+    extract_dir.path.mkdir(parents=True)
+    (extract_dir / "dir1").path.mkdir()
+    (extract_dir / "dir2").path.mkdir()
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -601,10 +618,11 @@ async def test_find_archive_root_returns_none_when_multiple_directories(tmp_path
 
 @pytest.mark.asyncio
 async def test_find_archive_root_returns_none_when_no_directories(tmp_path: pathlib.Path) -> None:
-    archive_path = tmp_path / "my-project-1.0.0.tar.gz"
-    extract_dir = tmp_path / "extracted"
-    extract_dir.mkdir(parents=True)
-    (extract_dir / "file.txt").write_text("content")
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / "my-project-1.0.0.tar.gz"
+    extract_dir = temp_dir / "extracted"
+    extract_dir.path.mkdir(parents=True)
+    (extract_dir / "file.txt").path.write_text("content")
 
     result = await atr.tasks.checks.compare._find_archive_root(archive_path, extract_dir)
 
@@ -615,15 +633,16 @@ async def test_find_archive_root_returns_none_when_no_directories(tmp_path: path
 async def test_source_trees_creates_temp_workspace_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(repo_only={"extra1.txt", "extra2.txt"})
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -636,9 +655,9 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
 
     assert checkout.checkout_dir is not None
     checkout_dir = checkout.checkout_dir
-    assert checkout_dir.name == "github"
-    assert checkout_dir.parent.parent == tmp_root
-    assert checkout_dir.parent.name.startswith("trees-")
+    assert checkout_dir.path.name == "github"
+    assert checkout_dir.parent.path.parent == tmp_root.path
+    assert checkout_dir.parent.path.name.startswith("trees-")
     assert await aiofiles.os.path.exists(tmp_root)
     assert not await aiofiles.os.path.exists(checkout_dir.parent)
     assert len(recorder.success_calls) == 1
@@ -670,16 +689,17 @@ async def test_source_trees_payload_none_skips_temp_workspace(monkeypatch: pytes
 async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    (cache_dir / "artifact").mkdir(parents=True)
-    (cache_dir / "artifact" / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+    cache_dir = temp_dir / "cache"
+    (cache_dir / "artifact").path.mkdir(parents=True)
+    (cache_dir / "artifact" / "pyproject.toml").path.write_text("[project]\nname = 'test'\n")
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(invalid={"PKG-INFO"})
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -698,15 +718,16 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 async def test_source_trees_records_failure_when_archive_has_invalid_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     compare = CompareRecorder(invalid={"bad1.txt", "bad2.txt"}, repo_only={"ok.txt"})
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -730,14 +751,15 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
 async def test_source_trees_records_failure_when_archive_root_not_found(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
     find_root = FindArchiveRootRecorder(root=None)
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -782,14 +804,15 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
 async def test_source_trees_records_failure_when_extra_entries_in_archive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
     find_root = FindArchiveRootRecorder(root="artifact", extra_entries=["README.txt", "extra.txt"])
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -811,16 +834,17 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
 async def test_source_trees_reports_repo_only_sample_limited_to_five(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
     args = _make_args(recorder)
     payload = _make_payload()
     checkout = CheckoutRecorder()
-    cache_dir = tmp_path / "cache"
-    cache_dir.mkdir()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
     find_root = FindArchiveRootRecorder("artifact")
     repo_only_files = {f"file{i}.txt" for i in range(10)}
     compare = CompareRecorder(repo_only=repo_only_files)
-    tmp_root = tmp_path / "temporary-root"
+    tmp_root = temp_dir / "temporary-root"
 
     monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
     monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", checkout)
@@ -854,10 +878,10 @@ def _make_args(recorder: atr.tasks.checks.Recorder) -> atr.tasks.checks.Function
     return atr.tasks.checks.FunctionArguments(
         recorder=RecorderFactory(recorder),
         asf_uid="test",
-        project_key="project",
-        version_key="version",
-        revision_number="00001",
-        primary_rel_path="artifact.tar.gz",
+        project_key=safe.ProjectKey("project"),
+        version_key=safe.VersionKey("version"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath("artifact.tar.gz"),
         extra_args={},
     )
 

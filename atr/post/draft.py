@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import aiofiles.os
 import asfquart.base as base
@@ -35,9 +35,6 @@ import atr.storage as storage
 import atr.storage.types as types
 import atr.util as util
 import atr.web as web
-
-if TYPE_CHECKING:
-    import pathlib
 
 
 @post.typed
@@ -273,7 +270,7 @@ async def sbomconvert(
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
 
-            async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
+            async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
                 sbom_path_rel = rel_path.with_suffix(".cdx.json").name
                 sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
@@ -296,8 +293,8 @@ async def sbomconvert(
                     project_key,
                     version_key,
                     old_rev.safe_number,
-                    str(path_in_new_revision),
-                    str(sbom_path_in_new_revision),
+                    path_in_new_revision,
+                    sbom_path_in_new_revision,
                 )
                 success = await interaction.wait_for_task(sbom_task)
                 if not success:
@@ -359,7 +356,7 @@ async def sbomgen(
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
 
-            async def modify(path: pathlib.Path, old_rev: sql.Revision | None) -> None:
+            async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
                 sbom_path_rel = rel_path.with_suffix(rel_path.suffix + ".cdx.json").name
                 sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
@@ -381,7 +378,7 @@ async def sbomgen(
                 sbom_task = await wacp.sbom.generate_cyclonedx(
                     project_key,
                     version_key,
-                    old_rev.number,
+                    old_rev.safe_number,
                     path_in_new_revision,
                     sbom_path_in_new_revision,
                 )

@@ -77,11 +77,11 @@ async def finalise(  # noqa: C901
             number_of_files = len(staged_files)
             description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
 
-            async def modify(path: pathlib.Path, _old_rev: sql.Revision | None) -> None:
+            async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
                 for filename in staged_files:
                     src = staging_dir / filename
                     dst = path / filename
-                    await aioshutil.move(str(src), str(dst))
+                    await aioshutil.move(src, dst)
 
             result = await wacp.revision.create_revision_with_quarantine(
                 project_key,

@@ -37,7 +37,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     if not (hash_abs_path := await recorder.abs_path()):
         return None
 
-    algorithm = hash_abs_path.suffix.lstrip(".")
+    algorithm = hash_abs_path.path.suffix.lstrip(".")
     if algorithm not in {"sha256", "sha512"}:
         await recorder.failure("Unsupported hash algorithm", {"algorithm": algorithm})
         return None
@@ -48,7 +48,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     # PosixPath('a/b/c.d.e.f.x')
     # >>> pathlib.Path("a/b/c.d.e.f.g").with_suffix("")
     # PosixPath('a/b/c.d.e.f')
-    artifact_abs_path = hash_abs_path.with_suffix("")
+    artifact_abs_path = hash_abs_path.path.with_suffix("")
 
     log.info(
         f"Checking hash ({algorithm}) for {artifact_abs_path} against {hash_abs_path} (rel: {args.primary_rel_path})"

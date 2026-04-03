@@ -16,7 +16,6 @@
 # under the License.
 import datetime
 import hashlib
-import pathlib
 from typing import Any, Final, Literal
 
 import aiofiles.os
@@ -1664,7 +1663,7 @@ def _jwt_asf_uid() -> str:
 
 
 async def _match_committee_keys(
-    key_committees: list[sql.Committee], finished_dir: pathlib.Path, data: models.api.SignatureProvenanceArgs
+    key_committees: list[sql.Committee], finished_dir: safe.StatePath, data: models.api.SignatureProvenanceArgs
 ) -> set[str]:
     key_committee_keys = set(committee.key for committee in key_committees)
     finished_dir = paths.get_finished_dir()
@@ -1674,7 +1673,7 @@ async def _match_committee_keys(
     for key_committee_key in key_committee_keys:
         key_committee_finished_dir = finished_dir / key_committee_key
         async for rel_path in util.paths_recursive(key_committee_finished_dir):
-            if rel_path.name == data.signature_file_name:
+            if rel_path.as_path().name == data.signature_file_name:
                 abs_path = finished_dir / rel_path
                 async with aiofiles.open(abs_path, "rb") as f:
                     rel_path_data = await f.read()
@@ -1699,9 +1698,9 @@ async def _match_committee_keys(
     return matched_committee_keys
 
 
-async def _match_unfinished(release_directory: pathlib.Path, data: models.api.SignatureProvenanceArgs) -> bool:
+async def _match_unfinished(release_directory: safe.StatePath, data: models.api.SignatureProvenanceArgs) -> bool:
     async for rel_path in util.paths_recursive(release_directory):
-        if rel_path.name == data.signature_file_name:
+        if rel_path.as_path().name == data.signature_file_name:
             abs_path = release_directory / rel_path
             async with aiofiles.open(abs_path, "rb") as f:
                 rel_path_data = await f.read()

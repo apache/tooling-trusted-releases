@@ -18,10 +18,10 @@
 import dataclasses
 import datetime
 import enum
-import pathlib
 from collections.abc import Callable
 
 import atr.classify as classify
+import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage.outcome as outcome
@@ -66,12 +66,12 @@ class LinkedCommittee:
 
 class PathInfo(schema.Strict):
     checker_stats: list[CheckerStats] = schema.factory(list)
-    errors: dict[pathlib.Path, list[sql.CheckResult]] = schema.factory(dict)
-    file_types: dict[pathlib.Path, classify.FileType] = schema.factory(dict)
+    errors: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
+    file_types: dict[safe.RelPath, classify.FileType] = schema.factory(dict)
     ignored_errors: list[sql.CheckResult] = schema.factory(list)
     ignored_warnings: list[sql.CheckResult] = schema.factory(list)
-    successes: dict[pathlib.Path, list[sql.CheckResult]] = schema.factory(dict)
-    warnings: dict[pathlib.Path, list[sql.CheckResult]] = schema.factory(dict)
+    successes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
+    warnings: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
 
 
 class PersonalAccessTokenSafe(schema.Strict):

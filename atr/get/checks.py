@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pathlib
 from collections.abc import Callable
 from typing import Literal, NamedTuple
 
@@ -219,10 +218,10 @@ async def selected_revision(
 
 async def _compute_stats(  # noqa: C901
     release: sql.Release,
-    paths: list[pathlib.Path],
+    paths: list[safe.RelPath],
     match_ignore: Callable[[sql.CheckResult], bool],
-) -> tuple[dict[pathlib.Path, FileStats], FileStats]:
-    per_file: dict[pathlib.Path, dict[str, int]] = {
+) -> tuple[dict[safe.RelPath, FileStats], FileStats]:
+    per_file: dict[safe.RelPath, dict[str, int]] = {
         p: {
             "file_pass_before": 0,
             "file_warn_before": 0,
@@ -252,7 +251,7 @@ async def _compute_stats(  # noqa: C901
         if not cr.primary_rel_path:
             continue
 
-        file_path = pathlib.Path(cr.primary_rel_path)
+        file_path = safe.RelPath(cr.primary_rel_path)
         if file_path not in per_file:
             continue
 
@@ -298,8 +297,8 @@ async def _compute_stats(  # noqa: C901
 def _render_checks_table(
     page: htm.Block,
     release: sql.Release,
-    paths: list[pathlib.Path],
-    per_file_stats: dict[pathlib.Path, FileStats],
+    paths: list[safe.RelPath],
+    per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
     if not paths:
         page.div(".alert.alert-info")["This release candidate does not have any files."]
@@ -331,8 +330,8 @@ def _render_checks_table(
 
 def _render_debug_table(
     page: htm.Block,
-    paths: list[pathlib.Path],
-    per_file_stats: dict[pathlib.Path, FileStats],
+    paths: list[safe.RelPath],
+    per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
     # Bootstrap does have striping, but that's for horizontal stripes
     # These are vertical stripes, to make it easier to distinguish collections
@@ -410,7 +409,7 @@ def _render_debug_table(
 def _render_file_row(
     tbody: htm.Block,
     release: sql.Release,
-    path: pathlib.Path,
+    path: safe.RelPath,
     stats: FileStats,
 ) -> None:
     path_str = str(path)
@@ -484,7 +483,7 @@ def _render_file_row(
     # <a href="{{ as_url(get.sbom.report, project=project_key, version=version_key, file_path=path) }}"
     # class="btn btn-sm btn-outline-secondary">Show SBOM</a>
     sbom_btn = None
-    if path.suffixes[-2:] == [".cdx", ".json"]:
+    if path.as_path().suffixes[-2:] == [".cdx", ".json"]:
         sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=sbom_url)["SBOM report"]
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
 
@@ -533,8 +532,8 @@ def _render_ignores_section(page: htm.Block, release: sql.Release) -> None:
 def _render_summary(
     page: htm.Block,
     totals: FileStats,
-    paths: list[pathlib.Path],
-    per_file_stats: dict[pathlib.Path, FileStats],
+    paths: list[safe.RelPath],
+    per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
     files_with_errors = sum(1 for s in per_file_stats.values() if s.file_err_after > 0)
     files_with_warnings = sum(1 for s in per_file_stats.values() if (s.file_warn_after > 0) and (s.file_err_after == 0))

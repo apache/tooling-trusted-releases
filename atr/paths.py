@@ -24,7 +24,7 @@ import atr.models.sql as sql
 
 def base_path_for_revision(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
-) -> pathlib.Path:
+) -> safe.StatePath:
     return get_unfinished_dir() / project_key / version_key / revision
 
 
@@ -44,7 +44,7 @@ def get_finished_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().FINISHED_STORAGE_DIR))
 
 
-def get_finished_dir_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> pathlib.Path:
+def get_finished_dir_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> safe.StatePath:
     return get_finished_dir() / project_key / version_key
 
 
@@ -63,24 +63,24 @@ def get_unfinished_dir() -> safe.StatePath:
 
 def get_unfinished_dir_for(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
-) -> pathlib.Path:
+) -> safe.StatePath:
     return get_unfinished_dir() / project_key / version_key / revision
 
 
-def get_upload_staging_dir(session_token: str) -> pathlib.Path:
+def get_upload_staging_dir(session_token: str) -> safe.StatePath:
     if not session_token.isalnum():
         raise ValueError("Invalid session token")
     return get_tmp_dir() / "upload-staging" / session_token
 
 
-def quarantine_directory(quarantined: sql.Quarantined) -> pathlib.Path:
+def quarantine_directory(quarantined: sql.Quarantined) -> safe.StatePath:
     if not quarantined.token.isalnum():
         raise ValueError("Invalid quarantine token")
     release = quarantined.release
     return get_quarantined_dir() / release.project_key / release.version / quarantined.token
 
 
-def release_directory(release: sql.Release) -> pathlib.Path:
+def release_directory(release: sql.Release) -> safe.StatePath:
     """Return the absolute path to the directory containing the active files for a given release phase."""
     latest_revision_number = release.latest_revision_number
     if (release.phase == sql.ReleasePhase.RELEASE) or (latest_revision_number is None):
@@ -88,7 +88,7 @@ def release_directory(release: sql.Release) -> pathlib.Path:
     return release_directory_base(release) / latest_revision_number
 
 
-def release_directory_base(release: sql.Release) -> pathlib.Path:
+def release_directory_base(release: sql.Release) -> safe.StatePath:
     """Determine the filesystem directory for a given release based on its phase."""
     phase = release.phase
     project_key = release.project.key
@@ -108,7 +108,7 @@ def release_directory_base(release: sql.Release) -> pathlib.Path:
     return base_dir / project_key / version_key
 
 
-def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
+def release_directory_revision(release: sql.Release) -> safe.StatePath | None:
     """Return the path to the directory containing the active files for a given release phase."""
     path_project = release.project.key
     path_version = release.version
@@ -127,7 +127,7 @@ def release_directory_revision(release: sql.Release) -> pathlib.Path | None:
     return path
 
 
-def release_directory_version(release: sql.Release) -> pathlib.Path:
+def release_directory_version(release: sql.Release) -> safe.StatePath:
     """Return the path to the directory containing the active files for a given release phase."""
     path_project = release.project.key
     path_version = release.version
@@ -146,5 +146,5 @@ def release_directory_version(release: sql.Release) -> pathlib.Path:
 
 def revision_path_for_file(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber, file_name: str
-) -> pathlib.Path:
+) -> safe.StatePath:
     return base_path_for_revision(project_key, version_key, revision) / file_name
