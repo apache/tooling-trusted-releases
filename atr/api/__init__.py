@@ -323,6 +323,7 @@ async def distribution_record(
     Record a manual distribution.
     """
     asf_uid = _jwt_asf_uid()
+    util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     async with db.session() as db_data:
         release = await db_data.release(
             project_key=str(data.project),
@@ -364,6 +365,7 @@ async def distribution_record_from_workflow(
     Record the result of an automated distribution from the GH tooling-actions workflow.
     Validates the caller is a Github workflow, triggered by ATR itself
     """
+
     _payload, _asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
         data.publisher,
         data.jwt,
@@ -372,6 +374,7 @@ async def distribution_record_from_workflow(
         data.project,
         data.version,
     )
+    util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
     if release.committee is None:
         raise exceptions.NotFound(f"Release {release.key} has no committee")
@@ -838,6 +841,7 @@ async def publisher_distribution_record(
             data.jwt,
             interaction.TrustedProjectPhase.COMPOSE,
         )
+    util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     async with db.session() as db_data:
         release = await db_data.release(
             project_key=project.key,

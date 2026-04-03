@@ -186,6 +186,11 @@ def _strip_slashes_or_none(v: object) -> object:
     return v
 
 
+type OptionalAlphanumeric = Annotated[
+    Alphanumeric | None,
+    pydantic.BeforeValidator(_strip_slashes_or_none),
+]
+
 type OptionalRelPath = Annotated[
     RelPath | None,
     pydantic.BeforeValidator(_strip_slashes_or_none),

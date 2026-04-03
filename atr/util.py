@@ -1154,6 +1154,17 @@ def validate_as_type[T](value: Any, t: type[T]) -> T:
     return value
 
 
+def validate_distribution_owner_namespace(platform: sql.DistributionPlatform, namespace: Any):
+    default_owner_namespace = platform.value.default_owner_namespace
+    requires_owner_namespace = platform.value.requires_owner_namespace
+
+    if requires_owner_namespace and (not namespace):
+        raise ValueError(f'Platform "{platform.value.name}" requires an owner or namespace.', "owner_namespace")
+
+    if (not requires_owner_namespace) and (not default_owner_namespace) and namespace:
+        raise ValueError(f'Platform "{platform.value.name}" does not require an owner or namespace.', "owner_namespace")
+
+
 def validate_email_recipients(recipients: EmailRecipients) -> None:
     if not recipients.email_to:
         raise ValueError("At least one To recipient is required")

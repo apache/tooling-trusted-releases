@@ -99,12 +99,24 @@ def flash_error_data(
 
     for i, error in enumerate(errors):
         loc = error["loc"]
-        kind = error["type"]
         msg = error["msg"]
-        msg = msg.replace(": An email address", " because an email address")
-        msg = msg.replace("Value error, ", "")
+        kind = error["type"]
         original = error["input"]
         field_name, field_label = name_and_label(concrete_cls, i, loc)
+        if not loc:
+            ctx_error = error.get("ctx", {}).get("error")
+            # If we have a field name in a ValueError, make sure we get the right message and original value
+            # This comes from raising a `ValueError` in a `pydantic.model_validator`
+            if isinstance(ctx_error, ValueError) and len(ctx_error.args) >= 2 and isinstance(ctx_error.args[1], str):
+                loc = (ctx_error.args[1],)
+                msg = ctx_error.args[0]
+            # Now reconstruct the field_name and label
+            field_name, field_label = name_and_label(concrete_cls, i, loc)
+            if isinstance(original, dict):
+                original = original[field_name]
+        msg = msg.replace(": An email address", " because an email address")
+        msg = msg.replace("Value error, ", "")
+
         flash_data[field_name] = {
             "label": field_label,
             "original": json_suitable(original),
