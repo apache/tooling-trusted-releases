@@ -214,7 +214,7 @@ class CommitteeMember(CommitteeParticipant):
                 # Each prior revision directory is immutable
                 await util.delete_immutable_directory(
                     unfinished_revisions_path,
-                    reason="user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
+                    reason=f"user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
                 )
         except Exception as e:
             raise storage.AccessError(f"Error moving files: {e!s}")
