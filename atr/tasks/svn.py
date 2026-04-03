@@ -104,8 +104,6 @@ async def _import_files_core(args: SvnImport) -> str:
                 "svn",
                 "export",
                 "--non-interactive",
-                "--trust-server-cert-failures",
-                "unknown-ca,cn-mismatch",
                 "-r",
                 args.revision,
                 "--",
