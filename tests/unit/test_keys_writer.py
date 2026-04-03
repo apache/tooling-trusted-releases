@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 import atr.models.safe as safe
+import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
 
@@ -28,6 +29,7 @@ import atr.storage.writers.keys as keys_writer
 class Query:
     def __init__(self, value):
         self._value = value
+        self.query = mock.MagicMock()
 
     async def get(self):
         return self._value
@@ -46,13 +48,86 @@ class MockData:
         self.commit = mock.AsyncMock()
         self.delete = mock.AsyncMock()
         self.execute = mock.AsyncMock()
+        self.flush = mock.AsyncMock()
 
     def public_signing_key(self, **_kwargs):
         return Query(self._key)
 
     def committee(self, *, key: str, _public_signing_keys: bool = False):
-        assert _public_signing_keys is True
         return Query(self._committees_after_commit[key])
+
+
+@pytest.mark.asyncio
+async def test_delete_committee_keys_audits_committed_delete_when_sync_fails():
+    key_orphaned = SimpleNamespace(fingerprint="fp1", committees=[])
+    initial_committee = SimpleNamespace(public_signing_keys=[key_orphaned])
+    data = MockData(None, committees_after_commit={"alpha": initial_committee})
+    writer, write_as = _make_foundation_admin(data, "alpha")
+    error_message = "Failed to remove KEYS file for committee alpha: boom"
+
+    with mock.patch.object(
+        writer,
+        "_sync_committee_keys_file",
+        new=mock.AsyncMock(side_effect=storage.AccessError(error_message)),
+    ):
+        with pytest.raises(storage.AccessError, match="boom"):
+            await writer.delete_committee_keys()
+
+    data.commit.assert_awaited_once()
+    assert write_as.append_to_audit_log.call_count == 2
+
+    delete_audit = write_as.append_to_audit_log.call_args_list[0].kwargs
+    sync_failure_audit = write_as.append_to_audit_log.call_args_list[1].kwargs
+
+    assert delete_audit["committee_key"] == "alpha"
+    assert delete_audit["keys_unlinked"] == 1
+    assert delete_audit["keys_deleted"] == 1
+    assert delete_audit["fingerprints"] == ["fp1"]
+
+    assert sync_failure_audit["action"] == "delete_committee_keys_sync_failed"
+    assert sync_failure_audit["committee_key"] == "alpha"
+    assert sync_failure_audit["error"] == error_message
+
+
+@pytest.mark.asyncio
+async def test_delete_committee_keys_removes_links_and_orphaned_keys():
+    key_orphaned = SimpleNamespace(fingerprint="fp1", committees=[])
+    key_shared = SimpleNamespace(fingerprint="fp2", committees=[SimpleNamespace(key="beta")])
+    initial_committee = SimpleNamespace(public_signing_keys=[key_orphaned, key_shared])
+    data = MockData(None, committees_after_commit={"alpha": initial_committee})
+    writer, write_as = _make_foundation_admin(data, "alpha")
+
+    with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
+        num_unlinked, num_deleted = await writer.delete_committee_keys()
+
+    assert num_unlinked == 2
+    assert num_deleted == 1
+    data.delete.assert_awaited_once_with(key_orphaned)
+    data.flush.assert_awaited_once()
+    data.commit.assert_awaited_once()
+    mock_sync.assert_awaited_once_with("alpha")
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args[1]
+    assert audit_kwargs["asf_uid"] == "alice"
+    assert audit_kwargs["committee_key"] == "alpha"
+    assert audit_kwargs["keys_unlinked"] == 2
+    assert audit_kwargs["keys_deleted"] == 1
+    assert set(audit_kwargs["fingerprints"]) == {"fp1", "fp2"}
+
+
+@pytest.mark.asyncio
+async def test_delete_committee_keys_returns_zero_when_no_keys():
+    empty_committee = SimpleNamespace(public_signing_keys=[])
+    data = MockData(None, committees_after_commit={"alpha": empty_committee})
+    writer, write_as = _make_foundation_admin(data, "alpha")
+
+    num_unlinked, num_deleted = await writer.delete_committee_keys()
+
+    assert num_unlinked == 0
+    assert num_deleted == 0
+    data.delete.assert_not_awaited()
+    data.commit.assert_not_awaited()
+    write_as.append_to_audit_log.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -145,6 +220,13 @@ def _committee(key: str, public_signing_keys: list[object], *, is_podling: bool 
         is_podling=is_podling,
         public_signing_keys=public_signing_keys,
     )
+
+
+def _make_foundation_admin(data: MockData, committee_key: str):
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "alice"
+    write_as = mock.MagicMock()
+    return keys_writer.FoundationAdmin(write, write_as, data, committee_key), write_as
 
 
 def _make_foundation_committer(data: MockData):

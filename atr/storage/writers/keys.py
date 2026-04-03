@@ -32,11 +32,13 @@ import aiofiles.os
 import pgpy
 import pgpy.constants as constants
 import sqlalchemy.dialects.sqlite as sqlite
+import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.config as config
 import atr.db as db
 import atr.log as log
+import atr.models.basic as basic
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -752,3 +754,50 @@ class FoundationAdmin(CommitteeMember):
     @property
     def committee_key(self) -> str:
         return self.__committee_key
+
+    async def delete_committee_keys(self) -> tuple[int, int]:
+        via = sql.validate_instrumented_attribute
+        committee_query = self.__data.committee(key=self.__committee_key)
+        committee_query.query = committee_query.query.options(
+            orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
+        )
+        committee = await committee_query.demand(storage.AccessError(f"Committee not found: {self.__committee_key}"))
+
+        keys_to_check = list(committee.public_signing_keys)
+        if not keys_to_check:
+            return (0, 0)
+
+        num_unlinked = len(keys_to_check)
+        fingerprints: list[basic.JSON] = [key_obj.fingerprint for key_obj in keys_to_check]
+        committee.public_signing_keys.clear()
+        await self.__data.flush()
+
+        num_deleted = 0
+        for key_obj in keys_to_check:
+            if not key_obj.committees:
+                await self.__data.delete(key_obj)
+                num_deleted += 1
+
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            keys_unlinked=num_unlinked,
+            keys_deleted=num_deleted,
+            fingerprints=fingerprints,
+        )
+        try:
+            await self._sync_committee_keys_file(self.__committee_key)
+        except Exception as e:
+            self.__write_as.append_to_audit_log(
+                action="delete_committee_keys_sync_failed",
+                asf_uid=self.__asf_uid,
+                committee_key=self.__committee_key,
+                keys_unlinked=num_unlinked,
+                keys_deleted=num_deleted,
+                fingerprints=fingerprints,
+                error=str(e),
+            )
+            raise
+
+        return (num_unlinked, num_deleted)

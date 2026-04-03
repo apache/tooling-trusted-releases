@@ -36,7 +36,6 @@ import jwt
 import pydantic
 import quart
 import sqlalchemy
-import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.blueprints.admin as admin
@@ -341,37 +340,20 @@ async def delete_committee_keys_post(
     """
     committee_key = delete_form.committee_key
 
-    async with db.session() as data:
-        committee_query = data.committee(key=committee_key)
-        via = sql.validate_instrumented_attribute
-        committee_query.query = committee_query.query.options(
-            orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
-        )
-        committee = await committee_query.get()
+    try:
+        async with storage.write(session) as write:
+            waca = write.as_committee_admin(committee_key)
+            num_unlinked, num_deleted = await waca.keys.delete_committee_keys()
+    except storage.AccessError as e:
+        await quart.flash(str(e), "error")
+        return await session.redirect(delete_committee_keys_get)
 
-        if not committee:
-            await quart.flash(f"Committee '{committee_key}' not found.", "error")
-            return await session.redirect(delete_committee_keys_get)
-
-        keys_to_check = list(committee.public_signing_keys)
-        if not keys_to_check:
-            await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
-            return await session.redirect(delete_committee_keys_get)
-
-        num_removed = len(committee.public_signing_keys)
-        committee.public_signing_keys.clear()
-        await data.flush()
-
-        unused_deleted = 0
-        for key_obj in keys_to_check:
-            if not key_obj.committees:
-                await data.delete(key_obj)
-                unused_deleted += 1
-
-        await data.commit()
+    if num_unlinked == 0:
+        await quart.flash(f"Committee '{committee_key}' has no keys.", "info")
+    else:
         await quart.flash(
-            f"Removed {util.plural(num_removed, 'key link')} for '{committee_key}'. "
-            f"Deleted {util.plural(unused_deleted, 'unused key')}.",
+            f"Removed {util.plural(num_unlinked, 'key link')} for '{committee_key}'. "
+            f"Deleted {util.plural(num_deleted, 'unused key')}.",
             "success",
         )
 
