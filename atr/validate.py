@@ -377,11 +377,13 @@ def release_vote_logic(r: sql.Release) -> Divergences:
     def okay(sr: tuple[datetime.datetime | None, datetime.datetime | None]) -> bool:
         # The vote_resolved property must not be set unless vote_started is set
         match sr:
-            case (None, None) | (_, None) | (_, _):
+            case (None, None) | (_, None):
                 return True
-            # case (None, _):
-            #     return False
-        return False
+            case (None, _):
+                # Resolved without being started
+                return False
+            case (_, _):
+                return True
 
     expected = "vote_started to be set when vote_resolved is set"
     actual = (r.vote_started, r.vote_resolved)
