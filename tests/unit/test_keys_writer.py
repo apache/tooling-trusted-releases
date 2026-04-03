@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -55,6 +56,40 @@ class MockData:
 
     def committee(self, *, key: str, _public_signing_keys: bool = False):
         return Query(self._committees_after_commit[key])
+
+
+@pytest.mark.asyncio
+async def test_database_add_model_audits_inserted_key():
+    data = MockData(None, committees_after_commit={})
+    writer, _write, write_as = _make_foundation_committer_with_audit(data)
+    insert_result = mock.MagicMock()
+    insert_result.one_or_none.return_value = object()
+    data.execute.return_value = insert_result
+    key_model = keys_writer.sql.PublicSigningKey(
+        fingerprint="fp1",
+        algorithm=1,
+        length=4096,
+        created=datetime.datetime.now(datetime.UTC),
+        latest_self_signature=None,
+        expires=None,
+        primary_declared_uid="Alice <alice@example.org>",
+        secondary_declared_uids=[],
+        apache_uid="alice",
+        ascii_armored_key="-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
+    )
+    key = SimpleNamespace(key_model=key_model)
+
+    result = await writer._FoundationCommitter__database_add_model(key)
+
+    assert isinstance(result, outcome.Result)
+    data.begin_immediate.assert_awaited_once()
+    data.commit.assert_awaited_once()
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert audit_kwargs["action"] == "key_insert"
+    assert audit_kwargs["asf_uid"] == "alice"
+    assert audit_kwargs["fingerprint"] == "fp1"
+    assert audit_kwargs["key_apache_uid"] == "alice"
 
 
 @pytest.mark.asyncio
@@ -140,7 +175,7 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
         owned_key,
         committees_after_commit={"alpha": _committee("alpha", [])},
     )
-    writer, _write = _make_foundation_committer(data)
+    writer, _write, write_as = _make_foundation_committer_with_audit(data)
 
     keys_path = tmp_path / "alpha" / "KEYS"
     keys_path.parent.mkdir(parents=True)
@@ -156,6 +191,11 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
     assert not keys_path.exists()
     data.delete.assert_awaited_once_with(owned_key)
     data.commit.assert_awaited_once()
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert audit_kwargs["action"] == "key_delete"
+    assert audit_kwargs["fingerprint"] == "fp1"
+    assert audit_kwargs["committee_keys"] == ["alpha"]
 
 
 @pytest.mark.asyncio
@@ -165,7 +205,7 @@ async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp
         owned_key,
         committees_after_commit={"alpha": _committee("alpha", [])},
     )
-    writer, write = _make_foundation_committer(data)
+    writer, write, write_as = _make_foundation_committer_with_audit(data)
 
     keys_path = tmp_path / "alpha" / "KEYS"
     keys_path.parent.mkdir(parents=True)
@@ -182,6 +222,12 @@ async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp
     assert write.as_committee_participant.call_count == 0
     data.begin_immediate.assert_awaited_once()
     data.commit.assert_awaited_once()
+    write_as.append_to_audit_log.assert_called_once()
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert audit_kwargs["action"] == "key_update_committee_associations"
+    assert audit_kwargs["fingerprint"] == "fp1"
+    assert audit_kwargs["committees_added"] == []
+    assert audit_kwargs["committees_removed"] == ["alpha"]
 
 
 @pytest.mark.asyncio
@@ -230,11 +276,16 @@ def _make_foundation_admin(data: MockData, committee_key: str):
 
 
 def _make_foundation_committer(data: MockData):
+    writer, write, _write_as = _make_foundation_committer_with_audit(data)
+    return writer, write
+
+
+def _make_foundation_committer_with_audit(data: MockData):
     write = mock.MagicMock()
     write.authorisation.asf_uid = "alice"
     write.as_committee_participant = mock.MagicMock()
     write_as = mock.MagicMock()
-    return keys_writer.FoundationCommitter(write, write_as, data), write
+    return keys_writer.FoundationCommitter(write, write_as, data), write, write_as
 
 
 def _public_key(
