@@ -245,6 +245,9 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
             and (config.is_production_mode() or config.is_ldap_configured())
         ):
             user_account = await ldap.account_lookup(asf_uid)
+            # We check here to see if the account is banned - in the case of running tasks,
+            # we don't really need to worry about admin/membership status as that wouldn't
+            # materially affect outstanding worker tasks and is rare anyway.
             if (user_account is None) or ldap.is_banned(user_account):
                 raise RuntimeError(f"Account '{asf_uid}' is banned or does not exist")
 
