@@ -163,7 +163,6 @@ def construct_checksum(message: Message) -> Checksum:
 def construct_interleaved_checksum_tag(
     even_checksum_tag: ChecksumTag, odd_checksum_tag: ChecksumTag
 ) -> InterleavedChecksumTag:
-    # TODO: Note that InterleavedChecksumTag is a subset of InterleavedChecksumString
     interleaved_checksum_tag = InterleavedChecksumTag(
         bytes(b for pair in zip(even_checksum_tag, odd_checksum_tag) for b in pair)
     )
