@@ -15,10 +15,12 @@
         <th>Project</th>
         <th>Phase</th>
         <th>Created</th>
+        <th>Age &amp; inactivity</th>
       </tr>
     </thead>
     <tbody>
-      {% for release in releases %}
+      {% for row in release_rows %}
+        {% set release = row.release %}
         <tr>
           <td>
             {% if release.project %}
@@ -45,6 +47,10 @@
             {% endif %}
           </td>
           <td>{{ release.created.strftime("%Y-%m-%d") }}<br>{{ release.created.strftime("%H:%M:%S UTC") }}</td>
+          <td>
+            <span{% if row.age_bold %} class="fw-bold"{% endif %}>{{ row.age_label }}</span><br>
+            <small class="text-muted{% if row.inactive_bold %} fw-bold{% endif %}">{{ row.inactive_label }}</small>
+          </td>
         </tr>
       {% else %}
         <tr>

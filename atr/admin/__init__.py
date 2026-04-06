@@ -65,6 +65,8 @@ import atr.web as web
 
 ROUTES_MODULE: Final[Literal[True]] = True
 
+_MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
+
 
 class BrowseAsUserForm(form.Form):
     uid: str = form.label("ASF UID", "Enter the ASF UID to browse as.")
@@ -92,6 +94,14 @@ class LdapLookupForm(form.Form):
     email: form.OptionalEmail = form.label(
         "Email address (optional)", "Enter email address, e.g. user@example.org", widget=form.Widget.EMAIL
     )
+
+
+class ReleaseAgeRow(NamedTuple):
+    release: sql.Release
+    age_label: str
+    age_bold: bool
+    inactive_label: str
+    inactive_bold: bool
 
 
 class RevokeUserTokensForm(form.Form):
@@ -134,8 +144,10 @@ async def all_releases(_session: web.Committer, _all_releases: Literal["all/rele
     Display a list of all releases across all phases.
     """
     async with db.session() as data:
-        releases = await data.release(_project=True, _committee=True).order_by(sql.Release.key).all()
-    return await template.render("all-releases.html", releases=releases, release_as_url=mapping.release_as_url)
+        releases = await data.release(_project=True, _committee=True, _revisions=True).order_by(sql.Release.key).all()
+    now = datetime.datetime.now(datetime.UTC)
+    release_rows = [_release_age_row(release, now) for release in releases]
+    return await template.render("all-releases.html", release_rows=release_rows, release_as_url=mapping.release_as_url)
 
 
 @admin.typed
@@ -1312,6 +1324,32 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                     version_dir_path = os.path.join(project_dir_path, version_dir)
                     if await aiofiles.os.path.isdir(version_dir_path):
                         filesystem_dirs.append(version_dir_path)
+
+
+def _last_activity_at(release: sql.Release) -> datetime.datetime:
+    candidates: list[datetime.datetime] = [release.created]
+    if release.revisions:
+        candidates.append(release.revisions[-1].created)
+    if release.vote_started is not None:
+        candidates.append(release.vote_started)
+    if release.vote_resolved is not None:
+        candidates.append(release.vote_resolved)
+    if release.released is not None:
+        candidates.append(release.released)
+    return max(candidates)
+
+
+def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:
+    age = now - release.created
+    last_activity = _last_activity_at(release)
+    inactive_for = now - last_activity
+    return ReleaseAgeRow(
+        release=release,
+        age_label=util.plural(age.days, "day"),
+        age_bold=age > _MAXIMUM_PERMITTED_AGE_DAYS,
+        inactive_label=util.plural(inactive_for.days, "day"),
+        inactive_bold=inactive_for > _MAXIMUM_PERMITTED_AGE_DAYS,
+    )
 
 
 def _require_non_production_mode() -> None:
