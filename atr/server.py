@@ -190,8 +190,11 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
     ]
     archives_dir = pathlib.Path(paths.get_archives_dir())
     unfinished_dir = pathlib.Path(paths.get_unfinished_dir())
+    enforce_permissions = not config.is_dev_environment()
     for directory in directories_to_ensure:
         directory.mkdir(parents=True, exist_ok=True)
+        if not enforce_permissions:
+            continue
         # Some directories need custom permissions
         if directory == archives_dir:
             _enforce_archives_permissions(archives_dir)
