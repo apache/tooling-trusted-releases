@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import secrets
 from collections.abc import Sequence
 from typing import Literal
 
@@ -29,7 +28,6 @@ import atr.get.keys as keys
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.post as post
 import atr.render as render
 import atr.shared as shared
 import atr.template as template
@@ -77,28 +75,6 @@ async def selected(
 
     block.h2(id="file-upload")["File upload"]
     block.p["Use this form to add files to this candidate draft."]
-
-    upload_session_token = secrets.token_hex(16)
-    stage_url = util.as_url(
-        post.upload.stage,
-        upload_session=upload_session_token,
-        _project_key=str(project_key),
-        _version_key=str(version_key),
-    )
-    finalise_url = util.as_url(
-        post.upload.finalise,
-        upload_session=upload_session_token,
-        project_key=str(project_key),
-        version_key=str(version_key),
-    )
-
-    block.append(
-        htpy.div(
-            "#upload-config.atr-hide",
-            data_stage_url=stage_url,
-            data_finalise_url=finalise_url,
-        )
-    )
 
     form.render_block(
         block,
