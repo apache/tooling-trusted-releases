@@ -67,12 +67,6 @@ def get_unfinished_dir_for(
     return get_unfinished_dir() / project_key / version_key / revision
 
 
-def get_upload_staging_dir(session_token: str) -> safe.StatePath:
-    if not session_token.isalnum():
-        raise ValueError("Invalid session token")
-    return get_tmp_dir() / "upload-staging" / session_token
-
-
 def quarantine_directory(quarantined: sql.Quarantined) -> safe.StatePath:
     if not quarantined.token.isalnum():
         raise ValueError("Invalid quarantine token")

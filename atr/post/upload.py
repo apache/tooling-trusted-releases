@@ -15,117 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import asyncio
-import json
-import pathlib
 from typing import Literal
 
-import aiofiles
-import aiofiles.os
-import aioshutil
 import quart
-import werkzeug.wrappers.response as response
 
 import atr.blueprints.post as post
 import atr.db as db
-import atr.form as form
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
-import atr.models.sql as sql
-import atr.models.unsafe as unsafe
-import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
-import atr.storage.types as types
 import atr.util as util
 import atr.web as web
-
-
-@post.typed
-async def finalise(  # noqa: C901
-    session: web.Committer,
-    _upload_finalise: Literal["upload/finalise"],
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    upload_session: unsafe.UnsafeStr,
-) -> web.WerkzeugResponse:
-    """
-    URL: /upload/finalise/<project_key>/<version_key>/<upload_session>
-    """
-
-    try:
-        staging_dir = paths.get_upload_staging_dir(str(upload_session))
-    except ValueError:
-        return _json_error("Invalid session token", 400)
-
-    if not await aiofiles.os.path.isdir(staging_dir):
-        return _json_error("No staged files found", 400)
-
-    try:
-        staged_files = await aiofiles.os.listdir(staging_dir)
-    except OSError:
-        return _json_error("Error reading staging directory", 500)
-
-    staged_files = [f for f in staged_files if f not in (".", "..")]
-    if not staged_files:
-        return _json_error("No staged files found", 400)
-
-    try:
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_key)
-            number_of_files = len(staged_files)
-            description = f"Upload of {util.plural(number_of_files, 'file')} through web interface"
-
-            async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
-                for filename in staged_files:
-                    src = staging_dir / filename
-                    dst = path / filename
-                    await aioshutil.move(src, dst)
-
-            result = await wacp.revision.create_revision_with_quarantine(
-                project_key,
-                version_key,
-                session.uid,
-                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
-                description=description,
-                modify=modify,
-            )
-
-        await aioshutil.rmtree(staging_dir)
-
-        if isinstance(result, sql.Quarantined):
-            return await session.redirect(
-                get.compose.selected,
-                success="Upload received. Archive validation in progress.",
-                project_key=str(project_key),
-                version_key=str(version_key),
-            )
-
-        return await session.redirect(
-            get.compose.selected,
-            success=f"{util.plural(number_of_files, 'file')} added successfully",
-            project_key=str(project_key),
-            version_key=str(version_key),
-        )
-    except types.PhaseMismatchError as e:
-        return await session.redirect(
-            get.compose.selected,
-            error=str(e),
-            project_key=str(project_key),
-            version_key=str(version_key),
-        )
-    except types.FailedError as e:
-        await aioshutil.rmtree(staging_dir)
-        await quart.flash(str(e), "error")
-        return await session.redirect(
-            get.upload.selected,
-            project_key=str(project_key),
-            version_key=str(version_key),
-        )
-    except Exception as e:
-        log.exception(f"Error finalising upload: {e!r}")
-        return _json_error(f"Error finalising upload: {e!s}", 500)
 
 
 @post.typed
@@ -147,55 +49,6 @@ async def selected(
 
         case shared.upload.SvnImportForm() as svn_form:
             return await _svn_import(session, svn_form, project_key, version_key)
-
-
-@post.typed
-async def stage(
-    _session: web.Committer,
-    _upload_stage: Literal["upload/stage"],
-    _project_key: safe.ProjectKey,
-    _version_key: safe.VersionKey,
-    upload_session: unsafe.UnsafeStr,
-) -> web.WerkzeugResponse:
-    """
-    URL: /upload/stage/<project_key>/<version_key>/<upload_session>
-    """
-
-    try:
-        staging_dir = paths.get_upload_staging_dir(str(upload_session))
-    except ValueError:
-        return _json_error("Invalid session token", 400)
-
-    files = await quart.request.files
-    file = files.get("file")
-    if (not file) or (not file.filename):
-        return _json_error("No file provided", 400)
-
-    # Extract basename and validate
-    basename = pathlib.Path(file.filename).name
-    validated_filename = form.to_filename(basename)
-    if validated_filename is None:
-        return _json_error("Invalid filename", 400)
-    filename = str(validated_filename)
-
-    await aiofiles.os.makedirs(staging_dir, exist_ok=True)
-
-    target_path = staging_dir / filename
-    if await aiofiles.os.path.exists(target_path):
-        return _json_error("File already exists in staging", 409)
-
-    try:
-        async with aiofiles.open(target_path, "wb") as f:
-            # 1 MiB chunks
-            while chunk := await asyncio.to_thread(file.stream.read, 1024 * 1024):
-                await f.write(chunk)
-    except Exception as e:
-        log.exception("Error staging file:")
-        if await aiofiles.os.path.exists(target_path):
-            await aiofiles.os.remove(target_path)
-        return _json_error(f"Error staging file: {e!s}", 500)
-
-    return _json_success({"status": "staged", "filename": filename})
 
 
 async def _add_files(
@@ -275,16 +128,6 @@ def _construct_svn_url(
     if is_podling:
         return path.prepend(f"{area.value}/incubator/{committee_key}")
     return path.prepend(f"{area.value}/{committee_key}")
-
-
-def _json_error(message: str, status: int) -> web.WerkzeugResponse:
-    # audit_guidance The application/json media type is not defined to have a charset parameter
-    return response.Response(json.dumps({"error": message}), status=status, mimetype="application/json")
-
-
-def _json_success(data: dict[str, str], status: int = 200) -> web.WerkzeugResponse:
-    # audit_guidance The application/json media type is not defined to have a charset parameter
-    return response.Response(json.dumps(data), status=status, mimetype="application/json")
 
 
 async def _svn_import(
