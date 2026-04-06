@@ -4,14 +4,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "tuesday"
     cooldown:
       default-days: 7
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "tuesday"
     allow:
       - dependency-type: "direct"
     cooldown:
@@ -20,7 +20,7 @@ updates:
     directory: "/"             # location of Dockerfile(s)
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "tuesday"
     cooldown:
       default-days: 7
   # # TODO: Uncomment when pre-commit checks support cooldowns
@@ -28,4 +28,4 @@ updates:
   #   directory: "/"
   #   schedule:
   #     interval: "weekly"
-  #     day: "monday"
+  #     day: "tuesday"
