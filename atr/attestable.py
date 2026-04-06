@@ -17,8 +17,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import TYPE_CHECKING, Any
+import os
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import aiofiles
 import aiofiles.os
@@ -36,6 +41,8 @@ import atr.util as util
 
 if TYPE_CHECKING:
     import pathlib
+
+_READONLY_PERMISSIONS: Final[int] = 0o444
 
 
 def attestable_checks_path(
@@ -169,7 +176,7 @@ async def github_tp_payload_write(
     # Dump the workflow payload, excluding exp and nbf - which shouldn't have made it this far. If they do,
     # it's safe to remove them as they've been validated by the model already, and we should never store
     # stale dates
-    await util.atomic_write_file(
+    await _atomic_write_readonly(
         payload_path.path, json.dumps(github_payload.model_dump(exclude={"exp", "nbf"}), indent=2)
     )
 
@@ -267,7 +274,7 @@ async def write_checks_data(
         result = models.AttestableChecksV2(checks=current)
         return result.model_dump_json(indent=2)
 
-    await util.atomic_modify_file(attestable_checks_path(project_key, version_key, revision_number).path, modify)
+    await _atomic_modify_readonly(attestable_checks_path(project_key, version_key, revision_number).path, modify)
 
 
 async def write_files_data(
@@ -293,11 +300,20 @@ async def write_files_data(
         classifications=classifications,
     )
     file_path = attestable_path(project_key, version_key, revision_number)
-    await util.atomic_write_file(file_path.path, result.model_dump_json(indent=2))
+    await _atomic_write_readonly(file_path.path, result.model_dump_json(indent=2))
     checks_file_path = attestable_checks_path(project_key, version_key, revision_number)
     if not checks_file_path.path.exists():
-        async with aiofiles.open(checks_file_path, "w", encoding="utf-8") as f:
-            await f.write(models.AttestableChecksV2().model_dump_json(indent=2))
+        await _atomic_write_readonly(checks_file_path.path, models.AttestableChecksV2().model_dump_json(indent=2))
+
+
+async def _atomic_modify_readonly(file_path: pathlib.Path, modify: Callable[[str], str]) -> None:
+    await util.atomic_modify_file(file_path, modify)
+    await asyncio.to_thread(os.chmod, file_path, _READONLY_PERMISSIONS)
+
+
+async def _atomic_write_readonly(file_path: pathlib.Path, content: str) -> None:
+    await util.atomic_write_file(file_path, content)
+    await asyncio.to_thread(os.chmod, file_path, _READONLY_PERMISSIONS)
 
 
 def _compute_hashes_with_attribution(  # noqa: C901
