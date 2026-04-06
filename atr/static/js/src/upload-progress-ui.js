@@ -18,6 +18,72 @@
  */
 
 window.UploadUI = {
+	buildBatchUI(container, files, onCancel) {
+		container.innerHTML = "";
+		container.classList.remove("d-none");
+
+		container.append(this.buildHeader(onCancel));
+		container.append(this.buildProgressBar());
+
+		const list = document.createElement("div");
+		list.id = "upload-file-list";
+		files.forEach((file, i) => {
+			const row = document.createElement("div");
+			row.className =
+				"d-flex justify-content-between align-items-center py-1 border-bottom";
+			row.dataset.fileIndex = String(i);
+			const nameSpan = document.createElement("span");
+			nameSpan.textContent = `${file.name} (${this.formatBytes(file.size)})`;
+			const statusSpan = document.createElement("small");
+			statusSpan.className = "upload-file-status text-muted";
+			statusSpan.textContent = "Pending";
+			row.append(nameSpan, statusSpan);
+			list.append(row);
+		});
+		container.append(list);
+
+		const msgArea = document.createElement("div");
+		msgArea.id = "upload-message-area";
+		container.append(msgArea);
+	},
+
+	buildHeader(onCancel) {
+		const header = document.createElement("div");
+		header.className = "d-flex justify-content-between align-items-center mb-3";
+		const statusEl = document.createElement("strong");
+		statusEl.id = "upload-batch-status";
+		statusEl.textContent = "Preparing upload";
+		const cancelBtn = document.createElement("button");
+		cancelBtn.type = "button";
+		cancelBtn.id = "upload-cancel-btn";
+		cancelBtn.className = "btn btn-sm btn-outline-secondary";
+		cancelBtn.textContent = "Cancel upload";
+		cancelBtn.addEventListener("click", onCancel);
+		header.append(statusEl, cancelBtn);
+		return header;
+	},
+
+	buildProgressBar() {
+		const wrap = document.createElement("div");
+		wrap.className = "mb-3";
+		const progress = document.createElement("progress");
+		progress.id = "upload-overall-progress";
+		progress.className = "w-100 mb-1";
+		progress.value = 0;
+		progress.max = 100;
+		const info = document.createElement("div");
+		info.className = "d-flex justify-content-between";
+		const bytes = document.createElement("small");
+		bytes.id = "upload-progress-bytes";
+		bytes.className = "text-muted";
+		const percent = document.createElement("small");
+		percent.id = "upload-progress-percent";
+		percent.textContent = "0%";
+		info.append(bytes, percent);
+		wrap.append(progress, info);
+		return wrap;
+	},
+
 	formatBytes(b) {
 		if (b < 1024) return `${b} B`;
 		if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
@@ -25,159 +91,128 @@ window.UploadUI = {
 		return `${(b / 1073741824).toFixed(2)} GB`;
 	},
 
-	buildFileProgressCard(fileName, fileSizeText) {
-		const div = document.createElement("div");
-		div.className = "card mb-3";
-
-		const cardBody = document.createElement("div");
-		cardBody.className = "card-body";
-
-		const headerRow = document.createElement("div");
-		headerRow.className =
-			"d-flex justify-content-between align-items-start mb-2";
-
-		const fileInfoDiv = document.createElement("div");
-		const fileNameEl = document.createElement("strong");
-		fileNameEl.className = "file-name";
-		fileNameEl.textContent = fileName;
-		const fileSize = document.createElement("small");
-		fileSize.className = "text-muted ms-2";
-		fileSize.textContent = `(${fileSizeText})`;
-		fileInfoDiv.append(fileNameEl, fileSize);
-
-		const cancelBtn = document.createElement("button");
-		cancelBtn.type = "button";
-		cancelBtn.className = "btn btn-sm btn-outline-secondary cancel-btn";
-		cancelBtn.textContent = "Cancel";
-		headerRow.append(fileInfoDiv, cancelBtn);
-
-		const progress = document.createElement("progress");
-		progress.className = "w-100 mb-1";
-		progress.value = 0;
-		progress.max = 100;
-
-		const statusRow = document.createElement("div");
-		statusRow.className = "d-flex justify-content-between";
-		const uploadStatus = document.createElement("small");
-		uploadStatus.className = "upload-status text-muted";
-		uploadStatus.textContent = "Preparing...";
-		const uploadPercent = document.createElement("small");
-		uploadPercent.className = "upload-percent";
-		uploadPercent.textContent = "0%";
-		statusRow.append(uploadStatus, uploadPercent);
-
-		cardBody.append(headerRow, progress, statusRow);
-		div.append(cardBody);
-		return div;
-	},
-
-	createFileProgressUI(file, index, activeUploads) {
-		const div = this.buildFileProgressCard(
-			file.name,
-			this.formatBytes(file.size),
-		);
-		div.id = `upload-file-${index}`;
-		div.querySelector(".cancel-btn").addEventListener("click", () => {
-			const xhr = activeUploads.get(index);
-			if (xhr) xhr.abort();
-		});
-		return div;
-	},
-
-	markUploadDone(ui, success, msg) {
-		const statusEl = ui.querySelector(".upload-status");
-		statusEl.textContent = msg;
-		statusEl.className = `upload-status text-${success ? "success" : "danger"}`;
-		const border = success ? "border-success" : "border-danger";
-		ui.querySelector(".card-body").classList.add(
-			"border-start",
-			border,
-			"border-3",
-		);
-		if (success) {
-			ui.querySelector("progress").value = 100;
-			ui.querySelector(".upload-percent").textContent = "100%";
+	showAmbiguousError() {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) statusEl.textContent = "Upload failed";
+		const cancelBtn = document.getElementById("upload-cancel-btn");
+		if (cancelBtn) cancelBtn.classList.add("d-none");
+		const msgArea = document.getElementById("upload-message-area");
+		if (msgArea) {
+			msgArea.innerHTML = "";
+			const alert = document.createElement("div");
+			alert.className = "alert alert-warning mt-3";
+			alert.textContent =
+				"Your files may already have been uploaded. Check compose before retrying.";
+			msgArea.append(alert);
 		}
-		ui.querySelector(".cancel-btn").classList.add("d-none");
 	},
 
-	resetUploadUI(ui) {
-		ui.querySelector(".card-body").classList.remove(
-			"border-start",
-			"border-danger",
-			"border-3",
-		);
-		const statusEl = ui.querySelector(".upload-status");
-		statusEl.textContent = "Preparing...";
-		statusEl.className = "upload-status text-muted";
-		ui.querySelector("progress").value = 0;
-		ui.querySelector(".upload-percent").textContent = "0%";
-		ui.querySelector(".cancel-btn").classList.remove("d-none");
+	showCancelled() {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) statusEl.textContent = "Upload cancelled";
+		const cancelBtn = document.getElementById("upload-cancel-btn");
+		if (cancelBtn) cancelBtn.classList.add("d-none");
 	},
 
-	showAllFailedSummary(container) {
-		const summary = document.createElement("div");
-		summary.className = "alert alert-danger mt-3";
-		summary.innerHTML = `<strong>All uploads failed.</strong>
-			<button type="button" class="btn btn-outline-primary ms-3" id="retry-all-btn">Try again</button>`;
-		container.append(summary);
-		document
-			.getElementById("retry-all-btn")
-			.addEventListener("click", () => location.reload());
-	},
-
-	showPartialSuccessSummary(container, completedCount, totalFiles, onFinalise) {
-		const summary = document.createElement("div");
-		summary.className = "alert alert-warning mt-3";
-		summary.id = "upload-summary";
-		const totalWord = totalFiles === 1 ? "file" : "files";
-		const stagedWord = completedCount === 1 ? "file" : "files";
-		summary.innerHTML = `<strong>${completedCount} of ${totalFiles} ${totalWord} staged.</strong>
-			<span class="ms-2">You can finalise with the staged files or retry failed uploads.</span>
-			<button type="button" class="btn btn-primary ms-3" id="finalise-btn">Finalise ${completedCount} ${stagedWord}</button>`;
-		container.append(summary);
-		document
-			.getElementById("finalise-btn")
-			.addEventListener("click", onFinalise);
-	},
-
-	doFinalise(container, finaliseUrl, csrfToken) {
-		const existingSummary = document.getElementById("upload-summary");
-		if (existingSummary) existingSummary.remove();
-		const summary = document.createElement("div");
-		summary.className = "alert alert-info mt-3";
-		summary.innerHTML = `<strong>Finalising upload...</strong>`;
-		container.append(summary);
-		const form = document.createElement("form");
-		form.method = "POST";
-		form.action = finaliseUrl;
-		form.style.display = "none";
-		const csrfInput = document.createElement("input");
-		csrfInput.type = "hidden";
-		csrfInput.name = "csrf_token";
-		csrfInput.value = csrfToken;
-		form.append(csrfInput);
-		document.body.append(form);
-		form.submit();
-	},
-
-	handleUploadProgress(e, progressBar, statusEl, percentEl, cancelBtn) {
-		if (e.lengthComputable) {
-			const pct = Math.round((e.loaded / e.total) * 100);
-			progressBar.value = pct;
-			delete progressBar.dataset.indeterminate;
-			percentEl.textContent = `${pct}%`;
-			if (pct >= 100) {
-				statusEl.textContent = "Processing...";
-				cancelBtn.classList.add("d-none");
-			} else {
-				statusEl.textContent = `${this.formatBytes(e.loaded)} / ${this.formatBytes(e.total)}`;
+	showError(message, onRetry) {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) statusEl.textContent = "Upload failed";
+		const cancelBtn = document.getElementById("upload-cancel-btn");
+		if (cancelBtn) cancelBtn.classList.add("d-none");
+		const msgArea = document.getElementById("upload-message-area");
+		if (msgArea) {
+			msgArea.innerHTML = "";
+			const alert = document.createElement("div");
+			alert.className = "alert alert-danger mt-3";
+			const msgEl = document.createElement("span");
+			msgEl.textContent = message;
+			alert.append(msgEl);
+			if (onRetry) {
+				const retryBtn = document.createElement("button");
+				retryBtn.type = "button";
+				retryBtn.className = "btn btn-outline-primary ms-3";
+				retryBtn.textContent = "Try again";
+				retryBtn.addEventListener("click", onRetry);
+				alert.append(retryBtn);
 			}
-		} else {
-			progressBar.removeAttribute("value");
-			progressBar.dataset.indeterminate = "true";
-			percentEl.textContent = "";
-			statusEl.textContent = `${this.formatBytes(e.loaded)} uploaded`;
+			msgArea.append(alert);
+		}
+	},
+
+	showProcessing() {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) statusEl.textContent = "Processing revision";
+		const cancelBtn = document.getElementById("upload-cancel-btn");
+		if (cancelBtn) cancelBtn.classList.add("d-none");
+		document
+			.querySelectorAll("#upload-file-list .upload-file-status")
+			.forEach((el) => {
+				el.textContent = "Done";
+				el.className = "upload-file-status text-success";
+			});
+	},
+
+	showSuccess(message) {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) statusEl.textContent = "Upload complete";
+		const cancelBtn = document.getElementById("upload-cancel-btn");
+		if (cancelBtn) cancelBtn.classList.add("d-none");
+		const progressBar = document.getElementById("upload-overall-progress");
+		if (progressBar) progressBar.value = 100;
+		const percentEl = document.getElementById("upload-progress-percent");
+		if (percentEl) percentEl.textContent = "100%";
+		const msgArea = document.getElementById("upload-message-area");
+		if (msgArea) {
+			const alert = document.createElement("div");
+			alert.className = "alert alert-success mt-3";
+			alert.textContent = message;
+			msgArea.append(alert);
+		}
+	},
+
+	showUploading(fileCount) {
+		const statusEl = document.getElementById("upload-batch-status");
+		if (statusEl) {
+			const word = fileCount === 1 ? "file" : "files";
+			statusEl.textContent = `Uploading ${fileCount} ${word}`;
+		}
+	},
+
+	updateProgress(loaded, total, cumulative, totalFileBytes) {
+		let pct = 0;
+		if (total > 0) {
+			pct = loaded >= total ? 100 : Math.floor((loaded / total) * 100);
+		}
+		const progressBar = document.getElementById("upload-overall-progress");
+		const percentEl = document.getElementById("upload-progress-percent");
+		const bytesEl = document.getElementById("upload-progress-bytes");
+
+		if (progressBar) progressBar.value = pct;
+		if (percentEl) percentEl.textContent = `${pct}%`;
+		if (bytesEl) {
+			bytesEl.textContent = `${this.formatBytes(loaded)} / ${this.formatBytes(total)}`;
+		}
+
+		if (totalFileBytes > 0) {
+			const scaled = loaded * (totalFileBytes / total);
+			document
+				.querySelectorAll("#upload-file-list [data-file-index]")
+				.forEach((row, i) => {
+					const start = i > 0 ? cumulative[i - 1] : 0;
+					const end = cumulative[i];
+					const statusSpan = row.querySelector(".upload-file-status");
+					if (!statusSpan) return;
+					if (scaled >= end) {
+						statusSpan.textContent = "Done";
+						statusSpan.className = "upload-file-status text-success";
+					} else if (scaled > start) {
+						statusSpan.textContent = "Sending";
+						statusSpan.className = "upload-file-status text-primary";
+					} else {
+						statusSpan.textContent = "Pending";
+						statusSpan.className = "upload-file-status text-muted";
+					}
+				});
 		}
 	},
 };
