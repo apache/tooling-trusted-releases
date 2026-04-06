@@ -135,14 +135,15 @@ async def selected(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     upload_form: shared.upload.UploadForm,
-) -> web.WerkzeugResponse:
+) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
     URL: /upload/<project_key>/<version_key>
     """
+    wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
 
     match upload_form:
         case shared.upload.AddFilesForm() as add_form:
-            return await _add_files(session, add_form, project_key, version_key)
+            return await _add_files(session, add_form, project_key, version_key, wants_json=wants_json)
 
         case shared.upload.SvnImportForm() as svn_form:
             return await _svn_import(session, svn_form, project_key, version_key)
@@ -202,7 +203,9 @@ async def _add_files(
     add_form: shared.upload.AddFilesForm,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-) -> web.WerkzeugResponse:
+    *,
+    wants_json: bool,
+) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
         file_data = add_form.file_data
 
@@ -213,6 +216,8 @@ async def _add_files(
             )
 
         if creation_error is not None:
+            if wants_json:
+                return quart.jsonify(ok=False, message=creation_error), 400
             await quart.flash(creation_error, "error")
             return await session.redirect(
                 get.upload.selected,
@@ -220,7 +225,19 @@ async def _add_files(
                 version_key=version_key,
             )
 
+        next_url = util.as_url(
+            get.compose.selected,
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+
         if was_quarantined:
+            if wants_json:
+                return quart.jsonify(
+                    ok=True,
+                    message="Upload received. Archive validation in progress.",
+                    next_url=next_url,
+                ), 202
             return await session.redirect(
                 get.compose.selected,
                 success="Upload received. Archive validation in progress.",
@@ -228,6 +245,12 @@ async def _add_files(
                 version_key=version_key,
             )
 
+        if wants_json:
+            return quart.jsonify(
+                ok=True,
+                message=f"{util.plural(number_of_files, 'file')} added successfully",
+                next_url=next_url,
+            ), 200
         return await session.redirect(
             get.compose.selected,
             success=f"{util.plural(number_of_files, 'file')} added successfully",
@@ -236,6 +259,8 @@ async def _add_files(
         )
     except Exception as e:
         log.exception("Error adding file:")
+        if wants_json:
+            return quart.jsonify(ok=False, message=f"Error adding file: {e!s}"), 500
         await quart.flash(f"Error adding file: {e!s}", "error")
         return await session.redirect(
             get.upload.selected,
