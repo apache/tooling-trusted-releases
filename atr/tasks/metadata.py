@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import datetime
-
 import aiohttp
 import pydantic
 
@@ -51,13 +49,7 @@ async def update(args: Update) -> results.Results | None:
             f"Metadata update completed successfully: added {added_count}, updated {updated_count}",
         )
 
-        # Schedule next update
-        if args.next_schedule_seconds and (args.next_schedule_seconds > 0):
-            next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=args.next_schedule_seconds)
-            await tasks.metadata_update(args.asf_uid, schedule=next_schedule, schedule_next=True)
-            log.info(
-                f"Scheduled next metadata update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
-            )
+        await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.metadata_update)
 
         return results.MetadataUpdate(
             kind="metadata_update",

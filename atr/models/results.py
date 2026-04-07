@@ -235,6 +235,12 @@ class VoteInitiate(schema.Strict):
     mail_send_warnings: list[str] = schema.description("Warnings from the mail server")
 
 
+class Maintenance(schema.Strict):
+    """Result of the task to run scheduled maintenance."""
+
+    kind: Literal["maintenance"] = schema.Field(alias="kind")
+
+
 class MetadataUpdate(schema.Strict):
     """Result of the task to update metadata from Whimsy."""
 
@@ -248,6 +254,7 @@ Results = Annotated[
     | DistributionWorkflow
     | DistributionWorkflowStatus
     | HashingCheck
+    | Maintenance
     | MessageSend
     | MetadataUpdate
     | SBOMAugment

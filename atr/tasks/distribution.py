@@ -14,8 +14,6 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import datetime
-
 import pydantic
 
 import atr.db as db
@@ -70,12 +68,7 @@ async def status_check(args: DistributionStatusCheckArgs, *, task_id: int | None
         except (distribution.DistributionError, storage.AccessError) as e:
             msg = f"Failed to record distribution: {e}"
             log.error(msg)
-    if args.next_schedule_seconds:
-        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=args.next_schedule_seconds)
-        await tasks.distribution_status_check(args.asf_uid, schedule=next_schedule, schedule_next=True)
-        log.info(
-            f"Scheduled next workflow status update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
-        )
+    await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.distribution_status_check)
     return results.DistributionStatusCheck(
         kind="distribution_status",
     )

@@ -27,6 +27,7 @@ import sqlmodel
 import atr.attestable as attestable
 import atr.db as db
 import atr.hashes as hashes
+import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -43,6 +44,7 @@ import atr.tasks.checks.zipformat as zipformat
 import atr.tasks.distribution as distribution
 import atr.tasks.gha as gha
 import atr.tasks.keys as keys
+import atr.tasks.maintenance as maintenance
 import atr.tasks.message as message
 import atr.tasks.metadata as metadata
 import atr.tasks.quarantine as quarantine
@@ -50,6 +52,9 @@ import atr.tasks.sbom as sbom
 import atr.tasks.svn as svn
 import atr.tasks.vote as vote
 import atr.util as util
+
+_EVERY_2_MINUTES = 60 * 2
+_DAILY = 60 * 60 * 24
 
 
 async def asc_checks(
@@ -112,7 +117,7 @@ async def distribution_status_check(
     """Queue a workflow status update task."""
     args = distribution.DistributionStatusCheckArgs(next_schedule_seconds=0, asf_uid=asf_uid)
     if schedule_next:
-        args.next_schedule_seconds = 2 * 60
+        args.next_schedule_seconds = _EVERY_2_MINUTES
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
@@ -231,6 +236,35 @@ async def keys_import_file(
         await data.commit()
 
 
+async def run_maintenance(
+    asf_uid: str,
+    caller_data: db.Session | None = None,
+    schedule: datetime.datetime | None = None,
+    schedule_next: bool = False,
+) -> sql.Task:
+    """Queue a maintenance task."""
+    args = maintenance.MaintenanceArgs(asf_uid=asf_uid, next_schedule_seconds=0)
+    if schedule_next:
+        args.next_schedule_seconds = _DAILY
+    async with db.ensure_session(caller_data) as data:
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.MAINTENANCE,
+            task_args=args.model_dump(),
+            asf_uid=asf_uid,
+            revision_number=None,
+            primary_rel_path=None,
+            project_key=None,
+            version_key=None,
+        )
+        if schedule:
+            task.scheduled = schedule
+        data.add(task)
+        await data.commit()
+        await data.flush()
+        return task
+
+
 async def metadata_update(
     asf_uid: str,
     caller_data: db.Session | None = None,
@@ -240,7 +274,7 @@ async def metadata_update(
     """Queue a metadata update task."""
     args = metadata.Update(asf_uid=asf_uid, next_schedule_seconds=0)
     if schedule_next:
-        args.next_schedule_seconds = 60 * 60 * 24
+        args.next_schedule_seconds = _DAILY
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
@@ -310,6 +344,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return license.files
         case sql.TaskType.LICENSE_HEADERS:
             return license.headers
+        case sql.TaskType.MAINTENANCE:
+            return maintenance.run
         case sql.TaskType.MESSAGE_SEND:
             return message.send
         case sql.TaskType.METADATA_UPDATE:
@@ -378,6 +414,14 @@ async def sha_checks(
     )
 
     return await asyncio.gather(*tasks)
+
+
+async def schedule_next(asf_uid: str, seconds: int, task: Callable[..., Awaitable[sql.Task]]) -> None:
+    """Schedule the next run of a recurring task."""
+    if seconds > 0:
+        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=seconds)
+        await task(asf_uid, schedule=next_schedule, schedule_next=True)
+        log.info(f"Scheduled next run for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 async def tar_gz_checks(
@@ -459,7 +503,7 @@ async def workflow_update(
     """Queue a workflow status update task."""
     args = gha.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0, asf_uid=asf_uid)
     if schedule_next:
-        args.next_schedule_seconds = 2 * 60
+        args.next_schedule_seconds = _EVERY_2_MINUTES
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,

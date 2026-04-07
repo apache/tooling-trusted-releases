@@ -208,6 +208,7 @@ class TaskType(enum.StrEnum):
     KEYS_IMPORT_FILE = "keys_import_file"
     LICENSE_FILES = "license_files"
     LICENSE_HEADERS = "license_headers"
+    MAINTENANCE = "maintenance"
     MESSAGE_SEND = "message_send"
     METADATA_UPDATE = "metadata_update"
     PATHS_CHECK = "paths_check"

@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 import asyncio
-import datetime
 import json
 import uuid
 from collections.abc import Callable
@@ -125,8 +124,7 @@ async def status_check(args: WorkflowStatusCheck) -> results.DistributionWorkflo
             f"Workflow status update completed: updated {updated_count} workflow(s)",
         )
 
-        # Schedule next update
-        await _schedule_next(args)
+        await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.workflow_update)
 
         return results.DistributionWorkflowStatus(
             kind="distribution_workflow_status",
@@ -247,15 +245,6 @@ async def _request_and_retry(
                 log.error(f"Failure calling Github: {e.message} ({e.status}, attempt {_attempt + 1})")
                 await asyncio.sleep(0.1)
     return None
-
-
-async def _schedule_next(args: WorkflowStatusCheck) -> None:
-    if args.next_schedule_seconds:
-        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=args.next_schedule_seconds)
-        await tasks.workflow_update(args.asf_uid, schedule=next_schedule, schedule_next=True)
-        log.info(
-            f"Scheduled next workflow status update for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}",
-        )
 
 
 #

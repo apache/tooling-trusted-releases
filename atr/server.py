@@ -622,9 +622,6 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _app_setup_security_headers(app)
     _app_setup_request_lifecycle(app)
     _app_setup_lifecycle(app, app_config)
-
-    # _register_recurrent_tasks()
-
     # do not enable template pre-loading if we explicitly want to reload templates
     if not app_config.TEMPLATES_AUTO_RELOAD:
         preload.setup_template_preloading(app)
@@ -908,10 +905,14 @@ def _pending_migrations(state_dir: pathlib.Path) -> set[tuple[str, str]]:
 
 async def _register_recurrent_tasks() -> None:
     """Schedule recurring tasks"""
-    # Start scheduled tasks 5 min after server start
+    await tasks.clear_scheduled()
+    # Run maintenance task immediately on server startup
+    maintenance = await tasks.run_maintenance(asf_uid="system", schedule_next=True)
+    log.info(f"Scheduled maintenance with ID {maintenance.id}")
+    # Start other tasks 5 min after server start
     await asyncio.sleep(300)
     try:
-        await tasks.clear_scheduled()
+        await asyncio.sleep(60)
         metadata = await tasks.metadata_update(asf_uid="system", schedule_next=True)
         log.info(f"Scheduled remote metadata update with ID {metadata.id}")
         await asyncio.sleep(60)
