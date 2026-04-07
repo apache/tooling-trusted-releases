@@ -128,7 +128,7 @@ On success, the response contains a JWT:
 JWTs have the following properties:
 
 * **Algorithm**: HS256 (HMAC-SHA256)
-* **Validity**: 90 minutes from creation
+* **Validity**: 30 minutes from creation
 * **Claims**: `sub` (ASF UID), `iat` (issued at), `exp` (expiration), `jti` (unique token ID)
 * **Storage**: JWTs are stateless; ATR does not store issued JWTs
 
@@ -193,7 +193,7 @@ ASF OAuth (web login)
     │
     └──▶ PAT Creation ──▶ PAT (180 days)
                               │
-                              └──▶ JWT Exchange ──▶ JWT (90 min)
+                              └──▶ JWT Exchange ──▶ JWT (30 min)
                                                        │
                                                        └──▶ API Access
 ```
@@ -217,7 +217,7 @@ For web users, authentication happens once via ASF OAuth, and the session persis
 
 ### JSON Web Tokens
 
-* Short validity (90 minutes) limits exposure window
+* Short validity (30 minutes) limits exposure window
 * Signed with a server secret initialized at startup
 * Stateless design means no database lookup required for verification
 
