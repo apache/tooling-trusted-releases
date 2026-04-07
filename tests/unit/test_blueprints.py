@@ -114,6 +114,33 @@ def test_build_api_path_optional_param():
     assert optional == ["_category"]
 
 
+def test_build_api_path_optional_safe_type_included_in_validated():
+    async def route(
+        _session: web.Committer,
+        _page: Literal["project"],
+        _project_key: safe.ProjectKey | None = None,
+    ) -> str:
+        return ""
+
+    path, validated, _, _, _, _, optional = common.build_api_path(route)
+    assert path == "/project/<_project_key>"
+    assert optional == ["_project_key"]
+    assert ("_project_key", safe.ProjectKey) in validated
+
+
+def test_build_api_path_optional_non_safe_type_not_in_validated():
+    async def route(
+        _session: web.Committer,
+        _page: Literal["items"],
+        _category: str | None = None,
+    ) -> str:
+        return ""
+
+    _, validated, _, _, _, _, optional = common.build_api_path(route)
+    assert optional == ["_category"]
+    assert all(name != "_category" for name, _ in validated)
+
+
 def test_build_api_path_query_param():
     @dataclasses.dataclass
     class Filters:
@@ -300,3 +327,26 @@ def test_setup_wrapper_sets_metadata():
     assert wrapper.__name__ == "index"
     assert wrapper.__doc__ == "Doc string."
     assert wrapper.__annotations__["endpoint"] == "get_blueprint.atr_get_dashboard_index"
+
+
+@pytest.mark.asyncio
+async def test_validate_params_skips_absent_optional():
+    kwargs: dict = {}
+    await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
+    assert "project_key" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_validate_params_validates_present_optional():
+    kwargs: dict = {"project_key": "myproject"}
+    await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
+    assert isinstance(kwargs["project_key"], safe.ProjectKey)
+
+
+@pytest.mark.asyncio
+async def test_validate_params_raises_on_invalid_optional():
+    import asfquart.base as base
+
+    kwargs: dict = {"project_key": "INVALID KEY WITH SPACES"}
+    with pytest.raises(base.ASFQuartException):
+        await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])

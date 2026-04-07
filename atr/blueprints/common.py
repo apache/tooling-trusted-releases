@@ -167,7 +167,8 @@ def build_api_path(
         if is_optional:
             segments.append(_param_to_segment(param_name, inner, func.__name__))
             optional_params.append(param_name)
-            # Note - this means that safe types which are optional will not get validated - no current use case for this
+            if inner in VALIDATED_TYPES:
+                validated_params.append((param_name, inner))
             continue
 
         _classify_url_param(param_name, hint, func.__name__, segments, validated_params, literal_params)
@@ -202,7 +203,9 @@ def safe_params_for_type(cls: type) -> list[tuple[str, type]]:
 async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, type]]) -> None:
     """Validate URL parameters in order, using the type-specific validators."""
     for param_name, param_type in known_params:
-        raw = kwargs[param_name]
+        raw = kwargs.get(param_name)
+        if raw is None:
+            continue
         if param_type is unsafe.UnsafeStr:
             kwargs[param_name] = unsafe.UnsafeStr(raw)
         elif issubclass(param_type, safe.SafeType):
