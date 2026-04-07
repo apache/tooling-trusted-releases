@@ -29,12 +29,12 @@ import sqlmodel
 import atr.construct as construct
 import atr.db as db
 import atr.mail as mail
+import atr.models.args as args
 import atr.models.basic as basic
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.tasks.message as message
 import atr.util as util
 
 
@@ -233,7 +233,7 @@ class CommitteeMember(CommitteeParticipant):
             task = sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.MESSAGE_SEND,
-                task_args=message.Send(
+                task_args=args.Send(
                     email_sender=f"{asf_uid}@apache.org",
                     email_to=email_to,
                     subject=subject,

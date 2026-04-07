@@ -71,3 +71,8 @@ class TaskType(str, enum.Enum):
     LICENSE_FILES = "license_files"
     LICENSE_HEADERS = "license_headers"
 ```
+
+### Task arguments
+
+The arguments to a task should be defined in a class, which should reside in `atr/models/args.py`. This allows them to be imported
+from elsewhere in the system without importing the whole task module.

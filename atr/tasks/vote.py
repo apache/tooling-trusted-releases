@@ -17,43 +17,27 @@
 
 import datetime
 
-import pydantic
-
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
 import atr.mail as mail
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.schema as schema
 import atr.storage as storage
 import atr.tasks.checks as checks
 import atr.util as util
-
-
-class Initiate(schema.Strict):
-    """Arguments for the task to start a vote."""
-
-    release_key: str = schema.description("The name of the release to vote on")
-    email_to: pydantic.EmailStr = schema.description("The mailing list To address")
-    vote_duration: int = schema.description("Duration of the vote in hours")
-    initiator_id: str = schema.description("ASF ID of the vote initiator")
-    initiator_fullname: str = schema.description("Full name of the vote initiator")
-    subject: str = schema.description("Subject line for the vote email")
-    body: str = schema.description("Body content for the vote email")
-    email_cc: list[pydantic.EmailStr] = schema.factory(list)
-    email_bcc: list[pydantic.EmailStr] = schema.factory(list)
 
 
 class VoteInitiationError(Exception):
     pass
 
 
-@checks.with_model(Initiate)
-async def initiate(args: Initiate) -> results.Results | None:
+@checks.with_model(args.Initiate)
+async def initiate(task_args: args.Initiate) -> results.Results | None:
     """Initiate a vote for a release."""
     try:
-        return await _initiate_core_logic(args)
+        return await _initiate_core_logic(task_args)
 
     except VoteInitiationError as e:
         log.error(f"Vote initiation failed: {e}")
@@ -63,34 +47,36 @@ async def initiate(args: Initiate) -> results.Results | None:
         raise
 
 
-async def _initiate_core_logic(args: Initiate) -> results.Results | None:
+async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | None:
     """Get arguments, create an email, and then send it to the recipient."""
     log.info("Starting initiate_core")
-    safe.ReleaseKey(args.release_key)
+    safe.ReleaseKey(task_args.release_key)
 
     # Validate arguments
-    all_addrs = [args.email_to, *args.email_cc, *args.email_bcc]
+    all_addrs = [task_args.email_to, *task_args.email_cc, *task_args.email_bcc]
     for addr in all_addrs:
         if not (addr.endswith("@apache.org") or addr.endswith(".apache.org")):
             log.error(f"Invalid destination email address: {addr}")
             raise VoteInitiationError(f"Invalid destination email address: {addr}")
 
     async with db.session() as data:
-        release = await data.release(key=args.release_key, _project=True, _committee=True).demand(
-            VoteInitiationError(f"Release {args.release_key!s} not found")
+        release = await data.release(key=task_args.release_key, _project=True, _committee=True).demand(
+            VoteInitiationError(f"Release {task_args.release_key!s} not found")
         )
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
-            raise VoteInitiationError(f"No revisions found for release {args.release_key!s}")
+            raise VoteInitiationError(f"No revisions found for release {task_args.release_key!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
             release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
         )
         if ongoing_tasks > 0:
-            raise VoteInitiationError(f"Cannot start vote for {args.release_key!s} as {ongoing_tasks} are not complete")
+            raise VoteInitiationError(
+                f"Cannot start vote for {task_args.release_key!s} as {ongoing_tasks} are not complete"
+            )
 
     # Calculate vote end date
-    vote_duration_hours = args.vote_duration
+    vote_duration_hours = task_args.vote_duration
     vote_start = datetime.datetime.now(datetime.UTC)
     vote_end = vote_start + datetime.timedelta(hours=vote_duration_hours)
 
@@ -112,36 +98,36 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
         raise VoteInitiationError(error_msg)
 
     # The subject and body have already been substituted by the route handler
-    subject = args.subject
-    body = args.body
+    subject = task_args.subject
+    body = task_args.body
 
-    permitted_recipients = util.permitted_voting_recipients(args.initiator_id, release.committee.key)
+    permitted_recipients = util.permitted_voting_recipients(task_args.initiator_id, release.committee.key)
     for addr in all_addrs:
         if addr not in permitted_recipients:
             log.error(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
             raise VoteInitiationError("Invalid mailing list choice")
 
     # Create mail message
-    log.info(f"Creating mail message for {args.email_to}")
+    log.info(f"Creating mail message for {task_args.email_to}")
     message = mail.Message(
-        email_sender=f"{args.initiator_id}@apache.org",
-        email_to=args.email_to,
+        email_sender=f"{task_args.initiator_id}@apache.org",
+        email_to=task_args.email_to,
         subject=subject,
         body=body,
-        email_cc=args.email_cc,
-        email_bcc=args.email_bcc,
+        email_cc=task_args.email_cc,
+        email_bcc=task_args.email_bcc,
     )
 
-    async with storage.write(args.initiator_id) as write:
+    async with storage.write(task_args.initiator_id) as write:
         wafc = write.as_foundation_committer()
         mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.USER)
 
     # Original success message structure
-    all_destinations = [args.email_to, *args.email_cc, *args.email_bcc]
+    all_destinations = [task_args.email_to, *task_args.email_cc, *task_args.email_bcc]
     result = results.VoteInitiate(
         kind="vote_initiate",
         message="Vote announcement email sent successfully",
-        email_to=args.email_to,
+        email_to=task_args.email_to,
         vote_end=vote_end_str,
         subject=subject,
         mid=mid,
@@ -149,7 +135,7 @@ async def _initiate_core_logic(args: Initiate) -> results.Results | None:
     )
 
     if mail_errors:
-        log.warning(f"Start vote for {args.release_key}: sending to {all_destinations} gave errors: {mail_errors}")
+        log.warning(f"Start vote for {task_args.release_key}: sending to {all_destinations} gave errors: {mail_errors}")
     else:
         log.info(f"Vote email sent successfully to {all_destinations}")
     return result

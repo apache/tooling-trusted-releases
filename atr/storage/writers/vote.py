@@ -28,12 +28,11 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
 import atr.mail as mail
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.tasks.message as message
-import atr.tasks.vote as tasks_vote
 import atr.util as util
 
 
@@ -122,7 +121,7 @@ class CommitteeParticipant(FoundationCommitter):
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.MESSAGE_SEND,
-            task_args=message.Send(
+            task_args=args.Send(
                 email_sender=email_sender,
                 email_to=email_to,
                 subject=subject,
@@ -199,7 +198,7 @@ class CommitteeParticipant(FoundationCommitter):
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.VOTE_INITIATE,
-            task_args=tasks_vote.Initiate(
+            task_args=args.Initiate(
                 release_key=release.key,
                 email_to=email_to,
                 vote_duration=vote_duration_choice,
@@ -527,7 +526,7 @@ class CommitteeMember(CommitteeParticipant):
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.MESSAGE_SEND,
-            task_args=message.Send(
+            task_args=args.Send(
                 email_sender=email_sender,
                 email_to=email_to,
                 subject=subject,
@@ -546,7 +545,7 @@ class CommitteeMember(CommitteeParticipant):
             task = sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.MESSAGE_SEND,
-                task_args=message.Send(
+                task_args=args.Send(
                     email_sender=email_sender,
                     email_to=extra_destination[0],
                     subject=subject,

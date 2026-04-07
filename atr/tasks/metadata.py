@@ -16,31 +16,23 @@
 # under the License.
 
 import aiohttp
-import pydantic
 
 import atr.datasources.apache as apache
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
-import atr.models.schema as schema
 import atr.tasks as tasks
 import atr.tasks.checks as checks
-
-
-class Update(schema.Strict):
-    """Arguments for the task to update metadata from remote data sources."""
-
-    asf_uid: str = schema.description("The ASF UID of the user triggering the update")
-    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
 
 
 class UpdateError(Exception):
     pass
 
 
-@checks.with_model(Update)
-async def update(args: Update) -> results.Results | None:
+@checks.with_model(args.Update)
+async def update(task_args: args.Update) -> results.Results | None:
     """Update metadata from remote data sources."""
-    log.info(f"Starting metadata update for user {args.asf_uid}")
+    log.info(f"Starting metadata update for user {task_args.asf_uid}")
 
     try:
         added_count, updated_count = await apache.update_metadata()
@@ -49,7 +41,7 @@ async def update(args: Update) -> results.Results | None:
             f"Metadata update completed successfully: added {added_count}, updated {updated_count}",
         )
 
-        await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.metadata_update)
+        await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.metadata_update)
 
         return results.MetadataUpdate(
             kind="metadata_update",

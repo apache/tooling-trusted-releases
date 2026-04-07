@@ -21,14 +21,13 @@ from collections.abc import Callable
 from typing import Any, Final, NoReturn
 
 import aiohttp
-import pydantic
 
 import atr.config as config
 import atr.db as db
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks as tasks
@@ -42,31 +41,8 @@ _FAILED_STATUSES: Final[list[str]] = ["failure", "startup_failure"]
 _TIMEOUT_S = 60
 
 
-class DistributionWorkflow(schema.Strict):
-    """Arguments for the task to start a Github Actions workflow."""
-
-    namespace: str = schema.description("Namespace to distribute to")
-    package: str = schema.description("Package to distribute")
-    version: str = schema.description("Version to distribute")
-    staging: bool = schema.description("Whether this is a staging distribution")
-    project_key: str = schema.description("Project name in ATR")
-    version_key: str = schema.description("Version name in ATR")
-    phase: str = schema.description("Release phase in ATR")
-    asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
-    committee_key: str = schema.description("Committee name in ATR")
-    platform: str = schema.description("Distribution platform")
-    arguments: dict[str, str] = schema.description("Workflow arguments")
-    name: str = schema.description("Name of the run")
-
-
-class WorkflowStatusCheck(schema.Strict):
-    run_id: int | None = schema.description("Run ID")
-    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
-    asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
-
-
-@checks.with_model(WorkflowStatusCheck)
-async def status_check(args: WorkflowStatusCheck) -> results.DistributionWorkflowStatus:
+@checks.with_model(args.WorkflowStatusCheck)
+async def status_check(task_args: args.WorkflowStatusCheck) -> results.DistributionWorkflowStatus:
     """Check remote workflow statuses."""
 
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
@@ -124,7 +100,7 @@ async def status_check(args: WorkflowStatusCheck) -> results.DistributionWorkflo
             f"Workflow status update completed: updated {updated_count} workflow(s)",
         )
 
-        await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.workflow_update)
+        await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.workflow_update)
 
         return results.DistributionWorkflowStatus(
             kind="distribution_workflow_status",
@@ -136,35 +112,37 @@ async def status_check(args: WorkflowStatusCheck) -> results.DistributionWorkflo
         _fail(f"Unexpected error during workflow status update: {e!s}")
 
 
-@checks.with_model(DistributionWorkflow)
-async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = None) -> results.Results | None:
-    unique_id = f"atr-dist-{args.name}-{uuid.uuid4()}"
-    project = safe.ProjectKey(args.project_key)
-    safe.VersionKey(args.version_key)
+@checks.with_model(args.DistributionWorkflow)
+async def trigger_workflow(
+    task_args: args.DistributionWorkflow, *, task_id: int | None = None
+) -> results.Results | None:
+    unique_id = f"atr-dist-{task_args.name}-{uuid.uuid4()}"
+    project = safe.ProjectKey(task_args.project_key)
+    safe.VersionKey(task_args.version_key)
     try:
-        sql_platform = sql.DistributionPlatform[args.platform]
+        sql_platform = sql.DistributionPlatform[task_args.platform]
     except KeyError:
-        _fail(f"Invalid platform: {args.platform}")
-    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if args.staging else ''}.yml"
+        _fail(f"Invalid platform: {task_args.platform}")
+    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if task_args.staging else ''}.yml"
     payload = {
         "ref": "main",
         "inputs": {
             "atr-id": unique_id,
-            "asf-uid": args.asf_uid,
-            "project": args.project_key,
-            "phase": args.phase,
-            "version": args.version_key,
-            "distribution-owner-namespace": args.namespace,
-            "distribution-package": args.package,
-            "distribution-version": args.version,
-            # **args.arguments,
+            "asf-uid": task_args.asf_uid,
+            "project": task_args.project_key,
+            "phase": task_args.phase,
+            "version": task_args.version_key,
+            "distribution-owner-namespace": task_args.namespace,
+            "distribution-package": task_args.package,
+            "distribution-version": task_args.version,
+            # **task_args.arguments,
         },
     }
 
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
     log.info(
         f"Triggering Github workflow apache/tooling-actions/{workflow} with args: {
-            json.dumps(args.arguments, indent=2)
+            json.dumps(task_args.arguments, indent=2)
         }"
     )
     async with util.create_secure_session() as session:
@@ -182,13 +160,13 @@ async def trigger_workflow(args: DistributionWorkflow, *, task_id: int | None = 
 
         if run.get("status") in _FAILED_STATUSES:
             _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
-        async with storage.write_as_committee_member(args.committee_key, args.asf_uid) as w:
+        async with storage.write_as_committee_member(task_args.committee_key, task_args.asf_uid) as w:
             try:
                 await w.workflowstatus.add_workflow_status(workflow, run_id, project, task_id, status=run.get("status"))
             except storage.AccessError as e:
                 _fail(f"Failed to record distribution: {e}")
         return results.DistributionWorkflow(
-            kind="distribution_workflow", name=args.name, run_id=run_id, url=run.get("html_url", "")
+            kind="distribution_workflow", name=task_args.name, run_id=run_id, url=run.get("html_url", "")
         )
 
 

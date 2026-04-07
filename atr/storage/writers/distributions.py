@@ -23,10 +23,10 @@ import datetime
 import atr.db as db
 import atr.log as log
 import atr.models as models
+import atr.models.args as args
 import atr.shared.distribution as distribution
 import atr.storage as storage
 import atr.storage.outcome as outcome
-import atr.tasks.gha as gha
 import atr.util as util
 
 
@@ -108,7 +108,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> models.sql.Task:
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
-            task_args=gha.DistributionWorkflow(
+            task_args=args.DistributionWorkflow(
                 name=str(release_key),
                 namespace=str(owner_namespace) if owner_namespace else "",
                 package=str(package),

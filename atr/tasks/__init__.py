@@ -28,6 +28,7 @@ import atr.attestable as attestable
 import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -115,14 +116,14 @@ async def distribution_status_check(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a workflow status update task."""
-    args = distribution.DistributionStatusCheckArgs(next_schedule_seconds=0, asf_uid=asf_uid)
+    task_args = args.DistributionStatusCheckArgs(next_schedule_seconds=0, asf_uid=asf_uid)
     if schedule_next:
-        args.next_schedule_seconds = _EVERY_2_MINUTES
+        task_args.next_schedule_seconds = _EVERY_2_MINUTES
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.DISTRIBUTION_STATUS,
-            task_args=args.model_dump(),
+            task_args=task_args.model_dump(),
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
@@ -221,7 +222,7 @@ async def keys_import_file(
             sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.KEYS_IMPORT_FILE,
-                task_args=keys.ImportFile(
+                task_args=args.ImportFile(
                     asf_uid=asf_uid,
                     project_key=project_key,
                     version_key=version_key,
@@ -243,14 +244,14 @@ async def run_maintenance(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a maintenance task."""
-    args = maintenance.MaintenanceArgs(asf_uid=asf_uid, next_schedule_seconds=0)
+    task_args = args.MaintenanceArgs(asf_uid=asf_uid, next_schedule_seconds=0)
     if schedule_next:
-        args.next_schedule_seconds = _DAILY
+        task_args.next_schedule_seconds = _DAILY
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.MAINTENANCE,
-            task_args=args.model_dump(),
+            task_args=task_args.model_dump(),
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
@@ -272,14 +273,14 @@ async def metadata_update(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a metadata update task."""
-    args = metadata.Update(asf_uid=asf_uid, next_schedule_seconds=0)
+    task_args = args.Update(asf_uid=asf_uid, next_schedule_seconds=0)
     if schedule_next:
-        args.next_schedule_seconds = _DAILY
+        task_args.next_schedule_seconds = _DAILY
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.METADATA_UPDATE,
-            task_args=args.model_dump(),
+            task_args=task_args.model_dump(),
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,
@@ -501,14 +502,14 @@ async def workflow_update(
     schedule_next: bool = False,
 ) -> sql.Task:
     """Queue a workflow status update task."""
-    args = gha.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0, asf_uid=asf_uid)
+    task_args = args.WorkflowStatusCheck(next_schedule_seconds=0, run_id=0, asf_uid=asf_uid)
     if schedule_next:
-        args.next_schedule_seconds = _EVERY_2_MINUTES
+        task_args.next_schedule_seconds = _EVERY_2_MINUTES
     async with db.ensure_session(caller_data) as data:
         task = sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.WORKFLOW_STATUS,
-            task_args=args.model_dump(),
+            task_args=task_args.model_dump(),
             asf_uid=asf_uid,
             revision_number=None,
             primary_rel_path=None,

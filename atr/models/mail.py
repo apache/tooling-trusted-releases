@@ -15,19 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import atr.models.args as args
-import atr.models.results as results
-import atr.storage as storage
-import atr.tasks.checks as checks
+import enum
 
 
-@checks.with_model(args.ImportFile)
-async def import_file(task_args: args.ImportFile) -> results.Results | None:
-    """Import a KEYS file from a draft release candidate revision."""
-    async with storage.write(task_args.asf_uid) as write:
-        wacm = await write.as_project_committee_member(task_args.project_key)
-        outcomes = await wacm.keys.import_keys_file(task_args.project_key, task_args.version_key)
-        if outcomes.any_error:
-            # TODO: Log this? This code is unused anyway
-            pass
-    return None
+class MailFooterCategory(enum.StrEnum):
+    NONE = "none"
+    USER = "user"
+    AUTO = "auto"

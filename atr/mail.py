@@ -20,7 +20,6 @@ import email.headerregistry as headerregistry
 import email.message as message
 import email.policy as policy
 import email.utils as utils
-import enum
 import ssl
 import time
 import uuid
@@ -30,6 +29,7 @@ import aiosmtplib
 
 # import dkim
 import atr.log as log
+import atr.models.mail as models_mail
 import atr.util as util
 
 # TODO: We should choose a pattern for globals
@@ -41,11 +41,7 @@ _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
 
-
-class MailFooterCategory(enum.StrEnum):
-    NONE = "none"
-    USER = "user"
-    AUTO = "auto"
+MailFooterCategory = models_mail.MailFooterCategory
 
 
 @dataclasses.dataclass

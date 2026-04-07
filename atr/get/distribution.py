@@ -24,12 +24,12 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
 import atr.htm as htm
+import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
-import atr.tasks.gha as gha
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -344,7 +344,7 @@ def _render_distribution_tasks(
 
 def _render_task(task: sql.Task) -> htm.Element:
     """Render a distribution task's details."""
-    args: gha.DistributionWorkflow = gha.DistributionWorkflow.model_validate(task.task_args)
+    workflow_args: args.DistributionWorkflow = args.DistributionWorkflow.model_validate(task.task_args)
     task_date = task.added.strftime("%Y-%m-%d %H:%M:%S")
     task_status = task.status.value
     workflow_status = task.workflow.status if task.workflow else ""
@@ -353,11 +353,11 @@ def _render_task(task: sql.Task) -> htm.Element:
     )
     if task_status != sql.TaskStatus.COMPLETED:
         return htm.details(".ms-4")[
-            htm.summary[f"{task_date} {args.platform} ({args.package} {args.version})"],
+            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
             htm.p(".ms-4")[task.error if task.error else task_status.capitalize()],
         ]
     else:
         return htm.details(".ms-4")[
-            htm.summary[f"{task_date} {args.platform} ({args.package} {args.version})"],
+            htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
             *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
         ]

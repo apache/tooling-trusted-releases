@@ -21,15 +21,12 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-import cyclonedx.exception
-import cyclonedx.schema
-import cyclonedx.validation
-import cyclonedx.validation.json
-
 from .utilities import get_pointer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    import cyclonedx.validation.json
 
     from . import models
 
@@ -64,6 +61,10 @@ def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
 def validate_py(
     bundle_value: models.bundle.Bundle,
 ) -> Iterable[cyclonedx.validation.json.JsonValidationError] | None:
+    import cyclonedx.exception
+    import cyclonedx.schema
+    import cyclonedx.validation.json
+
     json_sv = get_pointer(bundle_value.doc, "/specVersion")
     schema_version = cyclonedx.schema.SchemaVersion.V1_6
     if isinstance(json_sv, str):

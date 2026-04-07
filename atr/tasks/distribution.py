@@ -14,12 +14,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import pydantic
-
 import atr.db as db
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
-import atr.models.schema as schema
 import atr.shared.distribution as distribution
 import atr.storage as storage
 import atr.tasks as tasks
@@ -28,15 +26,10 @@ import atr.tasks.checks as checks
 _RETRY_LIMIT = 5
 
 
-class DistributionStatusCheckArgs(schema.Strict):
-    """Arguments for the task to re-check distribution statuses."""
-
-    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
-    asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
-
-
-@checks.with_model(DistributionStatusCheckArgs)
-async def status_check(args: DistributionStatusCheckArgs, *, task_id: int | None = None) -> results.Results | None:
+@checks.with_model(args.DistributionStatusCheckArgs)
+async def status_check(
+    task_args: args.DistributionStatusCheckArgs, *, task_id: int | None = None
+) -> results.Results | None:
     log.info("Checking pending recorded distributions")
     dists = []
     async with db.session() as data:
@@ -68,7 +61,7 @@ async def status_check(args: DistributionStatusCheckArgs, *, task_id: int | None
         except (distribution.DistributionError, storage.AccessError) as e:
             msg = f"Failed to record distribution: {e}"
             log.error(msg)
-    await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.distribution_status_check)
+    await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.distribution_status_check)
     return results.DistributionStatusCheck(
         kind="distribution_status",
     )

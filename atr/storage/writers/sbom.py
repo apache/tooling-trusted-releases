@@ -22,10 +22,10 @@ import asyncio
 import datetime
 
 import atr.db as db
+import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.tasks.sbom as sbom
 import atr.util as util
 
 
@@ -81,7 +81,7 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_AUGMENT,
-            task_args=sbom.FileArgs(
+            task_args=args.FileArgs(
                 project_key=project_key,
                 version_key=version_key,
                 revision_number=revision_number,
@@ -111,7 +111,7 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_CONVERT,
-            task_args=sbom.ConvertCycloneDX(
+            task_args=args.ConvertCycloneDX(
                 artifact_path=file_path,
                 revision=revision_number,
                 output_path=sbom_path,
@@ -142,7 +142,7 @@ class CommitteeParticipant(FoundationCommitter):
         output_path = await asyncio.to_thread(_resolved_path_str, sbom_path_in_new_revision)
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_GENERATE_CYCLONEDX,
-            task_args=sbom.GenerateCycloneDX(
+            task_args=args.GenerateCycloneDX(
                 artifact_path=artifact_path,
                 output_path=output_path,
             ).model_dump(),
@@ -167,7 +167,7 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> sql.Task:
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_OSV_SCAN,
-            task_args=sbom.FileArgs(
+            task_args=args.FileArgs(
                 project_key=project_key,
                 version_key=version_key,
                 revision_number=revision_number,

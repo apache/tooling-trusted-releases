@@ -14,64 +14,36 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Annotated, Any
-
-import pydantic
-
 import atr.ldap as ldap
 import atr.log as log
 import atr.mail as mail
+import atr.models.args as args
 import atr.models.results as results
-import atr.models.schema as schema
 import atr.storage as storage
 import atr.tasks.checks as checks
-
-
-def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:
-    if isinstance(value, mail.MailFooterCategory):
-        return value
-    if isinstance(value, str):
-        return mail.MailFooterCategory(value)
-    else:
-        return None
-
-
-class Send(schema.Strict):
-    """Arguments for the task to send an email."""
-
-    email_sender: pydantic.EmailStr = schema.description("The email address of the sender")
-    email_to: pydantic.EmailStr = schema.description("The email To address")
-    subject: str = schema.description("The subject of the email")
-    body: str = schema.description("The body of the email")
-    in_reply_to: str | None = schema.description("The message ID of the email to reply to")
-    email_cc: list[pydantic.EmailStr] = schema.factory(list)
-    email_bcc: list[pydantic.EmailStr] = schema.factory(list)
-    footer_category: Annotated[mail.MailFooterCategory, pydantic.BeforeValidator(_ensure_footer_enum)] = (
-        schema.description("The category of email footer to include")
-    )
 
 
 class SendError(Exception):
     pass
 
 
-@checks.with_model(Send)
-async def send(args: Send) -> results.Results | None:
-    if "@" not in args.email_sender:
-        log.warning(f"Invalid email sender: {args.email_sender}")
-        sender_asf_uid = args.email_sender
-    elif args.email_sender.endswith("@apache.org"):
-        sender_asf_uid = args.email_sender.split("@")[0]
+@checks.with_model(args.Send)
+async def send(task_args: args.Send) -> results.Results | None:
+    if "@" not in task_args.email_sender:
+        log.warning(f"Invalid email sender: {task_args.email_sender}")
+        sender_asf_uid = task_args.email_sender
+    elif task_args.email_sender.endswith("@apache.org"):
+        sender_asf_uid = task_args.email_sender.split("@")[0]
     else:
-        raise SendError(f"Invalid email sender: {args.email_sender}")
+        raise SendError(f"Invalid email sender: {task_args.email_sender}")
 
     sender_account = await ldap.account_lookup(sender_asf_uid)
     if sender_account is None:
-        raise SendError(f"Invalid email account: {args.email_sender}")
+        raise SendError(f"Invalid email account: {task_args.email_sender}")
     if ldap.is_banned(sender_account):
-        raise SendError(f"Email account {args.email_sender} is banned")
+        raise SendError(f"Email account {task_args.email_sender} is banned")
 
-    all_recipients = [args.email_to, *args.email_cc, *args.email_bcc]
+    all_recipients = [task_args.email_to, *task_args.email_cc, *task_args.email_bcc]
     for addr in all_recipients:
         recipient_domain = addr.split("@")[-1]
         sending_to_self = addr == f"{sender_asf_uid}@apache.org"
@@ -81,23 +53,23 @@ async def send(args: Send) -> results.Results | None:
             raise SendError(f"You are not permitted to send emails to {addr}")
 
     message = mail.Message(
-        email_sender=args.email_sender,
-        email_to=args.email_to,
-        subject=args.subject,
-        body=args.body,
-        in_reply_to=args.in_reply_to,
-        email_cc=args.email_cc,
-        email_bcc=args.email_bcc,
+        email_sender=task_args.email_sender,
+        email_to=task_args.email_to,
+        subject=task_args.subject,
+        body=task_args.body,
+        in_reply_to=task_args.in_reply_to,
+        email_cc=task_args.email_cc,
+        email_bcc=task_args.email_bcc,
     )
 
-    footer_category = mail.MailFooterCategory(args.footer_category)
+    footer_category = mail.MailFooterCategory(task_args.footer_category)
 
     async with storage.write(sender_asf_uid) as write:
         wafc = write.as_foundation_committer()
         mid, mail_errors = await wafc.mail.send(message, footer_category)
 
     if mail_errors:
-        log.warning(f"Mail sending to {args.email_to} for subject '{args.subject}' encountered errors:")
+        log.warning(f"Mail sending to {task_args.email_to} for subject '{task_args.subject}' encountered errors:")
         for error in mail_errors:
             log.warning(f"- {error}")
 

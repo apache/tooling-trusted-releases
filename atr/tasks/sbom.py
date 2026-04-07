@@ -27,9 +27,9 @@ import aiofiles.os
 import atr.archives as archives
 import atr.config as config
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.sbom as sbom
@@ -38,21 +38,6 @@ import atr.tasks.checks as checks
 import atr.util as util
 
 _CONFIG: Final = config.get()
-
-
-class ConvertCycloneDX(schema.Strict):
-    """Arguments for the task to generate a CycloneDX SBOM."""
-
-    artifact_path: safe.StatePath = schema.description("Absolute path to the artifact")
-    output_path: safe.StatePath = schema.description("Absolute path where the generated SBOM JSON should be written")
-    revision: safe.RevisionNumber = schema.description("Revision number")
-
-
-class GenerateCycloneDX(schema.Strict):
-    """Arguments for the task to generate a CycloneDX SBOM."""
-
-    artifact_path: safe.StatePath = schema.description("Absolute path to the artifact")
-    output_path: safe.StatePath = schema.description("Absolute path where the generated SBOM JSON should be written")
 
 
 class SBOMConversionError(Exception):
@@ -85,20 +70,8 @@ class SBOMScoringError(Exception):
         self.context = context if (context is not None) else {}
 
 
-class FileArgs(schema.Strict):
-    project_key: safe.ProjectKey = schema.description("Project name")
-    version_key: safe.VersionKey = schema.description("Version name")
-    revision_number: safe.RevisionNumber = schema.description("Revision number")
-    file_path: safe.RelPath = schema.description("Relative path to the SBOM file")
-    asf_uid: str | None = None
-
-
-class ScoreArgs(FileArgs):
-    previous_release_version: safe.VersionKey | None = schema.description("Previous release version")
-
-
-@checks.with_model(FileArgs)
-async def augment(args: FileArgs) -> results.Results | None:
+@checks.with_model(args.FileArgs)
+async def augment(args: args.FileArgs) -> results.Results | None:
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
@@ -149,8 +122,8 @@ async def augment(args: FileArgs) -> results.Results | None:
     )
 
 
-@checks.with_model(ConvertCycloneDX)
-async def convert_cyclonedx(args: ConvertCycloneDX) -> results.Results | None:
+@checks.with_model(args.ConvertCycloneDX)
+async def convert_cyclonedx(args: args.ConvertCycloneDX) -> results.Results | None:
     """Generate a JSON CycloneDX SBOM from a given XML SBOM."""
     try:
         result_data = await _convert_cyclonedx_core(args.artifact_path, args.output_path, args.revision)
@@ -166,8 +139,8 @@ async def convert_cyclonedx(args: ConvertCycloneDX) -> results.Results | None:
         raise
 
 
-@checks.with_model(GenerateCycloneDX)
-async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
+@checks.with_model(args.GenerateCycloneDX)
+async def generate_cyclonedx(args: args.GenerateCycloneDX) -> results.Results | None:
     """Generate a CycloneDX SBOM for the given artifact and write it to the output path."""
     try:
         result_data = await _generate_cyclonedx_core(args.artifact_path, args.output_path)
@@ -184,8 +157,8 @@ async def generate_cyclonedx(args: GenerateCycloneDX) -> results.Results | None:
         raise
 
 
-@checks.with_model(FileArgs)
-async def osv_scan(args: FileArgs) -> results.Results | None:
+@checks.with_model(args.FileArgs)
+async def osv_scan(args: args.FileArgs) -> results.Results | None:
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
@@ -251,8 +224,8 @@ async def osv_scan(args: FileArgs) -> results.Results | None:
     )
 
 
-@checks.with_model(FileArgs)
-async def score_qs(args: FileArgs) -> results.Results | None:
+@checks.with_model(args.FileArgs)
+async def score_qs(args: args.FileArgs) -> results.Results | None:
     path_str = str(args.file_path)
 
     base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
@@ -290,8 +263,8 @@ async def score_qs(args: FileArgs) -> results.Results | None:
     )
 
 
-@checks.with_model(ScoreArgs)
-async def score_tool(args: ScoreArgs) -> results.Results | None:
+@checks.with_model(args.ScoreArgs)
+async def score_tool(args: args.ScoreArgs) -> results.Results | None:
     path_str = str(args.file_path)
 
     base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)

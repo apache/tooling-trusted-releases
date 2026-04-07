@@ -24,6 +24,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
@@ -97,7 +98,7 @@ async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:ghi", errors=[])]
 
     await quarantine._extract_archives(
-        [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:ghi")],
+        [args.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:ghi")],
         quarantine_dir,
         safe.ProjectKey("proj"),
         safe.VersionKey("1.0"),
@@ -143,7 +144,7 @@ async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:def", errors=[])]
 
     await quarantine._extract_archives(
-        [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
+        [args.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:def")],
         quarantine_dir,
         safe.ProjectKey("proj"),
         safe.VersionKey("1.0"),
@@ -180,7 +181,7 @@ async def test_extract_archives_propagates_exarch_error_to_file_entry(
 
     with pytest.raises(RuntimeError, match="unsafe zip detected"):
         await quarantine._extract_archives(
-            [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:bad")],
+            [args.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:bad")],
             quarantine_dir,
             safe.ProjectKey("proj"),
             safe.VersionKey("1.0"),
@@ -217,7 +218,7 @@ async def test_extract_archives_stages_in_temporary_then_promotes(
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:abc", errors=[])]
 
     await quarantine._extract_archives(
-        [quarantine.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:abc")],
+        [args.QuarantineArchiveEntry(rel_path=archive_rel_path, content_hash="blake3:abc")],
         quarantine_dir,
         safe.ProjectKey("proj"),
         safe.VersionKey("1.0"),
@@ -337,7 +338,7 @@ async def test_run_safety_checks_safe_archive(tmp_path: pathlib.Path):
     archive_path = tmp_path / "safe.tar.gz"
     _create_safe_tar_gz(archive_path)
 
-    archives = [quarantine.QuarantineArchiveEntry(rel_path="safe.tar.gz", content_hash="abc123")]
+    archives = [args.QuarantineArchiveEntry(rel_path="safe.tar.gz", content_hash="abc123")]
     entries, any_failed = await quarantine._run_safety_checks(archives, tmp_path)
 
     assert not any_failed
@@ -352,7 +353,7 @@ async def test_run_safety_checks_unsafe_archive(tmp_path: pathlib.Path):
     archive_path = tmp_path / "unsafe.tar.gz"
     _create_traversal_tar_gz(archive_path)
 
-    archives = [quarantine.QuarantineArchiveEntry(rel_path="unsafe.tar.gz", content_hash="def456")]
+    archives = [args.QuarantineArchiveEntry(rel_path="unsafe.tar.gz", content_hash="def456")]
     entries, any_failed = await quarantine._run_safety_checks(archives, tmp_path)
 
     assert any_failed

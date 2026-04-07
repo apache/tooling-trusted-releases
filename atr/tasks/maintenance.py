@@ -15,30 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pydantic
-
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
-import atr.models.schema as schema
 import atr.tasks as tasks
 import atr.tasks.checks as checks
-
-
-class MaintenanceArgs(schema.Strict):
-    """Arguments for the task to perform scheduled maintenance."""
-
-    asf_uid: str = schema.description("The ASF UID of the user triggering the maintenance")
-    next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
 
 
 class MaintenanceError(Exception):
     pass
 
 
-@checks.with_model(MaintenanceArgs)
-async def run(args: MaintenanceArgs) -> results.Results | None:
+@checks.with_model(args.MaintenanceArgs)
+async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
     """Run maintenance."""
-    log.info(f"Starting maintenance (user: {args.asf_uid})")
+    log.info(f"Starting maintenance (user: {task_args.asf_uid})")
 
     try:
         await _storage_maintenance()
@@ -47,7 +38,7 @@ async def run(args: MaintenanceArgs) -> results.Results | None:
             "Storage maintenance completed successfully",
         )
 
-        await tasks.schedule_next(args.asf_uid, args.next_schedule_seconds, tasks.run_maintenance)
+        await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.run_maintenance)
 
         return results.Maintenance(
             kind="maintenance",

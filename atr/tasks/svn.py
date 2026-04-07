@@ -22,25 +22,14 @@ import aiofiles.os
 import aioshutil
 
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.checks as checks
 
 _SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
-
-
-class SvnImport(schema.Strict):
-    """Arguments for the task to import files from SVN."""
-
-    svn_url: safe.RelPath
-    revision: str
-    target_subdirectory: str | None
-    project_key: safe.ProjectKey
-    version_key: safe.VersionKey
-    asf_uid: str
 
 
 class SvnImportError(Exception):
@@ -51,12 +40,12 @@ class SvnImportError(Exception):
         self.details = details or {}
 
 
-@checks.with_model(SvnImport)
-async def import_files(args: SvnImport) -> results.Results | None:
+@checks.with_model(args.SvnImport)
+async def import_files(task_args: args.SvnImport) -> results.Results | None:
     """Import files from SVN into a draft release candidate revision."""
     # audit_guidance any file uploads are from known and managed repositories so file size is not an issue
     try:
-        result_message = await _import_files_core(args)
+        result_message = await _import_files_core(task_args)
         return results.SvnImportFiles(
             kind="svn_import",
             msg=result_message,
@@ -69,7 +58,7 @@ async def import_files(args: SvnImport) -> results.Results | None:
         raise
 
 
-async def _import_files_core(args: SvnImport) -> str:
+async def _import_files_core(args: args.SvnImport) -> str:
     """Core logic to perform the SVN export."""
 
     project_str = str(args.project_key)

@@ -36,25 +36,15 @@ import atr.db as db
 import atr.detection as detection
 import atr.hashes as hashes
 import atr.log as log
+import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage.writers.revision as revision
 import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 import atr.util as util
-
-
-class QuarantineArchiveEntry(schema.Strict):
-    rel_path: str
-    content_hash: str
-
-
-class QuarantineValidate(schema.Strict):
-    quarantined_id: int
-    archives: list[QuarantineArchiveEntry]
 
 
 def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
@@ -103,17 +93,17 @@ def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
     return results_list
 
 
-@checks.with_model(QuarantineValidate)
-async def validate(args: QuarantineValidate) -> results.Results | None:
+@checks.with_model(args.QuarantineValidate)
+async def validate(task_args: args.QuarantineValidate) -> results.Results | None:
     async with db.session() as data:
-        quarantined = await data.quarantined(id=args.quarantined_id, _release=True).get()
+        quarantined = await data.quarantined(id=task_args.quarantined_id, _release=True).get()
 
     if quarantined is None:
-        log.error(f"Quarantined row {args.quarantined_id} not found")
+        log.error(f"Quarantined row {task_args.quarantined_id} not found")
         return None
 
     if quarantined.status != sql.QuarantineStatus.PENDING:
-        log.error(f"Quarantined row {args.quarantined_id} is not PENDING")
+        log.error(f"Quarantined row {task_args.quarantined_id} is not PENDING")
         return None
 
     release = quarantined.release
@@ -125,7 +115,7 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         await _mark_failed(quarantined, None, "Quarantine directory does not exist")
         return None
 
-    file_entries, any_failed = await _run_safety_checks(args.archives, quarantine_dir)
+    file_entries, any_failed = await _run_safety_checks(task_args.archives, quarantine_dir)
 
     if any_failed:
         await _mark_failed(quarantined, file_entries)
@@ -133,7 +123,7 @@ async def validate(args: QuarantineValidate) -> results.Results | None:
         return None
 
     try:
-        await _extract_archives(args.archives, quarantine_dir, project_key, version_key, file_entries)
+        await _extract_archives(task_args.archives, quarantine_dir, project_key, version_key, file_entries)
     except Exception as exc:
         await _mark_failed(quarantined, file_entries, f"Archive extraction failed: {exc}")
         await aioshutil.rmtree(quarantine_dir)
@@ -225,7 +215,7 @@ def _extract_archive_to_dir(
 
 
 async def _extract_archives(
-    archives: list[QuarantineArchiveEntry],
+    archives: list[args.QuarantineArchiveEntry],
     quarantine_dir: safe.StatePath,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -369,7 +359,7 @@ async def _promote(
 
 
 async def _run_safety_checks(
-    archives: list[QuarantineArchiveEntry], quarantine_dir: safe.StatePath
+    archives: list[args.QuarantineArchiveEntry], quarantine_dir: safe.StatePath
 ) -> tuple[list[sql.QuarantineFileEntryV1], bool]:
     file_entries: list[sql.QuarantineFileEntryV1] = []
     any_failed = False
