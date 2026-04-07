@@ -2,6 +2,7 @@ FROM alpine:3.23.0
 
 RUN apk add --no-cache npm \
   && apk add --no-cache \
+       --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
        --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing \
        dart-sass
 
