@@ -69,6 +69,9 @@ cp node_modules/bootstrap/dist/js/bootstrap.bundle.min.js \
 cp node_modules/bootstrap/dist/js/bootstrap.bundle.min.js.map \
   "$OUTPUT/js/min/bootstrap.bundle.min.js.map"
 
+cp node_modules/mermaid/dist/mermaid.min.js \
+  "$OUTPUT/js/min/mermaid.min.js"
+
 echo "Cleaning up intermediate files..."
 rm -rf css node_modules scss
 

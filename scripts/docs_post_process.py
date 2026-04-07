@@ -21,6 +21,19 @@ import pathlib
 import re
 import sys
 
+MERMAID_BLOCK_RE = re.compile(
+    r'<pre lang="mermaid"><code>(.*?)</code></pre>',
+    re.DOTALL,
+)
+
+MERMAID_SCRIPT = (
+    '\n<script src="/static/js/min/mermaid.min.js"></script>\n<script src="/static/js/min/mermaid-init.js"></script>'
+)
+
+
+def _unescape_mermaid(match: re.Match[str]) -> str:
+    return '<pre class="mermaid">' + html.unescape(match.group(1)) + "</pre>"
+
 
 def generate_heading_id(text: str) -> str:
     text = re.sub(r"^[\d.]+\s*", "", text)
@@ -90,6 +103,11 @@ def process_html_file(file_path: pathlib.Path) -> None:
     parser.feed(html_content)
 
     processed_html = parser.get_html()
+
+    processed_html = MERMAID_BLOCK_RE.sub(_unescape_mermaid, processed_html)
+    if 'class="mermaid"' in processed_html:
+        processed_html += MERMAID_SCRIPT
+
     file_path.write_text(processed_html, encoding="utf-8")
 
 
