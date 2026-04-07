@@ -26,19 +26,25 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from playwright.sync_api import Page
+    from playwright.sync_api import Browser, Page
 
 
 @pytest.fixture
-def page_revoke_tokens(page: Page) -> Generator[Page]:
+def page_revoke_tokens(browser: Browser) -> Generator[Page]:
+    context = browser.new_context(ignore_https_errors=True)
+    page = context.new_page()
     helpers.log_in(page)
     helpers.visit(page, admin_helpers.REVOKE_TOKENS_PATH)
     yield page
+    page.close()
+    context.close()
 
 
 @pytest.fixture
-def page_revoke_tokens_with_token(page: Page) -> Generator[Page]:
+def page_revoke_tokens_with_token(browser: Browser) -> Generator[Page]:
     """Log in, create a test token, then navigate to the revoke page."""
+    context = browser.new_context(ignore_https_errors=True)
+    page = context.new_page()
     helpers.log_in(page)
     # Create a token first
     helpers.visit(page, admin_helpers.TOKENS_PATH)
@@ -51,3 +57,5 @@ def page_revoke_tokens_with_token(page: Page) -> Generator[Page]:
     from e2e.tokens.helpers import delete_token_by_label
 
     delete_token_by_label(page, admin_helpers.TOKEN_LABEL_FOR_TESTING)
+    page.close()
+    context.close()
