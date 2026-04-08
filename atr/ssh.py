@@ -73,6 +73,8 @@ class RsyncArgsError(Exception):
 class SSHServer(asyncssh.SSHServer):
     """Simple SSH server that handles connections."""
 
+    auth_username: str | None = None
+
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         """Called when a connection is established."""
         # Store connection for use in begin_auth
@@ -92,13 +94,14 @@ class SSHServer(asyncssh.SSHServer):
     async def begin_auth(self, username: str) -> bool:
         """Begin authentication for the specified user."""
         log.info(f"Beginning auth for user {username}")
+        self.auth_username = username
 
         if username == "github":
             log.info("GitHub authentication will use validate_public_key")
             return True
 
         if not await ldap.is_active(username):
-            log.failed_authentication("ssh_account_disabled")
+            log.auth_failure("ssh", "ssh_account_disabled", username)
             raise asyncssh.PermissionDenied("Account disabled")
 
         try:
@@ -108,6 +111,7 @@ class SSHServer(asyncssh.SSHServer):
 
                 if not user_keys:
                     log.warning(f"No SSH keys found for user: {username}")
+                    log.auth_failure("ssh", "no_keys_found", username)
                     # Still require authentication, but it will fail
                     return True
 
@@ -133,6 +137,14 @@ class SSHServer(asyncssh.SSHServer):
         # Always require authentication
         return True
 
+    def auth_completed(self) -> None:
+        username = self._conn.get_extra_info("username")
+        type = "ssh"
+        if username == "github":
+            type = "githubssh"
+            username = self._github_asf_uid
+        log.auth_success(type, username)
+
     def public_key_auth_supported(self) -> bool:
         """Indicate whether public key authentication is supported."""
         return True
@@ -143,7 +155,7 @@ class SSHServer(asyncssh.SSHServer):
         # The SSHServerConnection.validate_public_key method performs signature verification
         if username != "github":
             # We log an authentication failure in here because if we're here with a different username the key failed
-            log.failed_authentication("public_key_invalid")
+            log.auth_failure("ssh", "public_key_invalid", username)
             return False
 
         fingerprint = key.get_fingerprint()
@@ -158,13 +170,13 @@ class SSHServer(asyncssh.SSHServer):
         log.set_asf_uid(self._github_asf_uid)
 
         if not await ldap.is_active(self._github_asf_uid):
-            log.failed_authentication("ssh_workflow_account_disabled")
+            log.auth_failure("githubssh", "ssh_workflow_account_disabled", self._github_asf_uid)
             return False
 
         now = int(time.time())
         # audit_guidance this application is not concerned with checking for a not_before flag on the workflow_key
         if workflow_key.expires < now:
-            log.failed_authentication("public_key_expired")
+            log.auth_failure("githubssh", "public_key_expired", self._github_asf_uid)
             return False
 
         self._github_payload = github.TrustedPublisherPayload.model_validate(workflow_key.github_payload)

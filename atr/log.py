@@ -16,7 +16,9 @@
 # under the License.
 
 import collections
+import datetime
 import inspect
+import json
 import logging
 import logging.handlers
 import queue
@@ -54,6 +56,45 @@ class StructlogQueueHandler(logging.handlers.QueueHandler):
 def add_context(**kwargs):
     """Add context to the request log"""
     structlog.contextvars.bind_contextvars(**kwargs)
+
+
+def auth_event(event: str, asfuid: str | None = None, **kwargs):
+    request_user_id = get_context("user_id")
+    request_asf_id = get_context("asfuid")
+    admin_user_id = get_context("admin_id")
+    user_id = asfuid or request_user_id or request_asf_id
+    kwargs = {**kwargs, "event": event}
+    if user_id:
+        kwargs["request_user_id"] = user_id
+    if admin_user_id:
+        kwargs["admin_user_id"] = admin_user_id
+    _auth_log(**kwargs)
+
+
+def auth_failure(type: str, reason: str, asfuid: str | None = None):
+    request_user_id = get_context("user_id")
+    request_asf_id = get_context("asfuid")
+    admin_user_id = get_context("admin_id")
+    user_id = asfuid or request_user_id or request_asf_id
+    kwargs = {"type": type, "reason": reason, "event": "auth_failure"}
+    if user_id:
+        kwargs["request_user_id"] = user_id
+    if admin_user_id:
+        kwargs["admin_user_id"] = admin_user_id
+    _auth_log(**kwargs)
+
+
+def auth_success(type: str, asfuid: str | None = None) -> None:
+    request_user_id = get_context("user_id")
+    request_asf_id = get_context("asfuid")
+    admin_user_id = get_context("admin_id")
+    user_id = asfuid or request_user_id or request_asf_id
+    kwargs = {"type": type, "event": "auth_success"}
+    if user_id:
+        kwargs["request_user_id"] = user_id
+    if admin_user_id:
+        kwargs["admin_user_id"] = admin_user_id
+    _auth_log(**kwargs)
 
 
 def caller_name(depth: int = 1) -> str:
@@ -119,13 +160,6 @@ def exception(msg: str, **kwargs) -> None:
     _event(logging.ERROR, msg, exc_info=True, **kwargs)
 
 
-def failed_authentication(reason: str) -> None:
-    warning(
-        "Authentication failed",
-        reason=reason,
-    )
-
-
 def get_context(arg) -> Any | None:
     """Get context from the request log"""
     return structlog.contextvars.get_contextvars().get(arg, None)
@@ -171,6 +205,15 @@ def set_asf_uid(asfuid: str | None) -> None:
 
 def warning(msg: str, **kwargs) -> None:
     _event(logging.WARNING, msg, **kwargs)
+
+
+def _auth_log(**kwargs):
+    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
+    now = now.replace("+00:00", "Z")
+    kwargs = {"datetime": now, **kwargs}
+    msg = json.dumps(kwargs, allow_nan=False)
+    logger = logging.getLogger("atr.auth")
+    logger.info(msg)
 
 
 def _caller_logger(depth: int = 1) -> logging.Logger:

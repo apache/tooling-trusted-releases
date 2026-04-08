@@ -108,7 +108,7 @@ def _parse_json_event(
     _method_name: str,
     event_dict: structlog.types.EventDict,
 ) -> structlog.types.EventDict:
-    if event_dict.get("logger") != "atr.storage.audit":
+    if event_dict.get("logger") not in ["atr.auth", "atr.storage.audit"]:
         return event_dict
     event = event_dict.get("event")
     if isinstance(event, str) and event.startswith("{"):

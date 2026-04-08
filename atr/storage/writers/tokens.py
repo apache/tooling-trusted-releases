@@ -130,7 +130,7 @@ class FoundationCommitter(GeneralPublic):
         # Verify account still exists in LDAP
         account_details = await ldap.account_lookup(self.__asf_uid)
         if (account_details is None) or ldap.is_banned(account_details):
-            log.failed_authentication("account_deleted_or_banned")
+            log.auth_failure("jwt_issuance", "account_deleted_or_banned", self.__asf_uid)
             raise storage.AccessError("Authentication failed")
 
         issued_jwt = jwtoken.issue(self.__asf_uid, pat_hash=pat_hash)

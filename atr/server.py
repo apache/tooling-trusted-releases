@@ -405,12 +405,20 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     logging.getLogger("asyncio").addFilter(ssl_shutdown_filter)
 
     # Audit logger - JSON to dedicated file via queue
-    audit_listener = loggers.setup_dedicated_file_logger(
+    storage_audit_listener = loggers.setup_dedicated_file_logger(
         "atr.storage.audit",
         app_config.STORAGE_AUDIT_LOG_FILE,
         shared_processors,
     )
-    app.extensions["audit_listener"] = audit_listener
+    app.extensions["storage_audit_listener"] = storage_audit_listener
+
+    # Auth audit logger - JSON to dedicated file via queue
+    auth_audit_listener = loggers.setup_dedicated_file_logger(
+        "atr.auth",
+        app_config.AUTH_AUDIT_LOG_FILE,
+        shared_processors,
+    )
+    app.extensions["auth_audit_listener"] = auth_audit_listener
 
     # Request logs
     request_listener = loggers.setup_dedicated_file_logger(
@@ -479,16 +487,19 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
         # Check if session has a check timestamp in metadata
         last_check = session.metadata.get("last_account_check")
         current_time = time.time()
+        uid = str(session.uid)
 
         if last_check is None or (current_time - last_check > account_check_interval):
             # First time checking this session, record time
             session.metadata["last_account_check"] = current_time
-            if not await ldap.is_active(str(session.uid)):
+            if not await ldap.is_active(uid):
+                log.auth_failure("oauth", "account_deleted_or_banned", uid)
                 asfquart.session.clear()
                 raise base.ASFQuartException("Session expired", errorcode=401)
 
         if last_check is None:
             # If this was the first time we saw the session, make sure it contains the right data
+            log.auth_success("oauth", uid)
             pmcs = util.cookie_pmcs_or_session_pmcs(session)
             session_data = util.session_cookie_data_from_client(session, pmcs)
             util.write_quart_session_cookie(session_data)
@@ -585,8 +596,10 @@ def _app_setup_security_headers(app: base.QuartApp) -> None:
 
 
 async def _app_shutdown_log_listeners(app):
-    if audit_listener := app.extensions.get("audit_listener"):
-        audit_listener.stop()
+    if storage_audit_listener := app.extensions.get("storage_audit_listener"):
+        storage_audit_listener.stop()
+    if auth_audit_listener := app.extensions.get("auth_audit_listener"):
+        auth_audit_listener.stop()
     if request_listener := app.extensions.get("request_listener"):
         request_listener.stop()
     if listener := app.extensions.get("logging_listener"):

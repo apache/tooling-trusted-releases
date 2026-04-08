@@ -107,6 +107,7 @@ class AppConfig:
     ATTESTABLE_STORAGE_DIR = os.path.join(STATE_DIR, "attestable")
     SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="database/atr.db")
     STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
+    AUTH_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "auth-audit.log")
     PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
     REQUEST_LOG_FILE = os.path.join(STATE_DIR, "logs", "requests.log")
 
@@ -244,6 +245,7 @@ def validate() -> None:
         (conf.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
         (conf.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),
         (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
+        (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
     ]
     relative_paths = [
