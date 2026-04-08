@@ -187,7 +187,7 @@ async def browse_as_post(
         await quart.flash(f"Unable to browse as '{new_uid}': {exc}", "error")
         return await session.redirect(browse_as_get)
 
-    admin_id = current_session.uid
+    admin_id: str = session.asf_uid
     if isinstance(current_session.metadata, dict):
         existing_admin = current_session.metadata.get("admin")
         if isinstance(existing_admin, str) and existing_admin:
@@ -209,6 +209,7 @@ async def browse_as_post(
         roleaccount=False,
         metadata={"admin": admin_id},
     )
+    log.auth_event("impersonate", admin_id, as_user=committer.uid)
     # log.info(f"New Session Cookie Data: {session_cookie}")
     util.write_quart_session_cookie(session_cookie)
 

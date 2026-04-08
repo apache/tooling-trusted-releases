@@ -80,6 +80,7 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None) -> 
     }
     if pat_hash:
         payload["atr_th"] = pat_hash
+    log.auth_event("jwt_issuance", uid, pat_hash=pat_hash if pat_hash else None)
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
@@ -90,19 +91,20 @@ def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Aw
         try:
             claims = await verify(token)
         except jwt.ExpiredSignatureError as exc:
-            log.failed_authentication("jwt_token_expired")
+            log.auth_failure("jwt_token", "jwt_token_expired")
             raise base.ASFQuartException("Token has expired", errorcode=401) from exc
         except jwt.InvalidSignatureError as exc:
-            log.failed_authentication("jwt_signature_invalid")
+            log.auth_failure("jwt_token", "jwt_signature_invalid")
             raise base.ASFQuartException("Token signature verification failed", errorcode=401) from exc
         except jwt.InvalidTokenError as exc:
-            log.failed_authentication("jwt_token_invalid")
+            log.auth_failure("jwt_token", "jwt_token_invalid")
             raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
         except jwt.PyJWTError as exc:
-            log.failed_authentication("jwt_token_invalid_2")
+            log.auth_failure("jwt_token", "jwt_token_invalid_2")
             raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
 
         quart.g.jwt_claims = claims
+        log.auth_success("jwt_token")
         return await func(*args, **kwargs)
 
     return wrapper
@@ -131,10 +133,10 @@ async def verify(token: str) -> dict[str, Any]:
     )
     log.debug(f"JWT claims: {claims}")
     if not isinstance(asf_uid, str):
-        log.failed_authentication("jwt_subject_invalid")
+        log.auth_failure("jwt_token", "jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
     if not await ldap.is_active(asf_uid):
-        log.failed_authentication("account_deleted_or_banned")
+        log.auth_failure("jwt_token", "account_deleted_or_banned")
         raise base.ASFQuartException("Account is disabled", errorcode=401)
 
     pat_hash = claims.get("atr_th")
@@ -143,14 +145,14 @@ async def verify(token: str) -> dict[str, Any]:
         async with db.session() as data:
             pat = await data.personal_access_token(pat_hash).get()
             if not pat:
-                log.failed_authentication("pat_hash_invalid")
-                raise base.ASFQuartException("Personal Access Token invalid")
+                log.auth_failure("jwt_token", "pat_hash_invalid")
+                raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
             if pat.asfuid != claims.get("sub"):
-                log.failed_authentication("pat_user_mismatch")
-                raise base.ASFQuartException("Personal Access Token invalid")
+                log.auth_failure("jwt_token", "pat_user_mismatch")
+                raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
             if pat.expires < datetime.datetime.now(datetime.UTC):
-                log.failed_authentication("pat_expired")
-                raise base.ASFQuartException("Personal Access Token expired")
+                log.auth_failure("jwt_token", "pat_expired")
+                raise base.ASFQuartException("Personal Access Token expired", errorcode=401)
     return claims
 
 
