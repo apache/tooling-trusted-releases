@@ -129,6 +129,7 @@ async def trigger_workflow(
         "inputs": {
             "atr-id": unique_id,
             "asf-uid": task_args.asf_uid,
+            "task_id": task_id,
             "project": task_args.project_key,
             "phase": task_args.phase,
             "version": task_args.version_key,

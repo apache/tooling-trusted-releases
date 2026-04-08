@@ -291,6 +291,11 @@ async def distribute_ssh_register(
         data.project_key,
         data.version,
     )
+    # Validate that the task ID passed exists and was started by the UID asserted
+    async with db.session() as _data:
+        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(
+            exceptions.Unauthorized("Unauthorized"),
+        )
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -373,6 +378,11 @@ async def distribution_record_from_workflow(
         data.project,
         data.version,
     )
+    # Validate that the task ID passed exists and was started by the UID asserted
+    async with db.session() as _data:
+        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(
+            exceptions.Unauthorized("Unauthorized"),
+        )
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
     if release.committee is None:
