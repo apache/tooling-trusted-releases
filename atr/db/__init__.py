@@ -911,6 +911,14 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def user(self, asf_uid: Opt[str] = NOT_SET) -> Query[sql.User]:
+        query = sqlmodel.select(sql.User)
+
+        if is_defined(asf_uid):
+            query = query.where(sql.User.asfuid == asf_uid)
+
+        return Query(self, query)
+
     def workflow_ssh_key(
         self,
         fingerprint: Opt[str] = NOT_SET,

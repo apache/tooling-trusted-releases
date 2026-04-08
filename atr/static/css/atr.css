@@ -532,6 +532,323 @@ a.atr-link-plain:focus-visible {
     color: #cc0033 !important;
 }
 
+/* Colour blindness mode overrides */
+
+/* Deuteranopia (red-green, most common): blue/orange palette */
+.atr-cbm-deuteranopia {
+    --bs-success: #0077bb;
+    --bs-success-rgb: 0, 119, 187;
+    --bs-danger: #ee7733;
+    --bs-danger-rgb: 238, 119, 51;
+}
+
+.atr-cbm-deuteranopia .atr-green {
+    color: #0077bb !important;
+}
+
+.atr-cbm-deuteranopia .atr-red {
+    color: #ee7733 !important;
+}
+
+.atr-cbm-deuteranopia .text-success {
+    color: #0077bb !important;
+}
+
+.atr-cbm-deuteranopia .text-danger {
+    color: #ee7733 !important;
+}
+
+.atr-cbm-deuteranopia .btn-success {
+    background-color: #0077bb;
+    border-color: #0077bb;
+}
+
+.atr-cbm-deuteranopia .btn-danger {
+    background-color: #ee7733;
+    border-color: #ee7733;
+}
+
+.atr-cbm-deuteranopia .btn-outline-success {
+    color: #0077bb;
+    border-color: #0077bb;
+}
+
+.atr-cbm-deuteranopia .btn-outline-danger {
+    color: #ee7733;
+    border-color: #ee7733;
+}
+
+.atr-cbm-deuteranopia .bg-success {
+    background-color: #0077bb !important;
+}
+
+.atr-cbm-deuteranopia .bg-danger {
+    background-color: #ee7733 !important;
+}
+
+.atr-cbm-deuteranopia .flash-success {
+    background-color: #d0e8f7;
+    border-color: #b3d4ec;
+    color: #004a73;
+}
+
+.atr-cbm-deuteranopia .flash-error {
+    background-color: #fce5d3;
+    border-color: #f5cdb0;
+    color: #8a4400;
+}
+
+.atr-cbm-deuteranopia .alert-success {
+    background-color: #d0e8f7;
+    border-color: #b3d4ec;
+    color: #004a73;
+}
+
+.atr-cbm-deuteranopia .alert-danger {
+    background-color: #fce5d3;
+    border-color: #f5cdb0;
+    color: #8a4400;
+}
+
+.atr-cbm-deuteranopia .bg-success-subtle {
+    background-color: #d0e8f7 !important;
+}
+
+.atr-cbm-deuteranopia .bg-danger-subtle {
+    background-color: #fce5d3 !important;
+}
+
+.atr-cbm-deuteranopia .text-success-emphasis {
+    color: #004a73 !important;
+}
+
+.atr-cbm-deuteranopia .text-danger-emphasis {
+    color: #8a4400 !important;
+}
+
+.atr-cbm-deuteranopia .border-success-subtle {
+    border-color: #b3d4ec !important;
+}
+
+.atr-cbm-deuteranopia .border-danger-subtle {
+    border-color: #f5cdb0 !important;
+}
+
+.atr-cbm-deuteranopia .warning-banner {
+    border-color: #ee7733;
+    background: #fce5d3;
+}
+
+/* Protanopia (red-green): blue/orange palette, shifted */
+.atr-cbm-protanopia {
+    --bs-success: #0077bb;
+    --bs-success-rgb: 0, 119, 187;
+    --bs-danger: #cc6600;
+    --bs-danger-rgb: 204, 102, 0;
+}
+
+.atr-cbm-protanopia .atr-green {
+    color: #0077bb !important;
+}
+
+.atr-cbm-protanopia .atr-red {
+    color: #cc6600 !important;
+}
+
+.atr-cbm-protanopia .text-success {
+    color: #0077bb !important;
+}
+
+.atr-cbm-protanopia .text-danger {
+    color: #cc6600 !important;
+}
+
+.atr-cbm-protanopia .btn-success {
+    background-color: #0077bb;
+    border-color: #0077bb;
+}
+
+.atr-cbm-protanopia .btn-danger {
+    background-color: #cc6600;
+    border-color: #cc6600;
+}
+
+.atr-cbm-protanopia .btn-outline-success {
+    color: #0077bb;
+    border-color: #0077bb;
+}
+
+.atr-cbm-protanopia .btn-outline-danger {
+    color: #cc6600;
+    border-color: #cc6600;
+}
+
+.atr-cbm-protanopia .bg-success {
+    background-color: #0077bb !important;
+}
+
+.atr-cbm-protanopia .bg-danger {
+    background-color: #cc6600 !important;
+}
+
+.atr-cbm-protanopia .flash-success {
+    background-color: #d0e8f7;
+    border-color: #b3d4ec;
+    color: #004a73;
+}
+
+.atr-cbm-protanopia .flash-error {
+    background-color: #fae0c8;
+    border-color: #f0c9a0;
+    color: #7a3b00;
+}
+
+.atr-cbm-protanopia .alert-success {
+    background-color: #d0e8f7;
+    border-color: #b3d4ec;
+    color: #004a73;
+}
+
+.atr-cbm-protanopia .alert-danger {
+    background-color: #fae0c8;
+    border-color: #f0c9a0;
+    color: #7a3b00;
+}
+
+.atr-cbm-protanopia .bg-success-subtle {
+    background-color: #d0e8f7 !important;
+}
+
+.atr-cbm-protanopia .bg-danger-subtle {
+    background-color: #fae0c8 !important;
+}
+
+.atr-cbm-protanopia .text-success-emphasis {
+    color: #004a73 !important;
+}
+
+.atr-cbm-protanopia .text-danger-emphasis {
+    color: #7a3b00 !important;
+}
+
+.atr-cbm-protanopia .border-success-subtle {
+    border-color: #b3d4ec !important;
+}
+
+.atr-cbm-protanopia .border-danger-subtle {
+    border-color: #f0c9a0 !important;
+}
+
+.atr-cbm-protanopia .warning-banner {
+    border-color: #cc6600;
+    background: #fae0c8;
+}
+
+/* Tritanopia (blue-yellow): red/cyan palette */
+.atr-cbm-tritanopia {
+    --bs-success: #009988;
+    --bs-success-rgb: 0, 153, 136;
+    --bs-danger: #cc3366;
+    --bs-danger-rgb: 204, 51, 102;
+}
+
+.atr-cbm-tritanopia .atr-green {
+    color: #009988 !important;
+}
+
+.atr-cbm-tritanopia .atr-red {
+    color: #cc3366 !important;
+}
+
+.atr-cbm-tritanopia .text-success {
+    color: #009988 !important;
+}
+
+.atr-cbm-tritanopia .text-danger {
+    color: #cc3366 !important;
+}
+
+.atr-cbm-tritanopia .btn-success {
+    background-color: #009988;
+    border-color: #009988;
+}
+
+.atr-cbm-tritanopia .btn-danger {
+    background-color: #cc3366;
+    border-color: #cc3366;
+}
+
+.atr-cbm-tritanopia .btn-outline-success {
+    color: #009988;
+    border-color: #009988;
+}
+
+.atr-cbm-tritanopia .btn-outline-danger {
+    color: #cc3366;
+    border-color: #cc3366;
+}
+
+.atr-cbm-tritanopia .bg-success {
+    background-color: #009988 !important;
+}
+
+.atr-cbm-tritanopia .bg-danger {
+    background-color: #cc3366 !important;
+}
+
+.atr-cbm-tritanopia .flash-success {
+    background-color: #ccf0eb;
+    border-color: #a8e0d8;
+    color: #005c51;
+}
+
+.atr-cbm-tritanopia .flash-error {
+    background-color: #f5d3df;
+    border-color: #eab3c5;
+    color: #7a1a3a;
+}
+
+.atr-cbm-tritanopia .alert-success {
+    background-color: #ccf0eb;
+    border-color: #a8e0d8;
+    color: #005c51;
+}
+
+.atr-cbm-tritanopia .alert-danger {
+    background-color: #f5d3df;
+    border-color: #eab3c5;
+    color: #7a1a3a;
+}
+
+.atr-cbm-tritanopia .bg-success-subtle {
+    background-color: #ccf0eb !important;
+}
+
+.atr-cbm-tritanopia .bg-danger-subtle {
+    background-color: #f5d3df !important;
+}
+
+.atr-cbm-tritanopia .text-success-emphasis {
+    color: #005c51 !important;
+}
+
+.atr-cbm-tritanopia .text-danger-emphasis {
+    color: #7a1a3a !important;
+}
+
+.atr-cbm-tritanopia .border-success-subtle {
+    border-color: #a8e0d8 !important;
+}
+
+.atr-cbm-tritanopia .border-danger-subtle {
+    border-color: #eab3c5 !important;
+}
+
+.atr-cbm-tritanopia .warning-banner {
+    border-color: #cc3366;
+    background: #f5d3df;
+}
+
 .atr-hide {
     display: none;
 }

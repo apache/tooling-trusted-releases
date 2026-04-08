@@ -24,10 +24,29 @@ import atr.get as get
 import atr.htm as htm
 import atr.models as models
 import atr.shared as shared
+import atr.storage as storage
 import atr.tabulate as tabulate
 import atr.template as template
 import atr.util as util
 import atr.web as web
+
+
+@post.typed
+async def save_preferences(
+    session: web.Committer,
+    _user_preferences: Literal["user/preferences"],
+    preferences_form: shared.user.UserPreferencesForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /user/preferences
+    """
+    async with storage.write() as write:
+        prefs = models.sql.UserPreferencesEntry(
+            colour_blindness_mode=models.sql.ColourBlindnessMode(preferences_form.colour_blindness_mode.value)
+        )
+        await write.as_foundation_committer().user.set_user_preferences(prefs)
+    await quart.flash("Preferences saved", "success")
+    return await session.redirect(get.user.preferences)
 
 
 @post.typed

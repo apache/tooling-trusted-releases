@@ -254,6 +254,17 @@ class QuarantineFileEntryV1(schema.Strict):
     errors: list[str] = schema.factory(list)
 
 
+class ColourBlindnessMode(enum.StrEnum):
+    NONE = "None"
+    DEUTERANOPIA = "Deuteranopia"
+    PROTANOPIA = "Protanopia"
+    TRITANOPIA = "Tritanopia"
+
+
+class UserPreferencesEntry(schema.Subset):
+    colour_blindness_mode: ColourBlindnessMode = ColourBlindnessMode.NONE
+
+
 class VoteEntry(schema.Strict):
     result: bool = schema.Field(alias="result", **pydantic_example(True))
     summary: str = schema.Field(alias="summary", **pydantic_example("This is a summary"))
@@ -405,6 +416,26 @@ class QuarantineFileMetadataJSON(sqlalchemy.types.TypeDecorator):
         if value is None:
             return None
         return _QUARANTINE_FILE_METADATA_ADAPTER.validate_python(value)
+
+
+_USER_PREFERENCES_ADAPTER: Final = pydantic.TypeAdapter(UserPreferencesEntry)
+
+
+class UserPreferencesJSON(sqlalchemy.types.TypeDecorator):
+    impl = sqlalchemy.JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return value
+        return _USER_PREFERENCES_ADAPTER.dump_python(value, mode="json")
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return _USER_PREFERENCES_ADAPTER.validate_python(value)
 
 
 # SQL models
@@ -1446,6 +1477,14 @@ class Revision(sqlmodel.SQLModel, table=True):
     __table_args__ = (
         sqlmodel.UniqueConstraint("release_key", "seq", name="uq_revision_release_seq"),
         sqlmodel.UniqueConstraint("release_key", "number", name="uq_revision_release_number"),
+    )
+
+
+# User
+class User(sqlmodel.SQLModel, table=True):
+    asfuid: str = sqlmodel.Field(primary_key=True, default=None, **example("user"))
+    preferences: UserPreferencesEntry = sqlmodel.Field(
+        default_factory=UserPreferencesEntry, sa_column=sqlalchemy.Column(UserPreferencesJSON, nullable=False)
     )
 
 

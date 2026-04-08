@@ -21,6 +21,7 @@ import atr.blueprints.get as get
 import atr.form as form
 import atr.htm as htm
 import atr.shared as shared
+import atr.storage as storage
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -89,7 +90,31 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
 
 
 @get.typed
-async def tally(session: web.Committer, _user_tally: Literal["user/tally"]) -> str:
+async def preferences(session: web.Committer, _user_preferences: Literal["user/preferences"]) -> str:
+    """
+    URL: /user/preferences
+    """
+
+    existing_prefs = None
+    async with storage.read_as_foundation_committer() as rafc:
+        user = await rafc.user.user_preferences()
+        if user:
+            existing_prefs = user.preferences
+
+    block = htm.Block()
+    block.h1["User preferences"]
+    block.p["Select your preferences below."]
+    prefs_form = form.render(
+        model_cls=shared.user.UserPreferencesForm,
+        submit_label="Save",
+        defaults={"colour_blindness_mode": existing_prefs.colour_blindness_mode.value if existing_prefs else None},
+    )
+    block.append(prefs_form)
+    return await template.blank("User preferences", content=block.collect())
+
+
+@get.typed
+async def tally(_session: web.Committer, _user_tally: Literal["user/tally"]) -> str:
     """
     URL: /user/tally
     """

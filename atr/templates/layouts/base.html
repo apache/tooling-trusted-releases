@@ -31,7 +31,7 @@
     {% block head_extra %}
     {% endblock head_extra %}
   </head>
-  <body class="{%- block body_class -%}{%- endblock body_class -%}">
+  <body class="{%- block body_class -%}{%- endblock body_class -%} {% if colour_blindness_mode and colour_blindness_mode.value != 'None' %}atr-cbm-{{ colour_blindness_mode.value | lower }}{% endif %}">
 
     {% include "includes/topnav.html" %}
 
