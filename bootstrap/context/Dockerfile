@@ -1,4 +1,4 @@
-FROM alpine:3.23.0
+FROM alpine:edge
 
 RUN apk add --no-cache npm \
   && apk add --no-cache \
