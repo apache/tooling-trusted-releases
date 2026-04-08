@@ -24,6 +24,7 @@ import atr.tasks as tasks
 import atr.tasks.checks as checks
 
 _RETRY_LIMIT = 5
+_BATCH_SIZE = 20
 
 
 @checks.with_model(args.DistributionStatusCheckArgs)
@@ -33,7 +34,9 @@ async def status_check(
     log.info("Checking pending recorded distributions")
     dists = []
     async with db.session() as data:
-        dists = await data.distribution(pending=True, _with_release=True, _with_release_project=True).all()
+        dists = await data.distribution(
+            pending=True, _with_release=True, _with_release_project=True, _limit=_BATCH_SIZE
+        ).all()
     for dist in dists:
         name = f"{dist.platform} {dist.owner_namespace} {dist.package} {dist.version}"
         dd = dist.distribution_data()

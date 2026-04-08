@@ -307,6 +307,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         pending: Opt[bool] = NOT_SET,
         _with_release: bool = False,
         _with_release_project: bool = False,
+        _limit: Opt[int] = NOT_SET,
     ) -> Query[sql.Distribution]:
         query = sqlmodel.select(sql.Distribution)
         if is_defined(release_key):
@@ -325,6 +326,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.options(joined_load_nested(sql.Distribution.release, sql.Release.project))
         elif _with_release:
             query = query.options(joined_load(sql.Distribution.release))
+        if is_defined(_limit):
+            query = query.limit(_limit)
         return Query(self, query)
 
     async def execute_query(self, query: sqlalchemy.sql.expression.Executable) -> sqlalchemy.engine.Result:
