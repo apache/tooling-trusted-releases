@@ -18,6 +18,7 @@
 from typing import Annotated, Literal
 
 import atr.form as form
+import atr.models.sql as sql
 
 type CACHE = Literal["cache"]
 type DELETE = Literal["delete"]
@@ -39,3 +40,9 @@ type UserCacheForm = Annotated[
     CacheUserForm | DeleteCacheForm,
     form.DISCRIMINATOR,
 ]
+
+
+class UserPreferencesForm(form.Form):
+    colour_blindness_mode: form.Enum[sql.ColourBlindnessMode] = form.label(
+        "Colour blindness mode", widget=form.Widget.SELECT
+    )

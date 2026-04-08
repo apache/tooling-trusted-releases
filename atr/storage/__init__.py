@@ -78,6 +78,7 @@ class ReadAsFoundationCommitter(ReadAsGeneralPublic):
         # self.checks = readers.checks.FoundationCommitter(read, self, data)
         # self.releases = readers.releases.FoundationCommitter(read, self, data)
         self.tokens = readers.tokens.FoundationCommitter(read, self, data)
+        self.user = readers.user.FoundationCommitter(read, self, data)
 
 
 class ReadAsCommitteeParticipant(ReadAsFoundationCommitter): ...
@@ -152,6 +153,7 @@ class WriteAsFoundationCommitter(WriteAsGeneralPublic):
         self.sbom = writers.sbom.FoundationCommitter(write, self, data)
         self.ssh = writers.ssh.FoundationCommitter(write, self, data)
         self.tokens = writers.tokens.FoundationCommitter(write, self, data)
+        self.user = writers.user.FoundationCommitter(write, self, data)
         self.vote = writers.vote.FoundationCommitter(write, self, data)
 
     @property

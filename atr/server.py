@@ -63,6 +63,7 @@ import atr.paths as paths
 import atr.preload as preload
 import atr.pubsub as pubsub
 import atr.ssh as ssh
+import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
 import atr.template as template
@@ -258,12 +259,18 @@ def _app_setup_context(app: base.QuartApp) -> None:
         current_user = await asfquart.session.read()
         topnav_unfinished_releases: list[tuple[str, str, list[sql.Release]]] = []
         topnav_user_projects: list[tuple[str, str]] = []
+        colour_blindness_mode = sql.ColourBlindnessMode.NONE
         current_uid = current_user.uid if current_user else None
         if isinstance(current_uid, str):
             topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
             topnav_user_projects = await interaction.user_projects(current_uid)
+            async with storage.read_as_foundation_committer(current_uid) as rafc:
+                db_user = await rafc.user.user_preferences()
+                if db_user:
+                    colour_blindness_mode = db_user.preferences.colour_blindness_mode
 
         return {
+            "colour_blindness_mode": colour_blindness_mode,
             "admin": admin,
             "as_url": util.as_url,
             "commit": metadata.commit,

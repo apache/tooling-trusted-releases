@@ -18,5 +18,6 @@
 import atr.storage.readers.checks as checks
 import atr.storage.readers.releases as releases
 import atr.storage.readers.tokens as tokens
+import atr.storage.readers.user as user
 
-__all__ = ["checks", "releases", "tokens"]
+__all__ = ["checks", "releases", "tokens", "user"]
