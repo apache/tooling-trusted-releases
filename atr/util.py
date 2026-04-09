@@ -557,7 +557,7 @@ async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
 
 async def get_urls_as_completed(urls: Sequence[str]) -> AsyncGenerator[tuple[str, int | str | None, bytes]]:
     """GET a list of URLs in parallel and yield (url, status, content_bytes) as they become available."""
-    async with create_secure_session() as session:
+    async with create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
 
         async def _fetch(one_url: str) -> tuple[str, int | str | None, bytes]:
             try:
@@ -1046,7 +1046,7 @@ async def thread_messages(
     thread_url = f"https://lists.apache.org/api/thread.json?id={urllib.parse.quote(thread_id)}"
 
     try:
-        async with create_secure_session() as session:
+        async with create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
             async with session.get(thread_url) as resp:
                 resp.raise_for_status()
                 thread_data: Any = await resp.json(content_type=None)
