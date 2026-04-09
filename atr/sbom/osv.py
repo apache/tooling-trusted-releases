@@ -123,7 +123,7 @@ def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulner
     vulns = get_pointer(bundle.doc, "/vulnerabilities")
     if vulns is None:
         return []
-    print(vulns)
+    print(f"[DEBUG] {len(vulns)} vulnerabilities:\n{vulns}")
     return [models.osv.CdxVulnerabilityDetail.model_validate(v) for v in vulns]
 
 
