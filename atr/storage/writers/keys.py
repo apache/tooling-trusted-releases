@@ -24,7 +24,7 @@ import asyncio
 import datetime
 import tempfile
 import textwrap
-from typing import NoReturn
+from typing import Final, NoReturn
 
 import aiofiles
 import aiofiles.os
@@ -46,6 +46,23 @@ import atr.storage.outcome as outcome
 import atr.storage.types as types
 import atr.user as user
 import atr.util as util
+
+_APPROVED_KEY_ALGORITHMS: Final = frozenset(
+    {
+        constants.PubKeyAlgorithm.RSAEncryptOrSign,
+        constants.PubKeyAlgorithm.RSASign,
+        constants.PubKeyAlgorithm.ECDSA,
+        constants.PubKeyAlgorithm.EdDSA,
+    }
+)
+_EC_MINIMUM_BITS: Final = 255
+_RSA_ALGORITHMS: Final = frozenset(
+    {
+        constants.PubKeyAlgorithm.RSAEncryptOrSign,
+        constants.PubKeyAlgorithm.RSASign,
+    }
+)
+_RSA_MINIMUM_BITS: Final = 4096
 
 
 class GeneralPublic:
@@ -343,6 +360,9 @@ class FoundationCommitter(GeneralPublic):
                     if key_model is None:
                         # Was not a primary key, so skip it
                         continue
+                    _validate_key_strength(
+                        constants.PubKeyAlgorithm(key_model.algorithm), key_model.length, key_model.created
+                    )
                     if key is not None:
                         raise ValueError("Expected one key block, got multiple")
                     key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
@@ -647,6 +667,9 @@ class CommitteeParticipant(FoundationCommitter):
                     if key_model is None:
                         # Was not a primary key, so skip it
                         continue
+                    _validate_key_strength(
+                        constants.PubKeyAlgorithm(key_model.algorithm), key_model.length, key_model.created
+                    )
                     key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
                     key_list.append(key)
                 except Exception as e:
@@ -858,3 +881,16 @@ class FoundationAdmin(CommitteeMember):
             raise
 
         return (num_unlinked, num_deleted)
+
+
+def _validate_key_strength(algorithm: constants.PubKeyAlgorithm, length: int, created: datetime.datetime) -> None:
+    """Raise ValueError if the key is recently-generated and does not meet the minimum cryptographic strength."""
+    if created > datetime.datetime(2026, 4, 1, 0, 0, 0, tzinfo=datetime.UTC):
+        if algorithm not in _APPROVED_KEY_ALGORITHMS:
+            raise ValueError(f"Key algorithm {algorithm.name} is not accepted for upload; use RSA, ECDSA, or EdDSA")
+        if algorithm in _RSA_ALGORITHMS and length < _RSA_MINIMUM_BITS:
+            raise ValueError(
+                f"RSA key size {length} bits is below the minimum of {_RSA_MINIMUM_BITS} bits required by Apache policy"
+            )
+        if algorithm not in _RSA_ALGORITHMS and length < _EC_MINIMUM_BITS:
+            raise ValueError(f"Elliptic curve key size {length} bits is below the minimum of {_EC_MINIMUM_BITS} bits")
