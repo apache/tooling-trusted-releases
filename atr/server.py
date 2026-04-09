@@ -324,6 +324,9 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         ssh_server = await ssh.server_start()
         app.extensions["ssh_server"] = ssh_server
 
+        ssh_rate_limit_task = asyncio.create_task(ssh.rate_limit_cleanup_loop())
+        app.extensions["ssh_rate_limit_task"] = ssh_rate_limit_task
+
     @app.after_serving
     async def shutdown() -> None:
         """Clean up services after the app stops serving requests."""
@@ -338,6 +341,11 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
                 await scheduler_task
             except asyncio.CancelledError:
                 ...
+
+        if ssh_cleanup_task := app.extensions.get("ssh_rate_limit_task"):
+            ssh_cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ssh_cleanup_task
 
         ssh_server = app.extensions.get("ssh_server")
         if ssh_server:

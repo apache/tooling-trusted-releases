@@ -19,6 +19,7 @@
 
 import asyncio
 import asyncio.subprocess
+import collections
 import datetime
 import glob
 import os
@@ -63,6 +64,15 @@ _PATH_ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
 # We also allow + which is in common use
 _PATH_VERSION_CHARS: Final = _PATH_ALPHANUM | frozenset(".-+")
 
+_RATE_LIMIT_IP: Final = 100
+_RATE_LIMIT_USER: Final = 10
+_RATE_WINDOW: Final = 60.0
+
+# Keyed by IP address; catches all connections including failed auth
+global_ip_rate_buckets: dict[str, collections.deque[float]] = {}
+# Keyed by ASF UID; only incremented on successful authentication
+global_user_rate_buckets: dict[str, collections.deque[float]] = {}
+
 
 class RsyncArgsError(Exception):
     """Exception raised when the rsync arguments are invalid."""
@@ -75,12 +85,15 @@ class SSHServer(asyncssh.SSHServer):
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         """Called when a connection is established."""
-        # Store connection for use in begin_auth
         self._conn = conn
         self._github_asf_uid: str | None = None
         self._github_payload: github.TrustedPublisherPayload | None = None
         peer_addr = conn.get_extra_info("peername")[0]
         log.info(f"SSH connection received from {peer_addr}")
+        if not _rate_limit_check(global_ip_rate_buckets, peer_addr, _RATE_LIMIT_IP):
+            log.warning(f"IP rate limit exceeded for {peer_addr}")
+            conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+            return
 
     def connection_lost(self, exc: Exception | None) -> None:
         """Called when a connection is lost or closed."""
@@ -136,11 +149,16 @@ class SSHServer(asyncssh.SSHServer):
 
     def auth_completed(self) -> None:
         username = self._conn.get_extra_info("username")
-        type = "ssh"
+        auth_type = "ssh"
         if username == "github":
-            type = "githubssh"
+            auth_type = "githubssh"
             username = self._github_asf_uid
-        log.auth_success(type, username)
+        if username and not _rate_limit_check(global_user_rate_buckets, username, _RATE_LIMIT_USER):
+            log.warning(f"User rate limit exceeded for {username}")
+            log.auth_failure(auth_type, "rate_limit_exceeded", username)
+            self._conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+            return
+        log.auth_success(auth_type, username)
 
     def public_key_auth_supported(self) -> bool:
         """Indicate whether public key authentication is supported."""
@@ -192,6 +210,20 @@ class SSHServer(asyncssh.SSHServer):
         if username != "github":
             return None
         return self._github_payload
+
+
+async def rate_limit_cleanup_loop() -> None:
+    """Periodically remove stale entries from the rate limit buckets."""
+    while True:
+        await asyncio.sleep(_RATE_WINDOW)
+        now = time.monotonic()
+        for bucket in (global_ip_rate_buckets, global_user_rate_buckets):
+            stale_keys = [key for key, window in bucket.items() if not window or (now - window[-1]) > _RATE_WINDOW]
+            if len(stale_keys) == len(bucket):
+                bucket.clear()
+            else:
+                for key in stale_keys:
+                    del bucket[key]
 
 
 async def server_start() -> asyncssh.SSHAcceptor:
@@ -249,6 +281,22 @@ def _output_stderr(process: asyncssh.SSHServerProcess, message: str) -> None:
         log.warning("Failed to write error to client stderr: broken pipe")
     except Exception as e:
         log.exception(f"Error writing to client stderr: {e}")
+
+
+def _rate_limit_check(bucket: dict[str, collections.deque[float]], key: str, limit: int) -> bool:
+    """Return True if key is within the rate limit, False if exceeded. Mutates bucket."""
+    now = time.monotonic()
+    window = bucket.get(key)
+    if window is not None:
+        while window and (now - window[0]) > _RATE_WINDOW:
+            window.popleft()
+    if window and len(window) >= limit:
+        return False
+    if window is None:
+        window = collections.deque()
+        bucket[key] = window
+    window.append(now)
+    return True
 
 
 async def _step_01_handle_client(process: asyncssh.SSHServerProcess, server: SSHServer) -> None:
