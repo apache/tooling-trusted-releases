@@ -187,7 +187,24 @@ async def _checkout_github_source(
     repo_url = f"https://github.com/{payload.repository}.git"
     started_ns = time.perf_counter_ns()
     try:
-        await asyncio.to_thread(_clone_repo, repo_url, payload.sha, checkout_dir)
+        await asyncio.wait_for(asyncio.to_thread(_clone_repo, repo_url, payload.sha, checkout_dir), timeout=360)
+    except TimeoutError:
+        elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
+        log.exception(
+            "Timeout cloning GitHub repo for compare.source_trees",
+            repo_url=repo_url,
+            sha=payload.sha,
+            checkout_dir=str(checkout_dir),
+            clone_ms=elapsed_ms,
+            git_author_name=os.environ.get("GIT_AUTHOR_NAME"),
+            git_author_email=os.environ.get("GIT_AUTHOR_EMAIL"),
+            git_committer_name=os.environ.get("GIT_COMMITTER_NAME"),
+            git_committer_email=os.environ.get("GIT_COMMITTER_EMAIL"),
+            user=os.environ.get("USER"),
+            logname=os.environ.get("LOGNAME"),
+            email=os.environ.get("EMAIL"),
+        )
+        return None
     except Exception:
         elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
         log.exception(
