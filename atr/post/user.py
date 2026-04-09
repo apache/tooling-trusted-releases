@@ -119,17 +119,16 @@ async def _cache_session(session: web.Committer) -> None:
 
     session_data = {
         "uid": session.uid,
-        "dn": getattr(session, "dn", None),
-        "fullname": getattr(session, "fullname", None),
-        "email": getattr(session, "email", f"{session.uid}@apache.org"),
-        "isMember": getattr(session, "isMember", False),
-        "isChair": getattr(session, "isChair", False),
-        "isRoot": getattr(session, "isRoot", False),
-        "pmcs": getattr(session, "committees", []),
-        "projects": getattr(session, "projects", []),
-        "mfa": getattr(session, "mfa", False),
-        "roleaccount": getattr(session, "isRole", False),
-        "metadata": getattr(session, "metadata", {}),
+        "dn": session.dn,
+        "fullname": session.fullname,
+        "email": session.email,
+        "isMember": session.is_member,
+        "isChair": session.is_chair,
+        # "isRoot": session.is_root,
+        "pmcs": session.committees,
+        "projects": session.projects,
+        "mfa": session.mfa,
+        "roleaccount": session.is_role,
     }
 
     cache_data[session.uid] = session_data

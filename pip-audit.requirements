@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@fab20db357dd689ae5863c86d9eb1b07ae690b83
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@cb9b3fe9bbd6a6065f77cee595b617a8e4906013
     # via tooling-trusted-releases
 asyncssh==2.22.0
     # via tooling-trusted-releases
@@ -319,7 +319,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-ruff==0.15.9
+ruff==0.15.10
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -370,7 +370,7 @@ urllib3==2.6.3
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.2.0
+virtualenv==21.2.1
     # via pre-commit
 watchfiles==1.1.1
     # via

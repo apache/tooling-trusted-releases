@@ -22,12 +22,12 @@ import re
 import time
 from typing import Final
 
-import asfquart.session
-
 # from attr import asdict
 import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.util as util
 import atr.web as web
 
@@ -78,7 +78,7 @@ class Committer:
         self.altemails: list[str] = []
         self.isMember: bool = False
         self.isChair: bool = False
-        self.isRoot: bool = False
+        # self.isRoot: bool = False
         self.pmcs: list[str] = []
         self.projects: list[str] = []
 
@@ -104,8 +104,8 @@ class Committer:
             log.info(f"Took {finish - start:,} ns to get chair list")
 
             start = time.perf_counter_ns()
-            root_list = self._get_group_membership(ldap_search, LDAP_ROOT_BASE, "member", 3)
-            self.isRoot = self.dn in root_list
+            # root_list = self._get_group_membership(ldap_search, LDAP_ROOT_BASE, "member", 3)
+            # self.isRoot = self.dn in root_list
             finish = time.perf_counter_ns()
             log.info(f"Took {finish - start:,} ns to get root list")
 
@@ -235,12 +235,12 @@ class AuthoriserASFQuart:
     def member_of_and_participant_of(self, asf_uid: str) -> tuple[frozenset[str], frozenset[str]]:
         return self.__cache.member_of[asf_uid], self.__cache.participant_of[asf_uid]
 
-    async def cache_refresh(self, asf_uid: str, asfquart_session: asfquart.session.ClientSession) -> None:
+    async def cache_refresh(self, asf_uid: str, asfquart_session: sql.UserSession) -> None:
         if not self.__cache.outdated(asf_uid):
             return
-        if not isinstance(asfquart_session, asfquart.session.ClientSession):
+        if not isinstance(asfquart_session, sql.UserSession):
             # Defense in depth runtime check, already validated by the type checker
-            raise AuthenticationError("ASFQuart session is not a ClientSession")
+            raise AuthenticationError("Session is not a UserSession")
 
         committees = frozenset(asfquart_session.committees)
         projects = frozenset(asfquart_session.projects)
@@ -340,17 +340,13 @@ class Authorisation(AsyncObject):
                     case web.Committer():
                         asfquart_session = asf_uid.session
                     case _:
-                        asfquart_session = await asfquart.session.read()
-                # asfquart_session = await session.read()
-                if asfquart_session is None:
+                        asfquart_session = await sessions.read()
+                if not isinstance(asfquart_session, sql.UserSession):
                     raise AuthenticationError("No ASFQuart session found")
                 self.__authoriser = authoriser_asfquart
                 self.__asf_uid = asfquart_session.uid
-                if not isinstance(self.__asf_uid, str | None):
-                    raise AuthenticationError("ASFQuart session has no uid")
                 self.__authenticated = True
-                if isinstance(self.__asf_uid, str):
-                    await self.__authoriser.cache_refresh(self.__asf_uid, asfquart_session)
+                await self.__authoriser.cache_refresh(self.__asf_uid, asfquart_session)
             case str() | None:
                 self.__authoriser = authoriser_ldap
                 self.__asf_uid = asf_uid

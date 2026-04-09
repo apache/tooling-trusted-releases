@@ -39,7 +39,6 @@ from typing import Any, Final, Protocol
 import aiofiles.os
 import aiohttp
 import aioshutil
-import asfquart
 import asfquart.base as base
 import asfquart.session as session
 import gitignore_parser
@@ -53,7 +52,6 @@ import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.safe as safe
-import atr.models.session
 import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.paths as paths
@@ -77,9 +75,6 @@ DEV_THREAD_URLS: Final[dict[str, str]] = {
 }
 NPM_PACKAGE_JSON_MAX_SIZE: Final[int] = 512 * 1024
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
-
-
-NoneType: Final[type[None]] = type(None)
 
 
 class EmailRecipients(Protocol):
@@ -290,29 +285,6 @@ async def content_list(
             is_file=bool(stat.st_mode & 0o0100000),
             is_dir=bool(stat.st_mode & 0o040000),
         )
-
-
-def cookie_pmcs() -> list[str] | None:
-    pmcs = None
-    try:
-        cookie_id = asfquart.APP.app_id
-        cookie_session = quart.session.get(cookie_id, {})
-        if isinstance(cookie_session, dict):
-            pmcs = cookie_session.get("pmcs")
-            if not isinstance(pmcs, list):
-                pmcs = None
-    except Exception:
-        pmcs = None
-    return pmcs
-
-
-def cookie_pmcs_or_session_pmcs(session_data: session.ClientSession) -> list[str]:
-    pmcs = cookie_pmcs()
-    if pmcs is None:
-        pmcs = session_data.committees
-    if (not isinstance(pmcs, list)) or (not (all(isinstance(item, str) for item in pmcs))):
-        raise TypeError("Session pmcs must be a list[str]")
-    return pmcs
 
 
 async def create_hard_link_clone(
@@ -527,9 +499,12 @@ def format_permissions(mode: int) -> str:
 
 
 async def get_asf_id_or_die() -> str:
-    web_session = await session.read()
-    if (web_session is None) or (web_session.uid is None):
-        raise base.ASFQuartException("Not authenticated", errorcode=401)
+    web_session = getattr(quart.g, "_user_session", None)
+    if not isinstance(web_session, sql.UserSession):
+        web_session = await session.read()
+        if not isinstance(web_session, sql.UserSession):
+            raise base.ASFQuartException("Not authenticated", errorcode=401)
+        quart.g._user_session = web_session
     return web_session.uid
 
 
@@ -622,16 +597,8 @@ def is_disallowed_dotfile(segment: str) -> bool:
 def is_user_session_downgraded() -> bool:
     """Check whether a user session is downgraded from active admin privileges."""
     try:
-        app = asfquart.APP
-        if (not hasattr(app, "app_id")) or (not isinstance(app.app_id, str)):
-            log.error("Cannot get valid app_id to read session for admin view check")
-            return False
-
-        cookie_id = app.app_id
-        session_dict = quart.session.get(cookie_id, {})
-        return session_dict.get("downgrade_admin_to_user", False)
-    except Exception:
-        log.exception("Error checking admin downgrade session status")
+        return bool(getattr(quart.g, "is_session_downgraded", False))
+    except RuntimeError:
         return False
 
 
@@ -696,25 +663,6 @@ def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
     if negate:
         return not matched
     return matched
-
-
-def validate_trusted_publishing_constraints(
-    github_repository_name: str | None,
-    github_repository_branch: str | None,
-    all_paths: list[str],
-) -> None:
-    if all_paths and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when any workflow path is set.")
-
-    if github_repository_branch and (not github_repository_name):
-        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
-
-    if github_repository_name and ("/" in github_repository_name):
-        raise ValueError("GitHub repository name must not contain a slash.")
-
-    for path in all_paths:
-        if not path.startswith(".github/workflows/"):
-            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
 
 
 async def number_of_release_files(release: sql.Release) -> int:
@@ -934,75 +882,6 @@ async def session_cache_write(cache_data: dict[str, dict]) -> None:
     await atomic_write_file(cache_path, json.dumps(cache_data, indent=2))
 
 
-def session_cookie_data_from_client(  # noqa: C901
-    session_data: session.ClientSession, pmcs: list[str]
-) -> atr.models.session.CookieData:
-    uid = session_data.uid
-    if not isinstance(uid, str):
-        raise TypeError("Session uid must be a str")
-
-    dn = session_data.dn
-    if (dn is not None) and (not isinstance(dn, str)):
-        raise TypeError("Session dn must be a str or None")
-
-    fullname = session_data.fullname
-    if (fullname is not None) and (not isinstance(fullname, str)):
-        raise TypeError("Session fullname must be a str or None")
-
-    email = session_data.email
-    # The type checker doesn't believe that session_data.email can be None
-    # But we get the data from upstream, so we can't be entirely sure about this
-    # Therefore, just in case it can be, we use the following convoluted approach
-    if (not isinstance(email, NoneType)) and (not isinstance(email, str)):
-        raise TypeError("Session email must be a str or None")
-
-    is_member = session_data.isMember
-    if not isinstance(is_member, bool):
-        raise TypeError("Session isMember must be a bool")
-
-    is_chair = session_data.isChair
-    if not isinstance(is_chair, bool):
-        raise TypeError("Session isChair must be a bool")
-
-    is_root = session_data.isRoot
-    if not isinstance(is_root, bool):
-        raise TypeError("Session isRoot must be a bool")
-
-    if (not isinstance(pmcs, list)) or (not (all(isinstance(item, str) for item in pmcs))):
-        raise TypeError("Session pmcs must be a list[str]")
-
-    projects = session_data.projects
-    if (not isinstance(projects, list)) or (not (all(isinstance(item, str) for item in projects))):
-        raise TypeError("Session projects must be a list[str]")
-
-    mfa = session_data.mfa
-    if not isinstance(mfa, bool):
-        raise TypeError("Session mfa must be a bool")
-
-    roleaccount = session_data.isRole
-    if not isinstance(roleaccount, bool):
-        raise TypeError("Session roleaccount must be a bool")
-
-    metadata = session_data.metadata
-    if not isinstance(metadata, dict):
-        raise TypeError("Session metadata must be a dict")
-
-    return atr.models.session.CookieData(
-        uid=uid,
-        dn=dn,
-        fullname=fullname,
-        email=email,
-        isMember=is_member,
-        isChair=is_chair,
-        isRoot=is_root,
-        pmcs=pmcs,
-        projects=projects,
-        mfa=mfa,
-        roleaccount=roleaccount,
-        metadata=metadata,
-    )
-
-
 def static_path(*args: str) -> str:
     filename = str(pathlib.PurePosixPath(*args))
     return quart.url_for("static", filename=filename)
@@ -1220,6 +1099,25 @@ def validate_path_segment(path_segment: str, position: str = "Path segment") -> 
     return path_segment
 
 
+def validate_trusted_publishing_constraints(
+    github_repository_name: str | None,
+    github_repository_branch: str | None,
+    all_paths: list[str],
+) -> None:
+    if all_paths and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when any workflow path is set.")
+
+    if github_repository_branch and (not github_repository_name):
+        raise ValueError("GitHub repository name is required when a GitHub branch is set.")
+
+    if github_repository_name and ("/" in github_repository_name):
+        raise ValueError("GitHub repository name must not contain a slash.")
+
+    for path in all_paths:
+        if not path.startswith(".github/workflows/"):
+            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+
+
 # TODO: AM put these rules into safe.versionkey
 def version_key_error(version_key: str) -> str | None:
     """Check if the given version name is valid."""
@@ -1285,8 +1183,9 @@ def version_sort_key(version: str) -> bytes:
     return bytes(result)
 
 
-def write_quart_session_cookie(session_data: atr.models.session.CookieData) -> None:
-    session.write(session_data.model_dump(mode="json"))
+async def write_session(user_session: sql.UserSession) -> None:
+    await session.areplace(user_session)
+    quart.g._user_session = user_session
 
 
 async def _create_hard_link_clone_checks(

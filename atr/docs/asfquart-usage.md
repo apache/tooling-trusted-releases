@@ -58,7 +58,7 @@ ATR calls `asfquart.session.read()` throughout the codebase to obtain the curren
 4. If valid, updates the last-access timestamp and returns a `ClientSession` object
 5. If expired or absent, returns `None`
 
-The returned `ClientSession` object provides: `uid` (ASF user ID), `dn` (distinguished name), `fullname`, `email`, `committees` (PMC memberships), `projects` (committer memberships), `isMember`, `isChair`, `isRoot`, `isRole` (role/service account flag), `mfa`, and a `metadata` dict for application-specific data.
+The returned `ClientSession` object provides: `uid` (ASF user ID), `dn` (distinguished name), `fullname`, `email`, `committees` (PMC memberships), `projects` (committer memberships), `isMember`, `isChair`, `isRole` (role/service account flag), `mfa`, and a `metadata` dict for application-specific data.
 
 ATR uses the `metadata` dict to track admin impersonation state (the `admin` key stores the original admin's UID when browsing as another user).
 

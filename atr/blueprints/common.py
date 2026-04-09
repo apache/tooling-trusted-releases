@@ -23,16 +23,16 @@ from collections.abc import Callable
 from typing import Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin, get_type_hints
 
 import asfquart.base as base
-import asfquart.session
 import pydantic
 import quart
 import quart_schema
 import werkzeug.exceptions as exceptions
 
 import atr.form as form
-import atr.ldap as ldap
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.sessions as sessions
 import atr.web as web
 
 QUART_CONVERTERS: Final[dict[Any, str]] = {
@@ -54,24 +54,27 @@ VALIDATED_TYPES: Final[set[Any]] = {
 
 
 async def authenticate() -> web.Committer:
-    web_session = await asfquart.session.read()
-    if web_session is None:
+    web_session = await sessions.read()
+    if not isinstance(web_session, sql.UserSession):
         raise base.ASFQuartException("Not authenticated", errorcode=401)
-    if (web_session.uid is None) or (not await ldap.is_active(web_session.uid)):
-        asfquart.session.clear()
-        raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+    # if not await ldap.is_active(web_session.uid):
+    #     await sessions.deleted_or_banned(web_session.uid)
+    #     raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+    # admin_uid = web_session.admin_uid
+    # if isinstance(admin_uid, str) and admin_uid and (not await ldap.is_active(admin_uid)):
+    #     await sessions.deleted_or_banned(admin_uid)
+    #     raise base.ASFQuartException("Account is disabled", errorcode=401)
+
     return web.Committer(web_session)
 
 
 async def authenticate_public() -> web.Public:
-    web_session = await asfquart.session.read()
-    if web_session is None:
+    try:
+        return await authenticate()
+    except base.ASFQuartException:
         return None
-    else:
-        try:
-            return await authenticate()
-        except base.ASFQuartException:
-            return None
 
 
 def build_path(

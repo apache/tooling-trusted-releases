@@ -19,7 +19,6 @@ import pathlib
 from typing import Final, Literal
 
 import aiofiles
-import asfquart.session
 import quart.wrappers.response as quart_response
 import sqlalchemy.orm as orm
 import sqlmodel
@@ -29,6 +28,7 @@ import atr.config as config
 import atr.db as db
 import atr.htm as htm
 import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.template as template
 import atr.user as user
 import atr.util as util
@@ -73,11 +73,9 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
     URL: /
     Show public info or an entry portal for participants.
     """
-    session_data = await asfquart.session.read()
-    if session_data:
+    session_data = await sessions.read()
+    if isinstance(session_data, sql.UserSession):
         uid = session_data.uid
-        if not uid:
-            return await template.render("index-public.html")
 
         phase_sequence = ["Compose", "Vote", "Finish"]
         phase_index_map = {

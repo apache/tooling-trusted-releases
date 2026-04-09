@@ -22,7 +22,6 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 import asfquart.base as base
-import asfquart.session as session
 import markupsafe
 import pydantic_core
 import quart
@@ -63,7 +62,7 @@ class CommitterRouteFunction(Protocol[R]):
 class Committer:
     """Session with extra information about committers."""
 
-    def __init__(self, web_session: session.ClientSession) -> None:
+    def __init__(self, web_session: sql.UserSession) -> None:
         self.__form_cls: type[form.Form] | None = None
         self.__form_data: dict[str, Any] | None = None
         self.__projects: list[sql.Project] | None = None
@@ -71,8 +70,6 @@ class Committer:
 
     @property
     def asf_uid(self) -> str:
-        if self.session.uid is None:
-            raise base.ASFQuartException("Not authenticated", errorcode=401)
         return self.session.uid
 
     def __getattr__(self, name: str) -> Any:

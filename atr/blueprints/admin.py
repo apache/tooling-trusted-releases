@@ -20,13 +20,14 @@ from types import ModuleType
 from typing import Any, Concatenate, Final, overload
 
 import asfquart.base as base
-import asfquart.session
 import pydantic
 import quart
 import quart_schema
 
 import atr.blueprints.common as common
 import atr.log as log
+import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.user as user
 import atr.web as web
 
@@ -40,7 +41,8 @@ _routes: list[str] = []
 def post(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunction[Any]]:
     def decorator(func: web.CommitterRouteFunction[Any]) -> web.RouteFunction[Any]:
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return await func(quart.g.session, *args, **kwargs)
+            session = await common.authenticate()
+            return await func(session, *args, **kwargs)
 
         endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
         _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=["POST"])
@@ -167,11 +169,9 @@ def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> 
 
 @_BLUEPRINT.before_request
 async def _check_admin_access() -> None:
-    web_session = await asfquart.session.read()
-    if web_session is None:
+    web_session = await sessions.read()
+    if not isinstance(web_session, sql.UserSession):
         raise base.ASFQuartException("Not authenticated", errorcode=401)
 
     if not user.is_admin(web_session.uid):
         raise base.ASFQuartException("You are not authorized to access the admin interface", errorcode=403)
-
-    quart.g.session = web.Committer(web_session)

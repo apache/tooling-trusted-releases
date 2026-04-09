@@ -30,7 +30,6 @@ from typing import Any, Final, Literal, NamedTuple
 import aiofiles.os
 import asfquart
 import asfquart.base as base
-import asfquart.session
 import htpy
 import jwt
 import pydantic
@@ -50,7 +49,6 @@ import atr.ldap as ldap
 import atr.log as log
 import atr.mapping as mapping
 import atr.models.safe as safe
-import atr.models.session
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.paths as paths
@@ -177,8 +175,6 @@ async def browse_as_post(
     import atr.get.root as root
 
     new_uid = browse_form.uid
-    if not (current_session := await asfquart.session.read()):
-        raise base.ASFQuartException("Not authenticated", 401)
 
     try:
         committer = principal.Committer(new_uid)
@@ -188,30 +184,25 @@ async def browse_as_post(
         return await session.redirect(browse_as_get)
 
     admin_id: str = session.asf_uid
-    if isinstance(current_session.metadata, dict):
-        existing_admin = current_session.metadata.get("admin")
-        if isinstance(existing_admin, str) and existing_admin:
-            admin_id = existing_admin
+    existing_admin = session.session.admin_uid
+    if isinstance(existing_admin, str) and existing_admin:
+        admin_id = existing_admin
 
-    asfquart.session.clear()
-    # TODO: Make this safer
-    session_cookie = atr.models.session.CookieData(
-        uid=committer.uid,
-        dn=None,
-        fullname=committer.fullname or committer.uid,
-        email=committer.email,
-        isMember=committer.isMember,
-        isChair=committer.isChair,
-        isRoot=committer.isRoot,
-        pmcs=sorted(set(committer.pmcs)),
-        projects=sorted(set(committer.projects)),
-        mfa=current_session.mfa,
-        roleaccount=False,
-        metadata={"admin": admin_id},
+    await util.write_session(
+        sql.UserSession(
+            uid=committer.uid,
+            fullname=committer.fullname or committer.uid,
+            email=committer.email,
+            is_member=committer.isMember,
+            is_chair=committer.isChair,
+            # is_root=committer.isRoot,
+            committees=sorted(set(committer.pmcs)),
+            projects=sorted(set(committer.projects)),
+            mfa=session.session.mfa,
+            admin_uid=admin_id,
+        )
     )
     log.auth_event("impersonate", admin_id, as_user=committer.uid)
-    # log.info(f"New Session Cookie Data: {session_cookie}")
-    util.write_quart_session_cookie(session_cookie)
 
     await quart.flash(
         f"You are now browsing as '{new_uid}'. To return to your own account, please log out and log back in.",
@@ -1065,23 +1056,18 @@ async def toggle_view_get(_session: web.Committer, _toggle_view: Literal["toggle
 
 @admin.typed
 async def toggle_view_post(
-    _session: web.Committer, _toggle_view: Literal["toggle-view"], _form: form.Empty
+    session: web.Committer, _toggle_view: Literal["toggle-view"], _form: form.Empty
 ) -> web.WerkzeugResponse:
     """
     URL: POST /toggle-view
 
     Toggle between admin and user views.
     """
-    app = asfquart.APP
-    if (not hasattr(app, "app_id")) or (not isinstance(app.app_id, str)):
-        raise TypeError("Internal error: APP has no valid app_id")
+    session.session.downgrade_admin_to_user = not session.session.downgrade_admin_to_user
+    await asfquart.APP.sessions.save(session.session, {"downgrade_admin_to_user"})
+    quart.g.is_session_downgraded = session.session.downgrade_admin_to_user
 
-    cookie_id = app.app_id
-    session_dict = quart.session.get(cookie_id, {})
-    downgrade = not session_dict.get("downgrade_admin_to_user", False)
-    session_dict["downgrade_admin_to_user"] = downgrade
-
-    message = "Viewing as regular user" if downgrade else "Viewing as admin"
+    message = "Viewing as regular user" if session.session.downgrade_admin_to_user else "Viewing as admin"
     await quart.flash(message, "success")
     referrer = quart.request.referrer
     if referrer and web.valid_url(referrer, quart.request.host):
