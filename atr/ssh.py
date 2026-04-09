@@ -73,8 +73,6 @@ class RsyncArgsError(Exception):
 class SSHServer(asyncssh.SSHServer):
     """Simple SSH server that handles connections."""
 
-    auth_username: str | None = None
-
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         """Called when a connection is established."""
         # Store connection for use in begin_auth
@@ -94,7 +92,6 @@ class SSHServer(asyncssh.SSHServer):
     async def begin_auth(self, username: str) -> bool:
         """Begin authentication for the specified user."""
         log.info(f"Beginning auth for user {username}")
-        self.auth_username = username
 
         if username == "github":
             log.info("GitHub authentication will use validate_public_key")
