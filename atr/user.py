@@ -44,6 +44,7 @@ def is_admin(user_id: str | None) -> bool:
         return False
     if config.is_test_mode() and (user_id == "test"):
         return True
+    # TODO: is_user_session_downgraded only works in a Quart async context
     if util.is_user_session_downgraded():
         return False
     if user_id in _get_additional_admin_users():

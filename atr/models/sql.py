@@ -579,6 +579,35 @@ class TextValue(sqlmodel.SQLModel, table=True):
     value: str = sqlmodel.Field()
 
 
+# UserSession:
+class UserSession(sqlmodel.SQLModel, table=True):
+    sid_hash: str = sqlmodel.Field(default="", primary_key=True)
+    uid: str = sqlmodel.Field(index=True)
+    dn: str | None = sqlmodel.Field(default=None)
+    fullname: str | None = sqlmodel.Field(default=None)
+    email: str | None = sqlmodel.Field(default=None)
+    is_member: bool = sqlmodel.Field(default=False)
+    is_chair: bool = sqlmodel.Field(default=False)
+    is_root: bool = sqlmodel.Field(default=False)
+    committees: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    projects: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    mfa: bool = sqlmodel.Field(default=False)
+    is_role: bool = sqlmodel.Field(default=False)
+    admin_uid: str | None = sqlmodel.Field(default=None, index=True)
+    last_account_check: float | None = sqlmodel.Field(default=None)
+    downgrade_admin_to_user: bool = sqlmodel.Field(default=False)
+    cts: float = sqlmodel.Field(default=0.0, nullable=False)
+    uts: float = sqlmodel.Field(default=0.0, nullable=False)
+
+    def model_post_init(self, _context: Any) -> None:
+        if (self.email is None) and self.uid:
+            self.email = f"{self.uid}@apache.org"
+
+
 # WorkflowSSHKey:
 class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True, index=True)

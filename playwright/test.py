@@ -1052,7 +1052,7 @@ def test_session_01_banned_user_is_rejected(page: Page, credentials: Credentials
     wait_for_path(page, "/")
 
     logging.info("Verifying that the session expired error is shown")
-    error_locator = page.locator("h2.text-danger-emphasis:has-text('Session expired')")
+    error_locator = page.locator("h2.text-danger-emphasis:has-text('Account is disabled')")
     expect(error_locator).to_be_visible()
     logging.info("Session expired error confirmed for banned user")
 

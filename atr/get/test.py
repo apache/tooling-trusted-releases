@@ -19,6 +19,7 @@ import json
 from typing import Literal
 
 import aiofiles
+import asfquart
 import asfquart.base as base
 import quart
 import werkzeug.wrappers.response as response
@@ -31,10 +32,10 @@ import atr.get.root as root
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.safe as safe
-import atr.models.session
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.paths as paths
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.template as template
@@ -75,18 +76,14 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
     if not config.is_test_mode():
         return quart.abort(404)
 
-    session_data = atr.models.session.CookieData(
-        uid="test",
-        fullname="Test User",
-        pmcs=["test"],
-        projects=["test"],
-        isMember=False,
-        isChair=False,
-        roleaccount=False,
-        metadata={},
+    await util.write_session(
+        sql.UserSession(
+            uid="test",
+            fullname="Test User",
+            committees=["test"],
+            projects=["test"],
+        )
     )
-
-    util.write_quart_session_cookie(session_data)
     return await web.redirect(root.index)
 
 
@@ -100,18 +97,14 @@ async def test_login_banned(
     if not config.is_test_mode():
         return quart.abort(404)
 
-    session_data = atr.models.session.CookieData(
-        uid="test-banned",
-        fullname="Banned Test User",
-        pmcs=[],
-        projects=[],
-        isMember=False,
-        isChair=False,
-        roleaccount=False,
-        metadata={},
+    await util.write_session(
+        sql.UserSession(
+            uid="test-banned",
+            fullname="Banned Test User",
+            committees=[],
+            projects=[],
+        )
     )
-
-    util.write_quart_session_cookie(session_data)
     return await web.redirect(root.index)
 
 
@@ -217,14 +210,12 @@ async def test_recheck_session(
     if not config.is_test_mode():
         return quart.abort(404)
 
-    import asfquart.session as asfquart_session
-
-    existing = await asfquart_session.read()
-    if existing is None:
+    existing = await sessions.read()
+    if not isinstance(existing, sql.UserSession):
         raise base.ASFQuartException("No session to recheck", errorcode=400)
 
-    existing["metadata"]["last_account_check"] = 0
-    asfquart_session.write(existing)
+    existing.last_account_check = 0
+    await asfquart.APP.sessions.save(existing, {"last_account_check"})
     return await web.redirect(root.index)
 
 

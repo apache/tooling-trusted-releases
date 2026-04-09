@@ -25,7 +25,7 @@ class ClientSession(dict):
         we can send it to quart in a format it can render."""
         ...
 
-async def read(expiry_time=..., app=...) -> typing.Optional[ClientSession]:
+async def read(expiry_time=..., app=...) -> typing.Any:
     """Fetches a cookie-based session if found (and valid), and updates the last access timestamp
     for the session."""
     ...
@@ -34,6 +34,18 @@ def write(session_data: dict, app=...):  # -> None:
     """Sets a cookie-based user session for this app"""
     ...
 
+async def awrite(session_data: dict, app=...):  # -> None:
+    """Sets a server-side user session for this app"""
+    ...
+
 def clear(app=...):  # -> None:
     """Clears a session"""
+    ...
+
+async def aclear(app=...):  # -> None:
+    """Clears a server-side session"""
+    ...
+
+async def areplace(session_object: typing.Any, app=...):  # -> None:
+    """Replaces the current session with a pre-constructed session object"""
     ...

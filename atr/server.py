@@ -62,6 +62,7 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.preload as preload
 import atr.pubsub as pubsub
+import atr.sessions as sessions
 import atr.ssh as ssh
 import atr.storage as storage
 import atr.tasks as tasks
@@ -256,7 +257,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
         import atr.metadata as metadata
         import atr.post as post
 
-        current_user = await asfquart.session.read()
+        current_user = await sessions.read()
         topnav_unfinished_releases: list[tuple[str, str, list[sql.Release]]] = []
         topnav_user_projects: list[tuple[str, str]] = []
         colour_blindness_mode = sql.ColourBlindnessMode.NONE
@@ -445,8 +446,8 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
 def _app_setup_rate_limits(app: base.QuartApp, conf: type[config.AppConfig]):
     async def get_rate_limit_key() -> str:
         """Authenticated users -> pool per user"""
-        session = await asfquart.session.read()
-        if session is not None:
+        session = await sessions.read()
+        if isinstance(session, sql.UserSession):
             return f"user:{session.uid}"
         return f"ip:{quart.request.remote_addr}"
 
@@ -474,35 +475,39 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
     @app.before_request
     async def validate_session() -> None:
         """
-        Check account is still active and augment cookie with additional information
-        Note - absolute session max lifetime (MAX_SESSION_AGE) is handled by asfquart
+        Check account is still active via periodic LDAP liveness checks.
+        Absolute session max lifetime (MAX_SESSION_AGE) and idle timeout are
+        enforced by the session store during validate().
         """
-        session = await asfquart.session.read()
-        if session is None or session.uid is None:
+        session = await sessions.read()
+        if not isinstance(session, sql.UserSession):
             return
+
+        quart.g.is_session_downgraded = session.downgrade_admin_to_user
 
         conf = config.get()
         account_check_interval = conf.ACCOUNT_CHECK_INTERVAL
 
-        # Check if session has a check timestamp in metadata
-        last_check = session.metadata.get("last_account_check")
+        # Check if session has a check timestamp
+        last_check = session.last_account_check
         current_time = time.time()
-        uid = str(session.uid)
+        uid = session.uid
 
         if last_check is None or (current_time - last_check > account_check_interval):
-            # First time checking this session, record time
-            session.metadata["last_account_check"] = current_time
             if not await ldap.is_active(uid):
-                log.auth_failure("oauth", "account_deleted_or_banned", uid)
-                asfquart.session.clear()
-                raise base.ASFQuartException("Session expired", errorcode=401)
+                await sessions.deleted_or_banned(uid)
+                raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+            admin_uid = session.admin_uid
+            if isinstance(admin_uid, str) and admin_uid and (not await ldap.is_active(admin_uid)):
+                await sessions.deleted_or_banned(admin_uid)
+                raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+            session.last_account_check = current_time
+            await asfquart.APP.sessions.save(session, {"last_account_check"})
 
         if last_check is None:
-            # If this was the first time we saw the session, make sure it contains the right data
             log.auth_success("oauth", uid)
-            pmcs = util.cookie_pmcs_or_session_pmcs(session)
-            session_data = util.session_cookie_data_from_client(session, pmcs)
-            util.write_quart_session_cookie(session_data)
 
     @app.after_request
     async def log_request(response: quart.Response) -> quart.Response:
@@ -627,6 +632,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _validate_secrets_permissions(pathlib.Path(app_config.STATE_DIR))
     log.performance_init()
     app = _app_create_base(app_config)
+    app.sessions = sessions.Store()
     jwtoken.setup_signing_key(app)
 
     _app_setup_api_docs(app)
@@ -1015,11 +1021,11 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
 async def _reset_request_log_context():
     log.clear_context()
     log.add_context(request_id=str(uuid.uuid4()))
-    session = await asfquart.session.read()
-    if session is not None:
+    session = await sessions.read()
+    if isinstance(session, sql.UserSession):
         log.add_context(user_id=session.uid)
-        if "admin" in session.metadata:
-            log.add_context(admin_id=session.metadata["admin"])
+        if session.admin_uid:
+            log.add_context(admin_id=session.admin_uid)
     elif hasattr(quart.g, "jwt_claims"):
         claims = getattr(quart.g, "jwt_claims", {})
         asf_uid = claims.get("sub")
