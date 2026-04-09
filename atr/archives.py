@@ -139,14 +139,19 @@ def _tar_archive_extract_member(  # noqa: C901
     track_files: bool | set[str] = False,
     extracted_paths: list[str] = [],
 ) -> tuple[int, list[str]]:
+    """
+    Extract a single member from a tar archive.
+
+    `total_extracted` is an accumulator and should return itself if nothing is extracted
+    """
     member_basename = os.path.basename(member.name)
     if member_basename.startswith("._"):
         # Metadata convention
-        return 0, extracted_paths
+        return total_extracted, extracted_paths
 
     # Skip any character device, block device, or FIFO
     if member.isdev():
-        return 0, extracted_paths
+        return total_extracted, extracted_paths
 
     # Only track files that pass the path safety check
     if track_files and isinstance(track_files, set) and (member_basename in track_files):
@@ -165,7 +170,7 @@ def _tar_archive_extract_member(  # noqa: C901
         # Ensure the path is safe before extracting
         if _safe_path(extract_dir, member.name) is None:
             log.warning(f"Skipping potentially unsafe path: {member.name}")
-            return 0, extracted_paths
+            return total_extracted, extracted_paths
         archive.extract_member(member, extract_dir, numeric_owner=True, tar_filter="fully_trusted")
 
     elif member.isfile():
@@ -290,6 +295,11 @@ def _zip_archive_extract_member(
     track_files: bool | set[str] = False,
     extracted_paths: list[str] = [],
 ) -> tuple[int, list[str]]:
+    """
+    Extract a single member from a zip archive.
+
+    `total_extracted` is an accumulator and should return itself if nothing is extracted
+    """
     member_basename = os.path.basename(member.name)
 
     # Only track files that pass the path safety check
@@ -298,7 +308,7 @@ def _zip_archive_extract_member(
             extracted_paths.append(member.name)
 
     if member_basename.startswith("._"):
-        return 0, extracted_paths
+        return total_extracted, extracted_paths
 
     if member.isfile() and ((total_extracted + member.size) > max_size):
         raise ExtractionError(
@@ -310,7 +320,7 @@ def _zip_archive_extract_member(
         target_path = _safe_path(extract_dir, member.name)
         if target_path is None:
             log.warning(f"Skipping potentially unsafe path: {member.name}")
-            return 0, extracted_paths
+            return total_extracted, extracted_paths
         os.makedirs(target_path, exist_ok=True)
         return total_extracted, extracted_paths
 
