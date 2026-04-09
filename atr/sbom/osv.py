@@ -18,8 +18,9 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+import aiohttp
 from packageurl import PackageURL
 
 import atr.util as util
@@ -28,13 +29,13 @@ from . import models
 from .utilities import get_pointer, osv_severity_to_cdx
 
 if TYPE_CHECKING:
-    import aiohttp
     import yyjson
     from cyclonedx.model.component import Component
 
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
-_OSV_API_BASE: str = "https://api.osv.dev/v1"
-_SOURCE_DATABASE_NAMES = {
+_OSV_API_BASE: Final[str] = "https://api.osv.dev/v1"
+_API_TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
+_SOURCE_DATABASE_NAMES: Final = {
     "ASB": "Android Security Bulletin",
     "PUB": "Android Security Bulletin",
     "ALSA": "AlmaLinux Security Advisory",
@@ -92,7 +93,8 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
         ignored_count = len(ignored)
         if ignored_count > 0:
             print(f"[DEBUG] {ignored_count} components ignored (missing purl or version)")
-    async with util.create_secure_session() as session:
+    # Reusable HTTP session we can use for all fetches
+    async with util.create_secure_session(timeout=_API_TIMEOUT) as session:
         component_vulns_map = await _scan_bundle_fetch_vulnerabilities(session, queries, 1000)
         if _DEBUG:
             print(f"[DEBUG] Total components with vulnerabilities: {len(component_vulns_map)}")

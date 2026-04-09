@@ -72,7 +72,7 @@ colorama==0.4.6
     #   click
     #   djlint
     #   tqdm
-cryptography==46.0.6
+cryptography==46.0.7
     # via
     #   asfpy
     #   asyncssh
@@ -130,7 +130,7 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
-greenlet==3.3.2
+greenlet==3.4.0
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -222,7 +222,7 @@ pathspec==1.0.4
     # via djlint
 pgpy==0.6.0
     # via tooling-trusted-releases
-platformdirs==4.9.4
+platformdirs==4.9.6
     # via
     #   python-discovery
     #   virtualenv
@@ -235,7 +235,7 @@ propcache==0.4.1
     #   yarl
 psutil==7.2.2
     # via tooling-trusted-releases
-puremagic==2.1.1
+puremagic==2.2.0
     # via tooling-trusted-releases
 py-serializable==2.1.0
     # via cyclonedx-python-lib
@@ -271,7 +271,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.2.1
+python-discovery==1.2.2
     # via virtualenv
 python-gnupg==0.5.6
     # via tooling-trusted-releases
@@ -346,7 +346,7 @@ structlog==25.5.0
     # via tooling-trusted-releases
 tqdm==4.67.3
     # via djlint
-types-aiofiles==25.1.0.20251011
+types-aiofiles==25.1.0.20260409
     # via quart-uploads
 typing-extensions==4.15.0
     # via
