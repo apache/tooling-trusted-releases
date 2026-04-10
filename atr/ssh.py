@@ -67,6 +67,7 @@ _PATH_VERSION_CHARS: Final = _PATH_ALPHANUM | frozenset(".-+")
 _RATE_LIMIT_IP: Final = 100
 _RATE_LIMIT_USER: Final = 10
 _RATE_WINDOW: Final = 60.0
+_RSYNC_TIMEOUT: Final = 90 * 60
 
 # Keyed by IP address; catches all connections including failed auth
 global_ip_rate_buckets: dict[str, collections.deque[float]] = {}
@@ -729,7 +730,12 @@ async def _step_08_execute_rsync(process: asyncssh.SSHServerProcess, argv: list[
     # , send_eof=False
     await process.redirect(stdin=proc.stdin, stdout=proc.stdout, send_eof=False)
     # Wait for rsync to finish and get its exit status
-    exit_status = await proc.wait()
+    try:
+        exit_status = await asyncio.wait_for(proc.wait(), timeout=_RSYNC_TIMEOUT)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise RsyncArgsError(f"rsync operation timed out after {_RSYNC_TIMEOUT} seconds")
     log.info(f"Rsync finished with exit status {exit_status}")
     return exit_status
 
