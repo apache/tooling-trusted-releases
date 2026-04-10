@@ -1252,6 +1252,7 @@ async def releases_list(
 
 
 @api.typed
+@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
 @quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.SignatureProvenanceResults, 200)
@@ -1291,18 +1292,23 @@ async def signature_provenance(
             )
         )
 
-    downloads_dir = paths.get_downloads_dir()
-    matched_committee_keys = await _match_committee_keys(key.committees, paths.get_finished_dir(), data)
+    matched_committees = await _match_committees(key.committees, data)
 
-    for matched_committee_key in matched_committee_keys:
-        keys_file_path = downloads_dir / matched_committee_key / "KEYS"
-        async with aiofiles.open(keys_file_path, "rb") as f:
-            keys_file_data = await f.read()
+    for committee in matched_committees:
+        keys_file_path = _committee_keys_path(committee)
+        try:
+            async with aiofiles.open(keys_file_path, "rb") as f:
+                keys_file_data = await f.read()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            log.exception(f"Failed to read KEYS file for committee {committee.key}")
+            continue
         keys_file_sha3_256 = hashes.compute_sha3_256(keys_file_data)
         signing_keys.append(
             models.api.SignatureProvenanceKey(
-                committee=matched_committee_key,
-                keys_file_url=f"https://{host}/downloads/{matched_committee_key}/KEYS",
+                committee=committee.key,
+                keys_file_url=_committee_keys_url(host, committee),
                 keys_file_sha3_256=keys_file_sha3_256,
             )
         )
@@ -1664,6 +1670,19 @@ async def vote_tabulate(
     ).model_dump(mode="json"), 200
 
 
+def _committee_keys_path(committee: sql.Committee) -> safe.StatePath:
+    downloads_dir = paths.get_downloads_dir()
+    if committee.is_podling:
+        return downloads_dir / "incubator" / committee.key / "KEYS"
+    return downloads_dir / committee.key / "KEYS"
+
+
+def _committee_keys_url(host: str, committee: sql.Committee) -> str:
+    if committee.is_podling:
+        return f"https://{host}/downloads/incubator/{committee.key}/KEYS"
+    return f"https://{host}/downloads/{committee.key}/KEYS"
+
+
 def _jwt_asf_uid() -> str:
     claims = getattr(quart.g, "jwt_claims", {})
     asf_uid = claims.get("sub")
@@ -1672,51 +1691,41 @@ def _jwt_asf_uid() -> str:
     return asf_uid
 
 
-async def _match_committee_keys(
-    key_committees: list[sql.Committee], finished_dir: safe.StatePath, data: models.api.SignatureProvenanceArgs
-) -> set[str]:
-    key_committee_keys = set(committee.key for committee in key_committees)
-    finished_dir = paths.get_finished_dir()
-    matched_committee_keys = set()
-
-    # Check for finished files
-    for key_committee_key in key_committee_keys:
-        key_committee_finished_dir = finished_dir / key_committee_key
-        async for rel_path in util.paths_recursive(key_committee_finished_dir):
-            if rel_path.as_path().name == data.signature_file_name:
-                abs_path = finished_dir / rel_path
-                async with aiofiles.open(abs_path, "rb") as f:
-                    rel_path_data = await f.read()
-                rel_path_sha3_256 = hashlib.sha3_256(rel_path_data).hexdigest()
-                if rel_path_sha3_256 == data.signature_sha3_256:
-                    # We got a match
-                    matched_committee_keys.add(key_committee_key)
-                    break
-
-    # Check for unfinished files
+async def _match_committees(
+    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs
+) -> list[sql.Committee]:
+    matched: dict[str, sql.Committee] = {}
     async with db.session() as db_data:
-        for key_committee_key in key_committee_keys:
-            release_directories = []
-            projects = await db_data.project(committee_key=key_committee_key).all()
+        for committee in key_committees:
+            if committee.key in matched:
+                continue
+            projects = await db_data.project(committee_key=committee.key).all()
+            release_dirs: list[safe.StatePath] = []
             for project in projects:
                 releases = await db_data.release(project_key=project.key).all()
-                release_directories.extend(paths.release_directory(release) for release in releases)
-            for release_directory in release_directories:
-                if await _match_unfinished(release_directory, data):
-                    matched_committee_keys.add(key_committee_key)
+                release_dirs.extend(paths.release_directory(release) for release in releases)
+            for release_dir in release_dirs:
+                if await _match_release(release_dir, data):
+                    matched[committee.key] = committee
                     break
-    return matched_committee_keys
+    return list(matched.values())
 
 
-async def _match_unfinished(release_directory: safe.StatePath, data: models.api.SignatureProvenanceArgs) -> bool:
+async def _match_release(release_directory: safe.StatePath, data: models.api.SignatureProvenanceArgs) -> bool:
     async for rel_path in util.paths_recursive(release_directory):
         if rel_path.as_path().name == data.signature_file_name:
             abs_path = release_directory / rel_path
-            async with aiofiles.open(abs_path, "rb") as f:
-                rel_path_data = await f.read()
-                rel_path_sha3_256 = hashlib.sha3_256(rel_path_data).hexdigest()
-                if rel_path_sha3_256 == data.signature_sha3_256:
-                    return True
+            try:
+                async with aiofiles.open(abs_path, "rb") as f:
+                    rel_path_data = await f.read()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                log.exception(f"Failed to read signature file {abs_path}")
+                continue
+            rel_path_sha3_256 = hashlib.sha3_256(rel_path_data).hexdigest()
+            if rel_path_sha3_256 == data.signature_sha3_256:
+                return True
     return False
 
 

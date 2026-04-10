@@ -521,8 +521,6 @@ class ReleasesListResults(schema.Strict):
 
 
 class SignatureProvenanceArgs(schema.Strict):
-    artifact_file_name: str = schema.example("example-0.0.1-bin.tar.gz")
-    artifact_sha3_256: str = schema.example("0123456789abcdef0123456789abcdef01234567")
     signature_file_name: str = schema.example("example-0.0.1-bin.tar.gz.asc")
     signature_asc_text: str = schema.example("-----BEGIN PGP SIGNATURE-----\n\n...\n-----END PGP SIGNATURE-----\n")
     signature_sha3_256: str = schema.example("0123456789abcdef0123456789abcdef01234567")
