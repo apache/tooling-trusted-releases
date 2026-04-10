@@ -494,13 +494,20 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
         uid = session.uid
 
         if last_check is None or (current_time - last_check > account_check_interval):
-            if not await ldap.is_active(uid):
-                await sessions.deleted_or_banned(uid)
-                raise base.ASFQuartException("Account is disabled", errorcode=401)
-
             admin_uid = session.admin_uid
-            if isinstance(admin_uid, str) and admin_uid and (not await ldap.is_active(admin_uid)):
-                await sessions.deleted_or_banned(admin_uid)
+
+            if isinstance(admin_uid, str) and bool(admin_uid):
+                user_active, admin_active = await asyncio.gather(
+                    ldap.is_active(uid),
+                    ldap.is_active(admin_uid),
+                )
+                if not admin_active:
+                    await sessions.deleted_or_banned(admin_uid)
+                    raise base.ASFQuartException("Account is disabled", errorcode=401)
+            else:
+                user_active = await ldap.is_active(uid)
+            if not user_active:
+                await sessions.deleted_or_banned(uid)
                 raise base.ASFQuartException("Account is disabled", errorcode=401)
 
             session.last_account_check = current_time
