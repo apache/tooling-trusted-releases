@@ -854,6 +854,8 @@ async def revoke_user_tokens_post(
 
     Revoke all Personal Access Tokens for a specified user.
     """
+    # audit_guidance PAT revocation does not terminate web sessions
+    # audit_guidance PATs and OAuth sessions are independent auth paths
     target_uid = revoke_form.asf_uid
 
     async with storage.write(session) as write:
