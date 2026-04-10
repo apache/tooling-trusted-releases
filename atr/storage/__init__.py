@@ -225,6 +225,7 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
 
 class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
     def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
         self.__asf_uid = write.authorisation.asf_uid
         self.release = writers.release.FoundationAdmin(write, self, data)
         self.tokens = writers.tokens.FoundationAdmin(write, self, data)
