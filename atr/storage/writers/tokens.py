@@ -86,6 +86,8 @@ class FoundationCommitter(GeneralPublic):
         await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return types.PersonalAccessTokenSafe.from_sql(pat)
 
+    # audit_guidance PAT deletion revokes associated JWTs
+    # audit_guidance JWT verification rechecks PAT existence on every API request
     async def delete_token(self, token_id: int) -> None:
         pat = await self.__data.query_one_or_none(
             sqlmodel.select(sql.PersonalAccessToken).where(

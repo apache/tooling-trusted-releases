@@ -139,8 +139,9 @@ async def verify(token: str) -> dict[str, Any]:
         log.auth_failure("jwt_token", "account_deleted_or_banned")
         raise base.ASFQuartException("Account is disabled", errorcode=401)
 
+    # audit_guidance Revalidating PAT on each request ensures PAT deletion immediately revokes all JWTs issued therefrom
     pat_hash = claims.get("atr_th")
-    # We don't fail on missing hash because not all JWTs come from PATs
+    # Not all JWTs come from PATs, so don't fail on missing atr_th
     if pat_hash:
         async with db.session() as data:
             pat = await data.personal_access_token(pat_hash).get()
