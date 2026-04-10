@@ -175,6 +175,146 @@ def test_is_banned_returns_true_for_account_with_flag():
     assert ldap.is_banned(account) is True
 
 
+def _make_pubsub_payload(
+    uid: str = "testuser",
+    old_banned: list[str] | None = None,
+    new_banned: list[str] | None = None,
+) -> dict:
+    """Build a minimal LDAP pubsub payload for testing."""
+    return {
+        "dn": f"uid={uid},ou=people,dc=apache,dc=org",
+        "change_type": "modify",
+        "old_attributes": {
+            "uid": [uid],
+            "asf-banned": old_banned if old_banned is not None else [],
+        },
+        "new_attributes": {
+            "uid": [uid],
+            "asf-banned": new_banned if new_banned is not None else [],
+        },
+        "pubsub_timestamp": 1756736128.0,
+        "pubsub_topics": ["ldap"],
+        "pubsub_path": "/private/ldap",
+        "pubsub_cursor": "test-cursor",
+    }
+
+
 def _skip_if_unavailable(ldap_configured: bool) -> None:
     if not ldap_configured:
         pytest.skip("LDAP not configured")
+
+
+# --- PubSub payload parsing tests ---
+
+
+def test_pubsub_payload_parses_valid_event():
+    payload = _make_pubsub_payload(uid="alice")
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert parsed.dn == "uid=alice,ou=people,dc=apache,dc=org"
+    assert parsed.change_type == "modify"
+    assert parsed.new_attributes.uid == ["alice"]
+    assert parsed.old_attributes.asf_banned == []
+
+
+def test_pubsub_payload_ignores_extra_attributes():
+    payload = _make_pubsub_payload()
+    payload["new_attributes"]["mail"] = ["test@example.com"]
+    payload["new_attributes"]["objectClass"] = ["person", "top"]
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert parsed.new_attributes.uid == ["testuser"]
+
+
+def test_pubsub_payload_detects_ban():
+    payload = _make_pubsub_payload(old_banned=[], new_banned=["yes"])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert not bool(parsed.old_attributes.asf_banned)
+    assert bool(parsed.new_attributes.asf_banned)
+
+
+def test_pubsub_payload_detects_unban():
+    payload = _make_pubsub_payload(old_banned=["yes"], new_banned=[])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert bool(parsed.old_attributes.asf_banned)
+    assert not bool(parsed.new_attributes.asf_banned)
+
+
+def test_pubsub_payload_no_change_when_both_unbanned():
+    payload = _make_pubsub_payload(old_banned=[], new_banned=[])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert not bool(parsed.old_attributes.asf_banned)
+    assert not bool(parsed.new_attributes.asf_banned)
+
+
+def test_extract_uid_from_pubsub_prefers_attributes():
+    payload = ldap.PubSubPayload.model_validate(_make_pubsub_payload(uid="alice"))
+    assert ldap._extract_uid_from_pubsub(payload) == "alice"
+
+
+def test_extract_uid_from_pubsub_falls_back_to_dn():
+    payload = ldap.PubSubPayload.model_validate(
+        {
+            "dn": "uid=bob,ou=people,dc=apache,dc=org",
+            "change_type": "modify",
+            "old_attributes": {},
+            "new_attributes": {},
+        }
+    )
+    assert ldap._extract_uid_from_pubsub(payload) == "bob"
+
+
+def test_extract_uid_from_pubsub_returns_none_without_uid():
+    payload = ldap.PubSubPayload.model_validate(
+        {
+            "dn": "cn=some-group,ou=groups,dc=apache,dc=org",
+            "change_type": "modify",
+            "old_attributes": {},
+            "new_attributes": {},
+        }
+    )
+    assert ldap._extract_uid_from_pubsub(payload) is None
+
+
+@pytest.mark.asyncio
+async def test_handle_update_logs_deactivation(monkeypatch: "MonkeyPatch"):
+    logged: list[str] = []
+    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
+    monkeypatch.setattr("atr.log.debug", lambda msg: None)
+
+    payload = _make_pubsub_payload(uid="baduser", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert any("baduser" in msg and "deactivated" in msg for msg in logged)
+
+
+@pytest.mark.asyncio
+async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
+    logged: list[str] = []
+    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
+    monkeypatch.setattr("atr.log.debug", lambda msg: None)
+
+    payload = _make_pubsub_payload(uid="gooduser", old_banned=["yes"], new_banned=[])
+    await ldap.handle_update(payload)
+
+    assert any("gooduser" in msg and "reactivated" in msg for msg in logged)
+
+
+@pytest.mark.asyncio
+async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
+    logged: list[str] = []
+    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
+    monkeypatch.setattr("atr.log.debug", lambda msg: None)
+
+    payload = _make_pubsub_payload(uid="normaluser", old_banned=[], new_banned=[])
+    await ldap.handle_update(payload)
+
+    assert not logged
+
+
+@pytest.mark.asyncio
+async def test_handle_update_handles_invalid_payload(monkeypatch: "MonkeyPatch"):
+    warnings: list[str] = []
+    monkeypatch.setattr("atr.log.warning", lambda msg: warnings.append(msg))
+
+    await ldap.handle_update({"not": "valid"})
+
+    assert any("Failed to parse" in msg for msg in warnings)

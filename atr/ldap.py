@@ -44,6 +44,22 @@ RESULT_ATTRIBUTES: Final[list[str]] = [
 ]
 
 
+class PubSubAttributes(schema.Subset):
+    """LDAP attributes as they appear in pubsub old_attributes/new_attributes."""
+
+    asf_banned: list[str] = schema.Field(default_factory=list, alias="asf-banned")
+    uid: list[str] = schema.Field(default_factory=list)
+
+
+class PubSubPayload(schema.Subset):
+    """An LDAP change event from the ASF pubsub stream."""
+
+    dn: str
+    change_type: str
+    old_attributes: PubSubAttributes = schema.Field(default_factory=PubSubAttributes)
+    new_attributes: PubSubAttributes = schema.Field(default_factory=PubSubAttributes)
+
+
 class Result(schema.Strict):
     model_config = schema.pydantic.ConfigDict(
         extra="forbid", strict=True, validate_assignment=True, populate_by_name=True
@@ -242,8 +258,28 @@ async def github_to_apache(github_numeric_uid: int) -> str:
     return ldap_params.results_list[0].uid[0]
 
 
-async def handle_update(payload: dict):
-    return
+async def handle_update(payload: dict) -> None:
+    import atr.log as log
+
+    try:
+        parsed = PubSubPayload.model_validate(payload)
+    except schema.pydantic.ValidationError:
+        log.warning(f"Failed to parse LDAP pubsub payload with DN: {payload.get('dn', '<missing>')}")
+        return
+
+    uid = _extract_uid_from_pubsub(parsed)
+    if uid is None:
+        log.debug(f"Ignoring LDAP pubsub event with no uid: {parsed.dn}")
+        return
+
+    was_banned = bool(parsed.old_attributes.asf_banned)
+    now_banned = bool(parsed.new_attributes.asf_banned)
+
+    if now_banned and (not was_banned):
+        log.info(f"LDAP pubsub: user {uid} has been deactivated")
+        # TODO: Invalidate active sessions for this user once sessions are in the DB
+    elif was_banned and (not now_banned):
+        log.info(f"LDAP pubsub: user {uid} has been reactivated")
 
 
 async def is_active(asf_uid: str) -> bool:
@@ -288,6 +324,17 @@ def search(params: SearchParameters) -> None:
                 params.connection.unbind()
             except Exception:
                 ...
+
+
+def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:
+    """Extract the ASF UID from a pubsub payload, preferring new_attributes.uid then the DN."""
+    if payload.new_attributes.uid:
+        return payload.new_attributes.uid[0]
+    parsed = parse_dn(payload.dn)
+    uids = parsed.get("uid", [])
+    if uids:
+        return uids[0]
+    return None
 
 
 def _search_core(params: SearchParameters) -> None:

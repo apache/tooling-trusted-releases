@@ -147,7 +147,7 @@ class PubSubListener:
         url: str,
         username: str,
         password: str,
-        topics: str = "commit/svn,private/ldap",
+        topics: str = "commit/svn,ldap",
     ) -> None:
         self.svn_working_copy_root = pathlib.Path(svn_working_copy_root)
         self.url = url
