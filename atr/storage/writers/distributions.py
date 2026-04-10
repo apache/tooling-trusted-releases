@@ -132,6 +132,12 @@ class CommitteeMember(CommitteeParticipant):
         self.__data.add(dist_task)
         await self.__data.commit()
         await self.__data.refresh(dist_task)
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            operation="distribution_automate",
+            release_key=str(release_key),
+            platform=platform.name,
+        )
         return dist_task
 
     async def record(
@@ -168,6 +174,12 @@ class CommitteeMember(CommitteeParticipant):
         if existing is None:
             self.__data.add(dist)
             await self.__data.commit()
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                operation="distribution_record",
+                release_key=str(release_key),
+                platform=platform.name,
+            )
             return dist, True
         # If we're doing production and existing was for staging, upgrade it
         if (not staging) and existing.staging:
@@ -183,6 +195,12 @@ class CommitteeMember(CommitteeParticipant):
                 web_url,
             )
             if upgraded is not None:
+                self.__write_as.append_to_audit_log(
+                    asf_uid=self.__asf_uid,
+                    operation="distribution_upgrade",
+                    release_key=str(release_key),
+                    platform=platform.name,
+                )
                 return upgraded, False
         if existing.pending:
             if pending:
@@ -299,3 +317,9 @@ class CommitteeMember(CommitteeParticipant):
         ).demand(RuntimeError(f"Distribution {release_key} {platform} {owner_namespace} {package} {version} not found"))
         await self.__data.delete(distribution)
         await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            operation="distribution_delete",
+            release_key=str(release_key),
+            platform=platform.name,
+        )
