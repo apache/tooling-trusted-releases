@@ -277,9 +277,11 @@ async def handle_update(payload: dict) -> None:
 
     if now_banned and (not was_banned):
         log.info(f"LDAP pubsub: user {uid} has been deactivated")
-        # TODO: Invalidate active sessions for this user once sessions are in the DB
+        log.auth_event("account_deactivated", uid)
+        await _revoke_all_credentials(uid, log)
     elif was_banned and (not now_banned):
         log.info(f"LDAP pubsub: user {uid} has been reactivated")
+        log.auth_event("account_reactivated", uid)
 
 
 async def is_active(asf_uid: str) -> bool:
@@ -324,6 +326,43 @@ def search(params: SearchParameters) -> None:
                 params.connection.unbind()
             except Exception:
                 ...
+
+
+async def _revoke_all_credentials(uid: str, log) -> None:
+    """Revoke all sessions, PATs, and SSH keys for a banned user."""
+    import asfquart
+    import sqlmodel
+
+    import atr.db as db
+    import atr.models.sql as sql
+
+    session_count = await asfquart.APP.sessions.revoke_by_uid(uid)
+    if session_count > 0:
+        log.info(f"LDAP pubsub: revoked {session_count} session(s) for banned user {uid}")
+        log.auth_event("sessions_revoked", uid)
+
+    async with db.session() as data:
+        token_result = await data.execute(
+            sqlmodel.select(sql.PersonalAccessToken).where(sql.PersonalAccessToken.asfuid == uid)
+        )
+        tokens = list(token_result.scalars().all())
+        for token in tokens:
+            await data.delete(token)
+
+        ssh_result = await data.execute(sqlmodel.select(sql.SSHKey).where(sql.SSHKey.asf_uid == uid))
+        ssh_keys = list(ssh_result.scalars().all())
+        for ssh_key in ssh_keys:
+            await data.delete(ssh_key)
+
+        if tokens or ssh_keys:
+            await data.commit()
+
+    if tokens:
+        log.info(f"LDAP pubsub: revoked {len(tokens)} PAT(s) for banned user {uid}")
+        log.auth_event("tokens_revoked", uid)
+    if ssh_keys:
+        log.info(f"LDAP pubsub: revoked {len(ssh_keys)} SSH key(s) for banned user {uid}")
+        log.auth_event("ssh_keys_revoked", uid)
 
 
 def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:

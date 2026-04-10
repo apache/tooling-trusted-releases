@@ -274,40 +274,121 @@ def test_extract_uid_from_pubsub_returns_none_without_uid():
     assert ldap._extract_uid_from_pubsub(payload) is None
 
 
-@pytest.mark.asyncio
-async def test_handle_update_logs_deactivation(monkeypatch: "MonkeyPatch"):
+def _mock_db_session(token_items: list | None = None, ssh_key_items: list | None = None) -> mock.MagicMock:
+    """Build a mock db.session() context manager following the test_quarantine_task pattern."""
+    mock_data = mock.AsyncMock()
+    mock_data.delete = mock.AsyncMock()
+    mock_data.commit = mock.AsyncMock()
+
+    # execute() is called twice: first for tokens, then for SSH keys
+    # Each result needs .scalars().all() to return the items
+    token_result = mock.MagicMock()
+    token_result.scalars.return_value.all.return_value = token_items or []
+    ssh_result = mock.MagicMock()
+    ssh_result.scalars.return_value.all.return_value = ssh_key_items or []
+    mock_data.execute = mock.AsyncMock(side_effect=[token_result, ssh_result])
+
+    mock_session_ctx = mock.AsyncMock()
+    mock_session_ctx.__aenter__ = mock.AsyncMock(return_value=mock_data)
+    mock_session_ctx.__aexit__ = mock.AsyncMock(return_value=False)
+    return mock_session_ctx
+
+
+def _setup_ban_mocks(
+    monkeypatch: "MonkeyPatch",
+    session_count: int = 0,
+    token_count: int = 0,
+    ssh_key_count: int = 0,
+) -> tuple[list[str], list[str]]:
+    """Set up common mocks for ban/deactivation tests. Returns (logged, auth_events)."""
     logged: list[str] = []
+    auth_events: list[str] = []
     monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
     monkeypatch.setattr("atr.log.debug", lambda msg: None)
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
+
+    mock_sessions = mock.MagicMock()
+    mock_sessions.revoke_by_uid = mock.AsyncMock(return_value=session_count)
+    mock_app = mock.MagicMock()
+    mock_app.sessions = mock_sessions
+    monkeypatch.setattr("asfquart.APP", mock_app)
+
+    mock_db = _mock_db_session(
+        token_items=[mock.MagicMock() for _ in range(token_count)],
+        ssh_key_items=[mock.MagicMock() for _ in range(ssh_key_count)],
+    )
+    monkeypatch.setattr("atr.db.session", lambda: mock_db)
+
+    return logged, auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch"):
+    logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=2, token_count=3, ssh_key_count=1)
 
     payload = _make_pubsub_payload(uid="baduser", old_banned=[], new_banned=["yes"])
     await ldap.handle_update(payload)
 
     assert any("baduser" in msg and "deactivated" in msg for msg in logged)
+    assert "account_deactivated" in auth_events
+    assert "sessions_revoked" in auth_events
+    assert "tokens_revoked" in auth_events
+    assert "ssh_keys_revoked" in auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatch: "MonkeyPatch"):
+    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=0, token_count=0, ssh_key_count=0)
+
+    payload = _make_pubsub_payload(uid="nouser", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert "account_deactivated" in auth_events
+    assert "sessions_revoked" not in auth_events
+    assert "tokens_revoked" not in auth_events
+    assert "ssh_keys_revoked" not in auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: "MonkeyPatch"):
+    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1, token_count=0, ssh_key_count=0)
+
+    payload = _make_pubsub_payload(uid="user1", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert "sessions_revoked" in auth_events
+    assert "tokens_revoked" not in auth_events
+    assert "ssh_keys_revoked" not in auth_events
 
 
 @pytest.mark.asyncio
 async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
     logged: list[str] = []
+    auth_events: list[str] = []
     monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
     monkeypatch.setattr("atr.log.debug", lambda msg: None)
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
 
     payload = _make_pubsub_payload(uid="gooduser", old_banned=["yes"], new_banned=[])
     await ldap.handle_update(payload)
 
     assert any("gooduser" in msg and "reactivated" in msg for msg in logged)
+    assert "account_reactivated" in auth_events
 
 
 @pytest.mark.asyncio
 async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
     logged: list[str] = []
+    auth_events: list[str] = []
     monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
     monkeypatch.setattr("atr.log.debug", lambda msg: None)
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
 
     payload = _make_pubsub_payload(uid="normaluser", old_banned=[], new_banned=[])
     await ldap.handle_update(payload)
 
     assert not logged
+    assert not auth_events
 
 
 @pytest.mark.asyncio
