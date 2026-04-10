@@ -64,7 +64,6 @@ import atr.preload as preload
 import atr.pubsub as pubsub
 import atr.sessions as sessions
 import atr.ssh as ssh
-import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
 import atr.template as template
@@ -265,8 +264,8 @@ def _app_setup_context(app: base.QuartApp) -> None:
         if isinstance(current_uid, str):
             topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
             topnav_user_projects = await interaction.user_projects(current_uid)
-            async with storage.read_as_foundation_committer(current_uid) as rafc:
-                db_user = await rafc.user.user_preferences()
+            async with db.session() as data:
+                db_user = await data.user(asf_uid=current_uid).get()
                 if db_user:
                     colour_blindness_mode = db_user.preferences.colour_blindness_mode
 
