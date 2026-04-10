@@ -1271,6 +1271,9 @@ async def signature_provenance(
     # Then we deliver the appropriate signing key from the KEYS file(s)
     # And the URL of the KEYS file(s) for them to check
 
+    if (data.version_key is not None) and (data.project_key is None):
+        raise exceptions.BadRequest("version_key requires project_key")
+
     signing_keys: list[models.api.SignatureProvenanceKey] = []
     conf = config.get()
     host = conf.APP_HOST
@@ -1292,7 +1295,10 @@ async def signature_provenance(
             )
         )
 
-    matched_committees = await _match_committees(key.committees, data)
+    if data.project_key is not None:
+        matched_committees = await _match_committees_scoped(key.committees, data)
+    else:
+        matched_committees = await _match_committees(key.committees, data)
 
     for committee in matched_committees:
         keys_file_path = _committee_keys_path(committee)
@@ -1709,6 +1715,43 @@ async def _match_committees(
                     matched[committee.key] = committee
                     break
     return list(matched.values())
+
+
+async def _match_committees_scoped(
+    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs
+) -> list[sql.Committee]:
+    project_key = data.project_key
+    if project_key is None:
+        return []
+
+    committees_by_key = {c.key: c for c in key_committees}
+
+    async with db.session() as db_data:
+        project = await db_data.project(key=str(project_key)).get()
+        if (project is None) or (project.committee_key is None):
+            return []
+
+        committee = committees_by_key.get(project.committee_key)
+        if committee is None:
+            return []
+
+        if data.version_key is not None:
+            release = await db_data.release(
+                project_key=str(project_key),
+                version=str(data.version_key),
+            ).get()
+            if release is None:
+                return []
+            release_dirs = [paths.release_directory(release)]
+        else:
+            releases = await db_data.release(project_key=str(project_key)).all()
+            release_dirs = [paths.release_directory(release) for release in releases]
+
+        for release_dir in release_dirs:
+            if await _match_release(release_dir, data):
+                return [committee]
+
+    return []
 
 
 async def _match_release(release_directory: safe.StatePath, data: models.api.SignatureProvenanceArgs) -> bool:

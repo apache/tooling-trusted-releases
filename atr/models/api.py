@@ -524,6 +524,8 @@ class SignatureProvenanceArgs(schema.Strict):
     signature_file_name: str = schema.example("example-0.0.1-bin.tar.gz.asc")
     signature_asc_text: str = schema.example("-----BEGIN PGP SIGNATURE-----\n\n...\n-----END PGP SIGNATURE-----\n")
     signature_sha3_256: str = schema.example("0123456789abcdef0123456789abcdef01234567")
+    project_key: safe.ProjectKey | None = schema.default_example(None, "example")
+    version_key: safe.VersionKey | None = schema.default_example(None, "0.0.1")
 
 
 class SignatureProvenanceKey(schema.Strict):
