@@ -214,6 +214,14 @@ class FoundationAdmin(FoundationCommitter):
                 target_asf_uid=target_asf_uid,
                 tokens_revoked=count,
             )
+            message = mail.Message(
+                email_sender=NOREPLY_EMAIL_ADDRESS,
+                email_to=f"{target_asf_uid}@apache.org",
+                subject="ATR - Security alert: API tokens revoked by administrator",
+                body=f"An administrator has revoked all API tokens ({count}) for your ATR account. "
+                "If you did not expect this action, please contact ASF Tooling.",
+            )
+            await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return count
 
     async def rotate_jwt_signing_key(self) -> None:
