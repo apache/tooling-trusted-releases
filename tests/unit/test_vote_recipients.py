@@ -21,8 +21,67 @@ from types import SimpleNamespace
 import pytest
 
 import atr.db.interaction as interaction
+import atr.models.args as args
 import atr.models.results as results
 import atr.storage.writers.vote as vote
+import atr.util as util
+
+
+def test_initiate_args_accepts_second_round_email_to() -> None:
+    task_args = args.Initiate(
+        release_key="project-1.0.0",
+        email_to="dev@project.apache.org",
+        vote_duration=72,
+        initiator_id="testuser",
+        initiator_fullname="Test User",
+        subject="[VOTE] Release",
+        body="Please vote",
+        second_round_email_to="general@incubator.apache.org",
+    )
+
+    assert task_args.second_round_email_to == "general@incubator.apache.org"
+
+
+def test_initiate_args_backward_compatible_without_second_round_field() -> None:
+    raw = {
+        "release_key": "project-1.0.0",
+        "email_to": "dev@project.apache.org",
+        "vote_duration": 72,
+        "initiator_id": "testuser",
+        "initiator_fullname": "Test User",
+        "subject": "[VOTE] Release",
+        "body": "Please vote",
+        "email_cc": [],
+        "email_bcc": [],
+    }
+
+    task_args = args.Initiate.model_validate(raw)
+
+    assert task_args.second_round_email_to is None
+
+
+def test_permitted_podling_second_round_recipients_includes_incubator_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_config = SimpleNamespace(ATR_STATUS="PRODUCTION")
+    monkeypatch.setattr("atr.config.get", lambda: mock_config)
+
+    recipients = util.permitted_podling_second_round_recipients("testuser")
+
+    assert recipients == ["general@incubator.apache.org"]
+
+
+def test_permitted_podling_second_round_recipients_includes_test_addresses_in_alpha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_config = SimpleNamespace(ATR_STATUS="ALPHA")
+    monkeypatch.setattr("atr.config.get", lambda: mock_config)
+
+    recipients = util.permitted_podling_second_round_recipients("testuser")
+
+    assert "general@incubator.apache.org" in recipients
+    assert "user-tests@tooling.apache.org" in recipients
+    assert "testuser@apache.org" in recipients
 
 
 @pytest.mark.asyncio

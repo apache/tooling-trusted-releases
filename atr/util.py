@@ -73,6 +73,7 @@ DEV_THREAD_URLS: Final[dict[str, str]] = {
     "CADL1oArKFcXvNb1MJfjN=10-yRfKxgpLTRUrdMM1R7ygaTkdYQ@mail.gmail.com": "https://lists.apache.org/thread/d7119h2qm7jrd5zsbp8ghkk0lpvnnxnw",
     "a1507118-88b1-4b7b-923e-7f2b5330fc01@apache.org": "https://lists.apache.org/thread/gzjd2jv7yod5sk5rgdf4x33g5l3fdf5o",
 }
+INCUBATOR_GENERAL_ADDRESS: Final[str] = "general@incubator.apache.org"
 NPM_PACKAGE_JSON_MAX_SIZE: Final[int] = 512 * 1024
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 
@@ -800,6 +801,14 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
             expected_root_base = basename_from_filename.removesuffix(suffix)
             return [expected_root_base, f"{expected_root_base}{suffix}"]
     return [basename_from_filename]
+
+
+def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
+    recipients = [INCUBATOR_GENERAL_ADDRESS]
+    if config.get().ATR_STATUS == "ALPHA":
+        recipients.append(USER_TESTS_ADDRESS)
+        recipients.append(f"{asf_uid}@apache.org")
+    return recipients
 
 
 def permitted_voting_recipients(asf_uid: str, committee_key: str) -> list[str]:

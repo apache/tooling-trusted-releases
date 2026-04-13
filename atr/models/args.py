@@ -97,6 +97,10 @@ class Initiate(schema.Strict):
     body: str = schema.description("Body content for the vote email")
     email_cc: list[pydantic.EmailStr] = schema.factory(list)
     email_bcc: list[pydantic.EmailStr] = schema.factory(list)
+    second_round_email_to: pydantic.EmailStr | None = pydantic.Field(
+        default=None,
+        description="Optional mailing list To address for an automatically started podling second round vote",
+    )
 
 
 class MaintenanceArgs(schema.Strict):
