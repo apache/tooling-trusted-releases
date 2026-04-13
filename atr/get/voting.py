@@ -232,9 +232,6 @@ async def _render_page(
                 default_to=default_second_round,
                 field_name="second_round_email_to",
             ),
-            htm.div(".form-text.text-muted.mt-1")[
-                "Note: this field is not yet used. The second round currently sends to the hard coded test address."
-            ],
         ]
     else:
         skip.append("second_round_email_to")
