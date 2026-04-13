@@ -400,8 +400,9 @@ class CommitteeMember(CommitteeParticipant):
                 new_podling_thread_id=thread_id,
             )
             await self.__data.refresh(release)
-            # incubator_vote_address = "general@incubator.apache.org"
-            incubator_vote_address = util.USER_TESTS_ADDRESS
+            incubator_vote_address = (
+                latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
+            )
             if not release.project.committee:
                 raise ValueError("Project has no committee - Invalid state")
             revision_number = release.latest_revision_number
