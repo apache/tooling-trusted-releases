@@ -101,11 +101,15 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
     subject = task_args.subject
     body = task_args.body
 
-    permitted_recipients = util.permitted_voting_recipients(task_args.initiator_id, release.committee.key)
-    for addr in all_addrs:
-        if addr not in permitted_recipients:
-            log.error(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
-            raise VoteInitiationError("Invalid mailing list choice")
+    is_podling_round_two = release.committee.is_podling and (release.podling_thread_id is not None)
+    # A second round vote may be started by a different user, so the permitted recipients will be different
+    # Since we only have to validate before task boundaries, we can skip this for second rounds
+    if not is_podling_round_two:
+        permitted_recipients = util.permitted_voting_recipients(task_args.initiator_id, release.committee.key)
+        for addr in all_addrs:
+            if addr not in permitted_recipients:
+                log.error(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
+                raise VoteInitiationError("Invalid mailing list choice")
 
     # Create mail message
     log.info(f"Creating mail message for {task_args.email_to}")
