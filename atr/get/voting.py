@@ -71,8 +71,8 @@ async def selected_revision(
         permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
 
         min_hours = 72
-        if release.release_policy and (release.release_policy.min_hours is not None):
-            min_hours = release.release_policy.min_hours
+        if release.project.release_policy and (release.project.release_policy.min_hours is not None):
+            min_hours = release.project.release_policy.min_hours
 
         default_subject_template = await construct.start_vote_subject_default(project_key)
         default_body_template = await construct.start_vote_default(project_key)

@@ -34,6 +34,12 @@ class StartVotingForm(form.Form):
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM)
 
+    @pydantic.field_validator("vote_duration")
+    @classmethod
+    def validate_vote_duration(cls, field):
+        util.validate_vote_duration(field)
+        return field
+
     @pydantic.model_validator(mode="after")
     def _validate_recipients(self) -> "StartVotingForm":
         util.validate_email_recipients(self)

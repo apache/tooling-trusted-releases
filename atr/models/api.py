@@ -613,7 +613,9 @@ class VoteStartArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     revision: safe.RevisionNumber = schema.example("00005")
     email_to: str = schema.example("dev@example.apache.org")
-    vote_duration: int = schema.example(10)
+    email_cc: list[str] = schema.default_example([], "[dev@example.apache.org]")
+    email_bcc: list[str] = schema.default_example([], "[dev@example.apache.org]")
+    vote_duration: int = schema.example(72)
     subject: str = schema.example("[VOTE] Apache Example 0.0.1 release")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 0.0.1...")
 

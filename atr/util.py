@@ -1118,6 +1118,14 @@ def validate_trusted_publishing_constraints(
             raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
 
 
+def validate_vote_duration(duration: int):
+    if duration == 0:
+        return
+    if duration > 0:
+        if duration < 72 or duration > 168:
+            raise ValueError("Vote duration must be between 0 and 168")
+
+
 # TODO: AM put these rules into safe.versionkey
 def version_key_error(version_key: str) -> str | None:
     """Check if the given version name is valid."""

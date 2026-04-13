@@ -1609,6 +1609,9 @@ async def vote_start(
             permitted_recipients = util.permitted_voting_recipients(asf_uid, wacp.committee_key)
             if data.email_to not in permitted_recipients:
                 raise exceptions.Forbidden("Invalid mailing list choice")
+
+            util.validate_email_recipients(data)
+            util.validate_vote_duration(data.vote_duration)
             # TODO: Get fullname and use instead of asf_uid
             task = await wacp.vote.start(
                 data.email_to,
@@ -1620,6 +1623,8 @@ async def vote_start(
                 data.body,
                 asf_uid,
                 asf_uid,
+                email_cc=data.email_cc,
+                email_bcc=data.email_bcc,
             )
     # except Exception as e:
     #     import traceback
