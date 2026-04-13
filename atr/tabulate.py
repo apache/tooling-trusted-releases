@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+import re
 import time
 from collections.abc import Generator
 
@@ -156,6 +156,7 @@ async def votes(  # noqa: C901
     tabulated_votes = {}
     start_unixtime = None
     message_count = 0
+    _validate_thread_id(thread_id)
     async for mid, msg in util.thread_messages(thread_id):
         message_count += 1
         if message_count > MAX_THREAD_MESSAGES:
@@ -244,6 +245,13 @@ def _name_from_raw(from_raw: str) -> str:
     if via_index >= 0:
         name = name[:via_index]
     return name.strip()
+
+
+def _validate_thread_id(thread_id: str) -> None:
+    if not thread_id or not isinstance(thread_id, str):
+        raise ValueError(f"Invalid thread_id: {thread_id}")
+    if not re.match(r"^[a-zA-Z0-9]{32}$", thread_id):
+        raise ValueError(f"Invalid thread_id format: {thread_id}")
 
 
 def _vote_break(line: str) -> bool:
