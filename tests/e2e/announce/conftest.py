@@ -70,6 +70,10 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
     helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_KEY}/{VERSION_KEY}", FILE_NAME)
+    vote_path = page.locator("#start-vote-button").get_attribute("href")
+    assert vote_path is not None
+    _wait_for_vote_start_readiness(context, vote_path)
+    helpers.visit(page, f"/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
     page.locator('a[title="Start a vote on this draft"]').click()
     page.wait_for_load_state()
@@ -121,3 +125,25 @@ def _poll_for_vote_thread_link(page: Page, max_attempts: int = 30) -> None:
             return
         time.sleep(0.5)
         page.reload()
+
+
+def _wait_for_vote_start_readiness(
+    context: BrowserContext,
+    vote_path: str,
+    timeout: float = 60,
+    stable_polls: int = 2,
+) -> None:
+    checks_path = vote_path.replace("/voting/", "/api/checks/ongoing/", 1)
+    deadline = time.monotonic() + timeout
+    stable_zero_polls = 0
+    while True:
+        ongoing = int(helpers.api_get(context.request, checks_path)["ongoing"])
+        if ongoing == 0:
+            stable_zero_polls += 1
+            if stable_zero_polls >= stable_polls:
+                return
+        else:
+            stable_zero_polls = 0
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"Checks did not finish for {checks_path} within {timeout}s")
+        time.sleep(0.5)
