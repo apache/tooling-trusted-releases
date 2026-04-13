@@ -28,7 +28,6 @@ import atr.form as form
 import atr.get as get
 import atr.htm as htm
 import atr.jwtoken as jwtoken
-import atr.log as log
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
@@ -69,7 +68,6 @@ async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenFor
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=_EXPIRY_DAYS)
-    log.auth_event("pat_issuance", session.uid, pat_hash=token_hash)
 
     async with storage.write() as write:
         wafc = write.as_foundation_committer()

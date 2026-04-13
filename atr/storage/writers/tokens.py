@@ -76,6 +76,7 @@ class FoundationCommitter(GeneralPublic):
         )
         self.__data.add(pat)
         await self.__data.commit()
+        log.auth_event("pat_issuance", self.__asf_uid, pat_hash=pat.token_hash)
         message = mail.Message(
             email_sender=NOREPLY_EMAIL_ADDRESS,
             email_to=f"{self.__asf_uid}@apache.org",
@@ -89,7 +90,7 @@ class FoundationCommitter(GeneralPublic):
     # audit_guidance PAT deletion revokes associated JWTs
     # audit_guidance JWT verification rechecks PAT existence on every API request
     async def delete_token(self, token_id: int) -> None:
-        pat = await self.__data.query_one_or_none(
+        pat: sql.PersonalAccessToken | None = await self.__data.query_one_or_none(
             sqlmodel.select(sql.PersonalAccessToken).where(
                 sql.PersonalAccessToken.id == token_id,
                 sql.PersonalAccessToken.asfuid == self.__asf_uid,
@@ -102,6 +103,7 @@ class FoundationCommitter(GeneralPublic):
                 asf_uid=self.__asf_uid,
                 token_id=token_id,
             )
+            log.auth_event("pat_deleted", self.__asf_uid, pat_hash=pat.token_hash)
             label = pat.label or "[unlabeled]"
             message = mail.Message(
                 email_sender=NOREPLY_EMAIL_ADDRESS,
@@ -136,6 +138,7 @@ class FoundationCommitter(GeneralPublic):
             raise storage.AccessError("Authentication failed")
 
         issued_jwt = jwtoken.issue(self.__asf_uid, pat_hash=pat_hash)
+        log.auth_event("jwt_issued", self.__asf_uid, pat_hash=pat_hash)
         pat.last_used = datetime.datetime.now(datetime.UTC)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
@@ -214,6 +217,7 @@ class FoundationAdmin(FoundationCommitter):
                 target_asf_uid=target_asf_uid,
                 tokens_revoked=count,
             )
+            log.auth_event("pat_bulk_revoke", target_asf_uid, by=self.__asf_uid)
             message = mail.Message(
                 email_sender=NOREPLY_EMAIL_ADDRESS,
                 email_to=f"{target_asf_uid}@apache.org",
@@ -226,6 +230,7 @@ class FoundationAdmin(FoundationCommitter):
 
     async def rotate_jwt_signing_key(self) -> None:
         key = await asyncio.to_thread(jwtoken.write_new_signing_key)
+        log.auth_event("jwt_key_rotation", self.__asf_uid)
         jwtoken.activate_signing_key(key)
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
