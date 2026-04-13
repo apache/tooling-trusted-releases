@@ -101,13 +101,14 @@ def html_recipients_to_radios(
     recipients: list[str],
     default_to: str | None = None,
     documentation: str | None = None,
+    field_name: str = "email_to",
 ) -> htm.Element:
     radios = []
     for recipient in recipients:
-        radio_id = f"email_to_{recipient.replace('@', '_').replace('.', '_')}"
+        radio_id = f"{field_name}_{recipient.replace('@', '_').replace('.', '_')}"
         radio_attrs: dict[str, str] = {
             "type": "radio",
-            "name": "email_to",
+            "name": field_name,
             "id": radio_id,
             "value": recipient,
             "class_": "form-check-input",

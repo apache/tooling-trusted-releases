@@ -103,6 +103,16 @@ async def selected_revision(
                     f"Invalid recipient selection: {addr}",
                 )
 
+        second_round_email_to: str | None = None
+        if committee.is_podling and (start_voting_form.second_round_email_to is not None):
+            second_round_permitted = util.permitted_podling_second_round_recipients(session.uid)
+            if start_voting_form.second_round_email_to not in second_round_permitted:
+                return await session.form_error(
+                    "second_round_email_to",
+                    f"Invalid second round recipient selection: {start_voting_form.second_round_email_to}",
+                )
+            second_round_email_to = start_voting_form.second_round_email_to
+
         subject_template = await construct.start_vote_subject_default(project_key)
         current_hash = construct.template_hash(subject_template)
         if current_hash != start_voting_form.subject_template_hash:
@@ -138,6 +148,7 @@ async def selected_revision(
                 permitted_recipients=permitted_recipients,
                 email_cc=start_voting_form.email_cc,
                 email_bcc=start_voting_form.email_bcc,
+                second_round_email_to=second_round_email_to,
             )
 
         log.info(f"Vote email will be sent to: {all_addrs}")

@@ -25,6 +25,11 @@ class StartVotingForm(form.Form):
     email_to: str = form.label("To (mailing list)", widget=form.Widget.CUSTOM)
     email_cc: form.StrList = form.label("CC")
     email_bcc: form.StrList = form.label("BCC")
+    second_round_email_to: str | None = form.label(
+        "Second round mailing list",
+        widget=form.Widget.CUSTOM,
+        default=None,
+    )
     vote_duration: form.Int = form.label(
         "Minimum vote duration",
         "Minimum number of hours the vote will be open for.",

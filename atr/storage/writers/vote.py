@@ -157,6 +157,7 @@ class CommitteeParticipant(FoundationCommitter):
         permitted_recipients: list[str] | None = None,
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
+        second_round_email_to: str | None = None,
     ) -> sql.Task:
         if release is None:
             release = await self.__data.release(
@@ -173,6 +174,14 @@ class CommitteeParticipant(FoundationCommitter):
                 # This will be checked again by tasks/vote.py for extra safety
                 log.info(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
                 raise storage.AccessError("Invalid mailing list choice")
+
+        if second_round_email_to is not None:
+            second_round_permitted = util.permitted_podling_second_round_recipients(asf_uid)
+            if second_round_email_to not in second_round_permitted:
+                log.info(
+                    f"Invalid second round mailing list choice: {second_round_email_to} not in {second_round_permitted}"
+                )
+                raise storage.AccessError("Invalid second round mailing list choice")
 
         if await interaction.has_blocker_checks(release, selected_revision_number, caller_data=self.__data):
             raise storage.AccessError(
@@ -208,6 +217,7 @@ class CommitteeParticipant(FoundationCommitter):
                 body=body_data,
                 email_cc=email_cc or [],
                 email_bcc=email_bcc or [],
+                second_round_email_to=second_round_email_to,
             ).model_dump(),
             asf_uid=asf_uid,
             project_key=str(project_key),
@@ -425,7 +435,10 @@ class CommitteeMember(CommitteeParticipant):
                 release=release,
                 promote=False,
             )
-            success_message = "Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
+            success_message = (
+                f"Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
+                f" (sent to {incubator_vote_address})"
+            )
         elif vote_result == "passed":
             await self._resolve_transition(
                 release,

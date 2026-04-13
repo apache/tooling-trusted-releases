@@ -69,6 +69,9 @@ async def selected_revision(
                 pass
 
         permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
+        second_round_recipients = (
+            util.permitted_podling_second_round_recipients(session.uid) if committee.is_podling else []
+        )
 
         min_hours = 72
         if release.project.release_policy and (release.project.release_policy.min_hours is not None):
@@ -96,6 +99,7 @@ async def selected_revision(
             release=release,
             revision_number=str(revision),
             permitted_recipients=permitted_recipients,
+            second_round_recipients=second_round_recipients,
             default_subject=default_subject,
             subject_template_hash=subject_template_hash,
             default_body=default_body,
@@ -141,6 +145,7 @@ async def _render_page(
     release,
     revision_number: str,
     permitted_recipients: list[str],
+    second_round_recipients: list[str],
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
@@ -212,6 +217,28 @@ async def _render_page(
         ],
     ]
 
+    custom: dict[str, htm.Element | htm.VoidElement] = {
+        "email_to": to_radios,
+        "subject": custom_subject_widget,
+        "body": custom_body_widget,
+    }
+    skip = ["email_cc", "email_bcc"]
+
+    if second_round_recipients:
+        default_second_round = second_round_recipients[0]
+        custom["second_round_email_to"] = htm.div[
+            render.html_recipients_to_radios(
+                second_round_recipients,
+                default_to=default_second_round,
+                field_name="second_round_email_to",
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                "Note: this field is not yet used. The second round currently sends to the hard coded test address."
+            ],
+        ]
+    else:
+        skip.append("second_round_email_to")
+
     vote_form = form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
@@ -221,12 +248,8 @@ async def _render_page(
             "subject_template_hash": subject_template_hash,
             "body": default_body,
         },
-        custom={
-            "email_to": to_radios,
-            "subject": custom_subject_widget,
-            "body": custom_body_widget,
-        },
-        skip=["email_cc", "email_bcc"],
+        custom=custom,
+        skip=skip,
     )
     page.append(vote_form)
 
