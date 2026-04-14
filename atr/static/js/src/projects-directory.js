@@ -19,13 +19,17 @@
 
 function filter() {
 	const projectFilter = document.getElementById("project-filter").value;
+	if (projectFilter.length > 100) {
+	    throw new Error("Input too long");
+	}
+	const regex = new RegExp(projectFilter, 'i');
 	const cards = document.querySelectorAll(".page-project-card");
 	let visibleCount = 0;
 	for (const card of cards) {
 		const nameElement = card.querySelector(".card-title");
 		const name = nameElement.textContent;
 		if (projectFilter) {
-			card.parentElement.hidden = !new RegExp(projectFilter, "i").test(name);
+			card.parentElement.hidden = !regex.test(name);
 			if (!card.parentElement.hidden) {
 				visibleCount++;
 			}
