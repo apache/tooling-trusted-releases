@@ -14,18 +14,20 @@
 * [Web authentication](#web-authentication)
 * [API authentication](#api-authentication)
 * [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
+* [SSH authentication](#ssh-authentication)
 * [Token lifecycle](#token-lifecycle)
 * [Security properties](#security-properties)
 * [Implementation references](#implementation-references)
 
 ## Overview
 
-ATR uses two authentication mechanisms depending on the access method:
+ATR uses several authentication mechanisms depending on the access method:
 
 * **Web interface**: ASF OAuth provides browser-based sessions
 * **API**: Personal Access Tokens (PATs) authenticate users to obtain short-lived JSON Web Tokens (JWTs), which then authenticate API requests
+* **SSH**: Temporary SSH keys authenticate automated uploads from GitHub Actions workflows
 
-Both mechanisms require HTTPS. Authentication verifies the identity of users, while authorization (covered in [Authorization security](authorization-security)) determines what actions they can perform.
+All mechanisms require encrypted transport (HTTPS or SSH). Authentication verifies the identity of users, while authorization (covered in [Authorization security](authorization-security)) determines what actions they can perform.
 
 ## OAuth architecture and security responsibilities
 
@@ -182,6 +184,25 @@ The workflow also carries the originating committer's ASF UID as a parameter. AT
 
 In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH key bound to the specific project. The key cannot be used for any other project. The identity attached to the key differs: for project TP it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the committer's ASF UID passed through the workflow, trusted because only the service account — which only ATR can trigger — could have put it there.
 
+## SSH authentication
+
+ATR provides an SSH server for automated release artifact uploads from GitHub Actions workflows. This is a distinct authentication pathway from the web and API mechanisms described above.
+
+### Authentication mechanism
+
+The SSH server supports only public key authentication — password authentication is disabled and rejected. The authentication flow is tightly integrated with the GitHub Actions OIDC workflows described in the previous section:
+
+1. A GitHub Actions workflow authenticates to ATR via OIDC (see [GitHub Actions OIDC](#github-actions-oidc-trusted-publishing) above) and calls the SSH key registration endpoint.
+2. ATR generates a temporary SSH key pair, stores the public key in the database with a 20-minute TTL, and returns the private key to the workflow.
+3. The workflow uses the private key to connect to ATR's SSH server and upload release artifacts via rsync.
+4. The SSH server validates the presented public key against the database, checking existence, expiration, and project binding.
+
+Each key is bound to a specific project context and cannot be used for any other project. See [SSH key scope](#ssh-key-scope) above for how the key binding differs between project Trusted Publishing and ATR distribution workflows.
+
+### SSH server configuration
+
+The SSH server in [`ssh.py`](/ref/atr/ssh.py) applies a hardened security configuration. Cipher suites, key exchange algorithms, and MAC algorithms are restricted to those approved by the Hardened OpenSSH Server v9.9 policy from [ssh-audit](https://www.ssh-audit.com/). Only algorithms supported by both the policy and the asyncssh library are enabled.
+
 ## Token lifecycle
 
 The relationship between authentication methods and tokens:
@@ -195,10 +216,16 @@ ASF OAuth (web login)
                               │
                               └──▶ JWT Exchange ──▶ JWT (30 min)
                                                        │
-                                                       └──▶ API Access
+                                                       ├──▶ API Access
+                                                       │
+                                                       └──▶ GitHub OIDC Workflow
+                                                                 │
+                                                                 └──▶ SSH Key (20 min)
+                                                                          │
+                                                                          └──▶ rsync Upload
 ```
 
-For web users, authentication happens once via ASF OAuth, and the session persists until logout or expiration. For API users, the flow is: obtain a PAT once (via the web interface), then exchange it for JWTs as needed (JWTs expire quickly, so this exchange happens frequently in long-running scripts).
+For web users, authentication happens once via ASF OAuth, and the session persists until logout or expiration. For API users, the flow is: obtain a PAT once (via the web interface), then exchange it for JWTs as needed (JWTs expire quickly, so this exchange happens frequently in long-running scripts). For automated uploads, the flow extends further: a GitHub Actions workflow authenticates via OIDC, registers a temporary SSH key, and uses it to upload artifacts via rsync.
 
 ## Audit Logging
 
@@ -252,3 +279,4 @@ Tokens must be protected by the user at all times:
 * [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators; `verify_github_oidc` implements the OIDC validation chain
 * [`db/interaction.py`](/ref/atr/db/interaction.py) - `validate_trusted_jwt` implements the service account authorisation, `trusted_jwt_for_dist` implements gating based on the service account
 * [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation
+* [`ssh.py`](/ref/atr/ssh.py) - SSH server implementation, authentication, and rsync handling
