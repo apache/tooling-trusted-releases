@@ -200,6 +200,22 @@ ASF OAuth (web login)
 
 For web users, authentication happens once via ASF OAuth, and the session persists until logout or expiration. For API users, the flow is: obtain a PAT once (via the web interface), then exchange it for JWTs as needed (JWTs expire quickly, so this exchange happens frequently in long-running scripts).
 
+## Audit Logging
+
+An audit log, at `<STATE_DIR>/audit/auth-audit.log`, contains a log of all auth-adjacent operations. This should include authentication success/failures, token issuance/revocation,
+and anything else that would be relevant to authentication when investigating a potential security issue.
+
+This log is logged to by calling the specialised methods on atr.log (all args passed below as kwargs for readability):
+
+```python
+import atr.log as log
+
+log.auth_success(type="ssh", asfuid="arm")
+log.auth_failure(type="oauth", reason="account_not_found", asfuid="sbp")
+log.auth_event(event="pat_bulk_revoke", asfuid="akm", by="wave") # In this case, everything after asfuid is free-kwargs for additional log context
+
+```
+
 ## Security properties
 
 ### Web sessions
