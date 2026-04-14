@@ -42,7 +42,8 @@ async def save_preferences(
     """
     async with storage.write() as write:
         prefs = models.sql.UserPreferencesEntry(
-            colour_blindness_mode=models.sql.ColourBlindnessMode(preferences_form.colour_blindness_mode.value)
+            colour_blindness_mode=models.sql.ColourBlindnessMode(preferences_form.colour_blindness_mode.value),
+            nav_pinned=preferences_form.nav_pinned,
         )
         await write.as_foundation_committer().user.set_user_preferences(prefs)
     await quart.flash("Preferences saved", "success")

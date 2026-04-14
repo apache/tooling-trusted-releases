@@ -107,7 +107,10 @@ async def preferences(session: web.Committer, _user_preferences: Literal["user/p
     prefs_form = await form.render(
         model_cls=shared.user.UserPreferencesForm,
         submit_label="Save",
-        defaults={"colour_blindness_mode": existing_prefs.colour_blindness_mode.value if existing_prefs else None},
+        defaults={
+            "colour_blindness_mode": existing_prefs.colour_blindness_mode.value if existing_prefs else None,
+            "nav_pinned": existing_prefs.nav_pinned if existing_prefs else True,
+        },
     )
     block.append(prefs_form)
     return await template.blank("User preferences", content=block.collect())
