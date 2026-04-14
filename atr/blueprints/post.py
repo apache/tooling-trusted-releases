@@ -28,7 +28,6 @@ import quart
 import atr.blueprints.common as common
 import atr.form
 import atr.log as log
-import atr.models.safe as safe
 import atr.web as web
 
 _BLUEPRINT_NAME: Final = "post_blueprint"
@@ -61,8 +60,8 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
     - check_access is called automatically for committer routes with project_key
     """
     path, validated_params, literal_params, form_param, public = common.build_path(func)
-    project_key_var = next((name for name, t in validated_params if t is safe.ProjectKey), None)
-    check_access = (not public) and (project_key_var is not None)
+    # project_key_var = next((name for name, t in validated_params if t is safe.ProjectKey), None)
+    # check_access = (not public) and (project_key_var is not None)
     form_safe_params = common.safe_params_for_type(form_param[1]) if (form_param is not None) else []
 
     async def wrapper(*_args: Any, **kwargs: Any) -> Any:
@@ -70,8 +69,8 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
         await common.validate_params(kwargs, validated_params)
         kwargs.update(literal_params)
 
-        if check_access and (enhanced_session is not None) and (project_key_var is not None):
-            await enhanced_session.check_access(str(kwargs[project_key_var]))
+        # if check_access and (enhanced_session is not None) and (project_key_var is not None):
+        #     await enhanced_session.check_access(str(kwargs[project_key_var]))
 
         if form_param is not None:
             form_param_name, form_cls = form_param
