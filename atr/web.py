@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import json
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
@@ -33,6 +32,7 @@ import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.user as user
 import atr.util as util
 
@@ -132,7 +132,7 @@ class Committer:
         summary = form.flash_error_summary(errors, flash_data)
 
         await quart.flash(summary, category="error")
-        await quart.flash(json.dumps(flash_data), category="form-error-data")
+        await sessions.form_error_put(quart.request.path, flash_data)
         return quart.redirect(quart.request.path)
 
     async def form_validate(self, form_cls: type[form.Form], context: dict[str, Any]) -> pydantic.BaseModel:

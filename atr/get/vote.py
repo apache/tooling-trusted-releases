@@ -590,7 +590,7 @@ async def _render_vote_authenticated(
         version_key=release.version,
     )
     vote_comment_template = release.project.policy_vote_comment_template
-    cast_vote_form = form.render(
+    cast_vote_form = await form.render(
         model_cls=shared.vote.CastVoteForm,
         action=vote_action_url,
         submit_label="Submit vote",

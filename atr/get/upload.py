@@ -76,7 +76,7 @@ async def selected(
     block.h2(id="file-upload")["File upload"]
     block.p["Use this form to add files to this candidate draft."]
 
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.upload.AddFilesForm,
         submit_label="Add files",
@@ -99,7 +99,7 @@ async def selected(
         " page for this draft once the task is queued.",
     ]
 
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.upload.SvnImportForm,
         submit_label="Queue SVN import task",

@@ -31,6 +31,7 @@ import atr.htm as htm
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.sessions as sessions
 import atr.storage as storage
 import atr.storage.writers.vote as vote
 
@@ -272,6 +273,11 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
         lambda _endpoint, **_kwargs: "/vote/project/1.0.0",
     )
 
+    async def _no_form_errors(_path: str) -> dict[str, object]:
+        return {}
+
+    monkeypatch.setattr(sessions, "form_error_pop", _no_form_errors)
+
     release = SimpleNamespace(
         project=SimpleNamespace(key="project"),
         version="1.0.0",
@@ -279,7 +285,7 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
     )
 
     async with render_app.test_request_context("/manual/resolve/project/1.0.0"):
-        html = str(manual._render_resolve_page(release))
+        html = str(await manual._render_resolve_page(release))
 
     assert "manual vote resolution" in html
     assert "where you posted the result" in html

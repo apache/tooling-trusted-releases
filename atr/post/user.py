@@ -82,7 +82,7 @@ async def tally(
     block = htm.Block()
     block.h1["Vote tally"]
 
-    tally_resubmit = form.render(
+    tally_resubmit = await form.render(
         model_cls=shared.user.TallyForm,
         submit_label="Count votes",
         defaults={"thread": tally_form.thread},

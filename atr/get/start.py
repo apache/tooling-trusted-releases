@@ -98,7 +98,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         htm.strong["release candidate draft"],
         ". You can then add files to this draft before promoting it for voting.",
     ]
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.start.StartReleaseForm,
         form_classes=".atr-canary.py-4.px-5.border.rounded",

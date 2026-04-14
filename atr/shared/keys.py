@@ -159,7 +159,7 @@ async def render_upload_page(
     page.h2["Upload a file"]
     page.p["Upload a KEYS file from your computer."]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.UploadFileForm,
         action=util.as_url(post.keys.upload),
@@ -172,7 +172,7 @@ async def render_upload_page(
     page.h2(".mt-5")["Fetch existing KEYS file"]
     page.p["Fetch the KEYS file from the ASF downloads server for the selected committee."]
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.keys.UploadRemoteForm,
         action=util.as_url(post.keys.upload),

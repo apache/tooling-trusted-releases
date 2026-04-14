@@ -67,7 +67,7 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
 
         block.h3["Delete cache"]
         block.p["Remove your cached session information:"]
-        delete_cache_form = form.render(
+        delete_cache_form = await form.render(
             model_cls=shared.user.DeleteCacheForm,
             submit_label="Delete my cache",
             submit_classes="btn-danger",
@@ -79,7 +79,7 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
 
         block.h3["Cache current session"]
         block.p["Press the button below to cache your current session information:"]
-        cache_form = form.render(
+        cache_form = await form.render(
             model_cls=shared.user.CacheUserForm,
             submit_label="Cache me!",
             submit_classes="btn-primary",
@@ -104,7 +104,7 @@ async def preferences(session: web.Committer, _user_preferences: Literal["user/p
     block = htm.Block()
     block.h1["User preferences"]
     block.p["Select your preferences below."]
-    prefs_form = form.render(
+    prefs_form = await form.render(
         model_cls=shared.user.UserPreferencesForm,
         submit_label="Save",
         defaults={"colour_blindness_mode": existing_prefs.colour_blindness_mode.value if existing_prefs else None},
@@ -121,7 +121,7 @@ async def tally(_session: web.Committer, _user_tally: Literal["user/tally"]) -> 
     block = htm.Block()
     block.h1["Vote tally"]
     block.p["Enter a lists.apache.org thread URL or thread ID to count the votes in the thread."]
-    tally_form = form.render(
+    tally_form = await form.render(
         model_cls=shared.user.TallyForm,
         submit_label="Count votes",
     )

@@ -96,7 +96,7 @@ async def selected(
     for q in quarantined_failed:
         if q.id is None:
             continue
-        clear_quarantine_forms[q.id] = form.render(
+        clear_quarantine_forms[q.id] = await form.render(
             model_cls=draft.ClearQuarantineForm,
             action=util.as_url(
                 post.draft.quarantine_clear,
@@ -124,7 +124,7 @@ async def selected(
             revision_editor = None
             revision_timestamp = None
 
-    delete_form = form.render(
+    delete_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(selected, project_key=release.safe_project_key, version_key=release.safe_version_key),
         submit_label="Delete this draft",
@@ -135,7 +135,7 @@ async def selected(
 
     delete_file_forms: dict[str, htm.Element] = {}
     for path in all_paths:
-        delete_file_forms[str(path)] = form.render(
+        delete_file_forms[str(path)] = await form.render(
             model_cls=draft.DeleteFileForm,
             action=util.as_url(
                 post.draft.delete_file, project_key=release.safe_project_key, version_key=release.safe_version_key
@@ -153,7 +153,7 @@ async def selected(
             ),
         )
 
-    recheck_form = form.render(
+    recheck_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.recheck, project_key=release.safe_project_key, version_key=release.safe_version_key
@@ -161,7 +161,7 @@ async def selected(
         submit_label="Recheck with fresh cache",
         submit_classes="btn btn-primary",
     )
-    cache_reset_form = form.render(
+    cache_reset_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.cache_reset, project_key=release.safe_project_key, version_key=release.safe_version_key

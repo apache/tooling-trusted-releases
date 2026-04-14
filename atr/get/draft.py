@@ -71,14 +71,14 @@ async def tools(
         version_key=str(version_key),
         file_path=str(file_path),
     )
-    sha512_form = form.render(
+    sha512_form = await form.render(
         model_cls=shared.draft.HashGen,
         action=hashgen_action,
         submit_label="Generate SHA512",
         submit_classes="btn-outline-secondary",
         empty=True,
     )
-    sbom_form = form.render(
+    sbom_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.sbomgen,
@@ -90,7 +90,7 @@ async def tools(
         submit_classes="btn-outline-secondary",
         empty=True,
     )
-    sbom_convert_form = form.render(
+    sbom_convert_form = await form.render(
         model_cls=form.Empty,
         action=util.as_url(
             post.draft.sbomconvert,

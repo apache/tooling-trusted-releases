@@ -177,7 +177,7 @@ async def selected_revision(
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         for path in all_paths:
             delete_file_forms[str(path)] = str(
-                form.render(
+                await form.render(
                     model_cls=draft.DeleteFileForm,
                     action=util.as_url(
                         post.draft.delete_file, project_key=str(project_key), version_key=str(version_key)

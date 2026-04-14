@@ -236,7 +236,7 @@ async def _render_page(
     else:
         skip.append("second_round_email_to")
 
-    vote_form = form.render(
+    vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
         cancel_url=cancel_url,
