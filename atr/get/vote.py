@@ -120,7 +120,7 @@ async def render_options_page(
     _render_header(page, release, show_resolve_section, latest_vote_task)
     _render_section_download(page, release, session, user_category)
     _render_section_checks(page, release, file_totals)
-    await _render_section_vote(page, release, session, user_category, archive_url)
+    await _render_section_vote(page, release, session, user_category, archive_url, latest_vote_task)
     if show_resolve_section:
         _render_section_resolve(page, release, user_category)
 
@@ -317,6 +317,13 @@ async def _get_archive_url(
         return await wagp.cache.get_message_archive_url(task_mid, task_recipient)
 
 
+def _is_podling_round_two(release: sql.Release) -> bool:
+    # TODO: This logic is repeated elsewhere
+    # We should deduplicate this
+    committee = release.committee
+    return (committee is not None) and committee.is_podling and (release.podling_thread_id is not None)
+
+
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")["Release checklist"]
@@ -358,9 +365,10 @@ def _render_header(
     if release.committee is None:
         raise ValueError("Release has no committee")
 
+    voting_committee_name = _vote_committee_name(release)
     page.p[
         "The ",
-        htm.strong[release.committee.display_name],
+        htm.strong[voting_committee_name],
         " committee is currently voting on the release candidate for"
         f" {release.project.display_name} {release.version}.",
     ]
@@ -518,16 +526,18 @@ async def _render_section_vote(
     session: web.Committer | None,
     user_category: UserCategory,
     archive_url: str | None,
+    latest_vote_task: sql.Task | None,
 ) -> None:
     page.h2("#vote")["3. Cast your vote"]
 
     if release.committee is None:
         raise ValueError("Release has no committee")
 
+    vote_recipient = _vote_recipient(release, latest_vote_task)
     if user_category == UserCategory.UNAUTHENTICATED:
-        _render_vote_unauthenticated(page, release, archive_url)
+        _render_vote_unauthenticated(page, release, archive_url, vote_recipient)
     else:
-        await _render_vote_authenticated(page, release, session, user_category, archive_url)
+        await _render_vote_authenticated(page, release, session, user_category, archive_url, vote_recipient)
 
 
 async def _render_vote_authenticated(
@@ -536,6 +546,7 @@ async def _render_vote_authenticated(
     session: web.Committer | None,
     user_category: UserCategory,
     archive_url: str | None,
+    vote_recipient: str,
 ) -> None:
     if release.committee is None:
         raise ValueError("Release has no committee")
@@ -560,18 +571,16 @@ async def _render_vote_authenticated(
             " but is still valued by the community.",
         ]
 
-    # Note about where vote goes, with link to thread if available
-    mailing_list = f"dev@{release.committee.key}.apache.org"
     if archive_url:
         page.p[
             "Your vote will be sent to ",
-            htpy.code[mailing_list],
+            htpy.code[vote_recipient],
             " (",
             htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
             ").",
         ]
     else:
-        page.p["Your vote will be sent to ", htpy.code[mailing_list], "."]
+        page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
 
     # Build the vote widget
     vote_widget = htpy.div(id="decision", class_="btn-group", role="group")[
@@ -601,7 +610,12 @@ async def _render_vote_authenticated(
     page.append(cast_vote_form)
 
 
-def _render_vote_unauthenticated(page: htm.Block, release: sql.Release, archive_url: str | None) -> None:
+def _render_vote_unauthenticated(
+    page: htm.Block,
+    release: sql.Release,
+    archive_url: str | None,
+    vote_recipient: str,
+) -> None:
     page.p["Once you have reviewed the release, you can cast your vote."]
 
     redirect_url = util.as_url(selected, project_key=release.project.key, version_key=release.version)
@@ -640,10 +654,33 @@ def _render_vote_unauthenticated(page: htm.Block, release: sql.Release, archive_
             ],
         ]
     else:
-        committee_key = release.committee.key if release.committee else "unknown"
         email_body.p(".text-muted.mb-0")[
             "The vote thread archive is not yet available. ",
-            f"Check the dev@{committee_key}.apache.org mailing list.",
+            "The current vote was sent to ",
+            htpy.code[vote_recipient],
+            ".",
         ]
     email_box.append(email_body.collect())
     page.append(email_box.collect())
+
+
+def _vote_committee_name(release: sql.Release) -> str:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    if _is_podling_round_two(release):
+        return "Incubator"
+    return release.committee.display_name
+
+
+def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> str:
+    if latest_vote_task is not None:
+        if (task_recipient := interaction.task_recipient_get(latest_vote_task)) is not None:
+            return task_recipient
+        task_email_to = latest_vote_task.task_args.get("email_to")
+        if isinstance(task_email_to, str) and task_email_to:
+            return task_email_to
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    if _is_podling_round_two(release):
+        return util.INCUBATOR_GENERAL_ADDRESS
+    return f"dev@{release.committee.key}.apache.org"
