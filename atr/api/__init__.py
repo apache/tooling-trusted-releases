@@ -16,6 +16,7 @@
 # under the License.
 import datetime
 import hashlib
+import re
 from typing import Any, Final, Literal
 
 import aiofiles.os
@@ -57,6 +58,8 @@ import atr.util as util
 
 type DictResponse = tuple[dict[str, Any], int]
 
+AUTOMATED_KEY_PATTERNS: Final = ("Automated Release Signing", "Services RM")
+APACHE_ORG_RE: Final = re.compile(r"([a-z][a-z0-9-]*)\.apache\.org")
 ROUTES_MODULE: Final[Literal[True]] = True
 
 
@@ -824,6 +827,54 @@ async def projects_list(
     return models.api.ProjectsListResults(
         endpoint="/projects/list",
         projects=projects,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed
+@quart_schema.validate_response(models.api.CiStagingListResults, 200)
+async def projects_ci_staging(
+    _projects_ci_staging: Literal["projects/ci-staging"],
+) -> DictResponse:
+    """
+    URL: GET /projects/ci-staging
+
+    List PMCs approved for CI staging.
+
+    Returns projects that have a GitHub repository configured in their
+    release policy, and committee keys that have evidence of automated
+    CI usage (signing keys with automated UIDs). Consumers can join
+    on project.committee_key to determine which projects have both
+    configuration and evidence.
+    """
+    via = sql.validate_instrumented_attribute
+
+    async with db.session() as data:
+        # Evidence: committees with automated signing keys
+        stmt = sqlmodel.select(sql.PublicSigningKey).where(
+            sqlalchemy.or_(
+                *[
+                    via(sql.PublicSigningKey.primary_declared_uid).contains(pattern)
+                    for pattern in AUTOMATED_KEY_PATTERNS
+                ]
+            )
+        )
+        automated_keys = (await data.execute(stmt)).scalars().all()
+
+        evidence_committees: set[str] = set()
+        for key in automated_keys:
+            if key.primary_declared_uid:
+                match = APACHE_ORG_RE.search(key.primary_declared_uid)
+                if match:
+                    evidence_committees.add(match.group(1))
+
+        # Configuration: projects with github repos in release policy
+        all_projects = await data.project(_release_policy=True).all()
+        ci_projects = [p for p in all_projects if p.release_policy and p.release_policy.github_repository_name]
+
+    return models.api.CiStagingListResults(
+        endpoint="/projects/ci-staging",
+        projects=ci_projects,
+        evidence_committee_keys=sorted(evidence_committees),
     ).model_dump(mode="json"), 200
 
 

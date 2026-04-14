@@ -42,6 +42,12 @@ class ChecksListResults(schema.Strict):
         return sql.ReleasePhase(v) if isinstance(v, str) else v
 
 
+class CiStagingListResults(schema.Strict):
+    endpoint: Literal["/projects/ci-staging"] = schema.alias("endpoint")
+    projects: Sequence[sql.Project]
+    evidence_committee_keys: Sequence[str]
+
+
 class ChecksOngoingResults(schema.Strict):
     endpoint: Literal["/checks/ongoing"] = schema.alias("endpoint")
     ongoing: int = schema.example(10)
