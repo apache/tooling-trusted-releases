@@ -189,13 +189,13 @@ async def _get_page_data(
     return release, deletable_dirs, rc_analysis_result, tasks
 
 
-def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
+async def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
     """Render the delete directory form."""
     section = htm.Block()
 
     section.h2["Delete an empty directory"]
 
-    form.render_block(
+    await form.render_block(
         section,
         shared.finish.DeleteEmptyDirectoryForm,
         defaults={"directory_to_delete": deletable_dirs},
@@ -329,10 +329,10 @@ async def _render_page(
 
     # Delete directory form
     if deletable_dirs:
-        page.append(_render_delete_directory_form(deletable_dirs))
+        page.append(await _render_delete_directory_form(deletable_dirs))
 
     # Remove RC tags section
-    page.append(_render_rc_tags_section(rc_analysis))
+    page.append(await _render_rc_tags_section(rc_analysis))
 
     # Custom styles
     page_styles = """
@@ -380,7 +380,7 @@ def _render_rc_preview_table(affected_paths: list[tuple[str, str]]) -> htm.Eleme
     ]
 
 
-def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
+async def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
     """Render the remove RC tags section."""
     section = htm.Block()
 
@@ -394,7 +394,7 @@ def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
             _render_rc_preview_table(rc_analysis.affected_paths_preview) if rc_analysis.affected_paths_preview else "",
         ]
 
-        form.render_block(
+        await form.render_block(
             section,
             shared.finish.RemoveRCTagsForm,
             submit_label="Remove RC tags",

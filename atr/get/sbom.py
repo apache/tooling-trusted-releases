@@ -114,12 +114,12 @@ async def report(
             ]
             if len(augmented_bom_versions) > 0:
                 last_augmented_bom = max(augmented_bom_versions)
-        _augment_section(block, release, task_result, latest_augment, last_augmented_bom)
+        await _augment_section(block, release, task_result, latest_augment, last_augmented_bom)
 
     _conformance_section(block, task_result)
     _license_section(block, task_result)
 
-    _vulnerability_scan_section(
+    await _vulnerability_scan_section(
         block, str(project_key), str(version_key), str(file_path), task_result, osv_tasks, is_release_candidate
     )
 
@@ -130,7 +130,7 @@ async def report(
     return await template.blank("SBOM report", content=block.collect())
 
 
-def _augment_section(
+async def _augment_section(
     block: htm.Block,
     release: sql.Release,
     task_result: results.SBOMToolScore,
@@ -154,7 +154,7 @@ def _augment_section(
 
     if len(augments) == 0:
         block.p["We can attempt to augment this SBOM with additional data."]
-        form.render_block(
+        await form.render_block(
             block,
             model_cls=shared.sbom.AugmentSBOMForm,
             submit_label="Augment SBOM",
@@ -168,7 +168,7 @@ def _augment_section(
         else:
             block.p["This SBOM was augmented by ATR at revision ", htm.code[augments[-1]], "."]
             block.p["We can perform augmentation again to check for additional new data."]
-            form.render_block(
+            await form.render_block(
                 block,
                 model_cls=shared.sbom.AugmentSBOMForm,
                 submit_label="Re-augment SBOM",
@@ -661,10 +661,10 @@ def _vulnerability_results_from_scan(
     block.append(new_block)
 
 
-def _vulnerability_scan_button(block: htm.Block) -> None:
+async def _vulnerability_scan_button(block: htm.Block) -> None:
     block.p["You can perform a new vulnerability scan."]
 
-    form.render_block(
+    await form.render_block(
         block,
         model_cls=shared.sbom.ScanSBOMForm,
         submit_label="Scan file",
@@ -714,7 +714,7 @@ def _vulnerability_scan_results(
         _vulnerability_results_from_bom(vulns, block, scans, previous_vulns)
 
 
-def _vulnerability_scan_section(
+async def _vulnerability_scan_section(
     block: htm.Block,
     project: str,
     version: str,
@@ -747,12 +747,14 @@ def _vulnerability_scan_section(
 
     if not is_release_candidate:
         if in_progress_task is not None:
-            _vulnerability_scan_status(block, in_progress_task, project, version, file_path)
+            await _vulnerability_scan_status(block, in_progress_task, project, version, file_path)
         else:
-            _vulnerability_scan_button(block)
+            await _vulnerability_scan_button(block)
 
 
-def _vulnerability_scan_status(block: htm.Block, task: sql.Task, project: str, version: str, file_path: str) -> None:
+async def _vulnerability_scan_status(
+    block: htm.Block, task: sql.Task, project: str, version: str, file_path: str
+) -> None:
     status_text = task.status.value.replace("_", " ").capitalize()
     block.p[f"Vulnerability scan is currently {status_text.lower()}."]
     block.p["Task ID: ", htm.code[str(task.id)]]
@@ -762,4 +764,4 @@ def _vulnerability_scan_status(block: htm.Block, task: sql.Task, project: str, v
             htm.code[task.error],
             ". Additional details are unavailable from ATR.",
         ]
-        _vulnerability_scan_button(block)
+        await _vulnerability_scan_button(block)

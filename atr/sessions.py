@@ -20,6 +20,7 @@ from typing import Any, Final, Literal, get_args
 
 import asfquart.session
 import quart
+import sqlalchemy.dialects.sqlite
 import sqlmodel
 
 import atr.config as config
@@ -44,6 +45,44 @@ async def deleted_or_banned(uid: str) -> None:
     await asfquart.APP.sessions.revoke_by_uid(uid)
     await asfquart.session.aclear()
     invalidate_cache()
+
+
+async def form_error_pop(path: str) -> dict[str, Any]:
+    user_session = await read()
+    if user_session is None:
+        return {}
+    async with db.session() as data:
+        statement = sqlmodel.select(sql.SessionFormError).where(
+            sql.SessionFormError.sid_hash == user_session.sid_hash,
+            sql.SessionFormError.path == path,
+        )
+        result = await data.execute(statement)
+        row = result.scalar_one_or_none()
+        if row is None:
+            return {}
+        payload = dict(row.payload)
+        await data.delete(row)
+        await data.commit()
+        return payload
+
+
+async def form_error_put(path: str, payload: dict[str, Any]) -> None:
+    user_session = await read()
+    if user_session is None:
+        log.warning("form_error_put called without an active session; dropping payload")
+        return
+    now = time.time()
+    async with db.session() as data:
+        statement = (
+            sqlalchemy.dialects.sqlite.insert(sql.SessionFormError)
+            .values(sid_hash=user_session.sid_hash, path=path, payload=payload, cts=now)
+            .on_conflict_do_update(
+                index_elements=["sid_hash", "path"],
+                set_={"payload": payload, "cts": now},
+            )
+        )
+        await data.execute(statement)
+        await data.commit()
 
 
 def invalidate_cache() -> None:

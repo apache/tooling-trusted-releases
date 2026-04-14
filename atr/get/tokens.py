@@ -46,7 +46,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
         token is shown only once when you create it. You can revoke tokens
         you no longer need."""
     ]
-    add_form = form.render(
+    add_form = await form.render(
         model_cls=shared.tokens.AddTokenForm,
         form_classes=".mb-0",
         submit_label="Generate token",
@@ -55,7 +55,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
         htm.div(".card-header")["Generate new token"],
         htm.div(".card-body")[add_form],
     ]
-    _build_tokens_table(page, tokens_list)
+    await _build_tokens_table(page, tokens_list)
 
     page.h2["JSON Web Token (JWT)"]
     jwt_section = htm.Block()
@@ -65,7 +65,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
         in the Authorization header as a Bearer token when invoking the
         protected endpoints."""
     ]
-    form.render_block(
+    await form.render_block(
         jwt_section,
         model_cls=form.Empty,
         action=util.as_url(post.tokens.jwt_post),
@@ -94,7 +94,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     )
 
 
-def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalAccessTokenSafe]) -> None:
+async def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalAccessTokenSafe]) -> None:
     if not tokens_list:
         page.p["No tokens found."]
         return
@@ -104,7 +104,7 @@ def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalAccessT
         if not t.id:
             continue
 
-        delete_form = form.render(
+        delete_form = await form.render(
             model_cls=shared.tokens.DeleteTokenForm,
             action=util.as_url(post.tokens.tokens),
             form_classes=".mb-0",

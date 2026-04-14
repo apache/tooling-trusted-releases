@@ -237,7 +237,7 @@ async def _render_page(
             "body": default_body,
         }
 
-        form.render_block(
+        await form.render_block(
             page,
             model_cls=shared.announce.AnnounceForm,
             action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),

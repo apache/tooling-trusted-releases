@@ -241,8 +241,6 @@ async def validate_safe_fields(
 
 async def flash_form_error(form_cls: type, error: pydantic.ValidationError) -> Any:
     """Flash form validation errors and return a redirect to the current page."""
-    import json
-
     errors = error.errors()
     if len(errors) == 0:
         raise RuntimeError("Validation failed, but no errors were reported")
@@ -250,7 +248,7 @@ async def flash_form_error(form_cls: type, error: pydantic.ValidationError) -> A
     flash_data = form.flash_error_data(form_cls, errors, form_data_raw)
     summary = form.flash_error_summary(errors, flash_data)
     await quart.flash(summary, category="error")
-    await quart.flash(json.dumps(flash_data), category="form-error-data")
+    await sessions.form_error_put(quart.request.path, flash_data)
     return quart.redirect(quart.request.path)
 
 

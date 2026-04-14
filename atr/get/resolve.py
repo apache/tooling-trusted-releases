@@ -108,7 +108,7 @@ async def selected(
     else:
         form_cls = shared.resolve.CancelSubmitForm
 
-    resolve_form = atr.form.render(
+    resolve_form = await atr.form.render(
         model_cls=form_cls,
         action=util.as_url(post.resolve.selected, project_key=release.project.key, version_key=release.version),
         submit_label=submit_label,

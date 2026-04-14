@@ -119,7 +119,7 @@ async def list_get(
         ]
         block.table(".table.table-striped.table-bordered")[tbody]
 
-        delete_form = form.render(
+        delete_form = await form.render(
             model_cls=shared.distribution.DeleteForm,
             action=util.as_url(post.distribution.delete, project_key=str(project_key), version_key=str(version_key)),
             form_classes=".d-inline-block.m-0",
@@ -214,7 +214,7 @@ async def _automate_form_page(project: safe.ProjectKey, version: safe.VersionKey
     )
 
     # Render the distribution form
-    form_html = form.render(
+    form_html = await form.render(
         model_cls=shared.distribution.DistributionAutomateForm,
         submit_label="Distribute",
         action=action,
@@ -290,7 +290,7 @@ async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, 
     )
 
     # Render the distribution form
-    form_html = form.render(
+    form_html = await form.render(
         model_cls=shared.distribution.DistributionRecordForm,
         submit_label="Record distribution",
         action=action,

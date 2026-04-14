@@ -65,7 +65,7 @@ async def add_project(
 
     committee_display_name = committee.name or committee.key.title()
 
-    form.render_block(
+    await form.render_block(
         page,
         model_cls=shared.projects.AddProjectForm,
         action=util.as_url(post.projects.add_project, committee_key=committee.key),
@@ -104,7 +104,7 @@ async def projects(_session: web.Public, _projects: Literal["projects"]) -> str:
 
     delete_forms: dict[str, htm.Element] = {}
     for project in projects:
-        delete_forms[str(project.key)] = form.render(
+        delete_forms[str(project.key)] = await form.render(
             model_cls=shared.projects.DeleteSelectedProject,
             action=util.as_url(post.projects.delete),
             form_classes=".d-inline-block.m-0",
@@ -199,10 +199,10 @@ async def view(
 
     if project.status == sql.ProjectStatus.ACTIVE:
         if can_edit:
-            page.append(_render_compose_form(project))
-            page.append(_render_vote_form(project))
-            page.append(_render_finish_form(project))
-            page.append(_render_trusted_publishing_form(project))
+            page.append(await _render_compose_form(project))
+            page.append(await _render_vote_form(project))
+            page.append(await _render_finish_form(project))
+            page.append(await _render_trusted_publishing_form(project))
         else:
             page.append(_render_policy_readonly(project))
 
@@ -214,7 +214,7 @@ async def view(
         page.append(await _render_releases_sections(project, candidate_drafts, candidates, previews, full_releases))
 
         if project.created_by == session.uid:
-            page.append(_render_delete_section(project))
+            page.append(await _render_delete_section(project))
 
         if project.committee:
             if (project.committee.key in session.committees) or is_privileged:
@@ -335,7 +335,7 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _render_compose_form(project: sql.Project) -> htm.Element:
+async def _render_compose_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Compose options"]
@@ -347,7 +347,7 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
     else:
         atr_tag_yaml = ""
     with card.block(htm.div, classes=".card-body") as card_body:
-        form.render_block(
+        await form.render_block(
             card_body,
             model_cls=shared.projects.ComposePolicyForm,
             action=util.as_url(post.projects.view, name=str(project.key)),
@@ -367,11 +367,11 @@ def _render_compose_form(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _render_delete_section(project: sql.Project) -> htm.Element:
+async def _render_delete_section(project: sql.Project) -> htm.Element:
     section = htm.Block(htm.div)
     section.h2["Actions"]
 
-    delete_form = form.render(
+    delete_form = await form.render(
         shared.projects.DeleteProjectForm,
         action=util.as_url(post.projects.view, name=str(project.key)),
         form_classes="",
@@ -393,7 +393,7 @@ def _render_description_card(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _render_finish_form(project: sql.Project) -> htm.Element:
+async def _render_finish_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Finish options"]
@@ -415,7 +415,7 @@ def _render_finish_form(project: sql.Project) -> htm.Element:
     )
 
     with card.block(htm.div, classes=".card-body") as card_body:
-        form.render_block(
+        await form.render_block(
             card_body,
             model_cls=shared.projects.FinishPolicyForm,
             action=util.as_url(post.projects.view, name=str(project.key)),
@@ -609,14 +609,14 @@ async def _render_releases_sections(
     return sections.collect()
 
 
-def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
+async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Trusted Publishing"]
     ]
 
     with card.block(htm.div, classes=".card-body") as card_body:
-        form.render_block(
+        await form.render_block(
             card_body,
             model_cls=shared.projects.TrustedPublishingPolicyForm,
             action=util.as_url(post.projects.view, name=str(project.key)),
@@ -636,7 +636,7 @@ def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _render_vote_form(project: sql.Project) -> htm.Element:
+async def _render_vote_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
         htm.h3(".mb-0")["Release policy - Vote options"]
@@ -681,7 +681,7 @@ def _render_vote_form(project: sql.Project) -> htm.Element:
     )
 
     with card.block(htm.div, classes=".card-body") as card_body:
-        form.render_block(
+        await form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
             action=util.as_url(post.projects.view, name=str(project.key)),
