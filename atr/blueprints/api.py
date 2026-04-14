@@ -31,6 +31,7 @@ import quart_schema
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.common as common
+import atr.config as config
 import atr.log as log
 import atr.web as web
 
@@ -155,7 +156,9 @@ async def _handle_asfquart_exception(err: base.ASFQuartException) -> tuple[quart
 
 @_BLUEPRINT.errorhandler(Exception)
 async def _handle_generic_exception(err: Exception) -> tuple[quart.Response, int]:
-    return _json_error(str(err), 500)
+    if config.is_dev_environment():
+        return _json_error(str(err), 500)
+    return _json_error("Exception", 500)
 
 
 @_BLUEPRINT.errorhandler(exceptions.HTTPException)

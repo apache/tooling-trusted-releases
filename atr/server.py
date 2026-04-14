@@ -977,7 +977,9 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
 
         if quart.request.path.startswith("/api"):
             status_code = getattr(error, "code", 500) if isinstance(error, Exception) else 500
-            return quart.jsonify({"error": str(error)}), status_code
+            if config.is_dev_environment():
+                return quart.jsonify({"error": str(error)}), status_code
+            return quart.jsonify({"error": "Exception"}), status_code
 
         exc_info = (type(error), error, error.__traceback__)
         log.error("Unhandled exception", exc_info=exc_info)
@@ -988,19 +990,25 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
                 traceback=traceback.format_exc(),
                 status_code=500,
             ), 500
-        return await template.render("error.html", error=str(error), status_code=500), 500
+        return await template.render("error.html", error="Exception", status_code=500), 500
 
     @app.errorhandler(base.ASFQuartException)
     async def handle_asfquart_exception(error: base.ASFQuartException) -> Any:
         # TODO: Figure out why pyright doesn't know about this attribute
         if quart.request.path.startswith("/api"):
             errorcode = getattr(error, "errorcode", 500)
-            return quart.jsonify({"error": str(error)}), errorcode
+            if config.is_dev_environment():
+                return quart.jsonify({"error": str(error)}), errorcode
+            return quart.jsonify({"error": "Exception"}), errorcode
         if not hasattr(error, "errorcode"):
             errorcode = 500
         else:
             errorcode = getattr(error, "errorcode")
-        return await template.render("error.html", error=str(error), status_code=errorcode), errorcode
+        exc_info = (type(error), error, error.__traceback__)
+        log.error("Unhandled exception", exc_info=exc_info)
+        if config.is_dev_environment():
+            return await template.render("error.html", error=str(error), status_code=errorcode), errorcode
+        return await template.render("error.html", error="Exception", status_code=errorcode), errorcode
 
     # Add a global error handler for payload too large which will normally be handled in front in httpd server
     @app.errorhandler(413)
