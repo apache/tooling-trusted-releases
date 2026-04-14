@@ -260,6 +260,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
         topnav_unfinished_releases: list[tuple[str, str, list[sql.Release]]] = []
         topnav_user_projects: list[tuple[str, str]] = []
         colour_blindness_mode = sql.ColourBlindnessMode.NONE
+        nav_pinned = True
         current_uid = current_user.uid if current_user else None
         if isinstance(current_uid, str):
             topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
@@ -268,9 +269,11 @@ def _app_setup_context(app: base.QuartApp) -> None:
                 db_user = await data.user(asf_uid=current_uid).get()
                 if db_user:
                     colour_blindness_mode = db_user.preferences.colour_blindness_mode
+                    nav_pinned = db_user.preferences.nav_pinned
 
         return {
             "colour_blindness_mode": colour_blindness_mode,
+            "nav_pinned": nav_pinned,
             "admin": admin,
             "as_url": util.as_url,
             "commit": metadata.commit,

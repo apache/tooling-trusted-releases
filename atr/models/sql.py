@@ -263,6 +263,7 @@ class ColourBlindnessMode(enum.StrEnum):
 
 class UserPreferencesEntry(schema.Subset):
     colour_blindness_mode: ColourBlindnessMode = ColourBlindnessMode.NONE
+    nav_pinned: bool = True
 
 
 class VoteEntry(schema.Strict):

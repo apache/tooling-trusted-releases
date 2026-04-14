@@ -46,3 +46,7 @@ class UserPreferencesForm(form.Form):
     colour_blindness_mode: form.Enum[sql.ColourBlindnessMode] = form.label(
         "Colour blindness mode", widget=form.Widget.SELECT
     )
+    nav_pinned: form.Bool = form.label(
+        "Pin navigation to top of viewport",
+        documentation="When enabled, the top navigation bar stays visible as you scroll.",
+    )

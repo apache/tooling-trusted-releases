@@ -16,17 +16,19 @@
       <link rel="stylesheet"
             href="{{ static_url('css/bootstrap-icons.min.css') }}" />
       <link rel="stylesheet" href="{{ static_url('css/bootstrap.custom.css') }}" />
-      <style>
-        @media (min-width: 990px) {
-          body {
-            padding-top: 72px;
-          }
+      {% if nav_pinned is not defined or nav_pinned %}
+        <style>
+          @media (min-width: 990px) {
+            body {
+              padding-top: 72px;
+            }
 
-          .fixed-top {
-            position: fixed;
+            .fixed-top {
+              position: fixed;
+            }
           }
-        }
-      </style>
+        </style>
+      {% endif %}
     {% endblock stylesheets %}
     {% block head_extra %}
     {% endblock head_extra %}
