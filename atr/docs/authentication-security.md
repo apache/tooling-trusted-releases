@@ -186,18 +186,18 @@ In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/s
 
 ## SSH authentication
 
-ATR provides an SSH server for automated release artifact uploads from GitHub Actions workflows. This is a distinct authentication pathway from the web and API mechanisms described above.
+ATR provides an SSH server for rsync file upload, and for automated release artifact uploads from GitHub Actions workflows. This is a distinct authentication pathway from the web and API mechanisms described above.
 
 ### Authentication mechanism
 
-The SSH server supports only public key authentication — password authentication is disabled and rejected. The authentication flow is tightly integrated with the GitHub Actions OIDC workflows described in the previous section:
+The SSH server supports only public key authentication — password authentication is disabled and rejected. The authentication flow accepts SSH keys for rsync connections from the user, or, depending on the route, is tightly integrated with the GitHub Actions OIDC workflows described in the previous section:
 
 1. A GitHub Actions workflow authenticates to ATR via OIDC (see [GitHub Actions OIDC](#github-actions-oidc-trusted-publishing) above) and calls the SSH key registration endpoint.
 2. ATR generates a temporary SSH key pair, stores the public key in the database with a 20-minute TTL, and returns the private key to the workflow.
 3. The workflow uses the private key to connect to ATR's SSH server and upload release artifacts via rsync.
 4. The SSH server validates the presented public key against the database, checking existence, expiration, and project binding.
 
-Each key is bound to a specific project context and cannot be used for any other project. See [SSH key scope](#ssh-key-scope) above for how the key binding differs between project Trusted Publishing and ATR distribution workflows.
+Each such SSH key is bound to a specific project context and cannot be used for any other project. See [SSH key scope](#ssh-key-scope) above for how the key binding differs between project Trusted Publishing and ATR distribution workflows.
 
 ### SSH server configuration
 
