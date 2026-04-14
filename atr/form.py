@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import enum
-import json
 import pathlib
 import re
 import types
@@ -35,6 +34,7 @@ import quart_wtf.utils as utils
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.schema as schema
+import atr.sessions as sessions
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -249,19 +249,11 @@ def _get_concrete_cls(form_cls: TypeAliasType, discriminator_value: str) -> type
     raise ValueError(f"Discriminator value {discriminator_value} not found in union type: {alias_value}")
 
 
-def _get_flash_error_data() -> dict[str, Any]:
-    flashed_error_messages = quart.get_flashed_messages(category_filter=["form-error-data"])
-    if flashed_error_messages:
-        try:
-            first_message = flashed_error_messages[0]
-            if isinstance(first_message, str):
-                return json.loads(first_message)
-        except (json.JSONDecodeError, IndexError):
-            pass
-    return {}
+async def _get_flash_error_data() -> dict[str, Any]:
+    return await sessions.form_error_pop(quart.request.path)
 
 
-def render(  # noqa: C901
+async def render(  # noqa: C901
     model_cls: type[Form],
     action: str | None = None,
     form_classes: str = ".atr-canary.py-4",
@@ -292,7 +284,7 @@ def render(  # noqa: C901
     elif border and (".px-" not in form_classes):
         form_classes += ".px-5"
 
-    flash_error_data: dict[str, Any] = _get_flash_error_data() if use_error_data else {}
+    flash_error_data: dict[str, Any] = await _get_flash_error_data() if use_error_data else {}
     field_rows: list[htm.Element] = []
     hidden_fields: list[htm.Element | htm.VoidElement | markupsafe.Markup] = []
     hidden_fields.append(csrf_input())
@@ -359,8 +351,8 @@ def render(  # noqa: C901
     return htm.form(form_classes, **form_attrs)[form_children]
 
 
-def render_block(block: htm.Block, *args, **kwargs) -> None:
-    rendered = render(*args, **kwargs)
+async def render_block(block: htm.Block, *args, **kwargs) -> None:
+    rendered = await render(*args, **kwargs)
     block.append(rendered)
 
 

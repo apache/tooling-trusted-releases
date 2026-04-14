@@ -608,6 +608,16 @@ class UserSession(sqlmodel.SQLModel, table=True):
             self.email = f"{self.uid}@apache.org"
 
 
+# SessionFormError:
+class SessionFormError(sqlmodel.SQLModel, table=True):
+    sid_hash: str = sqlmodel.Field(default="", primary_key=True)
+    path: str = sqlmodel.Field(default="", primary_key=True)
+    payload: dict[str, Any] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    cts: float = sqlmodel.Field(default=0.0, nullable=False)
+
+
 # WorkflowSSHKey:
 class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True, index=True)

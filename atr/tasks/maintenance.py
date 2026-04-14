@@ -15,11 +15,20 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import time
+from typing import Final
+
+import sqlmodel
+
+import atr.db as db
 import atr.log as log
 import atr.models.args as args
 import atr.models.results as results
+import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+
+_FORM_ERROR_TTL_SECONDS: Final[int] = 24 * 60 * 60
 
 
 class MaintenanceError(Exception):
@@ -33,6 +42,7 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
 
     try:
         await _storage_maintenance()
+        await _session_data_maintenance()
 
         log.info(
             "Storage maintenance completed successfully",
@@ -47,6 +57,21 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         error_msg = f"Unexpected error during maintenance: {e!s}"
         log.exception("Maintenance failed with unexpected error")
         raise MaintenanceError(error_msg) from e
+
+
+async def _session_data_maintenance() -> None:
+    via = sql.validate_instrumented_attribute
+    cutoff = time.time() - _FORM_ERROR_TTL_SECONDS
+    async with db.session() as data:
+        active_sids = sqlmodel.select(via(sql.UserSession.sid_hash))
+        statement = sqlmodel.delete(sql.SessionFormError).where(
+            sqlmodel.or_(
+                via(sql.SessionFormError.sid_hash).not_in(active_sids),
+                via(sql.SessionFormError.cts) < cutoff,
+            )
+        )
+        await data.execute(statement)
+        await data.commit()
 
 
 async def _storage_maintenance():
