@@ -257,6 +257,7 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
     try:
         timeout = aiohttp.ClientTimeout(total=30)
         async with util.create_secure_session(timeout=timeout) as session:
+            # audit_guidance known issue: redirect without domain validation; will change when key import is refactored
             async with session.get(keys_url, allow_redirects=True) as response:
                 response.raise_for_status()
                 content_length = response.content_length
