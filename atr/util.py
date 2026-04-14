@@ -803,6 +803,13 @@ def permitted_archive_roots(basename_from_filename: str) -> list[str]:
     return [basename_from_filename]
 
 
+def permitted_podling_first_round_recipients(asf_uid: str, committee_key: str, *, is_podling: bool) -> list[str]:
+    recipients = permitted_voting_recipients(asf_uid, committee_key)
+    if not is_podling:
+        return recipients
+    return [recipient for recipient in recipients if (recipient != f"private@{committee_key}.apache.org")]
+
+
 def permitted_podling_second_round_recipients(asf_uid: str) -> list[str]:
     recipients = [INCUBATOR_GENERAL_ADDRESS]
     if config.get().ATR_STATUS == "ALPHA":

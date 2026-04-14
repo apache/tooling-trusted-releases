@@ -1606,7 +1606,15 @@ async def vote_start(
     try:
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(data.project)
-            permitted_recipients = util.permitted_voting_recipients(asf_uid, wacp.committee_key)
+            async with db.session() as read_data:
+                committee = await read_data.committee(key=wacp.committee_key).demand(
+                    storage.AccessError(f"Committee not found: {wacp.committee_key}")
+                )
+            permitted_recipients = util.permitted_podling_first_round_recipients(
+                asf_uid,
+                wacp.committee_key,
+                is_podling=committee.is_podling,
+            )
             if data.email_to not in permitted_recipients:
                 raise exceptions.Forbidden("Invalid mailing list choice")
 

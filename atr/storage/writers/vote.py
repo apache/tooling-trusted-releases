@@ -141,7 +141,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         return [email_to], ""
 
-    async def start(
+    async def start(  # noqa: C901
         self,
         email_to: str,
         project_key: safe.ProjectKey,
@@ -166,8 +166,14 @@ class CommitteeParticipant(FoundationCommitter):
                 _project=True,
                 _committee=True,
             ).demand(storage.AccessError("Release not found"))
+        if release.committee is None:
+            raise storage.AccessError("Release has no committee")
         if permitted_recipients is None:
-            permitted_recipients = util.permitted_voting_recipients(asf_uid, self.__committee_key)
+            permitted_recipients = util.permitted_podling_first_round_recipients(
+                asf_uid,
+                release.committee.key,
+                is_podling=release.committee.is_podling,
+            )
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted_recipients:

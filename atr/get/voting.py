@@ -68,7 +68,11 @@ async def selected_revision(
             case (release, committee):
                 pass
 
-        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
+        permitted_recipients = util.permitted_podling_first_round_recipients(
+            session.uid,
+            committee.key,
+            is_podling=committee.is_podling,
+        )
         second_round_recipients = (
             util.permitted_podling_second_round_recipients(session.uid) if committee.is_podling else []
         )

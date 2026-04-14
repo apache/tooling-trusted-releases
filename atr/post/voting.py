@@ -94,7 +94,11 @@ async def selected_revision(
             case (release, committee):
                 pass
 
-        permitted_recipients = util.permitted_voting_recipients(session.uid, committee.key)
+        permitted_recipients = util.permitted_podling_first_round_recipients(
+            session.uid,
+            committee.key,
+            is_podling=committee.is_podling,
+        )
         all_addrs = [start_voting_form.email_to, *start_voting_form.email_cc, *start_voting_form.email_bcc]
         for addr in all_addrs:
             if addr not in permitted_recipients:
