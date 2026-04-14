@@ -41,14 +41,17 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
     log.info(f"Starting maintenance (user: {task_args.asf_uid})")
 
     try:
+        # We schedule first to keep the start time approximately consistent
+        # (and knowing this task will finish before it's re-scheduled)
+        await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.run_maintenance)
+
         await _storage_maintenance()
         await _session_data_maintenance()
+        await _workflow_ssh_keys_maintenance()
 
         log.info(
             "Storage maintenance completed successfully",
         )
-
-        await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.run_maintenance)
 
         return results.Maintenance(
             kind="maintenance",
@@ -70,3 +73,15 @@ async def _session_data_maintenance() -> None:
 
 async def _storage_maintenance():
     pass
+
+
+async def _workflow_ssh_keys_maintenance() -> None:
+    via = sql.validate_instrumented_attribute
+    now = int(time.time())
+    async with db.session() as data:
+        statement = sqlmodel.delete(sql.WorkflowSSHKey).where(via(sql.WorkflowSSHKey.expires) < now)
+        result = await data.execute(statement)
+        await data.commit()
+        deleted = getattr(result, "rowcount", 0) or 0
+        if deleted > 0:
+            log.info(f"Purged {deleted} expired workflow SSH keys")
