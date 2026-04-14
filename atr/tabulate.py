@@ -41,6 +41,9 @@ async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee 
             async with db.session() as data:
                 committee = await data.committee(key=committee_label).get()
             break
+    elif (committee is not None) and committee.is_podling and (release.podling_thread_id is not None):
+        async with db.session() as data:
+            committee = await data.committee(key="incubator").get()
     return committee
 
 
