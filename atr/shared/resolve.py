@@ -21,10 +21,10 @@ import atr.form as form
 
 
 class CancelSubmitForm(form.Form):
-    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA)
+    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Cancelled"] = form.label("Vote result", default="Cancelled", widget=form.Widget.HIDDEN)
 
 
 class SubmitForm(form.Form):
-    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA)
+    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)

@@ -33,7 +33,7 @@ class AnnounceForm(form.Form):
     email_bcc: form.StrList = form.label("BCC")
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
-    body: str = form.label("Body", widget=form.Widget.CUSTOM)
+    body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
     download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
     confirm_announce: Literal["CONFIRM"] = form.label(
         "Confirm",
