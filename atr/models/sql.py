@@ -768,7 +768,7 @@ This is a stable release available for production use.
 Downloads are available from the following URL:
 
 {{DOWNLOAD_URL}}
-
+{{DISCLAIMER}}
 On behalf of the Apache {{COMMITTEE}} project team,
 
 {{YOUR_FULL_NAME}} ({{YOUR_ASF_ID}})

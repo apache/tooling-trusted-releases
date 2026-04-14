@@ -35,6 +35,7 @@ type Context = Literal["announce", "announce_subject", "checklist", "vote", "vot
 TEMPLATE_VARIABLES: list[tuple[str, str, set[Context]]] = [
     ("CHECKLIST_URL", "URL to the release checklist", {"vote"}),
     ("COMMITTEE", "Committee display name", {"announce", "checklist", "vote", "vote_subject"}),
+    ("DISCLAIMER", "Podling incubation disclaimer", {"announce"}),
     ("DOWNLOAD_URL", "URL to download the release", {"announce"}),
     ("DURATION", "Vote duration in hours", {"vote"}),
     ("KEYS_FILE", "URL to the KEYS file", {"vote"}),
@@ -121,6 +122,7 @@ async def announce_release_subject_and_body(
 
     # Perform substitutions in the body
     body = body.replace("{{COMMITTEE}}", committee.display_name)
+    body = body.replace("{{DISCLAIMER}}", _podling_disclaimer(release.project, committee))
     body = body.replace("{{DOWNLOAD_URL}}", download_url)
     body = body.replace("{{PROJECT}}", project_display_name)
     body = body.replace("{{REVISION}}", revision_number)
@@ -298,3 +300,21 @@ def vote_subject_template_variables() -> list[tuple[str, str]]:
 
 def vote_template_variables() -> list[tuple[str, str]]:
     return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "vote" in contexts]
+
+
+def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:
+    if not committee.is_podling:
+        return ""
+    project_name = project.name or str(project.key)
+    return (
+        f"\nDISCLAIMER: Apache {project_name} is an effort undergoing "
+        "incubation at The Apache Software Foundation (ASF), sponsored "
+        "by the Apache Incubator. Incubation is required of all newly "
+        "accepted projects until a further review indicates that the "
+        "infrastructure, communications, and decision making process "
+        "have stabilized in a manner consistent with other successful "
+        "ASF projects. While incubation status is not necessarily a "
+        "reflection of the completeness or stability of the code, it "
+        "does indicate that the project has yet to be fully endorsed "
+        "by the ASF.\n"
+    )
