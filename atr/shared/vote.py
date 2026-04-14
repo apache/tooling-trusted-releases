@@ -24,7 +24,7 @@ import atr.storage as storage
 
 class CastVoteForm(form.Form):
     decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM)
-    comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA)
+    comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA, max_length=50_000)
 
 
 async def is_binding(

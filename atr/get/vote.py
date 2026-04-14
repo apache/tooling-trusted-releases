@@ -574,7 +574,7 @@ async def _render_vote_authenticated(
         page.p["Your vote will be sent to ", htpy.code[mailing_list], "."]
 
     # Build the vote widget
-    vote_widget = htpy.div(class_="btn-group", role="group")[
+    vote_widget = htpy.div(id="decision", class_="btn-group", role="group")[
         htpy.input(type="radio", class_="btn-check", name="decision", id="decision_0", value="+1", autocomplete="off"),
         htpy.label(class_="btn btn-outline-success", for_="decision_0")[f"+1 ({potency})"],
         htpy.input(type="radio", class_="btn-check", name="decision", id="decision_1", value="0", autocomplete="off"),

@@ -138,16 +138,17 @@ def flash_error_summary(errors: list[pydantic_core.ErrorDetails], flash_data: di
     div = htm.Block(htm.div, classes=".atr-initial")
     div.text(f"Please fix the following {util.plural(len(errors), 'issue', include_count=False)}:")
     with div.block(htm.ul, classes=".mt-2.mb-0") as ul:
-        for i, flash_datum in enumerate(flash_data.values()):
+        for i, (field_name, flash_datum) in enumerate(flash_data.items()):
             if i > 9:
                 ul.li["And more, not shown here..."]
                 break
             if "msg" in flash_datum:
                 label = flash_datum["label"]
+                jump = htm.a(href=f"#{field_name}", class_="ms-1 text-decoration-none small")["\u2193"]
                 if label == "*":
-                    ul.li[flash_datum["msg"]]
+                    ul.li[flash_datum["msg"], " ", jump]
                 else:
-                    ul.li[htm.strong[label], ": ", flash_datum["msg"]]
+                    ul.li[htm.strong[label], ": ", flash_datum["msg"], " ", jump]
     summary = div.collect()
     return markupsafe.Markup(summary)
 
@@ -164,7 +165,13 @@ def json_suitable(field_value: Any) -> Any:
 
 
 def label(
-    description: str, documentation: str | None = None, *, default: Any = ..., widget: Widget | None = None, **kwargs
+    description: str,
+    documentation: str | None = None,
+    *,
+    default: Any = ...,
+    widget: Widget | None = None,
+    max_length: int | None = None,
+    **kwargs,
 ) -> Any:
     extra: dict[str, Any] = {}
     if widget is not None:
@@ -173,7 +180,7 @@ def label(
         extra["documentation"] = documentation
     if len(kwargs) > 0:
         extra.update(kwargs)
-    return pydantic.Field(default, description=description, json_schema_extra=extra)
+    return pydantic.Field(default, description=description, json_schema_extra=extra, max_length=max_length)
 
 
 def name_and_label(form_cls: type[Form], i: int, loc: tuple[str | int, ...]) -> tuple[str, str]:
@@ -938,7 +945,7 @@ def _render_widget(  # noqa: C901
                 checkbox_label = htpy.label(for_=checkbox_id, class_="form-check-label")[label]
                 checkboxes.append(htpy.div(class_="form-check")[checkbox_input, checkbox_label])
             elements.extend(checkboxes)
-            widget = htm.div[checkboxes]
+            widget = htm.div(id=field_name)[checkboxes]
 
         case Widget.CUSTOM:
             if custom and (field_name in custom):
@@ -997,7 +1004,7 @@ def _render_widget(  # noqa: C901
                 radio_label = htpy.label(for_=radio_id, class_="form-check-label")[label]
                 radios.append(htpy.div(class_="form-check")[radio_input, radio_label])
             elements.extend(radios)
-            widget = htm.div[radios]
+            widget = htm.div(id=field_name)[radios]
 
         case Widget.SELECT:
             # Check for dynamic choices from defaults or field_value
