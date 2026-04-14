@@ -23,7 +23,7 @@ function filter() {
 	let visibleCount = 0;
 	for (const card of cards) {
 		const nameElement = card.querySelector(".card-title");
-		const name = nameElement.innerHTML;
+		const name = nameElement.textContent;
 		if (projectFilter) {
 			card.parentElement.hidden = !new RegExp(projectFilter, "i").test(name);
 			if (!card.parentElement.hidden) {
