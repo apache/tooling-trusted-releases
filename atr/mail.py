@@ -57,7 +57,9 @@ class Message:
 
 async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, list[str]]:
     """Send an email notification about an artifact or a vote."""
-    log.info(f"Sending email for event: {msg_data}")
+    log.info(
+        "Sending email for event", sender=msg_data.email_sender, recipient=msg_data.email_to, subject=msg_data.subject
+    )
     _reject_null_bytes(
         msg_data.email_sender,
         msg_data.email_to,
@@ -108,7 +110,6 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
     start = time.perf_counter()
     # Convert to string to satisfy the existing _send_many function signature
     msg_text = msg.as_string()
-    log.info(f"sending message: {msg_text}")
 
     errors = await _send_many(from_addr, all_envelope_recipients, msg_text)
 
