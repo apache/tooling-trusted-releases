@@ -227,6 +227,7 @@ async def record_selected(
     """
     URL: /distribution/record/<project_key>/<version_key>
     """
+    await session.check_access(project_key)
     return await record_form_process_page(session, distribute_form, project_key, version_key, staging=False)
 
 
@@ -255,4 +256,5 @@ async def stage_record_selected(
     """
     URL: /distribution/stage/record/<project_key>/<version_key>
     """
+    await session.check_access(project_key)
     return await record_form_process_page(session, distribute_form, project_key, version_key, staging=True)

@@ -58,6 +58,8 @@ async def list_get(
 ) -> str:
     """
     URL: /distribution/list/<project_key>/<version_key>
+
+    audit_guidance This data is public available to any committer so does not check project access
     """
     distributions, tasks = await _get_page_data(project_key, version_key)
 
