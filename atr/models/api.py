@@ -581,7 +581,7 @@ class TasksListQuery:
 
 
 class TasksListResults(schema.Strict):
-    endpoint: Literal["/tasks/list"] = schema.alias("endpoint")
+    endpoint: Literal["/admin/tasks/list"] = schema.alias("endpoint")
     data: Sequence[sql.Task]
     count: int = schema.example(10)
 

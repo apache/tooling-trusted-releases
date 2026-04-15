@@ -16,7 +16,7 @@
 # under the License.
 
 import re
-from typing import Final
+from typing import Any, Final
 
 import hyperscan
 
@@ -65,6 +65,25 @@ def compile_ignore_pattern(pattern: str):
     except hyperscan.HyperscanError as exc:
         raise ValueError(f"Invalid ignore pattern: {exc}") from exc
     return HyperscanPattern(db)
+
+
+def pagination_args_validate(query_args: Any) -> None:
+    # Users could request any amount using limit=N with arbitrarily high N
+    # We therefore limit the maximum limit to 1000
+    if hasattr(query_args, "limit"):
+        limit = query_args.limit
+        if limit > 1000:
+            raise ValueError("Maximum limit of 1000 exceeded")
+        elif limit < 1:
+            raise ValueError("Minimum limit less than 1 is nonsense")
+    # Users could request any amount using offset=N with arbitrarily high N
+    # We therefore limit the maximum offset to 1000000
+    if hasattr(query_args, "offset"):
+        offset = query_args.offset
+        if offset > 1000000:
+            raise ValueError("Maximum offset of 1000000 exceeded")
+        elif offset < 0:
+            raise ValueError("Minimum offset less than 0 is nonsense")
 
 
 def validate_ignore_pattern(pattern: str) -> None:

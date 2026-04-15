@@ -36,6 +36,7 @@ import pydantic
 import quart
 import sqlalchemy
 import sqlmodel
+import werkzeug.exceptions as exceptions
 
 import atr.blueprints.admin as admin
 import atr.config as config
@@ -48,9 +49,11 @@ import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.mapping as mapping
+import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
@@ -894,6 +897,41 @@ async def rotate_jwt_key_post(
         await wafa.tokens.rotate_jwt_signing_key()
     await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
     return await session.redirect(rotate_jwt_key_get)
+
+
+@admin.typed
+async def tasks_list(
+    _session: web.Committer,
+    _tasks_list: Literal["tasks/list"],
+    query_args: api.TasksListQuery,
+) -> tuple[dict[str, Any], int]:
+    """
+    URL: GET /tasks/list
+
+    List tasks.
+    """
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        statement = sqlmodel.select(sql.Task).limit(query_args.limit).offset(query_args.offset)
+        if query_args.status:
+            if query_args.status not in sql.TaskStatus:
+                raise exceptions.BadRequest(f"Invalid status: {query_args.status}")
+            statement = statement.where(sql.Task.status == query_args.status)
+        statement = statement.order_by(via(sql.Task.id).desc())
+        paged_tasks = (await data.execute(statement)).scalars().all()
+        count_statement = sqlalchemy.select(sqlalchemy.func.count(via(sql.Task.id)))
+        if query_args.status:
+            count_statement = count_statement.where(via(sql.Task.status) == query_args.status)
+        count = (await data.execute(count_statement)).scalar_one()
+    return api.TasksListResults(
+        endpoint="/admin/tasks/list",
+        data=paged_tasks,
+        count=count,
+    ).model_dump(mode="json"), 200
 
 
 @admin.typed

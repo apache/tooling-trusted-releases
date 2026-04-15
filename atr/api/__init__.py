@@ -39,6 +39,7 @@ import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.principal as principal
 import atr.storage as storage
@@ -1218,7 +1219,10 @@ async def releases_list(
 
     The list of releases is paged and can be filtered by phase.
     """
-    _pagination_args_validate(query_args)
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
         statement = sqlmodel.select(sql.Release)
@@ -1394,7 +1398,10 @@ async def ssh_keys_list(
 
     List SSH keys by ASF UID.
     """
-    _pagination_args_validate(query_args)
+    try:
+        validation.pagination_args_validate(query_args)
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
         statement = (
@@ -1412,37 +1419,6 @@ async def ssh_keys_list(
     return models.api.SshKeysListResults(
         endpoint="/ssh-keys/list",
         data=paged_keys,
-        count=count,
-    ).model_dump(mode="json"), 200
-
-
-@api.typed
-async def tasks_list(
-    _tasks_list: Literal["tasks/list"],
-    query_args: models.api.TasksListQuery,
-) -> DictResponse:
-    """
-    URL: GET /tasks/list
-
-    List tasks.
-    """
-    _pagination_args_validate(query_args)
-    via = sql.validate_instrumented_attribute
-    async with db.session() as data:
-        statement = sqlmodel.select(sql.Task).limit(query_args.limit).offset(query_args.offset)
-        if query_args.status:
-            if query_args.status not in sql.TaskStatus:
-                raise exceptions.BadRequest(f"Invalid status: {query_args.status}")
-            statement = statement.where(sql.Task.status == query_args.status)
-        statement = statement.order_by(via(sql.Task.id).desc())
-        paged_tasks = (await data.execute(statement)).scalars().all()
-        count_statement = sqlalchemy.select(sqlalchemy.func.count(via(sql.Task.id)))
-        if query_args.status:
-            count_statement = count_statement.where(via(sql.Task.status) == query_args.status)
-        count = (await data.execute(count_statement)).scalar_one()
-    return models.api.TasksListResults(
-        endpoint="/tasks/list",
-        data=paged_tasks,
         count=count,
     ).model_dump(mode="json"), 200
 
@@ -1783,22 +1759,3 @@ async def _match_release(release_directory: safe.StatePath, data: models.api.Sig
             if rel_path_sha3_256 == data.signature_sha3_256:
                 return True
     return False
-
-
-def _pagination_args_validate(query_args: Any) -> None:
-    # Users could request any amount using limit=N with arbitrarily high N
-    # We therefore limit the maximum limit to 1000
-    if hasattr(query_args, "limit"):
-        limit = query_args.limit
-        if limit > 1000:
-            raise exceptions.BadRequest("Maximum limit of 1000 exceeded")
-        elif limit < 1:
-            raise exceptions.BadRequest("Minimum limit less than 1 is nonsense")
-    # Users could request any amount using offset=N with arbitrarily high N
-    # We therefore limit the maximum offset to 1000000
-    if hasattr(query_args, "offset"):
-        offset = query_args.offset
-        if offset > 1000000:
-            raise exceptions.BadRequest("Maximum offset of 1000000 exceeded")
-        elif offset < 0:
-            raise exceptions.BadRequest("Minimum offset less than 0 is nonsense")
