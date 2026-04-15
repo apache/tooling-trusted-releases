@@ -12,7 +12,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "tuesday"
-    versioning-strategy: "increase-if-necessary"
+    versioning-strategy: "lockfile-only"
     allow:
       - dependency-type: "direct"
     cooldown:
