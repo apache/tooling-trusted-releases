@@ -2,9 +2,6 @@ version = 1
 revision = 3
 requires-python = "==3.13.*"
 
-[options]
-exclude-newer = "2026-04-15T13:37:58Z"
-
 [[package]]
 name = "aiofiles"
 version = "25.1.0"
@@ -2000,7 +1997,7 @@ requires-dist = [
     { name = "cmarkgfm", specifier = ">=2024.11.20" },
     { name = "cryptography", specifier = ">=46.0,<47.0.0" },
     { name = "cvss", specifier = ">=3.6,<4.0.0" },
-    { name = "cyclonedx-python-lib", extras = ["json-validation"], specifier = ">=11.0.0" },
+    { name = "cyclonedx-python-lib", extras = ["json-validation"], specifier = ">=11.7.0" },
     { name = "dnspython", specifier = ">=2.7.0,<3.0.0" },
     { name = "dulwich", specifier = ">=1.0.0" },
     { name = "dunamai", specifier = ">=1.23.0" },

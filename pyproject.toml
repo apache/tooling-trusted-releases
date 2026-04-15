@@ -23,7 +23,7 @@ dependencies = [
   "cmarkgfm>=2024.11.20",
   "cryptography>=46.0,<47.0.0",
   "cvss>=3.6,<4.0.0",
-  "cyclonedx-python-lib[json-validation]>=11.0.0",
+  "cyclonedx-python-lib[json-validation]>=11.7.0",
   # "dkimpy @ git+https://github.com/sbp/dkimpy.git@main",
   "dnspython>=2.7.0,<3.0.0",
   "dulwich>=1.0.0",
