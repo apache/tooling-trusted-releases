@@ -53,6 +53,11 @@
                 This is <strong>Alpha 2 Software</strong>. You can test the process and download  content, but releases must still be committed by hand to <a href="https://dist.apache.org/repos/dist/release/">svn:dist/release</a> (see <a href="https://tooling.apache.org/svn-dist.html">svn-dist Transition Plan 1B</a>).
               </div>
             {% endif %}
+            {% if current_user and current_user.admin_uid %}
+              <div class="alert alert-warning atr-browse-as-banner" role="alert">
+                <strong>Impersonation active.</strong> You are browsing as <strong>{{ current_user.uid }}</strong> (your real account: <strong>{{ current_user.admin_uid }}</strong>). To return to your own account, log out and log back in.
+              </div>
+            {% endif %}
             {% from "macros/flash.html" import render_flash_messages %}
             {{ render_flash_messages() }}
             {% import 'macros/forms.html' as forms %}
