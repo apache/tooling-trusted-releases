@@ -120,6 +120,9 @@ def setup_signing_key(app: base.QuartApp) -> None:
 async def verify(token: str) -> dict[str, Any]:
     # Grab the "supposed" asf UID from the token presented, to make sure we know who failed to authenticate on failure.
     jwt_secret_key = _signing_key()
+    # We get the uid for logging here, which does allow faked UIDs to be used, but they'll only be used
+    # to be set in an auth_failure log which would show the claimed UID, which we explicitly want for audit context
+    # (even if it's not real, we want to know someone tried to auth as that user)
     claims_unsafe = jwt.decode(token, options={"verify_signature": False}, algorithms=[_ALGORITHM])
     asf_uid = claims_unsafe.get("sub")
     log.set_asf_uid(asf_uid)
