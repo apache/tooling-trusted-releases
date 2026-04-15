@@ -33,7 +33,7 @@ dependencies = [
   "gitignore-parser (>=0.1.12,<0.2.0)",
   "greenlet>=3.1.1,<4.0.0",
   "htpy (>=25.7.0,<26.0.0)",
-  "hypercorn[uvloop]>=0.17,<1.0.0",
+  "hypercorn[uvloop]>=0.18.0,<1.0.0",
   "hyperscan>=0.8.0",
   "ldap3 (==2.10.2rc3)",
   "packaging>=25.0",

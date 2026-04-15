@@ -2,9 +2,6 @@ version = 1
 revision = 3
 requires-python = "==3.13.*"
 
-[options]
-exclude-newer = "2026-04-15T13:37:58Z"
-
 [[package]]
 name = "aiofiles"
 version = "25.1.0"
@@ -2009,7 +2006,7 @@ requires-dist = [
     { name = "gitignore-parser", specifier = ">=0.1.12,<0.2.0" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
     { name = "htpy", specifier = ">=25.7.0,<26.0.0" },
-    { name = "hypercorn", extras = ["uvloop"], specifier = ">=0.17,<1.0.0" },
+    { name = "hypercorn", extras = ["uvloop"], specifier = ">=0.18.0,<1.0.0" },
     { name = "hyperscan", specifier = ">=0.8.0" },
     { name = "ldap3", specifier = "==2.10.2rc3" },
     { name = "packaging", specifier = ">=25.0" },
