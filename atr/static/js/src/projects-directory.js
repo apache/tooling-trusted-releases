@@ -18,14 +18,16 @@
  */
 
 function filter() {
-	const projectFilter = document.getElementById("project-filter").value;
+	const projectFilter = document
+		.getElementById("project-filter")
+		.value.toLowerCase();
 	const cards = document.querySelectorAll(".page-project-card");
 	let visibleCount = 0;
 	for (const card of cards) {
 		const nameElement = card.querySelector(".card-title");
-		const name = nameElement.innerHTML;
+		const name = nameElement.textContent.toLowerCase();
 		if (projectFilter) {
-			card.parentElement.hidden = !new RegExp(projectFilter, "i").test(name);
+			card.parentElement.hidden = !name.includes(projectFilter);
 			if (!card.parentElement.hidden) {
 				visibleCount++;
 			}
