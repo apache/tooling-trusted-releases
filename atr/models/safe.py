@@ -25,6 +25,7 @@ from typing import Annotated, Any, Final
 import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+_ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
 _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
@@ -176,6 +177,20 @@ class Alphanumeric(SafeType):
     def _valid_chars(cls) -> frozenset[str]:
         # default is the base set; subclasses can override this method
         return _ALPHANUM
+
+
+class AsfUid(SafeType):
+    """An ASF user ID validated to contain only lowercase letters, digits, hyphens, and underscores."""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _ASF_UID_CHARS
+
+    def _additional_validations(self, value: str) -> None:
+        if len(value) < 3:
+            raise ValueError("ASF UID must be at least 3 characters")
+        if value[0] not in string.ascii_lowercase:
+            raise ValueError("ASF UID must start with a lowercase letter")
 
 
 class CommitteeKey(Alphanumeric):

@@ -180,9 +180,9 @@ async def browse_as_post(
     new_uid = browse_form.uid
 
     try:
-        committer = principal.Committer(new_uid)
+        committer = principal.Committer(safe.AsfUid(new_uid))
         await asyncio.to_thread(committer.verify)
-    except principal.CommitterError as exc:
+    except (principal.CommitterError, ValueError) as exc:
         await quart.flash(f"Unable to browse as '{new_uid}': {exc}", "error")
         return await session.redirect(browse_as_get)
 

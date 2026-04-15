@@ -18,7 +18,6 @@
 # Derived from apache/infrastructure-oauth/app/lib/ldap.py
 
 import asyncio
-import re
 import time
 from typing import Final
 
@@ -26,6 +25,7 @@ from typing import Final
 import atr.config as config
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.sessions as sessions
 import atr.util as util
@@ -66,11 +66,9 @@ type UID = web.Committer | str | None | ArgumentNoneType
 class Committer:
     """Verifies and loads a committer's credentials via LDAP."""
 
-    def __init__(self, user: str) -> None:
-        if not re.match(r"^[-_a-z0-9]+$", user):
-            raise CommitterError("Invalid characters in User ID. Only lower-case alphanumerics, '-' and '_' allowed.")
+    def __init__(self, user: safe.AsfUid) -> None:
         self.user = user
-        self.uid = user
+        self.uid = str(user)
         self.dn = LDAP_DN % user
         self.email = f"{user}@apache.org"
         self.fullname: str = ""
@@ -304,7 +302,7 @@ class AuthoriserLDAP:
                 return
 
         try:
-            c = Committer(asf_uid)
+            c = Committer(safe.AsfUid(asf_uid))
             await asyncio.to_thread(c.verify)
 
             committees = frozenset(c.pmcs)
@@ -314,7 +312,7 @@ class AuthoriserLDAP:
             self.__cache.member_of[asf_uid] = committees
             self.__cache.participant_of[asf_uid] = projects
             self.__cache.last_refreshed[asf_uid] = int(time.time())
-        except CommitterError as e:
+        except (CommitterError, ValueError) as e:
             raise AuthenticationError(f"Failed to verify committer: {e}") from e
 
 
