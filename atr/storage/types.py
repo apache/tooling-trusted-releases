@@ -70,6 +70,7 @@ class PathInfo(schema.Strict):
     file_types: dict[safe.RelPath, classify.FileType] = schema.factory(dict)
     ignored_errors: list[sql.CheckResult] = schema.factory(list)
     ignored_warnings: list[sql.CheckResult] = schema.factory(list)
+    release_level_errors: list[sql.CheckResult] = schema.factory(list)
     successes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     warnings: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
 

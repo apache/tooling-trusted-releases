@@ -23,9 +23,11 @@ from typing import Final
 import aiofiles.os
 
 import atr.analysis as analysis
+import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
@@ -36,9 +38,9 @@ _ALLOWED_TOP_LEVEL: Final = frozenset(
     (name + suffix) for name in _ALLOWED_TOP_LEVEL_NAMES for suffix in _ALLOWED_TOP_LEVEL_SUFFIXES
 )
 # Release policy fields which this check relies on - used for result caching
-INPUT_POLICY_KEYS: Final[list[str]] = []
+INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -107,6 +109,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             relative_paths_set,
             is_podling,
         )
+
+    await _check_source_artifact_present(args, recorder_errors)
 
     return None
 
@@ -287,6 +291,27 @@ async def _check_path_process_single(  # noqa: C901
         blockers,
         warnings,
     )
+
+
+async def _check_source_artifact_present(
+    args: checks.FunctionArguments,
+    recorder_errors: checks.Recorder,
+) -> None:
+    release_key_str = str(sql.release_key(args.project_key, args.version_key))
+    revision_seq = int(str(args.revision_number))
+    async with db.session() as data:
+        classifications = await data.release_file_classifications_at(release_key_str, revision_seq)
+
+    source_artifacts = sorted(
+        path for path, cls in classifications.items() if (cls == "source") and analysis.is_artifact(path)
+    )
+
+    if not source_artifacts:
+        await recorder_errors.failure(
+            "Release must contain at least one source release artifact",
+            {},
+            primary_rel_path=None,
+        )
 
 
 async def _record(

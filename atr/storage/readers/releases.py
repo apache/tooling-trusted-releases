@@ -155,6 +155,8 @@ class GeneralPublic:
         for result in blocker:
             if path := result.safe_primary_rel_path:
                 cs.info.errors.setdefault(path, []).append(result)
+            else:
+                cs.info.release_level_errors.append(result)
 
     async def __errors(self, cs: types.ChecksSubset) -> None:
         errors = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.FAILURE]
@@ -164,6 +166,8 @@ class GeneralPublic:
                 continue
             if path := error.safe_primary_rel_path:
                 cs.info.errors.setdefault(path, []).append(error)
+            else:
+                cs.info.release_level_errors.append(error)
 
     async def __successes(self, cs: types.ChecksSubset) -> None:
         successes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUCCESS]
