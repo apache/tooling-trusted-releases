@@ -495,9 +495,10 @@ async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/che
     return web.ElementResponse(rendered_form)
 
 
-# TODO: AM Why has this no empty form?
-@admin.post("/keys/check")
-async def keys_check_post(session: web.Committer) -> web.QuartResponse:
+@admin.typed
+async def keys_check_post(
+    _session: web.Committer, _keys_check: Literal["keys/check"], _form: form.Empty
+) -> web.QuartResponse:
     """Check public signing key details."""
     try:
         result = await _check_keys()
@@ -524,9 +525,10 @@ async def keys_regenerate_all_get(
     return web.ElementResponse(rendered_form)
 
 
-# TODO: AM Why has this no empty form?
-@admin.post("/keys/regenerate-all")
-async def keys_regenerate_all_post(session: web.Committer) -> web.QuartResponse:
+@admin.typed
+async def keys_regenerate_all_post(
+    _session: web.Committer, _keys_regenerate_all: Literal["keys/regenerate-all"], _form: form.Empty
+) -> web.QuartResponse:
     """Regenerate the KEYS file for all committees."""
     async with db.session() as data:
         committee_keys = [c.key for c in await data.committee().all()]
@@ -574,9 +576,10 @@ async def keys_update_get(
     return await template.render("update-keys.html", empty_form=rendered_form, previous_output=previous_output)
 
 
-# TODO: AM Why has this no empty form?
-@admin.post("/keys/update")
-async def keys_update_post(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+@admin.typed
+async def keys_update_post(
+    session: web.Committer, _keys_update: Literal["keys/update"], _form: form.Empty
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update keys from remote data."""
     try:
         pid = await _update_keys(session.asf_uid)
@@ -677,14 +680,6 @@ async def ongoing_tasks_get(
     """
     URL: GET /ongoing-tasks
     """
-    return await _fetch_ongoing_tasks(session, project_key, version_key, revision)
-
-
-# TODO: AM Why has this no empty form?
-@admin.post("/ongoing-tasks/<project_key>/<version_key>/<revision>")
-async def ongoing_tasks_post(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
-) -> web.QuartResponse:
     return await _fetch_ongoing_tasks(session, project_key, version_key, revision)
 
 
@@ -791,9 +786,10 @@ async def projects_update_get(
     return await template.render("update-projects.html", empty_form=rendered_form)
 
 
-# TODO: AM Why has this no empty form?
-@admin.post("/projects/update")
-async def projects_update_post(session: web.Committer) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+@admin.typed
+async def projects_update_post(
+    session: web.Committer, _projects_update: Literal["projects/update"], _form: form.Empty
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update projects from remote data."""
     try:
         task = await tasks.metadata_update(session.asf_uid)

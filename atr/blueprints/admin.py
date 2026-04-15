@@ -38,20 +38,6 @@ _BLUEPRINT: Final = quart.Blueprint(
 _routes: list[str] = []
 
 
-def post(path: str) -> Callable[[web.CommitterRouteFunction[Any]], web.RouteFunction[Any]]:
-    def decorator(func: web.CommitterRouteFunction[Any]) -> web.RouteFunction[Any]:
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            session = await common.authenticate()
-            return await func(session, *args, **kwargs)
-
-        endpoint = common.setup_wrapper(wrapper, func, _BLUEPRINT_NAME)
-        _BLUEPRINT.add_url_rule(path, endpoint=endpoint, view_func=wrapper, methods=["POST"])
-
-        return wrapper
-
-    return decorator
-
-
 def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
     import atr.admin as admin
 
