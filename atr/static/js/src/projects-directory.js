@@ -18,18 +18,16 @@
  */
 
 function filter() {
-	const projectFilter = document.getElementById("project-filter").value;
-	if (projectFilter.length > 100) {
-		throw new Error("Input too long");
-	}
-	const regex = new RegExp(projectFilter, "i");
+	const projectFilter = document
+		.getElementById("project-filter")
+		.value.toLowerCase();
 	const cards = document.querySelectorAll(".page-project-card");
 	let visibleCount = 0;
 	for (const card of cards) {
 		const nameElement = card.querySelector(".card-title");
-		const name = nameElement.textContent;
+		const name = nameElement.textContent.toLowerCase();
 		if (projectFilter) {
-			card.parentElement.hidden = !regex.test(name);
+			card.parentElement.hidden = !name.includes(projectFilter);
 			if (!card.parentElement.hidden) {
 				visibleCount++;
 			}
