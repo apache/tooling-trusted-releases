@@ -17,9 +17,12 @@
 
 from typing import Literal
 
+import htpy
+
 import atr.blueprints.get as get
 import atr.db.interaction as interaction
 import atr.form
+import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -32,7 +35,7 @@ import atr.web as web
 
 
 @get.typed
-async def selected(
+async def selected(  # noqa: C901
     session: web.Committer,
     _resolve: Literal["resolve"],
     project_key: safe.ProjectKey,
@@ -102,11 +105,34 @@ async def selected(
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
+    binding_sufficient = (
+        (details is not None)
+        and (details.summary["binding_votes_yes"] >= 3)
+        and (details.summary["binding_votes_yes"] > details.summary["binding_votes_no"])
+    )
+
     submit_label = "Resolve vote"
     if pass_fail_allowed or bypass_active:
         form_cls = shared.resolve.SubmitForm
     else:
         form_cls = shared.resolve.CancelSubmitForm
+
+    pre_submit: htm.Element | None = None
+    if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
+        icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
+        if details is not None:
+            message = (
+                "The automated tabulation did not find sufficient binding +1 votes to"
+                " pass (at least 3 binding +1 votes are required, with more +1 than -1)."
+                " Note that the tabulation is heuristic and may not have parsed all votes"
+                " correctly."
+            )
+        else:
+            message = (
+                "The vote thread could not be tabulated, so binding vote requirements"
+                " could not be verified automatically."
+            )
+        pre_submit = htm.div(".border.rounded.bg-warning-subtle.p-3.mb-3")[icon, message]
 
     resolve_form = await atr.form.render(
         model_cls=form_cls,
@@ -114,6 +140,7 @@ async def selected(
         submit_label=submit_label,
         textarea_rows=24,
         defaults=defaults,
+        pre_submit=pre_submit,
     )
 
     return await template.render(

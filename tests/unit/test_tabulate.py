@@ -25,6 +25,28 @@ import atr.tabulate as tabulate
 
 
 @pytest.mark.asyncio
+async def test_vote_committee_returns_incubator_for_podling_round_two(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    committee = SimpleNamespace(is_podling=True)
+    incubator = SimpleNamespace(key="incubator", is_podling=False)
+    release = _make_release(committee=committee, podling_thread_id="round-one-thread")
+    query = mock.AsyncMock()
+    query.get = mock.AsyncMock(return_value=incubator)
+    data = mock.MagicMock()
+    data.committee = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(tabulate.db, "session", lambda: _mock_db_session(data))
+
+    result = await tabulate.vote_committee("threadid", release)
+
+    assert result is incubator
+    data.committee.assert_called_once_with(key="incubator")
+    query.get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_vote_committee_returns_project_committee_for_non_podling_release(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -54,26 +76,25 @@ async def test_vote_committee_returns_project_committee_for_podling_round_one(
     assert result is committee
 
 
-@pytest.mark.asyncio
-async def test_vote_committee_returns_incubator_for_podling_round_two(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    committee = SimpleNamespace(is_podling=True)
-    incubator = SimpleNamespace(key="incubator", is_podling=False)
-    release = _make_release(committee=committee, podling_thread_id="round-one-thread")
-    query = mock.AsyncMock()
-    query.get = mock.AsyncMock(return_value=incubator)
-    data = mock.MagicMock()
-    data.committee = mock.MagicMock(return_value=query)
+def test_vote_outcome_format_fails_when_binding_minus_one_equals_plus_one() -> None:
+    """_vote_outcome_format returns (False, ...) when binding -1 >= binding +1."""
+    passed, _outcome = tabulate._vote_outcome_format(None, 3, 3)
 
-    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
-    monkeypatch.setattr(tabulate.db, "session", lambda: _mock_db_session(data))
+    assert passed is False
 
-    result = await tabulate.vote_committee("threadid", release)
 
-    assert result is incubator
-    data.committee.assert_called_once_with(key="incubator")
-    query.get.assert_awaited_once()
+def test_vote_outcome_format_fails_when_fewer_than_three_binding_plus_one() -> None:
+    """_vote_outcome_format returns (False, ...) for fewer than 3 binding +1."""
+    passed, _outcome = tabulate._vote_outcome_format(None, 2, 0)
+
+    assert passed is False
+
+
+def test_vote_outcome_format_passes_with_three_binding_plus_one() -> None:
+    """_vote_outcome_format returns (True, ...) for 3 binding +1 and 0 binding -1."""
+    passed, _outcome = tabulate._vote_outcome_format(None, 3, 0)
+
+    assert passed is True
 
 
 def test_vote_resolution_body_votes_formats_plural_binding_summary() -> None:

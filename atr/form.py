@@ -278,6 +278,7 @@ async def render(  # noqa: C901
     skip: list[str] | None = None,
     confirm: str | None = None,
     submit_disabled: bool = False,
+    pre_submit: htm.Element | None = None,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -331,13 +332,19 @@ async def render(  # noqa: C901
         submit_div_contents.append(cancel_link)
 
     if is_empty_form:
+        if pre_submit is not None:
+            form_children.append(pre_submit)
         form_children.extend(submit_div_contents)
     else:
         if wider_widgets:
             submit_div = htm.div(".col-sm-10.offset-sm-2")
         else:
             submit_div = htm.div(".col-sm-9.offset-sm-3")
-        submit_row = htm.div(".row")[submit_div[submit_div_contents]]
+        submit_div_children: list[htm.Element | htm.VoidElement] = []
+        if pre_submit is not None:
+            submit_div_children.append(pre_submit)
+        submit_div_children.extend(submit_div_contents)
+        submit_row = htm.div(".row")[submit_div[submit_div_children]]
         form_children.append(submit_row)
 
     if custom:
