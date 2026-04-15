@@ -215,7 +215,7 @@ async def validate_params(kwargs: dict[str, Any], known_params: list[tuple[str, 
             try:
                 kwargs[param_name] = param_type(raw)
             except ValueError:
-                raise base.ASFQuartException(f"Parameter {param_name!r} is invalid. ")
+                raise base.ASFQuartException(f"Parameter {param_name!r} is invalid. ", errorcode=400)
 
 
 async def validate_safe_fields(

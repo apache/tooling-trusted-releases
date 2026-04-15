@@ -31,6 +31,7 @@ import quart_schema
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.common as common
+import atr.config as config
 import atr.log as log
 import atr.web as web
 
@@ -150,12 +151,19 @@ def _exempt_blueprint(app: base.QuartApp) -> None:
 @_BLUEPRINT.errorhandler(base.ASFQuartException)
 async def _handle_asfquart_exception(err: base.ASFQuartException) -> tuple[quart.Response, int]:
     status = getattr(err, "errorcode", 500)
-    return _json_error(str(err), status)
+    message = str(err)
+    if (status >= 500) and (not config.is_dev_environment()):
+        log.error("Unhandled exception", exc_info=(type(err), err, err.__traceback__))
+        message = "Internal server error"
+    return _json_error(message, status)
 
 
 @_BLUEPRINT.errorhandler(Exception)
 async def _handle_generic_exception(err: Exception) -> tuple[quart.Response, int]:
-    return _json_error(str(err), 500)
+    log.error("Unhandled exception", exc_info=(type(err), err, err.__traceback__))
+    if config.is_dev_environment():
+        return _json_error(str(err), 500)
+    return _json_error("Internal server error", 500)
 
 
 @_BLUEPRINT.errorhandler(exceptions.HTTPException)
