@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import datetime
 import urllib.parse
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import aiohttp
 import yyjson
@@ -32,6 +32,16 @@ if TYPE_CHECKING:
     from cyclonedx.model.component import Component
 
     from .models.bundle import Bundle
+
+
+_SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
+
+
+def _validate_url_protocol(url: str) -> str | None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme.lower() not in _SAFE_URL_SCHEMES:
+        return None
+    return url
 
 
 def assemble_component_identifier(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
@@ -112,7 +122,9 @@ async def assemble_component_supplier(
         package = package.replace("/", ":")
         key = f"{package} / {version}"
 
-        def supplier_op_from_url(url: str) -> models.patch.AddOp:
+        def supplier_op_from_url(url: str) -> models.patch.AddOp | None:
+            if _validate_url_protocol(url) is None:
+                return None
             if url.startswith("https://github.com/"):
                 github_user = url.removeprefix("https://github.com/").split("/", 1)[0]
                 return make_supplier_op(f"@github/{github_user}", f"https://github.com/{github_user}")
@@ -131,7 +143,9 @@ async def assemble_component_supplier(
             if cached is None:
                 return
             if isinstance(cached, str) and cached:
-                patch_ops.append(supplier_op_from_url(cached))
+                op = supplier_op_from_url(cached)
+                if op is not None:
+                    patch_ops.append(op)
             return
 
         url = f"https://api.deps.dev/v3/systems/MAVEN/packages/{package}/versions/{version}"
@@ -150,7 +164,9 @@ async def assemble_component_supplier(
                 homepage = link.get("url")
                 break
         if homepage:
-            patch_ops.append(supplier_op_from_url(homepage))
+            op = supplier_op_from_url(homepage)
+            if op is not None:
+                patch_ops.append(op)
             cache[key] = homepage
         else:
             cache[key] = None

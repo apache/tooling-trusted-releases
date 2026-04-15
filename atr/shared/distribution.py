@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import enum
 import urllib.parse
+from typing import Final
 
 import aiohttp
 import pydantic
@@ -65,6 +66,9 @@ import atr.util as util
 #         return outcome.Result(result)
 #     except aiohttp.ClientError as e:
 #         return outcome.Error(e)
+
+
+_SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 
 
 class DistributionError(RuntimeError): ...
@@ -238,10 +242,10 @@ def distribution_web_url(  # noqa: C901
                     return f"https://artifacthub.io/packages/helm/{repo_name}/{pkg_name}/{ver}"
                 return f"https://artifacthub.io/packages/helm/{repo_name}/{pkg_name}/{version!s}"
             if ah.home_url:
-                return ah.home_url
+                return _validate_url_protocol(ah.home_url)
             for link in ah.links:
                 if link.url:
-                    return link.url
+                    return _validate_url_protocol(link.url)
             return None
         case sql.DistributionPlatform.DOCKER_HUB:
             # The best we can do on Docker Hub is:
@@ -259,10 +263,11 @@ def distribution_web_url(  # noqa: C901
         case sql.DistributionPlatform.NPM_SCOPED:
             nr = distribution.NpmResponse.model_validate(data)
             # TODO: This is not correct
-            return nr.homepage
+            return _validate_url_protocol(nr.homepage) if nr.homepage else None
         case sql.DistributionPlatform.PYPI:
             info = distribution.PyPIResponse.model_validate(data).info
-            return info.release_url or info.project_url
+            url = info.release_url or info.project_url
+            return _validate_url_protocol(url) if url else None
     raise NotImplementedError(f"Platform {platform.name} is not yet supported")
 
 
@@ -303,7 +308,8 @@ def html_tr(label: str, value: str) -> htm.Element:
 
 
 def html_tr_a(label: str, value: str | None) -> htm.Element:
-    return htm.tr[htm.th[label], htm.td[htm.a(href=value)[value] if value else "-"]]
+    safe_url = _validate_url_protocol(value) if value else None
+    return htm.tr[htm.th[label], htm.td[htm.a(href=safe_url)[value] if safe_url else (value or "-")]]
 
 
 async def json_from_distribution_platform(
@@ -449,3 +455,10 @@ def _template_url(
         raise RuntimeError("This platform does not provide a staging API endpoint.")
 
     return template_url
+
+
+def _validate_url_protocol(url: str) -> str | None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme.lower() not in _SAFE_URL_SCHEMES:
+        return None
+    return url
