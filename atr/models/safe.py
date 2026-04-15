@@ -43,13 +43,16 @@ class SafeType:
         pass
 
     def __init__(self, value: str) -> None:
+        label = self.__class__.__name__
         if not value:
-            raise ValueError("Value cannot be empty")
+            raise ValueError(f"{label} cannot be empty")
 
         _assert_standard_safe_syntax(value)
 
-        if not all(c in self._valid_chars() for c in value):
-            raise ValueError("Value contains invalid characters")
+        invalid = sorted(set(value) - self._valid_chars())
+        if invalid:
+            chars = ", ".join(repr(c) for c in invalid)
+            raise ValueError(f"{label} {value!r} contains invalid characters: {chars}")
 
         self._additional_validations(value)
 

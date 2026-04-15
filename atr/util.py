@@ -738,7 +738,11 @@ async def paths_recursive(base_path: pathlib.Path | safe.StatePath) -> AsyncGene
         abs_path_to_check = resolved_base_path / rel_path
         with contextlib.suppress(FileNotFoundError, OSError):
             if await aiofiles.os.path.isfile(abs_path_to_check):
-                yield safe.RelPath.from_path(rel_path)
+                try:
+                    yield safe.RelPath.from_path(rel_path)
+                except ValueError as err:
+                    msg = f"Unsafe relative path {str(rel_path)!r}: {err}"
+                    raise ValueError(msg) from err
 
 
 async def paths_recursive_all(base_path: os.PathLike) -> AsyncGenerator[pathlib.Path]:
