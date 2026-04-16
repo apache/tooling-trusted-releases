@@ -28,7 +28,6 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.registry as registry
 import atr.storage as storage
-import atr.util as util
 
 
 class GeneralPublic:
@@ -194,14 +193,6 @@ class CommitteeMember(CommitteeParticipant):
 
         if not project:
             raise storage.AccessError(f"Project '{project_key}' not found.")
-
-        # Check for ownership or admin status
-        # TODO: Should use FoundationCommitter for the latter check
-        is_owner = project.created_by == self.__asf_uid
-        is_privileged = util.is_user_viewing_as_admin(self.__asf_uid)
-
-        if not (is_owner or is_privileged):
-            raise storage.AccessError(f"You do not have permission to delete project '{project_key}'.")
 
         # Prevent deletion if there are associated releases or channels
         if project.releases:
