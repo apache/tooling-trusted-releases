@@ -164,6 +164,9 @@ async def zip_selected(
     """
     URL: /download/zip/<project_key>/<version_key>
     """
+    # audit_guidance no file count or total size limit is enforced here intentionally: this endpoint requires
+    # committer authentication (web.Committer), release content is controlled at ingestion time, and providing
+    # an unrestricted download of one's own release is a core platform requirement
     try:
         release = await session.release(project_key=project_key, version_key=version_key, phase=None)
     except ValueError as e:
