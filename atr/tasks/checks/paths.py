@@ -23,6 +23,8 @@ from typing import Final
 import aiofiles.os
 
 import atr.analysis as analysis
+import atr.attestable as attestable
+import atr.classify as classify
 import atr.db as db
 import atr.log as log
 import atr.models.results as results
@@ -110,7 +112,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             is_podling,
         )
 
-    await _check_source_artifact_present(args, recorder_errors)
+    await _check_source_artifact_present(args, recorder_errors, relative_paths, base_path)
 
     return None
 
@@ -296,11 +298,47 @@ async def _check_path_process_single(  # noqa: C901
 async def _check_source_artifact_present(
     args: checks.FunctionArguments,
     recorder_errors: checks.Recorder,
+    relative_paths: list[safe.RelPath],
+    base_path: safe.StatePath,
 ) -> None:
     release_key_str = str(sql.release_key(args.project_key, args.version_key))
     revision_seq = int(str(args.revision_number))
     async with db.session() as data:
         classifications = await data.release_file_classifications_at(release_key_str, revision_seq)
+
+    missing_paths = [p for p in relative_paths if str(p) not in classifications]
+    if missing_paths:
+        attestable_data = await attestable.load(args.project_key, args.version_key, args.revision_number)
+        if attestable_data is not None:
+            policy = attestable_data.policy or {}
+            source_matcher, binary_matcher = classify.matchers_from_policy(
+                policy.get("source_artifact_paths", []),
+                policy.get("binary_artifact_paths", []),
+                base_path,
+            )
+            for path in missing_paths:
+                path_str = str(path)
+                cls = attestable.path_classification(attestable_data, path_str)
+                if cls is not None:
+                    classifications[path_str] = cls
+                else:
+                    classifications[path_str] = classify.classify(
+                        path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                    ).value
+        else:
+            async with db.session() as data:
+                project = await data.project(key=str(args.project_key), _release_policy=True).demand(
+                    RuntimeError(f"Project {args.project_key} not found")
+                )
+            source_matcher, binary_matcher = classify.matchers_from_policy(
+                project.policy_source_artifact_paths,
+                project.policy_binary_artifact_paths,
+                base_path,
+            )
+            for path in missing_paths:
+                classifications[str(path)] = classify.classify(
+                    path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                ).value
 
     source_artifacts = sorted(
         path for path, cls in classifications.items() if (cls == "source") and analysis.is_artifact(path)

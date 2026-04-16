@@ -39,7 +39,8 @@ async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyP
         "apache-test-1.0-bin.tar.gz.sha512": "metadata",
     }
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
-    await paths._check_source_artifact_present(args, recorder)
+    relative_paths = [safe.RelPath(p) for p in classifications]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
     failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
@@ -81,6 +82,106 @@ async def test_failure_without_path_goes_to_release_level_errors():
 
 
 @pytest.mark.asyncio
+async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    classifications = {
+        "apache-test-1.0-source.tar.gz.sha512": "metadata",
+    }
+    monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
+    relative_paths = [
+        safe.RelPath("apache-test-1.0-source.tar.gz"),
+        safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    assert not any(s == "failure" for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
+    attestable_data = mock.MagicMock()
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=attestable_data))
+    monkeypatch.setattr(
+        "atr.attestable.path_classification",
+        lambda _att, path: "source" if path.endswith(".tar.gz") else "metadata",
+    )
+    relative_paths = [
+        safe.RelPath("apache-test-1.0-source.tar.gz"),
+        safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    assert not any(s == "failure" for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
+    relative_paths = [
+        safe.RelPath("apache-test-1.0-bin.tar.gz"),
+        safe.RelPath("apache-test-1.0-bin.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
+    assert len(failures) == 1
+    assert "source release artifact" in failures[0][1]
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
+    attestable_data = mock.MagicMock()
+    attestable_data.policy = {"source_artifact_paths": ["*.tar.gz"]}
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=attestable_data))
+    monkeypatch.setattr("atr.attestable.path_classification", lambda _att, _path: None)
+    relative_paths = [
+        safe.RelPath("my-project-1.0.tar.gz"),
+        safe.RelPath("my-project-1.0.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    assert not any(s == "failure" for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    monkeypatch.setattr(
+        "atr.db.session",
+        lambda: _mock_db_session({}, source_artifact_paths=["*.tar.gz"]),
+    )
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
+    relative_paths = [
+        safe.RelPath("my-project-1.0.tar.gz"),
+        safe.RelPath("my-project-1.0.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    assert not any(s == "failure" for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_classify_when_no_attestable(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    args = _make_function_args(recorder)
+    monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
+    monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
+    relative_paths = [
+        safe.RelPath("apache-test-1.0-source.tar.gz"),
+        safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
+    ]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
+    assert not any(s == "failure" for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
 async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
     recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
     args = _make_function_args(recorder)
@@ -89,7 +190,8 @@ async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp
         "LICENSE": "docs",
     }
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
-    await paths._check_source_artifact_present(args, recorder)
+    relative_paths = [safe.RelPath(p) for p in classifications]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
     failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
@@ -121,7 +223,8 @@ async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatc
         "apache-test-1.0-source.tar.gz.sha512": "metadata",
     }
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
-    await paths._check_source_artifact_present(args, recorder)
+    relative_paths = [safe.RelPath(p) for p in classifications]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
     assert not any(s == "failure" for s, _, _ in recorder.messages)
 
 
@@ -133,7 +236,8 @@ async def test_source_classified_non_artifact_still_records_failure(monkeypatch:
         "README.md": "source",
     }
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
-    await paths._check_source_artifact_present(args, recorder)
+    relative_paths = [safe.RelPath(p) for p in classifications]
+    await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
     failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
@@ -183,9 +287,19 @@ def _make_reader() -> releases.GeneralPublic:
     return releases.GeneralPublic(read, read_as, data)
 
 
-def _mock_db_session(classifications: dict[str, str]) -> mock.AsyncMock:
+def _mock_db_session(
+    classifications: dict[str, str],
+    source_artifact_paths: list[str] | None = None,
+    binary_artifact_paths: list[str] | None = None,
+) -> mock.AsyncMock:
     mock_data = mock.AsyncMock()
     mock_data.release_file_classifications_at = mock.AsyncMock(return_value=classifications)
+    mock_project = mock.MagicMock()
+    mock_project.policy_source_artifact_paths = source_artifact_paths or []
+    mock_project.policy_binary_artifact_paths = binary_artifact_paths or []
+    mock_query = mock.MagicMock()
+    mock_query.demand = mock.AsyncMock(return_value=mock_project)
+    mock_data.project = mock.MagicMock(return_value=mock_query)
     mock_session_ctx = mock.AsyncMock()
     mock_session_ctx.__aenter__ = mock.AsyncMock(return_value=mock_data)
     mock_session_ctx.__aexit__ = mock.AsyncMock(return_value=False)

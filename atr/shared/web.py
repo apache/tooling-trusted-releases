@@ -37,11 +37,17 @@ def render_checks_summary(
 
     body = htm.Block(htm.div, classes=".card-body")
 
+    release_errors_by_checker: dict[str, list[sql.CheckResult]] = {}
     for error in info.release_level_errors:
-        status_class = ".atr-bg-blocker" if (error.status == sql.CheckResultStatus.BLOCKER) else ".bg-danger"
-        body.div(f".alert{status_class}.text-white")[error.message]
-    for i, stat in enumerate(info.checker_stats):
-        body.append(_render_checker_stat(stat, i, project_key, version_key))
+        release_errors_by_checker.setdefault(error.checker, []).append(error)
+
+    stats_by_checker = {stat.checker: stat for stat in info.checker_stats}
+    all_checkers = sorted(set(release_errors_by_checker) | {s.checker for s in info.checker_stats})
+
+    for index, checker in enumerate(all_checkers):
+        stat = stats_by_checker.get(checker)
+        release_errors = release_errors_by_checker.get(checker, [])
+        body.append(_render_checker_entry(stat, release_errors, index, project_key, version_key))
 
     card.append(body.collect())
     return card.collect()
@@ -51,41 +57,65 @@ def _checker_display_name(checker: str) -> str:
     return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
 
 
-def _render_checker_stat(
-    stat: types.CheckerStats, index: int, project_key: safe.ProjectKey, version_key: safe.VersionKey
+def _render_checker_entry(
+    stat: types.CheckerStats | None,
+    release_errors: list[sql.CheckResult],
+    index: int,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
 ) -> htm.Element:
     stripe_class = ".atr-stripe-odd" if ((index % 2) == 0) else ".atr-stripe-even"
     details = htm.Block(htm.details, classes=f".mb-0.p-2{stripe_class}")
 
+    checker = stat.checker if (stat is not None) else release_errors[0].checker
+    release_failure_count = sum(1 for e in release_errors if e.status != sql.CheckResultStatus.BLOCKER)
+    release_blocker_count = sum(1 for e in release_errors if e.status == sql.CheckResultStatus.BLOCKER)
+    warning_count = stat.warning_count if (stat is not None) else 0
+    failure_count = (stat.failure_count if (stat is not None) else 0) + release_failure_count
+    blocker_count = (stat.blocker_count if (stat is not None) else 0) + release_blocker_count
+
     summary_content: list[htm.Element | str] = []
-    if stat.warning_count > 0:
-        summary_content.append(htpy.span(".badge.bg-warning.text-dark.me-2")[str(stat.warning_count)])
-    if stat.failure_count > 0:
-        summary_content.append(htpy.span(".badge.bg-danger.me-2")[str(stat.failure_count)])
-    if stat.blocker_count > 0:
-        summary_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[str(stat.blocker_count)])
-    summary_content.append(htpy.strong[_checker_display_name(stat.checker)])
+    if warning_count > 0:
+        summary_content.append(htpy.span(".badge.bg-warning.text-dark.me-2")[str(warning_count)])
+    if failure_count > 0:
+        summary_content.append(htpy.span(".badge.bg-danger.me-2")[str(failure_count)])
+    if blocker_count > 0:
+        summary_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[str(blocker_count)])
+    summary_content.append(htpy.strong[_checker_display_name(checker)])
 
     details.summary[*summary_content]
 
     files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
-    all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
-    for file_path in sorted(all_files):
-        report_url = f"/report/{project_key!s}/{version_key!s}/{file_path}"
-        error_count = stat.failure_files.get(file_path, 0)
-        blocker_count = stat.blocker_files.get(file_path, 0)
-        warning_count = stat.warning_files.get(file_path, 0)
 
-        file_content: list[htm.Element | str] = []
-        if error_count > 0:
-            file_content.append(htpy.span(".badge.bg-danger.me-2")[util.plural(error_count, "error")])
-        if blocker_count > 0:
-            file_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[util.plural(blocker_count, "blocker")])
-        if warning_count > 0:
-            file_content.append(htpy.span(".badge.bg-warning.text-dark.me-2")[util.plural(warning_count, "warning")])
-        file_content.append(htpy.a(href=report_url)[htpy.strong[htpy.code[file_path]]])
+    for error in release_errors:
+        is_blocker = error.status == sql.CheckResultStatus.BLOCKER
+        badge_class = ".atr-bg-blocker" if is_blocker else ".bg-danger"
+        label = util.plural(1, "blocker") if is_blocker else util.plural(1, "error")
+        files_div.div[
+            htpy.span(f".badge{badge_class}.me-2")[label],
+            error.message,
+        ]
 
-        files_div.div[*file_content]
+    if stat is not None:
+        all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
+        for file_path in sorted(all_files):
+            report_url = f"/report/{project_key!s}/{version_key!s}/{file_path}"
+            file_error_count = stat.failure_files.get(file_path, 0)
+            file_blocker_count = stat.blocker_files.get(file_path, 0)
+            file_warning_count = stat.warning_files.get(file_path, 0)
+
+            file_content: list[htm.Element | str] = []
+            if file_error_count > 0:
+                file_content.append(htpy.span(".badge.bg-danger.me-2")[util.plural(file_error_count, "error")])
+            if file_blocker_count > 0:
+                file_content.append(htpy.span(".badge.atr-bg-blocker.me-2")[util.plural(file_blocker_count, "blocker")])
+            if file_warning_count > 0:
+                file_content.append(
+                    htpy.span(".badge.bg-warning.text-dark.me-2")[util.plural(file_warning_count, "warning")]
+                )
+            file_content.append(htpy.a(href=report_url)[htpy.strong[htpy.code[file_path]]])
+
+            files_div.div[*file_content]
 
     details.append(files_div.collect())
     return details.collect()
