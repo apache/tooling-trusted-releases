@@ -232,6 +232,9 @@ def _app_setup_api_docs(app: base.QuartApp) -> None:
         },
     )
 
+    # audit_guidance /api/docs and /api/openapi.json are intentionally public: ATR exposes a public API
+    # and publishing its documentation is deliberate policy, consistent with open-source ASF practice;
+    # admin routes are filtered from the spec by ApiOnlyOpenAPIProvider, so no internal surface is exposed
     @app.route("/api/docs")
     @quart_schema.hide
     async def swagger_ui() -> str:
