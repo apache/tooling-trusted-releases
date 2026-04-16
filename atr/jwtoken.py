@@ -68,6 +68,10 @@ def activate_signing_key(key: str) -> None:
 
 
 def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None) -> str:
+    # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
+    # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
+    # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
+    # deployments, which this is not
     now = datetime.datetime.now(tz=datetime.UTC)
     payload = {
         "sub": uid,
