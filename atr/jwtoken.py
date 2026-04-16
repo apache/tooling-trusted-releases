@@ -39,10 +39,10 @@ import atr.models.github as github
 import atr.util as util
 
 _ALGORITHM: Final[str] = "HS256"
-_ATR_JWT_AUDIENCE: Final[str] = "atr-api-pat-test-v1"
+_ATR_JWT_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_TTL: Final[int] = 30 * 60
-_GITHUB_OIDC_AUDIENCE: Final[str] = "atr-test-v1"
+_GITHUB_OIDC_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
     "enterprise": "the-asf",
     "enterprise_id": "212555",
