@@ -260,6 +260,8 @@ async def server_start() -> asyncssh.SSHAcceptor:
         process_factory=process_factory,
         host=_CONFIG.SSH_HOST,
         port=_CONFIG.SSH_PORT,
+        keepalive_interval=30,
+        keepalive_count_max=3,
         encoding=None,
         encryption_algs=_APPROVED_CIPHERS,
         kex_algs=_APPROVED_KEX,
