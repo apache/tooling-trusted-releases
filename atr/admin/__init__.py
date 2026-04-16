@@ -541,11 +541,8 @@ async def keys_regenerate_all_post(
     outcomes = outcome.List[str]()
     async with storage.write() as write:
         for committee_key in committee_keys:
-            wacm_outcome = write.as_committee_member_outcome(committee_key)
-            wacm = wacm_outcome.result_or_none()
-            if wacm is None:
-                continue
-            outcomes.append(await wacm.keys.autogenerate_keys_file())
+            waca = write.as_committee_admin(committee_key)
+            outcomes.append(await waca.keys.autogenerate_keys_file())
 
     response_lines = []
     for ocr in outcomes.results():
