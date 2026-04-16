@@ -1635,9 +1635,8 @@ async def vote_tabulate(
     """
     URL: POST /vote/tabulate
 
-    Tabulate a vote.
+    Tabulate a vote. Public data which is available to all logged-in committers (JWT Auth)
     """
-    # asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
         release = await db_data.release(key=str(release_key), _project_release_policy=True).demand(
