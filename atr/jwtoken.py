@@ -165,7 +165,7 @@ async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
     if dangerous_headers.intersection(header.keys()):
         raise base.ASFQuartException("JWT contains disallowed headers", errorcode=401)
     try:
-        async with util.create_secure_session() as session:
+        async with util.create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
             r = await session.get(
                 f"{_GITHUB_OIDC_ISSUER}/.well-known/openid-configuration",
                 timeout=aiohttp.ClientTimeout(total=10),

@@ -35,6 +35,7 @@ import atr.tasks.checks as checks
 import atr.util as util
 
 _BASE_URL: Final[str] = "https://api.github.com/repos"
+_HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10)
 _IN_PROGRESS_STATUSES: Final[list[str]] = ["in_progress", "queued", "requested", "waiting", "pending", "expected"]
 _COMPLETED_STATUSES: Final[list[str]] = ["completed"]
 _FAILED_STATUSES: Final[list[str]] = ["failure", "startup_failure"]
@@ -49,7 +50,7 @@ async def status_check(task_args: args.WorkflowStatusCheck) -> results.Distribut
     log.info("Updating Github workflow statuses from apache/tooling-actions")
     runs = []
     try:
-        async with util.create_secure_session() as session:
+        async with util.create_secure_session(timeout=_HTTP_TIMEOUT) as session:
             try:
                 async with session.get(
                     f"{_BASE_URL}/apache/tooling-actions/actions/runs?event=workflow_dispatch", headers=headers
@@ -146,7 +147,7 @@ async def trigger_workflow(
             json.dumps(task_args.arguments, indent=2)
         }"
     )
-    async with util.create_secure_session() as session:
+    async with util.create_secure_session(timeout=_HTTP_TIMEOUT) as session:
         try:
             async with session.post(
                 f"{_BASE_URL}/apache/tooling-actions/actions/workflows/{workflow}/dispatches",

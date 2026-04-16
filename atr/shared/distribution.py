@@ -69,6 +69,7 @@ import atr.util as util
 
 
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
+_TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
 
 
 class DistributionError(RuntimeError): ...
@@ -317,7 +318,7 @@ async def json_from_distribution_platform(
 ) -> outcome.Outcome[basic.JSON]:
     version = str(version_key)
     try:
-        async with util.create_secure_session() as session:
+        async with util.create_secure_session(timeout=_TIMEOUT) as session:
             async with session.get(api_url) as response:
                 response.raise_for_status()
                 response_json = await response.json()
@@ -339,7 +340,7 @@ async def json_from_maven_xml(api_url: str, version_key: safe.VersionKey) -> out
 
     version = str(version_key)
     try:
-        async with util.create_secure_session() as session:
+        async with util.create_secure_session(timeout=_TIMEOUT) as session:
             async with session.get(api_url) as response:
                 response.raise_for_status()
                 xml_text = await response.text()

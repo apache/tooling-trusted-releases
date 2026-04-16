@@ -21,6 +21,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Literal
 
+import aiohttp
 import cvss
 from cyclonedx.model.bom import Bom
 from cyclonedx.output import BaseOutput, make_outputter
@@ -82,7 +83,7 @@ async def bundle_to_ntia_patch(bundle_value: models.bundle.Bundle) -> models.pat
     from .conformance import ntia_2021_issues, ntia_2021_patch
 
     _warnings, errors = ntia_2021_issues(bundle_value)
-    async with util.create_secure_session() as session:
+    async with util.create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
         patch_ops = await ntia_2021_patch(session, bundle_value.doc, errors)
     return patch_ops
 
