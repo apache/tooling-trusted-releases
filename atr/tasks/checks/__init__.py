@@ -229,7 +229,7 @@ class Recorder:
             project.policy_binary_artifact_paths,
             base_path,
         )
-        return classify.classify(
+        return await classify.classify(
             self.primary_rel_path,
             base_path=base_path,
             source_matcher=source_matcher,

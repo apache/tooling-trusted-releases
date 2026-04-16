@@ -75,7 +75,7 @@ class GeneralPublic:
             if db_value is not None:
                 info.file_types[path] = classify.FileType(db_value)
             else:
-                info.file_types[path] = classify.classify(
+                info.file_types[path] = await classify.classify(
                     path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
                 )
         self.__compute_checker_stats(info, all_paths)

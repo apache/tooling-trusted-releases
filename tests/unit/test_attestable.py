@@ -42,8 +42,8 @@ def test_attestable_v2_round_trip():
     assert loaded.paths["a.tar.gz.sha512"].classification == "metadata"
 
 
-def test_generate_files_data_returns_attestable_v2():
-    data = attestable._generate_files_data(
+async def test_generate_files_data_returns_attestable_v2():
+    data = await attestable._generate_files_data(
         path_to_hash={
             safe.RelPath("apache-widget-1.0-src.tar.gz"): "h1",
             safe.RelPath("apache-widget-1.0-src.tar.gz.sha512"): "h2",
@@ -80,7 +80,7 @@ def test_hash_entry_basenames_round_trip():
     assert loaded.basenames == ["apache-widget-1.0-src.tar.gz"]
 
 
-def test_hash_metadata_basenames_are_cumulative_and_unique():
+async def test_hash_metadata_basenames_are_cumulative_and_unique():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h1"},
         hashes={
@@ -105,7 +105,7 @@ def test_hash_metadata_basenames_are_cumulative_and_unique():
         safe.RelPath("docs/readme.txt"): 50,
     }
 
-    data = attestable._generate_files_data(
+    data = await attestable._generate_files_data(
         path_to_hash=path_to_hash,
         path_to_size=path_to_size,
         revision_number=safe.RevisionNumber("00002"),

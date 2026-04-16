@@ -66,10 +66,11 @@ def can_write_file_state_rows(
     return is_first_revision or is_v2_continuation
 
 
-def compute_classifications(
+async def compute_classifications(
     path_to_hash: dict[safe.RelPath, str],
     release_policy: dict[str, Any] | None,
     base_path: safe.StatePath,
+    archives_base: safe.StatePath | None = None,
 ) -> dict[safe.RelPath, str]:
     policy = release_policy or {}
     source_matcher, binary_matcher = classify.matchers_from_policy(
@@ -77,10 +78,22 @@ def compute_classifications(
         policy.get("binary_artifact_paths", []),
         base_path,
     )
-    return {
-        path_key: classify.classify(path_key, base_path, source_matcher, binary_matcher).value
-        for path_key in path_to_hash
-    }
+    classifications: dict[safe.RelPath, str] = {}
+    for path_key in path_to_hash:
+        archive_cache_dir = (
+            archives_base / hashes.filesystem_archives_key(path_to_hash[path_key])
+            if (archives_base is not None)
+            else None
+        )
+        file_type = await classify.classify(
+            path_key,
+            base_path=base_path,
+            source_matcher=source_matcher,
+            binary_matcher=binary_matcher,
+            archive_cache_dir=archive_cache_dir,
+        )
+        classifications[path_key] = file_type.value
+    return classifications
 
 
 def compute_file_state_rows(
@@ -289,7 +302,7 @@ async def write_files_data(
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
 ) -> None:
-    result = _generate_files_data(
+    result = await _generate_files_data(
         path_to_hash,
         path_to_size,
         revision_number,
@@ -361,7 +374,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
     return new_hashes
 
 
-def _generate_files_data(
+async def _generate_files_data(
     path_to_hash: dict[safe.RelPath, str],
     path_to_size: dict[safe.RelPath, int],
     revision_number: safe.RevisionNumber,
@@ -380,7 +393,7 @@ def _generate_files_data(
     )
 
     if classifications is None:
-        classifications = compute_classifications(path_to_hash, release_policy, base_path)
+        classifications = await compute_classifications(path_to_hash, release_policy, base_path)
     return models.AttestableV2(
         hashes=dict(new_hashes),
         paths={

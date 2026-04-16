@@ -15,11 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import enum
+import os
 import pathlib
 import re
+import stat
 from collections.abc import Callable
 from typing import Final
+
+import aiofiles
+import aiofiles.os
 
 import atr.analysis as analysis
 import atr.detection as detection
@@ -132,11 +138,12 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
     return source_count, binary_count, docs_count
 
 
-def classify(
+async def classify(
     path: safe.RelPath,
     base_path: safe.StatePath | None = None,
     source_matcher: Callable[[str], bool] | None = None,
     binary_matcher: Callable[[str], bool] | None = None,
+    archive_cache_dir: safe.StatePath | None = None,
     _project_key: safe.ProjectKey | None = None,
 ) -> FileType:
     if (path.as_path().name in analysis.DISALLOWED_FILENAMES) or (
@@ -164,6 +171,10 @@ def classify(
     stem = path_str[: search.start()]
     if not any(path_str.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
         return FileType.BINARY
+    if archive_cache_dir is not None:
+        marker = await _content_markers(archive_cache_dir)
+        if marker is not None:
+            return marker
     return classify_from_counts(*archive_marker_counts(stem, path.as_path()))
 
 
@@ -211,6 +222,13 @@ def _bin_platform_token(tokens: frozenset[str]) -> bool:
     return bool(tokens & _BIN_PLATFORM_TOKENS)
 
 
+async def _content_markers(archive_cache_dir: safe.StatePath) -> FileType | None:
+    marker = await _npm_content_marker(archive_cache_dir)
+    if marker is not None:
+        return marker
+    return None
+
+
 def _doc_extra_token(tokens: frozenset[str]) -> bool:
     return bool(tokens & _DOC_EXTRA_TOKENS)
 
@@ -234,6 +252,39 @@ def _get_path_tokens(path: pathlib.PurePath) -> frozenset[str]:
 
 def _get_stem_tokens(name: str) -> frozenset[str]:
     return frozenset(token.lower() for token in _TOKEN_SPLIT_RE.split(name) if token)
+
+
+async def _npm_content_marker(archive_cache_dir: safe.StatePath) -> FileType | None:
+    try:
+        entries = [name for name in await aiofiles.os.listdir(archive_cache_dir) if not name.startswith("._")]
+    except OSError:
+        return None
+    if entries != ["package"]:
+        return None
+    try:
+        root_stat = await asyncio.to_thread(os.lstat, (archive_cache_dir / "package").path)
+    except OSError:
+        return None
+    if not stat.S_ISDIR(root_stat.st_mode):
+        return None
+    package_json_path = (archive_cache_dir / "package" / "package.json").path
+    try:
+        pj_stat = await asyncio.to_thread(os.lstat, package_json_path)
+    except OSError:
+        return None
+    if not stat.S_ISREG(pj_stat.st_mode):
+        return None
+    if (pj_stat.st_size <= 0) or (pj_stat.st_size > util.NPM_PACKAGE_JSON_MAX_SIZE):
+        return None
+    try:
+        async with aiofiles.open(package_json_path, "rb") as f:
+            raw = await f.read(util.NPM_PACKAGE_JSON_MAX_SIZE)
+    except OSError:
+        return None
+    npm_info, _ = util.parse_npm_pack_info(raw)
+    if npm_info is None:
+        return None
+    return FileType.BINARY
 
 
 def _src_path_source(ptokens: frozenset[str]) -> bool:

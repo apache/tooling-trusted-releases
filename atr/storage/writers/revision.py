@@ -194,7 +194,10 @@ async def _commit_new_revision(
     policy = release.release_policy or release.project.release_policy
     policy_dict = policy.model_dump() if policy else None
 
-    classifications = attestable.compute_classifications(path_to_hash, policy_dict, new_revision_dir)
+    archives_base = paths.get_archives_dir() / str(project_key) / str(version_key)
+    classifications = await attestable.compute_classifications(
+        path_to_hash, policy_dict, new_revision_dir, archives_base
+    )
 
     await attestable.write_files_data(
         project_key,

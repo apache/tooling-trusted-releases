@@ -346,7 +346,12 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
             return_value=({"example.txt": "hash2"}, {"example.txt": 100}),
         ),
         mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
-        mock.patch.object(revision.attestable, "compute_classifications", return_value={"example.txt": "binary"}),
+        mock.patch.object(
+            revision.attestable,
+            "compute_classifications",
+            new_callable=mock.AsyncMock,
+            return_value={"example.txt": "binary"},
+        ),
         mock.patch.object(revision.db, "session", return_value=mock_session),
         mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
         mock.patch.object(revision.detection, "validate_directory", return_value=[]),

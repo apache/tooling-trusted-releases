@@ -322,8 +322,10 @@ async def _check_source_artifact_present(
                 if cls is not None:
                     classifications[path_str] = cls
                 else:
-                    classifications[path_str] = classify.classify(
-                        path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                    classifications[path_str] = (
+                        await classify.classify(
+                            path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                        )
                     ).value
         else:
             async with db.session() as data:
@@ -336,8 +338,10 @@ async def _check_source_artifact_present(
                 base_path,
             )
             for path in missing_paths:
-                classifications[str(path)] = classify.classify(
-                    path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                classifications[str(path)] = (
+                    await classify.classify(
+                        path, base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                    )
                 ).value
 
     source_artifacts = sorted(
