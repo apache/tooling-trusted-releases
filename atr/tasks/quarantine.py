@@ -30,6 +30,7 @@ import aiofiles.os
 import aioshutil
 import exarch
 
+import atr.archives as archives
 import atr.attestable as attestable
 import atr.config as config
 import atr.db as db
@@ -42,7 +43,6 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage.writers.revision as revision
-import atr.tarzip as tarzip
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -64,7 +64,7 @@ def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
     staging_base = paths.get_tmp_dir()
     staging_base_path = staging_base.path
     staging_base_path.mkdir(parents=True, exist_ok=True)
-    extraction_cfg = _extraction_config()
+    extraction_cfg = archives.extraction_config()
     seen_archive_keys: set[str] = set()
     results_list: list[tuple[str, safe.StatePath, float]] = []
 
@@ -115,12 +115,7 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
         await _mark_failed(quarantined, None, "Quarantine directory does not exist")
         return None
 
-    file_entries, any_failed = await _run_safety_checks(task_args.archives, quarantine_dir)
-
-    if any_failed:
-        await _mark_failed(quarantined, file_entries)
-        await aioshutil.rmtree(quarantine_dir)
-        return None
+    file_entries = await _build_file_entries(task_args.archives, quarantine_dir)
 
     try:
         await _extract_archives(task_args.archives, quarantine_dir, project_key, version_key, file_entries)
@@ -186,6 +181,23 @@ def _backfill_revision(
         )
 
 
+async def _build_file_entries(
+    archive_entries: list[args.QuarantineArchiveEntry], quarantine_dir: safe.StatePath
+) -> list[sql.QuarantineFileEntryV1]:
+    file_entries: list[sql.QuarantineFileEntryV1] = []
+    for archive in archive_entries:
+        archive_path = quarantine_dir / archive.rel_path
+        stat = await aiofiles.os.stat(archive_path)
+        entry = sql.QuarantineFileEntryV1(
+            rel_path=archive.rel_path,
+            size_bytes=stat.st_size,
+            content_hash=archive.content_hash,
+            errors=[],
+        )
+        file_entries.append(entry)
+    return file_entries
+
+
 def _extract_archive_to_dir(
     archive_path: safe.StatePath,
     archive_dir: safe.StatePath,
@@ -215,7 +227,7 @@ def _extract_archive_to_dir(
 
 
 async def _extract_archives(
-    archives: list[args.QuarantineArchiveEntry],
+    archive_entries: list[args.QuarantineArchiveEntry],
     quarantine_dir: safe.StatePath,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -226,9 +238,9 @@ async def _extract_archives(
     await aiofiles.os.makedirs(archives_base, exist_ok=True)
     await aiofiles.os.makedirs(staging_base, exist_ok=True)
 
-    extraction_config = _extraction_config()
+    extraction_config = archives.extraction_config()
 
-    for archive in archives:
+    for archive in archive_entries:
         archive_dir = archives_base / hashes.filesystem_archives_key(archive.content_hash)
         if await aiofiles.os.path.isdir(archive_dir):
             continue
@@ -248,30 +260,6 @@ async def _extract_archives(
                     entry.errors.append(f"Extraction failed: {exc}")
                     break
             raise
-
-
-def _extraction_config() -> exarch.SecurityConfig:
-    conf = config.get()
-    extraction_config = (
-        exarch.SecurityConfig()
-        .max_file_size(conf.MAX_EXTRACT_SIZE)
-        .max_total_size(conf.MAX_EXTRACT_SIZE)
-        .max_file_count(tarzip.MAX_ARCHIVE_MEMBERS)
-        .max_compression_ratio(100.0)
-        .max_path_depth(32)
-        # Escaping the root is still disallowed by exarch even when symlinks are allowed
-        .allow_symlinks(True)
-        .allow_hardlinks(False)
-        .allow_absolute_paths(False)
-        # Too many archives use this for us to disallow it
-        # We could set to 0o444 after extraction anyway
-        .allow_world_writable(True)
-    )
-    banned_path_components = extraction_config.banned_path_components  # pyright: ignore[reportAttributeAccessIssue]
-    extraction_config.banned_path_components = [  # pyright: ignore[reportAttributeAccessIssue]
-        component for component in banned_path_components if component.lower() != ".env"
-    ]
-    return extraction_config
 
 
 def _is_archive_suffix(filename: str) -> bool:
@@ -356,27 +344,6 @@ async def _promote(
     async with db.session() as data:
         await data.delete(quarantined)
         await data.commit()
-
-
-async def _run_safety_checks(
-    archives: list[args.QuarantineArchiveEntry], quarantine_dir: safe.StatePath
-) -> tuple[list[sql.QuarantineFileEntryV1], bool]:
-    file_entries: list[sql.QuarantineFileEntryV1] = []
-    any_failed = False
-    for archive in archives:
-        archive_path = quarantine_dir / archive.rel_path
-        stat = await aiofiles.os.stat(archive_path)
-        errors = await asyncio.to_thread(detection.check_archive_safety, archive_path)
-        entry = sql.QuarantineFileEntryV1(
-            rel_path=archive.rel_path,
-            size_bytes=stat.st_size,
-            content_hash=archive.content_hash,
-            errors=errors,
-        )
-        file_entries.append(entry)
-        if errors:
-            any_failed = True
-    return file_entries, any_failed
 
 
 def _set_archive_permissions(archive_dir: os.PathLike) -> None:

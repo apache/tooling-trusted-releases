@@ -27,12 +27,10 @@ import os
 import pathlib
 import re
 import ssl
-import tarfile
 import tempfile
 import unicodedata
 import urllib.parse
 import uuid
-import zipfile
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
 from typing import Any, Final, Protocol
 
@@ -56,7 +54,6 @@ import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.paths as paths
 import atr.registry as registry
-import atr.tarzip as tarzip
 import atr.user as user
 
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-binary-assembly", "-binary", "-bin", "-source", "-src")
@@ -109,26 +106,6 @@ class FetchError(RuntimeError):
     def __init__(self, message: str, url: str):
         super().__init__(message)
         self.url = url
-
-
-async def archive_listing(file_path: safe.StatePath) -> list[str] | None:
-    """Attempt to list contents of supported archive files."""
-    if not await aiofiles.os.path.isfile(file_path):
-        return None
-
-    with contextlib.suppress(Exception):
-        if file_path.name.endswith((".tar.gz", ".tgz", ".zip")):
-
-            def _read_archive() -> list[str] | None:
-                with contextlib.suppress(tarfile.ReadError, zipfile.BadZipFile, EOFError, ValueError, OSError):
-                    with tarzip.open_archive(file_path) as archive:
-                        # TODO: Skip metadata files
-                        return sorted(member.name for member in archive)
-                return None
-
-            return await asyncio.to_thread(_read_archive)
-
-    return None
 
 
 def as_url(func: Callable, **kwargs: Any) -> str:

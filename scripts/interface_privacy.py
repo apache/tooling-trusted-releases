@@ -27,7 +27,6 @@ import sys
 ALLOWED_PRIVATE_ACCESS: dict[str, set[str]] = {
     "atr/htm.py": {"new_element._attrs"},
     "atr/models/sql.py": {"Release._latest_revision_number"},
-    "atr/tarzip.py": {"member_wrapper._original_info"},
 }
 
 
