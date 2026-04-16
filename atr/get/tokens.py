@@ -60,18 +60,21 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     page.h2["JSON Web Token (JWT)"]
     jwt_section = htm.Block()
     jwt_section.p[
-        """Generate a JSON Web Token (JWT) to authenticate calls to ATR's
+        """Use a PAT to generate a JSON Web Token (JWT) to authenticate calls to ATR's
         private API routes. Treat the token like a password and include it
         in the Authorization header as a Bearer token when invoking the
         protected endpoints."""
     ]
-    await form.render_block(
-        jwt_section,
-        model_cls=form.Empty,
+    issue_form = await form.render(
+        model_cls=shared.tokens.IssueForm,
         action=util.as_url(post.tokens.jwt_post),
         form_classes="#issue-jwt-form",
         submit_label="Generate JWT",
     )
+    jwt_section.div(".card.mb-4")[
+        htm.div(".card-header")["Generate new JWT"],
+        htm.div(".card-body")[issue_form],
+    ]
     jwt_section.div(id="jwt-container", class_="d-none")[
         htm.p["Copy the below value. It will be cleared in ", htm.span(id="time-remaining")],
         htm.pre(id="jwt-output", class_="mt-2 p-3 atr-word-wrap border rounded w-50"),
@@ -109,7 +112,7 @@ async def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalA
             action=util.as_url(post.tokens.tokens),
             form_classes=".mb-0",
             submit_classes="btn-sm btn-danger",
-            submit_label="Delete",
+            submit_label="Revoke",
             defaults={"token_id": t.id},
             empty=True,
         )
