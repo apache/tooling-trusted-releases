@@ -300,9 +300,11 @@ def _vote_castings(body: str) -> list[tuple[models.tabulate.Vote, str]]:
 def _vote_continue(line: str) -> bool:
     explanation_indicators = [
         "[ ] +1",
+        "[ ] +0",
+        "[ ] -0",
         "[ ] -1",
-        "binding +1 votes",
-        "binding -1 votes",
+        "+1 votes",
+        "-1 votes",
     ]
     if any((indicator in line) for indicator in explanation_indicators):
         # These indicators are used by the [VOTE] OP to indicate how to vote
