@@ -45,6 +45,10 @@ class DeleteTokenForm(form.Form):
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
 
 
+class IssueForm(form.Form):
+    pat: str = form.label("PAT", widget=form.Widget.TEXT)
+
+
 type TokenForm = Annotated[
     AddTokenForm | DeleteTokenForm,
     form.DISCRIMINATOR,

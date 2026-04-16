@@ -24,10 +24,8 @@ import quart
 import quart_rate_limiter as rate_limiter
 
 import atr.blueprints.post as post
-import atr.form as form
 import atr.get as get
 import atr.htm as htm
-import atr.jwtoken as jwtoken
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
@@ -37,11 +35,15 @@ _EXPIRY_DAYS: Final[int] = 180
 
 @post.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-async def jwt_post(session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], _form: form.Empty) -> web.QuartResponse:
+async def jwt_post(
+    session: web.Committer, _tokens_jwt: Literal["tokens/jwt"], form: shared.tokens.IssueForm
+) -> web.QuartResponse:
     """
     URL: /tokens/jwt
     """
-    jwt_token = jwtoken.issue(session.uid)
+    async with storage.write(session) as write:
+        wafc = write.as_foundation_committer()
+        jwt_token = await wafc.tokens.issue_jwt(form.pat)
     response = web.TextResponse(jwt_token)
     response.headers["Cache-Control"] = "no-store"
     return response
