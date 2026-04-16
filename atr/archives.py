@@ -14,15 +14,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+import asyncio
+import contextlib
 import os
-import os.path
-import tarfile
-import zipfile
+from typing import Final
 
+import aiofiles.os
+import exarch
+
+import atr.config as config
 import atr.log as log
 import atr.models.safe as safe
-import atr.tarzip as tarzip
+
+MAX_ARCHIVE_MEMBERS: Final[int] = 100_000
 
 
 class ExtractionError(Exception):
@@ -33,341 +37,77 @@ def extract(
     archive_path: safe.StatePath,
     extract_dir: str,
     max_size: int,
-    chunk_size: int,
+    chunk_size: int = 4096,
     track_files: bool | set[str] = False,
 ) -> tuple[int, list[str]]:
+    # chunk_size retained for signature stability; exarch manages buffering internally.
+    del chunk_size
     log.info(f"Extracting {archive_path} to {extract_dir}")
 
-    total_extracted = 0
-    extracted_paths = []
+    cfg = _build_extraction_config(max_size)
+    extracted_paths: list[str] = []
+
+    if isinstance(track_files, set) and track_files:
+        try:
+            manifest = exarch.list_archive(str(archive_path), cfg)
+        except Exception as exc:
+            raise ExtractionError(f"Failed to list archive: {exc}") from exc
+        for entry in manifest.entries:
+            if os.path.basename(entry.path) in track_files:
+                extracted_paths.append(entry.path)
 
     try:
-        with tarzip.open_archive(archive_path) as archive:
-            match archive.specific():
-                case tarfile.TarFile():
-                    for member in archive:
-                        if not isinstance(member, tarzip.TarMember):
-                            continue
-                        total_extracted, extracted_paths = _tar_archive_extract_member(
-                            archive,
-                            member,
-                            extract_dir,
-                            total_extracted,
-                            max_size,
-                            chunk_size,
-                            track_files,
-                            extracted_paths,
-                        )
+        report = exarch.extract_archive(str(archive_path), extract_dir, cfg)
+    except exarch.QuotaExceededError as exc:
+        raise ExtractionError(f"Extraction exceeded size limit of {max_size} bytes: {exc}") from exc
+    except Exception as exc:
+        raise ExtractionError(f"Failed to extract archive: {exc}") from exc
 
-                case zipfile.ZipFile():
-                    for member in archive:
-                        if not isinstance(member, tarzip.ZipMember):
-                            continue
-                        total_extracted, extracted_paths = _zip_archive_extract_member(
-                            archive,
-                            member,
-                            extract_dir,
-                            total_extracted,
-                            max_size,
-                            chunk_size,
-                            track_files,
-                            extracted_paths,
-                        )
-
-    except (tarfile.TarError, zipfile.BadZipFile, ValueError, tarzip.ArchiveMemberLimitExceededError) as e:
-        raise ExtractionError(f"Failed to read archive: {e}", {"archive_path": archive_path}) from e
-
-    return total_extracted, extracted_paths
+    return report.bytes_written, extracted_paths
 
 
-def total_size(tgz_path: safe.StatePath, chunk_size: int = 4096) -> int:
-    with tarzip.open_archive(tgz_path) as archive:
-        match archive.specific():
-            case tarfile.TarFile():
-                total_size = _size_tar(archive, chunk_size)
+def extraction_config() -> exarch.SecurityConfig:
+    """Shared secure extraction config for Apache release archives.
 
-            case zipfile.ZipFile():
-                total_size = _size_zip(archive, chunk_size)
-
-    return total_size
-
-
-def _safe_path(base_dir: str, *paths: str) -> str | None:
-    """Return an absolute path within the base_dir built from the given paths, or None if it escapes."""
-    target = os.path.abspath(os.path.join(base_dir, *paths))
-    abs_base = os.path.abspath(base_dir)
-    if (target == abs_base) or target.startswith(abs_base + os.sep):
-        return target
-    return None
-
-
-def _size_tar(archive: tarzip.Archive, chunk_size: int) -> int:
-    total_size = 0
-    for member in archive:
-        if not isinstance(member, tarzip.TarMember):
-            continue
-        total_size += member.size
-        if member.isfile():
-            fileobj = archive.extractfile(member)
-            if fileobj is not None:
-                while fileobj.read(chunk_size):
-                    pass
-    return total_size
-
-
-def _size_zip(archive: tarzip.Archive, chunk_size: int) -> int:
-    total_size = 0
-    for member in archive:
-        if not isinstance(member, tarzip.ZipMember):
-            continue
-        total_size += member.size
-        if member.isfile():
-            fileobj = archive.extractfile(member)
-            if fileobj is not None:
-                while fileobj.read(chunk_size):
-                    pass
-    return total_size
-
-
-def _tar_archive_extract_member(  # noqa: C901
-    archive: tarzip.Archive,
-    member: tarzip.TarMember,
-    extract_dir: str,
-    total_extracted: int,
-    max_size: int,
-    chunk_size: int,
-    track_files: bool | set[str] = False,
-    extracted_paths: list[str] = [],
-) -> tuple[int, list[str]]:
+    Permits symlinks (that remain within the extraction root), world-writable files,
+    and `.env` files — all of which appear legitimately in real Apache releases.
+    Rejects hardlinks, absolute paths, and enforces size/depth/compression quotas.
     """
-    Extract a single member from a tar archive.
-
-    `total_extracted` is an accumulator and should return itself if nothing is extracted
-    """
-    member_basename = os.path.basename(member.name)
-    if member_basename.startswith("._"):
-        # Metadata convention
-        return total_extracted, extracted_paths
-
-    # Skip any character device, block device, or FIFO
-    if member.isdev():
-        return total_extracted, extracted_paths
-
-    # Only track files that pass the path safety check
-    if track_files and isinstance(track_files, set) and (member_basename in track_files):
-        if _safe_path(extract_dir, member.name) is not None:
-            extracted_paths.append(member.name)
-
-    # Check whether extraction would exceed the size limit
-    if member.isfile() and ((total_extracted + member.size) > max_size):
-        raise ExtractionError(
-            f"Extraction would exceed maximum size limit of {max_size} bytes",
-            {"max_size": max_size, "current_size": total_extracted, "file_size": member.size},
-        )
-
-    # Extract directories directly
-    if member.isdir():
-        # Ensure the path is safe before extracting
-        if _safe_path(extract_dir, member.name) is None:
-            log.warning(f"Skipping potentially unsafe path: {member.name}")
-            return total_extracted, extracted_paths
-        archive.extract_member(member, extract_dir, numeric_owner=True, tar_filter="fully_trusted")
-
-    elif member.isfile():
-        extracted_size = _tar_archive_extract_safe_process_file(
-            archive, member, extract_dir, total_extracted, max_size, chunk_size
-        )
-        total_extracted += extracted_size
-
-    elif member.issym():
-        _tar_archive_extract_safe_process_symlink(member, extract_dir)
-
-    elif member.islnk():
-        _tar_archive_extract_safe_process_hardlink(member, extract_dir)
-
-    return total_extracted, extracted_paths
+    return _build_extraction_config(config.get().MAX_EXTRACT_SIZE)
 
 
-def _tar_archive_extract_safe_process_file(
-    archive: tarzip.Archive,
-    member: tarzip.TarMember,
-    extract_dir: str,
-    total_extracted: int,
-    max_size: int,
-    chunk_size: int,
-) -> int:
-    """Process a single file member during safe tar archive extraction."""
-    target_path = _safe_path(extract_dir, member.name)
-    if target_path is None:
-        log.warning(f"Skipping potentially unsafe path: {member.name}")
-        return 0
+async def list_archive(file_path: safe.StatePath) -> list[str] | None:
+    """Attempt to list contents of supported archive files."""
+    if not await aiofiles.os.path.isfile(file_path):
+        return None
+    if not file_path.name.endswith((".tar.gz", ".tgz", ".zip")):
+        return None
 
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    def _read_archive() -> list[str] | None:
+        with contextlib.suppress(Exception):
+            manifest = exarch.list_archive(str(file_path), extraction_config())
+            return sorted(entry.path for entry in manifest.entries)
+        return None
 
-    source = archive.extractfile(member)
-    if source is None:
-        # Should not happen if member.isfile() is true
-        log.warning(f"Could not extract file object for member: {member.name}")
-        return 0
-
-    extracted_file_size = 0
-    try:
-        with open(target_path, "wb") as target:
-            while chunk := source.read(chunk_size):
-                target.write(chunk)
-                extracted_file_size += len(chunk)
-
-                # Check size limits during extraction
-                if (total_extracted + extracted_file_size) > max_size:
-                    # Clean up the partial file before raising
-                    target.close()
-                    os.unlink(target_path)
-                    raise ExtractionError(
-                        f"Extraction exceeded maximum size limit of {max_size} bytes",
-                        {"max_size": max_size, "current_size": total_extracted},
-                    )
-    finally:
-        source.close()
-
-    return extracted_file_size
+    return await asyncio.to_thread(_read_archive)
 
 
-def _tar_archive_extract_safe_process_hardlink(member: tarzip.TarMember, extract_dir: str) -> None:
-    """Safely create a hard link from the TarMember entry."""
-    target_path = _safe_path(extract_dir, member.name)
-    if target_path is None:
-        log.warning(f"Skipping potentially unsafe hard link path: {member.name}")
-        return
-
-    link_target = member.linkname or ""
-    source_path = _safe_path(extract_dir, link_target)
-    if (source_path is None) or (not os.path.exists(source_path)):
-        log.warning(f"Skipping hard link with invalid target: {member.name} -> {link_target}")
-        return
-
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-    try:
-        if os.path.lexists(target_path):
-            return
-        os.link(source_path, target_path)
-    except (OSError, NotImplementedError) as e:
-        log.warning(f"Failed to create hard link {target_path} -> {source_path}: {e}")
-
-
-def _tar_archive_extract_safe_process_symlink(member: tarzip.TarMember, extract_dir: str) -> None:
-    """Safely create a symbolic link from the TarMember entry."""
-    target_path = _safe_path(extract_dir, member.name)
-    if target_path is None:
-        log.warning(f"Skipping potentially unsafe symlink path: {member.name}")
-        return
-
-    link_target = member.linkname or ""
-
-    # Reject absolute targets to avoid links outside the tree
-    if os.path.isabs(link_target):
-        log.warning(f"Skipping symlink with absolute target: {member.name} -> {link_target}")
-        return
-
-    # Ensure that the resolved link target stays within the extraction directory
-    resolved_target = _safe_path(os.path.dirname(target_path), link_target)
-    if resolved_target is None:
-        log.warning(f"Skipping symlink pointing outside tree: {member.name} -> {link_target}")
-        return
-
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-    try:
-        if os.path.lexists(target_path):
-            return
-        os.symlink(link_target, target_path)
-    except (OSError, NotImplementedError) as e:
-        log.warning(f"Failed to create symlink {target_path} -> {link_target}: {e}")
-
-
-def _zip_archive_extract_member(
-    archive: tarzip.Archive,
-    member: tarzip.ZipMember,
-    extract_dir: str,
-    total_extracted: int,
-    max_size: int,
-    chunk_size: int,
-    track_files: bool | set[str] = False,
-    extracted_paths: list[str] = [],
-) -> tuple[int, list[str]]:
-    """
-    Extract a single member from a zip archive.
-
-    `total_extracted` is an accumulator and should return itself if nothing is extracted
-    """
-    member_basename = os.path.basename(member.name)
-
-    # Only track files that pass the path safety check
-    if track_files and isinstance(track_files, set) and (member_basename in track_files):
-        if _safe_path(extract_dir, member.name) is not None:
-            extracted_paths.append(member.name)
-
-    if member_basename.startswith("._"):
-        return total_extracted, extracted_paths
-
-    if member.isfile() and ((total_extracted + member.size) > max_size):
-        raise ExtractionError(
-            f"Extraction would exceed maximum size limit of {max_size} bytes",
-            {"max_size": max_size, "current_size": total_extracted, "file_size": member.size},
-        )
-
-    if member.isdir():
-        target_path = _safe_path(extract_dir, member.name)
-        if target_path is None:
-            log.warning(f"Skipping potentially unsafe path: {member.name}")
-            return total_extracted, extracted_paths
-        os.makedirs(target_path, exist_ok=True)
-        return total_extracted, extracted_paths
-
-    if member.isfile():
-        extracted_size = _zip_extract_safe_process_file(
-            archive, member, extract_dir, total_extracted, max_size, chunk_size
-        )
-        return total_extracted + extracted_size, extracted_paths
-
-    return total_extracted, extracted_paths
-
-
-def _zip_extract_safe_process_file(
-    archive: tarzip.Archive,
-    member: tarzip.ZipMember,
-    extract_dir: str,
-    total_extracted: int,
-    max_size: int,
-    chunk_size: int,
-) -> int:
-    target_path = _safe_path(extract_dir, member.name)
-    if target_path is None:
-        log.warning(f"Skipping potentially unsafe path: {member.name}")
-        return 0
-
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-    source = archive.extractfile(member)
-    if source is None:
-        log.warning(f"Could not extract {member.name} from archive")
-        return 0
-
-    extracted_file_size = 0
-    try:
-        with open(target_path, "wb") as target:
-            while chunk := source.read(chunk_size):
-                target.write(chunk)
-                extracted_file_size += len(chunk)
-
-                if (total_extracted + extracted_file_size) > max_size:
-                    target.close()
-                    os.unlink(target_path)
-                    raise ExtractionError(
-                        f"Extraction exceeded maximum size limit of {max_size} bytes",
-                        {"max_size": max_size, "current_size": total_extracted},
-                    )
-    finally:
-        source.close()
-
-    return extracted_file_size
+def _build_extraction_config(max_extract_size: int) -> exarch.SecurityConfig:
+    cfg = (
+        exarch.SecurityConfig()
+        .max_file_size(max_extract_size)
+        .max_total_size(max_extract_size)
+        .max_file_count(MAX_ARCHIVE_MEMBERS)
+        .max_compression_ratio(100.0)
+        .max_path_depth(32)
+        # Escaping the root is still disallowed by exarch even when symlinks are allowed
+        .allow_symlinks(True)
+        .allow_hardlinks(False)
+        .allow_absolute_paths(False)
+        # Too many Apache archives ship world-writable files for us to reject them;
+        # we chmod after extraction anyway via util.chmod_files.
+        .allow_world_writable(True)
+    )
+    banned = cfg.banned_path_components
+    cfg.banned_path_components = [component for component in banned if component.lower() != ".env"]
+    return cfg

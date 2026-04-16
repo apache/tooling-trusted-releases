@@ -16,15 +16,12 @@
 # under the License.
 
 import pathlib
-import tarfile
-import zipfile
 from typing import Final
 
 import puremagic
 
 import atr.models.attestable as models
 import atr.models.safe as safe
-import atr.tarzip as tarzip
 
 # TODO: Widen the range of types checked here
 QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
@@ -65,25 +62,6 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
 _QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
-
-
-def check_archive_safety(archive_path: safe.StatePath) -> list[str]:
-    errors: list[str] = []
-    try:
-        with tarzip.open_archive(archive_path) as archive:
-            for member in archive:
-                if _archive_member_has_path_traversal(member.name):
-                    errors.append(f"{member.name}: Archive member path traversal is not allowed")
-
-                if (member.issym() or member.islnk()) and _archive_link_escapes_root(
-                    member.name, member.linkname, is_hardlink=member.islnk()
-                ):
-                    link_target = member.linkname or ""
-                    errors.append(f"{member.name}: Archive link target escapes root ({link_target})")
-    except (tarfile.TarError, zipfile.BadZipFile, ValueError, tarzip.ArchiveMemberLimitExceededError) as e:
-        errors.append(f"Failed to read archive: {e}")
-
-    return errors
 
 
 def deduplicate_quarantine_archives(

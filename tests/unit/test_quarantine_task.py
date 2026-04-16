@@ -22,8 +22,10 @@ import stat
 import tarfile
 import unittest.mock as mock
 
+import exarch
 import pytest
 
+import atr.archives as archives
 import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -334,34 +336,6 @@ def test_resolve_returns_quarantine_handler():
 
 
 @pytest.mark.asyncio
-async def test_run_safety_checks_safe_archive(tmp_path: pathlib.Path):
-    archive_path = tmp_path / "safe.tar.gz"
-    _create_safe_tar_gz(archive_path)
-
-    archives = [args.QuarantineArchiveEntry(rel_path="safe.tar.gz", content_hash="abc123")]
-    entries, any_failed = await quarantine._run_safety_checks(archives, tmp_path)
-
-    assert not any_failed
-    assert len(entries) == 1
-    assert entries[0].rel_path == "safe.tar.gz"
-    assert entries[0].content_hash == "abc123"
-    assert entries[0].errors == []
-
-
-@pytest.mark.asyncio
-async def test_run_safety_checks_unsafe_archive(tmp_path: pathlib.Path):
-    archive_path = tmp_path / "unsafe.tar.gz"
-    _create_traversal_tar_gz(archive_path)
-
-    archives = [args.QuarantineArchiveEntry(rel_path="unsafe.tar.gz", content_hash="def456")]
-    entries, any_failed = await quarantine._run_safety_checks(archives, tmp_path)
-
-    assert any_failed
-    assert len(entries) == 1
-    assert len(entries[0].errors) > 0
-
-
-@pytest.mark.asyncio
 async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path: pathlib.Path):
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
@@ -376,9 +350,9 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         mock.patch.object(quarantine.paths, "quarantine_directory", return_value=quarantine_dir),
         mock.patch.object(
             quarantine,
-            "_run_safety_checks",
+            "_build_file_entries",
             new_callable=mock.AsyncMock,
-            return_value=(ok_entries, False),
+            return_value=ok_entries,
         ),
         mock.patch.object(
             quarantine,
@@ -432,41 +406,6 @@ async def test_validate_non_pending_status():
 
 
 @pytest.mark.asyncio
-async def test_validate_safety_failure_marks_failed_and_deletes_dir(tmp_path: pathlib.Path):
-    quarantine_dir = tmp_path / "quarantine"
-    quarantine_dir.mkdir()
-
-    row = _make_quarantined_row()
-    mock_data = _make_session_returning(row)
-
-    fail_entries = [
-        sql.QuarantineFileEntryV1(
-            rel_path="unsafe.tar.gz", size_bytes=50, content_hash="def", errors=["path traversal"]
-        )
-    ]
-
-    with (
-        mock.patch.object(quarantine.db, "session", return_value=mock_data),
-        mock.patch.object(quarantine.paths, "quarantine_directory", return_value=quarantine_dir),
-        mock.patch.object(
-            quarantine,
-            "_run_safety_checks",
-            new_callable=mock.AsyncMock,
-            return_value=(fail_entries, True),
-        ),
-        mock.patch.object(quarantine, "_mark_failed", new_callable=mock.AsyncMock) as mock_mark,
-        mock.patch.object(quarantine.aioshutil, "rmtree", new_callable=mock.AsyncMock) as mock_rmtree,
-    ):
-        result = await quarantine.validate(
-            {"quarantined_id": 1, "archives": [{"rel_path": "unsafe.tar.gz", "content_hash": "def"}]}
-        )
-
-    assert result is None
-    mock_mark.assert_awaited_once_with(row, fail_entries)
-    mock_rmtree.assert_awaited_once_with(quarantine_dir)
-
-
-@pytest.mark.asyncio
 async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
     quarantine_dir = tmp_path / "quarantine"
     quarantine_dir.mkdir()
@@ -481,9 +420,9 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
         mock.patch.object(quarantine.paths, "quarantine_directory", return_value=quarantine_dir),
         mock.patch.object(
             quarantine,
-            "_run_safety_checks",
+            "_build_file_entries",
             new_callable=mock.AsyncMock,
-            return_value=(ok_entries, False),
+            return_value=ok_entries,
         ),
         mock.patch.object(quarantine, "_extract_archives", new_callable=mock.AsyncMock),
         mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
@@ -500,24 +439,137 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
     mock_mark.assert_not_awaited()
 
 
-def _create_safe_tar_gz(path: pathlib.Path) -> None:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        info = tarfile.TarInfo(name="README.txt")
-        content = b"Safe content"
-        info.size = len(content)
-        tar.addfile(info, io.BytesIO(content))
-    path.write_bytes(buf.getvalue())
+def test_extract_archive_to_dir_accepts_dotenv_anywhere(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "safe.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [
+            _tar_regular_file(".env", b"ATR_STATUS=ALPHA\n"),
+            _tar_regular_file("config/.env", b"SECRET=value\n"),
+        ],
+    )
+    quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+    )
 
 
-def _create_traversal_tar_gz(path: pathlib.Path) -> None:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        info = tarfile.TarInfo(name="../../../etc/passwd")
-        content = b"traversal"
-        info.size = len(content)
-        tar.addfile(info, io.BytesIO(content))
-    path.write_bytes(buf.getvalue())
+def test_extract_archive_to_dir_accepts_safe_archive(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "safe.tar.gz"
+    _write_tar_gz(archive_path, [_tar_regular_file("dist/file.txt", b"hello")])
+    elapsed = quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+    )
+    assert isinstance(elapsed, float)
+
+
+def test_extract_archive_to_dir_rejects_absolute_path(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "unsafe.tar.gz"
+    _write_tar_gz(archive_path, [_tar_regular_file("/etc/passwd", b"x")])
+    with pytest.raises(exarch.PathTraversalError):
+        quarantine._extract_archive_to_dir(
+            safe.StatePath(archive_path, tmp_path),
+            safe.StatePath(tmp_path / "out", tmp_path),
+            safe.StatePath(tmp_path, tmp_path),
+            archives.extraction_config(),
+        )
+
+
+def test_extract_archive_to_dir_rejects_hardlink_escaping_root(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "unsafe.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [
+            _tar_regular_file("dist/file.txt", b"ok"),
+            _tar_hardlink("dist/hard", "../../outside.txt"),
+        ],
+    )
+    with pytest.raises(exarch.SecurityViolationError):
+        quarantine._extract_archive_to_dir(
+            safe.StatePath(archive_path, tmp_path),
+            safe.StatePath(tmp_path / "out", tmp_path),
+            safe.StatePath(tmp_path, tmp_path),
+            archives.extraction_config(),
+        )
+
+
+def test_extract_archive_to_dir_rejects_path_traversal(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "unsafe.tar.gz"
+    _write_tar_gz(archive_path, [_tar_regular_file("../outside.txt", b"x")])
+    with pytest.raises(exarch.PathTraversalError):
+        quarantine._extract_archive_to_dir(
+            safe.StatePath(archive_path, tmp_path),
+            safe.StatePath(tmp_path / "out", tmp_path),
+            safe.StatePath(tmp_path, tmp_path),
+            archives.extraction_config(),
+        )
+
+
+def test_extract_archive_to_dir_rejects_symlink_escaping_root(tmp_path: pathlib.Path) -> None:
+    archive_path = tmp_path / "unsafe.tar.gz"
+    _write_tar_gz(
+        archive_path,
+        [
+            _tar_regular_file("dist/file.txt", b"ok"),
+            _tar_symlink("dist/link", "../../outside.txt"),
+        ],
+    )
+    with pytest.raises(exarch.SymlinkEscapeError):
+        quarantine._extract_archive_to_dir(
+            safe.StatePath(archive_path, tmp_path),
+            safe.StatePath(tmp_path / "out", tmp_path),
+            safe.StatePath(tmp_path, tmp_path),
+            archives.extraction_config(),
+        )
+
+
+type _TarEntry = tuple[str, str, bytes | str]
+
+
+def _tar_hardlink(name: str, link_target: str) -> _TarEntry:
+    return ("hardlink", name, link_target)
+
+
+def _tar_regular_file(name: str, data: bytes) -> _TarEntry:
+    return ("file", name, data)
+
+
+def _tar_symlink(name: str, link_target: str) -> _TarEntry:
+    return ("symlink", name, link_target)
+
+
+def _write_tar_gz(archive_path: pathlib.Path, members: list[_TarEntry]) -> None:
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for member_type, member_name, member_data in members:
+            if member_type == "file":
+                if not isinstance(member_data, bytes):
+                    raise ValueError("Tar regular file data must be bytes")
+                info = tarfile.TarInfo(member_name)
+                info.size = len(member_data)
+                archive.addfile(info, io.BytesIO(member_data))
+                continue
+            if member_type == "symlink":
+                if not isinstance(member_data, str):
+                    raise ValueError("Tar symlink data must be a path string")
+                info = tarfile.TarInfo(member_name)
+                info.type = tarfile.SYMTYPE
+                info.linkname = member_data
+                archive.addfile(info)
+                continue
+            if member_type == "hardlink":
+                if not isinstance(member_data, str):
+                    raise ValueError("Tar hardlink data must be a path string")
+                info = tarfile.TarInfo(member_name)
+                info.type = tarfile.LNKTYPE
+                info.linkname = member_data
+                archive.addfile(info)
+                continue
+            raise ValueError(f"Unsupported tar member type: {member_type}")
 
 
 def _make_quarantined_row() -> mock.MagicMock:

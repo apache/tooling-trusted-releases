@@ -17,6 +17,7 @@
 
 from typing import Literal
 
+import atr.archives as archives
 import atr.blueprints.get as get
 import atr.get.compose as compose
 import atr.get.finish as finish
@@ -145,7 +146,7 @@ async def selected_path(
     release = await session.release(project_key, version_key, phase=None)
     _max_view_size = 512 * 1024
     full_path = paths.release_directory(release) / file_path
-    content_listing = await util.archive_listing(full_path)
+    content_listing = await archives.list_archive(full_path)
     content, is_text, is_truncated, error_message = await util.read_file_for_viewer(full_path, _max_view_size)
 
     block = htm.Block()
