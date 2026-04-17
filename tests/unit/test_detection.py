@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pytest
+
 import atr.detection as detection
 import atr.models.attestable as models
 
@@ -164,3 +166,94 @@ def test_detect_archives_requiring_quarantine_tgz_and_tar_gz_are_equivalent():
     )
 
     assert result == []
+
+
+@pytest.mark.parametrize("alias", [".jar", ".war", ".whl", ".nar", ".nbm", ".vsix", ".apk"])
+def test_deduplicate_quarantine_archives_zip_family_aliases_collapse_with_zip(alias):
+    paths_list = [f"a/artifact{alias}", "b/artifact.zip"]
+    path_to_hash = {f"a/artifact{alias}": "h1", "b/artifact.zip": "h1"}
+
+    result = detection.deduplicate_quarantine_archives(paths_list, path_to_hash)
+
+    assert len(result) == 1
+
+
+@pytest.mark.parametrize("suffix", [".jar", ".war", ".whl", ".nar", ".nbm", ".vsix", ".apk"])
+def test_detect_archives_requiring_quarantine_zip_family_new_upload(suffix):
+    result = detection.detect_archives_requiring_quarantine(
+        path_to_hash={f"dist/widget{suffix}": "h1"},
+        previous_attestable=None,
+    )
+
+    assert result == [f"dist/widget{suffix}"]
+
+
+@pytest.mark.parametrize(
+    ("prev_suffix", "new_suffix"),
+    [
+        (".jar", ".zip"),
+        (".war", ".zip"),
+        (".whl", ".zip"),
+        (".nar", ".zip"),
+        (".nbm", ".zip"),
+        (".vsix", ".zip"),
+        (".apk", ".zip"),
+        (".jar", ".war"),
+        (".war", ".whl"),
+        (".nar", ".nbm"),
+        (".vsix", ".apk"),
+    ],
+)
+def test_detect_archives_requiring_quarantine_zip_family_aliases_are_equivalent(prev_suffix, new_suffix):
+    previous = models.AttestableV1(
+        paths={f"dist/widget{prev_suffix}": "h1"},
+        hashes={
+            "h1": models.HashEntry(
+                size=100,
+                uploaders=[("alice", "00001")],
+                basenames=[f"widget{prev_suffix}"],
+            )
+        },
+        policy={},
+    )
+
+    result = detection.detect_archives_requiring_quarantine(
+        path_to_hash={f"dist/widget{new_suffix}": "h1"},
+        previous_attestable=previous,
+    )
+
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "a.tar.gz",
+        "a.tgz",
+        "a.zip",
+        "a.jar",
+        "a.war",
+        "a.whl",
+        "a.nar",
+        "a.nbm",
+        "a.vsix",
+        "a.apk",
+        "FOO.JAR",
+        "Widget-1.0.War",
+        "package-1.0.WHL",
+        "processor-1.0.NAR",
+        "module-1.0.NBM",
+        "extension-1.0.VSIX",
+        "app-1.0.APK",
+    ],
+)
+def test_is_quarantine_archive_accepts_zip_family_and_tar_family(filename):
+    assert detection.is_quarantine_archive(filename) is True
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["README.md", "KEYS", "widget.txt", "widget.tar.gz.asc", "widget.tar", "widget.7z"],
+)
+def test_is_quarantine_archive_rejects_non_quarantine_files(filename):
+    assert detection.is_quarantine_archive(filename) is False

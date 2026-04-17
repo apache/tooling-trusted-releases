@@ -161,7 +161,7 @@ def _backfill_revision(
     for archive_path in sorted(revision_dir_path.rglob("*")):
         if not archive_path.is_file():
             continue
-        if not _is_archive_suffix(archive_path.name):
+        if not detection.is_quarantine_archive(archive_path.name):
             continue
         content_hash = hashes.compute_file_hash_sync(archive_path)
         archive_key = hashes.filesystem_archives_key(content_hash)
@@ -210,7 +210,8 @@ def _extract_archive_to_dir(
     try:
         staging_dir_path.mkdir(parents=False, exist_ok=False)
         start = time.monotonic()
-        exarch.extract_archive(str(archive_path), str(staging_dir), extraction_cfg)
+        with archives.exarch_compatible_path(archive_path) as exarch_path:
+            exarch.extract_archive(exarch_path, str(staging_dir), extraction_cfg)
         archive_dir_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             os.rename(staging_dir, archive_dir)
@@ -260,11 +261,6 @@ async def _extract_archives(
                     entry.errors.append(f"Extraction failed: {exc}")
                     break
             raise
-
-
-def _is_archive_suffix(filename: str) -> bool:
-    lower_name = filename.lower()
-    return any(lower_name.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES)
 
 
 async def _mark_failed(

@@ -17,6 +17,9 @@
 import asyncio
 import contextlib
 import os
+import shutil
+import tempfile
+from collections.abc import Iterator
 from typing import Final
 
 import aiofiles.os
@@ -27,6 +30,28 @@ import atr.log as log
 import atr.models.safe as safe
 
 MAX_ARCHIVE_MEMBERS: Final[int] = 100_000
+
+# Canonical form for archive-suffix aliases. detection.py uses this for
+# quarantine dedup; exarch_compatible_path rewrites filenames with it so
+# exarch accepts them.
+ARCHIVE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {
+    ".tgz": ".tar.gz",
+    ".jar": ".zip",
+    ".war": ".zip",
+    ".whl": ".zip",
+    ".nar": ".zip",
+    ".nbm": ".zip",
+    ".vsix": ".zip",
+    ".apk": ".zip",
+}
+
+# Zip-family aliases exarch doesn't recognise by extension. Derived from
+# ARCHIVE_NORMALISED_SUFFIXES so adding a new .zip-typed alias picks up the
+# hardlink rewrite automatically. .tgz is excluded because exarch handles
+# it natively.
+_EXARCH_REWRITE_SUFFIXES: Final[frozenset[str]] = frozenset(
+    alias for alias, canonical in ARCHIVE_NORMALISED_SUFFIXES.items() if canonical == ".zip"
+)
 
 
 class ExtractionError(Exception):
@@ -47,21 +72,22 @@ def extract(
     cfg = _build_extraction_config(max_size)
     extracted_paths: list[str] = []
 
-    if isinstance(track_files, set) and track_files:
-        try:
-            manifest = exarch.list_archive(str(archive_path), cfg)
-        except Exception as exc:
-            raise ExtractionError(f"Failed to list archive: {exc}") from exc
-        for entry in manifest.entries:
-            if os.path.basename(entry.path) in track_files:
-                extracted_paths.append(entry.path)
+    with exarch_compatible_path(archive_path) as exarch_path:
+        if isinstance(track_files, set) and track_files:
+            try:
+                manifest = exarch.list_archive(exarch_path, cfg)
+            except Exception as exc:
+                raise ExtractionError(f"Failed to list archive: {exc}") from exc
+            for entry in manifest.entries:
+                if os.path.basename(entry.path) in track_files:
+                    extracted_paths.append(entry.path)
 
-    try:
-        report = exarch.extract_archive(str(archive_path), extract_dir, cfg)
-    except exarch.QuotaExceededError as exc:
-        raise ExtractionError(f"Extraction exceeded size limit of {max_size} bytes: {exc}") from exc
-    except Exception as exc:
-        raise ExtractionError(f"Failed to extract archive: {exc}") from exc
+        try:
+            report = exarch.extract_archive(exarch_path, extract_dir, cfg)
+        except exarch.QuotaExceededError as exc:
+            raise ExtractionError(f"Extraction exceeded size limit of {max_size} bytes: {exc}") from exc
+        except Exception as exc:
+            raise ExtractionError(f"Failed to extract archive: {exc}") from exc
 
     return report.bytes_written, extracted_paths
 
@@ -90,6 +116,29 @@ async def list_archive(file_path: safe.StatePath) -> list[str] | None:
         return None
 
     return await asyncio.to_thread(_read_archive)
+
+
+@contextlib.contextmanager
+def exarch_compatible_path(archive_path: safe.StatePath) -> Iterator[str]:
+    # exarch dispatches on extension and doesn't recognise .jar/.war/.whl.
+    # For those, hardlink under a .zip name in a tempdir and hand exarch that.
+    source = archive_path.path
+    lower_name = source.name.lower()
+    alias = next((s for s in _EXARCH_REWRITE_SUFFIXES if lower_name.endswith(s)), None)
+    if alias is None:
+        yield str(source)
+        return
+    canonical = ARCHIVE_NORMALISED_SUFFIXES[alias]
+    # Hardlinks can't cross filesystems, so the tempdir has to sit next to
+    # the source. /tmp can be a separate tmpfs partition which would
+    # fail with EXDEV.
+    tmp_dir = tempfile.mkdtemp(prefix="atr-exarch-", dir=str(source.parent))
+    try:
+        link_path = os.path.join(tmp_dir, f"archive{canonical}")
+        os.link(source, link_path)
+        yield link_path
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _build_extraction_config(max_extract_size: int) -> exarch.SecurityConfig:

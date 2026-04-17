@@ -169,7 +169,7 @@ async def classify(
     if (binary_matcher is not None) and (abs_str is not None) and binary_matcher(abs_str):
         return FileType.BINARY
     stem = path_str[: search.start()]
-    if not any(path_str.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
+    if not any(path_str.endswith(suffix) for suffix in detection.CLASSIFY_ARCHIVE_SUFFIXES):
         return FileType.BINARY
     if archive_cache_dir is not None:
         marker = await _content_markers(archive_cache_dir)

@@ -26,6 +26,7 @@ import sys
 from typing import Final
 
 ARTIFACT_SUFFIXES: Final[list[str]] = [
+    "apk",
     "bin",
     "crate",
     "deb",

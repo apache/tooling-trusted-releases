@@ -20,11 +20,30 @@ from typing import Final
 
 import puremagic
 
+import atr.archives as archives
 import atr.models.attestable as models
 import atr.models.safe as safe
 
-# TODO: Widen the range of types checked here
-QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
+# Archive suffixes the source/binary classifier will peek inside. Zip-family
+# aliases (.jar/.war/.whl) are deliberately excluded - they were not in the existing
+# classified list when we added support
+CLASSIFY_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
+
+# Archive suffixes that trigger a quarantine safety scan. Aliases normalise
+# to canonical form via archives.ARCHIVE_NORMALISED_SUFFIXES for dedup and
+# for the exarch filename rewrite.
+QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (
+    ".tar.gz",
+    ".tgz",
+    ".zip",
+    ".jar",
+    ".war",
+    ".whl",
+    ".nar",
+    ".nbm",
+    ".vsix",
+    ".apk",
+)
 
 _BZIP2_TYPES: Final[set[str]] = {"application/x-bzip2"}
 _DEB_TYPES: Final[set[str]] = {"application/vnd.debian.binary-package", "application/x-archive"}
@@ -35,9 +54,12 @@ _RPM_TYPES: Final[set[str]] = {"application/x-rpm"}
 _TAR_TYPES: Final[set[str]] = {"application/x-tar"}
 _XZ_TYPES: Final[set[str]] = {"application/x-xz"}
 _ZIP_TYPES: Final[set[str]] = {"application/zip", "application/java-archive"}
+# puremagic identifies modern APKs via their own mime type rather than zip,
+# so the accept set is zip-types plus the Android-specific one.
+_APK_TYPES: Final[set[str]] = _ZIP_TYPES | {"application/vnd.android.package-archive"}
 
 _EXPECTED: Final[dict[str, set[str]]] = {
-    ".apk": _ZIP_TYPES,
+    ".apk": _APK_TYPES,
     ".bin.zip": _ZIP_TYPES,
     ".deb": _DEB_TYPES,
     ".exe": _EXE_TYPES,
@@ -61,7 +83,6 @@ _EXPECTED: Final[dict[str, set[str]]] = {
 }
 
 _COMPOUND_SUFFIXES: Final = tuple(s for s in _EXPECTED if s.count(".") > 1)
-_QUARANTINE_NORMALISED_SUFFIXES: Final[dict[str, str]] = {".tgz": ".tar.gz"}
 
 
 def deduplicate_quarantine_archives(
@@ -107,6 +128,10 @@ def detect_archives_requiring_quarantine(
             quarantine_paths.append(path_key)
 
     return quarantine_paths
+
+
+def is_quarantine_archive(filename: str) -> bool:
+    return _quarantine_archive_suffix(filename) is not None
 
 
 def validate_directory(directory: pathlib.Path) -> list[str]:
@@ -158,7 +183,7 @@ def _quarantine_archive_suffix(filename: str) -> str | None:
     lower_name = filename.lower()
     for suffix in QUARANTINE_ARCHIVE_SUFFIXES:
         if lower_name.endswith(suffix):
-            return _QUARANTINE_NORMALISED_SUFFIXES.get(suffix, suffix)
+            return archives.ARCHIVE_NORMALISED_SUFFIXES.get(suffix, suffix)
     return None
 
 
