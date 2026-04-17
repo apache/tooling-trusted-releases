@@ -2,7 +2,7 @@ name: Build and test
 
 on:
   push:
-    branches: [arm, main, sbp]
+    branches: [altera, arm, main, sbp]
   pull_request:
     branches: [main]
   workflow_dispatch:
