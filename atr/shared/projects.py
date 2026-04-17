@@ -355,6 +355,10 @@ class RemoveLanguageForm(form.Form):
     language_to_remove: str = form.label("Language to remove", widget=form.Widget.HIDDEN)
 
 
+class ArchiveSelectedProject(form.Form):
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+
+
 class DeleteProjectForm(form.Form):
     variant: DELETE_PROJECT = form.value(DELETE_PROJECT)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)

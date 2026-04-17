@@ -205,6 +205,9 @@ async def _render_page(
     page.append(_render_release_card(release))
     page.h2["Announce this release"]
 
+    if banner := shared.web.archived_project_banner(release.project):
+        page.append(banner)
+
     announce_msg = ""
     policy = release.release_policy or release.project.release_policy
     if policy and policy.file_tag_mappings:

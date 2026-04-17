@@ -102,6 +102,7 @@ class CommitteeMember(CommitteeParticipant):
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
             raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        storage.ensure_project_active(project)
         new_category = new_category.strip()
         current_categories = self.__current_categories(project)
         if new_category and (new_category not in current_categories):
@@ -129,6 +130,7 @@ class CommitteeMember(CommitteeParticipant):
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
             raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        storage.ensure_project_active(project)
         current_categories = self.__current_categories(project)
         if action_value in current_categories:
             if action_value in registry.FORBIDDEN_PROJECT_CATEGORIES:
@@ -209,18 +211,61 @@ class CommitteeMember(CommitteeParticipant):
         self.__data.add(project)
         return project
 
+    async def archive(self, project_key: safe.ProjectKey) -> None:
+        project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).get()
+
+        if not project:
+            raise storage.AccessError(f"Project '{project_key}' not found.")
+
+        # TODO: when a project has current or archived releases, archiving the project
+        # should be allowed and should cascade-archive the current releases as well -
+        # for now we just block, and only drafts are handled (deleted by the caller)
+        post_draft_phases = {
+            sql.ReleasePhase.RELEASE_CANDIDATE,
+            sql.ReleasePhase.RELEASE_PREVIEW,
+            sql.ReleasePhase.RELEASE,
+        }
+        if any(r.phase in post_draft_phases for r in project.releases):
+            raise storage.AccessError(
+                f"Cannot archive project '{project_key}' because it has active releases; complete or remove them first."
+            )
+
+        if project.committee_key:
+            committee_projects = await self.__data.project(
+                committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
+            ).all()
+            if len(committee_projects) <= 1:
+                raise storage.AccessError(
+                    f"Cannot archive project '{project_key}' because it is the only project in its committee."
+                )
+
+        project = await self.__data.merge(project)
+        project.status = sql.ProjectStatus.RETIRED
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+        )
+
     async def delete(self, project_key: safe.ProjectKey) -> None:
-        project = await self.__data.project(
-            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True, _distribution_channels=True
-        ).get()
+        project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).get()
 
         if not project:
             raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
 
-        # Prevent deletion if there are associated releases or channels
+        if project.committee_key:
+            committee_projects = await self.__data.project(
+                committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
+            ).all()
+            if len(committee_projects) <= 1:
+                raise storage.AccessError(
+                    f"Cannot delete project '{project_key}' because it is the only project in its committee."
+                )
+
         if project.releases:
             raise storage.AccessError(
-                f"Cannot delete project '{project_key}' because it has associated releases.", status=409
+                f"Cannot delete project '{project_key}' because it has associated releases. Delete them first.",
+                status=409,
             )
 
         await self.__data.delete(project)
@@ -350,6 +395,7 @@ class CommitteeMember(CommitteeParticipant):
                 status=400,
             )
         if existing is not None:
+            storage.ensure_project_active(existing)
             return existing, False
         if (args.project is None) or (args.project.name is None) or (not args.project.name.strip()):
             raise ValueError(f"Project '{args.project_key}' does not exist; project.name is required to create it")

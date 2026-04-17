@@ -111,6 +111,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_PREVIEW
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
     release_key = sql.release_key("proj", "1.0")
@@ -204,6 +205,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_PREVIEW
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
     release_key = sql.release_key("proj", "1.0")
@@ -279,6 +281,7 @@ async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_pa
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
     release_key = sql.release_key("proj", "1.0")
@@ -400,6 +403,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
 
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
     release.version = "1.0"
     release.latest_revision_number = "00001"
@@ -431,6 +435,7 @@ async def test_modify_path_provenance_flows_into_write_files_data(tmp_path: path
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
 
@@ -579,6 +584,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
     release_key = sql.release_key("proj", "1.0")

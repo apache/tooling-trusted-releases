@@ -106,6 +106,10 @@ class CommitteeMember(CommitteeParticipant):
         version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
+        project = await self.__data.project(key=str(project_key)).demand(
+            storage.AccessError(f"Project '{project_key}' not found.")
+        )
+        storage.ensure_project_active(project)
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=args.DistributionWorkflow(
@@ -153,6 +157,10 @@ class CommitteeMember(CommitteeParticipant):
         api_url: str | None = None,
         web_url: str | None = None,
     ) -> tuple[models.sql.Distribution, bool]:
+        release = await self.__data.release(key=str(release_key), _project=True).demand(
+            storage.AccessError(f"Release '{release_key}' not found.")
+        )
+        storage.ensure_project_active(release.project)
         namespace = str(owner_namespace) if owner_namespace else ""
         existing = await self.__data.distribution(
             str(release_key), platform, namespace, str(package), str(version)
@@ -220,6 +228,10 @@ class CommitteeMember(CommitteeParticipant):
         dd: models.distribution.Data,
         allow_retries: bool = False,
     ) -> tuple[models.sql.Distribution, bool, models.distribution.Metadata | None]:
+        release = await self.__data.release(key=str(release_key), _project=True).demand(
+            storage.AccessError(f"Release '{release_key}' not found.")
+        )
+        storage.ensure_project_active(release.project)
         api_url = distribution.get_api_url(dd, staging)
         if dd.platform == models.sql.DistributionPlatform.MAVEN:
             api_oc = await distribution.json_from_maven_xml(api_url, dd.version)
@@ -308,6 +320,10 @@ class CommitteeMember(CommitteeParticipant):
         package: str,
         version: str,
     ) -> None:
+        release = await self.__data.release(key=str(release_key), _project=True).demand(
+            storage.AccessError(f"Release '{release_key}' not found.")
+        )
+        storage.ensure_project_active(release.project)
         distribution = await self.__data.distribution(
             release_key=str(release_key),
             platform=platform,

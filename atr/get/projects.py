@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Literal
 
 import asfquart.base as base
@@ -98,28 +99,55 @@ async def add_project(
 
 
 @get.typed
-async def projects(_session: web.Public, _projects: Literal["projects"]) -> str:
+async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
     """
     URL: /projects
     Main project directory page.
     """
     async with db.session() as data:
-        projects = await data.project(_committee=True).order_by(sql.Project.name).all()
+        projects = await data.project(_committee=True, _releases=True).order_by(sql.Project.name).all()
 
-    delete_forms: dict[str, htm.Element] = {}
-    for project in projects:
-        delete_forms[str(project.key)] = await form.render(
-            model_cls=shared.projects.DeleteSelectedProject,
-            action=util.as_url(post.projects.delete),
-            form_classes=".d-inline-block.m-0",
-            submit_classes="btn-sm btn-outline-danger",
-            submit_label="Delete project",
-            empty=True,
-            defaults={"project_key": str(project.key)},
-            confirm="Are you sure you want to delete this project? This cannot be undone.",
-        )
+    committee_project_counts: Counter[str] = Counter(
+        str(p.committee.key) for p in projects if p.committee and p.status == sql.ProjectStatus.ACTIVE
+    )
 
-    return await template.render("projects.html", projects=projects, delete_forms=delete_forms)
+    action_forms: dict[str, htm.Element] = {}
+    if session is not None:
+        for project in projects:
+            if project.status != sql.ProjectStatus.ACTIVE:
+                continue
+            if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
+                continue
+            if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
+                continue
+            if not project.releases:
+                action_forms[str(project.key)] = await form.render(
+                    model_cls=shared.projects.DeleteSelectedProject,
+                    action=util.as_url(post.projects.delete),
+                    form_classes=".d-inline-block.m-0",
+                    submit_classes="btn-sm btn-outline-danger",
+                    submit_label="Delete project",
+                    empty=True,
+                    defaults={"project_key": str(project.key)},
+                    confirm="Are you sure you want to delete this project? This cannot be undone.",
+                )
+            elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
+                action_forms[str(project.key)] = await form.render(
+                    model_cls=shared.projects.ArchiveSelectedProject,
+                    action=util.as_url(post.projects.archive),
+                    form_classes=".d-inline-block.m-0",
+                    submit_classes="btn-sm btn-outline-secondary",
+                    submit_label="Archive project",
+                    empty=True,
+                    defaults={"project_key": str(project.key)},
+                    confirm=(
+                        f"This project has {util.plural(len(project.releases), 'draft release')}."
+                        " Archiving will delete those drafts and mark the project as retired."
+                        " Continue?"
+                    ),
+                )
+
+    return await template.render("projects.html", projects=projects, action_forms=action_forms)
 
 
 @get.typed
