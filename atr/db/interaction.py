@@ -15,10 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 import asyncio
-import contextlib
 import datetime
 import enum
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import Sequence
 from typing import Final
 
 import packaging.version as version
@@ -219,13 +218,6 @@ async def count_checks_for_revision_by_status(
         )
         result = await data.execute(query)
         return result.scalar_one()
-
-
-@contextlib.asynccontextmanager
-async def ephemeral_gpg_home() -> AsyncGenerator[str]:
-    """Create a temporary directory for an isolated GPG home, and clean it up on exit."""
-    async with util.async_temporary_directory(prefix="gpg-") as temp_dir:
-        yield str(temp_dir)
 
 
 async def full_releases(project: sql.Project) -> list[sql.Release]:
