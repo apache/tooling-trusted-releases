@@ -18,8 +18,10 @@
 import datetime
 import unittest.mock as mock
 
+import jwt
 import pytest
 
+import atr.jwtoken as jwtoken
 import atr.models.sql as sql
 import atr.storage.readers.tokens
 import atr.storage.types as types
@@ -116,6 +118,29 @@ async def test_reader_pat_methods_return_safe_tokens() -> None:
     assert isinstance(most_recent, types.PersonalAccessTokenSafe)
     assert most_recent is not None
     assert "token_hash" not in most_recent.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_jwt_without_nbf(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime.datetime.now(tz=datetime.UTC)
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: "a" * 64)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError))
+
+    token = jwt.encode(
+        {
+            "sub": "test",
+            "iss": jwtoken._ATR_JWT_ISSUER,
+            "aud": jwtoken._ATR_JWT_AUDIENCE,
+            "iat": now,
+            "exp": now + datetime.timedelta(minutes=30),
+            "jti": "test-jti",
+        },
+        "a" * 64,
+        algorithm=jwtoken._ALGORITHM,
+    )
+
+    with pytest.raises(jwt.MissingRequiredClaimError, match="nbf"):
+        await jwtoken.verify(token)
 
 
 @pytest.mark.asyncio

@@ -133,7 +133,7 @@ JWTs have the following properties:
 
 * **Algorithm**: HS256 (HMAC-SHA256)
 * **Validity**: 30 minutes from creation
-* **Claims**: `sub` (ASF UID), `iat` (issued at), `exp` (expiration), `jti` (unique token ID)
+* **Claims**: `sub` (ASF UID), `iss` (issuer), `aud` (audience), `iat` (issued at), `nbf` (not before), `exp` (expiration), `jti` (unique token ID)
 * **Storage**: JWTs are stateless; ATR does not store issued JWTs
 
 The JWT is used in the `Authorization` header as a bearer token:
@@ -144,7 +144,7 @@ Authorization: Bearer jwt_token_value
 
 ### Token handling
 
-The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints use the `@jwtoken.require` decorator, which extracts the JWT from the `Authorization` header, verifies its signature and expiration, and makes the user's ASF UID available to the handler.
+The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints use the `@jwtoken.require` decorator, which extracts the JWT from the `Authorization` header, verifies its signature and required claims, and makes the user's ASF UID available to the handler. Verification applies a deliberate two minute leeway to the time based JWT checks to tolerate small clock skew between ATR and API clients.
 
 ## GitHub Actions OIDC (Trusted Publishing)
 

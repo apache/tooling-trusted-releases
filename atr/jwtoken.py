@@ -41,6 +41,7 @@ import atr.util as util
 _ALGORITHM: Final[str] = "HS256"
 _ATR_JWT_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _ATR_JWT_ISSUER: Final[str] = f"https://{config.get().APP_HOST}/"
+_ATR_JWT_LEEWAY_SECONDS: Final[int] = 2 * 60
 _ATR_JWT_TTL: Final[int] = 30 * 60
 _GITHUB_OIDC_AUDIENCE: Final[str] = f"https://{config.get().APP_HOST}/"
 _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
@@ -135,7 +136,8 @@ async def verify(token: str) -> dict[str, Any]:
         algorithms=[_ALGORITHM],
         issuer=_ATR_JWT_ISSUER,
         audience=_ATR_JWT_AUDIENCE,
-        options={"require": ["sub", "iss", "aud", "iat", "exp", "jti"]},
+        leeway=_ATR_JWT_LEEWAY_SECONDS,
+        options={"require": ["sub", "iss", "aud", "iat", "nbf", "exp", "jti"]},
     )
     log.debug(f"JWT claims: {claims}")
     if not isinstance(asf_uid, str):
