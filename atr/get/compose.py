@@ -235,10 +235,15 @@ def _render_move_section(max_files_to_show: int = 10) -> htm.Element:
 
     section.h2["Move items to a different directory"]
     section.p[
-        "You may ",
-        htm.strong["optionally"],
-        " move files between your directories here if you want change their location for the final release. "
-        "Note that files with associated metadata (e.g. ",
+        """
+        Move files in the compose area using the form below. You can change
+        files freely until holding a vote, and then file locations are frozen.
+        Moving files now only moves them on ATR, but as soon as a vote is
+        started, if the vote is successful then the current locations will
+        determine where they are published to SVN (when ATR supports this
+        feature).
+        """
+        "Files with associated metadata (e.g. ",
         htm.code[".asc"],
         " or ",
         htm.code[".sha512"],
