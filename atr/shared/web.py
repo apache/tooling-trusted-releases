@@ -48,6 +48,15 @@ _STATUS_LABELS: Final[dict[sql.CheckResultStatus, str]] = {
 }
 
 
+def archived_project_banner(project: sql.Project) -> htm.Element | None:
+    # Shown on the five top-level release pages when the PMC has archived the
+    # project. The storage layer still refuses the write, but the banner tells
+    # the viewer why the buttons are inert.
+    if project.status != sql.ProjectStatus.RETIRED:
+        return None
+    return htm.div(".alert.alert-warning.mb-4")["This project is archived. Release actions are disabled."]
+
+
 def render_checks_summary(
     info: types.PathInfo | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> htm.Element | None:

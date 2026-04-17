@@ -234,6 +234,7 @@ class CommitteeParticipant(FoundationCommitter):
         fullname: str,
         is_binding: bool = False,
     ) -> tuple[list[str], str]:
+        storage.ensure_project_active(release.project)
         # Get the email thread
         latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
@@ -309,6 +310,14 @@ class CommitteeParticipant(FoundationCommitter):
         notify_when_finished: bool = False,
         automatic_resolve_when_finished: bool = False,
     ) -> sql.Task:
+        if release is None:
+            release = await self.__data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                _project=True,
+                _committee=True,
+            ).demand(storage.AccessError("Release not found", status=404))
+        storage.ensure_project_active(release.project)
         if promote:
             await self.__data.begin_immediate()
         try:
@@ -327,13 +336,6 @@ class CommitteeParticipant(FoundationCommitter):
                     promote=True,
                 )
             else:
-                if release is None:
-                    release = await self.__data.release(
-                        project_key=str(project_key),
-                        version=str(version_key),
-                        _project=True,
-                        _committee=True,
-                    ).demand(storage.AccessError("Release not found", status=404))
                 release, vote_seq, vote_mode, revision_number = await self.__write_as.release._start_vote_no_commit(
                     release.safe_key,
                     expected_revision,
@@ -478,6 +480,7 @@ class CommitteeMember(CommitteeParticipant):
             _release_policy=True,
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
+        storage.ensure_project_active(release.project)
         if (expected_vote_mode is not None) and (release.effective_vote_mode != expected_vote_mode):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
@@ -568,6 +571,7 @@ class CommitteeMember(CommitteeParticipant):
             _release_policy=True,
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
+        storage.ensure_project_active(release.project)
 
         if release.effective_vote_mode != sql.VoteMode.MANUAL:
             raise storage.AccessError("Release is not configured for manual voting", status=409)
@@ -641,6 +645,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.begin_immediate()
         # Attach the existing release to the session
         release = await self.__data.merge(release)
+        storage.ensure_project_active(release.project)
         # Update the release phase based on vote result
         extra_destination = None
         second_round_vote_seq = None
@@ -801,6 +806,7 @@ class CommitteeMember(CommitteeParticipant):
         latest_vote_task: sql.Task,
         extra_destination: tuple[str, str] | None = None,
     ) -> str | None:
+        storage.ensure_project_active(release.project)
         # Get the email thread
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
         if vote_thread_mid is None:

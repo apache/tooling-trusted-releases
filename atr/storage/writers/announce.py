@@ -137,6 +137,7 @@ class CommitteeMember(CommitteeParticipant):
                 status=404,
             )
         )
+        storage.ensure_project_active(release.project)
         if (committee := release.project.committee) is None:
             raise storage.AccessError("Release has no committee - Invalid state", status=500)
 

@@ -201,11 +201,15 @@ async def selected(
         )[""],
     ]
 
+    archived_banner = shared.web.archived_project_banner(release.project)
+    archived_banner_html = str(archived_banner) if archived_banner is not None else ""
+
     return await template.render(
         "check-selected.html",
         project_key=release.project.key,
         version_key=release.version,
         release=release,
+        archived_banner_html=archived_banner_html,
         release_vote_mode=release.effective_vote_mode,
         paths=all_paths,
         info=info,

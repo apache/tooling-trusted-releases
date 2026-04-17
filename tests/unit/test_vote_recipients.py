@@ -115,6 +115,7 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
     release = SimpleNamespace(
         project=SimpleNamespace(
             key="project",
+            status=sql.ProjectStatus.ACTIVE,
             display_name="Project",
         ),
         version="1.0.0",
@@ -145,8 +146,12 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
     data.rollback = mock.AsyncMock()
 
     release = SimpleNamespace(
-        key="project-1.0.0",
-        project_key="project",
+        key="project-1.0.0", project_key="project", project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
+    )
+    data.release = mock.MagicMock(
+        return_value=SimpleNamespace(
+            demand=mock.AsyncMock(return_value=release),
+        )
     )
     committee = SimpleNamespace(key="project", is_podling=False, committee_members=["chair"])
     data.project = mock.MagicMock(

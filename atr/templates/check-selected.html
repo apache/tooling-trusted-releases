@@ -79,6 +79,10 @@
     </p>
   {% endif %}
 
+  {% if archived_banner_html %}
+    {{ archived_banner_html|safe }}
+  {% endif %}
+
   <div id="release-info-container">
     {{ release_info_html|safe }}
   </div>
