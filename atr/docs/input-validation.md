@@ -14,6 +14,7 @@
 * [CSRF protection](#csrf-protection)
 * [Validation rules by input type](#validation-rules-by-input-type)
 * [Data integrity validation](#data-integrity-validation)
+* [Business logic validation](#business-logic-validation)
 * [Output encoding](#output-encoding)
 * [File upload security](#file-upload-security)
 * [Injection prevention](#injection-prevention)
@@ -30,7 +31,7 @@ ATR employs multiple layers of validation:
 1. **Transport layer**: HTTPS required, enforced by httpd
 2. **Request layer**: Size limits enforced by httpd (`MAX_CONTENT_LENGTH`)
 3. **Form layer**: Pydantic models validate structure and types
-4. **Application layer**: Business logic validation in route handlers
+4. **Application layer**: Business logic validation in route handlers, interaction helpers, and storage writers
 5. **Database layer**: SQLAlchemy ORM with parameterized queries, plus constraints
 6. **Markdown layer**: Via `cmarkgfm`
 7. **Output layer**: Jinja2 auto-escaping for HTML output
@@ -203,6 +204,28 @@ async for divergence in validate.everything(data):
     print(f"{divergence.source}: {divergence.divergence}")
 ```
 
+These validators are complementary to the live checks described below. Data integrity validation inspects stored records for drift or corruption. Business logic validation stops inconsistent actions before ATR accepts them.
+
+## Business logic validation
+
+Field validation is only the first step. ATR also checks whether an action still makes sense in the wider state of the release. These rules compare data across releases, revisions, committees, queued tasks, stored policy, and message delivery settings. They live mainly in [`interaction.py`](/ref/atr/db/interaction.py), storage writers, [`mail.py`](/ref/atr/mail.py), and shared helpers in [`util.py`](/ref/atr/util.py).
+
+### Vote initiation
+
+Before a vote can start, [`release_ready_for_vote`](/ref/atr/db/interaction.py:release_ready_for_vote) checks that the release still has a latest revision, that the requested revision is that latest revision, and that the release is still attached to a committee. It also checks that the requested vote mode agrees with the stored project policy, so ATR does not let a user start a manual vote for a project configured for standard voting, or the reverse.
+
+That same validation step then checks the surrounding release state. The user must be a committee member for the project or an ATR administrator. The selected revision must have no blocker results, and the release candidate draft must contain files. When ATR actually promotes the release into the voting phase, [`promote_to_candidate`](/ref/atr/storage/writers/release.py:promote_to_candidate) adds a task state check and refuses the transition while queued or active tasks still exist for that revision. This binds vote initiation to release phase, revision state, policy, committee membership, check results, file storage, and task execution rather than to form fields alone.
+
+### Trusted Publishing
+
+Trusted Publishing settings are validated when they are stored and again when they are used. On write, [`validate_trusted_publishing_constraints`](/ref/atr/util.py:validate_trusted_publishing_constraints) and [`policy.py`](/ref/atr/storage/writers/policy.py) normalize the configured repository name, branch, and workflow paths and reject incomplete or impossible combinations. A workflow path cannot be stored without a repository name. A branch cannot be stored without a repository name. Repository names are stored without a slash. Every workflow path must begin with `.github/workflows/`.
+
+At request time, [`_trusted_project_checks`](/ref/atr/db/interaction.py:_trusted_project_checks) and [`_trusted_project`](/ref/atr/db/interaction.py:_trusted_project) compare the GitHub token claims with the stored policy. The repository must be under `apache`. The workflow reference must begin with that same repository, must include a git ref, and must resolve to a workflow path under `.github/workflows/`. ATR then looks up the project by repository name and by the phase specific workflow path that was stored for compose, vote, or finish. Distribution callbacks add one more contextual check in [`trusted_jwt_for_dist`](/ref/atr/db/interaction.py:trusted_jwt_for_dist), which refuses the request unless the named release exists and is in the expected phase for the requested operation. The cryptographic validation of the token itself is described in [authentication security](authentication-security#github-actions-oidc-trusted-publishing).
+
+### Email delivery
+
+Email validation in ATR also depends on context. [`validate_email_recipients`](/ref/atr/util.py:validate_email_recipients) requires a primary recipient and rejects duplicate addresses across `To`, `Cc`, and `Bcc`. [`send`](/ref/atr/mail.py:send) then requires the sender to use `@apache.org`, and [`_validate_recipient`](/ref/atr/mail.py:_validate_recipient) rejects any envelope recipient outside `@apache.org` and its subdomains. This means that vote and release mail must go to ASF controlled addresses even if the address itself would be syntactically valid.
+
 ## Output encoding
 
 ATR uses [Jinja2](https://jinja.palletsprojects.com/) for templating with auto-escaping enabled by default. All variables rendered in templates are automatically HTML-escaped:
@@ -305,6 +328,10 @@ subprocess.run(f"gpg --verify {signature_file} {data_file}", shell=True)
 ## Implementation references
 
 * [`form.py`](/ref/atr/form.py) - Form definitions, validation, and rendering
+* [`db/interaction.py`](/ref/atr/db/interaction.py) - Contextual validation for vote initiation and Trusted Publishing
+* [`storage/writers/policy.py`](/ref/atr/storage/writers/policy.py) - Trusted Publishing policy validation and normalisation
+* [`storage/writers/release.py`](/ref/atr/storage/writers/release.py) - Release phase transition checks and task state guards
 * [`validate.py`](/ref/atr/validate.py) - Data integrity validators
-* [`util.py`](/ref/atr/util.py) - Utility functions including path handling
+* [`util.py`](/ref/atr/util.py) - Shared validation helpers including path handling, recipients, and Trusted Publishing
+* [`mail.py`](/ref/atr/mail.py) - Sender and recipient domain enforcement
 * [`htm.py`](/ref/atr/htm.py) - HTML generation utilities

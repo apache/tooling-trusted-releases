@@ -16,6 +16,7 @@
 * [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
 * [SSH authentication](#ssh-authentication)
 * [Token lifecycle](#token-lifecycle)
+* [Audit Logging](#audit-logging)
 * [Security properties](#security-properties)
 * [Implementation references](#implementation-references)
 
