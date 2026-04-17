@@ -25,6 +25,8 @@ from . import safe, schema, sql, tabulate, validation
 
 T = TypeVar("T")
 
+type TrustedWorkflowPhase = Literal["compose", "vote", "finish"]
+
 
 class ResultsTypeError(TypeError):
     pass
@@ -71,7 +73,7 @@ class DistributeSshRegisterArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     ssh_key: str = schema.example("ssh-ed25519 AAAAC3NzaC1lZDI1NTEgH5C9okWi0dh25AAAAIOMqqnkVzrm0SdG6UOoqKLsabl9GKJl")
-    phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
+    phase: TrustedWorkflowPhase = schema.Field(default="compose", json_schema_extra={"examples": ["compose", "finish"]})
     asf_uid: str = schema.example("user")
     project_key: safe.ProjectKey = schema.example("tooling")
     version: safe.VersionKey = schema.example("0.0.1")
@@ -135,7 +137,7 @@ class DistributionRecordFromWorkflowArgs(schema.Strict):
     distribution_owner_namespace: safe.Alphanumeric | None = schema.default_example(None, "example")
     distribution_package: safe.Alphanumeric = schema.example("example")
     distribution_version: safe.VersionKey = schema.example("0.0.1")
-    phase: str = schema.Field(strict=False, default="compose", json_schema_extra={"examples": ["compose", "finish"]})
+    phase: TrustedWorkflowPhase = schema.Field(default="compose", json_schema_extra={"examples": ["compose", "finish"]})
     staging: bool = schema.example(False)
     details: bool = schema.example(False)
     task_id: str = schema.example("32")

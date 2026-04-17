@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pydantic
 import pytest
 
 import atr.models.api as api
@@ -28,6 +29,82 @@ def test_check_result_ignore_has_project_key_field() -> None:
         release_glob="test-1.0.*",
     )  # pyright: ignore[reportCallIssue]
     assert cri.project_key == "test"
+
+
+@pytest.mark.parametrize("phase", ["compose", "vote", "finish"])
+def test_distribute_ssh_register_args_accepts_trusted_workflow_phase(phase: str) -> None:
+    args = api.DistributeSshRegisterArgs.model_validate(
+        {
+            "publisher": "user",
+            "jwt": "token",
+            "ssh_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample",
+            "phase": phase,
+            "asf_uid": "user",
+            "project_key": "tooling",
+            "version": "0.0.1",
+            "task_id": "32",
+        }
+    )
+    assert args.phase == phase
+
+
+def test_distribute_ssh_register_args_rejects_invalid_trusted_workflow_phase() -> None:
+    with pytest.raises(pydantic.ValidationError, match=r"compose|vote|finish"):
+        api.DistributeSshRegisterArgs.model_validate(
+            {
+                "publisher": "user",
+                "jwt": "token",
+                "ssh_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample",
+                "phase": "published",
+                "asf_uid": "user",
+                "project_key": "tooling",
+                "version": "0.0.1",
+                "task_id": "32",
+            }
+        )
+
+
+@pytest.mark.parametrize("phase", ["compose", "vote", "finish"])
+def test_distribution_record_from_workflow_args_accepts_trusted_workflow_phase(phase: str) -> None:
+    args = api.DistributionRecordFromWorkflowArgs.model_validate(
+        {
+            "asf_uid": "user",
+            "publisher": "user",
+            "jwt": "token",
+            "project": "tooling",
+            "version": "0.0.1",
+            "platform": "ARTIFACT_HUB",
+            "distribution_owner_namespace": "example",
+            "distribution_package": "example",
+            "distribution_version": "0.0.1",
+            "phase": phase,
+            "staging": False,
+            "details": False,
+            "task_id": "32",
+        }
+    )
+    assert args.phase == phase
+
+
+def test_distribution_record_from_workflow_args_rejects_invalid_trusted_workflow_phase() -> None:
+    with pytest.raises(pydantic.ValidationError, match=r"compose|vote|finish"):
+        api.DistributionRecordFromWorkflowArgs.model_validate(
+            {
+                "asf_uid": "user",
+                "publisher": "user",
+                "jwt": "token",
+                "project": "tooling",
+                "version": "0.0.1",
+                "platform": "ARTIFACT_HUB",
+                "distribution_owner_namespace": "example",
+                "distribution_package": "example",
+                "distribution_version": "0.0.1",
+                "phase": "published",
+                "staging": False,
+                "details": False,
+                "task_id": "32",
+            }
+        )
 
 
 def test_ignore_add_args_accepts_all_fields() -> None:
