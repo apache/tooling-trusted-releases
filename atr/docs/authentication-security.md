@@ -16,6 +16,7 @@
 * [GitHub Actions OIDC (Trusted Publishing)](#github-actions-oidc-trusted-publishing)
 * [SSH authentication](#ssh-authentication)
 * [Token lifecycle](#token-lifecycle)
+* [Adaptive response](#adaptive-response)
 * [Audit Logging](#audit-logging)
 * [Security properties](#security-properties)
 * [Implementation references](#implementation-references)
@@ -228,6 +229,18 @@ ASF OAuth (web login)
 
 For web users, authentication happens once via ASF OAuth, and the session persists until logout or expiration. For API users, the flow is: obtain a PAT once (via the web interface), then exchange it for JWTs as needed (JWTs expire quickly, so this exchange happens frequently in long-running scripts). For automated uploads, the flow extends further: a GitHub Actions workflow authenticates via OIDC, registers a temporary SSH key, and uses it to upload artifacts via rsync.
 
+## Adaptive response
+
+ATR does not currently implement any adaptive responses such as progressive delays or challenge page in its own authentication code. Its response to repeated failures is fixed rather than adaptive. Ordinary web requests are limited to `100` requests per minute and `1000` per hour. The limiter groups traffic by authenticated ASF UID when a session exists, and by client address otherwise. API requests have their own ceiling of `500` requests per hour. The JWT issue endpoints on the website and the API are tighter at `10` requests per hour. When an HTTP limit is exceeded, ATR returns `429 Too Many Requests`. For API responses it also includes `retry_after` when the limiter provides one.
+
+SSH follows the same general policy. ATR allows at most `100` SSH connections per minute from one client address. It also allows at most `10` successful SSH authentications per minute for one ASF UID. If either limit is exceeded then ATR closes the connection.
+
+Browser sign in is delegated to `oauth.apache.org`, so ATR does not process passwords and does not define how the ASF OAuth service handles repeated password failures. The credentials that ATR does verify directly are long random PATs, ATR signed JWTs, and public keys. For those mechanisms, ATR relies on fixed throttling, short token lifetimes, PAT and LDAP revalidation, and prompt revocation rather than challenge based escalation.
+
+There is one automatic containment step that goes beyond a simple reject: when LDAP marks an account as inactive, ATR revokes that user's sessions, PATs, and SSH keys.
+
+ATR also does not ship with built in alert thresholds or automatic blocking rules for repeated failures. Instead it writes authentication events to `<STATE_DIR>/audit/auth-audit.log` and request summaries to `<STATE_DIR>/logs/requests.log`.
+
 ## Audit Logging
 
 An audit log, at `<STATE_DIR>/audit/auth-audit.log`, contains a log of all auth-adjacent operations. This should include authentication success/failures, token issuance/revocation,
@@ -284,8 +297,13 @@ Tokens must be protected by the user at all times:
 ## Implementation references
 
 * [`principal.py`](/ref/atr/principal.py) - Session caching and authorization data
+* [`server.py`](/ref/atr/server.py) - Default web rate limits, 429 handling, and request logging
+* [`blueprints/api.py`](/ref/atr/blueprints/api.py) - API wide rate limiting
+* [`api/__init__.py`](/ref/atr/api/__init__.py) - Tighter API limits for JWT creation
 * [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators; `verify_github_oidc` implements the OIDC validation chain
 * [`db/interaction.py`](/ref/atr/db/interaction.py) - `validate_trusted_jwt` implements the service account authorisation, `trusted_jwt_for_dist` implements gating based on the service account
+* [`ldap.py`](/ref/atr/ldap.py) - Account deactivation handling and credential revocation
 * [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation
+* [`post/tokens.py`](/ref/atr/post/tokens.py) - Tighter web limits for JWT issuance and token management
 * [`ssh.py`](/ref/atr/ssh.py) - SSH server implementation, authentication, and rsync handling
 * [`storage/writers/ssh.py`](/ref/atr/storage/writers/ssh.py) - SSH key management and admin revocation
