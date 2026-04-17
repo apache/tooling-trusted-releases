@@ -119,7 +119,6 @@ async def automate_selected(
     """
     URL: /distribution/automate/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
     return await automate_form_process_page(session, distribute_form, project_key, version_key, staging=False)
 
 
@@ -134,7 +133,6 @@ async def delete(
     """
     URL: /distribution/delete/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
     url_release = sql.release_key(project_key, version_key)
@@ -227,7 +225,6 @@ async def record_selected(
     """
     URL: /distribution/record/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
     return await record_form_process_page(session, distribute_form, project_key, version_key, staging=False)
 
 
@@ -256,5 +253,4 @@ async def stage_record_selected(
     """
     URL: /distribution/stage/record/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
     return await record_form_process_page(session, distribute_form, project_key, version_key, staging=True)

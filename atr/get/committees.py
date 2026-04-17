@@ -63,7 +63,7 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
     project_list = list(committee.projects)
     committee_member = False
     if isinstance(session, web.Committer):
-        committee_member = await session.check_access_committee(name, False)
+        committee_member = await session.prevent_confusing_ui_display_committee(name, False)
     for project in project_list:
         # Workaround for the usual loading problem
         project.committee = committee

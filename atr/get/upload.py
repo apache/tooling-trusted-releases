@@ -45,7 +45,7 @@ async def selected(
     """
     URL: /upload/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await session.release(project_key, version_key, data=data)
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()

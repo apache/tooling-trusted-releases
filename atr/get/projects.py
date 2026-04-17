@@ -51,7 +51,7 @@ async def add_project(
     """
     URL: /project/add/<committee_key>
     """
-    await session.check_access_committee(committee_key)
+    await session.prevent_confusing_ui_display_committee(committee_key)
 
     async with db.session() as data:
         committee = await data.committee(key=str(committee_key)).demand(

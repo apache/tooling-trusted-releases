@@ -39,7 +39,7 @@ async def ignores(
     """
     URL: /ignores/<project_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with storage.read() as read:
         ragp = read.as_general_public()
         ignores = await ragp.checks.ignores(project_key)

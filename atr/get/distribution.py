@@ -45,7 +45,7 @@ async def automate(
     """
     URL: /distribution/automate/<project_key>/<version>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     return await _automate_form_page(project_key, version_key, staging=False)
 
 
@@ -153,7 +153,7 @@ async def record(
     """
     URL: /distribution/record/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     return await _record_form_page(project_key, version_key, staging=False)
 
 
@@ -167,7 +167,7 @@ async def stage_automate(
     """
     URL: /distribution/stage/automate/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     return await _automate_form_page(project_key, version_key, staging=True)
 
 
@@ -181,7 +181,7 @@ async def stage_record(
     """
     URL: /distribution/stage/record/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     return await _record_form_page(project_key, version_key, staging=True)
 
 

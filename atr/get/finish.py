@@ -68,7 +68,7 @@ async def selected(
     URL: /finish/<project_key>/<version_key>
     Finish a release preview.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     try:
         (release, deletable_dirs, rc_analysis, tasks) = await _get_page_data(project_key, version_key)
     except ValueError:

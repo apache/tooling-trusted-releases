@@ -39,7 +39,7 @@ async def selected(session: web.Committer, _start: Literal["start"], project_key
     """
     URL: /start/<project_key>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)

@@ -45,7 +45,7 @@ async def resolve_selected(
     URL: /manual/resolve/<project_key>/<version_key>
     Get the manual vote resolution page.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     release = await session.release(
         project_key,
         version_key,
@@ -76,7 +76,7 @@ async def start_selected_revision(
     """
     URL: /manual/start/<project_key>/<version_key>/<revision>
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
             session, project_key, version_key, revision, data, manual_vote=True

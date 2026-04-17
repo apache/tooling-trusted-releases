@@ -95,7 +95,7 @@ async def select(
     URL: /release/select/<project_key>
     Show releases in progress for a project.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)

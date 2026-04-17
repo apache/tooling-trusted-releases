@@ -37,7 +37,6 @@ async def ignores(
     URL: /ignores/<project_key>
     Handle forms on the ignores page.
     """
-    await session.check_access(project_key)
     match ignore_form:
         case shared.ignores.AddIgnoreForm() as add_form:
             return await _add_ignore(session, add_form, project_key)

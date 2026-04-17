@@ -55,7 +55,7 @@ async def selected(
     URL: /compose/<project_key>/<version_key>
     Show the contents of the release candidate draft.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await data.release(
             project_key=str(project_key),

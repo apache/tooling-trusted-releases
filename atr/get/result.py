@@ -39,7 +39,7 @@ async def data(
     URL: /result/data/<project_key>/<version_key>/<check_id>
     Show a check result as formatted JSON.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await data.release(
             project_key=str(project_key),

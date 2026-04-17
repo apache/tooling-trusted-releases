@@ -85,7 +85,7 @@ class Committer:
     def is_admin(self) -> bool:
         return user.is_admin(self.uid)
 
-    async def check_access(self, project_key: str | safe.ProjectKey) -> None:
+    async def prevent_confusing_ui_display(self, project_key: str | safe.ProjectKey) -> None:
         if not any((str(p.key) == str(project_key)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
@@ -96,7 +96,7 @@ class Committer:
                 return
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 
-    async def check_access_committee(self, committee_key: safe.CommitteeKey, die: bool = True) -> bool:
+    async def prevent_confusing_ui_display_committee(self, committee_key: safe.CommitteeKey, die: bool = True) -> bool:
         if str(committee_key) not in self.committees:
             if self.is_admin:
                 # Admins can view all committees

@@ -135,7 +135,6 @@ async def import_selected_revision(
     """
     URL: /keys/import/<project_key>/<version_key>
     """
-    await session.check_access(project_key)
     await session.release(project_key, version_key, with_committee=False, with_project=False)
     async with storage.write() as write:
         wacm = await write.as_project_committee_member(project_key)

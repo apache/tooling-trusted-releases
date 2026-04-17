@@ -46,7 +46,7 @@ async def tools(
     URL: /draft/tools/<project_key>/<version_key>/<path:file_path>
     Show the tools for a specific file.
     """
-    await session.check_access(project_key)
+    await session.prevent_confusing_ui_display(project_key)
     validated_path = file_path.as_path()
 
     release = await session.release(project_key, version_key)
