@@ -50,8 +50,11 @@ def _config_secrets_get(
             raise
     else:
         if key in repo_ini:
-            value = repo_ini[key]
-            return cast(value)
+            try:
+                value = repo_ini[key]
+                return cast(value)
+            except KeyError:
+                pass
 
     # There is no secrets file, or it does not contain the key
     # Try getting the value from environment variables
