@@ -247,12 +247,12 @@ pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
 pycryptodomex==3.23.0
     # via ldap3
-pydantic==2.13.0
+pydantic==2.13.2
     # via
     #   pydantic-xml
     #   quart-schema
     #   sqlmodel
-pydantic-core==2.46.0
+pydantic-core==2.46.2
     # via
     #   pydantic
     #   pydantic-xml
@@ -319,7 +319,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-ruff==0.15.10
+ruff==0.15.11
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
