@@ -32,7 +32,7 @@ async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee 
     committee = release.project.committee
     if config.is_dev_environment():
         message_count = 0
-        async for _mid, msg in util.thread_messages(thread_id):
+        async for _mid, msg in util.thread_messages(thread_id, strict=True):
             message_count += 1
             if message_count > MAX_THREAD_MESSAGES:
                 raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
@@ -160,7 +160,7 @@ async def votes(  # noqa: C901
     start_unixtime = None
     message_count = 0
     _validate_thread_id(thread_id)
-    async for mid, msg in util.thread_messages(thread_id):
+    async for mid, msg in util.thread_messages(thread_id, strict=True):
         message_count += 1
         if message_count > MAX_THREAD_MESSAGES:
             raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")

@@ -73,6 +73,7 @@ DEV_THREAD_URLS: Final[dict[str, str]] = {
 INCUBATOR_GENERAL_ADDRESS: Final[str] = "general@incubator.apache.org"
 NPM_PACKAGE_JSON_MAX_SIZE: Final[int] = 512 * 1024
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
+LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 
 
 class EmailRecipients(Protocol):
@@ -510,7 +511,7 @@ async def get_release_stats(release: sql.Release) -> tuple[int, int, str]:
 
 async def get_urls_as_completed(urls: Sequence[str]) -> AsyncGenerator[tuple[str, int | str | None, bytes]]:
     """GET a list of URLs in parallel and yield (url, status, content_bytes) as they become available."""
-    async with create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
+    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
 
         async def _fetch(one_url: str) -> tuple[str, int | str | None, bytes]:
             try:
@@ -890,6 +891,14 @@ def static_url(filename: str) -> str:
 
 
 async def task_archive_url(task_mid: str, recipient: str | None = None) -> str | None:
+    try:
+        return await task_archive_url_strict(task_mid, recipient)
+    except FetchError:
+        log.exception(f"Failed to get archive URL for task {task_mid}")
+        return None
+
+
+async def task_archive_url_strict(task_mid: str, recipient: str | None = None) -> str | None:
     if "@" not in task_mid:
         return None
 
@@ -900,29 +909,31 @@ async def task_archive_url(task_mid: str, recipient: str | None = None) -> str |
     lid = urllib.parse.quote(recipient_address.replace("@", "."))
     url = f"https://lists.apache.org/api/email.json?id=%3C{urllib.parse.quote(task_mid)}%3E&listid=%3C{lid}%3E"
     try:
-        async with create_secure_session() as session:
+        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
             async with session.get(url) as response:
+                if response.status == 404:
+                    return None
                 response.raise_for_status()
-                # TODO: Check whether this blocks from network
                 email_data = await response.json()
-        mid = email_data["mid"]
-        if not isinstance(mid, str):
-            return None
-        return "https://lists.apache.org/thread/" + urllib.parse.quote(mid)
-    except Exception:
-        log.exception(f"Failed to get archive URL for task {task_mid}")
+    except Exception as exc:
+        raise FetchError(f"Failed to look up archive URL for {task_mid}: {exc}", url=url) from exc
+    mid = email_data.get("mid") if isinstance(email_data, dict) else None
+    if not isinstance(mid, str):
         return None
+    return "https://lists.apache.org/thread/" + urllib.parse.quote(mid)
 
 
-async def thread_messages(
+async def thread_messages(  # noqa: C901
     thread_id: str,
+    *,
+    strict: bool = False,
 ) -> AsyncGenerator[tuple[str, dict[str, Any]]]:
     """Iterate over mailing list thread messages in chronological order."""
 
     thread_url = f"https://lists.apache.org/api/thread.json?id={urllib.parse.quote(thread_id)}"
 
     try:
-        async with create_secure_session(timeout=aiohttp.ClientTimeout(total=30, connect=10)) as session:
+        async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as session:
             async with session.get(thread_url) as resp:
                 resp.raise_for_status()
                 thread_data: Any = await resp.json(content_type=None)
@@ -946,12 +957,16 @@ async def thread_messages(
 
     async for url, status, content in get_urls_as_completed(email_urls):
         if (status != 200) or (not content):
+            if strict:
+                raise FetchError(f"Failed to fetch email data from {url}: {status}", url=url)
             log.warning(f"Failed to fetch email data from {url}: {status}")
             continue
         try:
             msg_json = json.loads(content.decode())
             messages.append(msg_json)
         except Exception as exc:
+            if strict:
+                raise FetchError(f"Failed to parse email JSON from {url}: {exc}", url=url) from exc
             log.warning(f"Failed to parse email JSON from {url}: {exc}")
 
     messages.sort(key=lambda m: m.get("epoch", 0))

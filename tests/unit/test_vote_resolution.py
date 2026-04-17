@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
@@ -484,6 +485,80 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = resolve.util.FetchError(
+        "Failed to look up archive URL",
+        url="https://lists.apache.org/api/email.json",
+    )
+
+    context, form_render, archive_lookup, vote_committee, vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        archive_error=error,
+    )
+
+    assert context["fetch_error"] == (
+        "ATR could not look up the archived vote thread on lists.apache.org. "
+        "Please review the vote manually and continue below."
+    )
+    assert context["resolve_form"] == "FORM"
+    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["pre_submit"] is not None
+    assert archive_lookup.await_args.kwargs["strict"] is True
+    vote_committee.assert_not_awaited()
+    vote_details.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolve_page_allows_manual_continuation_when_tabulation_is_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context, form_render, archive_lookup, vote_committee, vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        details_error=ValueError("Thread exceeds maximum of 10000 messages"),
+    )
+
+    assert context["fetch_error"] == (
+        "ATR could not tabulate the archived vote thread automatically. "
+        "Please review the vote manually and continue below."
+    )
+    assert context["resolve_form"] == "FORM"
+    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["pre_submit"] is not None
+    assert archive_lookup.await_args.kwargs["strict"] is True
+    vote_committee.assert_awaited_once()
+    vote_details.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = resolve.util.FetchError(
+        "Failed fetching thread metadata",
+        url="https://lists.apache.org/api/thread.json",
+    )
+
+    context, form_render, archive_lookup, vote_committee, vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        details_error=error,
+    )
+
+    assert context["fetch_error"] == (
+        "ATR could not retrieve the archived vote thread from lists.apache.org, "
+        "so automatic vote tabulation is unavailable. Please review the vote manually "
+        "and continue below."
+    )
+    assert context["resolve_form"] == "FORM"
+    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["pre_submit"] is not None
+    assert archive_lookup.await_args.kwargs["strict"] is True
+    vote_committee.assert_awaited_once()
+    vote_details.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Writer rejects Failed when the end of the vote has not been reached and no bypass is active."""
     data = _mock_data()
@@ -624,6 +699,7 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        vote_manual=False,
         vote_resolved=datetime.datetime.now(datetime.UTC),
         podling_thread_id=podling_thread_id,
         version="1.0.0",
@@ -745,6 +821,80 @@ def _refresh_as(**attrs: object) -> mock.AsyncMock:
             setattr(obj, k, v)
 
     return mock.AsyncMock(side_effect=_apply)
+
+
+async def _render_standard_resolve_page(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    archive_error: Exception | None = None,
+    details_error: Exception | None = None,
+) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
+    release = _candidate_release()
+    session = SimpleNamespace(
+        uid="chair",
+        fullname="Project Chair",
+        release=mock.AsyncMock(return_value=release),
+    )
+    context: dict[str, object] = {}
+    archive_lookup = mock.AsyncMock(return_value="https://lists.apache.org/thread/0123456789abcdef0123456789abcdef")
+    vote_committee = mock.AsyncMock(return_value=release.project.committee)
+    vote_details = mock.AsyncMock()
+    form_render = mock.AsyncMock(return_value="FORM")
+
+    if archive_error is not None:
+        archive_lookup.side_effect = archive_error
+    if details_error is not None:
+        vote_details.side_effect = details_error
+    else:
+        vote_details.return_value = SimpleNamespace(
+            votes={},
+            summary={
+                "binding_votes_yes": 0,
+                "binding_votes_no": 0,
+            },
+            passed=False,
+            outcome="The vote failed.",
+        )
+
+    @contextlib.asynccontextmanager
+    async def _write_context(_session: object):
+        yield SimpleNamespace(
+            as_general_public=lambda: SimpleNamespace(
+                cache=SimpleNamespace(get_message_archive_url=archive_lookup),
+            ),
+        )
+
+    async def _template_render(_template_name: str, **kwargs: object) -> str:
+        context.update(kwargs)
+        return "HTML"
+
+    monkeypatch.setattr(resolve.util, "as_url", lambda _endpoint, **_kwargs: "/resolve/project/1.0.0")
+    monkeypatch.setattr(
+        resolve.interaction, "release_latest_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
+    )
+    monkeypatch.setattr(resolve.interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: None)
+    monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: True)
+    monkeypatch.setattr(resolve.storage, "write", _write_context)
+    monkeypatch.setattr(resolve.tabulate, "vote_committee", vote_committee)
+    monkeypatch.setattr(resolve.tabulate, "vote_details", vote_details)
+    monkeypatch.setattr(resolve.atr.form, "render", form_render)
+    monkeypatch.setattr(resolve.template, "render", _template_render)
+
+    html = await _resolve_handler()(session, "resolve", _project_key(), _version_key())
+
+    assert html == "HTML"
+    return context, form_render, archive_lookup, vote_committee, vote_details
+
+
+def _resolve_handler():
+    wrapper = resolve.selected.__wrapped__
+    if wrapper.__closure__ is None:
+        raise AssertionError("Expected resolve.selected wrapper closure")
+    for name, cell in zip(wrapper.__code__.co_freevars, wrapper.__closure__):
+        if name == "func":
+            return cell.cell_contents
+    raise AssertionError("Could not find wrapped resolve handler")
 
 
 def _version_key() -> safe.VersionKey:

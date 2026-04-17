@@ -23,6 +23,7 @@ import atr.blueprints.get as get
 import atr.db.interaction as interaction
 import atr.form
 import atr.htm as htm
+import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -70,20 +71,24 @@ async def selected(  # noqa: C901
         if task_mid:
             async with storage.write(session) as write:
                 wagp = write.as_general_public()
-                archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient)
+                try:
+                    archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient, strict=True)
+                except util.FetchError as e:
+                    log.warning(f"Vote thread lookup unavailable for {project_key}/{version_key}: {e}")
+                    fetch_error = _archive_lookup_error()
 
     if archive_url:
         thread_id = archive_url.split("/")[-1]
         if thread_id:
             try:
                 committee = await tabulate.vote_committee(thread_id, release)
-            except util.FetchError as e:
-                fetch_error = f"Failed to fetch thread metadata: {e}"
-            else:
                 details = await tabulate.vote_details(committee, thread_id, release)
+            except (util.FetchError, ValueError) as e:
+                log.warning(f"Automatic vote tabulation unavailable for {project_key}/{version_key}: {e}")
+                fetch_error = _tabulation_error(e)
         else:
             fetch_error = "The vote thread could not yet be found."
-    else:
+    elif fetch_error is None:
         fetch_error = "The vote thread could not yet be found."
 
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
@@ -155,4 +160,24 @@ async def selected(  # noqa: C901
         vote_end=vote_end,
         pass_fail_allowed=pass_fail_allowed,
         bypass_active=bypass_active,
+    )
+
+
+def _archive_lookup_error() -> str:
+    return (
+        "ATR could not look up the archived vote thread on lists.apache.org. "
+        "Please review the vote manually and continue below."
+    )
+
+
+def _tabulation_error(error: util.FetchError | ValueError) -> str:
+    if isinstance(error, util.FetchError):
+        return (
+            "ATR could not retrieve the archived vote thread from lists.apache.org, "
+            "so automatic vote tabulation is unavailable. Please review the vote manually "
+            "and continue below."
+        )
+    return (
+        "ATR could not tabulate the archived vote thread automatically. "
+        "Please review the vote manually and continue below."
     )
