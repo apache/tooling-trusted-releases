@@ -653,6 +653,7 @@ async def _render_trusted_vote_authenticated(
         _render_vote_delivery(
             page,
             archive_url,
+            release,
             vote_recipient,
             trusted_vote=True,
             recast=latest_ballot is not None,
@@ -695,7 +696,7 @@ async def _render_vote_authenticated(
 
     potency = binding_word if is_binding else non_binding_word
     _render_binding_status(page, is_binding, binding_committee, vote_round)
-    _render_vote_delivery(page, archive_url, vote_recipient, trusted_vote=False)
+    _render_vote_delivery(page, archive_url, release, vote_recipient, trusted_vote=False)
     vote_widget = _vote_decision_widget(potency)
     await _append_cast_vote_form(page, release, vote_widget)
 
@@ -703,6 +704,7 @@ async def _render_vote_authenticated(
 def _render_vote_delivery(
     page: htm.Block,
     archive_url: str | None,
+    release: sql.Release,
     vote_recipient: str,
     *,
     trusted_vote: bool,
@@ -731,6 +733,8 @@ def _render_vote_delivery(
         ]
     else:
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
+    if banner := render.archived_project_banner(release.project):
+        page.append(banner)
 
 
 def _render_vote_manual(page: htm.Block) -> None:

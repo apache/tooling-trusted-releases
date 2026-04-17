@@ -116,6 +116,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.project.key = "proj"
     release.version = "1.0"
@@ -172,6 +173,7 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.project.key = "proj"
     release.version = "1.0"
@@ -225,6 +227,7 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
 async def test_phase_gate_rejects_mismatched_phase():
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE
+    release.project.status = sql.ProjectStatus.ACTIVE
 
     mock_session = _mock_db_session(release)
     participant = _make_participant()
@@ -248,6 +251,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
     release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
@@ -326,6 +330,7 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
     release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
@@ -413,6 +418,7 @@ async def test_quarantine_stores_prior_revision_key_from_lock(tmp_path: pathlib.
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
     release.key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()

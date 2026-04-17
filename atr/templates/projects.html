@@ -71,9 +71,7 @@
             </div>
           {% endif %}
 
-            {# TODO: Could add "or is_viewing_as_admin_fn(current_user.uid)" #}
-            {# But then the page is noisy for admins #}
-          {% if project.created_by == current_user.uid %}<div class="mt-3 position-relative z-1">{{ delete_forms[project.key] }}</div>{% endif %}
+          {% if project.key in action_forms %}<div class="mt-3 position-relative z-1">{{ action_forms[project.key] }}</div>{% endif %}
 
         </div>
       </div>

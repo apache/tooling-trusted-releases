@@ -22,11 +22,14 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.db as db
 import atr.get as get
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
+import atr.util as util
 import atr.web as web
 
 if TYPE_CHECKING:
@@ -61,6 +64,47 @@ async def add_project(
     return await session.redirect(
         get.projects.view, project_key=label, success=f"Project '{display_name}' added successfully."
     )
+
+
+@post.typed
+async def archive(
+    session: web.Committer,
+    _project_archive: Literal["project/archive"],
+    archive_selected_project_form: shared.projects.ArchiveSelectedProject,
+) -> web.WerkzeugResponse:
+    """
+    URL: /project/archive
+    Archive a project as a PMC member. Any draft releases are deleted first - they
+    would otherwise be stranded, because release.delete rejects once a project is retired.
+    """
+    project_key = archive_selected_project_form.project_key
+
+    # Pull the draft list up front so we can both delete them and report a count
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), _releases=True).get()
+        draft_versions: list[safe.VersionKey] = (
+            [
+                safe.VersionKey(r.version)
+                for r in project.releases
+                if r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+            ]
+            if project is not None
+            else []
+        )
+
+    async with storage.write(session) as write:
+        wacm = await write.as_project_committee_member(project_key)
+        try:
+            for version in draft_versions:
+                await wacm.release.delete(project_key, version)
+            await wacm.project.archive(project_key)
+        except storage.AccessError as e:
+            return await session.redirect(get.projects.projects, error=f"Error archiving project: {e}")
+
+    success = f"Project '{project_key}' archived successfully."
+    if draft_versions:
+        success += f" Deleted {util.plural(len(draft_versions), 'draft release')}."
+    return await session.redirect(get.projects.projects, success=success)
 
 
 @post.typed

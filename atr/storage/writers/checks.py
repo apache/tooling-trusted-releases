@@ -185,6 +185,7 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError(f"Project {project_key} not found", status=404)
         if project.committee_key != self.__committee_key:
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
 
 
 def _validate_ignore_patterns(*patterns: str | None) -> None:
