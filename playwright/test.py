@@ -595,7 +595,6 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
         test_session_01_banned_user_is_rejected,
         test_session_02_recheck_allows_active_user,
     ]
-
     # Order between our tests must be preserved
     # Insertion order is reliable since Python 3.6
     # Therefore iteration over tests matches the insertion order above

@@ -22,6 +22,7 @@ from typing import Any, Final, Literal
 import aiofiles.os
 import asfquart.base as base
 import openpgp
+import pydantic
 import quart
 import quart_rate_limiter as rate_limiter
 import quart_schema
@@ -1883,6 +1884,69 @@ def _issuer_matches_component(
     fingerprint_matches = (not issuer_fingerprints) or (fingerprint in issuer_fingerprints)
     key_id_matches = (not issuer_key_ids) or (key_id in issuer_key_ids)
     return fingerprint_matches and key_id_matches
+
+
+class TestProjectStatusArgs(pydantic.BaseModel):
+    project_key: safe.ProjectKey
+
+
+@api.typed
+@api.auth.public
+async def test_activate_project(
+    _test_activate_project: Literal["test/activate-project"],
+    data: TestProjectStatusArgs,
+) -> DictResponse:
+    """
+    URL: POST /test/activate-project
+
+    Restore a project to ACTIVE status (test mode only).
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+    async with db.session() as session:
+        project = await session.project(key=str(data.project_key)).get()
+        if not project:
+            return quart.abort(404)
+        project = await session.merge(project)
+        project.status = sql.ProjectStatus.ACTIVE
+        await session.commit()
+    return {"ok": True, "project_key": str(data.project_key)}, 200
+
+
+@api.typed
+@api.auth.public
+async def test_archive_project(
+    _test_archive_project: Literal["test/archive-project"],
+    data: TestProjectStatusArgs,
+) -> DictResponse:
+    """
+    URL: POST /test/archive-project
+
+    Set a project to RETIRED status (test mode only).
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+    async with db.session() as session:
+        project = await session.project(key=str(data.project_key)).get()
+        if not project:
+            return quart.abort(404)
+        project = await session.merge(project)
+        project.status = sql.ProjectStatus.RETIRED
+        await session.commit()
+    return {"ok": True, "project_key": str(data.project_key)}, 200
+
+
+def _committee_keys_path(committee: sql.Committee) -> safe.StatePath:
+    downloads_dir = paths.get_downloads_dir()
+    if committee.is_podling:
+        return downloads_dir / "incubator" / committee.key / "KEYS"
+    return downloads_dir / committee.key / "KEYS"
+
+
+def _committee_keys_url(host: str, committee: sql.Committee) -> str:
+    if committee.is_podling:
+        return f"https://{host}/downloads/incubator/{committee.key}/KEYS"
+    return f"https://{host}/downloads/{committee.key}/KEYS"
 
 
 def _jwt_asf_uid() -> str:

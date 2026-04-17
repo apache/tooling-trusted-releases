@@ -177,6 +177,7 @@ class CommitteeParticipant(FoundationCommitter):
         release = await self.__data.release(
             project_key=str(project_key), version=str(version), phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
+        storage.ensure_project_active(release.project)
         release_dirs = [
             paths.release_directory_base(release),
             paths.get_attestable_dir() / str(project_key) / str(version),
@@ -393,6 +394,10 @@ class CommitteeParticipant(FoundationCommitter):
         svn_revision: str,
         target_subdirectory: safe.RelPath | None,
     ) -> sql.Task:
+        project = await self.__data.project(key=str(project_key)).demand(
+            storage.AccessError(f"Project '{project_key}' not found.")
+        )
+        storage.ensure_project_active(project)
         task_args = {
             "svn_url": svn_url,
             "revision": svn_revision,
@@ -496,6 +501,7 @@ class CommitteeParticipant(FoundationCommitter):
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found", status=404))
+        storage.ensure_project_active(release_for_pre_checks.project)
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number

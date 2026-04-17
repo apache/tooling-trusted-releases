@@ -203,6 +203,9 @@ async def _render_page(
         htm.em[release.version],
     ]
 
+    if banner := shared.web.archived_project_banner(release.project):
+        page.append(banner)
+
     page.div(".px-3.py-4.mb-4.bg-light.border.rounded")[
         htm.p(".mb-0")[
             "Starting a vote for this draft release will cause an email to be sent to the appropriate mailing list, "

@@ -528,3 +528,9 @@ async def write_as_project_committee_member(
 ) -> AsyncGenerator[WriteAsCommitteeMember]:
     async with write(asf_uid) as w:
         yield await w.as_project_committee_member(project_key)
+
+
+def ensure_project_active(project: sql.Project) -> None:
+    if project.status == sql.ProjectStatus.ACTIVE:
+        return
+    raise AccessError(f"Project '{project.key}' is archived; release actions are disabled.")

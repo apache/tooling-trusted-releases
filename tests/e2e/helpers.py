@@ -29,6 +29,13 @@ def api_get(request: APIRequestContext, path: str) -> dict[str, Any]:
     return response.json()
 
 
+def api_post(request: APIRequestContext, path: str, data: dict[str, Any]) -> dict[str, Any]:
+    response = request.post(f"{_ATR_BASE_URL}{path}", data=data)
+    if not response.ok:
+        raise RuntimeError(f"POST {path} failed with status {response.status}: {response.text()}")
+    return response.json()
+
+
 def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> None:
     release_key = f"{project_key}-{version_key}"
     visit(page, "/admin/delete-release")

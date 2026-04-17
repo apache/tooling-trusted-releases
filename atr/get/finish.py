@@ -310,6 +310,9 @@ async def _render_page(
         htm.em[release.version],
     ]
 
+    if banner := shared.web.archived_project_banner(release.project):
+        page.append(banner)
+
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
 

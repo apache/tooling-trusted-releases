@@ -41,6 +41,10 @@ type TarEntry = tuple[str, str, bytes | str]
 @pytest.mark.asyncio
 async def test_clear_quarantine_raises_when_not_found():
     mock_data = mock.AsyncMock()
+    active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE)
+    active_project_query = mock.MagicMock()
+    active_project_query.demand = mock.AsyncMock(return_value=active_project)
+    mock_data.project = mock.MagicMock(return_value=active_project_query)
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=None)
     mock_data.quarantined = mock.MagicMock(return_value=mock_query)
@@ -59,6 +63,10 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
     quarantined_row.status = sql.QuarantineStatus.FAILED
 
     mock_data = mock.AsyncMock()
+    active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE)
+    active_project_query = mock.MagicMock()
+    active_project_query.demand = mock.AsyncMock(return_value=active_project)
+    mock_data.project = mock.MagicMock(return_value=active_project_query)
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=quarantined_row)
     mock_data.quarantined = mock.MagicMock(return_value=mock_query)
@@ -436,6 +444,7 @@ async def test_set_tag_raises_404_when_revision_missing():
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=None)
     mock_data.revision = mock.MagicMock(return_value=mock_query)
+    _attach_active_release(mock_data)
 
     writer = _make_revision_writer(mock_data)
     with pytest.raises(base.ASFQuartException, match="Revision 00001 not found") as exc_info:
@@ -474,6 +483,7 @@ async def test_set_tag_rejects_revision_with_existing_tag():
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=revision_row)
     mock_data.revision = mock.MagicMock(return_value=mock_query)
+    _attach_active_release(mock_data)
 
     writer = _make_revision_writer(mock_data)
     with pytest.raises(storage.AccessError, match="already has a tag and cannot be changed"):
@@ -490,6 +500,7 @@ async def test_set_tag_updates_untagged_revision():
     update_result = mock.MagicMock()
     update_result.rowcount = 1
     mock_data.execute = mock.AsyncMock(return_value=update_result)
+    _attach_active_release(mock_data)
 
     writer, mock_write_as = _make_revision_writer_pair(mock_data)
     await writer.set_tag(safe.ProjectKey("proj"), safe.VersionKey("1.0"), "00001", "rc1")
@@ -606,6 +617,14 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
         row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.key, str(quarantine_dir)
     )
     mock_mark.assert_not_awaited()
+
+
+def _attach_active_release(mock_data: mock.AsyncMock) -> None:
+    active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE)
+    release = mock.MagicMock(project=active_project)
+    release_query = mock.MagicMock()
+    release_query.demand = mock.AsyncMock(return_value=release)
+    mock_data.release = mock.MagicMock(return_value=release_query)
 
 
 def _make_quarantined_row() -> mock.MagicMock:
