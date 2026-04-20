@@ -60,7 +60,7 @@ def test_deduplicate_quarantine_archives_tgz_normalises_to_tar_gz():
 def test_detect_archives_requiring_quarantine_known_hash_and_different_extension():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tgz": "h1"},
-        hashes={"h1": models.HashEntry(size=100, uploaders=[("alice", "00001")], basenames=["old-src.tgz"])},
+        hashes={"h1": models.HashEntryV1(size=100, uploaders=[("alice", "00001")], basenames=["old-src.tgz"])},
         policy={},
     )
 
@@ -76,7 +76,7 @@ def test_detect_archives_requiring_quarantine_known_hash_and_same_extension():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h1"},
         hashes={
-            "h1": models.HashEntry(
+            "h1": models.HashEntryV1(
                 size=100,
                 uploaders=[("alice", "00001")],
                 basenames=["apache-widget-0.9-src.tar.gz"],
@@ -94,7 +94,7 @@ def test_detect_archives_requiring_quarantine_known_hash_and_same_extension():
 
 
 def test_detect_archives_requiring_quarantine_missing_historical_basenames():
-    hash_entry = models.HashEntry(size=100, uploaders=[("alice", "00001")])
+    hash_entry = models.HashEntryV1(size=100, uploaders=[("alice", "00001")])
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h1"},
         hashes={"h1": hash_entry},
@@ -113,7 +113,13 @@ def test_detect_archives_requiring_quarantine_missing_historical_basenames():
 def test_detect_archives_requiring_quarantine_new_hash_new_extension():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h_old"},
-        hashes={"h_old": models.HashEntry(size=100, uploaders=[("alice", "00001")], basenames=["old-src.tar.gz"])},
+        hashes={
+            "h_old": models.HashEntryV1(
+                size=100,
+                uploaders=[("alice", "00001")],
+                basenames=["old-src.tar.gz"],
+            )
+        },
         policy={},
     )
 
@@ -149,7 +155,7 @@ def test_detect_archives_requiring_quarantine_tgz_and_tar_gz_are_equivalent():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h1"},
         hashes={
-            "h1": models.HashEntry(
+            "h1": models.HashEntryV1(
                 size=100,
                 uploaders=[("alice", "00001")],
                 basenames=["apache-widget-1.0-src.tar.gz"],

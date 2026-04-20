@@ -335,16 +335,16 @@ def _compute_hashes_with_attribution(  # noqa: C901
     previous: models.Attestable | None,
     uploader_uid: str,
     revision_number: safe.RevisionNumber,
-) -> dict[str, models.HashEntry]:
+) -> dict[str, models.HashEntryV2]:
     previous_hash_to_paths: dict[str, set[str]] = {}
     if previous is not None:
         for path_key, hash_ref in path_hashes(previous).items():
             previous_hash_to_paths.setdefault(hash_ref, set()).add(path_key)
 
-    new_hashes: dict[str, models.HashEntry] = {}
+    new_hashes: dict[str, models.HashEntryV2] = {}
     if previous is not None:
         for hash_key, hash_entry in previous.hashes.items():
-            new_hashes[hash_key] = hash_entry.model_copy(deep=True)
+            new_hashes[hash_key] = models.HashEntryV2.model_validate(hash_entry.model_dump())
 
     for hash_ref, current_paths in current_hash_to_paths.items():
         previous_paths = previous_hash_to_paths.get(hash_ref, set())
@@ -353,7 +353,7 @@ def _compute_hashes_with_attribution(  # noqa: C901
         current_basenames = {_path_basename(str(path_key)) for path_key in current_paths}
 
         if hash_ref not in new_hashes:
-            new_hashes[hash_ref] = models.HashEntry(
+            new_hashes[hash_ref] = models.HashEntryV2(
                 size=file_size,
                 uploaders=[(uploader_uid, str(revision_number))],
                 basenames=sorted(current_basenames),

@@ -21,28 +21,34 @@ import pydantic
 
 from . import schema
 
+# We bump versions of all "trees" of classes together
+# We only bump when a field type changes, or a field is removed
+# We don't bump when a field is added
 
-class HashEntry(schema.Strict):
+
+# Attestable, v1
+
+
+class HashEntryV1(schema.Strict):
     size: int
     uploaders: list[Annotated[tuple[str, str], pydantic.BeforeValidator(tuple)]]
     basenames: list[str] = schema.factory(list)
 
 
-class AttestableChecksV1(schema.Strict):
-    version: Literal[1] = 1
-    checks: list[int] = schema.factory(list)
-
-
-class AttestableChecksV2(schema.Strict):
-    version: Literal[2] = 2
-    checks: dict[str, dict[str, str]] = schema.factory(dict)
-
-
 class AttestableV1(schema.Strict):
     version: Literal[1] = 1
     paths: dict[str, str] = schema.factory(dict)
-    hashes: dict[str, HashEntry] = schema.factory(dict)
+    hashes: dict[str, HashEntryV1] = schema.factory(dict)
     policy: dict[str, Any] = schema.factory(dict)
+
+
+# Attestable, v2
+
+
+class HashEntryV2(schema.Strict):
+    size: int
+    uploaders: list[Annotated[tuple[str, str], pydantic.BeforeValidator(tuple)]]
+    basenames: list[str] = schema.factory(list)
 
 
 class PathEntryV2(schema.Strict):
@@ -52,9 +58,33 @@ class PathEntryV2(schema.Strict):
 
 class AttestableV2(schema.Strict):
     version: Literal[2] = 2
-    hashes: dict[str, HashEntry] = schema.factory(dict)
+    hashes: dict[str, HashEntryV2] = schema.factory(dict)
     paths: dict[str, PathEntryV2] = schema.factory(dict)
     policy: dict[str, Any] = schema.factory(dict)
 
 
+# Attestable, any version
+
+
 type Attestable = AttestableV1 | AttestableV2
+
+
+# Attestable Checks, v1
+
+
+class AttestableChecksV1(schema.Strict):
+    version: Literal[1] = 1
+    checks: list[int] = schema.factory(list)
+
+
+# Attestable Checks, v2
+
+
+class AttestableChecksV2(schema.Strict):
+    version: Literal[2] = 2
+    checks: dict[str, dict[str, str]] = schema.factory(dict)
+
+
+# Attestable Checks, any version
+
+type AttestableChecks = AttestableChecksV1 | AttestableChecksV2

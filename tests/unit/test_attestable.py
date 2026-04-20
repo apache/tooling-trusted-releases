@@ -24,7 +24,7 @@ import atr.models.safe as safe
 
 def test_attestable_v2_round_trip():
     original = models.AttestableV2(
-        hashes={"h1": models.HashEntry(size=100, uploaders=[("alice", "00001")])},
+        hashes={"h1": models.HashEntryV2(size=100, uploaders=[("alice", "00001")])},
         paths={
             "a.tar.gz": models.PathEntryV2(content_hash="h1", classification="source"),
             "a.tar.gz.sha512": models.PathEntryV2(content_hash="h2", classification="metadata"),
@@ -67,14 +67,14 @@ async def test_generate_files_data_returns_attestable_v2():
     assert data.paths["apache-widget-1.0-src.tar.gz.sha512"].classification == "metadata"
 
 
-def test_hash_entry_basenames_round_trip():
-    entry = models.HashEntry(
+def test_hash_entry_v2_basenames_round_trip():
+    entry = models.HashEntryV2(
         size=123,
         uploaders=[("alice", "00001")],
         basenames=["apache-widget-1.0-src.tar.gz"],
     )
 
-    loaded = models.HashEntry.model_validate_json(entry.model_dump_json())
+    loaded = models.HashEntryV2.model_validate_json(entry.model_dump_json())
 
     assert loaded == entry
     assert loaded.basenames == ["apache-widget-1.0-src.tar.gz"]
@@ -84,7 +84,7 @@ async def test_hash_metadata_basenames_are_cumulative_and_unique():
     previous = models.AttestableV1(
         paths={"dist/apache-widget-1.0-src.tar.gz": "h1"},
         hashes={
-            "h1": models.HashEntry(
+            "h1": models.HashEntryV1(
                 size=100,
                 uploaders=[("alice", "00001")],
                 basenames=["apache-widget-1.0-src.tar.gz"],
@@ -118,6 +118,8 @@ async def test_hash_metadata_basenames_are_cumulative_and_unique():
     assert data.hashes["h1"].basenames == ["apache-widget-1.0-src.tar.gz", "apache-widget-1.0.zip"]
     assert data.hashes["h1"].uploaders == [("alice", "00001"), ("bob", "00002")]
     assert data.hashes["h2"].basenames == ["readme.txt"]
+    assert isinstance(data.hashes["h1"], models.HashEntryV2)
+    assert isinstance(data.hashes["h2"], models.HashEntryV2)
 
 
 def test_parse_attestable_v1():
