@@ -146,6 +146,37 @@ def compute_file_state_rows(
     return rows
 
 
+def effective_path_provenance(
+    path_provenance: dict[safe.RelPath, models.ProvenanceV2] | None,
+    path_to_hash: dict[safe.RelPath, str],
+    previous: models.Attestable | None,
+) -> dict[str, models.ProvenanceV2]:
+    result: dict[str, models.ProvenanceV2] = {}
+    caller: dict[str, models.ProvenanceV2] = {}
+    if path_provenance is not None:
+        caller = {str(path_key): value for path_key, value in path_provenance.items()}
+    prev_v2: models.AttestableV2 | None = previous if isinstance(previous, models.AttestableV2) else None
+    for path_key, content_hash in path_to_hash.items():
+        path_str = str(path_key)
+        # Use the provenance from the caller, if provided
+        if (caller_entry := caller.get(path_str)) is not None:
+            result[path_str] = caller_entry
+            continue
+        if prev_v2 is None:
+            continue
+        prev_entry = prev_v2.paths.get(path_str)
+        # Skip the path if it is not in the previous attestable data
+        if prev_entry is None:
+            continue
+        if prev_entry.content_hash != content_hash:
+            continue
+        if prev_entry.provenance is None:
+            continue
+        # Otherwise, we use the provenance from the previous attestable
+        result[path_str] = prev_entry.provenance
+    return result
+
+
 def github_tp_payload_path(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision_number: safe.RevisionNumber
 ) -> safe.StatePath:
@@ -253,6 +284,13 @@ def path_hashes(attestable: models.Attestable) -> dict[str, str]:
     return dict(attestable.paths)
 
 
+def path_provenance(attestable: models.Attestable, path_key: str) -> models.ProvenanceV2 | None:
+    if isinstance(attestable, models.AttestableV2):
+        entry = attestable.paths.get(path_key)
+        return entry.provenance if (entry is not None) else None
+    return None
+
+
 async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[safe.RelPath, str], dict[safe.RelPath, int]]:
     path_to_hash: dict[safe.RelPath, str] = {}
     path_to_size: dict[safe.RelPath, int] = {}
@@ -301,6 +339,7 @@ async def write_files_data(
     path_to_size: dict[safe.RelPath, int],
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
+    effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
 ) -> None:
     result = await _generate_files_data(
         path_to_hash,
@@ -311,6 +350,7 @@ async def write_files_data(
         previous,
         base_path,
         classifications=classifications,
+        effective_path_provenance=effective_path_provenance,
     )
     file_path = attestable_path(project_key, version_key, revision_number)
     await _atomic_write_readonly(file_path.path, result.model_dump_json(indent=2))
@@ -383,6 +423,7 @@ async def _generate_files_data(
     previous: models.Attestable | None,
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
+    effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
 ) -> models.AttestableV2:
     current_hash_to_paths: dict[str, set[safe.RelPath]] = {}
     for path_key, hash_ref in path_to_hash.items():
@@ -394,10 +435,15 @@ async def _generate_files_data(
 
     if classifications is None:
         classifications = await compute_classifications(path_to_hash, release_policy, base_path)
+    provenance_map = effective_path_provenance or {}
     return models.AttestableV2(
         hashes=dict(new_hashes),
         paths={
-            str(path_key): models.PathEntryV2(content_hash=hash_ref, classification=classifications[path_key])
+            str(path_key): models.PathEntryV2(
+                content_hash=hash_ref,
+                classification=classifications[path_key],
+                provenance=provenance_map.get(str(path_key)),
+            )
             for path_key, hash_ref in path_to_hash.items()
         },
         policy=release_policy or {},

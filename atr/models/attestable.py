@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import enum
 from typing import Annotated, Any, Literal
 
 import pydantic
@@ -51,9 +52,19 @@ class HashEntryV2(schema.Strict):
     basenames: list[str] = schema.factory(list)
 
 
+class GeneratorV2(enum.Enum):
+    SHA512_FROM_SIGNATURE = "SHA512_from_signature"
+
+
+class ProvenanceV2(schema.Strict):
+    generator: GeneratorV2
+    metadata: dict[str, Any] = schema.factory(dict)
+
+
 class PathEntryV2(schema.Strict):
     content_hash: str
     classification: str
+    provenance: ProvenanceV2 | None = None
 
 
 class AttestableV2(schema.Strict):
