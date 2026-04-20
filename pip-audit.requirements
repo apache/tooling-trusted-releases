@@ -114,7 +114,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.28.0
+filelock==3.29.0
     # via
     #   python-discovery
     #   virtualenv
@@ -152,7 +152,7 @@ hyperframe==6.1.0
     # via h2
 hyperscan==0.8.2
     # via tooling-trusted-releases
-identify==2.6.18
+identify==2.6.19
     # via pre-commit
 idna==3.11
     # via
