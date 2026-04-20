@@ -1363,6 +1363,9 @@ class ReleaseFileState(sqlmodel.SQLModel, table=True):
     present: bool = sqlmodel.Field(**example(True))
     content_hash: str | None = sqlmodel.Field(default=None, **example("blake3:7f83b1657ff1fc..."))
     classification: str | None = sqlmodel.Field(default=None, **example("source"))
+    provenance: dict[str, Any] | None = sqlmodel.Field(
+        default=None, sa_column=sqlalchemy.Column(SafeJSON, nullable=True)
+    )
 
     __table_args__ = (
         sqlalchemy.ForeignKeyConstraint(
@@ -1375,7 +1378,7 @@ class ReleaseFileState(sqlmodel.SQLModel, table=True):
             (
                 (present = 1 AND content_hash IS NOT NULL AND classification IS NOT NULL)
                 OR
-                (present = 0 AND content_hash IS NULL AND classification IS NULL)
+                (present = 0 AND content_hash IS NULL AND classification IS NULL AND provenance IS NULL)
             )
             """,
             name="valid_release_file_state",

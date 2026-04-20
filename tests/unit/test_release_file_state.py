@@ -84,6 +84,33 @@ def test_compute_file_state_rows_changed_hash():
     assert rows[0].classification == "metadata"
 
 
+def test_compute_file_state_rows_changed_provenance():
+    provenance = models.ProvenanceV2(
+        generator=models.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={"initiated_by": "alice", "source_paths": ["app.tar.gz"]},
+    )
+    previous = models.AttestableV2(
+        paths={
+            "app.tar.gz.sha512": models.PathEntryV2(content_hash="hash1", classification="metadata"),
+        },
+    )
+    rows = attestable.compute_file_state_rows(
+        "example-0.0.1",
+        2,
+        {"app.tar.gz.sha512": "hash1"},
+        {"app.tar.gz.sha512": "metadata"},
+        previous,
+        effective_path_provenance={"app.tar.gz.sha512": provenance},
+    )
+
+    assert len(rows) == 1
+    assert rows[0].path == "app.tar.gz.sha512"
+    assert rows[0].present is True
+    assert rows[0].content_hash == "hash1"
+    assert rows[0].classification == "metadata"
+    assert rows[0].provenance == provenance.model_dump(mode="json")
+
+
 def test_compute_file_state_rows_deleted_path():
     previous = models.AttestableV2(
         paths={
@@ -97,6 +124,26 @@ def test_compute_file_state_rows_deleted_path():
     assert rows[0].present is False
     assert rows[0].content_hash is None
     assert rows[0].classification is None
+    assert rows[0].provenance is None
+
+
+def test_compute_file_state_rows_deleted_path_with_previous_provenance():
+    provenance = models.ProvenanceV2(
+        generator=models.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={"initiated_by": "alice", "source_paths": ["old-file.tar.gz"]},
+    )
+    previous = models.AttestableV2(
+        paths={
+            "old-file.tar.gz.sha512": models.PathEntryV2(
+                content_hash="hash1", classification="metadata", provenance=provenance
+            ),
+        },
+    )
+    rows = attestable.compute_file_state_rows("example-0.0.1", 2, {}, {}, previous)
+
+    assert len(rows) == 1
+    assert rows[0].present is False
+    assert rows[0].provenance is None
 
 
 def test_compute_file_state_rows_new_path():
@@ -166,6 +213,7 @@ def test_release_file_state_deleted():
     assert state.present is False
     assert state.content_hash is None
     assert state.classification is None
+    assert state.provenance is None
 
 
 def test_release_file_state_present():
@@ -184,3 +232,25 @@ def test_release_file_state_present():
     assert state.present is True
     assert state.content_hash == "blake3:7f83b1657ff1fc"
     assert state.classification == "source"
+    assert state.provenance is None
+
+
+def test_release_file_state_present_with_provenance():
+    provenance_payload = {
+        "generator": "SHA512_from_signature",
+        "metadata": {
+            "initiated_by": "alice",
+            "source_paths": ["apache-example-0.0.1-src.tar.gz"],
+        },
+    }
+    state = sql.ReleaseFileState(
+        release_key="example-0.0.1",
+        path="apache-example-0.0.1-src.tar.gz.sha512",
+        since_revision_seq=1,
+        present=True,
+        content_hash="blake3:def",
+        classification="metadata",
+        provenance=provenance_payload,
+    )
+
+    assert state.provenance == provenance_payload

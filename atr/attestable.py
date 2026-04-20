@@ -102,22 +102,40 @@ def compute_file_state_rows(
     path_to_hash: dict[safe.RelPath, str],
     classifications: dict[safe.RelPath, str],
     previous: models.Attestable | None,
+    effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
 ) -> list[sql.ReleaseFileState]:
+    # This function is called when committing a new revision
+    # It's called after writing attestable data to attestable files
+    # Now we add some of that same data to ReleaseFileState rows
+    # We then return those rows for actually adding to the database
     prev_hashes: dict[str, str] = {}
     prev_classifications: dict[str, str] = {}
+    prev_provenance: dict[str, models.ProvenanceV2 | None] = {}
     if previous is not None:
         prev_hashes = path_hashes(previous)
         if isinstance(previous, models.AttestableV2):
             prev_classifications = {path_key: entry.classification for path_key, entry in previous.paths.items()}
+            prev_provenance = {path_key: entry.provenance for path_key, entry in previous.paths.items()}
 
+    effective = effective_path_provenance or {}
     rows: list[sql.ReleaseFileState] = []
 
+    # ReleaseFileState only reflects attestable path state, i.e. omitting hashes and policy
+    # Also, we only record new rows when the metadata changes
+    # But in attestable files, we record the data always, for each revision
     for path_key in sorted(path_to_hash, key=str):
         path_str = str(path_key)
         content_hash = path_to_hash[path_key]
         classification = classifications[path_key]
+        provenance_entry = effective.get(path_str)
+        provenance_payload = provenance_entry.model_dump(mode="json") if (provenance_entry is not None) else None
+        prev_provenance_entry = prev_provenance.get(path_str)
         # If all prior metadata properties are the same, we skip recording an event
-        if (prev_hashes.get(path_str) == content_hash) and (prev_classifications.get(path_str) == classification):
+        if (
+            (prev_hashes.get(path_str) == content_hash)
+            and (prev_classifications.get(path_str) == classification)
+            and (prev_provenance_entry == provenance_entry)
+        ):
             continue
         rows.append(
             sql.ReleaseFileState(
@@ -127,6 +145,7 @@ def compute_file_state_rows(
                 present=True,
                 content_hash=content_hash,
                 classification=classification,
+                provenance=provenance_payload,
             )
         )
     str_keys = {str(k) for k in path_to_hash}
@@ -140,6 +159,7 @@ def compute_file_state_rows(
                     present=False,
                     content_hash=None,
                     classification=None,
+                    provenance=None,
                 )
             )
 

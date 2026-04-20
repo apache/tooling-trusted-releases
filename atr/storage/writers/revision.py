@@ -90,6 +90,7 @@ async def finalise_revision(
     temp_dir_path: pathlib.Path,
     version_key: safe.VersionKey,
     was_quarantined: bool = False,
+    path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -126,6 +127,7 @@ async def finalise_revision(
         temp_dir=temp_dir,
         version_key=version_key,
         was_quarantined=was_quarantined,
+        path_provenance=path_provenance,
     )
 
 
@@ -144,6 +146,7 @@ async def _commit_new_revision(
     temp_dir: str,
     version_key: safe.VersionKey,
     was_quarantined: bool = False,
+    path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
 ) -> sql.Revision:
     try:
         # This is the only place where models.Revision is constructed
@@ -198,6 +201,7 @@ async def _commit_new_revision(
     classifications = await attestable.compute_classifications(
         path_to_hash, policy_dict, new_revision_dir, archives_base
     )
+    effective_provenance = attestable.effective_path_provenance(path_provenance, path_to_hash, previous_attestable)
 
     await attestable.write_files_data(
         project_key,
@@ -210,6 +214,7 @@ async def _commit_new_revision(
         path_to_size,
         new_revision_dir,
         classifications=classifications,
+        effective_path_provenance=effective_provenance,
     )
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):
@@ -219,6 +224,7 @@ async def _commit_new_revision(
             path_to_hash,
             classifications,
             previous_attestable,
+            effective_path_provenance=effective_provenance,
         ):
             data.add(row)
 
@@ -381,7 +387,11 @@ class CommitteeParticipant(FoundationCommitter):
         description: str | None = None,
         set_local_cache: bool = False,
         reset_to_global_cache: bool = False,
-        modify: Callable[[safe.StatePath, sql.Revision | None], Awaitable[None]] | None = None,
+        modify: Callable[
+            [safe.StatePath, sql.Revision | None],
+            Awaitable[dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None],
+        ]
+        | None = None,
         clone_from: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
@@ -414,6 +424,7 @@ class CommitteeParticipant(FoundationCommitter):
         prefix_token = secrets.token_hex(16)
         temp_dir: str = await asyncio.to_thread(tempfile.mkdtemp, prefix=prefix_token + "-", dir=paths.get_tmp_dir())
         temp_dir_path = safe.StatePath(pathlib.Path(temp_dir), paths.get_tmp_dir().path)
+        path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None
 
         try:
             # The directory was created by mkdtemp, but it's empty
@@ -422,7 +433,7 @@ class CommitteeParticipant(FoundationCommitter):
                 await util.create_hard_link_clone(old_release_dir, temp_dir_path, do_not_create_dest_dir=True)
             # The directory is either empty or its files are hard linked to the previous revision
             if modify is not None:
-                await modify(temp_dir_path, old_revision)
+                path_provenance = await modify(temp_dir_path, old_revision)
         except types.FailedError:
             await aioshutil.rmtree(temp_dir)
             raise
@@ -535,6 +546,7 @@ class CommitteeParticipant(FoundationCommitter):
                 release_key=release_key,
                 temp_dir=temp_dir,
                 version_key=version_key,
+                path_provenance=path_provenance,
             )
 
     async def _quarantine_archives(

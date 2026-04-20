@@ -311,6 +311,105 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
 
 
 @pytest.mark.asyncio
+async def test_modify_path_provenance_flows_into_write_files_data(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.release_policy = None
+    release.release_policy = None
+
+    import contextlib
+
+    import atr.models.attestable as attestable_models
+
+    provenance = attestable_models.ProvenanceV2(
+        generator=attestable_models.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={"initiated_by": "alice", "source_paths": ["example.tar.gz"]},
+    )
+    provenance_map: dict[safe.RelPath, attestable_models.ProvenanceV2] = {
+        safe.RelPath("example.tar.gz.sha512"): provenance,
+    }
+
+    async def modify(
+        path: safe.StatePath, old_rev: object
+    ) -> dict[safe.RelPath, attestable_models.ProvenanceV2] | None:
+        return provenance_map
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_key=None, new_number="00001")
+    write_files_data_mock = mock.AsyncMock()
+    compute_file_state_rows_mock = mock.MagicMock(return_value=[])
+
+    patches = [
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=None),
+        mock.patch.object(
+            revision.attestable,
+            "paths_to_hashes_and_sizes",
+            new_callable=mock.AsyncMock,
+            return_value=(
+                {
+                    safe.RelPath("example.tar.gz"): "blake3:src",
+                    safe.RelPath("example.tar.gz.sha512"): "blake3:hash",
+                },
+                {
+                    safe.RelPath("example.tar.gz"): 100,
+                    safe.RelPath("example.tar.gz.sha512"): 64,
+                },
+            ),
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new=write_files_data_mock),
+        mock.patch.object(revision.attestable, "compute_file_state_rows", new=compute_file_state_rows_mock),
+        mock.patch.object(
+            revision.attestable,
+            "compute_classifications",
+            new_callable=mock.AsyncMock,
+            return_value={
+                safe.RelPath("example.tar.gz"): "source",
+                safe.RelPath("example.tar.gz.sha512"): "metadata",
+            },
+        ),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
+        mock.patch.object(revision.merge, "merge", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision.tasks, "draft_checks", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
+        mock.patch.object(revision.paths, "get_archives_dir", return_value=temp_dir),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00001"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
+    ]
+
+    with contextlib.ExitStack() as stack:
+        for patch in patches:
+            stack.enter_context(patch)
+        await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            modify=modify,
+        )
+
+    assert write_files_data_mock.await_count == 1
+    forwarded = write_files_data_mock.await_args.kwargs.get("effective_path_provenance")
+    assert forwarded == {"example.tar.gz.sha512": provenance}
+    assert compute_file_state_rows_mock.call_count == 1
+    forwarded_rows = compute_file_state_rows_mock.call_args.kwargs.get("effective_path_provenance")
+    assert forwarded_rows == {"example.tar.gz.sha512": provenance}
+
+
+@pytest.mark.asyncio
 async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathlib.Path):
     temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
