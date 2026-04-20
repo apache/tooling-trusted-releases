@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import datetime
-import hashlib
 from typing import TYPE_CHECKING, Final
 
 import aiofiles.os
@@ -32,13 +31,17 @@ import sqlmodel
 import atr.analysis as analysis
 import atr.config as config
 import atr.db as db
+import atr.hashes as hashes
 import atr.log as log
 import atr.models.api as api
+import atr.models.attestable as attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
 import atr.storage.types as types
+import atr.tasks.checks as checks
+import atr.tasks.checks.signature as signature
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -48,6 +51,72 @@ if TYPE_CHECKING:
     import werkzeug.datastructures as datastructures
 
 SPECIAL_SUFFIXES: Final[frozenset[str]] = frozenset({".asc", ".sha256", ".sha512"})
+
+_SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
+
+
+def _normalise_signature_field(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if (not stripped) or (stripped.lower() in {"unknown", "not available"}):
+            return None
+        return stripped
+    if value is None:
+        return None
+    return str(value)
+
+
+async def _signature_provenance_metadata_for(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    parent_revision: sql.Revision | None,
+    signature_rel_path: pathlib.Path,
+) -> dict[str, str]:
+    if parent_revision is None:
+        raise types.FailedError("SHA512 generation requires a parent revision with a verified signature.")
+    release_key = sql.release_key(str(project_key), str(version_key))
+    parent_number = str(parent_revision.safe_number)
+    signature_rel_str = str(signature_rel_path)
+    async with db.session() as data:
+        check_results = await (
+            data.check_result(
+                release_key=release_key,
+                revision_number=parent_number,
+                checker=_SIGNATURE_CHECKER_KEY,
+                primary_rel_path=signature_rel_str,
+            )
+            .order_by(sql.validate_instrumented_attribute(sql.CheckResult.created).desc())
+            .all()
+        )
+    if not check_results:
+        log.info(
+            "SHA512 generation is waiting for signature verification"
+            f" release={release_key} revision={parent_number} path={signature_rel_str}"
+        )
+        raise types.FailedError(
+            "Signature verification has not completed yet for"
+            f" {signature_rel_path.name}. Please wait for checks to finish and try again."
+        )
+    latest = check_results[0]
+    latest_message = latest.message.strip() if isinstance(getattr(latest, "message", None), str) else None
+    log.info(
+        "SHA512 generation found signature check result"
+        f" release={release_key} revision={parent_number} path={signature_rel_str}"
+        f" status={latest.status.value} message={latest_message!r}"
+    )
+    if latest.status != sql.CheckResultStatus.SUCCESS:
+        if latest_message:
+            raise types.FailedError(f"Signature verification for {signature_rel_path.name} failed: {latest_message}")
+        raise types.FailedError(
+            "Signature verification for"
+            f" {signature_rel_path.name} is {latest.status.value}; cannot generate the SHA512 yet."
+        )
+    payload = latest.data if isinstance(latest.data, dict) else {}
+    metadata = {"signature_path": signature_rel_str}
+    for key in ("fingerprint", "key_id", "timestamp", "username"):
+        if (value := _normalise_signature_field(payload.get(key))) is not None:
+            metadata[key] = value
+    return metadata
 
 
 class GeneralPublic:
@@ -244,7 +313,9 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> None:
         description = "Hash generation through web interface"
 
-        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
+        async def modify(
+            path: safe.StatePath, old_rev: sql.Revision | None
+        ) -> dict[safe.RelPath, attestable.ProvenanceV2] | None:
             # Uses new_revision_number for logging only
             path_in_new_revision = path / rel_path
 
@@ -252,8 +323,10 @@ class CommitteeParticipant(FoundationCommitter):
             resolved = await asyncio.to_thread(path_in_new_revision.path.resolve)
             resolved.relative_to(await asyncio.to_thread(path.path.resolve))
 
-            hash_path_rel = rel_path.name + ".sha512"
-            hash_path_in_new_revision = path / rel_path.parent / hash_path_rel
+            hash_path_rel_name = rel_path.name + ".sha512"
+            hash_path_in_new_revision = path / rel_path.parent / hash_path_rel_name
+            signature_rel_path = rel_path.with_name(rel_path.name + ".asc")
+            signature_path_in_new_revision = path / signature_rel_path
 
             # Check that the source file exists in the new revision
             if not await aiofiles.os.path.exists(path_in_new_revision):
@@ -264,16 +337,36 @@ class CommitteeParticipant(FoundationCommitter):
             if await aiofiles.os.path.exists(hash_path_in_new_revision):
                 raise storage.AccessError("SHA512 file already exists")
 
-            # Read the source file from the new revision and compute the hash
-            hash_obj = hashlib.sha512()
-            async with aiofiles.open(path_in_new_revision, "rb") as f:
-                while chunk := await f.read(8192):
-                    hash_obj.update(chunk)
+            if not await aiofiles.os.path.exists(signature_path_in_new_revision):
+                raise types.FailedError(
+                    "SHA512 generation requires a detached OpenPGP signature at"
+                    f" {signature_rel_path!s}. Please upload the signature first."
+                )
 
-            # Write the hash file into the new revision
-            hash_value = hash_obj.hexdigest()
+            signature_metadata = await _signature_provenance_metadata_for(
+                project_key=project_key,
+                version_key=version_key,
+                parent_revision=old_rev,
+                signature_rel_path=signature_rel_path,
+            )
+
+            hash_value, source_content_hash = await hashes.compute_sha512_and_content_hash(path_in_new_revision.path)
+
             async with aiofiles.open(hash_path_in_new_revision, "w") as f:
                 await f.write(f"{hash_value}  {rel_path.name}\n")
+
+            generated_rel = safe.RelPath(str(rel_path.parent / hash_path_rel_name))
+            provenance = attestable.ProvenanceV2(
+                generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+                metadata={
+                    "initiated_by": self.__asf_uid,
+                    "signature_path": signature_metadata["signature_path"],
+                    "source_content_hashes": {str(rel_path): source_content_hash},
+                    "source_paths": [str(rel_path)],
+                    **{key: value for key, value in signature_metadata.items() if (key != "signature_path")},
+                },
+            )
+            return {generated_rel: provenance}
 
         await self.__write_as.revision.create_revision_with_quarantine(
             project_key,

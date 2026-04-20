@@ -273,6 +273,120 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.release_policy = None
+    release.release_policy = None
+    release_key = sql.release_key("proj", "1.0")
+
+    old_revision = mock.MagicMock()
+    old_revision.key = f"{release_key} 00005"
+    old_revision.number = "00005"
+    old_revision.safe_number = safe.RevisionNumber("00005")
+
+    intervening_revision = mock.MagicMock()
+    intervening_revision.key = f"{release_key} 00006"
+    intervening_revision.number = "00006"
+    intervening_revision.seq = 6
+    intervening_revision.safe_number = safe.RevisionNumber("00006")
+
+    import contextlib
+
+    import atr.models.attestable as attestable
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "signature_path": "example.tar.gz.asc",
+            "source_paths": ["example.tar.gz"],
+        },
+    )
+    provenance_map = {safe.RelPath("example.tar.gz.sha512"): provenance}
+
+    async def modify(path: safe.StatePath, old_rev: object) -> dict[safe.RelPath, attestable.ProvenanceV2] | None:
+        return provenance_map
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_key=f"{release_key} 00006", new_number="00007")
+    verify_mock = mock.AsyncMock()
+
+    patches = [
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=mock.MagicMock()),
+        mock.patch.object(
+            revision.attestable,
+            "paths_to_hashes_and_sizes",
+            new_callable=mock.AsyncMock,
+            return_value=(
+                {
+                    safe.RelPath("example.tar.gz"): "blake3:src",
+                    safe.RelPath("example.tar.gz.sha512"): "blake3:hash",
+                },
+                {
+                    safe.RelPath("example.tar.gz"): 100,
+                    safe.RelPath("example.tar.gz.sha512"): 64,
+                },
+            ),
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "compute_file_state_rows", return_value=[]),
+        mock.patch.object(
+            revision.attestable,
+            "compute_classifications",
+            new_callable=mock.AsyncMock,
+            return_value={
+                safe.RelPath("example.tar.gz"): "source",
+                safe.RelPath("example.tar.gz.sha512"): "metadata",
+            },
+        ),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(
+            revision.interaction,
+            "latest_revision",
+            new_callable=mock.AsyncMock,
+            side_effect=[old_revision, intervening_revision],
+        ),
+        mock.patch.object(revision.merge, "merge", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision, "_verify_provenance_sources_unchanged", new=verify_mock),
+        mock.patch.object(revision.tasks, "draft_checks", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
+        mock.patch.object(revision.paths, "get_archives_dir", return_value=temp_dir),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={"example.tar.gz": 1}),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00007"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
+    ]
+
+    with contextlib.ExitStack() as stack:
+        for patch in patches:
+            stack.enter_context(patch)
+        await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            modify=modify,
+        )
+
+    assert verify_mock.await_count == 1
+    assert verify_mock.await_args is not None
+    assert verify_mock.await_args.kwargs["path_provenance"] == provenance_map
+    assert verify_mock.await_args.kwargs["pre_merge_inodes"] == {"example.tar.gz": 1}
+
+
+@pytest.mark.asyncio
 async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Path):
     temp_dir = safe.StatePath(tmp_path)
     received_args: dict[str, object] = {}
@@ -483,6 +597,188 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     added_objects = [call.args[0] for call in safe_data.add.call_args_list]
     file_state_rows = [obj for obj in added_objects if isinstance(obj, sql.ReleaseFileState)]
     assert file_state_rows == []
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_accepts_stable_inode(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+    inode = source.stat().st_ino
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    await revision._verify_provenance_sources_unchanged(
+        temp_dir_path=safe.StatePath(tmp_path),
+        pre_merge_inodes={"artifact.tar.gz": inode},
+        path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+    )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_accepts_stable_signature(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+    signature = tmp_path / "artifact.tar.gz.asc"
+    signature.write_bytes(b"sig")
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "signature_path": "artifact.tar.gz.asc",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    await revision._verify_provenance_sources_unchanged(
+        temp_dir_path=safe.StatePath(tmp_path),
+        pre_merge_inodes={
+            "artifact.tar.gz": source.stat().st_ino,
+            "artifact.tar.gz.asc": signature.stat().st_ino,
+        },
+        path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+    )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_ignores_unrelated_file(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+    signature = tmp_path / "artifact.tar.gz.asc"
+    signature.write_bytes(b"sig")
+    source_inode = source.stat().st_ino
+    signature_inode = signature.stat().st_ino
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "signature_path": "artifact.tar.gz.asc",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    await revision._verify_provenance_sources_unchanged(
+        temp_dir_path=safe.StatePath(tmp_path),
+        pre_merge_inodes={
+            "artifact.tar.gz": source_inode,
+            "artifact.tar.gz.asc": signature_inode,
+            "unrelated.txt": 424242,
+        },
+        path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+    )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_rejects_missing_signature(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "signature_path": "artifact.tar.gz.asc",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
+        await revision._verify_provenance_sources_unchanged(
+            temp_dir_path=safe.StatePath(tmp_path),
+            pre_merge_inodes={
+                "artifact.tar.gz": source.stat().st_ino,
+                "artifact.tar.gz.asc": 123,
+            },
+            path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_rejects_missing_source(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
+        await revision._verify_provenance_sources_unchanged(
+            temp_dir_path=safe.StatePath(tmp_path),
+            pre_merge_inodes={"artifact.tar.gz": 123},
+            path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_rejects_replaced_signature(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+    signature = tmp_path / "artifact.tar.gz.asc"
+    signature.write_bytes(b"sig")
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "signature_path": "artifact.tar.gz.asc",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
+        await revision._verify_provenance_sources_unchanged(
+            temp_dir_path=safe.StatePath(tmp_path),
+            pre_merge_inodes={
+                "artifact.tar.gz": source.stat().st_ino,
+                "artifact.tar.gz.asc": signature.stat().st_ino + 999,
+            },
+            path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_provenance_sources_unchanged_rejects_replaced_source(tmp_path: pathlib.Path):
+    import atr.models.attestable as attestable
+
+    source = tmp_path / "artifact.tar.gz"
+    source.write_bytes(b"payload")
+    stale_inode = source.stat().st_ino + 999
+
+    provenance = attestable.ProvenanceV2(
+        generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
+        metadata={
+            "initiated_by": "alice",
+            "source_content_hashes": {"artifact.tar.gz": "blake3:x"},
+            "source_paths": ["artifact.tar.gz"],
+        },
+    )
+    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
+        await revision._verify_provenance_sources_unchanged(
+            temp_dir_path=safe.StatePath(tmp_path),
+            pre_merge_inodes={"artifact.tar.gz": stale_inode},
+            path_provenance={safe.RelPath("artifact.tar.gz.sha512"): provenance},
+        )
 
 
 def _make_fake_revision(**kwargs) -> FakeRevision:

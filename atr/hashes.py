@@ -20,7 +20,6 @@ import pathlib
 from typing import Any, Final
 
 import aiofiles
-import aiofiles.os
 import blake3
 
 _HASH_CHUNK_SIZE: Final[int] = 4 * 1024 * 1024
@@ -61,9 +60,21 @@ async def compute_sha512(file_path: pathlib.Path) -> str:
     """Compute SHA-512 hash of a file."""
     sha512 = hashlib.sha512()
     async with aiofiles.open(file_path, "rb") as f:
-        while chunk := await f.read(4096):
+        while chunk := await f.read(_HASH_CHUNK_SIZE):
             sha512.update(chunk)
     return sha512.hexdigest()
+
+
+async def compute_sha512_and_content_hash(path: str | os.PathLike) -> tuple[str, str]:
+    """Compute SHA-512 hex digest and BLAKE3 content hash in a single streaming pass."""
+    path = pathlib.Path(path)
+    sha512 = hashlib.sha512()
+    blake3_hasher = blake3.blake3()
+    async with aiofiles.open(path, "rb") as f:
+        while chunk := await f.read(_HASH_CHUNK_SIZE):
+            sha512.update(chunk)
+            blake3_hasher.update(chunk)
+    return sha512.hexdigest(), f"blake3:{blake3_hasher.hexdigest()}"
 
 
 async def file_sha3(path: str) -> str:

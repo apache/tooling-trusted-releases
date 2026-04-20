@@ -35,6 +35,7 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.detection as detection
 import atr.merge as merge
+import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -45,8 +46,6 @@ import atr.util as util
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-
-    import atr.models.attestable
 
 _QUARANTINE_TOKEN_ALPHABET: Final[str] = "qpzry9x8gf2tvdw0s3jn54khce6mua7b"
 _QUARANTINE_TOKEN_LENGTH: Final[int] = 24
@@ -313,6 +312,36 @@ async def _lock_and_merge(
     return previous_attestable, merge_base_revision_key, prior_revision_key, merged_release
 
 
+async def _verify_provenance_sources_unchanged(
+    *,
+    temp_dir_path: safe.StatePath,
+    pre_merge_inodes: dict[str, int],
+    path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2],
+) -> None:
+    # When there's a revision merge, the provenance for SHA512 files may no longer be accurate
+    # This function checks input file inodes to ensure that they match
+    # If they don't match, we raise an error
+    for generated_rel, provenance_entry in path_provenance.items():
+        if provenance_entry.generator != atr.models.attestable.GeneratorV2.SHA512_FROM_SIGNATURE:
+            continue
+        dependency_paths = [path for path in provenance_entry.metadata.get("source_paths", []) if isinstance(path, str)]
+        if (signature_path := provenance_entry.metadata.get("signature_path")) is not None:
+            if isinstance(signature_path, str) and (signature_path not in dependency_paths):
+                dependency_paths.append(signature_path)
+        for dependency_rel in dependency_paths:
+            pre_merge_inode = pre_merge_inodes.get(dependency_rel)
+            dependency_path_full = temp_dir_path.path / dependency_rel
+            try:
+                stat_result = await aiofiles.os.stat(dependency_path_full)
+                post_merge_inode: int | None = stat_result.st_ino
+            except FileNotFoundError:
+                post_merge_inode = None
+            if (pre_merge_inode is None) or (post_merge_inode != pre_merge_inode):
+                raise types.FailedError(
+                    f"A concurrent revision replaced {dependency_rel}; please regenerate {generated_rel}."
+                )
+
+
 class GeneralPublic:
     def __init__(
         self,
@@ -510,6 +539,17 @@ class CommitteeParticipant(FoundationCommitter):
                     f"Cannot create revision: release phase is {merged_release.phase.value}, "
                     f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
                 )
+
+            if (merge_base_revision_key is not None) and path_provenance:
+                try:
+                    await _verify_provenance_sources_unchanged(
+                        temp_dir_path=temp_dir_path,
+                        pre_merge_inodes=n_inodes,
+                        path_provenance=path_provenance,
+                    )
+                except Exception:
+                    await aioshutil.rmtree(temp_dir)
+                    raise
 
             if set_local_cache:
                 merged_release.check_cache_key = str(uuid.uuid4())
