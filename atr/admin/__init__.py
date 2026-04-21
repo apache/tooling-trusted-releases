@@ -336,7 +336,13 @@ async def delete_committee_keys_get(
         submit_label="Delete all keys for selected committee",
         defaults={"committee_key": committee_choices},
     )
-    return await template.render("delete-committee-keys.html", form=rendered_form)
+    return await template.render(
+        "admin-form.html",
+        title="Delete committee keys",
+        description="Delete committee keys",
+        header="Delete all keys for a committee",
+        form=rendered_form,
+    )
 
 
 @admin.typed
@@ -442,6 +448,7 @@ async def delete_test_openpgp_keys_get(
     URL: GET /delete-test-openpgp-keys
 
     Display the form to delete test user OpenPGP keys.
+    This is a test-only endpoint so doesn't need any of the usual UI.
     """
     if not config.is_test_mode():
         return quart.abort(404)
@@ -486,7 +493,7 @@ async def delete_test_openpgp_keys_post(
 
 
 @admin.typed
-async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/check"]) -> web.QuartResponse:
+async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/check"]) -> str | web.WerkzeugResponse:
     """
     URL: GET /keys/check
 
@@ -494,29 +501,43 @@ async def keys_check_get(_session: web.Committer, _keys_check: Literal["keys/che
     """
     rendered_form = await form.render(
         model_cls=form.Empty,
-        submit_label="Check public signing key details",
+        submit_label="Check",
         empty=True,
     )
-    return web.ElementResponse(rendered_form)
+    return await template.render(
+        "admin-form.html",
+        title="Check public signing key details",
+        description="Check public signing key details",
+        header="Check public signing key details",
+        form=rendered_form,
+    )
 
 
 @admin.typed
 async def keys_check_post(
     _session: web.Committer, _keys_check: Literal["keys/check"], _form: form.Empty
-) -> web.QuartResponse:
+) -> str | web.WerkzeugResponse:
     """Check public signing key details."""
+    page = htm.Block()
+    page.h1["Public signing key check results"]
     try:
         result = await _check_keys()
-        return web.TextResponse(result)
+        page.div[[htm.p[line] for line in result.split("\n")]]
     except Exception as e:
         log.exception("Exception during key check:")
-        return web.TextResponse(f"Exception during key check: {e!s}")
+        page.p[f"Exception during key check: {e!s}"]
+    return await template.render(
+        "blank.html",
+        title="Check public signing key details",
+        description="Check public signing key details",
+        content=page.collect(),
+    )
 
 
 @admin.typed
 async def keys_regenerate_all_get(
     _session: web.Committer, _keys_regenerate_all: Literal["keys/regenerate-all"]
-) -> web.QuartResponse:
+) -> str | web.WerkzeugResponse:
     """
     URL: GET /keys/regenerate-all
 
@@ -524,10 +545,16 @@ async def keys_regenerate_all_get(
     """
     rendered_form = await form.render(
         model_cls=form.Empty,
-        submit_label="Regenerate all KEYS files",
+        submit_label="Re-generate",
         empty=True,
     )
-    return web.ElementResponse(rendered_form)
+    return await template.render(
+        "admin-form.html",
+        title="Regenerate KEYS files",
+        description="Regenerate KEYS files",
+        header="Regenerate all KEYS files",
+        form=rendered_form,
+    )
 
 
 @admin.typed
