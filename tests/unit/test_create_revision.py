@@ -24,6 +24,7 @@ import pytest
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage.types as types
+import atr.storage.writers.release as release
 import atr.storage.writers.revision as revision
 
 
@@ -524,6 +525,55 @@ async def test_modify_path_provenance_flows_into_write_files_data(tmp_path: path
 
 
 @pytest.mark.asyncio
+async def test_open_for_replace_rejects_directory_collision(tmp_path: pathlib.Path):
+    # If the target's a directory (not a file), we leave it alone and let
+    # the write fail. Don't want to silently drop a directory's contents on
+    # a name clash.
+    target = tmp_path / "collision"
+    target.mkdir()
+    (target / "inside.txt").write_bytes(b"inner")
+
+    participant = _make_release_participant()
+    open_for_replace = getattr(participant, "_CommitteeParticipant__open_for_replace")
+
+    with pytest.raises(IsADirectoryError):
+        async with open_for_replace(target) as handle:
+            await handle.write(b"new bytes")
+
+    assert target.is_dir()
+    assert (target / "inside.txt").read_bytes() == b"inner"
+
+
+@pytest.mark.asyncio
+async def test_open_for_replace_silently_replaces_readonly_hardlink(tmp_path: pathlib.Path):
+    # Regression for #1183. Re-upload should succeed when the target is a
+    # hardlinked 0o444 file from a prior revision. And the prior revision's
+    # bytes should stay intact - we break the shared inode rather than writing
+    # through it.
+    prior_revision = tmp_path / "prior"
+    prior_revision.mkdir()
+    prior_file = prior_revision / "artifact.tar.gz"
+    prior_file.write_bytes(b"original bytes")
+
+    new_revision = tmp_path / "new"
+    new_revision.mkdir()
+    target = new_revision / "artifact.tar.gz"
+    os.link(prior_file, target)
+    os.chmod(target, 0o444)
+    assert target.stat().st_ino == prior_file.stat().st_ino
+
+    participant = _make_release_participant()
+    open_for_replace = getattr(participant, "_CommitteeParticipant__open_for_replace")
+
+    async with open_for_replace(target) as handle:
+        await handle.write(b"new bytes")
+
+    assert target.read_bytes() == b"new bytes"
+    assert prior_file.read_bytes() == b"original bytes"
+    assert target.stat().st_ino != prior_file.stat().st_ino
+
+
+@pytest.mark.asyncio
 async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathlib.Path):
     temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()
@@ -789,6 +839,12 @@ def _make_participant() -> revision.CommitteeParticipant:
     mock_write = mock.MagicMock()
     mock_write.authorisation.asf_uid = "test"
     return revision.CommitteeParticipant(mock_write, mock.MagicMock(), mock.MagicMock(), "test")
+
+
+def _make_release_participant() -> release.CommitteeParticipant:
+    mock_write = mock.MagicMock()
+    mock_write.authorisation.asf_uid = "test"
+    return release.CommitteeParticipant(mock_write, mock.MagicMock(), mock.MagicMock(), "test")
 
 
 def _mock_db_session(release: mock.MagicMock, selected_revision: mock.MagicMock | None = None) -> mock.MagicMock:

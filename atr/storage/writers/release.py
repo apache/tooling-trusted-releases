@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import datetime
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
 import sqlalchemy
@@ -46,7 +47,7 @@ import atr.util as util
 
 if TYPE_CHECKING:
     import pathlib
-    from collections.abc import Sequence
+    from collections.abc import AsyncIterator, Sequence
 
     import werkzeug.datastructures as datastructures
 
@@ -613,9 +614,7 @@ class CommitteeParticipant(FoundationCommitter):
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             target_path = path / validated_path
             await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
-            if await aiofiles.os.path.exists(target_path):
-                raise storage.AccessError("File already exists")
-            async with aiofiles.open(target_path, "wb") as f:
+            async with self.__open_for_replace(target_path.path) as f:
                 await f.write(file_bytes)
 
         result = await self.__write_as.revision.create_revision_with_quarantine(
@@ -724,6 +723,14 @@ class CommitteeParticipant(FoundationCommitter):
             )
         return None
 
+    @contextlib.asynccontextmanager
+    async def __open_for_replace(self, target_path: pathlib.Path) -> AsyncIterator[Any]:
+        # Unlink first - the target could be a hardlink from a prior revision, locked 0o444.
+        if await aiofiles.os.path.isfile(target_path):
+            await aiofiles.os.remove(target_path)
+        async with aiofiles.open(target_path, "wb") as f:
+            yield f
+
     def __related_files(self, path: pathlib.Path) -> list[pathlib.Path]:
         base_path = path.with_suffix("") if (path.suffix in SPECIAL_SUFFIXES) else path
         parent_dir = base_path.parent
@@ -807,7 +814,7 @@ class CommitteeParticipant(FoundationCommitter):
         return False, renamed_count_local
 
     async def __save_file(self, file: datastructures.FileStorage, target_path: pathlib.Path) -> None:
-        async with aiofiles.open(target_path, "wb") as f:
+        async with self.__open_for_replace(target_path) as f:
             while chunk := await asyncio.to_thread(file.stream.read, 8192):
                 await f.write(chunk)
 
