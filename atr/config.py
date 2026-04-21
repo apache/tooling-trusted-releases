@@ -49,9 +49,11 @@ def _config_secrets_get(
         if allow_not_found is False:
             raise
     else:
-        if key in repo_ini:
+        try:
             value = repo_ini[key]
             return cast(value)
+        except KeyError:
+            pass
 
     # There is no secrets file, or it does not contain the key
     # Try getting the value from environment variables
