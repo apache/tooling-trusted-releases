@@ -101,22 +101,23 @@ async def _set_tag(
 ) -> web.WerkzeugResponse:
     """Set a tag on a specific revision."""
     revision_number = set_tag_form.revision_number
-    tag = set_tag_form.tag.strip() or None
+    tag = set_tag_form.tag
 
-    async with db.session() as data:
-        release = await session.release(project_key, version_key, phase=None, data=data)
-        revision = await data.revision(release_key=release.key, number=revision_number).demand(
-            base.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            await wacp.revision.set_tag(project_key, version_key, revision_number, tag)
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.revisions.selected,
+            error=str(e),
+            project_key=str(project_key),
+            version_key=str(version_key),
         )
-        revision.tag = tag
-        await data.commit()
 
-    message = (
-        f"Tag '{tag}' set for revision {revision_number}" if tag else f"Tag removed from revision {revision_number}"
-    )
     return await session.redirect(
         get.revisions.selected,
-        success=message,
+        success=f"Tag '{tag}' set for revision {revision_number}",
         project_key=str(project_key),
         version_key=str(version_key),
     )

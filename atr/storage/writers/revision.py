@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import datetime
 import pathlib
+import re
 import secrets
 import tempfile
 import uuid
@@ -29,6 +30,8 @@ from typing import TYPE_CHECKING, Final
 
 import aiofiles.os
 import aioshutil
+import asfquart.base as base
+import sqlmodel
 
 import atr.attestable as attestable
 import atr.db as db
@@ -588,6 +591,48 @@ class CommitteeParticipant(FoundationCommitter):
                 version_key=version_key,
                 path_provenance=path_provenance,
             )
+
+    async def set_tag(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        revision_number: str,
+        tag: str,
+    ) -> None:
+        tag = tag.strip()
+        if not tag:
+            raise storage.AccessError("Tag is required")
+        if re.match(r"^[a-zA-Z0-9+_.-]+$", tag) is None:
+            raise storage.AccessError("Tag must contain only letters, numbers, plus, underscore, dot, or hyphen")
+        if len(tag.encode("utf-8")) > 256:
+            raise storage.AccessError("Tag must be at most 256 bytes")
+
+        release_key = sql.release_key(str(project_key), str(version_key))
+        via = sql.validate_instrumented_attribute
+        stmt = (
+            sqlmodel.update(sql.Revision)
+            .where(
+                via(sql.Revision.release_key) == release_key,
+                via(sql.Revision.number) == revision_number,
+                via(sql.Revision.tag).is_(None),
+            )
+            .values(tag=tag)
+        )
+        result = await self.__data.execute(stmt)
+        if getattr(result, "rowcount", 0) != 1:
+            await self.__data.rollback()
+            revision = await self.__data.revision(release_key=release_key, number=revision_number).get()
+            if revision is None:
+                raise base.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
+            raise storage.AccessError(f"Revision {revision_number} already has a tag and cannot be changed")
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=revision_number,
+            tag=tag,
+        )
 
     async def _quarantine_archives(
         self,

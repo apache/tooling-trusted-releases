@@ -289,14 +289,18 @@ def _render_revision_timestamp(revision: sql.Revision) -> htm.Element:
 
 
 def _render_tag_form(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
-    body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Tag"]
+    body.h3(".fs-6.fw-semibold.mt-3.atr-sans")["Immutable tag"]
+    if revision.tag is not None:
+        body.p(".mt-2.mb-0")[htm.code[revision.tag]]
+        return
+
     action_url = util.as_url(post.revisions.selected_post, project_key=project_key, version_key=version_key)
     body.form(".d-flex.align-items-center.gap-2.mt-2.w-50", method="post", action=action_url)[
         form.csrf_input(),
         htpy.input(type="hidden", name="variant", value="set_tag"),
         htpy.input(type="hidden", name="revision_number", value=revision.number),
-        htpy.input(".form-control.form-control-sm", type="text", name="tag", value=revision.tag or ""),
-        htpy.button(".btn.btn-sm.btn-outline-primary.text-nowrap", type="submit")["Set tag"],
+        htpy.input(".form-control.form-control-sm", type="text", name="tag", value=""),
+        htpy.button(".btn.btn-sm.btn-outline-primary.text-nowrap", type="submit")["Set immutable tag"],
     ]
 
 
