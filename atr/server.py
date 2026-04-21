@@ -303,6 +303,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
     async def startup() -> None:
         """Start services before the app starts serving requests."""
 
+        util.warn_default_tls_settings_if_changed()
+
         await asyncio.to_thread(_set_file_permissions_to_read_only)
 
         await _backfill_archive_cache()

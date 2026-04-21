@@ -20,7 +20,6 @@ import email.headerregistry as headerregistry
 import email.message as message
 import email.policy as policy
 import email.utils as utils
-import ssl
 import time
 import uuid
 from typing import Final
@@ -172,8 +171,7 @@ async def _send_via_relay(from_addr: str, to_addr: str, msg_bytes: bytes) -> Non
     # In effect, these are two different "packages" of functionality
     # We can't even sign it first and pass it to asfpy, due to its different design
     log.info(f"Connecting async to {_MAIL_RELAY}:{_SMTP_PORT}")
-    context = ssl.create_default_context()
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context = util.create_secure_ssl_context()
 
     smtp = aiosmtplib.SMTP(
         hostname=_MAIL_RELAY, port=_SMTP_PORT, timeout=_SMTP_TIMEOUT, tls_context=context, start_tls=True

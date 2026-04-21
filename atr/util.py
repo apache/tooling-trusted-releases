@@ -74,6 +74,28 @@ INCUBATOR_GENERAL_ADDRESS: Final[str] = "general@incubator.apache.org"
 NPM_PACKAGE_JSON_MAX_SIZE: Final[int] = 512 * 1024
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
+EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
+EXPECTED_DEFAULT_TLS_MINIMUM_VERSION: Final[ssl.TLSVersion] = ssl.TLSVersion.TLSv1_2
+EXPECTED_DEFAULT_TLS_VERIFY_MODE: Final[ssl.VerifyMode] = ssl.CERT_REQUIRED
+EXPECTED_DEFAULT_TLS_CIPHER_NAMES: Final[tuple[str, ...]] = (
+    "TLS_AES_256_GCM_SHA384",
+    "TLS_CHACHA20_POLY1305_SHA256",
+    "TLS_AES_128_GCM_SHA256",
+    "ECDHE-ECDSA-AES256-GCM-SHA384",
+    "ECDHE-RSA-AES256-GCM-SHA384",
+    "ECDHE-ECDSA-AES128-GCM-SHA256",
+    "ECDHE-RSA-AES128-GCM-SHA256",
+    "ECDHE-ECDSA-CHACHA20-POLY1305",
+    "ECDHE-RSA-CHACHA20-POLY1305",
+    "ECDHE-ECDSA-AES256-SHA384",
+    "ECDHE-RSA-AES256-SHA384",
+    "ECDHE-ECDSA-AES128-SHA256",
+    "ECDHE-RSA-AES128-SHA256",
+    "DHE-RSA-AES256-GCM-SHA384",
+    "DHE-RSA-AES128-GCM-SHA256",
+    "DHE-RSA-AES256-SHA256",
+    "DHE-RSA-AES128-SHA256",
+)
 
 
 class EmailRecipients(Protocol):
@@ -1201,6 +1223,25 @@ def version_sort_key(version: str) -> bytes:
             i += 1
 
     return bytes(result)
+
+
+def warn_default_tls_settings_if_changed() -> None:
+    ctx = ssl.create_default_context()
+    current_cipher_names = tuple(cipher["name"] for cipher in ctx.get_ciphers())
+    if (
+        (ctx.check_hostname == EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME)
+        and (ctx.verify_mode == EXPECTED_DEFAULT_TLS_VERIFY_MODE)
+        and (ctx.minimum_version == EXPECTED_DEFAULT_TLS_MINIMUM_VERSION)
+        and (current_cipher_names == EXPECTED_DEFAULT_TLS_CIPHER_NAMES)
+    ):
+        return
+    log.warning(
+        "Python default TLS settings changed: "
+        f"expected check_hostname={EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME}, got {ctx.check_hostname}; "
+        f"expected verify_mode={EXPECTED_DEFAULT_TLS_VERIFY_MODE}, got {ctx.verify_mode}; "
+        f"expected minimum_version={EXPECTED_DEFAULT_TLS_MINIMUM_VERSION}, got {ctx.minimum_version}; "
+        f"expected ciphers={EXPECTED_DEFAULT_TLS_CIPHER_NAMES}, got {current_cipher_names}"
+    )
 
 
 async def write_session(user_session: sql.UserSession) -> None:
