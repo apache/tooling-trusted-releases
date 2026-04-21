@@ -629,7 +629,6 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
         release,
         "cancelled",
         "The vote has been cancelled.",
-        "chair",
         "Project Chair",
         latest_vote_task,
     )
@@ -904,6 +903,7 @@ def _version_key() -> safe.VersionKey:
 def _writer_with_data(data: mock.MagicMock) -> vote.CommitteeMember:
     writer = object.__new__(vote.CommitteeMember)
     writer._CommitteeMember__data = data
+    writer._CommitteeMember__asf_uid = "chair"
     return writer
 
 

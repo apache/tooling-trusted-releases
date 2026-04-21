@@ -145,7 +145,6 @@ async def selected_revision(
                 start_voting_form.vote_duration,
                 subject,
                 start_voting_form.body,
-                session.uid,
                 session.fullname,
                 release=release,
                 promote=True,

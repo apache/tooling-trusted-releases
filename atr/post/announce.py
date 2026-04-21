@@ -111,7 +111,6 @@ async def selected(
                 email_to=announce_form.email_to,
                 body=announce_form.body,
                 download_path_suffix=announce_form.download_path_suffix,
-                asf_uid=session.uid,
                 fullname=session.fullname,
                 subject_template_hash=announce_form.subject_template_hash,
                 email_cc=announce_form.email_cc,

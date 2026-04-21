@@ -123,13 +123,12 @@ class CommitteeMember(CommitteeParticipant):
         email_to: str,
         body: str,
         download_path_suffix: safe.RelPath | None,
-        asf_uid: str,
         fullname: str,
         subject_template_hash: str | None = None,
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
     ) -> None:
-        permitted = util.permitted_announce_recipients(asf_uid)
+        permitted = util.permitted_announce_recipients(self.__asf_uid)
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted:
@@ -181,7 +180,7 @@ class CommitteeMember(CommitteeParticipant):
 
         # Substitute the subject template
         options = construct.AnnounceReleaseOptions(
-            asfuid=asf_uid,
+            asfuid=self.__asf_uid,
             fullname=fullname,
             project_key=project_key,
             version_key=version_key,
@@ -249,7 +248,7 @@ class CommitteeMember(CommitteeParticipant):
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.MESSAGE_SEND,
                 task_args=args.Send(
-                    email_sender=f"{asf_uid}@apache.org",
+                    email_sender=f"{self.__asf_uid}@apache.org",
                     email_to=email_to,
                     subject=subject,
                     body=body,
@@ -258,7 +257,7 @@ class CommitteeMember(CommitteeParticipant):
                     email_bcc=email_bcc or [],
                     footer_category=mail.MailFooterCategory.NONE,
                 ).model_dump(),
-                asf_uid=asf_uid,
+                asf_uid=self.__asf_uid,
                 project_key=str(project_key),
                 version_key=str(version_key),
             )

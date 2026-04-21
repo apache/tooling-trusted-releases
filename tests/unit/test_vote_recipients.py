@@ -107,7 +107,6 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
         release,
         "passed",
         "Resolution body",
-        "chair",
         "Project Chair",
         latest_vote_task,
     )
@@ -253,4 +252,5 @@ def _patch_storage_write(monkeypatch: pytest.MonkeyPatch) -> None:
 def _writer_with_data(data: mock.MagicMock) -> vote.CommitteeMember:
     writer = object.__new__(vote.CommitteeMember)
     writer._CommitteeMember__data = data
+    writer._CommitteeMember__asf_uid = "chair"
     return writer

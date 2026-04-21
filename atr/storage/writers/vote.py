@@ -150,7 +150,6 @@ class CommitteeParticipant(FoundationCommitter):
         vote_duration_choice: int,
         subject: str,
         body_data: str,
-        asf_uid: str,
         asf_fullname: str,
         release: sql.Release | None = None,
         promote: bool = True,
@@ -170,7 +169,7 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("Release has no committee")
         if permitted_recipients is None:
             permitted_recipients = util.permitted_podling_first_round_recipients(
-                asf_uid,
+                self.__asf_uid,
                 release.committee.key,
                 is_podling=release.committee.is_podling,
             )
@@ -182,7 +181,7 @@ class CommitteeParticipant(FoundationCommitter):
                 raise storage.AccessError("Invalid mailing list choice")
 
         if second_round_email_to is not None:
-            second_round_permitted = util.permitted_podling_second_round_recipients(asf_uid)
+            second_round_permitted = util.permitted_podling_second_round_recipients(self.__asf_uid)
             if second_round_email_to not in second_round_permitted:
                 log.info(
                     f"Invalid second round mailing list choice: {second_round_email_to} not in {second_round_permitted}"
@@ -217,7 +216,7 @@ class CommitteeParticipant(FoundationCommitter):
                 release_key=release.key,
                 email_to=email_to,
                 vote_duration=vote_duration_choice,
-                initiator_id=asf_uid,
+                initiator_id=self.__asf_uid,
                 initiator_fullname=asf_fullname,
                 subject=subject,
                 body=body_data,
@@ -225,7 +224,7 @@ class CommitteeParticipant(FoundationCommitter):
                 email_bcc=email_bcc or [],
                 second_round_email_to=second_round_email_to,
             ).model_dump(),
-            asf_uid=asf_uid,
+            asf_uid=self.__asf_uid,
             project_key=str(project_key),
             version_key=str(version_key),
         )
@@ -434,7 +433,6 @@ class CommitteeMember(CommitteeParticipant):
                 project_key=release.safe_project_key,
                 version_key=release.safe_version_key,
                 selected_revision_number=release.safe_latest_revision_number,
-                asf_uid=self.__asf_uid,
                 asf_fullname=asf_fullname,
                 vote_duration_choice=vote_duration,
                 subject=subject_data,
@@ -490,7 +488,6 @@ class CommitteeMember(CommitteeParticipant):
             release,
             vote_result,
             resolution_body,
-            self.__asf_uid,
             asf_fullname,
             latest_vote_task,
             extra_destination=extra_destination,
@@ -510,7 +507,6 @@ class CommitteeMember(CommitteeParticipant):
         release: sql.Release,
         resolution: str,
         body: str,
-        asf_uid: str,
         asf_fullname: str,
         latest_vote_task: sql.Task,
         extra_destination: tuple[str, str] | None = None,
@@ -527,7 +523,7 @@ class CommitteeMember(CommitteeParticipant):
         email_to: str = latest_vote_task.task_args["email_to"]
         email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
         email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
-        email_sender = f"{asf_uid}@apache.org"
+        email_sender = f"{self.__asf_uid}@apache.org"
         subject = f"[VOTE] [RESULT] Release {release.project.display_name} {release.version} {resolution.upper()}"
         # TODO: This duplicates atr/tabulate.py code
         # There are arguments for using this code instead:
@@ -556,7 +552,7 @@ class CommitteeMember(CommitteeParticipant):
                 email_bcc=email_bcc,
                 footer_category=mail.MailFooterCategory.USER,
             ).model_dump(),
-            asf_uid=asf_uid,
+            asf_uid=self.__asf_uid,
             project_key=release.project.key,
             version_key=release.version,
         )
@@ -573,7 +569,7 @@ class CommitteeMember(CommitteeParticipant):
                     in_reply_to=extra_destination[1],
                     footer_category=mail.MailFooterCategory.USER,
                 ).model_dump(),
-                asf_uid=asf_uid,
+                asf_uid=self.__asf_uid,
                 project_key=release.project.key,
                 version_key=release.version,
             )

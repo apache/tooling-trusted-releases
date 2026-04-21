@@ -906,7 +906,6 @@ async def publisher_release_announce(
                 email_to=data.email_to,
                 body=data.body,
                 download_path_suffix=data.path_suffix,
-                asf_uid=asf_uid,
                 fullname=asf_uid,
             )
     except storage.AccessError as e:
@@ -1016,7 +1015,6 @@ async def release_announce(
                 email_to=data.email_to,
                 body=data.body,
                 download_path_suffix=data.path_suffix,
-                asf_uid=asf_uid,
                 fullname=asf_uid,
             )
     except storage.AccessError as e:
@@ -1605,7 +1603,6 @@ async def vote_start(
                 data.vote_duration,
                 data.subject,
                 data.body,
-                asf_uid,
                 asf_uid,
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
