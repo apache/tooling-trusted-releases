@@ -206,10 +206,7 @@ class FoundationCommitter(GeneralPublic):
         )
 
     def _committee_keys_path(self, committee: sql.Committee) -> safe.StatePath:
-        base_downloads_dir = paths.get_downloads_dir()
-        if committee.is_podling:
-            return base_downloads_dir / "incubator" / committee.key / "KEYS"
-        return base_downloads_dir / committee.key / "KEYS"
+        return paths.committee_downloads_dir(committee) / "KEYS"
 
     async def _sync_committee_keys_file(self, committee_key: str) -> str | None:
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(

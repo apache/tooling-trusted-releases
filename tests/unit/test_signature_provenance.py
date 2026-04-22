@@ -85,35 +85,6 @@ def test_args_defaults_scoping_fields_to_none() -> None:
     assert args.version_key is None
 
 
-def test_committee_keys_path_podling(tmp_path: pathlib.Path) -> None:
-    downloads = safe.StatePath(tmp_path)
-    committee = SimpleNamespace(key="myproject", is_podling=True)
-    with mock.patch.object(atr.api.paths, "get_downloads_dir", return_value=downloads):
-        result = atr.api._committee_keys_path(committee)
-    assert str(result).endswith("/incubator/myproject/KEYS")
-
-
-def test_committee_keys_path_regular(tmp_path: pathlib.Path) -> None:
-    downloads = safe.StatePath(tmp_path)
-    committee = SimpleNamespace(key="myproject", is_podling=False)
-    with mock.patch.object(atr.api.paths, "get_downloads_dir", return_value=downloads):
-        result = atr.api._committee_keys_path(committee)
-    assert str(result).endswith("/myproject/KEYS")
-    assert "/incubator/" not in str(result)
-
-
-def test_committee_keys_url_podling() -> None:
-    committee = SimpleNamespace(key="myproject", is_podling=True)
-    result = atr.api._committee_keys_url("atr.example.org", committee)
-    assert result == "https://atr.example.org/downloads/incubator/myproject/KEYS"
-
-
-def test_committee_keys_url_regular() -> None:
-    committee = SimpleNamespace(key="myproject", is_podling=False)
-    result = atr.api._committee_keys_url("atr.example.org", committee)
-    assert result == "https://atr.example.org/downloads/myproject/KEYS"
-
-
 @pytest.mark.asyncio
 async def test_match_release_matches_file_and_hash(tmp_path: pathlib.Path) -> None:
     release_dir = safe.StatePath(tmp_path)

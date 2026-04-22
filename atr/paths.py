@@ -28,6 +28,21 @@ def base_path_for_revision(
     return get_unfinished_dir() / project_key / version_key / revision
 
 
+def committee_downloads_dir(committee: sql.Committee) -> safe.StatePath:
+    downloads_dir = get_downloads_dir()
+    if committee.is_podling:
+        return downloads_dir / "incubator" / committee.key
+    return downloads_dir / committee.key
+
+
+def committee_downloads_url(host: str, committee: sql.Committee) -> str:
+    # This is a slight extension of the intended paths concept
+    # But URLs contain paths, so atr.paths does not have to be limited to filesystem paths
+    if committee.is_podling:
+        return f"https://{host}/downloads/incubator/{committee.key}"
+    return f"https://{host}/downloads/{committee.key}"
+
+
 def get_archives_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().ARCHIVES_STORAGE_DIR))
 

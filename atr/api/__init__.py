@@ -1303,7 +1303,7 @@ async def signature_provenance(
         matched_committees = await _match_committees(key.committees, data)
 
     for committee in matched_committees:
-        keys_file_path = _committee_keys_path(committee)
+        keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
         try:
             async with aiofiles.open(keys_file_path, "rb") as f:
                 keys_file_data = await f.read()
@@ -1316,7 +1316,7 @@ async def signature_provenance(
         signing_keys.append(
             models.api.SignatureProvenanceKey(
                 committee=committee.key,
-                keys_file_url=_committee_keys_url(host, committee),
+                keys_file_url=f"{paths.committee_downloads_url(host, committee)}/KEYS",
                 keys_file_sha3_256=keys_file_sha3_256,
             )
         )
@@ -1659,19 +1659,6 @@ async def vote_tabulate(
         endpoint="/vote/tabulate",
         details=details,
     ).model_dump(mode="json"), 200
-
-
-def _committee_keys_path(committee: sql.Committee) -> safe.StatePath:
-    downloads_dir = paths.get_downloads_dir()
-    if committee.is_podling:
-        return downloads_dir / "incubator" / committee.key / "KEYS"
-    return downloads_dir / committee.key / "KEYS"
-
-
-def _committee_keys_url(host: str, committee: sql.Committee) -> str:
-    if committee.is_podling:
-        return f"https://{host}/downloads/incubator/{committee.key}/KEYS"
-    return f"https://{host}/downloads/{committee.key}/KEYS"
 
 
 def _jwt_asf_uid() -> str:

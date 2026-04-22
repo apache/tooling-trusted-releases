@@ -38,21 +38,6 @@ import atr.storage as storage
 import atr.util as util
 
 
-def _committee_downloads_path(
-    committee: sql.Committee,
-    download_path_suffix: safe.RelPath | None,
-) -> safe.StatePath:
-    # TODO: Rename *_dir functions to _path functions
-    downloads_base_path = paths.get_downloads_dir()
-    if committee.is_podling:
-        downloads_path = downloads_base_path / "incubator" / committee.key
-    else:
-        downloads_path = downloads_base_path / committee.key
-    if download_path_suffix is not None:
-        downloads_path = downloads_path / download_path_suffix.as_path()
-    return downloads_path
-
-
 class GeneralPublic:
     def __init__(
         self,
@@ -281,7 +266,9 @@ class CommitteeMember(CommitteeParticipant):
         preserve: bool = False,
     ) -> None:
         """Hard link the release files to the downloads directory."""
-        downloads_path = _committee_downloads_path(committee, download_path_suffix)
+        downloads_path = paths.committee_downloads_dir(committee)
+        if download_path_suffix is not None:
+            downloads_path = downloads_path / download_path_suffix.as_path()
         # The "exist_ok" parameter means to overwrite files if True
         # We only overwrite if we're not preserving, so we supply "not preserve"
         # TODO: Add a test for this

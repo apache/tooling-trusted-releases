@@ -28,6 +28,7 @@ import atr.get.projects as projects
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -63,6 +64,19 @@ async def selected(
     default_body_template = await construct.announce_release_default(project_key)
     subject_template_hash = construct.template_hash(default_subject_template)
 
+    # The download path suffix can be changed
+    # The defaults depend on whether the project is top level or not
+    if (committee := release.project.committee) is None:
+        raise ValueError("Release has no committee")
+    top_level_project = release.project.key == util.unwrap(committee.key)
+    # These defaults are as per #136, but we allow the user to change the result
+    default_download_path_suffix = (
+        None if top_level_project else safe.RelPath(f"{release.project.key}-{release.version}")
+    )
+    default_download_path_value = (
+        "/" if (default_download_path_suffix is None) else f"/{default_download_path_suffix!s}/"
+    )
+
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
         asfuid=session.uid,
@@ -70,24 +84,22 @@ async def selected(
         project_key=project_key,
         version_key=version_key,
         revision_number=release.safe_latest_revision_number,
+        download_path_suffix=default_download_path_suffix,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
         default_subject_template, default_body_template, options
     )
 
-    # The download path suffix can be changed
-    # The defaults depend on whether the project is top level or not
-    if (committee := release.project.committee) is None:
-        raise ValueError("Release has no committee")
-    top_level_project = release.project.key == util.unwrap(committee.key)
-    # These defaults are as per #136, but we allow the user to change the result
-    default_download_path_suffix = "/" if top_level_project else f"/{release.project.key}-{release.version}/"
-
-    # This must NOT end with a "/"
-    description_download_prefix = f"https://{config.get().APP_HOST}/downloads"
-    if committee.is_podling:
-        description_download_prefix += "/incubator"
-    description_download_prefix += f"/{committee.key}"
+    description_download_prefix = paths.committee_downloads_url(
+        config.get().APP_HOST,
+        committee,
+    )
+    preview_url = util.as_url(
+        post.announce.preview,
+        project_key=release.project.key,
+        version_key=release.version,
+        revision_number=release.unwrap_revision_number,
+    )
 
     permitted_recipients = util.permitted_announce_recipients(session.uid)
 
@@ -97,8 +109,9 @@ async def selected(
         default_subject=default_subject,
         subject_template_hash=subject_template_hash,
         default_body=default_body,
-        default_download_path_suffix=default_download_path_suffix,
+        default_download_path_value=default_download_path_value,
         download_path_description=f"The URL will be {description_download_prefix} plus this suffix",
+        preview_url=preview_url,
     )
 
     return await template.blank(
@@ -162,8 +175,9 @@ async def _render_page(
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
-    default_download_path_suffix: str,
+    default_download_path_value: str,
     download_path_description: str,
+    preview_url: str,
 ) -> htm.Element:
     """Render the announce page."""
     page = htm.Block()
@@ -229,7 +243,7 @@ async def _render_page(
         ]
 
         # Custom widget for download_path_suffix with custom documentation
-        download_path_widget = _render_download_path_field(default_download_path_suffix, download_path_description)
+        download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
 
         defaults_dict = {
             "revision_number": release.unwrap_revision_number,
@@ -254,6 +268,7 @@ async def _render_page(
             border=True,
             wider_widgets=True,
         )
+        page.append(htpy.div("#announce-body-config.d-none", data_preview_url=preview_url))
     else:
         page.p[htm.strong[announce_msg]]
 

@@ -119,11 +119,7 @@ async def selected_revision(
 
 
 async def _check_keys_warning(committee: sql.Committee) -> bool:
-    if committee.is_podling:
-        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.key / "KEYS"
-    else:
-        keys_file_path = paths.get_downloads_dir() / committee.key / "KEYS"
-
+    keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
     return not await aiofiles.os.path.isfile(keys_file_path)
 
 

@@ -58,6 +58,7 @@ class AnnounceReleaseOptions:
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
+    download_path_suffix: safe.RelPath | None = None
 
 
 @dataclasses.dataclass
@@ -82,10 +83,6 @@ async def announce_release_default(project_key: safe.ProjectKey) -> str:
 async def announce_release_subject_and_body(
     subject: str, body: str, options: AnnounceReleaseOptions
 ) -> tuple[str, str]:
-    # NOTE: The present module is imported by routes
-    # Therefore this must be done here to avoid a circular import
-    import atr.get as get
-
     try:
         host = quart.request.host
     except RuntimeError:
@@ -108,13 +105,10 @@ async def announce_release_subject_and_body(
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
     project_display_name = release.project.short_display_name if release.project else str(options.project_key)
-
-    routes_file_selected = get.file.selected
-    download_path = util.as_url(
-        routes_file_selected, project_key=str(options.project_key), version_key=str(options.version_key)
-    )
-    # TODO: This download_url should probably be for the proxy download directory, not the ATR view
-    download_url = f"https://{host}{download_path}"
+    download_url = paths.committee_downloads_url(host, committee)
+    if options.download_path_suffix is not None:
+        download_url += f"/{options.download_path_suffix!s}"
+    download_url += "/"
 
     # Perform substitutions in the subject
     subject = subject.replace("{{PROJECT}}", project_display_name)
@@ -230,14 +224,9 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     # NOTE: The /downloads/ directory is served by the proxy front end, not by ATR
     # Therefore there is no route handler, so we have to construct the URL manually
     keys_file = None
-    if committee.is_podling:
-        keys_file_path = paths.get_downloads_dir() / "incubator" / committee.key / "KEYS"
-        if await aiofiles.os.path.isfile(keys_file_path):
-            keys_file = f"https://{host}/downloads/incubator/{committee.key}/KEYS"
-    else:
-        keys_file_path = paths.get_downloads_dir() / committee.key / "KEYS"
-        if await aiofiles.os.path.isfile(keys_file_path):
-            keys_file = f"https://{host}/downloads/{committee.key}/KEYS"
+    keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
+    if await aiofiles.os.path.isfile(keys_file_path):
+        keys_file = f"{paths.committee_downloads_url(host, committee)}/KEYS"
 
     checklist_content = ""
     async with db.session() as data:

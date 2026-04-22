@@ -20,7 +20,38 @@ import types
 
 import pytest
 
+import atr.models.safe as safe
 import atr.paths as paths
+
+
+def test_committee_downloads_dir_for_podling(monkeypatch, tmp_path: pathlib.Path):
+    committee = types.SimpleNamespace(key="myproject", is_podling=True)
+    monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
+
+    assert paths.committee_downloads_dir(committee).path == tmp_path / "incubator" / "myproject"
+
+
+def test_committee_downloads_dir_for_top_level_committee(monkeypatch, tmp_path: pathlib.Path):
+    committee = types.SimpleNamespace(key="myproject", is_podling=False)
+    monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
+
+    assert paths.committee_downloads_dir(committee).path == tmp_path / "myproject"
+
+
+def test_committee_downloads_url_for_podling() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=True)
+
+    assert paths.committee_downloads_url("downloads.apache.org", committee) == (
+        "https://downloads.apache.org/downloads/incubator/myproject"
+    )
+
+
+def test_committee_downloads_url_for_top_level_committee() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=False)
+
+    assert paths.committee_downloads_url("downloads.apache.org", committee) == (
+        "https://downloads.apache.org/downloads/myproject"
+    )
 
 
 def test_get_quarantined_dir_uses_state_dir(monkeypatch, tmp_path: pathlib.Path):
