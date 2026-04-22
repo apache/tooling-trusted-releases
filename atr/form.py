@@ -357,10 +357,9 @@ async def render(  # noqa: C901
         "enctype": "multipart/form-data",
     }
     if confirm:
-        # audit_guidance building JavaScript with string concatenation is an intentional choice for simplicity
         if not _CONFIRM_PATTERN.match(confirm):
             raise ValueError(f"Invalid characters in confirm message: {confirm!r}")
-        form_attrs["onsubmit"] = f"return confirm('{confirm}');"
+        form_attrs["data-confirm"] = confirm
 
     return htm.form(form_classes, **form_attrs)[form_children]
 
