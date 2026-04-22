@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
-from typing import Final
 
 import sqlmodel
 
@@ -33,9 +32,6 @@ import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.types as types
-
-# TODO: Check that this is known and that its emails are correctly discarded
-NOREPLY_EMAIL_ADDRESS: Final[str] = "noreply@apache.org"
 
 
 class GeneralPublic:
@@ -78,7 +74,7 @@ class FoundationCommitter(GeneralPublic):
         await self.__data.commit()
         log.auth_event("pat_issuance", self.__asf_uid, pat_hash=pat.token_hash)
         message = mail.Message(
-            email_sender=NOREPLY_EMAIL_ADDRESS,
+            email_sender=mail.NOREPLY_EMAIL_ADDRESS,
             email_to=f"{self.__asf_uid}@apache.org",
             subject="ATR - New API Token Created",
             body=f"In ATR a new API token called '{label}' was created for your account. "
@@ -106,7 +102,7 @@ class FoundationCommitter(GeneralPublic):
             log.auth_event("pat_deleted", self.__asf_uid, pat_hash=pat.token_hash)
             label = pat.label or "[unlabeled]"
             message = mail.Message(
-                email_sender=NOREPLY_EMAIL_ADDRESS,
+                email_sender=mail.NOREPLY_EMAIL_ADDRESS,
                 email_to=f"{self.__asf_uid}@apache.org",
                 subject="ATR - Deleted API Token",
                 body=f"In ATR an API token called '{label}' was deleted from your account. "
@@ -219,7 +215,7 @@ class FoundationAdmin(FoundationCommitter):
             )
             log.auth_event("pat_bulk_revoke", target_asf_uid, by=self.__asf_uid)
             message = mail.Message(
-                email_sender=NOREPLY_EMAIL_ADDRESS,
+                email_sender=mail.NOREPLY_EMAIL_ADDRESS,
                 email_to=f"{target_asf_uid}@apache.org",
                 subject="ATR - Security alert: API tokens revoked by administrator",
                 body=f"An administrator has revoked all API tokens ({count}) for your ATR account. "

@@ -23,6 +23,7 @@ import time
 import sqlmodel
 
 import atr.db as db
+import atr.mail as mail
 import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -67,6 +68,14 @@ class FoundationCommitter(GeneralPublic):
         ).demand(storage.AccessError(f"Key not found: {fingerprint}"))
         await self.__data.delete(ssh_key)
         await self.__data.commit()
+        message = mail.Message(
+            email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+            email_to=f"{self.__asf_uid}@apache.org",
+            subject="ATR - Deleted SSH key",
+            body=f"In ATR an SSH key with fingerprint '{fingerprint}' was deleted from your account. "
+            "If you did not make this change, please contact ASF Tooling.",
+        )
+        await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
 
 
 class CommitteeParticipant(FoundationCommitter):

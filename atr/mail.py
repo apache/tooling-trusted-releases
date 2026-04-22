@@ -39,6 +39,7 @@ _APACHE_DOMAIN: Final[str] = "apache.org"
 _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
+NOREPLY_EMAIL_ADDRESS: Final[str] = f"noreply@{_APACHE_DOMAIN}"
 
 MailFooterCategory = models_mail.MailFooterCategory
 
