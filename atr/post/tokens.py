@@ -20,12 +20,12 @@ import hashlib
 import secrets
 from typing import Final, Literal
 
-import quart
 import quart_rate_limiter as rate_limiter
 
 import atr.blueprints.post as post
 import atr.get as get
 import atr.htm as htm
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
@@ -96,5 +96,7 @@ async def _delete_token(session: web.Committer, delete_form: shared.tokens.Delet
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
         await wafc.tokens.delete_token(delete_form.token_id)
-    await quart.flash("Token deleted successfully", "success")
+    # audit_guidance revoking a PAT terminates all of this user's OAuth sessions, in case the token was created by
+    # an attacker-controlled session
+    await sessions.terminate_current_users_sessions(session.uid)
     return await session.redirect(get.tokens.tokens)

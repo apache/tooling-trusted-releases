@@ -32,6 +32,7 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.storage.outcome as outcome
@@ -248,7 +249,10 @@ async def _delete_ssh_key(session: web.Committer, delete_form: shared.keys.Delet
         except storage.AccessError as e:
             return await session.redirect(get.keys.keys, error=f"Error deleting SSH key: {e}")
 
-    return await session.redirect(get.keys.keys, success="SSH key deleted successfully")
+    # audit_guidance revoking an SSH key terminates all of this user's OAuth sessions, in case the key was uploaded
+    # by an attacker-controlled session
+    await sessions.terminate_current_users_sessions(session.uid)
+    return await session.redirect(get.keys.keys)
 
 
 async def _fetch_keys_from_url(keys_url: str) -> str:

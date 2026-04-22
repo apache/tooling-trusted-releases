@@ -100,6 +100,15 @@ async def read() -> sql.UserSession | None:
     return None
 
 
+async def terminate_current_users_sessions(uid: str) -> int:
+    # revoking a credential must log the user out of every OAuth session,
+    # in case the revoked credential was created by an attacker-controlled session
+    count = await asfquart.APP.sessions.revoke_by_uid(uid)
+    await asfquart.session.aclear()
+    invalidate_cache()
+    return count
+
+
 def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:
     # Field names match the raw OAuth dict from asfquart
     # They do not match ClientSession attribute names

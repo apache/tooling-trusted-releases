@@ -426,6 +426,13 @@ def _render_committee_checkboxes(
 async def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
     page.h3["Your SSH keys"]
     if user_ssh_keys:
+        page.div(".alert.alert-warning.mb-3")[
+            htm.p(".fw-semibold.mb-1")["Note:"],
+            htm.p(".mb-0")[
+                "Deleting any SSH key will log you out of every ATR session for security. ",
+                "You will need to sign in again.",
+            ],
+        ]
         grid = htm.Block(htm.div, classes=".d-grid.gap-4")
         for key in user_ssh_keys:
             card_block = htm.Block(htm.div, classes=f"#ssh-key-{key.fingerprint}.card.p-3.border")
@@ -454,6 +461,7 @@ async def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
                 form_classes=".mt-3",
                 submit_label="Delete key",
                 submit_classes="btn btn-danger",
+                confirm="Deleting this SSH key will log you out of every session. Continue?",
                 defaults={"fingerprint": key.fingerprint},
                 empty=True,
             )

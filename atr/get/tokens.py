@@ -46,6 +46,12 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
         token is shown only once when you create it. You can revoke tokens
         you no longer need."""
     ]
+    page.div(".alert.alert-warning.mb-3")[
+        htm.p(".fw-semibold.mb-1")["Note:"],
+        htm.p(".mb-0")[
+            "Revoking any token will log you out of every ATR session for security. You will need to sign in again."
+        ],
+    ]
     add_form = await form.render(
         model_cls=shared.tokens.AddTokenForm,
         form_classes=".mb-0",
@@ -113,6 +119,7 @@ async def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalA
             form_classes=".mb-0",
             submit_classes="btn-sm btn-danger",
             submit_label="Revoke",
+            confirm="Revoking this token will log you out of every session. Continue?",
             defaults={"token_id": t.id},
             empty=True,
         )
