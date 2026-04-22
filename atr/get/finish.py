@@ -193,7 +193,7 @@ async def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -
     """Render the delete directory form."""
     section = htm.Block()
 
-    section.h2["Delete an empty directory"]
+    section.h3["Delete an empty directory"]
 
     await form.render_block(
         section,
@@ -201,7 +201,6 @@ async def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -
         defaults={"directory_to_delete": deletable_dirs},
         submit_label="Delete empty directory",
         submit_classes="btn-danger",
-        form_classes=".mb-4",
     )
 
     return section.collect()
@@ -314,8 +313,7 @@ async def _render_page(
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
 
-    page.h2["Distributions"]
-    # Information paragraph
+    page.h2["Distribute on third party platforms"]
     page.p[
         "During this phase you should distribute release artifacts to your package distribution networks "
         "such as Maven Central, PyPI, or Docker Hub."
@@ -327,6 +325,7 @@ async def _render_page(
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release))
 
+    page.h2["Tidy up the release"]
     # Delete directory form
     if deletable_dirs:
         page.append(await _render_delete_directory_form(deletable_dirs))
@@ -384,7 +383,7 @@ async def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Eleme
     """Render the remove RC tags section."""
     section = htm.Block()
 
-    section.h2["Remove release candidate tags"]
+    section.h3["Remove release candidate tags"]
 
     if rc_analysis.affected_count > 0:
         section.div(".alert.alert-info.mb-3")[

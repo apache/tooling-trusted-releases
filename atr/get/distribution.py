@@ -96,8 +96,11 @@ async def list_get(
     # Table of contents
     block.append(htm.ul_links(*[(f"#distribution-{dist.identifier}", dist.title) for dist in distributions]))
 
-    ## Distributions
-    block.h2["Distributions"]
+    ## Distributions on third party platforms
+    block.h2["Distributions on third party platforms"]
+    block.p[
+        "These are distributions that are hosted on third party platforms such as Maven Central, PyPI, or Docker Hub."
+    ]
     for dist in distributions:
         title_extra = []
         if dist.pending:
