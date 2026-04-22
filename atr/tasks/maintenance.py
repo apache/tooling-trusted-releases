@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import time
 from typing import Final
 
@@ -28,6 +29,7 @@ import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 
+_EXPIRED_TOKEN_RETENTION_DAYS: Final[int] = 30
 _FORM_ERROR_TTL_SECONDS: Final[int] = 24 * 60 * 60
 
 
@@ -45,8 +47,9 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         # (and knowing this task will finish before it's re-scheduled)
         await tasks.schedule_next(task_args.asf_uid, task_args.next_schedule_seconds, tasks.run_maintenance)
 
-        await _storage_maintenance()
+        await _expired_pats_maintenance()
         await _session_data_maintenance()
+        await _storage_maintenance()
         await _workflow_ssh_keys_maintenance()
 
         log.info(
@@ -60,6 +63,18 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         error_msg = f"Unexpected error during maintenance: {e!s}"
         log.exception("Maintenance failed with unexpected error")
         raise MaintenanceError(error_msg) from e
+
+
+async def _expired_pats_maintenance() -> None:
+    via = sql.validate_instrumented_attribute
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_EXPIRED_TOKEN_RETENTION_DAYS)
+    async with db.session() as data:
+        statement = sqlmodel.delete(sql.PersonalAccessToken).where(via(sql.PersonalAccessToken.expires) < cutoff)
+        result = await data.execute(statement)
+        await data.commit()
+        deleted = getattr(result, "rowcount", 0) or 0
+        if deleted > 0:
+            log.info(f"Purged {deleted} expired personal access tokens")
 
 
 async def _session_data_maintenance() -> None:
