@@ -457,7 +457,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 ],
                 htm.a(
                     f".btn{announce_classes}.me-2",
-                    title=f"Announce and distribute {release.key}",
+                    title=f"Announce and publish {release.key}",
                     href=util.as_url(
                         announce.selected,
                         project_key=release.project.key,
@@ -467,7 +467,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     else None,
                 )[
                     htm.icon("check-circle"),
-                    " Announce and distribute",
+                    " Announce and publish",
                 ],
                 htm.span(".page-preview-meta-item.page-extra-muted")[f"{announce_disable_message}"],
             ],

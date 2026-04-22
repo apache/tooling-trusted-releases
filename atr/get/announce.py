@@ -115,8 +115,8 @@ async def selected(
     )
 
     return await template.blank(
-        title=f"Announce and distribute {release.project.display_name} {release.version}",
-        description=f"Announce and distribute {release.project.display_name} {release.version} as a release.",
+        title=f"Announce and publish {release.project.display_name} {release.version}",
+        description=f"Announce and publish {release.project.display_name} {release.version} as a release.",
         content=content,
         javascripts=["announce-confirm"],
     )
