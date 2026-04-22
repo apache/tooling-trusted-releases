@@ -97,7 +97,7 @@ def build_path(
     segments: list[str] = []
     validated_params: list[tuple[str, type]] = []
     literal_params: dict[str, str] = {}
-    unique = _UniqueParams()
+    unique = UniqueParams()
 
     for ix, param_name in enumerate(params):
         hint = hints.get(param_name)
@@ -150,7 +150,7 @@ def build_api_path(
     segments: list[str] = []
     validated_params: list[tuple[str, type]] = []
     literal_params: dict[str, str] = {}
-    unique = _UniqueParams()
+    unique = UniqueParams()
     optional_params: list[str] = []
 
     for ix, param_name in enumerate(params):
@@ -312,7 +312,7 @@ def _parse_query_args(query_cls: type, args: Any) -> Any:
 
 
 @dataclasses.dataclass
-class _UniqueParams:
+class UniqueParams:
     """Tracks the at-most-one body, form, and query parameters during path building."""
 
     body: tuple[str, type[pydantic.BaseModel]] | None = None

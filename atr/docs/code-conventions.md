@@ -70,12 +70,13 @@ This includes triple quoted strings.
 
 ### Prefix private interfaces with a single underscore
 
-Prefix all private interfaces, e.g. functions, classes, constants, variables, with a single underscore. An interface is private when used exclusively within its containing module and not referenced by external code, templates, or processes.
+Prefix private interfaces, e.g. functions, constants, variables, with a single underscore. An interface is private when used exclusively within its containing module and not referenced by external code, templates, or processes.
 
 Exceptions to this rule include:
 
 * Type variables
 * Enumerations
+* Classes
 * Methods requiring interface compatibility with their superclass
 * Nested functions (which should generally be avoided)
 

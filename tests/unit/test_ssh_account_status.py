@@ -200,7 +200,7 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
         return True
 
     monkeypatch.setattr("atr.ldap.is_active", is_active)
-    monkeypatch.setattr("atr.db.session", lambda: _WorkflowKeySession(mock_workflow_key, mark_session_closed))
+    monkeypatch.setattr("atr.db.session", lambda: WorkflowKeySession(mock_workflow_key, mark_session_closed))
 
     result = await server.validate_public_key("github", key)
 
@@ -231,7 +231,7 @@ def _make_server() -> ssh.SSHServer:
     return server
 
 
-class _WorkflowKeySession:
+class WorkflowKeySession:
     def __init__(self, workflow_key: mock.MagicMock, on_exit):
         self._workflow_key = workflow_key
         self._on_exit = on_exit
