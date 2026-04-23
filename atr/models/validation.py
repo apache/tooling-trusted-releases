@@ -86,6 +86,11 @@ def pagination_args_validate(query_args: Any) -> None:
             raise ValueError("Minimum offset less than 0 is nonsense")
 
 
+def validate_github_repository_name(github_repository_name: str | None) -> None:
+    if github_repository_name and ("/" in github_repository_name):
+        raise ValueError("GitHub repository name must not contain a slash.")
+
+
 def validate_ignore_pattern(pattern: str) -> None:
     """Raise an exception if the pattern is invalid."""
     if pattern == "!":
@@ -94,3 +99,14 @@ def validate_ignore_pattern(pattern: str) -> None:
     if raw_pattern.startswith("!"):
         raw_pattern = raw_pattern[1:]
     compile_ignore_pattern(raw_pattern)
+
+
+def validate_policy_min_hours(min_hours: int) -> None:
+    if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
+        raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
+
+
+def validate_trusted_publishing_workflow_paths(paths: list[str]) -> None:
+    for path in paths:
+        if not path.startswith(".github/workflows/"):
+            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")

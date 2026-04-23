@@ -25,6 +25,7 @@ import pydantic
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.util as util
 
 type COMPOSE = Literal["compose"]
@@ -173,10 +174,7 @@ class VotePolicyForm(form.Form):
 
     @pydantic.model_validator(mode="after")
     def validate_vote_fields(self) -> VotePolicyForm:
-        min_hours = self.min_hours
-        if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
-            raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
-
+        validation.validate_policy_min_hours(self.min_hours)
         return self
 
 

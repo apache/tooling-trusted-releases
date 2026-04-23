@@ -156,7 +156,7 @@ class CommitteeMember(CommitteeParticipant):
             _validate_file_tag_mappings(update.file_tag_mappings)
 
         if ("min_hours" in fields_to_update) and (update.min_hours is not None):
-            _validate_min_hours(update.min_hours)
+            models.validation.validate_policy_min_hours(update.min_hours)
 
         if ("manual_vote" in fields_to_update) and update.manual_vote:
             if project.committee and project.committee.is_podling:
@@ -363,8 +363,3 @@ def _validate_file_tag_mappings(mappings: dict[str, list[str]]) -> None:
         for value in values:
             if ".." in value:
                 raise ValueError("File tag mapping values may not contain '..'")
-
-
-def _validate_min_hours(min_hours: int) -> None:
-    if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
-        raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")

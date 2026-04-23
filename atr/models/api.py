@@ -326,7 +326,7 @@ class PolicyUpdateArgs(schema.Strict):
     github_repository_name: str | None = None
     github_vote_workflow_path: list[str] | None = None
     license_check_mode: sql.LicenseCheckMode | None = None
-    mailto_addresses: list[str] | None = None
+    mailto_addresses: list[pydantic.EmailStr] | None = None
     manual_vote: bool | None = None
     min_hours: int | None = None
     preserve_download_files: bool | None = None
@@ -337,6 +337,28 @@ class PolicyUpdateArgs(schema.Strict):
     start_vote_subject: str | None = None
     start_vote_template: str | None = None
     vote_comment_template: str | None = None
+
+    @pydantic.model_validator(mode="after")
+    def validate_policy_fields(self) -> "PolicyUpdateArgs":
+        if self.min_hours is not None:
+            validation.validate_policy_min_hours(self.min_hours)
+
+        github_repository_name = self.github_repository_name
+        if github_repository_name is not None:
+            validation.validate_github_repository_name(github_repository_name.strip())
+
+        workflow_paths: list[str] = []
+        for paths in (
+            self.github_compose_workflow_path,
+            self.github_vote_workflow_path,
+            self.github_finish_workflow_path,
+        ):
+            if paths is None:
+                continue
+            workflow_paths.extend(path.strip() for path in paths if path.strip())
+        validation.validate_trusted_publishing_workflow_paths(workflow_paths)
+
+        return self
 
 
 class PolicyUpdateResults(schema.Strict):

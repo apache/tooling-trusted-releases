@@ -1144,12 +1144,8 @@ def validate_trusted_publishing_constraints(
     if github_repository_branch and (not github_repository_name):
         raise ValueError("GitHub repository name is required when a GitHub branch is set.")
 
-    if github_repository_name and ("/" in github_repository_name):
-        raise ValueError("GitHub repository name must not contain a slash.")
-
-    for path in all_paths:
-        if not path.startswith(".github/workflows/"):
-            raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+    validation.validate_github_repository_name(github_repository_name)
+    validation.validate_trusted_publishing_workflow_paths(all_paths)
 
 
 def validate_vote_duration(duration: int):
