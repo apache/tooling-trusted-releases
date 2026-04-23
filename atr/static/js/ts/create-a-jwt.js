@@ -22,10 +22,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const outputContainer = document.getElementById("jwt-container");
     const output = document.getElementById("jwt-output");
     const timeField = document.getElementById("time-remaining");
-    let timeoutObj, intervalObj;
+    let timeoutObj = null;
+    let intervalObj = null;
     if (!form || !output || !outputContainer || !timeField) {
         return;
     }
+    const jwtOutput = output;
+    const jwtOutputContainer = outputContainer;
+    const jwtTimeField = timeField;
+    function clearJwtDisplay() {
+        if (timeoutObj !== null) {
+            clearTimeout(timeoutObj);
+            timeoutObj = null;
+        }
+        if (intervalObj !== null) {
+            clearInterval(intervalObj);
+            intervalObj = null;
+        }
+        jwtOutput.textContent = "";
+        jwtTimeField.textContent = "";
+        jwtOutputContainer.classList.add("d-none");
+    }
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            clearJwtDisplay();
+        }
+    });
+    window.addEventListener("pagehide", () => {
+        clearJwtDisplay();
+    });
+    window.addEventListener("pageshow", (event) => {
+        if (event.persisted) {
+            clearJwtDisplay();
+        }
+    });
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const resp = await fetch(form.action, {
@@ -35,19 +65,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (resp.ok) {
             const token = await resp.text();
             let time = 60;
-            clearTimeout(timeoutObj);
-            clearInterval(intervalObj);
-            timeField.textContent = time + "s";
-            outputContainer.classList.remove("d-none");
-            output.textContent = token;
+            clearJwtDisplay();
+            jwtOutputContainer.classList.remove("d-none");
+            jwtOutput.textContent = token;
+            jwtTimeField.textContent = time + "s";
             timeoutObj = setTimeout(() => {
-                output.textContent = "";
-                outputContainer.classList.add("d-none");
-                clearInterval(intervalObj);
+                clearJwtDisplay();
             }, 60000);
             intervalObj = setInterval(() => {
                 time = time - 1;
-                timeField.textContent = time + "s";
+                jwtTimeField.textContent = time + "s";
             }, 1000);
         }
         else {

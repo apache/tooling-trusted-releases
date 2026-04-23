@@ -19,14 +19,49 @@
 
 document.addEventListener("DOMContentLoaded", (): void => {
   const form = document.getElementById("issue-jwt-form") as HTMLFormElement | null;
-  const outputContainer = document.getElementById("jwt-container")
+  const outputContainer = document.getElementById("jwt-container");
   const output = document.getElementById("jwt-output");
   const timeField = document.getElementById("time-remaining");
-  let timeoutObj: number, intervalObj: number;
+  let timeoutObj: number | null = null;
+  let intervalObj: number | null = null;
 
   if (!form || !output || !outputContainer || !timeField) {
     return;
   }
+
+  const jwtOutput = output;
+  const jwtOutputContainer = outputContainer;
+  const jwtTimeField = timeField;
+
+  function clearJwtDisplay(): void {
+    if (timeoutObj !== null) {
+      clearTimeout(timeoutObj);
+      timeoutObj = null;
+    }
+    if (intervalObj !== null) {
+      clearInterval(intervalObj);
+      intervalObj = null;
+    }
+    jwtOutput.textContent = "";
+    jwtTimeField.textContent = "";
+    jwtOutputContainer.classList.add("d-none");
+  }
+
+  document.addEventListener("visibilitychange", (): void => {
+    if (document.visibilityState === "hidden") {
+      clearJwtDisplay();
+    }
+  });
+
+  window.addEventListener("pagehide", (): void => {
+    clearJwtDisplay();
+  });
+
+  window.addEventListener("pageshow", (event: PageTransitionEvent): void => {
+    if (event.persisted) {
+      clearJwtDisplay();
+    }
+  });
 
   form.addEventListener("submit", async (e: Event): Promise<void> => {
     e.preventDefault();
@@ -38,21 +73,19 @@ document.addEventListener("DOMContentLoaded", (): void => {
 
     if (resp.ok) {
       const token = await resp.text();
-      let time = 60
-      clearTimeout(timeoutObj)
-      clearInterval(intervalObj)
-      timeField.textContent = time + "s"
-      outputContainer.classList.remove("d-none");
-      output.textContent = token;
+      let time = 60;
+
+      clearJwtDisplay();
+      jwtOutputContainer.classList.remove("d-none");
+      jwtOutput.textContent = token;
+      jwtTimeField.textContent = time + "s";
       timeoutObj = setTimeout(() => {
-          output.textContent = ""
-          outputContainer.classList.add("d-none");
-          clearInterval(intervalObj)
-      }, 60000)
+        clearJwtDisplay();
+      }, 60000);
       intervalObj = setInterval(() => {
-          time = time - 1
-          timeField.textContent = time + "s"
-      }, 1000)
+        time = time - 1;
+        jwtTimeField.textContent = time + "s";
+      }, 1000);
     } else {
       alert("Failed to fetch JWT");
     }
