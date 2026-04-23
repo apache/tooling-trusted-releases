@@ -68,6 +68,7 @@ _RATE_LIMIT_IP: Final = 100
 _RATE_LIMIT_USER: Final = 10
 _RATE_WINDOW: Final = 60.0
 _RSYNC_TIMEOUT: Final = 90 * 60
+_RSYNC_MAX_UPLOAD_SIZE: Final = 2_000_000_000
 
 # Keyed by IP address; catches all connections including failed auth
 global_ip_rate_buckets: dict[str, collections.deque[float]] = {}
@@ -277,6 +278,13 @@ async def server_stop(server: asyncssh.SSHAcceptor) -> None:
     server.close()
     await server.wait_closed()
     log.info("SSH server stopped")
+
+
+def _build_rsync_write_argv(argv: list[str], path: safe.StatePath) -> list[str]:
+    """Build the rsync command for a write, adding enforced server side limits."""
+    if len(argv) < 2 or argv[-2] != ".":
+        raise RuntimeError("Validated rsync write argv must end with '.' and the destination path")
+    return [*argv[:-2], f"--max-size={_RSYNC_MAX_UPLOAD_SIZE}", "--info=skip2", ".", str(path)]
 
 
 def _output_stderr(process: asyncssh.SSHServerProcess, message: str) -> None:
@@ -644,13 +652,12 @@ async def _step_07b_process_validated_rsync_write(
             nonlocal exit_status
             if old_rev is not None:
                 log.info(f"Using old revision {old_rev.number} and interim path {path}")
-            # Update the rsync command path to the new revision directory
-            argv[-1] = str(path)
+            rsync_argv = _build_rsync_write_argv(argv, path)
 
             ###################################################
             ### Calls _step_08_execute_rsync_upload_command ###
             ###################################################
-            exit_status = await _step_08_execute_rsync(process, argv)
+            exit_status = await _step_08_execute_rsync(process, rsync_argv)
             if exit_status != 0:
                 if old_rev is not None:
                     for_revision = f"successor of revision {old_rev.number}"
@@ -658,7 +665,7 @@ async def _step_07b_process_validated_rsync_write(
                     for_revision = f"initial revision for release {release_key}"
                 log.error(
                     f"rsync upload failed with exit status {exit_status} for {for_revision}. "
-                    f"Command: {process.command} (run as {' '.join(argv)})"
+                    f"Command: {process.command} (run as {' '.join(rsync_argv)})"
                 )
                 raise types.FailedError(f"rsync upload failed with exit status {exit_status} for {for_revision}")
 
