@@ -58,18 +58,24 @@ RUN set -eux; \
 
 # WORKDIR /var/run
 ENV SYFT_VERSION=1.38.2
+ENV SYFT_INSTALL_SHA256=01d0d15aff461f1bc54d1716feb4824341918c4f37e1b6a5a0c0caee2251be67
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
 # TODO: This is much faster than the above, but we should figure out how to pin the binaries
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh | sh -s -- -b /usr/local/bin
+RUN curl -fsSL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh -o /tmp/syft-install.sh && \
+    echo "${SYFT_INSTALL_SHA256}  /tmp/syft-install.sh" | sha256sum -c - && \
+    sh /tmp/syft-install.sh -b /usr/local/bin && \
+    rm -f /tmp/syft-install.sh
 ENV PARLAY_VERSION=0.9.0
 RUN GOPATH=/usr/local go install github.com/snyk/parlay@v${PARLAY_VERSION}
 ENV SBOMQS_VERSION=1.1.0
 RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v${SBOMQS_VERSION}
 
 ENV CDXCLI_VERSION=0.29.1
-# TODO: Check hash
-RUN curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
-    -o /usr/local/bin/cyclonedx && chmod +x /usr/local/bin/cyclonedx
+ENV CDXCLI_SHA256=526d55f67ac53744f45525f30f0f210d3a95e044b5073904cb3eacb8f8e52135
+RUN curl -fsSL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
+    -o /usr/local/bin/cyclonedx && \
+    echo "${CDXCLI_SHA256}  /usr/local/bin/cyclonedx" | sha256sum -c - && \
+    chmod +x /usr/local/bin/cyclonedx
 
 # final image
 FROM python:3.13.7-alpine3.22
