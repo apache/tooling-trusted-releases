@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Final
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+import pydantic
 import sqlmodel
 
 import atr.config as config
@@ -189,10 +190,10 @@ class Release(schema.Strict):
 
 
 class ProjectStatus(schema.Strict):
-    category: str | None = None
+    category: list[str] = schema.factory(list)
     created: str | None = None
     description: str | None = None
-    programming_language: str | None = schema.alias_opt("programming-language")
+    programming_language: list[str] = schema.Field(alias="programming-language", default_factory=list)
     doap: str | None = None
     homepage: str
     name: str
@@ -218,6 +219,15 @@ class ProjectStatus(schema.Strict):
     wiki: str | None = None
     account: AccountInfo | None = None
     platform: str | None = None
+
+    @pydantic.field_validator("category", "programming_language", mode="before")
+    @classmethod
+    def _coerce_to_list(cls, v: object) -> list[str]:
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        if isinstance(v, str):
+            return [v] if v else []
+        return []
 
 
 class ProjectsData(helpers.DictRoot[ProjectStatus]):
@@ -486,9 +496,9 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         # Pass the project name through the validator
         safe.ProjectKey(project_model.key)
         project_model.name = str(project_status.name)
-        project_model.category = project_status.category
+        project_model.category = ", ".join(project_status.category) or None
         project_model.description = project_status.description
-        project_model.programming_languages = project_status.programming_language
+        project_model.programming_languages = ", ".join(project_status.programming_language) or None
 
     return added_count, updated_count
 
