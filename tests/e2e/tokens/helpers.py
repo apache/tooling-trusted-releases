@@ -17,17 +17,25 @@
 
 from typing import Final
 
+import e2e.helpers as helpers
 from playwright.sync_api import Page
 
 TOKEN_LABEL_FOR_TESTING: Final[str] = "e2e-test-token"
 TOKENS_PATH: Final[str] = "/tokens"
 
 
-def delete_token_by_label(page: Page, label: str) -> None:
-    row = get_token_row_by_label(page, label)
-    if row.count() > 0:
-        row.get_by_role("button", name="Delete").click()
+def delete_token_by_label(page: Page, label: str) -> bool:
+    deleted = False
+    while True:
+        row = get_token_row_by_label(page, label).first
+        if row.count() == 0:
+            return deleted
+        page.once("dialog", lambda dialog: dialog.accept())
+        row.get_by_role("button", name="Revoke").click()
         page.wait_for_load_state()
+        deleted = True
+        helpers.log_in(page)
+        helpers.visit(page, TOKENS_PATH)
 
 
 def get_token_row_by_label(page: Page, label: str) -> Page:

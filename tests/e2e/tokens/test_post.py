@@ -46,7 +46,7 @@ def test_create_token_without_label_shows_error(page_tokens_clean: Page) -> None
     expect(error_message).to_contain_text("Label is required")
 
 
-def test_delete_token_shows_success(page_tokens_clean: Page) -> None:
+def test_revoke_token_removes_token(page_tokens_clean: Page) -> None:
     page = page_tokens_clean
 
     label_input = page.locator('input[name="label"]')
@@ -57,12 +57,7 @@ def test_delete_token_shows_success(page_tokens_clean: Page) -> None:
     token_row = token_helpers.get_token_row_by_label(page, token_helpers.TOKEN_LABEL_FOR_TESTING)
     expect(token_row).to_be_visible()
 
-    token_row.get_by_role("button", name="Delete").click()
-    page.wait_for_load_state()
-
-    success_message = page.locator(".flash-message.flash-success")
-    expect(success_message).to_be_visible()
-    expect(success_message).to_contain_text("Token deleted successfully")
+    token_helpers.delete_token_by_label(page, token_helpers.TOKEN_LABEL_FOR_TESTING)
 
     token_row = token_helpers.get_token_row_by_label(page, token_helpers.TOKEN_LABEL_FOR_TESTING)
     expect(token_row).to_have_count(0)
