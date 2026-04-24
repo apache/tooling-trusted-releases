@@ -50,7 +50,7 @@ dependencies = [
   "quart-wtforms>=1.0.3,<2.0.0",
   "requests>=2.33.0",
   "rich>=14.0.0",
-  "rpgp-py>=0.19.5",
+  "rpgp-py==0.19.6",
   "semver>=3.0.4",
   "sqlmodel>=0.0.24,<0.1.0",
   "ssh-audit>=3.3.0",
@@ -76,6 +76,15 @@ test = [
   "pytest-playwright>=0.7.2",
   "pytest>=8.0",
 ]
+
+[tool.uv.sources]
+rpgp-py = { index = "rpgp-py-sbp" }
+
+[[tool.uv.index]]
+name = "rpgp-py-sbp"
+url = "https://raw.githubusercontent.com/apache/tooling-trusted-releases/4408f2533c793df9050878e49d3e6437874fa2c2/wheelhouse/rpgp-py-v0.19.6.html"
+format = "flat"
+explicit = true
 
 # Additional tools
 

@@ -49,7 +49,7 @@ blockbuster==1.5.26
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
-certifi==2026.2.25
+certifi==2026.4.22
     # via requests
 cffi==2.0.0
     # via
@@ -60,7 +60,7 @@ cfgv==3.5.0
     # via pre-commit
 charset-normalizer==3.4.7
     # via requests
-click==8.3.2
+click==8.3.3
     # via
     #   djlint
     #   flask
@@ -94,7 +94,7 @@ dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.1.0
+dulwich==1.2.0
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -108,7 +108,7 @@ editorconfig==0.17.1
     #   jsbeautifier
 email-validator==2.3.0
     # via tooling-trusted-releases
-exarch==0.2.9
+exarch==0.3.0
     # via tooling-trusted-releases
 ezt==1.1
     # via
@@ -154,7 +154,7 @@ hyperscan==0.8.2
     # via tooling-trusted-releases
 identify==2.6.19
     # via pre-commit
-idna==3.11
+idna==3.13
     # via
     #   anyio
     #   email-validator
@@ -218,7 +218,7 @@ packaging==26.1
     # via
     #   dunamai
     #   tooling-trusted-releases
-pathspec==1.0.4
+pathspec==1.1.0
     # via djlint
 pgpy==0.6.0
     # via tooling-trusted-releases
@@ -226,7 +226,7 @@ platformdirs==4.9.6
     # via
     #   python-discovery
     #   virtualenv
-pre-commit==4.5.1
+pre-commit==4.6.0
 priority==2.0.0
     # via hypercorn
 propcache==0.4.1
@@ -264,7 +264,7 @@ pyhumps==3.8.0
     # via quart-schema
 pyjwt==2.12.1
     # via tooling-trusted-releases
-pyright==1.1.408
+pyright==1.1.409
 python-dateutil==2.9.0.post0
     # via
     #   arrow
@@ -319,7 +319,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-rpgp-py==0.19.5
+rpgp-py==0.19.6
     # via tooling-trusted-releases
 ruff==0.15.11
 semver==3.0.4

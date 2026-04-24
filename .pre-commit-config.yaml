@@ -84,7 +84,7 @@ repos:
 #        - --profile=jinja
 #        - --reformat
 - repo: https://github.com/thibaudcolas/pre-commit-stylelint
-  rev: v17.8.0
+  rev: v17.9.0
   hooks:
     - id: stylelint
       additional_dependencies: ['stylelint@16.14.1', 'stylelint-config-standard@37.0.0']

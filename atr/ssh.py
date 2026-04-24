@@ -94,7 +94,7 @@ class SSHServer(asyncssh.SSHServer):
         log.info(f"SSH connection received from {peer_addr}")
         if not _rate_limit_check(global_ip_rate_buckets, peer_addr, _RATE_LIMIT_IP):
             log.warning(f"IP rate limit exceeded for {peer_addr}")
-            conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+            conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")  # type: ignore[reportPrivateImportUsage]
             return
 
     def connection_lost(self, exc: Exception | None) -> None:
@@ -158,7 +158,7 @@ class SSHServer(asyncssh.SSHServer):
         if username and not _rate_limit_check(global_user_rate_buckets, username, _RATE_LIMIT_USER):
             log.warning(f"User rate limit exceeded for {username}")
             log.auth_failure(auth_type, "rate_limit_exceeded", username)
-            self._conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+            self._conn.disconnect(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")  # type: ignore[reportPrivateImportUsage]
             return
         log.auth_success(auth_type, username)
 
