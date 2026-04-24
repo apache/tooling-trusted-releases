@@ -463,7 +463,7 @@ def run_tests_in_context(context: BrowserContext, credentials: Credentials, skip
 
     if tidy_after:
         logging.info("Tidying up after the tests")
-        test_tidy_up(page)
+        test_tidy_up(page, credentials)
         logging.info("Tidying up after the tests finished")
 
 
@@ -524,7 +524,7 @@ def ssh_keys_generate() -> None:
 def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
     start = time.perf_counter()
     test_login(page, credentials)
-    test_tidy_up(page)
+    test_tidy_up(page, credentials)
 
     # Declare all tests
     # The order here is important
@@ -1215,9 +1215,9 @@ def test_ssh_02_rsync_upload(page: Page, credentials: Credentials) -> None:
     poll_for_tasks_completion(page, project_key, version_key, revision)
 
 
-def test_tidy_up(page: Page) -> None:
+def test_tidy_up(page: Page, credentials: Credentials) -> None:
     test_tidy_up_releases(page)
-    test_tidy_up_ssh_keys(page)
+    test_tidy_up_ssh_keys(page, credentials)
     test_tidy_up_openpgp_keys(page)
 
 
@@ -1349,7 +1349,7 @@ def test_tidy_up_project(page: Page) -> None:
         logging.info(f"Project card for '{project_key}' not found, no deletion needed")
 
 
-def test_tidy_up_ssh_keys(page: Page) -> None:
+def test_tidy_up_ssh_keys(page: Page, credentials: Credentials) -> None:
     logging.info("Starting SSH key tidy up")
     go_to_path(page, "/keys")
     logging.info("Navigated to /keys page for SSH key cleanup")
@@ -1417,10 +1417,10 @@ def test_tidy_up_ssh_keys(page: Page) -> None:
             logging.debug(f"SSH key card: test comment '{SSH_KEY_COMMENT}' not found in key content")
 
     # For the complexity linter only
-    test_tidy_up_ssh_keys_continued(page, fingerprints_to_delete)
+    test_tidy_up_ssh_keys_continued(page, credentials, fingerprints_to_delete)
 
 
-def test_tidy_up_ssh_keys_continued(page: Page, fingerprints_to_delete: list[str]) -> None:
+def test_tidy_up_ssh_keys_continued(page: Page, credentials: Credentials, fingerprints_to_delete: list[str]) -> None:
     if not fingerprints_to_delete:
         logging.info("No test SSH keys found to delete")
         return
@@ -1447,8 +1447,12 @@ def test_tidy_up_ssh_keys_continued(page: Page, fingerprints_to_delete: list[str
             page.wait_for_load_state()
             wait_for_path(page, "/keys")
 
-            flash_message_locator = page.locator("div.flash-success")
-            expect(flash_message_locator).to_contain_text("SSH key deleted successfully")
+            logging.info("SSH key deletion terminates sessions; logging in again")
+            test_login(page, credentials)
+            go_to_path(page, "/keys")
+
+            deleted_card_locator = page.locator(f"div.card:has(td:has-text('{fingerprint}'))")
+            expect(deleted_card_locator).not_to_be_visible()
             logging.info(f"Deletion successful for key {fingerprint}")
 
         else:
