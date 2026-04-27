@@ -319,7 +319,7 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-rpgp-py==0.19.6
+rpgp-py==0.19.7
     # via tooling-trusted-releases
 ruff==0.15.12
 semver==3.0.4
