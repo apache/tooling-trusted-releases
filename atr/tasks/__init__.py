@@ -96,6 +96,7 @@ async def clear_scheduled(caller_data: db.Session | None = None) -> None:
         delete_stmt = sqlmodel.delete(sql.Task).where(
             via(sql.Task.task_type).in_(
                 [
+                    sql.TaskType.MAINTENANCE,
                     sql.TaskType.METADATA_UPDATE,
                     sql.TaskType.WORKFLOW_STATUS,
                     sql.TaskType.DISTRIBUTION_STATUS,
@@ -130,6 +131,8 @@ async def distribution_status_check(
         )
         if schedule:
             task.scheduled = schedule
+            await data.begin_immediate()
+            await _clear_existing_scheduled(data, sql.TaskType.DISTRIBUTION_STATUS, asf_uid)
         data.add(task)
         await data.commit()
         await data.flush()
@@ -260,6 +263,14 @@ async def run_maintenance(
         )
         if schedule:
             task.scheduled = schedule
+        if (schedule is not None) or schedule_next:
+            await data.begin_immediate()
+            await _clear_existing_scheduled(
+                data,
+                sql.TaskType.MAINTENANCE,
+                asf_uid,
+                include_unscheduled=schedule_next,
+            )
         data.add(task)
         await data.commit()
         await data.flush()
@@ -289,6 +300,8 @@ async def metadata_update(
         )
         if schedule:
             task.scheduled = schedule
+            await data.begin_immediate()
+            await _clear_existing_scheduled(data, sql.TaskType.METADATA_UPDATE, asf_uid)
         data.add(task)
         await data.commit()
         await data.flush()
@@ -518,6 +531,8 @@ async def workflow_update(
         )
         if schedule:
             task.scheduled = schedule
+            await data.begin_immediate()
+            await _clear_existing_scheduled(data, sql.TaskType.WORKFLOW_STATUS, asf_uid)
         data.add(task)
         await data.commit()
         await data.flush()
@@ -607,6 +622,29 @@ async def _add_task(data: db.Session, task: sql.Task) -> None:
         ):
             return
         raise
+
+
+async def _clear_existing_scheduled(
+    data: db.Session,
+    task_type: sql.TaskType,
+    asf_uid: str,
+    *,
+    include_unscheduled: bool = False,
+) -> None:
+    via = sql.validate_instrumented_attribute
+    conditions: list[Any] = [
+        (via(sql.Task.task_type) == task_type),
+        (via(sql.Task.asf_uid) == asf_uid),
+        (via(sql.Task.status) == sql.TaskStatus.QUEUED),
+    ]
+    if not include_unscheduled:
+        conditions.append(via(sql.Task.scheduled).is_not(None))
+
+    await data.execute(
+        sqlmodel.delete(sql.Task).where(
+            *conditions,
+        )
+    )
 
 
 async def _draft_file_checks(
