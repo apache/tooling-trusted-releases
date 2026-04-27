@@ -20,7 +20,7 @@ from typing import Any, Final, Literal
 
 import aiofiles.os
 import asfquart.base as base
-import pgpy
+import openpgp
 import quart
 import quart_rate_limiter as rate_limiter
 import quart_schema
@@ -1281,20 +1281,15 @@ async def signature_provenance(
     host = conf.APP_HOST
 
     signature_asc_data = data.signature_asc_text
-    sig = pgpy.PGPSignature.from_blob(signature_asc_data)
-
-    if not hasattr(sig, "signer_fingerprint"):
-        raise exceptions.NotFound("No signer fingerprint found")
-
-    signer_fingerprint = getattr(sig, "signer_fingerprint").lower()
+    sig, _ = openpgp.DetachedSignature.from_armor(signature_asc_data)
+    signature_info = sig.signature_info()
+    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
+    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
+    if (not issuer_fingerprints) and (not issuer_key_ids):
+        raise exceptions.NotFound("No signer fingerprint or key id found")
     async with db.session() as db_data:
-        key = await db_data.public_signing_key(
-            fingerprint=signer_fingerprint,
-            _committees=True,
-        ).demand(
-            exceptions.NotFound(
-                f"Key with fingerprint {signer_fingerprint} not found",
-            )
+        key, signer_fingerprint = await _resolve_signing_key_from_signature(
+            db_data, issuer_fingerprints, issuer_key_ids
         )
 
     if data.project_key is not None:
@@ -1661,6 +1656,17 @@ async def vote_tabulate(
     ).model_dump(mode="json"), 200
 
 
+def _issuer_matches_component(
+    fingerprint: str,
+    key_id: str,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> bool:
+    fingerprint_matches = (not issuer_fingerprints) or (fingerprint in issuer_fingerprints)
+    key_id_matches = (not issuer_key_ids) or (key_id in issuer_key_ids)
+    return fingerprint_matches and key_id_matches
+
+
 def _jwt_asf_uid() -> str:
     claims = getattr(quart.g, "jwt_claims", {})
     asf_uid = claims.get("sub")
@@ -1742,3 +1748,44 @@ async def _match_release(release_directory: safe.StatePath, data: models.api.Sig
             if rel_path_sha3_256 == data.signature_sha3_256:
                 return True
     return False
+
+
+def _matched_issuer_fingerprint(
+    key: openpgp.PublicKey,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> str | None:
+    key_fingerprint = key.fingerprint.lower()
+    if _issuer_matches_component(key_fingerprint, key.key_id.lower(), issuer_fingerprints, issuer_key_ids):
+        return key_fingerprint
+    for subkey in key.subkey_bindings():
+        subkey_fingerprint = subkey.fingerprint.lower()
+        if _issuer_matches_component(subkey_fingerprint, subkey.key_id.lower(), issuer_fingerprints, issuer_key_ids):
+            return subkey_fingerprint
+    return None
+
+
+async def _resolve_signing_key_from_signature(
+    db_data: db.Session,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> tuple[sql.PublicSigningKey, str]:
+    if not issuer_key_ids:
+        for fingerprint in issuer_fingerprints:
+            stored = await db_data.public_signing_key(fingerprint=fingerprint, _committees=True).get()
+            if stored is not None:
+                return stored, fingerprint
+    candidates = await db_data.public_signing_key(_committees=True).all()
+    for stored in candidates:
+        armored = stored.ascii_armored_key
+        if isinstance(armored, bytes):
+            armored = armored.decode("utf-8", errors="replace")
+        try:
+            parsed, _ = openpgp.PublicKey.from_armor(armored)
+        except Exception as e:
+            log.info(f"Failed to parse key {stored.fingerprint}: {e}")
+            continue
+        matched_fingerprint = _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
+        if matched_fingerprint is not None:
+            return stored, matched_fingerprint
+    raise exceptions.NotFound("No matching signing key found for signature")

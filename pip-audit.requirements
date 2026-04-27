@@ -76,7 +76,6 @@ cryptography==46.0.7
     # via
     #   asfpy
     #   asyncssh
-    #   pgpy
     #   tooling-trusted-releases
 cssbeautifier==1.15.4
     # via djlint
@@ -220,8 +219,6 @@ packaging==26.2
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-pgpy==0.6.0
-    # via tooling-trusted-releases
 platformdirs==4.9.6
     # via
     #   python-discovery
@@ -240,9 +237,7 @@ puremagic==2.2.0
 py-serializable==2.1.0
     # via cyclonedx-python-lib
 pyasn1==0.6.3
-    # via
-    #   ldap3
-    #   pgpy
+    # via ldap3
 pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
 pycryptodomex==3.23.0
@@ -273,8 +268,6 @@ python-decouple==3.8
     # via tooling-trusted-releases
 python-discovery==1.2.2
     # via virtualenv
-python-gnupg==0.5.6
-    # via tooling-trusted-releases
 pyyaml==6.0.3
     # via
     #   asfpy

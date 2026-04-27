@@ -29,6 +29,21 @@ import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 
+_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v2
+
+mDMEV2o9XRYJKwYBBAHaRw8BAQdAZ8zkuQDL9x7rcvvoo6s3iEF1j88Dknd9nZhL
+nTEoBRm0G3BhdHJpY2UubHVtdW1iYUBleGFtcGxlLm5ldIh5BBMWCAAhBQJXaj1d
+AhsDBQsJCAcCBhUICQoLAgQWAgMBAh4BAheAAAoJEBOVY2gqAg0KmQ0BAMUNzAlT
+OzG7tolSI92lhePi5VqutdqTEQTyYYWi1aEsAP0YfiuosNggTc0oRTSz46S3i0Qj
+AlpXwfU00888yIreDbg4BFdqPY0SCisGAQQBl1UBBQEBB0AWeeZlz31O4qTmIKr3
+CZhlRUXZFxc3YKyoCXyIZBBRawMBCAeIYQQYFggACQUCV2o9jQIbDAAKCRATlWNo
+KgINCsuFAP9BplWl813pi779V8OMsRGs/ynyihnOESft/H8qlM8PDQEAqIUPpIty
+OX/OBFy2RIlIi7J1bTp9RzcbzQ/4Fk4hWQQ=
+=qRfF
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
 
 class MockQuery:
     def __init__(self, value: object) -> None:
@@ -66,6 +81,21 @@ class MockDBSession:
             match = next((r for r in releases if getattr(r, "version", None) == str(version)), None)
             return MockQuery(match)
         return MockQuery(releases)
+
+
+class MockKeyDBSession:
+    def __init__(self, public_signing_keys: list[object]) -> None:
+        self._public_signing_keys = public_signing_keys
+
+    def public_signing_key(self, **kwargs: object) -> MockQuery:
+        fingerprint = kwargs.get("fingerprint")
+        if fingerprint is not None:
+            match = next(
+                (key for key in self._public_signing_keys if getattr(key, "fingerprint", None) == str(fingerprint)),
+                None,
+            )
+            return MockQuery(match)
+        return MockQuery(self._public_signing_keys)
 
 
 def test_args_accepts_scoping_fields() -> None:
@@ -134,6 +164,46 @@ async def test_match_release_no_match_wrong_hash(tmp_path: pathlib.Path) -> None
     wrong_hash = hashlib.sha3_256(b"different content").hexdigest()
     args = _make_args("example-0.0.1.tar.gz.asc", wrong_hash)
     assert await atr.api._match_release(release_dir, args) is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_signing_key_from_signature_rejects_mismatched_issuer_metadata() -> None:
+    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    subkey = next(iter(parsed_key.subkey_bindings()))
+    stored = SimpleNamespace(
+        fingerprint=parsed_key.fingerprint.lower(),
+        ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
+        committees=[],
+    )
+    db_data = MockKeyDBSession([stored])
+
+    with pytest.raises(atr.api.exceptions.NotFound, match="No matching signing key"):
+        await atr.api._resolve_signing_key_from_signature(
+            db_data,
+            issuer_fingerprints={parsed_key.fingerprint.lower()},
+            issuer_key_ids={subkey.key_id.lower()},
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_signing_key_from_signature_returns_subkey_fingerprint() -> None:
+    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    subkey = next(iter(parsed_key.subkey_bindings()))
+    stored = SimpleNamespace(
+        fingerprint=parsed_key.fingerprint.lower(),
+        ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
+        committees=[],
+    )
+    db_data = MockKeyDBSession([stored])
+
+    resolved, signer_fingerprint = await atr.api._resolve_signing_key_from_signature(
+        db_data,
+        issuer_fingerprints=set(),
+        issuer_key_ids={subkey.key_id.lower()},
+    )
+
+    assert resolved is stored
+    assert signer_fingerprint == subkey.fingerprint.lower()
 
 
 @pytest.mark.asyncio

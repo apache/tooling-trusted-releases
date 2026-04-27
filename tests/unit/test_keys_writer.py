@@ -26,6 +26,26 @@ import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
 
+_EMBEDDED_V4_EXPIRING_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1.4.10 (GNU/Linux)
+
+mI0ES+OoSQEEAJUZ/+fC6DXN2X7Wxl4Huud/+i2qP1hcq+Qnbr7hVCKEnn0edYl+
+6xfsKmAMBjl+qTZxPSDSx4r3ciMiIbnvXFtlBAQmji86kqoR6fm9s8BN7LTq7+2/
+c2FHVF67D7zES7WgHc4i7CfiZnwXgkLvi5b1jBt+MTAOrFhdobxoy6/XABEBAAGI
+twQfAQIAIQUCS+OsRRcMgAEO5b6XkoLYC591QPHM0u2U0hc56QIHAAAKCRA0t9EL
+wQjoOrRXBACBqhigTcj8pJY14AkjV+ZzUbm55kJRDPdU7NQ1PSvczm7HZaL3b8Lr
+Psa5c5+caVLjsGWkQycQl7lUIGU84KoUfwACQKVVLkqJz8LkL54lLcwkG70+1NH5
+xoSNcHHVbYtqDLNeCOq5jEIoXuz44wiWVEfF+/B115PvgwZ63pjH1rRGVGVzdCBL
+ZXkgRGVtb25zdHJhdGluZyBSZXZva2VyIFRyb3VibGUgKERPIE5PVCBVU0UpIDx0
+ZXN0QGV4YW1wbGUubmV0Poi+BBMBAgAoBQJL46hJAhsDBQkACTqABgsJCAcDAgYV
+CAIJCgsEFgIDAQIeAQIXgAAKCRA0t9ELwQjoOgLpA/9/si2QYmietY9a6VlAmMri
+mhZeqo6zyn8zrO9RGU7+8jmeb5nVnXw1YmZcw2fiJgI9+tTMkTfomyR6k0EDvcEu
+2Mg3USkVnJfrrkPjSL9EajW6VpOUNxlox3ZT1oyEo3OOnVF1gC1reWYfy7Ns9zIB
+1leLXbMr86zYdCoXp0Xu4g==
+=xsEd
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
 
 class Query:
     def __init__(self, value):
@@ -196,6 +216,39 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
     assert audit_kwargs["action"] == "key_delete"
     assert audit_kwargs["fingerprint"] == "fp1"
     assert audit_kwargs["committee_keys"] == ["alpha"]
+
+
+def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
+    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    binding = next(iter(key.user_bindings()))
+    binding_signature = binding.signatures[0]
+
+    expires = keys_writer._key_expires_at(key)
+
+    assert expires == datetime.datetime.fromtimestamp(
+        key.created_at + binding_signature.key_expiration_seconds,
+        datetime.UTC,
+    )
+
+
+def test_public_key_model_stores_latest_self_signature_separately_from_expiry() -> None:
+    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    binding = next(iter(key.user_bindings()))
+    binding_signature = binding.signatures[0]
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
+
+    key_model = writer.public_key_model(key, {}, original_key_block=_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    latest_self_signature = keys_writer._latest_self_signature(key)
+
+    assert latest_self_signature is not None
+    assert key_model.latest_self_signature == datetime.datetime.fromtimestamp(
+        latest_self_signature.creation_time, datetime.UTC
+    )
+    assert key_model.expires == datetime.datetime.fromtimestamp(
+        key.created_at + binding_signature.key_expiration_seconds, datetime.UTC
+    )
+    assert key_model.latest_self_signature != key_model.expires
 
 
 @pytest.mark.asyncio

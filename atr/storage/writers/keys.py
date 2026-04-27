@@ -22,14 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import tempfile
 import textwrap
 from typing import Final, NoReturn
 
 import aiofiles
 import aiofiles.os
-import pgpy
-import pgpy.constants as constants
+import openpgp
 import sqlalchemy.dialects.sqlite as sqlite
 import sqlalchemy.orm as orm
 import sqlmodel
@@ -47,22 +45,136 @@ import atr.storage.types as types
 import atr.user as user
 import atr.util as util
 
-_APPROVED_KEY_ALGORITHMS: Final = frozenset(
-    {
-        constants.PubKeyAlgorithm.RSAEncryptOrSign,
-        constants.PubKeyAlgorithm.RSASign,
-        constants.PubKeyAlgorithm.ECDSA,
-        constants.PubKeyAlgorithm.EdDSA,
-    }
-)
+_ALGORITHM_IDS: Final[dict[str, int]] = {
+    "rsa": 1,
+    "rsa-encrypt": 2,
+    "rsa-sign": 3,
+    "elgamal-encrypt": 16,
+    "dsa": 17,
+    "ecdh": 18,
+    "ecdsa": 19,
+    "elgamal": 20,
+    "diffie-hellman": 21,
+    "eddsa-legacy": 22,
+    "x25519": 25,
+    "x448": 26,
+    "ed25519": 27,
+    "ed448": 28,
+}
+_ALGORITHM_NAMES: Final[dict[int, str]] = {
+    1: "RSA",
+    2: "RSA",
+    3: "RSA",
+    16: "Elgamal",
+    17: "DSA",
+    18: "ECDH",
+    19: "ECDSA",
+    20: "Elgamal",
+    21: "Diffie-Hellman",
+    22: "EdDSA",
+    25: "X25519",
+    26: "X448",
+    27: "Ed25519",
+    28: "Ed448",
+}
+_APPROVED_KEY_ALGORITHMS: Final = frozenset({1, 3, 19, 22, 27})
 _EC_MINIMUM_BITS: Final = 255
-_RSA_ALGORITHMS: Final = frozenset(
-    {
-        constants.PubKeyAlgorithm.RSAEncryptOrSign,
-        constants.PubKeyAlgorithm.RSASign,
-    }
-)
+_RSA_ALGORITHMS: Final = frozenset({1, 3})
 _RSA_MINIMUM_BITS: Final = 4096
+
+
+def _algorithm_id(name: str) -> int:
+    if algorithm_id := _ALGORITHM_IDS.get(name):
+        return algorithm_id
+    raise ValueError(f"Unsupported OpenPGP key algorithm: {name}")
+
+
+def _algorithm_name(algorithm: int) -> str:
+    return _ALGORITHM_NAMES.get(algorithm, str(algorithm))
+
+
+def _binding_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureInfo]:
+    self_fingerprint = key.fingerprint.lower()
+    self_key_id = key.key_id.lower()
+    primary_bindings = [binding for binding in key.user_bindings() if binding.is_primary]
+    chosen_bindings = primary_bindings or list(key.user_bindings())
+    binding_sigs: list[openpgp.SignatureInfo] = []
+    for binding in chosen_bindings:
+        binding_sigs.extend(
+            signature
+            for signature in binding.signatures
+            if _signature_is_self(signature, self_fingerprint, self_key_id)
+        )
+    return binding_sigs
+
+
+def _direct_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureInfo]:
+    self_fingerprint = key.fingerprint.lower()
+    self_key_id = key.key_id.lower()
+    return [
+        signature
+        for signature in key.direct_signature_infos()
+        if _signature_is_self(signature, self_fingerprint, self_key_id)
+    ]
+
+
+def _effective_key_expiration_self_signature(key: openpgp.PublicKey) -> openpgp.SignatureInfo | None:
+    direct_sigs = _direct_self_signatures(key)
+    binding_sigs = _binding_self_signatures(key)
+    if key.version >= 6:
+        return _latest_signature(direct_sigs)
+    if binding_sigs:
+        return _latest_signature(binding_sigs)
+    return _latest_signature(direct_sigs)
+
+
+def _key_length(key: openpgp.PublicKey) -> int:
+    public_params = key.public_params
+    rsa_bits = public_params.rsa_bits
+    if isinstance(rsa_bits, int):
+        return rsa_bits
+    curve_bits = public_params.curve_bits
+    if isinstance(curve_bits, int):
+        return curve_bits
+    raise ValueError(
+        f"Key size is not available for algorithm {key.public_key_algorithm}:"
+        f" rsa_bits={rsa_bits!r}, curve_bits={curve_bits!r}"
+    )
+
+
+def _key_expires_at(key: openpgp.PublicKey) -> datetime.datetime | None:
+    effective = _effective_key_expiration_self_signature(key)
+    if effective is None:
+        return None
+    key_expiration_seconds = effective.key_expiration_seconds
+    if key_expiration_seconds is None:
+        return None
+    return datetime.datetime.fromtimestamp(key.created_at + key_expiration_seconds, tz=datetime.UTC)
+
+
+def _latest_self_signature(key: openpgp.PublicKey) -> openpgp.SignatureInfo | None:
+    signatures = _direct_self_signatures(key)
+    signatures.extend(_binding_self_signatures(key))
+    return _latest_signature(signatures)
+
+
+def _latest_self_signature_created_at(key: openpgp.PublicKey) -> datetime.datetime | None:
+    signature = _latest_self_signature(key)
+    if signature is None or signature.creation_time is None:
+        return None
+    return datetime.datetime.fromtimestamp(signature.creation_time, tz=datetime.UTC)
+
+
+def _latest_signature(signatures: list[openpgp.SignatureInfo]) -> openpgp.SignatureInfo | None:
+    if not signatures:
+        return None
+    return max(signatures, key=lambda signature: signature.creation_time or 0)
+
+
+def _signature_is_self(signature: openpgp.SignatureInfo, self_fingerprint: str, self_key_id: str) -> bool:
+    fingerprints = {fingerprint.lower() for fingerprint in signature.issuer_fingerprints}
+    key_ids = {key_id.lower() for key_id in signature.issuer_key_ids}
+    return (self_fingerprint in fingerprints) or (self_key_id in key_ids)
 
 
 class GeneralPublic:
@@ -117,47 +229,31 @@ class FoundationCommitter(GeneralPublic):
     async def ensure_stored_one(self, key_file_text: str) -> outcome.Outcome[types.Key]:
         return await self.__ensure_one(key_file_text, associate=False)
 
-    def keyring_fingerprint_model(
+    def public_key_model(
         self,
-        keyring: pgpy.PGPKeyring,
-        fingerprint: str,
+        key: openpgp.PublicKey,
         ldap_data: dict[str, str],
         original_key_block: str | None = None,
-    ) -> sql.PublicSigningKey | None:
-        with keyring.key(fingerprint) as key:
-            if not key.is_primary:
-                return None
-            uids = [uid.userid for uid in key.userids]
-            asf_uid = self.__uids_asf_uid(uids, ldap_data)
+    ) -> sql.PublicSigningKey:
+        uids = list(key.user_ids)
+        asf_uid = self.__uids_asf_uid(uids, ldap_data)
 
-            # TODO: Improve this
-            key_size = key.key_size
-            length = 0
-            if isinstance(key_size, constants.EllipticCurveOID):
-                if isinstance(key_size.key_size, int):
-                    length = key_size.key_size
-                else:
-                    raise ValueError(f"Key size is not an integer: {type(key_size.key_size)}, {key_size.key_size}")
-            elif isinstance(key_size, int):
-                length = key_size
-            else:
-                raise ValueError(f"Key size is not an integer: {type(key_size)}, {key_size}")
+        # Use the original key block if available
+        ascii_armored = original_key_block if original_key_block else key.to_armored()
+        expires_at = _key_expires_at(key)
 
-            # Use the original key block if available
-            ascii_armored = original_key_block if original_key_block else str(key)
-
-            return sql.PublicSigningKey(
-                fingerprint=str(key.fingerprint).lower(),
-                algorithm=key.key_algorithm.value,
-                length=length,
-                created=key.created,
-                latest_self_signature=key.expires_at,
-                expires=key.expires_at,
-                primary_declared_uid=uids[0],
-                secondary_declared_uids=uids[1:],
-                apache_uid=asf_uid,
-                ascii_armored_key=ascii_armored,
-            )
+        return sql.PublicSigningKey(
+            fingerprint=key.fingerprint.lower(),
+            algorithm=_algorithm_id(key.public_key_algorithm),
+            length=_key_length(key),
+            created=datetime.datetime.fromtimestamp(key.created_at, tz=datetime.UTC),
+            latest_self_signature=_latest_self_signature_created_at(key),
+            expires=expires_at,
+            primary_declared_uid=uids[0],
+            secondary_declared_uids=uids[1:],
+            apache_uid=asf_uid,
+            ascii_armored_key=ascii_armored,
+        )
 
     async def keys_file_text(self, committee_key: str) -> str:
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
@@ -343,30 +439,10 @@ class FoundationCommitter(GeneralPublic):
             else:
                 raise ValueError("Expected one key block, got none or multiple")
 
-        with tempfile.NamedTemporaryFile(delete=True) as tmpfile:
-            tmpfile.write(key_block.encode())
-            tmpfile.flush()
-            keyring = pgpy.PGPKeyring()
-            fingerprints = keyring.load(tmpfile.name)
-            key = None
-            for fingerprint in fingerprints:
-                try:
-                    key_model = self.keyring_fingerprint_model(
-                        keyring, fingerprint, ldap_data, original_key_block=key_block
-                    )
-                    if key_model is None:
-                        # Was not a primary key, so skip it
-                        continue
-                    _validate_key_strength(
-                        constants.PubKeyAlgorithm(key_model.algorithm), key_model.length, key_model.created
-                    )
-                    if key is not None:
-                        raise ValueError("Expected one key block, got multiple")
-                    key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
-                except Exception as e:
-                    raise e
-        if key is None:
-            raise ValueError("Expected a key, got none")
+        public_key, _ = openpgp.PublicKey.from_armor(key_block)
+        key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
+        _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
+        key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
         self.__key_block_models_cache[key_block] = [key]
         return key
 
@@ -647,30 +723,18 @@ class CommitteeParticipant(FoundationCommitter):
         if key_block in self.__key_block_models_cache:
             return self.__key_block_models_cache[key_block]
 
-        with tempfile.NamedTemporaryFile(delete=True) as tmpfile:
-            tmpfile.write(key_block.encode())
-            tmpfile.flush()
-            keyring = pgpy.PGPKeyring()
-            try:
-                fingerprints = keyring.load(tmpfile.name)
-            except StopIteration as e:
-                raise ValueError(f"Error loading OpenPGP key block: {e}") from e
-            key_list = []
-            for fingerprint in fingerprints:
-                try:
-                    key_model = self.keyring_fingerprint_model(
-                        keyring, fingerprint, ldap_data, original_key_block=key_block
-                    )
-                    if key_model is None:
-                        # Was not a primary key, so skip it
-                        continue
-                    _validate_key_strength(
-                        constants.PubKeyAlgorithm(key_model.algorithm), key_model.length, key_model.created
-                    )
-                    key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
-                    key_list.append(key)
-                except Exception as e:
-                    key_list.append(e)
+        try:
+            public_key, _ = openpgp.PublicKey.from_armor(key_block)
+        except Exception as e:
+            raise ValueError(f"Error loading OpenPGP key block: {e}") from e
+        key_list = []
+        try:
+            key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
+            _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
+            key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
+            key_list.append(key)
+        except Exception as e:
+            key_list.append(e)
         self.__key_block_models_cache[key_block] = key_list
         return key_list
 
@@ -880,14 +944,16 @@ class FoundationAdmin(CommitteeMember):
         return (num_unlinked, num_deleted)
 
 
-def _validate_key_strength(algorithm: constants.PubKeyAlgorithm, length: int, created: datetime.datetime) -> None:
+def _validate_key_strength(algorithm: int, length: int, created: datetime.datetime) -> None:
     """Raise ValueError if the key is recently-generated and does not meet the minimum cryptographic strength."""
     if created > datetime.datetime(2026, 4, 1, 0, 0, 0, tzinfo=datetime.UTC):
         if algorithm not in _APPROVED_KEY_ALGORITHMS:
-            raise ValueError(f"Key algorithm {algorithm.name} is not accepted for upload; use RSA, ECDSA, or EdDSA")
-        if algorithm in _RSA_ALGORITHMS and length < _RSA_MINIMUM_BITS:
+            raise ValueError(
+                f"Key algorithm {_algorithm_name(algorithm)} is not accepted for upload; use RSA, ECDSA, or EdDSA"
+            )
+        if (algorithm in _RSA_ALGORITHMS) and (length < _RSA_MINIMUM_BITS):
             raise ValueError(
                 f"RSA key size {length} bits is below the minimum of {_RSA_MINIMUM_BITS} bits required by Apache policy"
             )
-        if algorithm not in _RSA_ALGORITHMS and length < _EC_MINIMUM_BITS:
+        if (algorithm not in _RSA_ALGORITHMS) and (length < _EC_MINIMUM_BITS):
             raise ValueError(f"Elliptic curve key size {length} bits is below the minimum of {_EC_MINIMUM_BITS} bits")

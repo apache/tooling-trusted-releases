@@ -16,11 +16,10 @@
 # under the License.
 
 import asyncio
-import tempfile
 import time
 from typing import Any, Final
 
-import gnupg
+import openpgp
 import sqlmodel
 
 import atr.db as db
@@ -127,61 +126,158 @@ def _check_core_logic_verify_signature(
     signature_path: str, artifact_path: str, ascii_armored_keys: list[str], apache_uid_map: dict[str, bool]
 ) -> dict[str, Any]:
     """Verify an OpenPGP signature for a file."""
-    with tempfile.TemporaryDirectory(prefix="gpg-") as gpg_dir, open(signature_path, "rb") as sig_file:
-        gpg: Final[gnupg.GPG] = gnupg.GPG(gnupghome=gpg_dir)
+    start = time.perf_counter_ns()
+    public_keys: list[openpgp.PublicKey] = []
+    for ascii_armored_key in ascii_armored_keys:
+        try:
+            public_key, _ = openpgp.PublicKey.from_armor(ascii_armored_key)
+        except Exception as e:
+            log.warning(f"Failed to parse committee public key: {e}")
+            continue
+        public_keys.append(public_key)
+    if not public_keys:
+        log.warning("No fingerprints found after parsing keys")
+    end = time.perf_counter_ns()
+    log.info(f"Parsing of {util.plural(len(ascii_armored_keys), 'key')} took {(end - start) / 1000000} ms")
 
-        # Import all PMC public signing keys
-        start = time.perf_counter_ns()
-        # for key in ascii_armored_keys:
-        #     import_result = gpg.import_keys(key)
-        #     if not import_result.fingerprints:
-        #         # TODO: Log warning about invalid key?
-        #         continue
-        # TODO: Will this fail if one key doesn't work?
-        import_result = gpg.import_keys("\n\n".join(ascii_armored_keys))
-        if not import_result.fingerprints:
-            log.warning("No fingerprints found after importing keys")
-        end = time.perf_counter_ns()
-        log.info(f"Import of {util.plural(len(ascii_armored_keys), 'key')} took {(end - start) / 1000000} ms")
-        verified = gpg.verify_file(sig_file, str(artifact_path))
-
-    key_fp = verified.pubkey_fingerprint.lower() if verified.pubkey_fingerprint else None
-    apache_uid_ok = (key_fp is not None) and apache_uid_map.get(key_fp, False)
-
-    # Collect all available information for debugging
-    debug_info = {
-        "key_id": verified.key_id or "Not available",
-        "fingerprint": key_fp or "Not available",
-        "pubkey_fingerprint": verified.pubkey_fingerprint.lower() if verified.pubkey_fingerprint else "Not available",
-        "creation_date": verified.creation_date or "Not available",
-        "timestamp": verified.timestamp or "Not available",
-        "username": verified.username or "Not available",
-        "status": verified.status or "Not available",
-        "valid": bool(verified),
-        "trust_level": verified.trust_level if hasattr(verified, "trust_level") else "Not available",
-        "trust_text": verified.trust_text if hasattr(verified, "trust_text") else "Not available",
-        "stderr": verified.stderr if hasattr(verified, "stderr") else "Not available",
-        "num_committee_keys": len(ascii_armored_keys),
-        "key_has_apache_uid": apache_uid_ok,
-    }
-
-    if (not verified) or (not apache_uid_ok):
-        error_msg = "No valid signature found"
-        if verified and (not apache_uid_ok):
-            error_msg = "Verifying key lacks an ASF UID"
-            debug_info["status"] = "Invalid: Key lacks ASF UID"
+    try:
+        with open(signature_path, "rb") as sig_file:
+            signature, _ = openpgp.DetachedSignature.from_armor(sig_file.read().decode("utf-8"))
+    except Exception as e:
         return {
             "verified": False,
-            "error": error_msg,
+            "error": "No valid signature found",
+            "debug_info": _debug_info(
+                key=None,
+                signature_info=None,
+                status=str(e),
+                valid=False,
+                num_committee_keys=len(ascii_armored_keys),
+                key_has_apache_uid=False,
+            ),
+        }
+    signature_info = signature.signature_info()
+    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
+    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
+    candidate_keys = [key for key in public_keys if _key_matches_signature(key, issuer_fingerprints, issuer_key_ids)]
+
+    matched_key: openpgp.PublicKey | None = None
+    verified_signature_info: openpgp.SignatureInfo | None = None
+    for candidate_key in candidate_keys:
+        try:
+            signature.verify_file(candidate_key, artifact_path)
+            verified_signature_info = signature_info
+            matched_key = candidate_key
+            break
+        except Exception as e:
+            log.debug(f"Signature verification failed for key {candidate_key.fingerprint}: {e}")
+            continue
+
+    if (matched_key is None) or (verified_signature_info is None):
+        return {
+            "verified": False,
+            "error": "No valid signature found",
+            "debug_info": _debug_info(
+                key=None,
+                signature_info=signature_info,
+                status="No valid signature found",
+                valid=False,
+                num_committee_keys=len(ascii_armored_keys),
+                key_has_apache_uid=False,
+            ),
+        }
+
+    apache_uid_ok = apache_uid_map.get(matched_key.fingerprint.lower(), False)
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=verified_signature_info,
+        status="Valid signature",
+        valid=True,
+        num_committee_keys=len(ascii_armored_keys),
+        key_has_apache_uid=apache_uid_ok,
+    )
+
+    if not apache_uid_ok:
+        debug_info["status"] = "Invalid: Key lacks ASF UID"
+        return {
+            "verified": False,
+            "error": "Verifying key lacks an ASF UID",
             "debug_info": debug_info,
         }
 
+    key_id = verified_signature_info.issuer_key_ids[0] if verified_signature_info.issuer_key_ids else matched_key.key_id
+    username = _signer_username(matched_key, verified_signature_info) or "Unknown"
+    timestamp = verified_signature_info.creation_time
     return {
         "verified": True,
-        "key_id": verified.key_id,
-        "timestamp": verified.timestamp,
-        "username": verified.username or "Unknown",
-        "fingerprint": key_fp or "Unknown",
+        "key_id": key_id,
+        "timestamp": timestamp,
+        "username": username,
+        "fingerprint": matched_key.fingerprint.lower(),
         "status": "Valid signature",
         "debug_info": debug_info,
     }
+
+
+def _debug_info(
+    *,
+    key: openpgp.PublicKey | None,
+    signature_info: openpgp.SignatureInfo | None,
+    status: str,
+    valid: bool,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    fingerprint = key.fingerprint.lower() if (key is not None) else "Not available"
+    key_id = key.key_id if (key is not None) else "Not available"
+    creation_time = signature_info.creation_time if (signature_info is not None) else None
+    username = _signer_username(key, signature_info) if ((key is not None) and (signature_info is not None)) else None
+    return {
+        "key_id": (signature_info.issuer_key_ids[0] if (signature_info and signature_info.issuer_key_ids) else key_id),
+        "fingerprint": fingerprint,
+        "pubkey_fingerprint": fingerprint,
+        "creation_date": creation_time if (creation_time is not None) else "Not available",
+        "timestamp": creation_time if (creation_time is not None) else "Not available",
+        "username": username or "Not available",
+        "status": status,
+        "valid": valid,
+        "trust_level": "Not available",
+        "trust_text": "Not available",
+        "stderr": "Not available",
+        "num_committee_keys": num_committee_keys,
+        "key_has_apache_uid": key_has_apache_uid,
+        "hash_algorithm": signature_info.hash_algorithm if (signature_info is not None) else "Not available",
+        "signature_type": signature_info.signature_type if (signature_info is not None) else "Not available",
+        "public_key_algorithm": (
+            signature_info.public_key_algorithm if (signature_info is not None) else "Not available"
+        ),
+    }
+
+
+def _key_matches_signature(
+    key: openpgp.PublicKey,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> bool:
+    if (not issuer_fingerprints) and (not issuer_key_ids):
+        return True
+
+    key_fingerprints = {key.fingerprint.lower()}
+    key_fingerprints.update(subkey.fingerprint.lower() for subkey in key.subkey_bindings())
+    if key_fingerprints.intersection(issuer_fingerprints):
+        return True
+
+    key_ids = {key.key_id.lower()}
+    key_ids.update(subkey.key_id.lower() for subkey in key.subkey_bindings())
+    return bool(key_ids.intersection(issuer_key_ids))
+
+
+def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureInfo) -> str | None:
+    if signature_info.signer_user_id:
+        return signature_info.signer_user_id
+    for binding in key.user_bindings():
+        if binding.is_primary:
+            return binding.user_id
+    if key.user_ids:
+        return key.user_ids[0]
+    return None
