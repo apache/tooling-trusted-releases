@@ -3,7 +3,7 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-04-28T13:05:06Z"
+exclude-newer = "2026-04-28T13:07:00Z"
 
 [[package]]
 name = "aiofiles"
@@ -1759,14 +1759,17 @@ wheels = [
 [[package]]
 name = "rpgp-py"
 version = "0.19.7"
-source = { registry = "https://raw.githubusercontent.com/apache/tooling-trusted-releases/d30b6cedf7d9e427ec56587bcc3411e1d94f3515/wheelhouse/rpgp-py-v0.19.7.html" }
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/7e/0b9d978992972c2ac1509088dc738ce2e00a195185cbf44095f44edc1b0e/rpgp_py-0.19.7.tar.gz", hash = "sha256:fc5b47d45756627e129f537ad903e36599b02cc58547b4961b700d3508d23385", size = 114103, upload-time = "2026-04-28T11:07:01.93Z" }
 wheels = [
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-macosx_10_12_x86_64.whl" },
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-macosx_11_0_arm64.whl" },
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl" },
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" },
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-musllinux_1_2_aarch64.whl" },
-    { url = "https://github.com/sbp/rpgp-py/releases/download/v0.19.7/rpgp_py-0.19.7-cp310-abi3-musllinux_1_2_x86_64.whl" },
+    { url = "https://files.pythonhosted.org/packages/21/20/75b539ad976ff24bcfa067c7f38c94a08714ff87e668c954166d88320c38/rpgp_py-0.19.7-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ea7aa88d6d36b57f53e4253f408f0389ec5a3ac27d8935b25387e4d49f7d46f8", size = 3375886, upload-time = "2026-04-28T11:06:46.807Z" },
+    { url = "https://files.pythonhosted.org/packages/df/4b/f5ceca5b893486a951bc0f54066ddd416b0b5158212c53a1d4fe03df8e3e/rpgp_py-0.19.7-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:398979c34838c85055592bfb4bf362e29eeaad549934fda39e4c0c08e3ee4e3e", size = 3159480, upload-time = "2026-04-28T11:06:48.405Z" },
+    { url = "https://files.pythonhosted.org/packages/48/2f/838a76325a394a59c6b95e1256b2533701f74db5ec447e2bea591ee49e20/rpgp_py-0.19.7-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8782efc158a22cf471fd215f5362e1272855c243976a7db920d2eb41b9d2d864", size = 3489921, upload-time = "2026-04-28T11:06:50.121Z" },
+    { url = "https://files.pythonhosted.org/packages/75/48/3a7bf258fc4f0e8cab119ca4163fb14df90bbb00c19abdd5bc9518e72f53/rpgp_py-0.19.7-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7a53dc9c6c266f16d0e02e4c0af57361265e9eaacb39e8cc762345c3634f38e9", size = 3591552, upload-time = "2026-04-28T11:06:52.285Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/30/67cec0edbc807335fe3fccf901dd7e876b4a103fd4626f50f510d48d4d40/rpgp_py-0.19.7-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:f43576e440a7ff64f1e022e8ce5db54d448ec43d0e9e52a860251040cd249908", size = 3647596, upload-time = "2026-04-28T11:06:54.344Z" },
+    { url = "https://files.pythonhosted.org/packages/22/fe/2a6c0c59e7a5adc38b32dc10476b0c74aa6dce08125277ab22e00ef682b3/rpgp_py-0.19.7-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ac8d683aa393369365cb7f99f7db71b5759c094f1bff4ba6600505b67da9877a", size = 3863095, upload-time = "2026-04-28T11:06:56.916Z" },
+    { url = "https://files.pythonhosted.org/packages/89/e4/ebbb8108b914a217ed487c9bbff7b3cabd6cf44e743dd81dc0370d25784d/rpgp_py-0.19.7-cp310-abi3-win32.whl", hash = "sha256:d57444c7663f8c78475ae716c167d9ac21fa6d1f7a10afdc1b788ea5a3453975", size = 2988953, upload-time = "2026-04-28T11:06:58.567Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/58/748814d8a584be4f94a4a15f02f2387ceded4a69c11913812d57427f381d/rpgp_py-0.19.7-cp310-abi3-win_amd64.whl", hash = "sha256:96259ff8d84bb1c23cadf74350b00b4afce748a99757c322f7ee286db6c27878", size = 3199270, upload-time = "2026-04-28T11:07:00.77Z" },
 ]
 
 [[package]]
@@ -2017,7 +2020,7 @@ requires-dist = [
     { name = "quart-wtforms", specifier = ">=1.0.3,<2.0.0" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "rich", specifier = ">=14.0.0" },
-    { name = "rpgp-py", specifier = "==0.19.7", index = "https://raw.githubusercontent.com/apache/tooling-trusted-releases/d30b6cedf7d9e427ec56587bcc3411e1d94f3515/wheelhouse/rpgp-py-v0.19.7.html" },
+    { name = "rpgp-py", specifier = "==0.19.7" },
     { name = "semver", specifier = ">=3.0.4" },
     { name = "sqlmodel", specifier = ">=0.0.24,<0.1.0" },
     { name = "ssh-audit", specifier = ">=3.3.0" },

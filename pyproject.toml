@@ -75,15 +75,6 @@ test = [
   "pytest>=8.0",
 ]
 
-[tool.uv.sources]
-rpgp-py = { index = "rpgp-py-sbp" }
-
-[[tool.uv.index]]
-name = "rpgp-py-sbp"
-url = "https://raw.githubusercontent.com/apache/tooling-trusted-releases/d30b6cedf7d9e427ec56587bcc3411e1d94f3515/wheelhouse/rpgp-py-v0.19.7.html"
-format = "flat"
-explicit = true
-
 # Additional tools
 
 [tool.djlint]
