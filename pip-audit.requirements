@@ -365,7 +365,7 @@ urllib3==2.6.3
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.2.4
+virtualenv==21.3.0
     # via pre-commit
 watchfiles==1.1.1
     # via
