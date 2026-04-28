@@ -242,10 +242,6 @@ class UserRole(enum.StrEnum):
 # Pydantic models
 
 
-def pydantic_example(value: Any) -> dict[Literal["json_schema_extra"], dict[str, Any]]:
-    return {"json_schema_extra": {"example": value}}
-
-
 class QuarantineFileEntryV1(schema.Strict):
     version: Literal[1] = 1
     rel_path: str
@@ -264,19 +260,6 @@ class ColourBlindnessMode(enum.StrEnum):
 class UserPreferencesEntry(schema.Subset):
     colour_blindness_mode: ColourBlindnessMode = ColourBlindnessMode.NONE
     nav_pinned: bool = True
-
-
-class VoteEntry(schema.Strict):
-    result: bool = schema.Field(alias="result", **pydantic_example(True))
-    summary: str = schema.Field(alias="summary", **pydantic_example("This is a summary"))
-    binding_votes: int = schema.Field(alias="binding_votes", **pydantic_example(10))
-    community_votes: int = schema.Field(alias="community_votes", **pydantic_example(10))
-    start: datetime.datetime = schema.Field(
-        alias="start", **pydantic_example(datetime.datetime(2025, 5, 5, 1, 2, 3, tzinfo=datetime.UTC))
-    )
-    end: datetime.datetime = schema.Field(
-        alias="end", **pydantic_example(datetime.datetime(2025, 5, 7, 1, 2, 3, tzinfo=datetime.UTC))
-    )
 
 
 # Type decorators
@@ -1006,10 +989,6 @@ class Release(sqlmodel.SQLModel, table=True):
         cascade_delete=True, sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True}
     )
 
-    # VoteEntry is a Pydantic model, not a SQL model
-    votes: list[VoteEntry] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
-    )
     vote_manual: bool = sqlmodel.Field(default=False, **example(False))
     vote_started: datetime.datetime | None = sqlmodel.Field(
         default=None,

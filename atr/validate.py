@@ -285,7 +285,6 @@ def release(r: sql.Release) -> AnnotatedDivergences:
     yield from release_released(r)
     yield from release_sboms(r)
     yield from release_vote_logic(r)
-    yield from release_votes(r)
 
 
 def release_components(
@@ -388,14 +387,6 @@ def release_vote_logic(r: sql.Release) -> Divergences:
     expected = "vote_started to be set when vote_resolved is set"
     actual = (r.vote_started, r.vote_resolved)
     yield from divergences_predicate(okay, expected, actual)
-
-
-@release_components("Release.votes")
-def release_votes(r: sql.Release) -> Divergences:
-    """Check that the release votes are empty."""
-    expected = []
-    actual = r.votes
-    yield from divergences(expected, actual)
 
 
 def releases(rs: Iterable[sql.Release]) -> AnnotatedDivergences:
