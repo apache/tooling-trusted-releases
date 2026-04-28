@@ -64,6 +64,25 @@ async def is_admin_async(user_id: str | None) -> bool:
     return user_id in await cache.admins_get_async()
 
 
+async def is_binding_for_release(
+    committee: sql.Committee,
+    asf_uid: str,
+    vote_round: int | None,
+) -> tuple[bool, str]:
+    if not committee.is_podling:
+        if vote_round is not None:
+            raise ValueError("Non-podling votes require vote_round to be None")
+        return is_committee_member(committee, asf_uid), committee.display_name
+
+    if vote_round is None:
+        raise ValueError("Podling votes require vote_round 1 or 2")
+    if vote_round not in (1, 2):
+        raise ValueError(f"Unexpected podling vote_round: {vote_round!r}")
+    async with db.session() as data:
+        incubator = await data.committee(key="incubator").get()
+    return is_committee_member(incubator, asf_uid), "Incubator"
+
+
 def is_committee_member(committee: sql.Committee | None, uid: str) -> bool:
     if committee is None:
         return False

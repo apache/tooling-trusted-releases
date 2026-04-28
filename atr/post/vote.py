@@ -48,8 +48,10 @@ async def selected_post(
     vote = cast_vote_form.decision
     comment = cast_vote_form.comment
 
-    is_pmc_member = user.is_committee_member(release.committee, session.uid)
-    is_binding, _binding_committee = await shared.vote.is_binding(release.committee, is_pmc_member)
+    vote_round = None
+    if release.committee.is_podling:
+        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    is_binding, _binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
 
     async with storage.write_as_committee_participant(release.committee.key) as wacm:
         email_to, error_message = await wacm.vote.send_user_vote(release, vote, comment, session.fullname, is_binding)

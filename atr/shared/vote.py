@@ -18,28 +18,8 @@
 from typing import Literal
 
 import atr.form as form
-import atr.models.sql as sql
-import atr.storage as storage
 
 
 class CastVoteForm(form.Form):
     decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM)
     comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA, max_length=50_000)
-
-
-async def is_binding(
-    committee: sql.Committee,
-    is_pmc_member: bool,
-) -> tuple[bool, str]:
-    if committee.is_podling:
-        async with storage.write() as write:
-            try:
-                _wacm = write.as_committee_member("incubator")
-                is_binding = True
-            except storage.AccessError:
-                is_binding = False
-        binding_committee = "Incubator"
-    else:
-        is_binding = is_pmc_member
-        binding_committee = committee.display_name
-    return is_binding, binding_committee

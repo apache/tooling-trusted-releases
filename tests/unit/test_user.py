@@ -15,11 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
+import unittest.mock as mock
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 import pytest
 
 import atr.config as config
+import atr.models.sql as sql
 import atr.user as user
 
 if TYPE_CHECKING:
@@ -106,3 +110,37 @@ def test_is_admin_returns_true_for_test_user_when_allowed(mock_app: MockApp, mon
     monkeypatch.setattr("atr.config.get_mode", lambda: config.Mode.Test)
     mock_app.extensions["admins"] = frozenset()
     assert user.is_admin("test") is True
+
+
+@pytest.mark.asyncio
+async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeypatch: "MonkeyPatch"):
+    committee = sql.Committee(key="example", name="Example", committee_members=["alice"])
+    podling = sql.Committee(key="podling", name="Podling", is_podling=True, committee_members=["ppmc"])
+    incubator = sql.Committee(key="incubator", name="Incubator", committee_members=["ipmc"])
+    query = mock.MagicMock()
+    query.get = mock.AsyncMock(return_value=incubator)
+    data = mock.MagicMock()
+    data.committee = mock.MagicMock(return_value=query)
+    monkeypatch.setattr(user.db, "session", lambda: _mock_db_session(data))
+
+    assert await user.is_binding_for_release(committee, "alice", None) == (True, "Example")
+    assert await user.is_binding_for_release(committee, "bob", None) == (False, "Example")
+    assert await user.is_binding_for_release(podling, "ppmc", 1) == (False, "Incubator")
+    assert await user.is_binding_for_release(podling, "ipmc", 1) == (True, "Incubator")
+    assert await user.is_binding_for_release(podling, "ipmc", 2) == (True, "Incubator")
+    assert await user.is_binding_for_release(podling, "ppmc", 2) == (False, "Incubator")
+    with pytest.raises(ValueError, match="Podling votes require vote_round 1 or 2"):
+        await user.is_binding_for_release(podling, "ppmc", None)
+    with pytest.raises(ValueError, match="Unexpected podling vote_round: 3"):
+        await user.is_binding_for_release(podling, "ppmc", 3)
+    with pytest.raises(ValueError, match="Non-podling votes require vote_round to be None"):
+        await user.is_binding_for_release(committee, "alice", 1)
+
+    assert data.committee.call_count == 4
+    data.committee.assert_called_with(key="incubator")
+    assert query.get.await_count == 4
+
+
+@contextlib.asynccontextmanager
+async def _mock_db_session(data: mock.MagicMock) -> AsyncIterator[mock.MagicMock]:
+    yield data

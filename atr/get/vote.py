@@ -537,14 +537,13 @@ async def _render_section_vote(
     if user_category == UserCategory.UNAUTHENTICATED:
         _render_vote_unauthenticated(page, release, archive_url, vote_recipient)
     else:
-        await _render_vote_authenticated(page, release, session, user_category, archive_url, vote_recipient)
+        await _render_vote_authenticated(page, release, session, archive_url, vote_recipient)
 
 
 async def _render_vote_authenticated(
     page: htm.Block,
     release: sql.Release,
     session: web.Committer | None,
-    user_category: UserCategory,
     archive_url: str | None,
     vote_recipient: str,
 ) -> None:
@@ -553,8 +552,10 @@ async def _render_vote_authenticated(
     if session is None:
         raise ValueError("Session required for authenticated vote")
 
-    is_pmc_member = user_category in (UserCategory.PMC_MEMBER, UserCategory.PMC_MEMBER_RM)
-    is_binding, binding_committee = await shared.vote.is_binding(release.committee, is_pmc_member)
+    vote_round = None
+    if release.committee.is_podling:
+        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
 
     potency = "Binding" if is_binding else "Non-binding"
     if is_binding:
