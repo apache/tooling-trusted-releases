@@ -133,12 +133,15 @@ def _key_length(key: openpgp.PublicKey) -> int:
     rsa_bits = public_params.rsa_bits
     if isinstance(rsa_bits, int):
         return rsa_bits
+    dsa_bits = public_params.dsa_bits
+    if isinstance(dsa_bits, int):
+        return dsa_bits
     curve_bits = public_params.curve_bits
     if isinstance(curve_bits, int):
         return curve_bits
     raise ValueError(
         f"Key size is not available for algorithm {key.public_key_algorithm}:"
-        f" rsa_bits={rsa_bits!r}, curve_bits={curve_bits!r}"
+        f" rsa_bits={rsa_bits!r}, dsa_bits={dsa_bits!r}, curve_bits={curve_bits!r}"
     )
 
 
@@ -237,6 +240,8 @@ class FoundationCommitter(GeneralPublic):
     ) -> sql.PublicSigningKey:
         uids = list(key.user_ids)
         asf_uid = self.__uids_asf_uid(uids, ldap_data)
+        if not uids:
+            raise ValueError("No UIDs found in key")
 
         # Use the original key block if available
         ascii_armored = original_key_block if original_key_block else key.to_armored()

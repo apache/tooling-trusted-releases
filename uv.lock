@@ -3,7 +3,7 @@ revision = 3
 requires-python = "==3.13.*"
 
 [options]
-exclude-newer = "2026-04-28T13:07:00Z"
+exclude-newer = "2026-04-28T13:14:30Z"
 
 [[package]]
 name = "aiofiles"

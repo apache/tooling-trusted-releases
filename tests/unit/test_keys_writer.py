@@ -231,6 +231,17 @@ def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
     )
 
 
+def test_key_length_returns_dsa_bits() -> None:
+    key = SimpleNamespace(
+        public_key_algorithm="dsa",
+        public_params=SimpleNamespace(rsa_bits=None, dsa_bits=3072, curve_bits=None),
+    )
+
+    length = keys_writer._key_length(key)
+
+    assert length == 3072
+
+
 def test_public_key_model_stores_latest_self_signature_separately_from_expiry() -> None:
     key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
     binding = next(iter(key.user_bindings()))
