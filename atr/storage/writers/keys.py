@@ -596,9 +596,6 @@ class CommitteeParticipant(FoundationCommitter):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
-        # Specific to this module
-        self.__key_block_models_cache = {}
-
     async def associate_fingerprint(self, fingerprint: str) -> outcome.Outcome[types.LinkedCommittee]:
         via = sql.validate_instrumented_attribute
         link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}]
@@ -662,14 +659,26 @@ class CommitteeParticipant(FoundationCommitter):
     def committee_key(self) -> str:
         return self.__committee_key
 
-    async def ensure_associated(self, keys_file_text: str) -> outcome.List[types.Key]:
-        outcomes: outcome.List[types.Key] = await self.__ensure(keys_file_text, associate=True)
+    async def ensure_associated(
+        self, keys_file_text: str, ldap_data: dict[str, str] | None = None
+    ) -> outcome.List[types.Key]:
+        outcomes: outcome.List[types.Key] = await self.__ensure(
+            keys_file_text,
+            associate=True,
+            ldap_data=ldap_data,
+        )
         if outcomes.any_result:
             await self.autogenerate_keys_file()
         return outcomes
 
-    async def ensure_stored(self, keys_file_text: str) -> outcome.List[types.Key]:
-        outcomes: outcome.List[types.Key] = await self.__ensure(keys_file_text, associate=False)
+    async def ensure_stored(
+        self, keys_file_text: str, ldap_data: dict[str, str] | None = None
+    ) -> outcome.List[types.Key]:
+        outcomes: outcome.List[types.Key] = await self.__ensure(
+            keys_file_text,
+            associate=False,
+            ldap_data=ldap_data,
+        )
         if outcomes.any_result:
             await self.autogenerate_keys_file()
         return outcomes
@@ -724,10 +733,6 @@ class CommitteeParticipant(FoundationCommitter):
         return outcomes
 
     def __block_models(self, key_block: str, ldap_data: dict[str, str]) -> list[types.Key | Exception]:
-        # This cache is only held for the session
-        if key_block in self.__key_block_models_cache:
-            return self.__key_block_models_cache[key_block]
-
         try:
             public_key, _ = openpgp.PublicKey.from_armor(key_block)
         except Exception as e:
@@ -740,7 +745,6 @@ class CommitteeParticipant(FoundationCommitter):
             key_list.append(key)
         except Exception as e:
             key_list.append(e)
-        self.__key_block_models_cache[key_block] = key_list
         return key_list
 
     async def __database_add_models(
@@ -840,21 +844,33 @@ class CommitteeParticipant(FoundationCommitter):
             )
         return outcomes
 
-    async def __ensure(self, keys_file_text: str, associate: bool = True) -> outcome.List[types.Key]:
+    async def __ensure(
+        self,
+        keys_file_text: str,
+        associate: bool = True,
+        ldap_data: dict[str, str] | None = None,
+    ) -> outcome.List[types.Key]:
         outcomes = outcome.List[types.Key]()
         try:
-            ldap_data = await util.email_to_uid_map()
+            if ldap_data is None:
+                ldap_data = await util.email_to_uid_map()
             key_blocks = util.parse_key_blocks(keys_file_text)
         except Exception as e:
             outcomes.append_error(e)
             return outcomes
-        for key_block in key_blocks:
-            try:
-                # TODO: Change self.__block_models to return outcomes
-                key_models = await asyncio.to_thread(self.__block_models, key_block, ldap_data)
-                outcomes.extend_roes(Exception, key_models)
-            except Exception as e:
-                outcomes.append_error(e)
+        # TODO: Change self.__block_models to return outcomes
+        tasks = [
+            asyncio.create_task(asyncio.to_thread(self.__block_models, key_block, ldap_data))
+            for key_block in key_blocks
+        ]
+        key_model_batches = await asyncio.gather(*tasks, return_exceptions=True)
+        for key_model_batch in key_model_batches:
+            if isinstance(key_model_batch, Exception):
+                outcomes.append_error(key_model_batch)
+            elif isinstance(key_model_batch, BaseException):
+                raise key_model_batch
+            else:
+                outcomes.extend_roes(Exception, key_model_batch)
         # Try adding the keys to the database
         # If not, all keys will be replaced with a PostParseError
         return await self.__database_add_models(outcomes, associate=associate)

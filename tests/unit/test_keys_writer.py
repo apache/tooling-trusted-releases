@@ -218,6 +218,42 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
     assert audit_kwargs["committee_keys"] == ["alpha"]
 
 
+@pytest.mark.asyncio
+async def test_ensure_reuses_supplied_ldap_data_for_bulk_import() -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write_as = _make_foundation_admin(data, "alpha")
+    database_outcomes = outcome.List()
+    ldap_data = {"alice@example.org": "alice"}
+
+    with (
+        mock.patch.object(keys_writer.util, "email_to_uid_map", new=mock.AsyncMock()) as email_to_uid_map,
+        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one", "block-two"]),
+        mock.patch.object(
+            writer,
+            "_CommitteeParticipant__block_models",
+            side_effect=[
+                [SimpleNamespace(fingerprint="one")],
+                [SimpleNamespace(fingerprint="two")],
+            ],
+        ) as block_models,
+        mock.patch.object(
+            writer,
+            "_CommitteeParticipant__database_add_models",
+            new=mock.AsyncMock(return_value=database_outcomes),
+        ) as database_add_models,
+    ):
+        result = await writer._CommitteeParticipant__ensure("keys text", ldap_data=ldap_data)
+
+    assert result is database_outcomes
+    email_to_uid_map.assert_not_awaited()
+    assert block_models.call_count == 2
+    assert {call.args[0] for call in block_models.call_args_list} == {"block-one", "block-two"}
+    assert all(call.args[1] is ldap_data for call in block_models.call_args_list)
+    database_add_models.assert_awaited_once()
+    parsed_outcomes = database_add_models.await_args.args[0]
+    assert parsed_outcomes.result_count == 2
+
+
 def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
     key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
     binding = next(iter(key.user_bindings()))
