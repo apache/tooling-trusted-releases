@@ -832,9 +832,13 @@ Thanks,
 
     @property
     def policy_manual_vote(self) -> bool:
+        return self.policy_vote_mode == VoteMode.MANUAL
+
+    @property
+    def policy_vote_mode(self) -> VoteMode:
         if (policy := self.release_policy) is None:
-            return False
-        return policy.manual_vote
+            return VoteMode.EMAIL
+        return policy.vote_mode
 
     @property
     def policy_min_hours(self) -> int:
@@ -995,7 +999,7 @@ class Release(sqlmodel.SQLModel, table=True):
         cascade_delete=True, sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True}
     )
 
-    vote_manual: bool = sqlmodel.Field(default=False, **example(False))
+    vote_mode: VoteMode | None = sqlmodel.Field(default=None, **example(VoteMode.EMAIL))
     vote_started: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
@@ -1042,6 +1046,12 @@ class Release(sqlmodel.SQLModel, table=True):
         # if project is None:
         #     return None
         return project.committee
+
+    @property
+    def effective_vote_mode(self) -> VoteMode:
+        if (self.phase != ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (self.vote_mode is not None):
+            return self.vote_mode
+        return self.project.policy_vote_mode
 
     @property
     def safe_latest_revision_number(self) -> safe.RevisionNumber:
@@ -1377,7 +1387,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     mailto_addresses: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    manual_vote: bool = sqlmodel.Field(default=False)
     vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.EMAIL)
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
@@ -1423,7 +1432,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         # Cannot call this .copy because that's an existing BaseModel method
         return ReleasePolicy(
             mailto_addresses=list(self.mailto_addresses),
-            manual_vote=self.manual_vote,
             vote_mode=self.vote_mode,
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,
@@ -1440,6 +1448,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             github_repository_name=self.github_repository_name,
             github_repository_branch=self.github_repository_branch,
             github_compose_workflow_path=list(self.github_compose_workflow_path),
+            file_tag_mappings=dict(self.file_tag_mappings),
             github_vote_workflow_path=list(self.github_vote_workflow_path),
             github_finish_workflow_path=list(self.github_finish_workflow_path),
             preserve_download_files=self.preserve_download_files,

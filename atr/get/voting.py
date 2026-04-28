@@ -55,7 +55,12 @@ async def selected_revision(
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_key, version_key, revision, data, manual_vote=False
+            session,
+            project_key,
+            version_key,
+            revision,
+            data,
+            frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
         ):
             case str() as error:
                 return await session.redirect(
@@ -78,9 +83,11 @@ async def selected_revision(
         )
 
         min_hours = 72
-        if release.project.release_policy and (release.project.release_policy.min_hours is not None):
-            min_hours = release.project.release_policy.min_hours
+        release_policy = release.project.release_policy
+        if release_policy and (release_policy.min_hours is not None):
+            min_hours = release_policy.min_hours
 
+        vote_mode = release.effective_vote_mode
         default_subject_template = await construct.start_vote_subject_default(project_key)
         default_body_template = await construct.start_vote_default(project_key)
         subject_template_hash = construct.template_hash(default_subject_template)
@@ -108,6 +115,7 @@ async def selected_revision(
             subject_template_hash=subject_template_hash,
             default_body=default_body,
             min_hours=min_hours,
+            vote_mode=vote_mode,
             keys_warning=keys_warning,
         )
 
@@ -150,6 +158,7 @@ async def _render_page(
     subject_template_hash: str,
     default_body: str,
     min_hours: int,
+    vote_mode: sql.VoteMode,
     keys_warning: bool,
 ) -> htm.Element:
     page = htm.Block()
@@ -242,6 +251,7 @@ async def _render_page(
         cancel_url=cancel_url,
         defaults={
             "vote_duration": min_hours,
+            "vote_mode": vote_mode,
             "subject_template_hash": subject_template_hash,
             "body": default_body,
         },

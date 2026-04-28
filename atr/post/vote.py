@@ -40,10 +40,19 @@ async def selected_post(
     URL: /vote/<project_key>/<version_key>
     """
 
-    release = await session.release(project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE)
+    release = await session.release(
+        project_key,
+        version_key,
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        with_release_policy=True,
+        with_project_release_policy=True,
+    )
 
     if release.committee is None:
         raise ValueError("Release has no committee")
+    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+        await quart.flash("Trusted vote casting is not available yet.", "error")
+        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
     vote = cast_vote_form.decision
     comment = cast_vote_form.comment

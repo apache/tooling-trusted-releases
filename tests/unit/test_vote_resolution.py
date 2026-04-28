@@ -59,7 +59,10 @@ def test_automatic_vote_resolve_section_links_to_standard_resolve(monkeypatch: p
 
     page = htm.Block()
     release = SimpleNamespace(
-        vote_manual=False,
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        vote_mode=sql.VoteMode.EMAIL,
+        effective_vote_mode=sql.VoteMode.EMAIL,
+        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
         project=SimpleNamespace(key="project"),
         version="1.0.0",
     )
@@ -81,7 +84,10 @@ async def test_cancelled_resolve_release_clears_podling_thread_id() -> None:
     release = _candidate_release(podling_thread_id="abc123")
     data.merge = mock.AsyncMock(return_value=release)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     await writer.resolve_release(
@@ -107,7 +113,10 @@ async def test_cancelled_resolve_release_produces_correct_message() -> None:
     release = _candidate_release()
     data.merge = mock.AsyncMock(return_value=release)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     _release, _round, success, _error = await writer.resolve_release(
@@ -133,7 +142,10 @@ async def test_cancelled_resolve_release_returns_to_draft() -> None:
     release = _candidate_release()
     data.merge = mock.AsyncMock(return_value=release)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     _release, _round, success, _error = await writer.resolve_release(
@@ -147,6 +159,7 @@ async def test_cancelled_resolve_release_returns_to_draft() -> None:
     )
 
     assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    assert release.vote_mode is None
     assert release.vote_resolved is None
     assert success == "Vote marked as cancelled"
     write_as.revision.create_revision_with_quarantine.assert_not_awaited()
@@ -162,7 +175,10 @@ async def test_failed_resolve_release_clears_podling_thread_id() -> None:
     release = _candidate_release(podling_thread_id="abc123")
     data.merge = mock.AsyncMock(return_value=release)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     await writer.resolve_release(
@@ -177,6 +193,7 @@ async def test_failed_resolve_release_clears_podling_thread_id() -> None:
 
     assert release.podling_thread_id is None
     assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    assert release.vote_mode is None
     assert release.vote_resolved is None
 
 
@@ -192,7 +209,10 @@ async def test_manual_cancelled_returns_to_draft_and_clears_podling_thread_id() 
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     success = await writer.resolve_manually(
@@ -202,6 +222,7 @@ async def test_manual_cancelled_returns_to_draft_and_clears_podling_thread_id() 
     )
 
     assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    assert release.vote_mode is None
     assert release.vote_resolved is None
     assert release.podling_thread_id is None
     assert success == "Vote marked as cancelled"
@@ -220,7 +241,10 @@ async def test_manual_failed_returns_to_draft_and_clears_podling_thread_id() -> 
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
     data.refresh = _refresh_as(
-        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, vote_resolved=None, podling_thread_id=None
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        vote_mode=None,
+        vote_resolved=None,
+        podling_thread_id=None,
     )
 
     success = await writer.resolve_manually(
@@ -230,6 +254,7 @@ async def test_manual_failed_returns_to_draft_and_clears_podling_thread_id() -> 
     )
 
     assert release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    assert release.vote_mode is None
     assert release.vote_resolved is None
     assert release.podling_thread_id is None
     assert success == "Vote marked as failed"
@@ -331,7 +356,10 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
 
     page = htm.Block()
     release = SimpleNamespace(
-        vote_manual=True,
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        vote_mode=sql.VoteMode.MANUAL,
+        effective_vote_mode=sql.VoteMode.MANUAL,
+        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
         project=SimpleNamespace(key="project"),
         version="1.0.0",
     )
@@ -698,7 +726,9 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        vote_manual=False,
+        vote_mode=sql.VoteMode.EMAIL,
+        effective_vote_mode=sql.VoteMode.EMAIL,
+        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
         vote_resolved=datetime.datetime.now(datetime.UTC),
         podling_thread_id=podling_thread_id,
         version="1.0.0",
@@ -712,6 +742,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             key="project",
             display_name="Project",
             short_display_name="Project",
+            release_policy=None,
             committee=SimpleNamespace(
                 key="project",
                 display_name="Project",
@@ -769,7 +800,9 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
     return SimpleNamespace(
         key="project-1.0.0",
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        vote_manual=True,
+        vote_mode=sql.VoteMode.MANUAL,
+        effective_vote_mode=sql.VoteMode.MANUAL,
+        release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
         vote_started=datetime.datetime.now(datetime.UTC),
         vote_resolved=datetime.datetime.now(datetime.UTC),
         podling_thread_id=podling_thread_id,
@@ -778,6 +811,7 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
         project=SimpleNamespace(
             key="project",
             display_name="Project",
+            release_policy=None,
             committee=SimpleNamespace(
                 key="project",
                 is_podling=False,

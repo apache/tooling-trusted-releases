@@ -56,7 +56,7 @@ The [`check_release_key`](/ref/atr/models/sql.py:check_release_key) function run
 
 Some properties are computed dynamically rather than stored in the database. The `Release.latest_revision_number` property is implemented as a SQLAlchemy column property using a correlated subquery. This means that when you access `release.latest_revision_number`, SQLAlchemy automatically executes a query to find the highest revision number for that release. The query is defined once in [`RELEASE_LATEST_REVISION_NUMBER`](/ref/atr/models/sql.py:RELEASE_LATEST_REVISION_NUMBER) and attached to the `Release` class.
 
-Projects have many computed properties that provide access to release policy settings with appropriate defaults. For example, `Project.policy_start_vote_template` returns the custom vote template if one is configured, or falls back to `Project.policy_start_vote_default` if not. This pattern allows projects to customize their release process while providing sensible defaults.
+Projects have many computed properties that provide access to release policy settings with appropriate defaults. For example, `Project.policy_start_vote_template` returns the custom vote template if one is configured, or falls back to the default vote template if not. This pattern allows projects to customize their release process while providing sensible defaults.
 
 ### Constraints and validation
 

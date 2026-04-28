@@ -287,7 +287,7 @@ async def release_ready_for_vote(
     version_key: safe.VersionKey,
     revision: safe.RevisionNumber,
     data: db.Session,
-    manual_vote: bool = False,
+    allowed_vote_modes: frozenset[sql.VoteMode],
 ) -> tuple[sql.Release, sql.Committee] | str:
     release = await session.release(
         project_key,
@@ -309,10 +309,8 @@ async def release_ready_for_vote(
     if committee is None:
         return "The committee for this release was not found"
 
-    if manual_vote and (not release.project.policy_manual_vote):
-        return "This release does not have manual vote mode enabled"
-    elif (not manual_vote) and release.project.policy_manual_vote:
-        return "This release has manual vote mode enabled"
+    if release.effective_vote_mode not in allowed_vote_modes:
+        return "This release's vote mode does not allow that action"
 
     if await has_blocker_checks(release, revision, caller_data=data):
         return "This release candidate draft has blockers. Please fix the blockers before starting a vote."

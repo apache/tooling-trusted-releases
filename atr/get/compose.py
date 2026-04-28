@@ -61,6 +61,7 @@ async def selected(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
+            _release_policy=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
@@ -201,6 +202,7 @@ async def selected(
         project_key=release.project.key,
         version_key=release.version,
         release=release,
+        release_vote_mode=release.effective_vote_mode,
         paths=all_paths,
         info=info,
         revision_editor=revision_editor,

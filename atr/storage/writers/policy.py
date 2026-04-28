@@ -129,7 +129,10 @@ class CommitteeMember(CommitteeParticipant):
             raise ValueError("Invalid file tag mappings")
         atr_tags_dict: dict[str, list[str]] = atr_tags_data
         _validate_file_tag_mappings(atr_tags_dict)
-        release_policy.license_check_mode = form.license_check_mode  # pyright: ignore[reportAttributeAccessIssue]
+        license_check_mode = form.license_check_mode
+        if not isinstance(license_check_mode, models.sql.LicenseCheckMode):
+            raise ValueError(f"Unsupported license check mode: {license_check_mode}")
+        release_policy.license_check_mode = license_check_mode
         release_policy.source_excludes_lightweight = _split_lines_verbatim(form.source_excludes_lightweight)
         release_policy.source_excludes_rat = _split_lines_verbatim(form.source_excludes_rat)
         release_policy.file_tag_mappings = atr_tags_dict
@@ -143,8 +146,10 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         # TODO: Ideally we would centralise the validation in this method
         project, release_policy = await self.__get_or_create_policy(project_key)
-        fields_to_update = update.model_fields_set - {"project"}
+        fields_to_update = update.model_fields_set - {"manual_vote", "project"}
         normalised_values: dict[str, Any] = {}
+
+        self.__set_policy_vote_mode_from_api(project, release_policy, update)
 
         for field in fields_to_update:
             value = getattr(update, field)
@@ -157,10 +162,6 @@ class CommitteeMember(CommitteeParticipant):
 
         if ("min_hours" in fields_to_update) and (update.min_hours is not None):
             models.validation.validate_policy_min_hours(update.min_hours)
-
-        if ("manual_vote" in fields_to_update) and update.manual_vote:
-            if project.committee and project.committee.is_podling:
-                raise storage.AccessError("Manual voting is not allowed for podlings.")
 
         if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
             normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
@@ -195,18 +196,21 @@ class CommitteeMember(CommitteeParticipant):
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
+        vote_mode = form.vote_mode
+        if (vote_mode == models.sql.VoteMode.MANUAL) and (project.committee and project.committee.is_podling):
+            raise storage.AccessError("Manual voting is not allowed for podlings.")
 
-        release_policy.manual_vote = form.manual_vote
+        release_policy.vote_mode = vote_mode
 
-        if not release_policy.manual_vote:
+        if release_policy.vote_mode in {models.sql.VoteMode.EMAIL, models.sql.VoteMode.TRUSTED}:
             release_policy.mailto_addresses = [form.mailto_addresses]
             self.__set_min_hours(form.min_hours, project, release_policy)
             release_policy.release_checklist = form.release_checklist or ""
             release_policy.vote_comment_template = form.vote_comment_template or ""
             self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)
             self.__set_start_vote_template(form.start_vote_template or "", project, release_policy)
-        elif project.committee and project.committee.is_podling:
-            raise storage.AccessError("Manual voting is not allowed for podlings.")
+        elif release_policy.vote_mode != models.sql.VoteMode.MANUAL:
+            raise ValueError(f"Unsupported vote mode: {release_policy.vote_mode}")
 
         await self.__commit_and_log(str(str(project_key)))
 
@@ -276,6 +280,23 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.min_hours = None
         else:
             release_policy.min_hours = submitted_min_hours
+
+    def __set_policy_vote_mode_from_api(
+        self,
+        project: models.sql.Project,
+        release_policy: models.sql.ReleasePolicy,
+        update: models.api.PolicyUpdateArgs,
+    ) -> None:
+        if "manual_vote" not in update.model_fields_set:
+            return
+        if update.manual_vote is None:
+            raise ValueError("Field 'manual_vote' does not accept null")
+        if update.manual_vote:
+            if project.committee and project.committee.is_podling:
+                raise storage.AccessError("Manual voting is not allowed for podlings.")
+            release_policy.vote_mode = models.sql.VoteMode.MANUAL
+        else:
+            release_policy.vote_mode = models.sql.VoteMode.EMAIL
 
     def __set_start_vote_subject(
         self,

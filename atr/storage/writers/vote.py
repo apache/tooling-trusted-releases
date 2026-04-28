@@ -157,6 +157,7 @@ class CommitteeParticipant(FoundationCommitter):
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
         second_round_email_to: str | None = None,
+        expected_vote_mode: sql.VoteMode | None = None,
     ) -> sql.Task:
         if release is None:
             release = await self.__data.release(
@@ -195,8 +196,15 @@ class CommitteeParticipant(FoundationCommitter):
 
         if promote is True:
             # This verifies the state and sets the phase to RELEASE_CANDIDATE
+            allowed_vote_modes = (
+                frozenset({expected_vote_mode})
+                if expected_vote_mode is not None
+                else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
+            )
             error = await self.__write_as.release.promote_to_candidate(
-                release.safe_key, selected_revision_number, vote_manual=False
+                release.safe_key,
+                selected_revision_number,
+                allowed_vote_modes=allowed_vote_modes,
             )
             if error:
                 raise storage.AccessError(error)
@@ -268,7 +276,11 @@ class CommitteeMember(CommitteeParticipant):
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
+            _release_policy=True,
+            _project_release_policy=True,
         ).demand(storage.AccessError("Release not found"))
+        if release.effective_vote_mode == sql.VoteMode.MANUAL:
+            raise ValueError("Release is configured for manual voting")
 
         is_podling = False
         if release.project.committee is not None:
@@ -315,9 +327,11 @@ class CommitteeMember(CommitteeParticipant):
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
+            _release_policy=True,
+            _project_release_policy=True,
         ).demand(storage.AccessError("Release not found"))
 
-        if not release.vote_manual:
+        if release.effective_vote_mode != sql.VoteMode.MANUAL:
             raise ValueError("Release is not configured for manual voting")
 
         if release.vote_started is None:
@@ -333,6 +347,7 @@ class CommitteeMember(CommitteeParticipant):
                     expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                     expected_podling_thread_id=None,
                     new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                    new_vote_mode=release.effective_vote_mode,
                     new_vote_resolved=datetime.datetime.now(datetime.UTC),
                     new_podling_thread_id=None,
                 )
@@ -355,6 +370,7 @@ class CommitteeMember(CommitteeParticipant):
                     expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                     expected_podling_thread_id=None,
                     new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                    new_vote_mode=None,
                     new_vote_resolved=None,
                     new_podling_thread_id=None,
                 )
@@ -401,6 +417,7 @@ class CommitteeMember(CommitteeParticipant):
                 expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 expected_podling_thread_id=None,
                 new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                new_vote_mode=release.effective_vote_mode,
                 new_vote_resolved=None,
                 new_podling_thread_id=thread_id,
             )
@@ -450,6 +467,7 @@ class CommitteeMember(CommitteeParticipant):
                 expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 expected_podling_thread_id=release.podling_thread_id,
                 new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                new_vote_mode=release.effective_vote_mode,
                 new_vote_resolved=datetime.datetime.now(datetime.UTC),
                 new_podling_thread_id=release.podling_thread_id,
             )
@@ -477,6 +495,7 @@ class CommitteeMember(CommitteeParticipant):
                 expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 expected_podling_thread_id=release.podling_thread_id,
                 new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                new_vote_mode=None,
                 new_vote_resolved=None,
                 new_podling_thread_id=None,
             )
@@ -586,6 +605,7 @@ class CommitteeMember(CommitteeParticipant):
         expected_phase: sql.ReleasePhase,
         expected_podling_thread_id: str | None,
         new_phase: sql.ReleasePhase,
+        new_vote_mode: sql.VoteMode | None,
         new_vote_resolved: datetime.datetime | None,
         new_podling_thread_id: str | None,
     ) -> None:
@@ -601,6 +621,7 @@ class CommitteeMember(CommitteeParticipant):
         result = await self.__data.execute(
             stmt.values(
                 phase=new_phase,
+                vote_mode=new_vote_mode,
                 vote_resolved=new_vote_resolved,
                 podling_thread_id=new_podling_thread_id,
             )

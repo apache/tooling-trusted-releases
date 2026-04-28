@@ -143,9 +143,9 @@ class VotePolicyForm(form.Form):
         f"The mailing list where vote emails are sent. This is usually your dev list. "
         f"ATR will currently only send test announcement emails to {util.USER_TESTS_ADDRESS}.",
     )
-    manual_vote: form.Bool = form.label(
-        "Manual voting process",
-        "If this is set then the vote will be completely manual and following policy is ignored.",
+    vote_mode: sql.VoteMode = form.label(
+        "Vote mode",
+        widget=form.Widget.CUSTOM,
     )
     min_hours: form.Int = form.label(
         "Minimum voting period",

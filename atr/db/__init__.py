@@ -703,7 +703,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         self,
         id: Opt[int] = NOT_SET,
         mailto_addresses: Opt[list[str]] = NOT_SET,
-        manual_vote: Opt[bool] = NOT_SET,
+        vote_mode: Opt[sql.VoteMode] = NOT_SET,
         min_hours: Opt[int] = NOT_SET,
         release_checklist: Opt[str] = NOT_SET,
         github_repository_name: Opt[str] = NOT_SET,
@@ -722,8 +722,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.ReleasePolicy.id == id)
         if is_defined(mailto_addresses):
             query = query.where(sql.ReleasePolicy.mailto_addresses == mailto_addresses)
-        if is_defined(manual_vote):
-            query = query.where(sql.ReleasePolicy.manual_vote == manual_vote)
+        if is_defined(vote_mode):
+            query = query.where(sql.ReleasePolicy.vote_mode == vote_mode)
         if is_defined(min_hours):
             query = query.where(sql.ReleasePolicy.min_hours == min_hours)
         if is_defined(release_checklist):

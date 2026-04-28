@@ -69,6 +69,7 @@ async def category_and_release(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
+            _release_policy=True,
             _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
@@ -500,7 +501,7 @@ def _render_section_resolve(page: htm.Block, release: sql.Release, user_category
     else:
         page.p["When the voting period concludes, use the resolution page to tally votes and record the outcome."]
 
-        if release.vote_manual:
+        if release.effective_vote_mode == sql.VoteMode.MANUAL:
             resolve_url = util.as_url(
                 manual.resolve_selected,
                 project_key=release.project.key,

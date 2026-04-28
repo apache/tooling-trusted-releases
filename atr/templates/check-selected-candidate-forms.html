@@ -1,4 +1,4 @@
-{% if not release.vote_manual %}
+{% if release_vote_mode.value != "manual" %}
   {% include "check-selected-vote-email.html" %}
 
 {% endif %}

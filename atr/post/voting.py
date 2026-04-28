@@ -27,6 +27,7 @@ import atr.form as form
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
@@ -35,6 +36,7 @@ import atr.web as web
 
 class BodyPreviewForm(form.Form):
     vote_duration: form.Int = form.label("Vote duration")
+    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
 
 
 @post.typed
@@ -49,6 +51,20 @@ async def body_preview(
     """
     URL: /voting/body/preview/<project_key>/<version_key>/<revision_number>
     """
+
+    async with db.session() as data:
+        release = await session.release(
+            project_key,
+            version_key,
+            data=data,
+            with_release_policy=True,
+            with_project_release_policy=True,
+        )
+        vote_mode = release.effective_vote_mode
+    if vote_mode != preview_form.vote_mode:
+        return web.TextResponse(
+            "The vote mode has changed since you loaded the form. Please reload and try again.", 409
+        )
 
     default_subject_template = await construct.start_vote_subject_default(project_key)
     default_body_template = await construct.start_vote_default(project_key)
@@ -81,7 +97,12 @@ async def selected_revision(
 
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_key, version_key, revision, data, manual_vote=False
+            session,
+            project_key,
+            version_key,
+            revision,
+            data,
+            frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
         ):
             case str() as error:
                 return await session.redirect(
@@ -93,6 +114,13 @@ async def selected_revision(
                 )
             case (release, committee):
                 pass
+
+        vote_mode = release.effective_vote_mode
+        if vote_mode != start_voting_form.vote_mode:
+            return await session.form_error(
+                "vote_mode",
+                "The vote mode has changed since you loaded the form. Please reload and try again.",
+            )
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             session.uid,
@@ -152,6 +180,7 @@ async def selected_revision(
                 email_cc=start_voting_form.email_cc,
                 email_bcc=start_voting_form.email_bcc,
                 second_round_email_to=second_round_email_to,
+                expected_vote_mode=start_voting_form.vote_mode,
             )
 
         log.info(f"Vote email will be sent to: {all_addrs}")

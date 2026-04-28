@@ -17,7 +17,7 @@
         <p>
           <strong>Created:</strong> {{ format_datetime(release.created) }}
         </p>
-        {% if release.vote_manual %}
+        {% if release_vote_mode.value == "manual" %}
           <p>
             <strong>Manual vote process:</strong> Yes
           </p>
@@ -60,12 +60,12 @@
         {% if revision_number %}
           {% set vote_blocked = blocker_errors %}
           {% set blocked_title = "Fix blockers before starting a vote" %}
-          {% if has_files and release.project.policy_manual_vote and (ongoing_tasks_count == 0) and (not vote_blocked) %}
+          {% if has_files and (release_vote_mode.value == "manual") and (ongoing_tasks_count == 0) and (not vote_blocked) %}
             <a id="start-vote-button"
                href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                title="Start a manual vote on this draft"
                class="btn btn-success"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
-          {% elif has_files and release.project.policy_manual_vote and (not vote_blocked) %}
+          {% elif has_files and (release_vote_mode.value == "manual") and (not vote_blocked) %}
             <a id="start-vote-button"
                href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                data-vote-href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
@@ -74,7 +74,7 @@
                role="button"
                aria-disabled="true"
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
-          {% elif has_files and release.project.policy_manual_vote and vote_blocked %}
+          {% elif has_files and (release_vote_mode.value == "manual") and vote_blocked %}
             <a id="start-vote-button"
                href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                title="{{ blocked_title }}"
@@ -82,12 +82,12 @@
                role="button"
                aria-disabled="true"
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
-          {% elif has_files and (not vote_blocked) and (ongoing_tasks_count == 0) %}
+          {% elif has_files and (release_vote_mode.value != "manual") and (not vote_blocked) and (ongoing_tasks_count == 0) %}
             <a id="start-vote-button"
                href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                title="Start a vote on this draft"
                class="btn btn-success"><i class="bi bi-check-circle me-1"></i> Start voting</a>
-          {% elif has_files and (not vote_blocked) %}
+          {% elif has_files and (release_vote_mode.value != "manual") and (not vote_blocked) %}
             <a id="start-vote-button"
                href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                data-vote-href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
@@ -96,7 +96,7 @@
                role="button"
                aria-disabled="true"
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start voting</a>
-          {% elif has_files and vote_blocked %}
+          {% elif has_files and (release_vote_mode.value != "manual") and vote_blocked %}
             <a id="start-vote-button"
                href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
                title="{{ blocked_title }}"
@@ -120,7 +120,7 @@
            class="btn btn-primary"><i class="bi bi-download me-1"></i> Download files</a>
         <a href="{{ as_url(get.file.selected, project_key=release.project.key, version_key=release.version) }}"
            class="btn btn-secondary"><i class="bi bi-eye me-1"></i> View files</a>
-        {% if can_resolve and release.vote_manual %}
+        {% if can_resolve and (release_vote_mode.value == "manual") %}
           <a href="{{ as_url(get.manual.resolve_selected, project_key=release.project.key, version_key=release.version) }}"
              class="btn btn-success"><i class="bi bi-clipboard-check me-1"></i> Resolve vote</a>
         {% elif can_resolve and resolve_form %}

@@ -53,7 +53,7 @@ async def resolve_selected(
         with_release_policy=True,
         with_project_release_policy=True,
     )
-    if not release.vote_manual:
+    if release.effective_vote_mode != sql.VoteMode.MANUAL:
         raise RuntimeError("This page is for manual votes only")
 
     content = await _render_resolve_page(release)
@@ -79,7 +79,7 @@ async def start_selected_revision(
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         match await interaction.release_ready_for_vote(
-            session, project_key, version_key, revision, data, manual_vote=True
+            session, project_key, version_key, revision, data, frozenset({sql.VoteMode.MANUAL})
         ):
             case str() as error:
                 return await session.redirect(

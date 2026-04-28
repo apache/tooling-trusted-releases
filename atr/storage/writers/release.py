@@ -445,15 +445,19 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         release_key: safe.ReleaseKey,
         selected_revision_number: safe.RevisionNumber,
-        vote_manual: bool = False,
+        *,
+        allowed_vote_modes: frozenset[sql.VoteMode],
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
-        release_for_pre_checks = await self.__data.release(key=str(release_key), _project=True).demand(
-            storage.AccessError("Release candidate draft not found")
-        )
+        release_for_pre_checks = await self.__data.release(
+            key=str(release_key), _project=True, _project_release_policy=True
+        ).demand(storage.AccessError("Release candidate draft not found"))
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number
+        vote_mode = release_for_pre_checks.effective_vote_mode
+        if vote_mode not in allowed_vote_modes:
+            return "This release's vote mode does not allow that action"
 
         # Check for ongoing tasks
         ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, selected_revision_number)
@@ -484,9 +488,9 @@ class CommitteeParticipant(FoundationCommitter):
             )
             .values(
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                vote_mode=vote_mode,
                 vote_started=datetime.datetime.now(datetime.UTC),
                 vote_resolved=None,
-                vote_manual=vote_manual,
             )
         )
 
@@ -502,7 +506,7 @@ class CommitteeParticipant(FoundationCommitter):
             asf_uid=self.__asf_uid,
             release_key=str(release_key),
             selected_revision_number=str(selected_revision_number),
-            vote_manual=vote_manual,
+            vote_mode=vote_mode.value,
         )
         return None
 

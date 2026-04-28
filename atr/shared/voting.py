@@ -18,6 +18,7 @@
 import pydantic
 
 import atr.form as form
+import atr.models.sql as sql
 import atr.util as util
 
 
@@ -38,6 +39,7 @@ class StartVotingForm(form.Form):
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
+    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
 
     @pydantic.field_validator("vote_duration")
     @classmethod

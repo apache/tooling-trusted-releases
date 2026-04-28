@@ -509,8 +509,8 @@ def _render_policy_readonly(project: sql.Project) -> htm.Element:
             htm.td(".text-break.border-0")[email_content],
         ],
         htm.tr[
-            htm.th(".border-0")["Manual vote process"],
-            htm.td(".text-break.border-0")[str(project.policy_manual_vote)],
+            htm.th(".border-0")["Vote mode"],
+            htm.td(".text-break.border-0")[_vote_mode_label(project.policy_vote_mode)],
         ],
         htm.tr[
             htm.th(".border-0")["Minimum voting period"],
@@ -647,15 +647,13 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         "mailto_addresses": project.policy_mailto_addresses[0]
         if project.policy_mailto_addresses
         else f"dev@{project.key}.apache.org",
-        "manual_vote": project.policy_manual_vote,
+        "vote_mode": project.policy_vote_mode,
         "min_hours": project.policy_min_hours,
         "release_checklist": project.policy_release_checklist or "",
         "vote_comment_template": project.policy_vote_comment_template or "",
         "start_vote_subject": project.policy_start_vote_subject or "",
         "start_vote_template": project.policy_start_vote_template or "",
     }
-
-    skip_fields = ["manual_vote"] if (project.committee and project.committee.is_podling) else []
 
     release_checklist_widget = _textarea_with_variables(
         field_name="release_checklist",
@@ -679,6 +677,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         rows=18,
         documentation="Email template for messages to start a vote on a release.",
     )
+    vote_mode_widget = _vote_mode_radios(project)
 
     with card.block(htm.div, classes=".card-body") as card_body:
         await form.render_block(
@@ -691,11 +690,11 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             border=True,
             # wider_widgets=True,
             textarea_rows=10,
-            skip=skip_fields,
             custom={
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
+                "vote_mode": vote_mode_widget,
             },
         )
     return card.collect()
@@ -752,3 +751,42 @@ def _textarea_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+def _vote_mode_label(mode: sql.VoteMode) -> str:
+    return mode.value.capitalize()
+
+
+def _vote_mode_radios(project: sql.Project) -> htm.Element:
+    choices = list(sql.VoteMode)
+    if project.committee and project.committee.is_podling:
+        choices = [mode for mode in choices if mode != sql.VoteMode.MANUAL]
+    elements: list[htm.Element | htm.VoidElement] = []
+    if project.policy_vote_mode not in choices:
+        elements.append(
+            htm.div(".alert.alert-warning.mb-3")[
+                f"The current vote mode, {_vote_mode_label(project.policy_vote_mode)}, "
+                "is not available for this project."
+            ]
+        )
+    radios = []
+    for mode in choices:
+        radio_id = f"vote_mode_{mode.value}"
+        attrs: dict[str, str] = {
+            "type": "radio",
+            "name": "vote_mode",
+            "id": radio_id,
+            "value": mode.value,
+            "class_": "form-check-input",
+            "required": "",
+        }
+        if mode == project.policy_vote_mode:
+            attrs["checked"] = ""
+        radios.append(
+            htpy.div(".form-check")[
+                htpy.input(**attrs),
+                htpy.label(".form-check-label", for_=radio_id)[_vote_mode_label(mode)],
+            ]
+        )
+    elements.append(htm.div("#vote_mode")[*radios])
+    return htm.div[*elements]
