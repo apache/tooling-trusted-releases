@@ -239,6 +239,12 @@ class UserRole(enum.StrEnum):
     SYSADMIN = "sysadmin"
 
 
+class VoteMode(enum.StrEnum):
+    MANUAL = "manual"
+    EMAIL = "email"
+    TRUSTED = "trusted"
+
+
 # Pydantic models
 
 
@@ -1372,6 +1378,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     manual_vote: bool = sqlmodel.Field(default=False)
+    vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.EMAIL)
     min_hours: int | None = sqlmodel.Field(default=None)
     release_checklist: str = sqlmodel.Field(default="")
     vote_comment_template: str = sqlmodel.Field(default="")
@@ -1417,6 +1424,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         return ReleasePolicy(
             mailto_addresses=list(self.mailto_addresses),
             manual_vote=self.manual_vote,
+            vote_mode=self.vote_mode,
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,
             vote_comment_template=self.vote_comment_template,
