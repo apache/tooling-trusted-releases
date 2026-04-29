@@ -76,7 +76,7 @@ async def category_and_release(
         if release.committee is None:
             raise ValueError("Release has no committee")
 
-        latest_vote_task = await interaction.release_latest_vote_task(release, data)
+        latest_vote_task = await interaction.release_current_vote_task(release, data)
         vote_initiator_uid: str | None = None
         if latest_vote_task is not None:
             vote_initiator_uid = latest_vote_task.task_args.get("initiator_id")

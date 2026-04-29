@@ -64,7 +64,7 @@ async def selected(  # noqa: C901
     archive_url = None
     fetch_error = None
 
-    latest_vote_task = await interaction.release_latest_vote_task(release)
+    latest_vote_task = await interaction.release_current_vote_task(release)
     if latest_vote_task is not None:
         task_mid = interaction.task_mid_get(latest_vote_task)
         task_recipient = interaction.task_recipient_get(latest_vote_task)

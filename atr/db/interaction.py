@@ -265,6 +265,25 @@ async def previews(project: sql.Project) -> list[sql.Release]:
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
 
 
+async def release_current_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
+    current_vote_seq = getattr(release, "current_vote_seq", None)
+    if current_vote_seq is None:
+        return await release_latest_vote_task(release, caller_data)
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == release.project_key)
+            .where(sql.Task.version_key == release.version)
+            .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
+            .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") == current_vote_seq)
+            .order_by(via(sql.Task.added).desc())
+            .limit(1)
+        )
+        task = (await data.execute(query)).scalar_one_or_none()
+        return task
+
+
 async def release_latest_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
     """Find the most recent VOTE_INITIATE task for this release."""
     via = sql.validate_instrumented_attribute

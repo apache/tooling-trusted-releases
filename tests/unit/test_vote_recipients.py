@@ -25,6 +25,7 @@ import atr.db.interaction as interaction
 import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.storage.writers.vote as vote
 import atr.tasks.vote
 import atr.util as util
@@ -45,6 +46,21 @@ def test_initiate_args_accepts_second_round_email_to() -> None:
     assert task_args.second_round_email_to == "general@incubator.apache.org"
 
 
+def test_initiate_args_accepts_vote_seq() -> None:
+    task_args = args.Initiate(
+        release_key="project-1.0.0",
+        email_to="dev@project.apache.org",
+        vote_duration=72,
+        initiator_id="testuser",
+        initiator_fullname="Test User",
+        subject="[VOTE] Release",
+        body="Please vote",
+        vote_seq=3,
+    )
+
+    assert task_args.vote_seq == 3
+
+
 def test_initiate_args_backward_compatible_without_second_round_field() -> None:
     raw = {
         "release_key": "project-1.0.0",
@@ -61,6 +77,7 @@ def test_initiate_args_backward_compatible_without_second_round_field() -> None:
     task_args = args.Initiate.model_validate(raw)
 
     assert task_args.second_round_email_to is None
+    assert task_args.vote_seq is None
 
 
 def test_permitted_podling_second_round_recipients_includes_incubator_address(
@@ -119,6 +136,45 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
     assert queued_task.task_args["email_bcc"] == ["secretary@project.apache.org"]
 
 
+@pytest.mark.asyncio
+async def test_start_email_vote_sets_vote_seq_on_task() -> None:
+    data = mock.MagicMock()
+    data.add = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+
+    release = SimpleNamespace(
+        key="project-1.0.0",
+        committee=SimpleNamespace(key="project", is_podling=False),
+    )
+    release_writer = SimpleNamespace(
+        _start_vote_no_commit=mock.AsyncMock(return_value=(release, 7, sql.VoteMode.EMAIL)),
+    )
+    write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
+    writer = _participant_writer_with_mocks(data, write_as)
+
+    task = await writer.start(
+        "dev@project.apache.org",
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        safe.RevisionNumber("00001"),
+        72,
+        "[VOTE] Release",
+        "Please vote",
+        "Project Chair",
+        permitted_recipients=["dev@project.apache.org"],
+    )
+
+    assert task.task_args["vote_seq"] == 7
+    data.add.assert_called_once_with(task)
+    data.begin_immediate.assert_awaited_once()
+    data.commit.assert_awaited_once()
+    data.rollback.assert_not_awaited()
+    write_as.append_to_audit_log.assert_called_once()
+    assert write_as.append_to_audit_log.call_args.kwargs["vote_seq"] == 7
+
+
 def test_task_recipient_get_returns_full_vote_recipient() -> None:
     latest_vote_task = _latest_vote_task()
 
@@ -140,6 +196,31 @@ async def test_worker_accepts_incubator_address_for_podling_round_two(
 
     assert isinstance(result, results.VoteInitiate)
     assert result.email_to == "general@incubator.apache.org"
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_stale_vote_seq(monkeypatch: pytest.MonkeyPatch) -> None:
+    release = _make_release(is_podling=False, podling_thread_id=None, current_vote_seq=2)
+    _patch_db_and_interaction(monkeypatch, release)
+    _patch_storage_write(monkeypatch)
+
+    task_args = _make_initiate_args(email_to="dev@project.apache.org")
+    task_args.vote_seq = 1
+
+    with pytest.raises(atr.tasks.vote.VoteInitiationError, match="stale"):
+        await atr.tasks.vote._initiate_core_logic(task_args)
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_vote_task_outside_candidate_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    release = _make_release(is_podling=False, podling_thread_id=None, phase=sql.ReleasePhase.RELEASE)
+    _patch_db_and_interaction(monkeypatch, release)
+    _patch_storage_write(monkeypatch)
+
+    task_args = _make_initiate_args(email_to="dev@project.apache.org")
+
+    with pytest.raises(atr.tasks.vote.VoteInitiationError, match="stale"):
+        await atr.tasks.vote._initiate_core_logic(task_args)
 
 
 @pytest.mark.asyncio
@@ -208,8 +289,16 @@ def _make_initiate_args(email_to: str, initiator_id: str = "testuser") -> args.I
     )
 
 
-def _make_release(*, is_podling: bool, podling_thread_id: str | None) -> SimpleNamespace:
+def _make_release(
+    *,
+    is_podling: bool,
+    podling_thread_id: str | None,
+    current_vote_seq: int | None = None,
+    phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE_CANDIDATE,
+) -> SimpleNamespace:
     return SimpleNamespace(
+        phase=phase,
+        current_vote_seq=current_vote_seq,
         latest_revision_number="00001",
         safe_project_key=safe.ProjectKey("testproject"),
         safe_version_key=safe.VersionKey("1.0.0"),
@@ -220,6 +309,15 @@ def _make_release(*, is_podling: bool, podling_thread_id: str | None) -> SimpleN
         ),
         podling_thread_id=podling_thread_id,
     )
+
+
+def _participant_writer_with_mocks(data: mock.MagicMock, write_as: SimpleNamespace) -> vote.CommitteeParticipant:
+    writer = object.__new__(vote.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__write_as = write_as
+    writer._CommitteeParticipant__asf_uid = "chair"
+    writer._CommitteeParticipant__committee_key = "project"
+    return writer
 
 
 def _patch_db_and_interaction(monkeypatch: pytest.MonkeyPatch, release: SimpleNamespace) -> None:

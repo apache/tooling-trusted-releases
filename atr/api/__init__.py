@@ -1573,15 +1573,17 @@ async def vote_start(
     asf_uid = _jwt_asf_uid()
 
     try:
-        async with storage.write(asf_uid) as write:
-            wacp = await write.as_project_committee_participant(data.project)
-            async with db.session() as read_data:
-                committee = await read_data.committee(key=wacp.committee_key).demand(
-                    storage.AccessError(f"Committee not found: {wacp.committee_key}")
-                )
+        async with db.session() as db_data:
+            project = await db_data.project(key=str(data.project), _committee=True).demand(
+                storage.AccessError(f"Project not found: {data.project}")
+            )
+            committee = project.committee
+            if committee is None:
+                raise storage.AccessError("No committee found for project - Invalid state")
+        async with storage.write_as_committee_participant(committee.key, asf_uid) as wacp:
             permitted_recipients = util.permitted_podling_first_round_recipients(
                 asf_uid,
-                wacp.committee_key,
+                committee.key,
                 is_podling=committee.is_podling,
             )
             if data.email_to not in permitted_recipients:
@@ -1635,7 +1637,7 @@ async def vote_tabulate(
             exceptions.NotFound(f"Release {release_key} not found"),
         )
 
-    latest_vote_task = await interaction.release_latest_vote_task(release)
+    latest_vote_task = await interaction.release_current_vote_task(release)
     if latest_vote_task is None:
         raise exceptions.NotFound("No vote task found")
     task_mid = interaction.task_mid_get(latest_vote_task)

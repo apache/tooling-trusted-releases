@@ -26,12 +26,14 @@ from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
 import sqlalchemy
+import sqlalchemy.dialects.sqlite as sqlite
 import sqlalchemy.engine as engine
 import sqlmodel
 
 import atr.analysis as analysis
 import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.api as api
@@ -218,7 +220,11 @@ class CommitteeParticipant(FoundationCommitter):
                 via(sql.RevisionCounter.release_key) == release_key
             )
             await self.__data.execute(counter_delete_stmt)
-            log.info(f"Deleted revision counter for test release: {release_key}")
+            vote_counter_delete_stmt = sqlmodel.delete(sql.VoteCounter).where(
+                via(sql.VoteCounter.release_key) == release_key
+            )
+            await self.__data.execute(vote_counter_delete_stmt)
+            log.info(f"Deleted revision and vote counters for test release: {release_key}")
 
         # Filesystem deletions are more likely to have permission errors than database deletions
         # Therefore we do filesystem deletions first
@@ -449,66 +455,129 @@ class CommitteeParticipant(FoundationCommitter):
         allowed_vote_modes: frozenset[sql.VoteMode],
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
+        try:
+            await self.__data.begin_immediate()
+            release, vote_seq, vote_mode = await self._start_vote_no_commit(
+                release_key,
+                selected_revision_number,
+                allowed_vote_modes=allowed_vote_modes,
+                promote=True,
+            )
+            await self.__data.commit()
+        except storage.AccessError as e:
+            await self.__data.rollback()
+            return str(e)
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            release_key=release.key,
+            selected_revision_number=str(selected_revision_number),
+            vote_seq=vote_seq,
+            vote_mode=vote_mode.value,
+        )
+        return None
+
+    async def _start_vote_no_commit(  # noqa: C901
+        self,
+        release_key: safe.ReleaseKey,
+        selected_revision_number: safe.RevisionNumber,
+        *,
+        allowed_vote_modes: frozenset[sql.VoteMode],
+        promote: bool,
+        expected_podling_thread_id: str | None = None,
+    ) -> tuple[sql.Release, int, sql.VoteMode]:
         release_for_pre_checks = await self.__data.release(
-            key=str(release_key), _project=True, _project_release_policy=True
+            key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found"))
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number
-        vote_mode = release_for_pre_checks.effective_vote_mode
+        if promote:
+            vote_mode = release_for_pre_checks.effective_vote_mode
+        else:
+            vote_mode = release_for_pre_checks.vote_mode
+            if vote_mode is None:
+                raise storage.AccessError("The release state has changed, please refresh and try again")
         if vote_mode not in allowed_vote_modes:
-            return "This release's vote mode does not allow that action"
+            raise storage.AccessError("This release's vote mode does not allow that action")
 
         # Check for ongoing tasks
-        ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, selected_revision_number)
-        if ongoing_tasks > 0:
-            return "All checks must be completed before starting a vote"
+        if promote:
+            ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, selected_revision_number)
+            if ongoing_tasks > 0:
+                raise storage.AccessError("All checks must be completed before starting a vote")
 
         # Verify that it's in the correct phase
-        if release_for_pre_checks.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            return "This release is not in the candidate draft phase"
+        expected_phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+        if not promote:
+            expected_phase = sql.ReleasePhase.RELEASE_CANDIDATE
+        if release_for_pre_checks.phase != expected_phase:
+            if promote:
+                raise storage.AccessError("This release is not in the candidate draft phase")
+            raise storage.AccessError("The release state has changed, please refresh and try again")
 
         # Check that the revision number is the latest
         if revision_number != selected_revision_number:
-            return "The selected revision number does not match the latest revision number"
+            raise storage.AccessError("The selected revision number does not match the latest revision number")
+
+        if await interaction.has_blocker_checks(
+            release_for_pre_checks, selected_revision_number, caller_data=self.__data
+        ):
+            raise storage.AccessError(
+                "This release candidate draft has blockers. Please fix the blockers before starting a vote."
+            )
 
         # Check that there is at least one file in the draft
-        file_count = await util.number_of_release_files(release_for_pre_checks)
-        if file_count == 0:
-            return "This candidate draft is empty, containing no files"
+        if promote:
+            file_count = await util.number_of_release_files(release_for_pre_checks)
+            if file_count == 0:
+                raise storage.AccessError("This candidate draft is empty, containing no files")
 
         # Promote it to RELEASE_CANDIDATE
         via = sql.validate_instrumented_attribute
-        stmt = (
-            sqlmodel.update(sql.Release)
-            .where(
-                via(sql.Release.key) == release_for_pre_checks.key,
-                via(sql.Release.phase) == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                sql.latest_revision_number_query() == str(selected_revision_number),
-            )
-            .values(
-                phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                vote_mode=vote_mode,
-                vote_started=datetime.datetime.now(datetime.UTC),
-                vote_resolved=None,
-            )
+        vote_seq = await self.__vote_seq_allocate(release_for_pre_checks.key)
+        values: dict[str, object] = {
+            "vote_started": datetime.datetime.now(datetime.UTC),
+            "vote_resolved": None,
+            "current_vote_seq": vote_seq,
+        }
+        if promote:
+            values["phase"] = sql.ReleasePhase.RELEASE_CANDIDATE
+            values["vote_mode"] = vote_mode
+        stmt = sqlmodel.update(sql.Release).where(
+            via(sql.Release.key) == release_for_pre_checks.key,
+            via(sql.Release.phase) == expected_phase,
+            sql.latest_revision_number_query() == str(selected_revision_number),
         )
-
-        result = await self.__data.execute(stmt)
+        if not promote:
+            if expected_podling_thread_id is None:
+                stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
+            else:
+                stmt = stmt.where(via(sql.Release.podling_thread_id) == expected_podling_thread_id)
+        result = await self.__data.execute(stmt.values(**values))
         if not isinstance(result, engine.CursorResult):
             log.error(f"Expected cursor result, got {type(result)}")
-            return "An error occurred while promoting the release candidate"
+            raise storage.AccessError("An error occurred while promoting the release candidate")
         if result.rowcount != 1:
-            await self.__data.rollback()
-            return "A newer revision appeared, please refresh and try again."
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            release_key=str(release_key),
-            selected_revision_number=str(selected_revision_number),
-            vote_mode=vote_mode.value,
+            raise storage.AccessError("A newer revision appeared, please refresh and try again.")
+        await self.__data.refresh(release_for_pre_checks)
+        return release_for_pre_checks, vote_seq, vote_mode
+
+    async def __vote_seq_allocate(self, release_key: str) -> int:
+        upsert_stmt = (
+            sqlite.insert(sql.VoteCounter)
+            .values(release_key=release_key, last_allocated_number=1)
+            .on_conflict_do_update(
+                index_elements=["release_key"],
+                set_={"last_allocated_number": sqlalchemy.text("last_allocated_number + 1")},
+            )
+            .returning(sqlalchemy.literal_column("last_allocated_number"))
         )
-        return None
+        result = await self.__data.execute(upsert_stmt)
+        return int(result.scalar_one())
 
     async def remove_rc_tags(
         self, project_key: safe.ProjectKey, version_key: safe.VersionKey

@@ -88,7 +88,7 @@ class CommitteeParticipant(FoundationCommitter):
         is_binding: bool = False,
     ) -> tuple[list[str], str]:
         # Get the email thread
-        latest_vote_task = await interaction.release_latest_vote_task(release)
+        latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
             return [], "No vote task found."
         vote_thread_mid = interaction.task_mid_get(latest_vote_task)
@@ -159,85 +159,106 @@ class CommitteeParticipant(FoundationCommitter):
         second_round_email_to: str | None = None,
         expected_vote_mode: sql.VoteMode | None = None,
     ) -> sql.Task:
-        if release is None:
-            release = await self.__data.release(
-                project_key=str(project_key),
-                version=str(version_key),
-                _project=True,
-                _committee=True,
-            ).demand(storage.AccessError("Release not found"))
-        if release.committee is None:
-            raise storage.AccessError("Release has no committee")
-        if permitted_recipients is None:
-            permitted_recipients = util.permitted_podling_first_round_recipients(
-                self.__asf_uid,
-                release.committee.key,
-                is_podling=release.committee.is_podling,
-            )
-        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
-        for addr in all_addrs:
-            if addr not in permitted_recipients:
-                # This will be checked again by tasks/vote.py for extra safety
-                log.info(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
-                raise storage.AccessError("Invalid mailing list choice")
-
-        if second_round_email_to is not None:
-            second_round_permitted = util.permitted_podling_second_round_recipients(self.__asf_uid)
-            if second_round_email_to not in second_round_permitted:
-                log.info(
-                    f"Invalid second round mailing list choice: {second_round_email_to} not in {second_round_permitted}"
+        if promote:
+            await self.__data.begin_immediate()
+        try:
+            release_key = sql.release_key(project_key, version_key)
+            if promote is True:
+                # This verifies the state and sets the phase to RELEASE_CANDIDATE
+                allowed_vote_modes = (
+                    frozenset({expected_vote_mode})
+                    if expected_vote_mode is not None
+                    else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
                 )
-                raise storage.AccessError("Invalid second round mailing list choice")
+                release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
+                    release_key,
+                    selected_revision_number,
+                    allowed_vote_modes=allowed_vote_modes,
+                    promote=True,
+                )
+            else:
+                if release is None:
+                    release = await self.__data.release(
+                        project_key=str(project_key),
+                        version=str(version_key),
+                        _project=True,
+                        _committee=True,
+                    ).demand(storage.AccessError("Release not found"))
+                release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
+                    release.safe_key,
+                    selected_revision_number,
+                    allowed_vote_modes=frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
+                    promote=False,
+                    expected_podling_thread_id=release.podling_thread_id,
+                )
+            if release.committee is None:
+                raise storage.AccessError("Release has no committee")
+            if permitted_recipients is None:
+                permitted_recipients = util.permitted_podling_first_round_recipients(
+                    self.__asf_uid,
+                    release.committee.key,
+                    is_podling=release.committee.is_podling,
+                )
+            all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
+            for addr in all_addrs:
+                if addr not in permitted_recipients:
+                    # This will be checked again by tasks/vote.py for extra safety
+                    log.info(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
+                    raise storage.AccessError("Invalid mailing list choice")
 
-        if await interaction.has_blocker_checks(release, selected_revision_number, caller_data=self.__data):
-            raise storage.AccessError(
-                "This release candidate draft has blockers. Please fix the blockers before starting a vote."
+            if second_round_email_to is not None:
+                second_round_permitted = util.permitted_podling_second_round_recipients(self.__asf_uid)
+                if second_round_email_to not in second_round_permitted:
+                    log.info(
+                        "Invalid second round mailing list choice: "
+                        f"{second_round_email_to} not in {second_round_permitted}"
+                    )
+                    raise storage.AccessError("Invalid second round mailing list choice")
+
+            # TODO: We also need to store the duration of the vote
+            # We can't allow resolution of the vote until the duration has elapsed
+            # But we allow the user to specify in the form
+            # And yet we also have ReleasePolicy.min_hours
+            # Presumably this sets the default, and the form takes precedence?
+            # ReleasePolicy.min_hours can also be 0, though
+
+            # Create a task for vote initiation
+            task = sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.VOTE_INITIATE,
+                task_args=args.Initiate(
+                    release_key=release.key,
+                    email_to=email_to,
+                    vote_duration=vote_duration_choice,
+                    initiator_id=self.__asf_uid,
+                    initiator_fullname=asf_fullname,
+                    subject=subject,
+                    body=body_data,
+                    vote_seq=vote_seq,
+                    email_cc=email_cc or [],
+                    email_bcc=email_bcc or [],
+                    second_round_email_to=second_round_email_to,
+                ).model_dump(),
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
+            self.__data.add(task)
+            if promote:
+                await self.__data.commit()
+        except Exception:
+            if promote:
+                await self.__data.rollback()
+            raise
 
-        if promote is True:
-            # This verifies the state and sets the phase to RELEASE_CANDIDATE
-            allowed_vote_modes = (
-                frozenset({expected_vote_mode})
-                if expected_vote_mode is not None
-                else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
-            )
-            error = await self.__write_as.release.promote_to_candidate(
-                release.safe_key,
-                selected_revision_number,
-                allowed_vote_modes=allowed_vote_modes,
-            )
-            if error:
-                raise storage.AccessError(error)
-
-        # TODO: We also need to store the duration of the vote
-        # We can't allow resolution of the vote until the duration has elapsed
-        # But we allow the user to specify in the form
-        # And yet we also have ReleasePolicy.min_hours
-        # Presumably this sets the default, and the form takes precedence?
-        # ReleasePolicy.min_hours can also be 0, though
-
-        # Create a task for vote initiation
-        task = sql.Task(
-            status=sql.TaskStatus.QUEUED,
-            task_type=sql.TaskType.VOTE_INITIATE,
-            task_args=args.Initiate(
+        if promote:
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
                 release_key=release.key,
-                email_to=email_to,
-                vote_duration=vote_duration_choice,
-                initiator_id=self.__asf_uid,
-                initiator_fullname=asf_fullname,
-                subject=subject,
-                body=body_data,
-                email_cc=email_cc or [],
-                email_bcc=email_bcc or [],
-                second_round_email_to=second_round_email_to,
-            ).model_dump(),
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version_key=str(version_key),
-        )
-        self.__data.add(task)
-        await self.__data.commit()
+                selected_revision_number=str(selected_revision_number),
+                vote_seq=vote_seq,
+                vote_mode=vote_mode.value,
+            )
 
         # TODO: We should log all outgoing email and the session so that users can confirm
         # And can be warned if there was a failure
@@ -287,7 +308,7 @@ class CommitteeMember(CommitteeParticipant):
             is_podling = release.project.committee.is_podling
         podling_thread_id = release.podling_thread_id
 
-        latest_vote_task = await interaction.release_latest_vote_task(release)
+        latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
             raise RuntimeError("No vote task found, unable to send resolution message.")
 
@@ -386,7 +407,7 @@ class CommitteeMember(CommitteeParticipant):
         )
         return success_message
 
-    async def resolve_release(
+    async def resolve_release(  # noqa: C901
         self,
         project_key: safe.ProjectKey,
         release: sql.Release,
@@ -396,67 +417,82 @@ class CommitteeMember(CommitteeParticipant):
         asf_fullname: str,
         resolution_body: str,
     ) -> tuple[sql.Release, int | None, str, str | None]:
+        if (voting_round == 1) and (vote_result == "passed"):
+            await self.__data.commit()
+            await self.__data.begin_immediate()
         # Attach the existing release to the session
         release = await self.__data.merge(release)
         # Update the release phase based on vote result
         extra_destination = None
+        second_round_vote_seq = None
+        second_round_vote_mode = None
         if (voting_round == 1) and (vote_result == "passed"):
-            # This is the first podling vote, by the PPMC and not the Incubator PMC
-            # In this branch, we do not move to RELEASE_PREVIEW but keep everything the same
-            # We only set the podling_thread_id to the thread_id of the vote thread
-            # Then we automatically start the Incubator PMC vote
-            # TODO: Note on the resolve vote page that resolving the Project PPMC vote starts the Incubator PMC vote
-            task_mid = interaction.task_mid_get(latest_vote_task)
-            task_recipient = interaction.task_recipient_get(latest_vote_task)
-            archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
-            if archive_url is None:
-                raise ValueError("No archive URL found for podling vote")
-            thread_id = archive_url.split("/")[-1]
-            await self._resolve_transition(
-                release,
-                expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                expected_podling_thread_id=None,
-                new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-                new_vote_mode=release.effective_vote_mode,
-                new_vote_resolved=None,
-                new_podling_thread_id=thread_id,
-            )
-            await self.__data.refresh(release)
-            incubator_vote_address = (
-                latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
-            )
-            if not release.project.committee:
-                raise ValueError("Project has no committee - Invalid state")
-            revision_number = release.latest_revision_number
-            if revision_number is None:
-                raise ValueError("Release has no revision number - Invalid state")
-            vote_duration = latest_vote_task.task_args["vote_duration"]
-            subject_template = await construct.start_vote_subject_default(release.safe_project_key)
-            body_template = await construct.start_vote_default(release.safe_project_key)
-            options = construct.StartVoteOptions(
-                asfuid=self.__asf_uid,
-                fullname=asf_fullname,
-                project_key=release.safe_project_key,
-                version_key=release.safe_version_key,
-                revision_number=release.safe_latest_revision_number,
-                vote_duration=vote_duration,
-            )
-            subject_data, body_data = await construct.start_vote_subject_and_body(
-                subject_template, body_template, options
-            )
-            await self.start(
-                email_to=incubator_vote_address,
-                permitted_recipients=[incubator_vote_address],
-                project_key=release.safe_project_key,
-                version_key=release.safe_version_key,
-                selected_revision_number=release.safe_latest_revision_number,
-                asf_fullname=asf_fullname,
-                vote_duration_choice=vote_duration,
-                subject=subject_data,
-                body_data=body_data,
-                release=release,
-                promote=False,
-            )
+            try:
+                # This is the first podling vote, by the PPMC and not the Incubator PMC
+                # In this branch, we do not move to RELEASE_PREVIEW but keep everything the same
+                # We only set the podling_thread_id to the thread_id of the vote thread
+                # Then we automatically start the Incubator PMC vote
+                # TODO: Note on the resolve vote page that resolving the Project PPMC vote starts the Incubator PMC vote
+                task_mid = interaction.task_mid_get(latest_vote_task)
+                task_recipient = interaction.task_recipient_get(latest_vote_task)
+                archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
+                if archive_url is None:
+                    raise ValueError("No archive URL found for podling vote")
+                thread_id = archive_url.split("/")[-1]
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=None,
+                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    new_vote_mode=release.effective_vote_mode,
+                    new_vote_resolved=None,
+                    new_podling_thread_id=thread_id,
+                )
+                await self.__data.refresh(release)
+                incubator_vote_address = (
+                    latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
+                )
+                if not release.project.committee:
+                    raise ValueError("Project has no committee - Invalid state")
+                revision_number = release.latest_revision_number
+                if revision_number is None:
+                    raise ValueError("Release has no revision number - Invalid state")
+                vote_duration = latest_vote_task.task_args["vote_duration"]
+                subject_template = await construct.start_vote_subject_default(release.safe_project_key)
+                body_template = await construct.start_vote_default(release.safe_project_key)
+                options = construct.StartVoteOptions(
+                    asfuid=self.__asf_uid,
+                    fullname=asf_fullname,
+                    project_key=release.safe_project_key,
+                    version_key=release.safe_version_key,
+                    revision_number=release.safe_latest_revision_number,
+                    vote_duration=vote_duration,
+                )
+                subject_data, body_data = await construct.start_vote_subject_and_body(
+                    subject_template, body_template, options
+                )
+                second_round_task = await self.start(
+                    email_to=incubator_vote_address,
+                    permitted_recipients=[incubator_vote_address],
+                    project_key=release.safe_project_key,
+                    version_key=release.safe_version_key,
+                    selected_revision_number=release.safe_latest_revision_number,
+                    asf_fullname=asf_fullname,
+                    vote_duration_choice=vote_duration,
+                    subject=subject_data,
+                    body_data=body_data,
+                    release=release,
+                    promote=False,
+                )
+                second_round_vote_seq = second_round_task.task_args["vote_seq"]
+                if not isinstance(second_round_vote_seq, int):
+                    raise ValueError("Second round vote sequence is invalid")
+                second_round_vote_mode = release.effective_vote_mode
+                await self.__data.commit()
+                await self.__data.refresh(release)
+            except Exception:
+                await self.__data.rollback()
+                raise
             success_message = (
                 f"Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
                 f" (sent to {incubator_vote_address})"
@@ -512,13 +548,27 @@ class CommitteeMember(CommitteeParticipant):
             extra_destination=extra_destination,
         )
         # TODO: Could move this up before send_resolution
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version_key=release.version,
-            vote_result=vote_result,
-            voting_round=voting_round,
-        )
+        if (second_round_vote_seq is not None) and (second_round_vote_mode is not None):
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                release_key=release.key,
+                project_key=str(project_key),
+                version_key=release.version,
+                selected_revision_number=str(release.safe_latest_revision_number),
+                vote_seq=second_round_vote_seq,
+                vote_mode=second_round_vote_mode.value,
+                vote_result=vote_result,
+                voting_round=voting_round,
+                second_round_vote_seq=second_round_vote_seq,
+            )
+        else:
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                version_key=release.version,
+                vote_result=vote_result,
+                voting_round=voting_round,
+            )
         return release, voting_round, success_message, error_message
 
     async def send_resolution(

@@ -108,11 +108,10 @@ async def start_selected_revision(
                     project_key=str(project_key),
                     version_key=str(version_key),
                 )
-            case (release, _committee):
+            case (release, committee):
                 pass
 
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(release.safe_project_key)
+        async with storage.write_as_committee_participant(committee.key, session) as wacp:
             error = await wacp.release.promote_to_candidate(
                 release.safe_key,
                 revision,

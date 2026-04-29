@@ -95,6 +95,7 @@ class Initiate(schema.Strict):
     initiator_fullname: str = schema.description("Full name of the vote initiator")
     subject: str = schema.description("Subject line for the vote email")
     body: str = schema.description("Body content for the vote email")
+    vote_seq: int | None = None
     email_cc: list[pydantic.EmailStr] = schema.factory(list)
     email_bcc: list[pydantic.EmailStr] = schema.factory(list)
     second_round_email_to: pydantic.EmailStr | None = pydantic.Field(

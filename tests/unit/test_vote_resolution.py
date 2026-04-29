@@ -436,7 +436,7 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
     data.merge = mock.AsyncMock(return_value=release)
 
     future_task = _latest_vote_task_with_end(24)
-    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
     writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as cancelled", None))
@@ -466,7 +466,7 @@ async def test_resolve_allows_early_passed_with_bypass(monkeypatch: pytest.Monke
     data.merge = mock.AsyncMock(return_value=release)
 
     future_task = _latest_vote_task_with_end(24)
-    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
 
     writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
@@ -496,7 +496,7 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
     data.merge = mock.AsyncMock(return_value=release)
 
     past_task = _latest_vote_task_with_end(-24)
-    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=past_task))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
     writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
@@ -600,7 +600,7 @@ async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> 
     data.merge = mock.AsyncMock(return_value=release)
 
     future_task = _latest_vote_task_with_end(24)
-    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
     with pytest.raises(storage.AccessError, match="unless it is cancelled"):
@@ -626,7 +626,7 @@ async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> 
     data.release = mock.MagicMock(return_value=query)
 
     future_task = _latest_vote_task_with_end(24)
-    monkeypatch.setattr(interaction, "release_latest_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
     with pytest.raises(storage.AccessError, match="voting period"):
@@ -828,6 +828,7 @@ def _mock_cursor_result(rowcount: int = 1) -> mock.MagicMock:
 
 def _mock_data() -> mock.MagicMock:
     data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
     data.execute = mock.AsyncMock(return_value=_mock_cursor_result())
     data.flush = mock.AsyncMock()
@@ -903,7 +904,7 @@ async def _render_standard_resolve_page(
 
     monkeypatch.setattr(resolve.util, "as_url", lambda _endpoint, **_kwargs: "/resolve/project/1.0.0")
     monkeypatch.setattr(
-        resolve.interaction, "release_latest_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
+        resolve.interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
     )
     monkeypatch.setattr(resolve.interaction, "vote_duration_bypass", lambda: False)
     monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: None)

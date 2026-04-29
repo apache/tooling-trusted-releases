@@ -24,6 +24,7 @@ import atr.mail as mail
 import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.checks as checks
 import atr.util as util
@@ -47,7 +48,7 @@ async def initiate(task_args: args.Initiate) -> results.Results | None:
         raise
 
 
-async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | None:
+async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | None:  # noqa: C901
     """Get arguments, create an email, and then send it to the recipient."""
     log.info("Starting initiate_core")
     safe.ReleaseKey(task_args.release_key)
@@ -66,6 +67,13 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             raise VoteInitiationError(f"No revisions found for release {task_args.release_key!s}")
+        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
+            raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
+        if task_args.vote_seq is None:
+            if release.current_vote_seq is not None:
+                raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
+        elif release.current_vote_seq != task_args.vote_seq:
+            raise VoteInitiationError(f"Vote task is stale for release {task_args.release_key!s}")
 
         ongoing_tasks = await interaction.tasks_ongoing(
             release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
