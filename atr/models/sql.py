@@ -245,6 +245,12 @@ class VoteMode(enum.StrEnum):
     TRUSTED = "trusted"
 
 
+class VoteChoice(enum.StrEnum):
+    YES = "+1"
+    ABSTAIN = "0"
+    NO = "-1"
+
+
 # Pydantic models
 
 
@@ -460,6 +466,12 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
 
 # RevisionCounter:
 class RevisionCounter(sqlmodel.SQLModel, table=True):
+    release_key: str = sqlmodel.Field(primary_key=True)
+    last_allocated_number: int = sqlmodel.Field(default=0)
+
+
+# VoteCounter:
+class VoteCounter(sqlmodel.SQLModel, table=True):
     release_key: str = sqlmodel.Field(primary_key=True)
     last_allocated_number: int = sqlmodel.Field(default=0)
 
@@ -1000,6 +1012,7 @@ class Release(sqlmodel.SQLModel, table=True):
     )
 
     vote_mode: VoteMode | None = sqlmodel.Field(default=None, **example(VoteMode.EMAIL))
+    current_vote_seq: int | None = sqlmodel.Field(default=None, index=True)
     vote_started: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
@@ -1026,6 +1039,12 @@ class Release(sqlmodel.SQLModel, table=True):
     # 1-M: Release -C-> [CheckResult]
     # M-1: CheckResult -> Release
     check_results: list["CheckResult"] = sqlmodel.Relationship(
+        back_populates="release", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+    # 1-M: Release -C-> [BallotPaper]
+    # M-1: BallotPaper -> Release
+    ballot_papers: list["BallotPaper"] = sqlmodel.Relationship(
         back_populates="release", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -1119,6 +1138,50 @@ class Release(sqlmodel.SQLModel, table=True):
 
 
 # SQL models referencing Committee, Project, or Release
+
+
+# BallotPaper: Release
+class BallotPaper(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+
+    # M-1: BallotPaper -> Release
+    # 1-M: Release -C-> [BallotPaper]
+    release_key: str = sqlmodel.Field(foreign_key="release.key", ondelete="CASCADE", index=True)
+    release: Release = sqlmodel.Relationship(back_populates="ballot_papers")
+
+    vote_seq: int
+    vote_round: int | None = None
+    voter_asf_uid: str
+    voter_fullname: str
+    choice: VoteChoice
+    comment: str = sqlmodel.Field(default="")
+    is_binding_at_cast: bool
+    revision_number_at_cast: str
+    receipt_message_id: str
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+
+    def model_post_init(self, _context):
+        if isinstance(self.choice, str):
+            self.choice = VoteChoice(self.choice)
+
+        if isinstance(self.created, str):
+            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+
+    __table_args__ = (
+        sqlalchemy.Index(
+            "ix_ballotpaper_release_vote_round_voter_id",
+            "release_key",
+            "vote_seq",
+            "vote_round",
+            "voter_asf_uid",
+            "id",
+        ),
+        sqlalchemy.Index("ix_ballotpaper_receipt_message_id", "receipt_message_id"),
+        sqlalchemy.Index("ix_ballotpaper_release_vote_seq", "release_key", "vote_seq"),
+    )
 
 
 # CheckResult: Release
