@@ -23,6 +23,17 @@ import stat
 import atr.util as util
 
 
+async def test_number_of_release_files_counts_paths_with_spaces(monkeypatch, tmp_path: pathlib.Path):
+    (tmp_path / "filename with spaces.txt").write_text("content")
+    nested = tmp_path / "nested directory"
+    nested.mkdir()
+    (nested / "nested file with spaces.txt").write_text("content")
+
+    monkeypatch.setattr(util.paths, "release_directory_revision", lambda release: tmp_path)
+
+    assert await util.number_of_release_files(object()) == 2
+
+
 def test_chmod_files_does_not_change_directory_permissions(tmp_path: pathlib.Path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()

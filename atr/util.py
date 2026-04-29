@@ -670,9 +670,14 @@ async def number_of_release_files(release: sql.Release) -> int:
     """Return the number of files in a release."""
     if (path := paths.release_directory_revision(release)) is None:
         return 0
+    if (resolved_path := await is_dir_resolve(path)) is None:
+        return 0
     count = 0
-    async for _ in paths_recursive(path):
-        count += 1
+    async for rel_path in paths_recursive_all(resolved_path):
+        abs_path_to_check = resolved_path / rel_path
+        with contextlib.suppress(FileNotFoundError, OSError):
+            if await aiofiles.os.path.isfile(abs_path_to_check):
+                count += 1
     return count
 
 
