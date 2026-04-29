@@ -56,6 +56,18 @@ class Message:
     message_id: str | None = None
 
 
+def body_with_footer(body: str, category: MailFooterCategory, from_addr: str) -> str:
+    # TODO: AM need to get the domain but we don't have that apart from in a request context currently.
+    match category:
+        case MailFooterCategory.NONE:
+            return body
+        case MailFooterCategory.USER:
+            asf_uid, _ = _split_address(from_addr)
+            return f"{body}\n\nThis email was sent by {asf_uid}@apache.org on the Apache Trusted Releases platform"
+        case MailFooterCategory.AUTO:
+            return f"{body}\n\nThis email was sent from automation on the Apache Trusted Releases platform"
+
+
 def message_id_create() -> str:
     return f"{uuid.uuid4()}@{_APACHE_DOMAIN}"
 
@@ -112,7 +124,7 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
         return mid, [f"CRLF injection detected: {e}"]
 
     # Set the email body (handles RFC-compliant line endings automatically)
-    msg.set_content(_body_with_footer(msg_data.body.strip(), category, from_addr))
+    msg.set_content(body_with_footer(msg_data.body.strip(), category, from_addr))
 
     start = time.perf_counter()
     # Convert to string to satisfy the existing _send_many function signature
@@ -134,18 +146,6 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
 def _address_header(addresses: list[str]) -> str:
     parts = [headerregistry.Address(username=local, domain=domain) for local, domain in map(_split_address, addresses)]
     return ", ".join(str(a) for a in parts)
-
-
-def _body_with_footer(body: str, category: MailFooterCategory, from_addr: str) -> str:
-    # TODO: AM need to get the domain but we don't have that apart from in a request context currently.
-    match category:
-        case MailFooterCategory.NONE:
-            return body
-        case MailFooterCategory.USER:
-            asf_uid, _ = _split_address(from_addr)
-            return f"{body}\n\nThis email was sent by {asf_uid}@apache.org on the Apache Trusted Releases platform"
-        case MailFooterCategory.AUTO:
-            return f"{body}\n\nThis email was sent from automation on the Apache Trusted Releases platform"
 
 
 def _reject_null_bytes(*values: str | None) -> None:

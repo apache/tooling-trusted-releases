@@ -17,6 +17,13 @@
 
 from __future__ import annotations
 
+import datetime
+import email.utils
+import pathlib
+
+import aiofiles
+import aiofiles.os
+
 import atr.config as config
 import atr.db as db
 import atr.log as log
@@ -61,6 +68,7 @@ class FoundationCommitter(GeneralPublic):
         if is_dev:
             log.info(f"Dev environment detected, not sending email to {message.email_to}")
             mid = message.message_id if (message.message_id is not None) else util.DEV_TEST_MID
+            await _dev_email_log_append(message, category, mid)
             errors: list[str] = []
         else:
             mid, errors = await mail.send(message, category)
@@ -113,3 +121,33 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+
+async def _dev_email_log_append(message: mail.Message, category: mail.MailFooterCategory, mid: str) -> None:
+    log_path = pathlib.Path(config.get().STATE_DIR) / "logs" / "sent-email-dev.log"
+    await aiofiles.os.makedirs(log_path.parent, exist_ok=True)
+    all_recipients = [message.email_to, *message.email_cc, *message.email_bcc]
+    timestamp = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    body = mail.body_with_footer(message.body.strip(), category, message.email_sender)
+    headers = [
+        f"Envelope-Date: {timestamp}",
+        f"Envelope-From: {message.email_sender}",
+        f"Envelope-To: {', '.join(all_recipients)}",
+        f"From: {message.email_sender}",
+        f"To: {message.email_to}",
+        f"Subject: {message.subject}",
+        f"Date: {email.utils.formatdate(usegmt=True)}",
+        f"Message-ID: <{mid}>",
+    ]
+    if message.email_cc:
+        headers.append(f"Cc: {', '.join(message.email_cc)}")
+    if message.email_bcc:
+        headers.append(f"Bcc: {', '.join(message.email_bcc)}")
+    if message.in_reply_to is not None:
+        headers.append(f"In-Reply-To: <{message.in_reply_to}>")
+        headers.append(f"References: <{message.in_reply_to}>")
+    async with aiofiles.open(log_path, "a", encoding="utf-8") as f:
+        await f.write("\n".join(headers))
+        await f.write("\n\n")
+        await f.write(body)
+        await f.write("\n\n")
