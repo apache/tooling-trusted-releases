@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 import atr.mail as mail
+import atr.models.mail as models_mail
+import atr.storage.writers.mail as mail_writer
+import atr.util as util
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
@@ -96,6 +99,69 @@ async def test_footer_user_appended_to_body(monkeypatch: "MonkeyPatch") -> None:
     assert len(errors) == 0
     msg_text = mock_send_many.call_args[0][2]
     assert "This email was sent by bob@apache.org on the Apache Trusted Releases platform" in msg_text
+
+
+@pytest.mark.asyncio
+async def test_foundation_committer_send_dev_preserves_supplied_message_id(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
+    writer, write_as = _mail_writer()
+
+    mid, errors = await writer.send(
+        mail.Message(
+            email_sender="sender@apache.org",
+            email_to="recipient@apache.org",
+            subject="Dev ID test",
+            body="Hello.",
+            message_id="preallocated@example.apache.org",
+        ),
+        mail.MailFooterCategory.NONE,
+    )
+
+    assert errors == []
+    assert mid == "preallocated@example.apache.org"
+    assert write_as.append_to_audit_log.call_args.kwargs["mid"] == "preallocated@example.apache.org"
+
+
+@pytest.mark.asyncio
+async def test_foundation_committer_send_dev_rejects_invalid_message_id(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
+    writer, write_as = _mail_writer()
+
+    with pytest.raises(ValueError, match=r"Message ID"):
+        await writer.send(
+            mail.Message(
+                email_sender="sender@apache.org",
+                email_to="recipient@apache.org",
+                subject="Dev ID test",
+                body="Hello.",
+                message_id="<preallocated@example.apache.org>",
+            ),
+            mail.MailFooterCategory.NONE,
+        )
+
+    write_as.append_to_audit_log.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_foundation_committer_send_dev_uses_test_id_without_supplied_message_id(
+    monkeypatch: "MonkeyPatch",
+) -> None:
+    monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: True)
+    writer, write_as = _mail_writer()
+
+    mid, errors = await writer.send(
+        mail.Message(
+            email_sender="sender@apache.org",
+            email_to="recipient@apache.org",
+            subject="Dev ID test",
+            body="Hello.",
+        ),
+        mail.MailFooterCategory.NONE,
+    )
+
+    assert errors == []
+    assert mid == util.DEV_TEST_MID
+    assert write_as.append_to_audit_log.call_args.kwargs["mid"] == util.DEV_TEST_MID
 
 
 @pytest.mark.asyncio
@@ -241,6 +307,25 @@ async def test_send_empty_cc_bcc_omits_cc_header(monkeypatch: "MonkeyPatch") -> 
 
 
 @pytest.mark.asyncio
+async def test_send_generated_message_id_round_trip(monkeypatch: "MonkeyPatch") -> None:
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_to="recipient@apache.org",
+        subject="Generated ID test",
+        body="Hello.",
+    )
+
+    mid, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert errors == []
+    assert mid.endswith("@apache.org")
+    assert f"Message-ID: <{mid}>" in mock_send_many.call_args[0][2]
+
+
+@pytest.mark.asyncio
 async def test_send_handles_non_ascii_headers(monkeypatch: "MonkeyPatch") -> None:
     """Test that non-ASCII characters in headers are handled correctly."""
     mock_send_many = mock.AsyncMock(return_value=[])
@@ -263,39 +348,12 @@ async def test_send_handles_non_ascii_headers(monkeypatch: "MonkeyPatch") -> Non
     # Assert that _send_many was called with a string (not bytes)
     mock_send_many.assert_called_once()
     call_args = mock_send_many.call_args
-    msg_text = call_args[0][2]  # Third argument should be str
+    # Third argument should be str
+    msg_text = call_args[0][2]
     assert isinstance(msg_text, str)
 
     # Verify the subject is present in the message
     assert "Subject: Test avec Accént" in msg_text
-
-
-@pytest.mark.asyncio
-async def test_send_to_with_cc_in_envelope(monkeypatch: "MonkeyPatch") -> None:
-    """Test that To and CC addresses both appear in the SMTP envelope."""
-    mock_send_many = mock.AsyncMock(return_value=[])
-    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
-
-    msg = mail.Message(
-        email_sender="sender@apache.org",
-        email_to="alice@apache.org",
-        subject="Multi-recipient test",
-        body="Hello both.",
-        email_cc=["bob@apache.org"],
-    )
-
-    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
-
-    assert len(errors) == 0
-    call_args = mock_send_many.call_args
-    envelope_recipients = call_args[0][1]
-    msg_text = call_args[0][2]
-
-    assert "alice@apache.org" in envelope_recipients
-    assert "bob@apache.org" in envelope_recipients
-
-    assert "alice@apache.org" in msg_text
-    assert "bob@apache.org" in msg_text
 
 
 @pytest.mark.asyncio
@@ -563,26 +621,6 @@ async def test_send_rejects_duplicate_across_cc_and_bcc(monkeypatch: "MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_send_rejects_duplicate_across_to_and_cc(monkeypatch: "MonkeyPatch") -> None:
-    """Test that the same address in To and CC is rejected."""
-    mock_send_many = mock.AsyncMock(return_value=[])
-    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
-
-    msg = mail.Message(
-        email_sender="sender@apache.org",
-        email_to="recipient@apache.org",
-        subject="Dup test",
-        body="Hello.",
-        email_cc=["recipient@apache.org"],
-    )
-
-    with pytest.raises(ValueError, match=r"Duplicate recipient"):
-        await mail.send(msg, mail.MailFooterCategory.NONE)
-
-    mock_send_many.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_send_rejects_duplicate_across_to_and_bcc(monkeypatch: "MonkeyPatch") -> None:
     """Test that the same address in To and BCC is rejected."""
     mock_send_many = mock.AsyncMock(return_value=[])
@@ -594,6 +632,26 @@ async def test_send_rejects_duplicate_across_to_and_bcc(monkeypatch: "MonkeyPatc
         subject="Dup test",
         body="Hello.",
         email_bcc=["recipient@apache.org"],
+    )
+
+    with pytest.raises(ValueError, match=r"Duplicate recipient"):
+        await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    mock_send_many.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_duplicate_across_to_and_cc(monkeypatch: "MonkeyPatch") -> None:
+    """Test that the same address in To and CC is rejected."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_to="recipient@apache.org",
+        subject="Dup test",
+        body="Hello.",
+        email_cc=["recipient@apache.org"],
     )
 
     with pytest.raises(ValueError, match=r"Duplicate recipient"):
@@ -619,6 +677,31 @@ async def test_send_rejects_empty_to(monkeypatch: "MonkeyPatch") -> None:
         await mail.send(msg, mail.MailFooterCategory.NONE)
 
     mock_send_many.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "message_id",
+    [
+        "",
+        "<preallocated@example.apache.org>",
+        "preallocated@example.apache.org\r\nBcc: evil@example.com",
+        "preallocated example@example.apache.org",
+        "preallocated",
+        "@apache.org",
+        "preallocated@",
+        "preallocated@example.org",
+        "préallocated@example.apache.org",
+        "preallocated,foo@example.apache.org",
+        "preallocated(foo)@example.apache.org",
+        '"preallocated"@example.apache.org',
+        "preallocated@.apache.org",
+        "preallocated@example..apache.org",
+        "pre\x00allocated@example.apache.org",
+    ],
+)
+def test_send_rejects_invalid_supplied_message_id(message_id: str) -> None:
+    with pytest.raises(ValueError, match=r"Message ID"):
+        models_mail.message_id_validate(message_id)
 
 
 @pytest.mark.asyncio
@@ -782,6 +865,55 @@ async def test_send_rejects_null_byte_in_to_address(monkeypatch: "MonkeyPatch") 
     mock_send_many.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_send_to_with_cc_in_envelope(monkeypatch: "MonkeyPatch") -> None:
+    """Test that To and CC addresses both appear in the SMTP envelope."""
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_to="alice@apache.org",
+        subject="Multi-recipient test",
+        body="Hello both.",
+        email_cc=["bob@apache.org"],
+    )
+
+    _, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert len(errors) == 0
+    call_args = mock_send_many.call_args
+    envelope_recipients = call_args[0][1]
+    msg_text = call_args[0][2]
+
+    assert "alice@apache.org" in envelope_recipients
+    assert "bob@apache.org" in envelope_recipients
+
+    assert "alice@apache.org" in msg_text
+    assert "bob@apache.org" in msg_text
+
+
+@pytest.mark.asyncio
+async def test_send_uses_supplied_message_id(monkeypatch: "MonkeyPatch") -> None:
+    mock_send_many = mock.AsyncMock(return_value=[])
+    monkeypatch.setattr("atr.mail._send_many", mock_send_many)
+
+    msg = mail.Message(
+        email_sender="sender@apache.org",
+        email_to="recipient@apache.org",
+        subject="Preallocated ID test",
+        body="Hello.",
+        message_id="preallocated@example.apache.org",
+    )
+
+    mid, errors = await mail.send(msg, mail.MailFooterCategory.NONE)
+
+    assert errors == []
+    assert mid == "preallocated@example.apache.org"
+    assert "Message-ID: <preallocated@example.apache.org>" in mock_send_many.call_args[0][2]
+    mock_send_many.assert_called_once()
+
+
 def test_smtp_policy_vs_smtputf8() -> None:
     """Test that SMTPUTF8 policy is required for proper Unicode handling.
 
@@ -830,3 +962,11 @@ def test_split_address_rejects_null_byte() -> None:
     """Test that _split_address rejects addresses containing null bytes."""
     with pytest.raises(ValueError, match=r"null bytes"):
         mail._split_address("user\x00@apache.org")
+
+
+def _mail_writer() -> tuple[mail_writer.FoundationCommitter, mock.MagicMock]:
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "sender"
+    write_as = mock.MagicMock()
+    data = mock.MagicMock()
+    return mail_writer.FoundationCommitter(write, write_as, data), write_as

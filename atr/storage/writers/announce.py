@@ -241,7 +241,7 @@ class CommitteeMember(CommitteeParticipant):
                     email_cc=email_cc or [],
                     email_bcc=email_bcc or [],
                     footer_category=mail.MailFooterCategory.NONE,
-                ).model_dump(),
+                ).as_task_args(),
                 asf_uid=self.__asf_uid,
                 project_key=str(project_key),
                 version_key=str(version_key),

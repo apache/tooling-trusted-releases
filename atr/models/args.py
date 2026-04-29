@@ -144,9 +144,24 @@ class Send(schema.Strict):
     in_reply_to: str | None = schema.description("The message ID of the email to reply to")
     email_cc: list[pydantic.EmailStr] = schema.factory(list)
     email_bcc: list[pydantic.EmailStr] = schema.factory(list)
+    message_id: str | None = pydantic.Field(default=None, description="Optional bare message ID to use")
     footer_category: Annotated[mail.MailFooterCategory, pydantic.BeforeValidator(_ensure_footer_enum)] = (
         schema.description("The category of email footer to include")
     )
+
+    @pydantic.field_validator("message_id")
+    @classmethod
+    def _validate_message_id(cls, value: str | None) -> str | None:
+        mail.message_id_validate(value)
+        return value
+
+    # This is for compatibility with old task workers only
+    # TODO: We should be able to remove this eventually
+    def as_task_args(self) -> dict[str, Any]:
+        task_args = self.model_dump()
+        if task_args.get("message_id") is None:
+            task_args.pop("message_id", None)
+        return task_args
 
 
 class SvnImport(schema.Strict):

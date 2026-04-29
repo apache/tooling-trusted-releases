@@ -21,6 +21,7 @@ import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.mail as mail
+import atr.models.mail as models_mail
 import atr.storage as storage
 import atr.util as util
 
@@ -54,11 +55,12 @@ class FoundationCommitter(GeneralPublic):
         self.__asf_uid = asf_uid
 
     async def send(self, message: mail.Message, category: mail.MailFooterCategory) -> tuple[str, list[str]]:
+        models_mail.message_id_validate(message.message_id)
         is_dev = config.is_dev_environment()
 
         if is_dev:
             log.info(f"Dev environment detected, not sending email to {message.email_to}")
-            mid = util.DEV_TEST_MID
+            mid = message.message_id if (message.message_id is not None) else util.DEV_TEST_MID
             errors: list[str] = []
         else:
             mid, errors = await mail.send(message, category)

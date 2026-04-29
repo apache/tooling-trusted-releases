@@ -462,9 +462,8 @@ def _report_header(
         guideline to the quality of your SBOM file."""
     ]
     if not is_release_candidate:
-        block.p[
-            "This report is for revision ", htm.code[str(task_result.revision_number)], "."
-        ]  # TODO: Mark if a subsequent score has failed
+        # TODO: Mark if a subsequent score has failed
+        block.p["This report is for revision ", htm.code[str(task_result.revision_number)], "."]
     elif release.phase == sql.ReleasePhase.RELEASE_CANDIDATE:
         block.p[f"This report is for the latest {release.version} release candidate."]
 

@@ -91,7 +91,8 @@ async def listen(
             try:
                 async for payload in _process_connection(session, pubsub_url):
                     if not payload:
-                        pass  ### tbd?: event loop killed or hit EOF
+                        ### tbd?: event loop killed or hit EOF
+                        pass
 
                     # We got a payload, so reset the DELAY.
                     delay = 0.0

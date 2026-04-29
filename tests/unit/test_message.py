@@ -19,6 +19,7 @@
 
 import contextlib
 import unittest.mock as mock
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 import pydantic
@@ -26,10 +27,54 @@ import pytest
 
 import atr.ldap as ldap
 import atr.mail as mail
+import atr.models.args as args
 import atr.tasks.message as message
 
 if TYPE_CHECKING:
     from pytest import MonkeyPatch
+
+
+def test_send_args_accepts_and_rejects_message_id() -> None:
+    base = _send_args()
+    without_message_id = args.Send.model_validate(base)
+    with_message_id = args.Send.model_validate({**base, "message_id": "preallocated@example.apache.org"})
+
+    assert without_message_id.message_id is None
+    assert with_message_id.message_id == "preallocated@example.apache.org"
+    with pytest.raises(pydantic.ValidationError, match=r"Message ID"):
+        args.Send.model_validate({**base, "message_id": "preallocated@example.org"})
+
+
+@pytest.mark.asyncio
+async def test_send_passes_message_id_to_mail_writer(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr(
+        "atr.tasks.message.ldap.account_lookup",
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=validuser,ou=people,dc=apache,dc=org", uid=["validuser"], cn=["Valid User"]
+            )
+        ),
+    )
+    mock_mail_send = mock.AsyncMock(return_value=("preallocated@example.apache.org", []))
+    mock_wafc = mock.MagicMock()
+    mock_wafc.mail.send = mock_mail_send
+    mock_write = mock.MagicMock()
+    mock_write.as_foundation_committer.return_value = mock_wafc
+
+    @contextlib.asynccontextmanager
+    async def mock_storage_write(_asf_uid: str) -> AsyncIterator[mock.MagicMock]:
+        yield mock_write
+
+    monkeypatch.setattr("atr.tasks.message.storage.write", mock_storage_write)
+
+    result = await message.send(
+        _send_args(email_sender="validuser@apache.org", message_id="preallocated@example.apache.org")
+    )
+    sent_message = mock_mail_send.call_args.args[0]
+
+    assert result is not None
+    assert result.mid == "preallocated@example.apache.org"
+    assert sent_message.message_id == "preallocated@example.apache.org"
 
 
 @pytest.mark.asyncio
@@ -108,7 +153,17 @@ async def test_send_succeeds_with_valid_asf_id(monkeypatch: "MonkeyPatch") -> No
     mock_mail_send.assert_called_once()
 
 
-"""Build an argument dict matching the Send schema."""
+def test_send_task_args_omits_only_empty_message_id() -> None:
+    base = args.Send.model_validate(_send_args())
+    with_message_id = args.Send.model_validate(_send_args(message_id="preallocated@example.apache.org"))
+
+    without_message_id = base.as_task_args()
+    with_supplied_message_id = with_message_id.as_task_args()
+
+    assert "message_id" not in without_message_id
+    assert "in_reply_to" in without_message_id
+    assert without_message_id["in_reply_to"] is None
+    assert with_supplied_message_id["message_id"] == "preallocated@example.apache.org"
 
 
 def _send_args(
@@ -117,8 +172,9 @@ def _send_args(
     subject: str = "Test Subject",
     body: str = "Test body",
     in_reply_to: str | None = None,
+    message_id: str | None = None,
 ) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "email_sender": email_sender,
         "email_to": email_to,
         "subject": subject,
@@ -126,3 +182,6 @@ def _send_args(
         "in_reply_to": in_reply_to,
         "footer_category": mail.MailFooterCategory.NONE,
     }
+    if message_id is not None:
+        result["message_id"] = message_id
+    return result

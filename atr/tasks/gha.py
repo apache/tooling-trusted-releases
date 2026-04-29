@@ -207,7 +207,7 @@ async def _request_and_retry(
     headers: dict[str, str],
     response_func: Callable[[Any], dict[str, Any] | None],
 ) -> dict[str, Any] | None:
-    for _attempt in range(_TIMEOUT_S * 10):  # timeout_s * 10):
+    for _attempt in range(_TIMEOUT_S * 10):
         async with session.get(
             url,
             headers=headers,

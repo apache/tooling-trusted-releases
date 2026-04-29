@@ -60,6 +60,7 @@ async def send(task_args: args.Send) -> results.Results | None:
         in_reply_to=task_args.in_reply_to,
         email_cc=task_args.email_cc,
         email_bcc=task_args.email_bcc,
+        message_id=task_args.message_id,
     )
 
     footer_category = mail.MailFooterCategory(task_args.footer_category)

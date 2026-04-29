@@ -35,7 +35,7 @@ import atr.util as util
 # We could e.g. use uppercase instead of global_
 # It's not always worth identifying globals as globals
 # But in many cases we should do so
-_APACHE_DOMAIN: Final[str] = "apache.org"
+_APACHE_DOMAIN: Final[str] = models_mail.APACHE_DOMAIN
 _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
@@ -53,6 +53,11 @@ class Message:
     in_reply_to: str | None = None
     email_cc: list[str] = dataclasses.field(default_factory=list)
     email_bcc: list[str] = dataclasses.field(default_factory=list)
+    message_id: str | None = None
+
+
+def message_id_create() -> str:
+    return f"{uuid.uuid4()}@{_APACHE_DOMAIN}"
 
 
 async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, list[str]]:
@@ -68,7 +73,9 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
         msg_data.subject,
         msg_data.body,
         msg_data.in_reply_to,
+        msg_data.message_id,
     )
+    models_mail.message_id_validate(msg_data.message_id)
     from_addr = msg_data.email_sender
     if not from_addr.endswith(f"@{_APACHE_DOMAIN}"):
         raise ValueError(f"from_addr must end with @{_APACHE_DOMAIN}, got {from_addr}")
@@ -80,7 +87,7 @@ async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, li
 
     # UUID4 is entirely random, with no timestamp nor namespace
     # It does have 6 version and variant bits, so only 122 bits are random
-    mid = f"{uuid.uuid4()}@{_APACHE_DOMAIN}"
+    mid = msg_data.message_id if (msg_data.message_id is not None) else message_id_create()
 
     # Use EmailMessage with Address objects for CRLF injection protection
     msg = message.EmailMessage(policy=policy.SMTPUTF8)
