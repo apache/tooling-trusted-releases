@@ -1179,7 +1179,7 @@ class BallotPaper(sqlmodel.SQLModel, table=True):
             "voter_asf_uid",
             "id",
         ),
-        sqlalchemy.Index("ix_ballotpaper_receipt_message_id", "receipt_message_id"),
+        sqlalchemy.Index("ix_ballotpaper_receipt_message_id", "receipt_message_id", unique=True),
         sqlalchemy.Index("ix_ballotpaper_release_vote_seq", "release_key", "vote_seq"),
     )
 

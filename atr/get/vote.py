@@ -538,7 +538,7 @@ async def _render_section_vote(
     if user_category == UserCategory.UNAUTHENTICATED:
         _render_vote_unauthenticated(page, release, archive_url, vote_recipient)
     else:
-        await _render_vote_authenticated(page, release, session, archive_url, vote_recipient)
+        await _render_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
 
 
 async def _render_vote_authenticated(
@@ -547,11 +547,19 @@ async def _render_vote_authenticated(
     session: web.Committer | None,
     archive_url: str | None,
     vote_recipient: str,
+    latest_vote_task: sql.Task | None,
 ) -> None:
     if release.committee is None:
         raise ValueError("Release has no committee")
     if session is None:
         raise ValueError("Session required for authenticated vote")
+
+    trusted_vote = release.effective_vote_mode == sql.VoteMode.TRUSTED
+    if trusted_vote:
+        task_mid = interaction.task_mid_get(latest_vote_task) if latest_vote_task is not None else None
+        if (release.current_vote_seq is None) or (task_mid is None):
+            page.p["This vote is not ready for trusted casting yet. Please refresh after the vote email has been sent."]
+            return
 
     vote_round = None
     if release.committee.is_podling:
@@ -573,7 +581,17 @@ async def _render_vote_authenticated(
             " but is still valued by the community.",
         ]
 
-    if archive_url:
+    if trusted_vote and archive_url:
+        page.p[
+            "Your vote will be recorded by ATR and a receipt will be sent to ",
+            htpy.code[vote_recipient],
+            " (",
+            htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
+            ").",
+        ]
+    elif trusted_vote:
+        page.p["Your vote will be recorded by ATR and a receipt will be sent to ", htpy.code[vote_recipient], "."]
+    elif archive_url:
         page.p[
             "Your vote will be sent to ",
             htpy.code[vote_recipient],
@@ -607,7 +625,11 @@ async def _render_vote_authenticated(
         submit_label="Submit vote",
         form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
         custom={"decision": vote_widget},
-        defaults={"comment": vote_comment_template},
+        defaults={
+            "comment": vote_comment_template,
+            "vote_seq": release.current_vote_seq,
+            "vote_mode": release.effective_vote_mode,
+        },
     )
     page.append(cast_vote_form)
 

@@ -29,7 +29,7 @@ import atr.web as web
 
 
 @post.typed
-async def selected_post(
+async def selected_post(  # noqa: C901
     session: web.Committer,
     _vote: Literal["vote"],
     project_key: safe.ProjectKey,
@@ -44,18 +44,51 @@ async def selected_post(
         project_key,
         version_key,
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-        with_release_policy=True,
         with_project_release_policy=True,
     )
 
     if release.committee is None:
         raise ValueError("Release has no committee")
-    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
-        await quart.flash("Trusted vote casting is not available yet.", "error")
+
+    if release.effective_vote_mode != cast_vote_form.vote_mode:
+        await quart.flash("The vote form is stale, please refresh and try again.", "error")
         return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
     vote = cast_vote_form.decision
     comment = cast_vote_form.comment
+
+    if release.effective_vote_mode == sql.VoteMode.MANUAL:
+        await quart.flash("Voting through this form is not available for manual votes.", "error")
+        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
+
+    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+        if cast_vote_form.vote_seq is None:
+            await quart.flash("Vote serial is missing, please refresh and try again.", "error")
+            return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
+        async with storage.write(session) as write:
+            wafc = write.as_foundation_committer()
+            email_to, error_message = await wafc.vote.cast_trusted(
+                project_key,
+                version_key,
+                sql.VoteChoice(vote),
+                comment,
+                session.fullname,
+                expected_vote_seq=cast_vote_form.vote_seq,
+                expected_vote_mode=cast_vote_form.vote_mode,
+            )
+        if error_message:
+            await quart.flash(error_message, "error")
+            return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
+        if email_to:
+            success_message = f"Your vote has been recorded and a receipt is being sent to {email_to[0]}."
+        else:
+            success_message = "Your vote has been recorded and a receipt is being sent."
+        await quart.flash(success_message, "success")
+        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
+
+    if release.current_vote_seq != cast_vote_form.vote_seq:
+        await quart.flash("The vote form is stale, please refresh and try again.", "error")
+        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
     vote_round = None
     if release.committee.is_podling:

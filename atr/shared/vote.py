@@ -18,8 +18,11 @@
 from typing import Literal
 
 import atr.form as form
+import atr.models.sql as sql
 
 
 class CastVoteForm(form.Form):
     decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM)
     comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA, max_length=50_000)
+    vote_seq: form.OptionalInt = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
+    vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)

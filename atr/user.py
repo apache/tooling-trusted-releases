@@ -17,6 +17,8 @@
 
 """user.py"""
 
+from __future__ import annotations
+
 import functools
 
 import atr.cache as cache
@@ -68,6 +70,7 @@ async def is_binding_for_release(
     committee: sql.Committee,
     asf_uid: str,
     vote_round: int | None,
+    caller_data: db.Session | None = None,
 ) -> tuple[bool, str]:
     if not committee.is_podling:
         if vote_round is not None:
@@ -78,7 +81,7 @@ async def is_binding_for_release(
         raise ValueError("Podling votes require vote_round 1 or 2")
     if vote_round not in (1, 2):
         raise ValueError(f"Unexpected podling vote_round: {vote_round!r}")
-    async with db.session() as data:
+    async with db.ensure_session(caller_data) as data:
         incubator = await data.committee(key="incubator").get()
     return is_committee_member(incubator, asf_uid), "Incubator"
 

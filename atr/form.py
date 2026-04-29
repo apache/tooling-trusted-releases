@@ -458,6 +458,12 @@ def to_int(v: Any) -> int:
         raise ValueError(f"Invalid integer value: {v!r}")
 
 
+def to_optional_int(v: Any) -> int | None:
+    if (v is None) or (v == ""):
+        return None
+    return to_int(v)
+
+
 def to_optional_url(v: Any) -> pydantic.HttpUrl | None:
     if (v is None) or (v == ""):
         return None
@@ -548,6 +554,12 @@ Filename = Annotated[
 Int = Annotated[
     int,
     functional_validators.BeforeValidator(to_int),
+]
+
+OptionalInt = Annotated[
+    int | None,
+    functional_validators.BeforeValidator(to_optional_int),
+    pydantic.Field(default=None),
 ]
 
 OptionalURL = Annotated[

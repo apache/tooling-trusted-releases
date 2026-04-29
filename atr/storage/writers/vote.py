@@ -33,6 +33,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.user as user
 import atr.util as util
 
 
@@ -59,6 +60,146 @@ class FoundationCommitter(GeneralPublic):
         if asf_uid is None:
             raise storage.AccessError("Not authorized")
         self.__asf_uid = asf_uid
+
+    async def cast_trusted(  # noqa: C901
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        choice: sql.VoteChoice,
+        comment: str,
+        fullname: str,
+        expected_vote_seq: int,
+        expected_vote_mode: sql.VoteMode,
+    ) -> tuple[list[str], str]:
+        await self.__data.begin_immediate()
+        try:
+            release = await self.__data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                _project=True,
+                _committee=True,
+            ).get()
+            if release is None:
+                await self.__data.rollback()
+                return [], "Vote is no longer open."
+            if expected_vote_mode != sql.VoteMode.TRUSTED:
+                await self.__data.rollback()
+                return [], "The vote form is stale, please refresh and try again."
+            if release.effective_vote_mode != sql.VoteMode.TRUSTED:
+                await self.__data.rollback()
+                return [], "This release is not accepting trusted votes."
+            if release.current_vote_seq is None:
+                await self.__data.rollback()
+                return [], "Vote serial is missing, please refresh and try again."
+            if release.current_vote_seq != expected_vote_seq:
+                await self.__data.rollback()
+                return [], "The vote form is stale, please refresh and try again."
+            if release.committee is None:
+                await self.__data.rollback()
+                return [], "The committee for this release was not found."
+            if release.latest_revision_number is None:
+                await self.__data.rollback()
+                return [], "No revision found for this release."
+
+            vote_round = None
+            if release.committee.is_podling:
+                vote_round = 2 if (release.podling_thread_id is not None) else 1
+            is_binding, _binding_committee = await user.is_binding_for_release(
+                release.committee,
+                self.__asf_uid,
+                vote_round,
+                caller_data=self.__data,
+            )
+
+            start_task = await interaction.release_current_vote_task(release, self.__data)
+            if start_task is None:
+                await self.__data.rollback()
+                return [], "No vote task found."
+            vote_result = start_task.result
+            if vote_result is None:
+                await self.__data.rollback()
+                return [], "Vote task has not completed yet."
+            if not isinstance(vote_result, results.VoteInitiate):
+                await self.__data.rollback()
+                return [], "Vote task result is not a VoteInitiate result."
+            start_mid = interaction.task_mid_get(start_task)
+            if start_mid is None:
+                await self.__data.rollback()
+                return [], "No vote thread found."
+            email_to: str = start_task.task_args["email_to"]
+            email_cc: list[str] = start_task.task_args.get("email_cc", [])
+            email_bcc: list[str] = start_task.task_args.get("email_bcc", [])
+            email_sender = f"{self.__asf_uid}@apache.org"
+            subject = f"Re: {vote_result.subject}"
+            body_text = format_vote_email_body(
+                vote=choice.value,
+                asf_uid=self.__asf_uid,
+                fullname=fullname,
+                is_binding=is_binding,
+                comment=comment,
+            )
+
+            previous_ballot_query = (
+                sqlmodel.select(sql.BallotPaper)
+                .where(sql.BallotPaper.release_key == release.key)
+                .where(sql.BallotPaper.vote_seq == release.current_vote_seq)
+                .where(sql.BallotPaper.voter_asf_uid == self.__asf_uid)
+                .order_by(sql.validate_instrumented_attribute(sql.BallotPaper.id).desc())
+                .limit(1)
+            )
+            previous_ballot = (await self.__data.execute(previous_ballot_query)).scalar_one_or_none()
+
+            receipt_message_id = mail.message_id_create()
+            task = sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.MESSAGE_SEND,
+                task_args=args.Send(
+                    email_sender=email_sender,
+                    email_to=email_to,
+                    subject=subject,
+                    body=body_text,
+                    in_reply_to=start_mid,
+                    email_cc=email_cc,
+                    email_bcc=email_bcc,
+                    message_id=receipt_message_id,
+                    footer_category=mail.MailFooterCategory.USER,
+                ).as_task_args(),
+                asf_uid=self.__asf_uid,
+                project_key=release.project.key,
+                version_key=release.version,
+            )
+            ballot = sql.BallotPaper(
+                release_key=release.key,
+                vote_seq=release.current_vote_seq,
+                vote_round=vote_round,
+                voter_asf_uid=self.__asf_uid,
+                voter_fullname=fullname,
+                choice=choice,
+                comment=comment,
+                is_binding_at_cast=is_binding,
+                revision_number_at_cast=release.latest_revision_number,
+                receipt_message_id=receipt_message_id,
+            )
+            self.__data.add_all([task, ballot])
+            await self.__data.flush()
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+        self.__write_as.append_to_audit_log(
+            ballot_id=ballot.id,
+            release_key=release.key,
+            vote_seq=release.current_vote_seq,
+            vote_round=vote_round,
+            voter_asf_uid=self.__asf_uid,
+            choice=choice.value,
+            is_binding_at_cast=is_binding,
+            receipt_message_id=receipt_message_id,
+            replaced_ballot_id=previous_ballot.id if previous_ballot is not None else None,
+        )
+        return [email_to], ""
 
 
 class CommitteeParticipant(FoundationCommitter):
