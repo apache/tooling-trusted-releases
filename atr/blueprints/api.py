@@ -29,11 +29,16 @@ import quart_rate_limiter as rate_limiter
 import quart_schema
 import werkzeug.exceptions as exceptions
 
+import atr.blueprints.api_auth as auth
 import atr.blueprints.common as common
 import atr.errors as errors
 import atr.log as log
 import atr.storage as storage
 import atr.web as web
+
+# Re-export so routes can write `@api.auth.public` etc. (matches #1169).
+# We also keep `auth` importable as a plain attribute for tests.
+__all__ = ["auth", "register", "typed"]
 
 _BLUEPRINT_NAME: Final = "api_blueprint"
 _BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
@@ -47,6 +52,19 @@ def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
     return api, _routes
 
 
+# Registry of (function name -> auth level) captured at import time.
+# Populated by typed() and consumed by tests/unit/test_api_auth_decorators.py.
+_route_auth_levels: dict[str, auth.AuthLevel] = {}
+
+
+def route_auth_levels() -> dict[str, auth.AuthLevel]:
+    """Return a snapshot of the registered (route function name -> auth level) map.
+
+    A copy is returned so callers cannot mutate the registry.
+    """
+    return dict(_route_auth_levels)
+
+
 def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     """Decorator that derives the URL path from the function's type annotations.
 
@@ -57,8 +75,16 @@ def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     - str | None parameters create optional URL segments (two routes registered)
     - int, float use Quart's built-in type converters
     - HTTP method is POST if a body param is present, GET otherwise
+
+    Every route decorated with this function must also declare its
+    authentication level via exactly one of the decorators in
+    :mod:`atr.blueprints.api_auth` (``@api.auth.public``, ``@api.auth.bearer``,
+    ``@api.auth.body_oidc``, or ``@api.auth.pat``). This is enforced at
+    import time: forgetting the decorator raises :class:`TypeError` and
+    the server will not start.
     """
     original = inspect.unwrap(func)
+    _require_auth_level(func, original)
     path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
         original
     )
@@ -206,6 +232,29 @@ def _json_error(
     if extra is not None:
         payload.update(extra)
     return quart.jsonify(payload), status_code
+
+
+def _require_auth_level(func: Callable[..., Any], original: Callable[..., Any]) -> auth.AuthLevel:
+    """Fail import if ``original`` has no ``@api.auth.<level>`` decorator.
+
+    Returns the detected level and records it in the module-level registry.
+    Looks at both the wrapped and unwrapped callables because ``@api.auth.bearer``
+    returns a wrapper, while ``@api.auth.public`` returns the function itself.
+    """
+    level = getattr(func, auth.AUTH_LEVEL_ATTR, None) or getattr(original, auth.AUTH_LEVEL_ATTR, None)
+    if level is None:
+        raise TypeError(
+            f"API route {original.__name__!r} in {original.__module__} is missing "
+            "an auth decorator. Apply exactly one of @api.auth.public, "
+            "@api.auth.bearer, @api.auth.body_oidc, or @api.auth.pat. "
+            "See atr/blueprints/api_auth.py for details."
+        )
+    if level not in auth.VALID_LEVELS:
+        raise TypeError(
+            f"API route {original.__name__!r}: unknown auth level {level!r}. Valid levels: {sorted(auth.VALID_LEVELS)}"
+        )
+    _route_auth_levels[original.__name__] = level
+    return level
 
 
 @_BLUEPRINT.record_once
