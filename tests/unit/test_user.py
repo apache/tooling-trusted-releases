@@ -125,8 +125,8 @@ async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeyp
 
     assert await user.is_binding_for_release(committee, "alice", None) == (True, "Example")
     assert await user.is_binding_for_release(committee, "bob", None) == (False, "Example")
-    assert await user.is_binding_for_release(podling, "ppmc", 1) == (False, "Incubator")
-    assert await user.is_binding_for_release(podling, "ipmc", 1) == (True, "Incubator")
+    assert await user.is_binding_for_release(podling, "ppmc", 1) == (True, "Podling (Incubating)")
+    assert await user.is_binding_for_release(podling, "ipmc", 1) == (False, "Podling (Incubating)")
     assert await user.is_binding_for_release(podling, "ipmc", 2) == (True, "Incubator")
     assert await user.is_binding_for_release(podling, "ppmc", 2) == (False, "Incubator")
     with pytest.raises(ValueError, match="Podling votes require vote_round 1 or 2"):
@@ -136,9 +136,9 @@ async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeyp
     with pytest.raises(ValueError, match="Non-podling votes require vote_round to be None"):
         await user.is_binding_for_release(committee, "alice", 1)
 
-    assert data.committee.call_count == 4
+    assert data.committee.call_count == 2
     data.committee.assert_called_with(key="incubator")
-    assert query.get.await_count == 4
+    assert query.get.await_count == 2
 
 
 @contextlib.asynccontextmanager

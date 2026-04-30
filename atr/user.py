@@ -81,6 +81,8 @@ async def is_binding_for_release(
         raise ValueError("Podling votes require vote_round 1 or 2")
     if vote_round not in (1, 2):
         raise ValueError(f"Unexpected podling vote_round: {vote_round!r}")
+    if vote_round == 1:
+        return is_committee_member(committee, asf_uid), committee.display_name
     async with db.ensure_session(caller_data) as data:
         incubator = await data.committee(key="incubator").get()
     return is_committee_member(incubator, asf_uid), "Incubator"

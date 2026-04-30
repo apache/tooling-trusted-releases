@@ -43,7 +43,7 @@
               {{ vote_detail.vote.value }}
             </td>
             <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %}">
-              {{ vote_detail.status.value }}
+              {% if vote_detail.status.value == 'Binding' %}{{ binding_label }}{% else %}{{ vote_detail.status.value }}{% endif %}
             </td>
             <td class="atr-nowrap text-center">
               <a href="https://lists.apache.org/thread/{{ vote_detail.asf_eid }}"
@@ -68,14 +68,14 @@
         </thead>
         <tbody>
           <tr>
-            <td>Binding votes</td>
+            <td>{{ binding_label }} votes</td>
             <td>{{ summary.binding_votes_yes }}</td>
             <td>{{ summary.binding_votes_no }}</td>
             <td>{{ summary.binding_votes_abstain }}</td>
             <td>{{ summary.binding_votes }}</td>
           </tr>
           <tr>
-            <td>Non-binding votes</td>
+            <td>{{ non_binding_label }} votes</td>
             <td>{{ summary.non_binding_votes_yes }}</td>
             <td>{{ summary.non_binding_votes_no }}</td>
             <td>{{ summary.non_binding_votes_abstain }}</td>

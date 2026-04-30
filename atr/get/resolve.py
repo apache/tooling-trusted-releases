@@ -35,6 +35,12 @@ import atr.util as util
 import atr.web as web
 
 
+def binding_terminology(vote_round: int | None) -> tuple[str, str]:
+    if vote_round == 1:
+        return "Formal", "Informal"
+    return "Binding", "Non-binding"
+
+
 @get.typed
 async def selected(  # noqa: C901
     session: web.Committer,
@@ -123,6 +129,11 @@ async def selected(  # noqa: C901
         and (details.summary["binding_votes_yes"] > details.summary["binding_votes_no"])
     )
 
+    vote_round: int | None = None
+    if (release.committee is not None) and release.committee.is_podling:
+        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    binding_label, non_binding_label = binding_terminology(vote_round)
+
     submit_label = "Resolve vote"
     if pass_fail_allowed or bypass_active:
         form_cls = shared.resolve.SubmitForm
@@ -134,14 +145,14 @@ async def selected(  # noqa: C901
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
         if details is not None:
             message = (
-                "The automated tabulation did not find sufficient binding +1 votes to"
-                " pass (at least 3 binding +1 votes are required, with more +1 than -1)."
+                f"The automated tabulation did not find sufficient {binding_label.lower()} +1 votes to"
+                f" pass (at least 3 {binding_label.lower()} +1 votes are required, with more +1 than -1)."
                 " Note that the tabulation is heuristic and may not have parsed all votes"
                 " correctly."
             )
         else:
             message = (
-                "The vote thread could not be tabulated, so binding vote requirements"
+                f"The vote thread could not be tabulated, so {binding_label.lower()} vote requirements"
                 " could not be verified automatically."
             )
         pre_submit = htm.div(".border.rounded.bg-warning-subtle.p-3.mb-3")[icon, message]
@@ -167,6 +178,8 @@ async def selected(  # noqa: C901
         vote_end=vote_end,
         pass_fail_allowed=pass_fail_allowed,
         bypass_active=bypass_active,
+        binding_label=binding_label,
+        non_binding_label=non_binding_label,
     )
 
 

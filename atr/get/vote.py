@@ -379,18 +379,19 @@ def _message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
     return f"https://lists.apache.org/api/source.lua?{query}"
 
 
-def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str) -> None:
+def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str, vote_round: int | None) -> None:
+    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
     if is_binding:
         page.p[
             f"As a member of the {binding_committee} committee, your vote is ",
-            htpy.strong["binding"],
+            htpy.strong[binding_word.lower()],
             ".",
         ]
     else:
         page.p[
             f"You are not a member of the {binding_committee} committee. ",
             "Your vote will be recorded as ",
-            htpy.strong["non-binding"],
+            htpy.strong[non_binding_word.lower()],
             " but is still valued by the community.",
         ]
 
@@ -632,8 +633,9 @@ async def _render_trusted_vote_authenticated(
 
     vote_round = _vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-    potency = "Binding" if is_binding else "Non-binding"
-    _render_binding_status(page, is_binding, binding_committee)
+    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
+    potency = binding_word if is_binding else non_binding_word
+    _render_binding_status(page, is_binding, binding_committee, vote_round)
 
     if latest_ballot is not None:
         page.append(_trusted_vote_status(latest_ballot, vote_recipient))
@@ -688,9 +690,10 @@ async def _render_vote_authenticated(
 
     vote_round = _vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
+    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
 
-    potency = "Binding" if is_binding else "Non-binding"
-    _render_binding_status(page, is_binding, binding_committee)
+    potency = binding_word if is_binding else non_binding_word
+    _render_binding_status(page, is_binding, binding_committee, vote_round)
     _render_vote_delivery(page, archive_url, vote_recipient, trusted_vote=False)
     vote_widget = _vote_decision_widget(potency)
     await _append_cast_vote_form(page, release, vote_widget)
