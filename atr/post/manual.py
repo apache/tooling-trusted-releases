@@ -73,8 +73,16 @@ async def resolve_selected(
             vote_result = "cancelled"
             destination = get.compose.selected
 
-    async with storage.write_as_project_committee_member(project_key) as wacm:
-        success_message = await wacm.vote.resolve_manually(project_key, version_key, vote_result)
+    try:
+        async with storage.write_as_project_committee_member(project_key) as wacm:
+            success_message = await wacm.vote.resolve_manually(project_key, version_key, vote_result)
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.manual.resolve_selected,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            error=str(e),
+        )
 
     return await session.redirect(
         destination,

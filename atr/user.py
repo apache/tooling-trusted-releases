@@ -28,6 +28,12 @@ import atr.models.sql as sql
 import atr.util as util
 
 
+def binding_terminology(vote_round: int | None) -> tuple[str, str]:
+    if vote_round == 1:
+        return "Formal", "Informal"
+    return "Binding", "Non-binding"
+
+
 async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = None) -> list[sql.Release]:
     # Must be imported here, to avoid a circular import
     import atr.db.interaction as interaction

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import asyncio
+import dataclasses
 import datetime
 import enum
 from collections.abc import Sequence
@@ -67,6 +68,24 @@ class TrustedProjectPhase(enum.Enum):
     COMPOSE = "compose"
     VOTE = "vote"
     FINISH = "finish"
+
+
+@dataclasses.dataclass
+class TrustedVoteSummary:
+    binding_votes_yes: int = 0
+    binding_votes_no: int = 0
+    binding_votes_abstain: int = 0
+    non_binding_votes_yes: int = 0
+    non_binding_votes_no: int = 0
+    non_binding_votes_abstain: int = 0
+
+    @property
+    def binding_votes(self) -> int:
+        return self.binding_votes_yes + self.binding_votes_no + self.binding_votes_abstain
+
+    @property
+    def non_binding_votes(self) -> int:
+        return self.non_binding_votes_yes + self.non_binding_votes_no + self.non_binding_votes_abstain
 
 
 async def all_releases(project: sql.Project) -> list[sql.Release]:
@@ -171,6 +190,33 @@ async def ballot_receipt_message_ids(
         )
         result = await data.execute(query)
         return {message_id for message_id in result.scalars().all() if message_id}
+
+
+async def ballots_for_resolution(
+    release_key: str,
+    vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> list[sql.BallotPaper]:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        row_number = sqlalchemy.func.row_number().over(
+            partition_by=(via(sql.BallotPaper.vote_round), via(sql.BallotPaper.voter_asf_uid)),
+            order_by=via(sql.BallotPaper.id).desc(),
+        )
+        latest_ids = (
+            sqlmodel.select(via(sql.BallotPaper.id).label("ballot_id"), row_number.label("row_number"))
+            .where(sql.BallotPaper.release_key == release_key)
+            .where(sql.BallotPaper.vote_seq == vote_seq)
+            .subquery()
+        )
+        query = (
+            sqlmodel.select(sql.BallotPaper)
+            .join(latest_ids, via(sql.BallotPaper.id) == latest_ids.c.ballot_id)
+            .where(latest_ids.c.row_number == 1)
+            .order_by(via(sql.BallotPaper.vote_round).asc(), via(sql.BallotPaper.voter_asf_uid).asc())
+        )
+        result = await data.execute(query)
+        return list(result.scalars().all())
 
 
 async def candidate_drafts(project: sql.Project) -> list[sql.Release]:
@@ -487,6 +533,40 @@ async def tasks_ongoing_revision(
     async with db.session() as session:
         task_count, latest_revision = (await session.execute(query)).one()
         return task_count, latest_revision
+
+
+async def trusted_ballot_summary(
+    release: sql.Release,
+    ballots: Sequence[sql.BallotPaper],
+    caller_data: db.Session | None = None,
+) -> TrustedVoteSummary:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    summary = TrustedVoteSummary()
+    for ballot in ballots:
+        is_binding, _binding_committee = await user.is_binding_for_release(
+            release.committee,
+            ballot.voter_asf_uid,
+            ballot.vote_round,
+            caller_data=caller_data,
+        )
+        match ballot.choice:
+            case sql.VoteChoice.YES:
+                if is_binding:
+                    summary.binding_votes_yes += 1
+                else:
+                    summary.non_binding_votes_yes += 1
+            case sql.VoteChoice.ABSTAIN:
+                if is_binding:
+                    summary.binding_votes_abstain += 1
+                else:
+                    summary.non_binding_votes_abstain += 1
+            case sql.VoteChoice.NO:
+                if is_binding:
+                    summary.binding_votes_no += 1
+                else:
+                    summary.non_binding_votes_no += 1
+    return summary
 
 
 async def trusted_jwt(

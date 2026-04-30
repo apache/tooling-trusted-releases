@@ -380,7 +380,7 @@ def _message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
 
 
 def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str, vote_round: int | None) -> None:
-    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
+    binding_word, non_binding_word = user.binding_terminology(vote_round)
     if is_binding:
         page.p[
             f"As a member of the {binding_committee} committee, your vote is ",
@@ -633,7 +633,7 @@ async def _render_trusted_vote_authenticated(
 
     vote_round = _vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
+    binding_word, non_binding_word = user.binding_terminology(vote_round)
     potency = binding_word if is_binding else non_binding_word
     _render_binding_status(page, is_binding, binding_committee, vote_round)
 
@@ -643,7 +643,7 @@ async def _render_trusted_vote_authenticated(
             "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
         ]
 
-    task_mid = interaction.task_mid_get(latest_vote_task) if latest_vote_task is not None else None
+    task_mid = interaction.task_mid_get(latest_vote_task) if (latest_vote_task is not None) else None
     casting_enabled = (release.current_vote_seq is not None) and (task_mid is not None)
     vote_widget = _vote_decision_widget(potency, disabled=not casting_enabled)
     submit_label = "Resubmit vote" if (latest_ballot is not None) else "Submit vote"
@@ -690,7 +690,7 @@ async def _render_vote_authenticated(
 
     vote_round = _vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
-    binding_word, non_binding_word = resolve.binding_terminology(vote_round)
+    binding_word, non_binding_word = user.binding_terminology(vote_round)
 
     potency = binding_word if is_binding else non_binding_word
     _render_binding_status(page, is_binding, binding_committee, vote_round)

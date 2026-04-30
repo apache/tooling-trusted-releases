@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any, Final
 import strictyaml
 import strictyaml.ruamel.error as error
 
-import atr.config as config
 import atr.db as db
 import atr.hashes as hashes
 import atr.models as models
@@ -198,8 +197,6 @@ class CommitteeMember(CommitteeParticipant):
         project_key = form.project_key
         project, release_policy = await self.__get_or_create_policy(project_key)
         vote_mode = form.vote_mode
-        if (vote_mode == models.sql.VoteMode.TRUSTED) and (not config.is_dev_environment()):
-            raise storage.AccessError("Trusted voting is only available in development mode.")
         if (vote_mode == models.sql.VoteMode.MANUAL) and (project.committee and project.committee.is_podling):
             raise storage.AccessError("Manual voting is not allowed for podlings.")
 

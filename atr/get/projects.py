@@ -759,8 +759,6 @@ def _vote_mode_label(mode: sql.VoteMode) -> str:
 
 def _vote_mode_radios(project: sql.Project) -> htm.Element:
     choices = list(sql.VoteMode)
-    if not config.is_dev_environment():
-        choices = [mode for mode in choices if mode != sql.VoteMode.TRUSTED]
     if project.committee and project.committee.is_podling:
         choices = [mode for mode in choices if mode != sql.VoteMode.MANUAL]
     elements: list[htm.Element | htm.VoidElement] = []

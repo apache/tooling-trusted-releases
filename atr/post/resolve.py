@@ -57,6 +57,8 @@ async def selected(
                 writer_result,
                 session.fullname,
                 email_body,
+                expected_vote_seq=submit_form.vote_seq,
+                expected_vote_mode=submit_form.vote_mode,
             )
     except storage.AccessError as e:
         return await session.redirect(

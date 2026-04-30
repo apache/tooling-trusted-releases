@@ -116,6 +116,57 @@ async def test_ballot_receipt_message_ids_returns_all_receipts_for_vote(sqlite_s
 
 
 @pytest.mark.asyncio
+async def test_ballots_for_resolution_returns_latest_per_round_and_voter(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        older = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.YES,
+            receipt_message_id="older@apache.org",
+        )
+        newest = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.NO,
+            receipt_message_id="newest@apache.org",
+        )
+        other_round = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.ABSTAIN,
+            receipt_message_id="other-round@apache.org",
+        )
+        other_round.vote_round = 2
+        other_voter = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="someone",
+            choice=sql.VoteChoice.YES,
+            receipt_message_id="other-voter@apache.org",
+        )
+        other_seq = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=2,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.YES,
+            receipt_message_id="other-seq@apache.org",
+        )
+        data.add_all([older, newest, other_round, other_voter, other_seq])
+        await data.commit()
+
+        found = await interaction.ballots_for_resolution("project-1.0.0", 1, data)
+
+    assert {ballot.receipt_message_id for ballot in found} == {
+        "newest@apache.org",
+        "other-round@apache.org",
+        "other-voter@apache.org",
+    }
+
+
+@pytest.mark.asyncio
 async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:

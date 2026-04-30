@@ -31,14 +31,9 @@ import atr.shared as shared
 import atr.storage as storage
 import atr.tabulate as tabulate
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
-
-
-def binding_terminology(vote_round: int | None) -> tuple[str, str]:
-    if vote_round == 1:
-        return "Formal", "Informal"
-    return "Binding", "Non-binding"
 
 
 @get.typed
@@ -107,9 +102,42 @@ async def selected(  # noqa: C901
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
     bypass_active = interaction.vote_duration_bypass()
     vote_end = interaction.vote_end_get(latest_vote_task)
+    is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
+    trusted_ballot_count = 0
+    trusted_summary = None
+    trusted_passed = False
+    if is_trusted_mode and (release.current_vote_seq is not None):
+        trusted_ballots = await interaction.ballots_for_resolution(release.key, release.current_vote_seq)
+        trusted_ballot_count = len(trusted_ballots)
+        trusted_summary = await interaction.trusted_ballot_summary(release, trusted_ballots)
+        trusted_passed = tabulate.binding_vote_passes(
+            trusted_summary.binding_votes_yes, trusted_summary.binding_votes_no
+        )
 
-    defaults = {}
-    if (committee is not None) and (details is not None) and (thread_id is not None):
+    defaults: dict[str, object] = {
+        "vote_mode": release.effective_vote_mode,
+        "vote_seq": release.current_vote_seq,
+    }
+    if trusted_summary is not None:
+        vote_round: int | None = None
+        if (release.committee is not None) and release.committee.is_podling:
+            vote_round = 2 if (release.podling_thread_id is not None) else 1
+        binding_label, non_binding_label = user.binding_terminology(vote_round)
+        defaults["email_body"] = tabulate.trusted_vote_resolution(
+            release,
+            trusted_summary,
+            trusted_passed,
+            full_name,
+            asf_uid,
+            thread_id,
+            binding_label,
+            non_binding_label,
+        )
+    elif (committee is not None) and (details is not None) and (thread_id is not None):
+        vote_round = None
+        if (release.committee is not None) and release.committee.is_podling:
+            vote_round = 2 if (release.podling_thread_id is not None) else 1
+        binding_label, non_binding_label = user.binding_terminology(vote_round)
         defaults["email_body"] = tabulate.vote_resolution(
             committee,
             release,
@@ -120,22 +148,34 @@ async def selected(  # noqa: C901
             full_name,
             asf_uid,
             thread_id,
+            binding_label,
+            non_binding_label,
         )
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
-    binding_sufficient = (
-        (details is not None)
-        and (details.summary["binding_votes_yes"] >= 3)
-        and (details.summary["binding_votes_yes"] > details.summary["binding_votes_no"])
-    )
+    if is_trusted_mode:
+        binding_sufficient = trusted_passed
+    else:
+        binding_sufficient = (details is not None) and tabulate.binding_vote_passes(
+            details.summary["binding_votes_yes"], details.summary["binding_votes_no"]
+        )
 
-    vote_round: int | None = None
+    vote_round = None
     if (release.committee is not None) and release.committee.is_podling:
         vote_round = 2 if (release.podling_thread_id is not None) else 1
-    binding_label, non_binding_label = binding_terminology(vote_round)
+    binding_label, non_binding_label = user.binding_terminology(vote_round)
 
     submit_label = "Resolve vote"
-    if pass_fail_allowed or bypass_active:
+    trusted_duration_blocks_result = is_trusted_mode and (vote_end is not None) and (not pass_fail_allowed)
+    if trusted_duration_blocks_result and (not bypass_active):
+        form_cls = shared.resolve.CancelSubmitForm
+    elif is_trusted_mode:
+        form_cls = shared.resolve.SubmitForm
+        vote_result_choices = [("Failed", "Failed"), ("Cancelled", "Cancelled")]
+        if binding_sufficient or bypass_active:
+            vote_result_choices.insert(0, ("Passed", "Passed"))
+        defaults["vote_result"] = vote_result_choices
+    elif pass_fail_allowed or bypass_active:
         form_cls = shared.resolve.SubmitForm
     else:
         form_cls = shared.resolve.CancelSubmitForm
@@ -143,7 +183,12 @@ async def selected(  # noqa: C901
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
-        if details is not None:
+        if is_trusted_mode:
+            message = (
+                f"The trusted ballot record does not contain sufficient {binding_label.lower()} +1 votes to"
+                f" pass (at least 3 {binding_label.lower()} +1 votes are required, with more +1 than -1)."
+            )
+        elif details is not None:
             message = (
                 f"The automated tabulation did not find sufficient {binding_label.lower()} +1 votes to"
                 f" pass (at least 3 {binding_label.lower()} +1 votes are required, with more +1 than -1)."
@@ -175,6 +220,9 @@ async def selected(  # noqa: C901
         resolve_form=resolve_form,
         fetch_error=fetch_error,
         archive_url=archive_url,
+        trusted_ballot_count=trusted_ballot_count,
+        trusted_summary=trusted_summary,
+        trusted_mode=is_trusted_mode,
         vote_end=vote_end,
         pass_fail_allowed=pass_fail_allowed,
         bypass_active=bypass_active,

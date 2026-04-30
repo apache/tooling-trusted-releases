@@ -17,6 +17,7 @@
 import re
 import time
 from collections.abc import Generator
+from typing import Protocol
 
 import atr.config as config
 import atr.db as db
@@ -26,6 +27,42 @@ import atr.models.sql as sql
 import atr.util as util
 
 MAX_THREAD_MESSAGES = 10000
+
+
+class TrustedVoteSummaryData(Protocol):
+    binding_votes_abstain: int
+    binding_votes_no: int
+    binding_votes_yes: int
+    non_binding_votes_abstain: int
+    non_binding_votes_no: int
+    non_binding_votes_yes: int
+
+    @property
+    def binding_votes(self) -> int: ...
+
+    @property
+    def non_binding_votes(self) -> int: ...
+
+
+def binding_vote_passes(binding_plus_one: int, binding_minus_one: int) -> bool:
+    return (binding_plus_one >= 3) and (binding_plus_one > binding_minus_one)
+
+
+def trusted_vote_resolution(
+    release: sql.Release,
+    summary: TrustedVoteSummaryData,
+    passed: bool,
+    full_name: str,
+    asf_uid: str,
+    thread_id: str | None,
+    binding_label: str = "Binding",
+    non_binding_label: str = "Non-binding",
+) -> str:
+    return "\n".join(
+        _trusted_vote_resolution_body(
+            release, summary, passed, full_name, asf_uid, thread_id, binding_label, non_binding_label
+        )
+    )
 
 
 async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee | None:
@@ -104,11 +141,23 @@ def vote_resolution(
     full_name: str,
     asf_uid: str,
     thread_id: str,
+    binding_label: str = "Binding",
+    non_binding_label: str = "Non-binding",
 ) -> str:
     """Generate a resolution email body."""
     return "\n".join(
         _vote_resolution_body(
-            committee, release, tabulated_votes, summary, passed, outcome, full_name, asf_uid, thread_id
+            committee,
+            release,
+            tabulated_votes,
+            summary,
+            passed,
+            outcome,
+            full_name,
+            asf_uid,
+            thread_id,
+            binding_label,
+            non_binding_label,
         )
     )
 
@@ -268,6 +317,53 @@ def _name_from_raw(from_raw: str) -> str:
     return name.strip()
 
 
+def _trusted_vote_resolution_body(
+    release: sql.Release,
+    summary: TrustedVoteSummaryData,
+    passed: bool,
+    full_name: str,
+    asf_uid: str,
+    thread_id: str | None,
+    binding_label: str,
+    non_binding_label: str,
+) -> Generator[str]:
+    committee_key = release.project.key
+    if release.podling_thread_id:
+        committee_key = "Incubator"
+    yield f"Dear {committee_key} participants,"
+    yield ""
+    outcome = "passed" if passed else "failed"
+    yield f"The vote on {release.project.key} {release.version} {outcome}."
+    yield ""
+
+    if release.podling_thread_id:
+        yield "The previous round of voting is archived at the following URL:"
+        yield ""
+        yield f"https://lists.apache.org/thread/{release.podling_thread_id}"
+        yield ""
+
+    if thread_id is not None:
+        yield "The vote thread is archived at the following URL:"
+        yield ""
+        yield f"https://lists.apache.org/thread/{thread_id}"
+        yield ""
+
+    yield f"There were {summary.binding_votes} {binding_label.lower()} votes."
+    yield (
+        f"{binding_label} votes: +1: {summary.binding_votes_yes}, "
+        f"0: {summary.binding_votes_abstain}, -1: {summary.binding_votes_no}."
+    )
+    yield (
+        f"{non_binding_label} votes: +1: {summary.non_binding_votes_yes}, "
+        f"0: {summary.non_binding_votes_abstain}, -1: {summary.non_binding_votes_no}."
+    )
+    yield ""
+    yield "Thank you for your participation."
+    yield ""
+    yield "Sincerely,"
+    yield f"{full_name} ({asf_uid})"
+
+
 def _validate_thread_id(thread_id: str) -> None:
     if not thread_id or not isinstance(thread_id, str):
         raise ValueError(f"Invalid thread_id: {thread_id}")
@@ -359,7 +455,7 @@ def _vote_identity(
 def _vote_outcome_format(
     duration_hours_remaining: float | int | None, binding_plus_one: int, binding_minus_one: int
 ) -> tuple[bool, str]:
-    outcome_passed = (binding_plus_one >= 3) and (binding_plus_one > binding_minus_one)
+    outcome_passed = binding_vote_passes(binding_plus_one, binding_minus_one)
     if not outcome_passed:
         if (duration_hours_remaining is not None) and (duration_hours_remaining > 0):
             duration_str = _format_duration(duration_hours_remaining)
@@ -388,6 +484,8 @@ def _vote_resolution_body(
     full_name: str,
     asf_uid: str,
     thread_id: str,
+    binding_label: str,
+    non_binding_label: str,
 ) -> Generator[str]:
     committee_key = committee.display_name
     if release.podling_thread_id:
@@ -410,7 +508,7 @@ def _vote_resolution_body(
     yield f"https://lists.apache.org/thread/{thread_id}"
     yield ""
 
-    yield from _vote_resolution_body_votes(tabulated_votes, summary)
+    yield from _vote_resolution_body_votes(tabulated_votes, summary, binding_label, non_binding_label)
     yield "Thank you for your participation."
     yield ""
     yield "Sincerely,"
@@ -418,14 +516,19 @@ def _vote_resolution_body(
 
 
 def _vote_resolution_body_votes(
-    tabulated_votes: dict[str, models.tabulate.VoteEmail], summary: dict[str, int]
+    tabulated_votes: dict[str, models.tabulate.VoteEmail],
+    summary: dict[str, int],
+    binding_label: str = "Binding",
+    non_binding_label: str = "Non-binding",
 ) -> Generator[str]:
-    yield from _vote_resolution_votes(tabulated_votes, {models.tabulate.VoteStatus.BINDING})
+    yield from _vote_resolution_votes(
+        tabulated_votes, {models.tabulate.VoteStatus.BINDING}, binding_label, non_binding_label
+    )
 
     binding_total = summary["binding_votes"]
     were_word = "was" if (binding_total == 1) else "were"
     votes_word = "vote" if (binding_total == 1) else "votes"
-    yield f"There {were_word} {binding_total} binding {votes_word}."
+    yield f"There {were_word} {binding_total} {binding_label.lower()} {votes_word}."
     yield ""
 
     binding_yes = summary["binding_votes_yes"]
@@ -436,12 +539,17 @@ def _vote_resolution_body_votes(
         _vote_resolution_count(binding_no, "-1"),
         _vote_resolution_count(binding_abstain, "0"),
     ]
-    yield f"Of these binding votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
+    yield f"Of these {binding_label.lower()} votes, {', '.join(binding_vote_counts[:2])}, and {binding_vote_counts[2]}."
     yield ""
 
-    yield from _vote_resolution_votes(tabulated_votes, {models.tabulate.VoteStatus.COMMITTER})
     yield from _vote_resolution_votes(
-        tabulated_votes, {models.tabulate.VoteStatus.CONTRIBUTOR, models.tabulate.VoteStatus.UNKNOWN}
+        tabulated_votes, {models.tabulate.VoteStatus.COMMITTER}, binding_label, non_binding_label
+    )
+    yield from _vote_resolution_votes(
+        tabulated_votes,
+        {models.tabulate.VoteStatus.CONTRIBUTOR, models.tabulate.VoteStatus.UNKNOWN},
+        binding_label,
+        non_binding_label,
     )
 
 
@@ -450,10 +558,21 @@ def _vote_resolution_count(count: int, symbol: str) -> str:
     return f"{count} {were_word} {symbol}"
 
 
-def _vote_resolution_votes(
-    tabulated_votes: dict[str, models.tabulate.VoteEmail], statuses: set[models.tabulate.VoteStatus]
+def _vote_resolution_votes(  # noqa: C901
+    tabulated_votes: dict[str, models.tabulate.VoteEmail],
+    statuses: set[models.tabulate.VoteStatus],
+    binding_label: str = "Binding",
+    non_binding_label: str = "Non-binding",
 ) -> Generator[str]:
-    header: str | None = f"The {' and '.join(status.value.lower() for status in statuses)} votes were cast as follows:"
+    status_labels = []
+    for status in statuses:
+        if status == models.tabulate.VoteStatus.BINDING:
+            status_labels.append(binding_label.lower())
+        elif status in {models.tabulate.VoteStatus.COMMITTER, models.tabulate.VoteStatus.CONTRIBUTOR}:
+            status_labels.append(status.value.lower())
+        else:
+            status_labels.append(non_binding_label.lower())
+    header: str | None = f"The {' and '.join(status_labels)} votes were cast as follows:"
     for vote_email in tabulated_votes.values():
         if vote_email.status not in statuses:
             continue

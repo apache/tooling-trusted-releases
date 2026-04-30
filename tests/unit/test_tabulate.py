@@ -26,6 +26,19 @@ import atr.models.tabulate as models_tabulate
 import atr.tabulate as tabulate
 
 
+@pytest.mark.parametrize(
+    ("binding_plus_one", "binding_minus_one", "expected"),
+    [
+        (2, 0, False),
+        (3, 3, False),
+        (3, 2, True),
+        (4, 0, True),
+    ],
+)
+def test_binding_vote_passes(binding_plus_one: int, binding_minus_one: int, expected: bool) -> None:
+    assert tabulate.binding_vote_passes(binding_plus_one, binding_minus_one) is expected
+
+
 @pytest.mark.asyncio
 async def test_vote_committee_returns_incubator_for_podling_round_two(
     monkeypatch: pytest.MonkeyPatch,
@@ -123,6 +136,20 @@ def test_vote_resolution_body_votes_formats_singular_binding_summary() -> None:
     body_lines = list(tabulate._vote_resolution_body_votes({}, summary))
 
     assert body_lines[2] == "Of these binding votes, 8 were +1, 1 was -1, and 0 were 0."
+
+
+def test_vote_resolution_body_votes_uses_formal_label() -> None:
+    summary = {
+        "binding_votes": 3,
+        "binding_votes_yes": 3,
+        "binding_votes_no": 0,
+        "binding_votes_abstain": 0,
+    }
+
+    body_lines = list(tabulate._vote_resolution_body_votes({}, summary, "Formal", "Informal"))
+
+    assert body_lines[0] == "There were 3 formal votes."
+    assert body_lines[2] == "Of these formal votes, 3 were +1, 0 were -1, and 0 were 0."
 
 
 @pytest.mark.asyncio

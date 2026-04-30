@@ -547,7 +547,7 @@ async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails
         "Please review the vote manually and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_not_awaited()
@@ -568,7 +568,7 @@ async def test_resolve_page_allows_manual_continuation_when_tabulation_is_invali
         "Please review the vote manually and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_awaited_once()
@@ -595,7 +595,7 @@ async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
         "and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {}
+    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_awaited_once()
@@ -656,6 +656,32 @@ async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    release.current_vote_seq = 2
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
+
+    with pytest.raises(storage.AccessError, match="resolve form is stale"):
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "failed",
+            "Chair",
+            "The vote has failed.",
+            expected_vote_seq=1,
+            expected_vote_mode=sql.VoteMode.EMAIL,
+        )
+
+
+@pytest.mark.asyncio
 async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     """send_resolution accepts cancelled and builds a CANCELLED subject."""
     data = _mock_data()
@@ -684,6 +710,42 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     assert queued_task.task_args["email_to"] == "dev@project.apache.org"
     assert queued_task.task_args["email_cc"] == ["private@project.apache.org"]
     assert queued_task.task_args["email_bcc"] == ["secretary@project.apache.org"]
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+    writer.send_resolution = mock.AsyncMock(return_value=None)
+
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 1
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
+    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
+    )
+
+    _release, _round, success, _error = await writer.resolve(
+        _project_key(),
+        _version_key(),
+        "passed",
+        "Chair",
+        "The vote has passed.",
+        expected_vote_seq=1,
+        expected_vote_mode=sql.VoteMode.TRUSTED,
+    )
+
+    assert success == "Vote marked as passed"
+    write_as.revision.create_revision_with_quarantine.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -844,6 +906,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         effective_vote_mode=sql.VoteMode.EMAIL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
         vote_resolved=datetime.datetime.now(datetime.UTC),
+        current_vote_seq=None,
         podling_thread_id=podling_thread_id,
         version="1.0.0",
         latest_revision_number="00001",
@@ -1008,6 +1071,8 @@ async def _render_standard_resolve_page(
     vote_details = mock.AsyncMock()
     form_render = mock.AsyncMock(return_value="FORM")
     ballot_receipt_message_ids = ballot_receipt_message_ids or mock.AsyncMock(return_value=set())
+    ballots_for_resolution = mock.AsyncMock(return_value=[])
+    trusted_ballot_summary = mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
 
     if archive_error is not None:
         archive_lookup.side_effect = archive_error
@@ -1041,6 +1106,8 @@ async def _render_standard_resolve_page(
     monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: None)
     monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: True)
     monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
+    monkeypatch.setattr(resolve.interaction, "ballots_for_resolution", ballots_for_resolution)
+    monkeypatch.setattr(resolve.interaction, "trusted_ballot_summary", trusted_ballot_summary)
     monkeypatch.setattr(resolve.storage, "write", _write_context)
     monkeypatch.setattr(resolve.tabulate, "vote_committee", vote_committee)
     monkeypatch.setattr(resolve.tabulate, "vote_details", vote_details)

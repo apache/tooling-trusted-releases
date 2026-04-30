@@ -17,14 +17,35 @@
 
 from typing import Literal
 
+import pydantic
+
 import atr.form as form
+import atr.models.sql as sql
 
 
 class CancelSubmitForm(form.Form):
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Cancelled"] = form.label("Vote result", default="Cancelled", widget=form.Widget.HIDDEN)
+    vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
+    vote_seq: int | None = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
+
+    @pydantic.field_validator("vote_mode", "vote_seq", mode="before")
+    @classmethod
+    def empty_hidden_value(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
 
 class SubmitForm(form.Form):
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
+    vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
+    vote_seq: int | None = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
+
+    @pydantic.field_validator("vote_mode", "vote_seq", mode="before")
+    @classmethod
+    def empty_hidden_value(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value

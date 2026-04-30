@@ -127,6 +127,30 @@ def test_empty_comment_no_signature() -> None:
     assert "-- \n" not in body
 
 
+def test_formal_vote_body_format() -> None:
+    body = vote_writer.format_vote_email_body(
+        vote="+1",
+        asf_uid="ppmc",
+        fullname="PPMC Member",
+        is_binding=True,
+        potency_label="formal",
+    )
+
+    assert body == "+1 (formal) (ppmc) PPMC Member"
+
+
+def test_informal_vote_body_format() -> None:
+    body = vote_writer.format_vote_email_body(
+        vote="+1",
+        asf_uid="contributor",
+        fullname="A Contributor",
+        is_binding=False,
+        potency_label="informal",
+    )
+
+    assert body == "+1 (informal) (contributor) A Contributor"
+
+
 def test_negative_binding_vote_body_format() -> None:
     """Negative binding votes are formatted correctly."""
     body = vote_writer.format_vote_email_body(

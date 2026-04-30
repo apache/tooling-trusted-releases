@@ -33,6 +33,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.tabulate as tabulate
 import atr.user as user
 import atr.util as util
 
@@ -111,6 +112,10 @@ class FoundationCommitter(GeneralPublic):
                 vote_round,
                 caller_data=self.__data,
             )
+            binding_word, non_binding_word = user.binding_terminology(vote_round)
+            potency_label = binding_word.lower() if is_binding else None
+            if (vote_round == 1) and (not is_binding):
+                potency_label = non_binding_word.lower()
 
             start_task = await interaction.release_current_vote_task(release, self.__data)
             if start_task is None:
@@ -138,6 +143,7 @@ class FoundationCommitter(GeneralPublic):
                 fullname=fullname,
                 is_binding=is_binding,
                 comment=comment,
+                potency_label=potency_label,
             )
 
             previous_ballot_query = (
@@ -197,7 +203,7 @@ class FoundationCommitter(GeneralPublic):
             choice=choice.value,
             is_binding_at_cast=is_binding,
             receipt_message_id=receipt_message_id,
-            replaced_ballot_id=previous_ballot.id if previous_ballot is not None else None,
+            replaced_ballot_id=previous_ballot.id if (previous_ballot is not None) else None,
         )
         return [email_to], ""
 
@@ -256,6 +262,7 @@ class CommitteeParticipant(FoundationCommitter):
             fullname=fullname,
             is_binding=is_binding,
             comment=comment,
+            potency_label=_vote_potency_label(release, is_binding),
         )
         in_reply_to = vote_thread_mid
 
@@ -308,7 +315,7 @@ class CommitteeParticipant(FoundationCommitter):
                 # This verifies the state and sets the phase to RELEASE_CANDIDATE
                 allowed_vote_modes = (
                     frozenset({expected_vote_mode})
-                    if expected_vote_mode is not None
+                    if (expected_vote_mode is not None)
                     else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
                 )
                 release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
@@ -425,13 +432,15 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
-    async def resolve(
+    async def resolve(  # noqa: C901
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
         vote_result: Literal["passed", "failed", "cancelled"],
         asf_fullname: str,
         resolution_body: str,
+        expected_vote_seq: int | None = None,
+        expected_vote_mode: sql.VoteMode | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
             key=sql.release_key(str(project_key), str(version_key)),
@@ -441,8 +450,42 @@ class CommitteeMember(CommitteeParticipant):
             _release_policy=True,
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found"))
+        if (expected_vote_mode is not None) and (release.effective_vote_mode != expected_vote_mode):
+            raise storage.AccessError("The resolve form is stale, please refresh and try again")
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
-            raise ValueError("Release is configured for manual voting")
+            raise storage.AccessError("Release is configured for manual voting")
+        podling_round_one_thread_id = None
+        if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+            if (
+                (vote_result == "passed")
+                and (release.committee is not None)
+                and release.committee.is_podling
+                and (release.podling_thread_id is None)
+            ):
+                latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
+                if latest_vote_task is not None:
+                    task_mid = interaction.task_mid_get(latest_vote_task)
+                    task_recipient = interaction.task_recipient_get(latest_vote_task)
+                    archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
+                    if archive_url is not None:
+                        podling_round_one_thread_id = archive_url.split("/")[-1]
+            await self.__data.rollback()
+            return await self._resolve_trusted(
+                project_key,
+                version_key,
+                vote_result,
+                asf_fullname,
+                resolution_body,
+                expected_vote_seq,
+                expected_vote_mode,
+                podling_round_one_thread_id,
+            )
+        if (
+            (expected_vote_seq is not None)
+            and (release.current_vote_seq is not None)
+            and (release.current_vote_seq != expected_vote_seq)
+        ):
+            raise storage.AccessError("The resolve form is stale, please refresh and try again")
 
         is_podling = False
         if release.project.committee is not None:
@@ -451,7 +494,7 @@ class CommitteeMember(CommitteeParticipant):
 
         latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
-            raise RuntimeError("No vote task found, unable to send resolution message.")
+            raise storage.AccessError("No vote task found, unable to send resolution message.")
 
         if (
             (vote_result != "cancelled")
@@ -466,7 +509,7 @@ class CommitteeMember(CommitteeParticipant):
         if is_podling is True:
             voting_round = 1 if (podling_thread_id is None) else 2
         if release.committee is None:
-            raise ValueError("Project has no committee - Invalid state")
+            raise storage.AccessError("Project has no committee - Invalid state")
 
         return await self.resolve_release(
             project_key,
@@ -494,13 +537,13 @@ class CommitteeMember(CommitteeParticipant):
         ).demand(storage.AccessError("Release not found"))
 
         if release.effective_vote_mode != sql.VoteMode.MANUAL:
-            raise ValueError("Release is not configured for manual voting")
+            raise storage.AccessError("Release is not configured for manual voting")
 
         if release.vote_started is None:
-            raise ValueError("Vote has not been started")
+            raise storage.AccessError("Vote has not been started")
 
         if (release.project.committee is not None) and release.project.committee.is_podling:
-            raise ValueError("Podling releases require the standard two round vote process")
+            raise storage.AccessError("Podling releases require the standard two round vote process")
 
         match vote_result:
             case "passed":
@@ -789,6 +832,208 @@ class CommitteeMember(CommitteeParticipant):
         await self.__data.commit()
         return None
 
+    async def _resolve_trusted(  # noqa: C901
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        vote_result: Literal["passed", "failed", "cancelled"],
+        asf_fullname: str,
+        resolution_body: str,
+        expected_vote_seq: int | None,
+        expected_vote_mode: sql.VoteMode | None,
+        podling_round_one_thread_id: str | None,
+    ) -> tuple[sql.Release, int | None, str, str | None]:
+        latest_vote_task: sql.Task | None = None
+        second_round_vote_mode: sql.VoteMode | None = None
+        second_round_vote_seq: int | None = None
+        await self.__data.begin_immediate()
+        try:
+            release = await self.__data.release(
+                key=sql.release_key(str(project_key), str(version_key)),
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                _project=True,
+                _committee=True,
+                _release_policy=True,
+                _project_release_policy=True,
+            ).demand(storage.AccessError("Release not found"))
+            if (expected_vote_mode is not None) and (expected_vote_mode != sql.VoteMode.TRUSTED):
+                raise storage.AccessError("The resolve form is stale, please refresh and try again")
+            if release.effective_vote_mode != sql.VoteMode.TRUSTED:
+                raise storage.AccessError("Release is not configured for trusted voting")
+            if release.current_vote_seq is None:
+                raise storage.AccessError("Vote serial is missing, please refresh and try again")
+            if (expected_vote_seq is not None) and (release.current_vote_seq != expected_vote_seq):
+                raise storage.AccessError("The resolve form is stale, please refresh and try again")
+            if release.committee is None:
+                raise storage.AccessError("Project has no committee - Invalid state")
+
+            vote_seq = release.current_vote_seq
+            voting_round = None
+            if release.committee.is_podling:
+                voting_round = 1 if (release.podling_thread_id is None) else 2
+
+            latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
+            vote_end = interaction.vote_end_get(latest_vote_task)
+            resolution_bypass = interaction.vote_duration_bypass()
+            if (
+                (vote_result != "cancelled")
+                and (vote_end is not None)
+                and (not interaction.vote_pass_fail_allowed(latest_vote_task))
+                and (not resolution_bypass)
+            ):
+                raise storage.AccessError(
+                    "The vote cannot be resolved before the voting period has ended unless it is cancelled."
+                )
+
+            ballots = await interaction.ballots_for_resolution(release.key, vote_seq, self.__data)
+            summary = await interaction.trusted_ballot_summary(release, ballots, self.__data)
+            if (
+                (vote_result == "passed")
+                and (not tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no))
+                and (not resolution_bypass)
+            ):
+                binding_label, _non_binding_label = user.binding_terminology(voting_round)
+                raise storage.AccessError(
+                    f"The trusted ballot record does not have enough {binding_label.lower()} +1 votes to pass."
+                )
+
+            if (voting_round == 1) and (vote_result == "passed"):
+                if latest_vote_task is None:
+                    raise storage.AccessError("No vote task found, unable to start the Incubator vote.")
+                if podling_round_one_thread_id is None:
+                    raise storage.AccessError("No archive URL found for podling vote")
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=None,
+                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    new_vote_mode=release.effective_vote_mode,
+                    new_vote_resolved=None,
+                    new_podling_thread_id=podling_round_one_thread_id,
+                )
+                await self.__data.refresh(release)
+                incubator_vote_address = (
+                    latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
+                )
+                revision_number = release.latest_revision_number
+                if revision_number is None:
+                    raise storage.AccessError("Release has no revision number - Invalid state")
+                vote_duration = latest_vote_task.task_args["vote_duration"]
+                subject_template = await construct.start_vote_subject_default(release.safe_project_key)
+                body_template = await construct.start_vote_default(release.safe_project_key)
+                options = construct.StartVoteOptions(
+                    asfuid=self.__asf_uid,
+                    fullname=asf_fullname,
+                    project_key=release.safe_project_key,
+                    version_key=release.safe_version_key,
+                    revision_number=release.safe_latest_revision_number,
+                    vote_duration=vote_duration,
+                )
+                subject_data, body_data = await construct.start_vote_subject_and_body(
+                    subject_template, body_template, options
+                )
+                second_round_task = await self.start(
+                    email_to=incubator_vote_address,
+                    permitted_recipients=[incubator_vote_address],
+                    project_key=release.safe_project_key,
+                    version_key=release.safe_version_key,
+                    selected_revision_number=release.safe_latest_revision_number,
+                    asf_fullname=asf_fullname,
+                    vote_duration_choice=vote_duration,
+                    subject=subject_data,
+                    body_data=body_data,
+                    release=release,
+                    promote=False,
+                )
+                second_round_vote_seq = second_round_task.task_args["vote_seq"]
+                if not isinstance(second_round_vote_seq, int):
+                    raise storage.AccessError("Second round vote sequence is invalid")
+                second_round_vote_mode = release.effective_vote_mode
+                await self.__data.commit()
+                await self.__data.refresh(release)
+                success_message = (
+                    f"Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
+                    f" (sent to {incubator_vote_address})"
+                )
+            elif vote_result == "passed":
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=release.podling_thread_id,
+                    new_phase=sql.ReleasePhase.RELEASE_PREVIEW,
+                    new_vote_mode=release.effective_vote_mode,
+                    new_vote_resolved=datetime.datetime.now(datetime.UTC),
+                    new_podling_thread_id=release.podling_thread_id,
+                )
+                await self.__data.commit()
+                await self.__data.refresh(release)
+                success_message = "Vote marked as passed"
+            else:
+                await self._resolve_transition(
+                    release,
+                    expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                    expected_podling_thread_id=release.podling_thread_id,
+                    new_phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                    new_vote_mode=None,
+                    new_vote_resolved=None,
+                    new_podling_thread_id=None,
+                )
+                await self.__data.commit()
+                await self.__data.refresh(release)
+                success_message = f"Vote marked as {vote_result}"
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+        extra_destination = None
+        if (vote_result == "passed") and (voting_round != 1):
+            description = "Create a preview revision from the last candidate draft"
+            await self.__write_as.revision.create_revision_with_quarantine(
+                project_key,
+                release.safe_version_key,
+                self.__asf_uid,
+                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
+                description=description,
+            )
+            if (voting_round == 2) and (release.podling_thread_id is not None):
+                round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
+                    release.podling_thread_id
+                )
+                extra_destination = (round_one_email_address, round_one_message_id)
+
+        if latest_vote_task is None:
+            error_message = "No vote task found, unable to send resolution message."
+        else:
+            error_message = await self.send_resolution(
+                release,
+                vote_result,
+                resolution_body,
+                asf_fullname,
+                latest_vote_task,
+                extra_destination=extra_destination,
+            )
+
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            release_key=release.key,
+            project_key=str(project_key),
+            version_key=release.version,
+            selected_revision_number=release.latest_revision_number,
+            vote_result=vote_result,
+            voting_round=voting_round,
+            vote_seq=vote_seq,
+            vote_mode=release.effective_vote_mode.value,
+            trusted_binding_yes=summary.binding_votes_yes,
+            trusted_binding_no=summary.binding_votes_no,
+            trusted_binding_abstain=summary.binding_votes_abstain,
+            trusted_non_binding_yes=summary.non_binding_votes_yes,
+            trusted_non_binding_no=summary.non_binding_votes_no,
+            trusted_non_binding_abstain=summary.non_binding_votes_abstain,
+            second_round_vote_seq=second_round_vote_seq,
+            second_round_vote_mode=second_round_vote_mode.value if (second_round_vote_mode is not None) else None,
+        )
+        return release, voting_round, success_message, error_message
+
     async def _resolve_transition(
         self,
         release: sql.Release,
@@ -832,6 +1077,7 @@ def format_vote_email_body(
     fullname: str,
     is_binding: bool,
     comment: str = "",
+    potency_label: str | None = None,
 ) -> str:
     """Format the body of a vote email.
 
@@ -846,7 +1092,9 @@ def format_vote_email_body(
         The formatted email body text
     """
     # audit_guidance all email is sent through `atr.mail` which handles validation
-    if is_binding:
+    if potency_label is not None:
+        body = [f"{vote} ({potency_label}) ({asf_uid}) {fullname}"]
+    elif is_binding:
         body = [f"{vote} (binding) ({asf_uid}) {fullname}"]
     else:
         body = [f"{vote} ({asf_uid}) {fullname}"]
@@ -855,3 +1103,15 @@ def format_vote_email_body(
         # Only include the signature if there is a comment
         body.append(f"-- \n{fullname} ({asf_uid})")
     return "\n\n".join(body)
+
+
+def _vote_potency_label(release: sql.Release, is_binding: bool) -> str | None:
+    vote_round = None
+    if (release.committee is not None) and release.committee.is_podling:
+        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    binding_word, non_binding_word = user.binding_terminology(vote_round)
+    if is_binding:
+        return binding_word.lower()
+    if vote_round == 1:
+        return non_binding_word.lower()
+    return None
