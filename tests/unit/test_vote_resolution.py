@@ -213,6 +213,12 @@ async def test_failed_resolve_release_clears_podling_thread_id() -> None:
     assert release.vote_resolved is None
 
 
+def test_format_utc_returns_utc_minute_string() -> None:
+    assert resolve.format_utc(datetime.datetime(2026, 1, 2, 3, 4)) == "2026-01-02 03:04 UTC"
+    offset = datetime.timezone(datetime.timedelta(hours=1))
+    assert resolve.format_utc(datetime.datetime(2026, 1, 2, 4, 4, tzinfo=offset)) == "2026-01-02 03:04 UTC"
+
+
 @pytest.mark.asyncio
 async def test_manual_cancelled_returns_to_draft_and_clears_podling_thread_id() -> None:
     """Manual cancelled returns the release to draft and clears podling_thread_id."""
@@ -713,6 +719,128 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
 
 
 @pytest.mark.asyncio
+async def test_trusted_ballot_rows_use_recomputed_bindingness_and_receipt_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    ballot = sql.BallotPaper(
+        release_key="project-1.0.0",
+        vote_seq=1,
+        vote_round=None,
+        voter_asf_uid="voter",
+        voter_fullname="Voter",
+        choice=sql.VoteChoice.YES,
+        comment="",
+        is_binding_at_cast=False,
+        revision_number_at_cast="00001",
+        receipt_message_id="receipt@apache.org",
+        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+    )
+    is_binding_for_release = mock.AsyncMock(return_value=(True, "Project"))
+    monkeypatch.setattr(resolve.user, "is_binding_for_release", is_binding_for_release)
+
+    rows, summary = await resolve._trusted_ballot_rows_and_summary(
+        release,
+        [ballot],
+        "dev@project.apache.org",
+        None,
+    )
+
+    assert rows == [
+        resolve.TrustedBallotRow(
+            cast_at="2026-01-02 03:04 UTC",
+            choice="+1",
+            is_binding=True,
+            receipt_message_id="receipt@apache.org",
+            receipt_url=(
+                "https://lists.apache.org/api/source.lua?"
+                "id=%3Creceipt@apache.org%3E&listid=%3Cdev.project.apache.org%3E"
+            ),
+            status_label="Binding",
+            voter_asf_uid="voter",
+            voter_fullname="Voter",
+        )
+    ]
+    assert summary.binding_votes_yes == 1
+    assert summary.non_binding_votes_yes == 0
+    is_binding_for_release.assert_awaited_once_with(release.committee, "voter", None)
+
+
+def test_trusted_email_context_labels_avoid_authoritative_terms() -> None:
+    vote_details = models_tabulate.VoteDetails(
+        start_unixtime=None,
+        votes={
+            "member": models_tabulate.VoteEmail(
+                name="Member",
+                asf_uid_or_email="member",
+                from_email="member@apache.org",
+                status=models_tabulate.VoteStatus.BINDING,
+                asf_eid="member-eid",
+                iso_datetime="2026-01-01T00:00:00Z",
+                vote=models_tabulate.Vote.YES,
+                quotation="+1",
+                updated=False,
+            ),
+            "committer": models_tabulate.VoteEmail(
+                name="Committer",
+                asf_uid_or_email="committer",
+                from_email="committer@apache.org",
+                status=models_tabulate.VoteStatus.COMMITTER,
+                asf_eid="committer-eid",
+                iso_datetime="2026-01-01T00:00:00Z",
+                vote=models_tabulate.Vote.NO,
+                quotation="-1",
+                updated=False,
+            ),
+            "contributor": models_tabulate.VoteEmail(
+                name="Contributor",
+                asf_uid_or_email="contributor",
+                from_email="contributor@example.org",
+                status=models_tabulate.VoteStatus.CONTRIBUTOR,
+                asf_eid="contributor-eid",
+                iso_datetime="2026-01-01T00:00:00Z",
+                vote=models_tabulate.Vote.ABSTAIN,
+                quotation="0",
+                updated=False,
+            ),
+            "unknown": models_tabulate.VoteEmail(
+                name="Unknown",
+                asf_uid_or_email="unknown@example.org",
+                from_email="unknown@example.org",
+                status=models_tabulate.VoteStatus.UNKNOWN,
+                asf_eid="unknown-eid",
+                iso_datetime="2026-01-01T00:00:00Z",
+                vote=models_tabulate.Vote.UNKNOWN,
+                quotation="?",
+                updated=False,
+            ),
+        },
+        summary={},
+        passed=True,
+        outcome="The vote passed.",
+    )
+
+    rows = resolve._email_context_rows(vote_details.votes)
+    summary_rows = resolve._email_context_summary_rows(vote_details.votes)
+
+    assert [row.status_label for row in rows] == [
+        "Email from PMC member",
+        "Email from committer",
+        "Email from contributor",
+        "Unknown email",
+    ]
+    assert [row.vote for row in rows] == ["+1", "-1", "0", "?"]
+    assert [row.label for row in summary_rows] == [
+        "Email from PMC member",
+        "Email from committer",
+        "Email from contributor",
+        "Unknown email",
+    ]
+    assert "Binding" not in {row.status_label for row in rows}
+    assert "Formal" not in {row.status_label for row in rows}
+
+
+@pytest.mark.asyncio
 async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
     data = _mock_data()
     write_as = _mock_write_as()
@@ -746,6 +874,79 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
 
     assert success == "Vote marked as passed"
     write_as.revision.create_revision_with_quarantine.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_page_passes_authoritative_ballot_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.release_policy = SimpleNamespace(vote_mode=sql.VoteMode.TRUSTED)
+    release.current_vote_seq = 7
+
+    context, _form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+    )
+
+    assert context["trusted_mode"] is True
+    assert context["trusted_has_vote_serial"] is True
+    assert context["trusted_ballots"] == []
+    assert context["trusted_outcome"] == (
+        "The ATR ballot record does not satisfy the binding vote threshold for passing."
+    )
+    assert context["email_context_votes"] == []
+    assert context["email_context_summary"] == []
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_page_passes_non_empty_authoritative_ballot_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.release_policy = SimpleNamespace(vote_mode=sql.VoteMode.TRUSTED)
+    release.current_vote_seq = 7
+    ballot = sql.BallotPaper(
+        release_key="project-1.0.0",
+        vote_seq=7,
+        vote_round=None,
+        voter_asf_uid="voter",
+        voter_fullname="Voter",
+        choice=sql.VoteChoice.YES,
+        comment="",
+        is_binding_at_cast=False,
+        revision_number_at_cast="00001",
+        receipt_message_id="receipt@apache.org",
+        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+    )
+    ballots_for_resolution = mock.AsyncMock(return_value=[ballot])
+
+    context, _form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+        ballots_for_resolution=ballots_for_resolution,
+    )
+
+    assert context["trusted_ballots"] == [
+        resolve.TrustedBallotRow(
+            cast_at="2026-01-02 03:04 UTC",
+            choice="+1",
+            is_binding=True,
+            receipt_message_id="receipt@apache.org",
+            receipt_url=(
+                "https://lists.apache.org/api/source.lua?"
+                "id=%3Creceipt@apache.org%3E&listid=%3Cdev.project.apache.org%3E"
+            ),
+            status_label="Binding",
+            voter_asf_uid="voter",
+            voter_fullname="Voter",
+        )
+    ]
+    ballots_for_resolution.assert_awaited_once_with("project-1.0.0", 7)
 
 
 @pytest.mark.asyncio
@@ -1058,6 +1259,7 @@ async def _render_standard_resolve_page(
     details_error: Exception | None = None,
     release: SimpleNamespace | None = None,
     ballot_receipt_message_ids: mock.AsyncMock | None = None,
+    ballots_for_resolution: mock.AsyncMock | None = None,
 ) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
     release = release or _candidate_release()
     session = SimpleNamespace(
@@ -1071,8 +1273,8 @@ async def _render_standard_resolve_page(
     vote_details = mock.AsyncMock()
     form_render = mock.AsyncMock(return_value="FORM")
     ballot_receipt_message_ids = ballot_receipt_message_ids or mock.AsyncMock(return_value=set())
-    ballots_for_resolution = mock.AsyncMock(return_value=[])
-    trusted_ballot_summary = mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
+    ballots_for_resolution = ballots_for_resolution or mock.AsyncMock(return_value=[])
+    is_binding_for_release = mock.AsyncMock(return_value=(True, "Project"))
 
     if archive_error is not None:
         archive_lookup.side_effect = archive_error
@@ -1107,10 +1309,10 @@ async def _render_standard_resolve_page(
     monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: True)
     monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
     monkeypatch.setattr(resolve.interaction, "ballots_for_resolution", ballots_for_resolution)
-    monkeypatch.setattr(resolve.interaction, "trusted_ballot_summary", trusted_ballot_summary)
     monkeypatch.setattr(resolve.storage, "write", _write_context)
     monkeypatch.setattr(resolve.tabulate, "vote_committee", vote_committee)
     monkeypatch.setattr(resolve.tabulate, "vote_details", vote_details)
+    monkeypatch.setattr(resolve.user, "is_binding_for_release", is_binding_for_release)
     monkeypatch.setattr(resolve.atr.form, "render", form_render)
     monkeypatch.setattr(resolve.template, "render", _template_render)
 

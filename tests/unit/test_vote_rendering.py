@@ -33,6 +33,7 @@ import atr.htm as htm
 import atr.models.results as results
 import atr.models.sql as sql
 import atr.sessions as sessions
+import atr.shared as shared
 
 
 @pytest.fixture
@@ -272,7 +273,7 @@ async def test_latest_ballot_for_voter_uses_highest_id_not_timestamp(sqlite_sess
 
 
 def test_message_id_source_archive_url_encodes_message_id_and_listid() -> None:
-    url = vote._message_id_source_archive_url(
+    url = shared.vote.message_id_source_archive_url(
         "CAA9ykM+bMPNk=BOF@apache.org",
         "user-tests@tooling.apache.org",
     )

@@ -15,10 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import urllib.parse
 from typing import Literal
 
 import atr.form as form
 import atr.models.sql as sql
+
+
+def message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
+    list_id = vote_recipient.replace("@", ".")
+    query = urllib.parse.urlencode(
+        {"id": f"<{message_id}>", "listid": f"<{list_id}>"},
+        quote_via=urllib.parse.quote,
+        safe="@",
+    )
+    return f"https://lists.apache.org/api/source.lua?{query}"
 
 
 class CastVoteForm(form.Form):

@@ -13,9 +13,47 @@
   <h1>Resolve vote for {{ release.short_display_name }}</h1>
 
   {% if trusted_mode %}
-    <h2>Authoritative trusted ballots</h2>
-    <p>Trusted votes are resolved from ATR ballot records. Email tabulation below is non-authoritative context only.</p>
-    {% if trusted_ballot_count > 0 %}
+    <h2>Authoritative votes</h2>
+    <p>
+      Trusted votes are resolved from ATR ballot records.
+    </p>
+    {% if not trusted_has_vote_serial %}
+      <p>Trusted ballots are unavailable until the current vote serial is known.</p>
+    {% elif trusted_ballots %}
+      <h3>ATR votes</h3>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>ASF UID</th>
+            <th>Name</th>
+            <th class="text-center">Vote</th>
+            <th class="text-center">Status</th>
+            <th>Cast at</th>
+            <th>Receipt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ballot in trusted_ballots %}
+            <tr>
+              <td class="atr-nowrap">{{ ballot.voter_asf_uid }}</td>
+              <td class="atr-nowrap">{{ ballot.voter_fullname }}</td>
+              <td class="atr-nowrap text-center {% if ballot.choice == '+1' %}atr-green{% elif ballot.choice == '-1' %}atr-red{% endif %}">
+                {{ ballot.choice }}
+              </td>
+              <td class="atr-nowrap text-center {% if ballot.is_binding %}fw-bold{% endif %}">{{ ballot.status_label }}</td>
+              <td class="atr-nowrap">{{ ballot.cast_at }}</td>
+              <td class="atr-nowrap">
+                {% if ballot.receipt_url %}
+                  <a href="{{ ballot.receipt_url }}">Link</a>
+                {% else %}
+                  {{ ballot.receipt_message_id }}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h3>ATR summary</h3>
       <table class="table table-striped">
         <thead>
           <tr>
@@ -43,20 +81,76 @@
           </tr>
         </tbody>
       </table>
-    {% elif release.current_vote_seq is none %}
-      <p>No trusted vote serial is active yet.</p>
+      <p>{{ trusted_outcome }}</p>
     {% else %}
-      <p>No trusted ballots were found for the current vote serial.</p>
+      <p>No ATR ballots have been recorded for the current vote serial.</p>
     {% endif %}
-    <h2>Email thread context</h2>
+    <h2>Informative votes</h2>
+    <p>
+      Mailing list votes are shown for context only in trusted mode. In trusted mode, votes sent from committee members to the mailing list directly are never counted as {{ binding_label.lower() }} votes. Any {{ binding_label.lower() }} votes are in the ATR ballots section above.
+    </p>
+    {% if email_context_votes %}
+      <h3>Mailing list votes</h3>
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>ASF UID or email</th>
+            <th>Name</th>
+            <th class="text-center">Vote</th>
+            <th class="text-center">Status</th>
+            <th class="text-center">Message</th>
+            <th>Quotation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for vote_detail in email_context_votes %}
+            <tr>
+              <td class="atr-nowrap">{{ vote_detail.asf_uid_or_email }}</td>
+              <td class="atr-nowrap">{{ vote_detail.name }}</td>
+              <td class="atr-nowrap text-center {% if vote_detail.vote == '+1' %}atr-green{% elif vote_detail.vote == '-1' %}atr-red{% endif %}">
+                {{ vote_detail.vote }}
+              </td>
+              <td class="atr-nowrap text-center">{{ vote_detail.status_label }}</td>
+              <td class="atr-nowrap text-center">
+                <a href="{{ vote_detail.link_url }}">Link</a>
+              </td>
+              <td>{{ vote_detail.quotation }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if email_context_summary %}
+        <h3>Mailing list summary</h3>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>Email category</th>
+              <th>+1</th>
+              <th>-1</th>
+              <th>0</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in email_context_summary %}
+              <tr>
+                <td>{{ row.label }}</td>
+                <td>{{ row.yes }}</td>
+                <td>{{ row.no }}</td>
+                <td>{{ row.abstain }}</td>
+                <td>{{ row.total }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    {% elif fetch_error %}
+      <div class="alert alert-warning">{{ fetch_error }}</div>
+    {% else %}
+      <p>No email context has been tabulated yet.</p>
+    {% endif %}
   {% else %}
     <h2>Tabulated votes</h2>
-  {% endif %}
-  {% if trusted_mode %}
-    <p>
-      ATR can still show email thread context when the vote thread is available. This context is useful for review, but the trusted outcome is calculated from ATR ballot records. Votes sent from committee members to the mailing list directly are never counted as {{ binding_label.lower() }} votes.
-    </p>
-  {% else %}
     <p>
       This page attempts to automatically tabulate votes from
       {% if archive_url %}
@@ -66,88 +160,74 @@
       {% endif %}
       for you. It is not always possible to parse the votes accurately, so you should check the results carefully. <strong>Do not use this page to decide how to resolve the vote without manual review.</strong>
     </p>
-  {% endif %}
-  {% if tabulated_votes %}
-    <table class="table table-striped">
-      <thead>
-        <tr>
-          <th>ASF UID or email</th>
-          <th>Name</th>
-          <th class="text-center">Vote</th>
-          <th class="text-center">Status</th>
-          <th class="text-center">Link</th>
-          <th>Quotation</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for asf_uid, vote_detail in tabulated_votes.items() %}
-          <tr>
-            <td class="atr-nowrap">{{ vote_detail.asf_uid_or_email }}</td>
-            <td class="atr-nowrap">{{ vote_detail.name }}</td>
-            <td class="atr-nowrap text-center {% if (not trusted_mode) and vote_detail.status.value == 'Binding' %}fw-bold{% endif %} {% if vote_detail.vote.value == 'Yes' %}atr-green{% elif vote_detail.vote.value == 'No' %}atr-red{% endif %}">
-              {{ vote_detail.vote.value }}
-            </td>
-            <td class="atr-nowrap text-center {% if (not trusted_mode) and vote_detail.status.value == 'Binding' %}fw-bold{% endif %}">
-              {% if trusted_mode and vote_detail.status.value == 'Binding' %}
-                Would be {{ binding_label.lower() }} in ATR
-              {% elif trusted_mode and (vote_detail.status.value == 'Committer' or vote_detail.status.value == 'Contributor') %}
-                Would be {{ non_binding_label.lower() }} in ATR
-              {% elif vote_detail.status.value == 'Binding' %}
-                {{ binding_label }}
-              {% else %}
-                {{ vote_detail.status.value }}
-              {% endif %}
-            </td>
-            <td class="atr-nowrap text-center">
-              <a href="https://lists.apache.org/thread/{{ vote_detail.asf_eid }}"
-                 target="_blank">Email</a>
-            </td>
-            <td>{{ vote_detail.quotation }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if summary %}
-      <h2>{% if trusted_mode %}Email context summary{% else %}Vote summary{% endif %}</h2>
+    {% if tabulated_votes %}
       <table class="table table-striped">
         <thead>
           <tr>
-            <th>Vote type</th>
-            <th>Yes</th>
-            <th>No</th>
-            <th>Abstain</th>
-            <th>Total</th>
+            <th>ASF UID or email</th>
+            <th>Name</th>
+            <th class="text-center">Vote</th>
+            <th class="text-center">Status</th>
+            <th class="text-center">Link</th>
+            <th>Quotation</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>{% if trusted_mode %}Would be {{ binding_label.lower() }} in ATR{% else %}{{ binding_label }} votes{% endif %}</td>
-            <td>{{ summary.binding_votes_yes }}</td>
-            <td>{{ summary.binding_votes_no }}</td>
-            <td>{{ summary.binding_votes_abstain }}</td>
-            <td>{{ summary.binding_votes }}</td>
-          </tr>
-          <tr>
-            <td>{% if trusted_mode %}Would be {{ non_binding_label.lower() }} in ATR{% else %}{{ non_binding_label }} votes{% endif %}</td>
-            <td>{{ summary.non_binding_votes_yes }}</td>
-            <td>{{ summary.non_binding_votes_no }}</td>
-            <td>{{ summary.non_binding_votes_abstain }}</td>
-            <td>{{ summary.non_binding_votes }}</td>
-          </tr>
-          <tr>
-            <td>Unknown votes</td>
-            <td>{{ summary.unknown_votes_yes }}</td>
-            <td>{{ summary.unknown_votes_no }}</td>
-            <td>{{ summary.unknown_votes_abstain }}</td>
-            <td>{{ summary.unknown_votes }}</td>
-          </tr>
+          {% for asf_uid, vote_detail in tabulated_votes.items() %}
+            <tr>
+              <td class="atr-nowrap">{{ vote_detail.asf_uid_or_email }}</td>
+              <td class="atr-nowrap">{{ vote_detail.name }}</td>
+              <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %} {% if vote_detail.vote.value == 'Yes' %}atr-green{% elif vote_detail.vote.value == 'No' %}atr-red{% endif %}">
+                {{ vote_detail.vote.value }}
+              </td>
+              <td class="atr-nowrap text-center {% if vote_detail.status.value == 'Binding' %}fw-bold{% endif %}">
+                {% if vote_detail.status.value == 'Binding' %}{{ binding_label }}{% else %}{{ vote_detail.status.value }}{% endif %}
+              </td>
+              <td class="atr-nowrap text-center">
+                <a href="https://lists.apache.org/thread/{{ vote_detail.asf_eid }}">Email</a>
+              </td>
+              <td>{{ vote_detail.quotation }}</td>
+            </tr>
+          {% endfor %}
         </tbody>
       </table>
-    {% endif %}
-    {% if trusted_mode %}
-      <h2>Email context outcome</h2>
-      <p>Email votes are not binding in trusted mode and do not determine the trusted outcome.</p>
-    {% else %}
+      {% if summary %}
+        <h2>Vote summary</h2>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>Vote type</th>
+              <th>Yes</th>
+              <th>No</th>
+              <th>Abstain</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ binding_label }} votes</td>
+              <td>{{ summary.binding_votes_yes }}</td>
+              <td>{{ summary.binding_votes_no }}</td>
+              <td>{{ summary.binding_votes_abstain }}</td>
+              <td>{{ summary.binding_votes }}</td>
+            </tr>
+            <tr>
+              <td>{{ non_binding_label }} votes</td>
+              <td>{{ summary.non_binding_votes_yes }}</td>
+              <td>{{ summary.non_binding_votes_no }}</td>
+              <td>{{ summary.non_binding_votes_abstain }}</td>
+              <td>{{ summary.non_binding_votes }}</td>
+            </tr>
+            <tr>
+              <td>Unknown votes</td>
+              <td>{{ summary.unknown_votes_yes }}</td>
+              <td>{{ summary.unknown_votes_no }}</td>
+              <td>{{ summary.unknown_votes_abstain }}</td>
+              <td>{{ summary.unknown_votes }}</td>
+            </tr>
+          </tbody>
+        </table>
+      {% endif %}
       <h2>Vote outcome</h2>
       <p>
         {% if outcome %}
@@ -156,11 +236,11 @@
           No outcome yet.
         {% endif %}
       </p>
+    {% elif fetch_error %}
+      <div class="alert alert-danger">{{ fetch_error }}</div>
+    {% else %}
+      <p>No votes tabulated yet.</p>
     {% endif %}
-  {% elif fetch_error %}
-    <div class="alert alert-danger">{{ fetch_error }}</div>
-  {% else %}
-    <p>No votes tabulated yet.</p>
   {% endif %}
   {% if resolve_form %}
     <h2>Resolve vote</h2>

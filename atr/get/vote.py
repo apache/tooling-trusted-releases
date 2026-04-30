@@ -315,14 +315,6 @@ def _download_zip(release: sql.Release) -> htm.Element:
     ]
 
 
-def _format_utc(timestamp: datetime.datetime) -> str:
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=datetime.UTC)
-    else:
-        timestamp = timestamp.astimezone(datetime.UTC)
-    return timestamp.strftime("%Y-%m-%d %H:%M UTC")
-
-
 def _format_vote_end(vote_end: datetime.datetime) -> str:
     now = datetime.datetime.now(datetime.UTC)
     timestamp = vote_end.strftime("%a %Y-%m-%d at %H:%M UTC")
@@ -367,16 +359,6 @@ def _is_podling_round_two(release: sql.Release) -> bool:
     # We should deduplicate this
     committee = release.committee
     return (committee is not None) and committee.is_podling and (release.podling_thread_id is not None)
-
-
-def _message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
-    list_id = vote_recipient.replace("@", ".")
-    query = urllib.parse.urlencode(
-        {"id": f"<{message_id}>", "listid": f"<{list_id}>"},
-        quote_via=urllib.parse.quote,
-        safe="@",
-    )
-    return f"https://lists.apache.org/api/source.lua?{query}"
 
 
 def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str, vote_round: int | None) -> None:
@@ -805,12 +787,12 @@ def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: st
 
 
 def _trusted_vote_status(latest_ballot: sql.BallotPaper, vote_recipient: str) -> htm.Element:
-    receipt_archive_url = _message_id_source_archive_url(latest_ballot.receipt_message_id, vote_recipient)
+    receipt_archive_url = shared.vote.message_id_source_archive_url(latest_ballot.receipt_message_id, vote_recipient)
     return htm.div(".card.mb-3")[
         htm.div(".card-header.bg-light")["You already cast a vote"],
         htm.div(".card-body")[
             htm.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]],
-            htm.p(".mb-2")["Recorded: ", _format_utc(latest_ballot.created)],
+            htm.p(".mb-2")["Recorded: ", resolve.format_utc(latest_ballot.created)],
             htm.p(".mb-0")[
                 "Receipt message ID: ",
                 htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[

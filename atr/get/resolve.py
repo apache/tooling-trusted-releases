@@ -15,6 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import dataclasses
+import datetime
+from collections.abc import Sequence
 from typing import Literal
 
 import htpy
@@ -24,6 +27,7 @@ import atr.db.interaction as interaction
 import atr.form
 import atr.htm as htm
 import atr.log as log
+import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -34,6 +38,45 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+
+@dataclasses.dataclass(frozen=True)
+class EmailContextRow:
+    asf_uid_or_email: str
+    link_url: str
+    name: str
+    quotation: str
+    status_label: str
+    vote: str
+
+
+@dataclasses.dataclass(frozen=True)
+class TrustedBallotRow:
+    cast_at: str
+    choice: str
+    is_binding: bool
+    receipt_message_id: str
+    receipt_url: str | None
+    status_label: str
+    voter_asf_uid: str
+    voter_fullname: str
+
+
+@dataclasses.dataclass(frozen=True)
+class VoteCountRow:
+    abstain: int
+    label: str
+    no: int
+    total: int
+    yes: int
+
+
+def format_utc(timestamp: datetime.datetime) -> str:
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=datetime.UTC)
+    else:
+        timestamp = timestamp.astimezone(datetime.UTC)
+    return timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
 
 @get.typed
@@ -103,26 +146,33 @@ async def selected(  # noqa: C901
     bypass_active = interaction.vote_duration_bypass()
     vote_end = interaction.vote_end_get(latest_vote_task)
     is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
-    trusted_ballot_count = 0
+    vote_round: int | None = None
+    if (release.committee is not None) and release.committee.is_podling:
+        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    binding_label, non_binding_label = user.binding_terminology(vote_round)
+    vote_seq = release.current_vote_seq
+    trusted_ballot_rows: list[TrustedBallotRow] = []
+    trusted_has_vote_serial = vote_seq is not None
+    trusted_outcome = ""
     trusted_summary = None
     trusted_passed = False
-    if is_trusted_mode and (release.current_vote_seq is not None):
-        trusted_ballots = await interaction.ballots_for_resolution(release.key, release.current_vote_seq)
-        trusted_ballot_count = len(trusted_ballots)
-        trusted_summary = await interaction.trusted_ballot_summary(release, trusted_ballots)
+    vote_recipient = interaction.task_recipient_get(latest_vote_task) if (latest_vote_task is not None) else None
+    if is_trusted_mode and (vote_seq is not None):
+        trusted_ballots = await interaction.ballots_for_resolution(release.key, vote_seq)
+        trusted_ballot_rows, trusted_summary = await _trusted_ballot_rows_and_summary(
+            release, trusted_ballots, vote_recipient, vote_round
+        )
         trusted_passed = tabulate.binding_vote_passes(
             trusted_summary.binding_votes_yes, trusted_summary.binding_votes_no
         )
+    email_context_votes = _email_context_rows(details.votes) if (details is not None) else []
+    email_context_summary = _email_context_summary_rows(details.votes) if (details is not None) else []
 
     defaults: dict[str, object] = {
         "vote_mode": release.effective_vote_mode,
-        "vote_seq": release.current_vote_seq,
+        "vote_seq": vote_seq,
     }
     if trusted_summary is not None:
-        vote_round: int | None = None
-        if (release.committee is not None) and release.committee.is_podling:
-            vote_round = 2 if (release.podling_thread_id is not None) else 1
-        binding_label, non_binding_label = user.binding_terminology(vote_round)
         defaults["email_body"] = tabulate.trusted_vote_resolution(
             release,
             trusted_summary,
@@ -133,11 +183,7 @@ async def selected(  # noqa: C901
             binding_label,
             non_binding_label,
         )
-    elif (committee is not None) and (details is not None) and (thread_id is not None):
-        vote_round = None
-        if (release.committee is not None) and release.committee.is_podling:
-            vote_round = 2 if (release.podling_thread_id is not None) else 1
-        binding_label, non_binding_label = user.binding_terminology(vote_round)
+    elif (not is_trusted_mode) and (committee is not None) and (details is not None) and (thread_id is not None):
         defaults["email_body"] = tabulate.vote_resolution(
             committee,
             release,
@@ -160,10 +206,8 @@ async def selected(  # noqa: C901
             details.summary["binding_votes_yes"], details.summary["binding_votes_no"]
         )
 
-    vote_round = None
-    if (release.committee is not None) and release.committee.is_podling:
-        vote_round = 2 if (release.podling_thread_id is not None) else 1
-    binding_label, non_binding_label = user.binding_terminology(vote_round)
+    if trusted_summary is not None:
+        trusted_outcome = _trusted_outcome(trusted_summary, binding_label)
 
     submit_label = "Resolve vote"
     trusted_duration_blocks_result = is_trusted_mode and (vote_end is not None) and (not pass_fail_allowed)
@@ -220,7 +264,11 @@ async def selected(  # noqa: C901
         resolve_form=resolve_form,
         fetch_error=fetch_error,
         archive_url=archive_url,
-        trusted_ballot_count=trusted_ballot_count,
+        email_context_summary=email_context_summary,
+        email_context_votes=email_context_votes,
+        trusted_ballots=trusted_ballot_rows,
+        trusted_has_vote_serial=trusted_has_vote_serial,
+        trusted_outcome=trusted_outcome,
         trusted_summary=trusted_summary,
         trusted_mode=is_trusted_mode,
         vote_end=vote_end,
@@ -238,6 +286,71 @@ def _archive_lookup_error() -> str:
     )
 
 
+def _email_context_rows(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> list[EmailContextRow]:
+    return [
+        EmailContextRow(
+            asf_uid_or_email=vote_detail.asf_uid_or_email,
+            link_url=f"https://lists.apache.org/thread/{vote_detail.asf_eid}",
+            name=vote_detail.name,
+            quotation=vote_detail.quotation,
+            status_label=_email_context_status_label(vote_detail.status),
+            vote=_email_context_vote_label(vote_detail.vote),
+        )
+        for vote_detail in tabulated_votes.values()
+    ]
+
+
+def _email_context_status_label(status: models.tabulate.VoteStatus) -> str:
+    match status:
+        case models.tabulate.VoteStatus.BINDING:
+            return "Email from PMC member"
+        case models.tabulate.VoteStatus.COMMITTER:
+            return "Email from committer"
+        case models.tabulate.VoteStatus.CONTRIBUTOR:
+            return "Email from contributor"
+        case models.tabulate.VoteStatus.UNKNOWN:
+            return "Unknown email"
+
+
+def _email_context_vote_label(vote: models.tabulate.Vote) -> str:
+    match vote:
+        case models.tabulate.Vote.YES:
+            return "+1"
+        case models.tabulate.Vote.NO:
+            return "-1"
+        case models.tabulate.Vote.ABSTAIN:
+            return "0"
+        case models.tabulate.Vote.UNKNOWN:
+            return "?"
+
+
+def _email_context_summary_rows(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> list[VoteCountRow]:
+    counts = {status: [0, 0, 0, 0] for status in models.tabulate.VoteStatus}
+    for vote_detail in tabulated_votes.values():
+        count = counts[vote_detail.status]
+        count[3] += 1
+        match vote_detail.vote:
+            case models.tabulate.Vote.YES:
+                count[0] += 1
+            case models.tabulate.Vote.NO:
+                count[1] += 1
+            case models.tabulate.Vote.ABSTAIN:
+                count[2] += 1
+            case models.tabulate.Vote.UNKNOWN:
+                pass
+    return [
+        VoteCountRow(
+            abstain=count[2],
+            label=_email_context_status_label(status),
+            no=count[1],
+            total=count[3],
+            yes=count[0],
+        )
+        for status, count in counts.items()
+        if count[3] > 0
+    ]
+
+
 def _tabulation_error(error: util.FetchError | ValueError) -> str:
     if isinstance(error, util.FetchError):
         return (
@@ -249,3 +362,66 @@ def _tabulation_error(error: util.FetchError | ValueError) -> str:
         "ATR could not tabulate the archived vote thread automatically. "
         "Please review the vote manually and continue below."
     )
+
+
+async def _trusted_ballot_rows_and_summary(
+    release: sql.Release,
+    ballots: Sequence[sql.BallotPaper],
+    vote_recipient: str | None,
+    expected_vote_round: int | None,
+) -> tuple[list[TrustedBallotRow], interaction.TrustedVoteSummary]:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    rows: list[TrustedBallotRow] = []
+    summary = interaction.TrustedVoteSummary()
+    for ballot in ballots:
+        if ballot.vote_round != expected_vote_round:
+            raise ValueError("Trusted ballot vote round does not match the active vote round")
+        is_binding, _binding_committee = await user.is_binding_for_release(
+            release.committee,
+            ballot.voter_asf_uid,
+            ballot.vote_round,
+        )
+        _trusted_summary_add(summary, ballot.choice, is_binding)
+        binding_label, non_binding_label = user.binding_terminology(ballot.vote_round)
+        receipt_url = None
+        if vote_recipient is not None:
+            receipt_url = shared.vote.message_id_source_archive_url(ballot.receipt_message_id, vote_recipient)
+        rows.append(
+            TrustedBallotRow(
+                cast_at=format_utc(ballot.created),
+                choice=ballot.choice.value,
+                is_binding=is_binding,
+                receipt_message_id=ballot.receipt_message_id,
+                receipt_url=receipt_url,
+                status_label=binding_label if is_binding else non_binding_label,
+                voter_asf_uid=ballot.voter_asf_uid,
+                voter_fullname=ballot.voter_fullname,
+            )
+        )
+    return rows, summary
+
+
+def _trusted_outcome(summary: interaction.TrustedVoteSummary, binding_label: str) -> str:
+    if tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no):
+        return f"The ATR ballot record satisfies the {binding_label.lower()} vote threshold for passing."
+    return f"The ATR ballot record does not satisfy the {binding_label.lower()} vote threshold for passing."
+
+
+def _trusted_summary_add(summary: interaction.TrustedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:
+    match choice:
+        case sql.VoteChoice.YES:
+            if is_binding:
+                summary.binding_votes_yes += 1
+            else:
+                summary.non_binding_votes_yes += 1
+        case sql.VoteChoice.ABSTAIN:
+            if is_binding:
+                summary.binding_votes_abstain += 1
+            else:
+                summary.non_binding_votes_abstain += 1
+        case sql.VoteChoice.NO:
+            if is_binding:
+                summary.binding_votes_no += 1
+            else:
+                summary.non_binding_votes_no += 1
