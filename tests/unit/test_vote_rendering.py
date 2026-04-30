@@ -59,6 +59,63 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
 
 
 @pytest.mark.asyncio
+async def test_ballot_receipt_message_ids_returns_all_receipts_for_vote(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        receipt_one = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.YES,
+            receipt_message_id="receipt-one@apache.org",
+        )
+        receipt_two = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.NO,
+            receipt_message_id="receipt-two@apache.org",
+        )
+        receipt_other_voter = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="someone",
+            choice=sql.VoteChoice.ABSTAIN,
+            receipt_message_id="receipt-other-voter@apache.org",
+        )
+        empty_receipt = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="empty",
+            choice=sql.VoteChoice.ABSTAIN,
+            receipt_message_id="",
+        )
+        other_seq = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=2,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.ABSTAIN,
+            receipt_message_id="receipt-other-seq@apache.org",
+        )
+        other_release = _ballot(
+            release_key="other-1.0.0",
+            vote_seq=1,
+            voter_asf_uid="voter",
+            choice=sql.VoteChoice.ABSTAIN,
+            receipt_message_id="receipt-other-release@apache.org",
+        )
+        data.add_all([receipt_one, receipt_two, receipt_other_voter, empty_receipt, other_seq, other_release])
+        await data.commit()
+
+        found = await interaction.ballot_receipt_message_ids("project-1.0.0", 1, data)
+
+    assert found == {
+        "receipt-one@apache.org",
+        "receipt-two@apache.org",
+        "receipt-other-voter@apache.org",
+    }
+
+
+@pytest.mark.asyncio
 async def test_email_rendering_keeps_hidden_vote_defaults_and_no_trusted_state(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:

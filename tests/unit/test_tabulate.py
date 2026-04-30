@@ -17,10 +17,12 @@
 
 import contextlib
 import unittest.mock as mock
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
 
+import atr.models.tabulate as models_tabulate
 import atr.tabulate as tabulate
 
 
@@ -123,6 +125,65 @@ def test_vote_resolution_body_votes_formats_singular_binding_summary() -> None:
     assert body_lines[2] == "Of these binding votes, 8 were +1, 1 was -1, and 0 were 0."
 
 
+@pytest.mark.asyncio
+async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _thread_messages(
+        _thread_id: str, *, strict: bool = False
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        del strict
+        yield (
+            "archive-doc-receipt",
+            _vote_message(
+                from_raw="Receipt Voter <receipt@example.com>",
+                message_id="<receipt-mid@apache.org>",
+                archive_mid="archive-receipt",
+                epoch="1",
+            ),
+        )
+        yield (
+            "archive-doc-keep",
+            _vote_message(
+                from_raw="Other Voter <other@example.com>",
+                message_id="<other-mid@apache.org>",
+                archive_mid="archive-other",
+                epoch="2",
+            ),
+        )
+        yield (
+            "archive-doc-mid-only",
+            _vote_message(
+                from_raw="Archive Mid Voter <midonly@example.com>",
+                message_id="<different-mid@apache.org>",
+                archive_mid="receipt-mid@apache.org",
+                epoch="3",
+            ),
+        )
+
+    monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(
+        tabulate.util,
+        "email_to_uid_map",
+        mock.AsyncMock(
+            return_value={
+                "receipt@example.com": "receipt-voter",
+                "other@example.com": "other-voter",
+                "midonly@example.com": "mid-only-voter",
+            }
+        ),
+    )
+    monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
+
+    _start_unixtime, tabulated_votes = await tabulate.votes(
+        None,
+        "0123456789abcdef0123456789abcdef",
+        excluded_message_ids={"receipt-mid@apache.org"},
+    )
+
+    assert "receipt-voter" not in tabulated_votes
+    assert tabulated_votes["other-voter"].vote == models_tabulate.Vote.YES
+    assert tabulated_votes["mid-only-voter"].asf_eid == "receipt-mid@apache.org"
+
+
 def _make_release(*, committee: SimpleNamespace, podling_thread_id: str | None) -> SimpleNamespace:
     return SimpleNamespace(
         project=SimpleNamespace(committee=committee),
@@ -137,3 +198,24 @@ async def _mock_db_session(data: mock.MagicMock):
 
 def _unexpected_db_session() -> None:
     raise AssertionError("db.session should not be called")
+
+
+def _vote_message(
+    *,
+    from_raw: str,
+    message_id: str,
+    archive_mid: str,
+    epoch: str,
+) -> dict[str, object]:
+    return {
+        "from_raw": from_raw,
+        "list_raw": "dev.project.apache.org",
+        "cc": "",
+        "epoch": epoch,
+        "subject": "Re: [VOTE] Release project 1.0.0",
+        "body": "+1\n",
+        "message-id": message_id,
+        "mid": archive_mid,
+        "date": "2026-01-01T00:00:00Z",
+        "id": f"doc-{epoch}",
+    }

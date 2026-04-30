@@ -24,6 +24,7 @@ import pytest
 import quart
 import sqlalchemy.engine as engine
 
+import atr.api
 import atr.db.interaction as interaction
 import atr.get.manual as manual
 import atr.get.resolve as resolve
@@ -32,6 +33,7 @@ import atr.htm as htm
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.tabulate as models_tabulate
 import atr.sessions as sessions
 import atr.storage as storage
 import atr.storage.writers.vote as vote
@@ -163,6 +165,20 @@ async def test_cancelled_resolve_release_returns_to_draft() -> None:
     assert release.vote_resolved is None
     assert success == "Vote marked as cancelled"
     write_as.revision.create_revision_with_quarantine.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_email_resolve_page_does_not_query_ballot_receipts(monkeypatch: pytest.MonkeyPatch) -> None:
+    ballot_receipt_message_ids = mock.AsyncMock(return_value={"receipt@apache.org"})
+
+    _context, _form_render, _archive_lookup, _vote_committee, vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        ballot_receipt_message_ids=ballot_receipt_message_ids,
+    )
+
+    ballot_receipt_message_ids.assert_not_awaited()
+    vote_details.assert_awaited_once()
+    assert vote_details.await_args.kwargs["excluded_message_ids"] is None
 
 
 @pytest.mark.asyncio
@@ -670,6 +686,28 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
     assert queued_task.task_args["email_bcc"] == ["secretary@project.apache.org"]
 
 
+@pytest.mark.asyncio
+async def test_trusted_resolve_page_passes_receipt_exclusions_to_tabulation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.release_policy = SimpleNamespace(vote_mode=sql.VoteMode.TRUSTED)
+    release.current_vote_seq = 7
+    ballot_receipt_message_ids = mock.AsyncMock(return_value={"receipt@apache.org"})
+
+    _context, _form_render, _archive_lookup, _vote_committee, vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+        ballot_receipt_message_ids=ballot_receipt_message_ids,
+    )
+
+    ballot_receipt_message_ids.assert_awaited_once_with("project-1.0.0", 7)
+    vote_details.assert_awaited_once()
+    assert vote_details.await_args.kwargs["excluded_message_ids"] == {"receipt@apache.org"}
+
+
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
     """vote_end_get returns a UTC datetime for a valid VoteInitiate task."""
     task = _latest_vote_task()
@@ -723,6 +761,82 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
     assert interaction.vote_pass_fail_allowed(task) is True
 
 
+@pytest.mark.asyncio
+async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: pytest.MonkeyPatch) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.release_policy = SimpleNamespace(vote_mode=sql.VoteMode.TRUSTED)
+    release.current_vote_seq = 7
+    release.project_key = "project"
+
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    db_data = mock.MagicMock()
+    db_data.release = mock.MagicMock(return_value=query)
+
+    @contextlib.asynccontextmanager
+    async def _db_session():
+        yield db_data
+
+    archive_lookup = mock.AsyncMock(return_value="https://lists.apache.org/thread/0123456789abcdef0123456789abcdef")
+
+    @contextlib.asynccontextmanager
+    async def _write_context():
+        yield SimpleNamespace(
+            as_general_public=lambda: SimpleNamespace(
+                cache=SimpleNamespace(get_message_archive_url=archive_lookup),
+            ),
+        )
+
+    vote_committee = mock.AsyncMock(return_value=release.project.committee)
+    vote_details = mock.AsyncMock(
+        return_value=models_tabulate.VoteDetails(
+            start_unixtime=None,
+            votes={},
+            summary={},
+            passed=False,
+            outcome="",
+        )
+    )
+    ballot_receipt_message_ids = mock.AsyncMock(return_value={"receipt@apache.org"})
+
+    monkeypatch.setattr(atr.api.db, "session", _db_session)
+    monkeypatch.setattr(atr.api.storage, "write", _write_context)
+    monkeypatch.setattr(
+        atr.api.interaction,
+        "release_current_vote_task",
+        mock.AsyncMock(return_value=_latest_vote_task()),
+    )
+    monkeypatch.setattr(atr.api.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
+    monkeypatch.setattr(atr.api.tabulate, "vote_committee", vote_committee)
+    monkeypatch.setattr(atr.api.tabulate, "vote_details", vote_details)
+
+    response, status_code = await _api_vote_tabulate_handler()(
+        "vote/tabulate",
+        SimpleNamespace(project="project", version="1.0.0"),
+    )
+
+    assert status_code == 200
+    assert response["endpoint"] == "/vote/tabulate"
+    ballot_receipt_message_ids.assert_awaited_once_with("project-1.0.0", 7)
+    vote_details.assert_awaited_once()
+    assert vote_details.await_args.kwargs["excluded_message_ids"] == {"receipt@apache.org"}
+
+
+def _api_vote_tabulate_handler():
+    wrapper = atr.api.vote_tabulate.__wrapped__
+    if wrapper.__closure__ is None:
+        raise AssertionError("Expected api.vote_tabulate wrapper closure")
+    for name, cell in zip(wrapper.__code__.co_freevars, wrapper.__closure__):
+        if name == "func":
+            handler = cell.cell_contents
+            while hasattr(handler, "__wrapped__"):
+                handler = handler.__wrapped__
+            return handler
+    raise AssertionError("Could not find wrapped API handler")
+
+
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -755,6 +869,23 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         safe_latest_revision_number="00001",
         key="project-1.0.0",
     )
+
+
+def _empty_vote_summary() -> dict[str, int]:
+    return {
+        "binding_votes": 0,
+        "binding_votes_yes": 0,
+        "binding_votes_no": 0,
+        "binding_votes_abstain": 0,
+        "non_binding_votes": 0,
+        "non_binding_votes_yes": 0,
+        "non_binding_votes_no": 0,
+        "non_binding_votes_abstain": 0,
+        "unknown_votes": 0,
+        "unknown_votes_yes": 0,
+        "unknown_votes_no": 0,
+        "unknown_votes_abstain": 0,
+    }
 
 
 def _latest_vote_task() -> SimpleNamespace:
@@ -862,8 +993,10 @@ async def _render_standard_resolve_page(
     *,
     archive_error: Exception | None = None,
     details_error: Exception | None = None,
+    release: SimpleNamespace | None = None,
+    ballot_receipt_message_ids: mock.AsyncMock | None = None,
 ) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
-    release = _candidate_release()
+    release = release or _candidate_release()
     session = SimpleNamespace(
         uid="chair",
         fullname="Project Chair",
@@ -874,6 +1007,7 @@ async def _render_standard_resolve_page(
     vote_committee = mock.AsyncMock(return_value=release.project.committee)
     vote_details = mock.AsyncMock()
     form_render = mock.AsyncMock(return_value="FORM")
+    ballot_receipt_message_ids = ballot_receipt_message_ids or mock.AsyncMock(return_value=set())
 
     if archive_error is not None:
         archive_lookup.side_effect = archive_error
@@ -882,10 +1016,7 @@ async def _render_standard_resolve_page(
     else:
         vote_details.return_value = SimpleNamespace(
             votes={},
-            summary={
-                "binding_votes_yes": 0,
-                "binding_votes_no": 0,
-            },
+            summary=_empty_vote_summary(),
             passed=False,
             outcome="The vote failed.",
         )
@@ -909,6 +1040,7 @@ async def _render_standard_resolve_page(
     monkeypatch.setattr(resolve.interaction, "vote_duration_bypass", lambda: False)
     monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: None)
     monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: True)
+    monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
     monkeypatch.setattr(resolve.storage, "write", _write_context)
     monkeypatch.setattr(resolve.tabulate, "vote_committee", vote_committee)
     monkeypatch.setattr(resolve.tabulate, "vote_details", vote_details)

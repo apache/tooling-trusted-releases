@@ -1651,7 +1651,10 @@ async def vote_tabulate(
 
     thread_id = archive_url.split("/")[-1]
     committee = await tabulate.vote_committee(thread_id, release)
-    details = await tabulate.vote_details(committee, thread_id, release)
+    excluded_message_ids = None
+    if (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None):
+        excluded_message_ids = await interaction.ballot_receipt_message_ids(release.key, release.current_vote_seq)
+    details = await tabulate.vote_details(committee, thread_id, release, excluded_message_ids=excluded_message_ids)
     return models.api.VoteTabulateResults(
         endpoint="/vote/tabulate",
         details=details,

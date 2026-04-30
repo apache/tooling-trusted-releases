@@ -155,6 +155,24 @@ async def automated_release_signing_keys(caller_data: db.Session | None = None) 
         return result.scalars().all()
 
 
+async def ballot_receipt_message_ids(
+    release_key: str,
+    vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> set[str]:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.BallotPaper.receipt_message_id)
+            .where(sql.BallotPaper.release_key == release_key)
+            .where(sql.BallotPaper.vote_seq == vote_seq)
+            .where(via(sql.BallotPaper.receipt_message_id).is_not(None))
+            .where(sql.BallotPaper.receipt_message_id != "")
+        )
+        result = await data.execute(query)
+        return {message_id for message_id in result.scalars().all() if message_id}
+
+
 async def candidate_drafts(project: sql.Project) -> list[sql.Release]:
     """Get the candidate drafts for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT)

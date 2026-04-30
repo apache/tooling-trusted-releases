@@ -48,9 +48,13 @@ async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee 
 
 
 async def vote_details(
-    committee: sql.Committee | None, thread_id: str, release: sql.Release
+    committee: sql.Committee | None,
+    thread_id: str,
+    release: sql.Release,
+    *,
+    excluded_message_ids: set[str] | None = None,
 ) -> models.tabulate.VoteDetails:
-    start_unixtime, tabulated_votes = await votes(committee, thread_id)
+    start_unixtime, tabulated_votes = await votes(committee, thread_id, excluded_message_ids=excluded_message_ids)
     summary = vote_summary(tabulated_votes)
     passed, outcome = vote_outcome(release, start_unixtime, tabulated_votes)
     return models.tabulate.VoteDetails(
@@ -146,9 +150,16 @@ def vote_summary(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> dict[
 
 
 async def votes(  # noqa: C901
-    committee: sql.Committee | None, thread_id: str
+    committee: sql.Committee | None,
+    thread_id: str,
+    *,
+    excluded_message_ids: set[str] | None = None,
 ) -> tuple[int | None, dict[str, models.tabulate.VoteEmail]]:
     """Tabulate votes."""
+    excluded_message_ids_normalized = {
+        _message_id_normalize(message_id) for message_id in (excluded_message_ids or set()) if message_id
+    }
+
     start = time.perf_counter_ns()
     email_to_uid = await util.email_to_uid_map()
     end = time.perf_counter_ns()
@@ -160,10 +171,13 @@ async def votes(  # noqa: C901
     start_unixtime = None
     message_count = 0
     _validate_thread_id(thread_id)
-    async for mid, msg in util.thread_messages(thread_id, strict=True):
+    async for _archive_doc_id, msg in util.thread_messages(thread_id, strict=True):
         message_count += 1
         if message_count > MAX_THREAD_MESSAGES:
             raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
+        message_id = msg.get("message-id")
+        if isinstance(message_id, str) and (_message_id_normalize(message_id) in excluded_message_ids_normalized):
+            continue
         from_raw = msg.get("from_raw", "")
         list_raw = msg.get("list_raw", "")
         cc = msg.get("cc", "").split(",\n")
@@ -237,6 +251,10 @@ def _format_duration(duration_hours: float | int) -> str:
     if not parts:
         return "less than 1 minute"
     return " and ".join(parts)
+
+
+def _message_id_normalize(message_id: str) -> str:
+    return message_id.strip().removeprefix("<").removesuffix(">")
 
 
 def _name_from_raw(from_raw: str) -> str:
