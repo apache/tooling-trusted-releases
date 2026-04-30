@@ -35,7 +35,6 @@ import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
-import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -403,8 +402,6 @@ async def distribute_ssh_register(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.DistributionRecordResults, 200)
 async def distribution_record(
     _distribution_record: Literal["distribution/record"],
@@ -497,8 +494,6 @@ async def distribution_record_from_workflow(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.IgnoreAddResults, 200)
 async def ignore_add(
     _ignore_add: Literal["ignore/add"],
@@ -532,8 +527,6 @@ async def ignore_add(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.IgnoreDeleteResults, 200)
 async def ignore_delete(
     _ignore_delete: Literal["ignore/delete"],
@@ -612,8 +605,6 @@ async def jwt_create(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.KeyAddResults, 200)
 async def key_add(
     _key_add: Literal["key/add"],
@@ -655,8 +646,6 @@ async def key_add(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.KeyDeleteResults, 200)
 async def key_delete(
     _key_delete: Literal["key/delete"],
@@ -720,8 +709,6 @@ async def key_get(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.KeysUploadResults, 200)
 async def keys_upload(
     _keys_upload: Literal["keys/upload"],
@@ -852,8 +839,6 @@ async def policy_get(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.PolicyUpdateResults, 200)
 async def policy_update(
     _policy_update: Literal["policy/update"],
@@ -1143,8 +1128,6 @@ async def publisher_vote_resolve(
 @api.typed
 @rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseAnnounceResults, 201)
 async def release_announce(
     _release_announce: Literal["release/announce"],
@@ -1186,8 +1169,6 @@ async def release_announce(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseCreateResults, 201)
 async def release_create(
     _release_create: Literal["release/create"],
@@ -1218,8 +1199,6 @@ async def release_create(
 # TODO: Duplicates the below
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseDeleteResults, 200)
 async def release_delete(
     _release_delete: Literal["release/delete"],
@@ -1327,8 +1306,6 @@ async def release_revisions(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ReleaseUploadResults, 201)
 async def release_upload(
     _release_upload: Literal["release/upload"],
@@ -1420,8 +1397,6 @@ async def releases_list(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.SignatureProvenanceResults, 200)
 async def signature_provenance(
     _signature_provenance: Literal["signature/provenance"],
@@ -1495,8 +1470,6 @@ async def signature_provenance(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.SshKeyAddResults, 201)
 async def ssh_key_add(
     _ssh_key_add: Literal["ssh-key/add"],
@@ -1526,8 +1499,6 @@ async def ssh_key_add(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.SshKeyDeleteResults, 201)
 async def ssh_key_delete(
     _ssh_key_delete: Literal["ssh-key/delete"],
@@ -1622,8 +1593,6 @@ async def update_distribution_task_status(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.UserInfoResults, 200)
 async def user_info(
     _user_info: Literal["user/info"],
@@ -1689,8 +1658,7 @@ async def users_list(
 
 @api.typed
 @rate_limiter.rate_limit(60, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.VoteCastResults, 200)
 async def vote_cast(
     _vote_cast: Literal["vote/cast"],
@@ -1729,8 +1697,6 @@ async def vote_cast(
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.VoteResolveResults, 200)
 async def vote_resolve(
     _vote_resolve: Literal["vote/resolve"],
@@ -1773,8 +1739,6 @@ async def vote_resolve(
 @api.typed
 @rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.VoteStartResults, 201)
 async def vote_start(
     _vote_start: Literal["vote/start"],
@@ -1838,8 +1802,6 @@ async def vote_start(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.VoteTabulateResults, 200)
 async def vote_tabulate(
     _vote_tabulate: Literal["vote/tabulate"],

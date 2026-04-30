@@ -47,8 +47,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final, Literal
 
+import quart_schema
+
+import atr.jwtoken as jwtoken
+
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Coroutine
     from typing import Any
 
 
@@ -60,15 +64,27 @@ AUTH_LEVEL_ATTR: Final[str] = "_api_auth_level"
 VALID_LEVELS: Final[frozenset[AuthLevel]] = frozenset({"public", "bearer", "body_oidc", "pat"})
 
 
-def bearer[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Marker for routes authenticated by an ATR-issued Bearer JWT.
+def bearer[**P, R](
+    func: Callable[P, Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
+    """Require an ATR-issued Bearer JWT in the ``Authorization`` header.
 
-    PR 1: marker only. Handlers still declare ``@jwtoken.require`` and
-    ``@quart_schema.security_scheme([{"BearerAuth": []}])`` explicitly.
-    PR 2 folds both of those into this decorator and removes the duplicate
-    stack across the ~18 bearer endpoints.
+    Folds in two concerns that previously had to be declared separately
+    on every bearer endpoint:
+
+    1. ``@jwtoken.require`` — validates the JWT and populates
+       ``quart.g.jwt_claims`` so handlers can read the caller's identity
+       via ``_jwt_asf_uid()``.
+    2. ``@quart_schema.security_scheme([{"BearerAuth": []}])`` — advertises
+       the scheme in the generated OpenAPI document.
+
+    The auth-level marker is applied to the outermost wrapper so
+    :func:`atr.blueprints.api.typed` can read it back.
     """
-    return _mark("bearer", func)
+    wrapped = jwtoken.require(func)
+    wrapped = quart_schema.security_scheme([{"BearerAuth": []}])(wrapped)
+    _mark("bearer", wrapped)
+    return wrapped
 
 
 def body_oidc[F: Callable[..., Awaitable[Any]]](func: F) -> F:
