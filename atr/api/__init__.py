@@ -372,14 +372,16 @@ async def distribute_ssh_register(
         vars(data)["ssh_key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
-    payload, asf_uid, project, release = await interaction.trusted_jwt_for_dist(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    project, release = await interaction.trusted_release_for_payload(
+        ctx.asf_uid,
         data.asf_uid,
         interaction.TrustedProjectPhase(data.phase),
         data.project_key,
         data.version,
     )
+    asf_uid = data.asf_uid
+    payload = ctx.payload
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
@@ -457,9 +459,9 @@ async def distribution_record_from_workflow(
     Validates the caller is a Github workflow, triggered by ATR itself
     """
 
-    _payload, _asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    _project, release = await interaction.trusted_release_for_payload(
+        ctx.asf_uid,
         data.asf_uid,
         interaction.TrustedProjectPhase(data.phase),
         data.project,
@@ -867,8 +869,6 @@ async def policy_update(
 
 @api.typed
 @api.auth.bearer
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
 @quart_schema.validate_response(models.api.ProjectConfigResults, 200)
 async def project_config_upsert(
     _project_config: Literal["project/config"],
@@ -972,17 +972,18 @@ async def publisher_distribution_record(
 
     Record a distribution with a corroborating Trusted Publisher JWT.
     """
+    ctx = api.auth.trusted_publisher_context()
     try:
-        _payload, asf_uid, project = await interaction.trusted_jwt(
-            data.publisher,
-            data.jwt,
+        asf_uid, project = await interaction.trusted_project_for_payload(
+            ctx.payload,
+            ctx.asf_uid,
             interaction.TrustedProjectPhase.FINISH,
         )
     except interaction.ReleasePolicyNotFoundError:
         # TODO: We could perform a more advanced query with multiple in_ statements
-        _payload, asf_uid, project = await interaction.trusted_jwt(
-            data.publisher,
-            data.jwt,
+        asf_uid, project = await interaction.trusted_project_for_payload(
+            ctx.payload,
+            ctx.asf_uid,
             interaction.TrustedProjectPhase.COMPOSE,
         )
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
@@ -1025,9 +1026,10 @@ async def publisher_release_announce(
 
     Announce a release with a corroborating Trusted Publisher JWT.
     """
-    _payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
         interaction.TrustedProjectPhase.FINISH,
     )
     try:
@@ -1068,9 +1070,13 @@ async def publisher_ssh_register(
         vars(data)["ssh_key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
-    payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher, data.jwt, interaction.TrustedProjectPhase.COMPOSE
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
+        interaction.TrustedProjectPhase.COMPOSE,
     )
+    payload = ctx.payload
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -1100,9 +1106,10 @@ async def publisher_vote_resolve(
     Resolve a vote with a corroborating Trusted Publisher JWT.
     """
     # TODO: Need to be able to resolve and make the release immutable
-    _payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
         interaction.TrustedProjectPhase.VOTE,
     )
     try:
@@ -1571,9 +1578,9 @@ async def update_distribution_task_status(
     Update the status of a distribution task
     Validates the caller is a Github workflow, triggered by ATR itself
     """
-    _payload, asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    ctx = api.auth.trusted_publisher_context()
     # If UID is not none, this is a non-ATR workflow, which is unsupported.
-    if asf_uid is not None:
+    if ctx.asf_uid is not None:
         raise exceptions.Forbidden("This endpoint may only be called by ATR")
     async with db.session() as db_data:
         status = await db_data.workflow_status(

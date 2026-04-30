@@ -15,38 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Explicit authentication level decorators for API endpoints.
-
-Every route decorated with :func:`atr.blueprints.api.typed` must also be
-decorated with exactly one of the auth level decorators in this module.
-The :func:`atr.blueprints.api.typed` decorator enforces this at import
-time; forgetting the decorator raises :class:`TypeError` and the server
-will not start.
-
-Usage::
-
-    @api.typed
-    @api.auth.bearer
-    @quart_schema.validate_response(models.api.FooResults, 200)
-    async def foo(...):
-        ...
-
-Decorator order: ``@api.typed`` on the outside, then ``@api.auth.<level>``,
-then any ``@quart_schema`` or ``@rate_limiter`` decorators closer to the
-function.
-
-The levels are:
-
-- ``public``     No authentication. Route may be called by anyone.
-- ``bearer``     ATR-issued JWT in an ``Authorization: Bearer ...`` header.
-- ``body_oidc``  Trusted Publisher OIDC token carried in the request body.
-- ``pat``        Personal Access Token in the request body, exchanged for a JWT.
-"""
+"""Authentication level decorators for API endpoints. See #1169."""
 
 from __future__ import annotations
 
+import dataclasses
+import functools
 from typing import TYPE_CHECKING, Final, Literal
 
+import asfquart.base as base
+import jwt as pyjwt
+import pydantic
+import quart
 import quart_schema
 
 import atr.jwtoken as jwtoken
@@ -55,82 +35,110 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Coroutine
     from typing import Any
 
+    import atr.models.github as github
+
 
 AuthLevel = Literal["public", "bearer", "body_oidc", "pat"]
 
-# Public name so external tests and the typed() enforcer agree.
 AUTH_LEVEL_ATTR: Final[str] = "_api_auth_level"
 
 VALID_LEVELS: Final[frozenset[AuthLevel]] = frozenset({"public", "bearer", "body_oidc", "pat"})
+
+_TP_CONTEXT_ATTR: Final[str] = "tp_context"
+
+
+@dataclasses.dataclass(frozen=True)
+class TrustedPublisherContext:
+    """Verified Trusted Publisher state exposed to body_oidc handlers."""
+
+    payload: github.TrustedPublisherPayload
+    asf_uid: str | None
+    publisher: str
 
 
 def bearer[**P, R](
     func: Callable[P, Coroutine[Any, Any, R]],
 ) -> Callable[P, Awaitable[R]]:
-    """Require an ATR-issued Bearer JWT in the ``Authorization`` header.
-
-    Folds in two concerns that previously had to be declared separately
-    on every bearer endpoint:
-
-    1. ``@jwtoken.require`` — validates the JWT and populates
-       ``quart.g.jwt_claims`` so handlers can read the caller's identity
-       via ``_jwt_asf_uid()``.
-    2. ``@quart_schema.security_scheme([{"BearerAuth": []}])`` — advertises
-       the scheme in the generated OpenAPI document.
-
-    The auth-level marker is applied to the outermost wrapper so
-    :func:`atr.blueprints.api.typed` can read it back.
-    """
+    """Require an ATR-issued Bearer JWT in the Authorization header."""
     wrapped = jwtoken.require(func)
     wrapped = quart_schema.security_scheme([{"BearerAuth": []}])(wrapped)
     _mark("bearer", wrapped)
     return wrapped
 
 
-def body_oidc[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Marker for routes authenticated by a Trusted Publisher OIDC token in the body.
+def body_oidc[**P, R](
+    func: Callable[P, Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
+    """Validate a Trusted Publisher OIDC token carried in the request body."""
 
-    PR 1: marker only. The handler still calls ``interaction.trusted_jwt(...)``
-    or ``interaction.validate_trusted_jwt(...)`` itself. PR 3 moves the
-    validation into the decorator.
-    """
-    return _mark("body_oidc", func)
+    @functools.wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        data = kwargs.get("data")
+        if data is None:
+            raise base.ASFQuartException(
+                "Trusted Publisher auth requires a validated request body",
+                errorcode=401,
+            )
+        publisher = getattr(data, "publisher", None)
+        jwt = getattr(data, "jwt", None)
+        if (not isinstance(publisher, str)) or (not isinstance(jwt, str)):
+            raise base.ASFQuartException(
+                "Trusted Publisher auth requires 'publisher' and 'jwt' string fields",
+                errorcode=401,
+            )
+
+        # Lazy import to match the project convention: atr.db.interaction
+        # pulls in much of the project, and other blueprint modules don't
+        # import it at top level either.
+        import atr.db.interaction as interaction
+
+        try:
+            payload, asf_uid = await interaction.validate_trusted_jwt(publisher, jwt)
+        except base.ASFQuartException:
+            # Already carries an HTTP status code (401 for credential
+            # failures, 502 for upstream failures); let it propagate.
+            raise
+        except (interaction.InteractionError, pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
+            # Credential-shaped failures: unsupported publisher, malformed
+            # or expired JWT, payload that doesn't match the expected
+            # TrustedPublisherPayload schema. All map to 401.
+            raise base.ASFQuartException(f"Trusted Publisher auth failed: {exc}", errorcode=401) from exc
+
+        quart.g.tp_context = TrustedPublisherContext(
+            payload=payload,
+            asf_uid=asf_uid,
+            publisher=publisher,
+        )
+        return await func(*args, **kwargs)
+
+    _mark("body_oidc", wrapper)
+    return wrapper
 
 
 def pat[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Marker for routes that accept a Personal Access Token in the body.
-
-    PR 1: marker only. Currently applies to ``jwt_create`` only, which
-    exchanges a PAT for an ATR-issued JWT. PR 3 may move the PAT validation
-    into the decorator once we have a second caller to design against.
-    """
+    """Marker for routes that accept a PAT in the body (jwt_create only)."""
     return _mark("pat", func)
 
 
 def public[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Mark an API route as public (no authentication required).
-
-    This is a marker only: it has no runtime effect. Its purpose is to
-    make "this route is intentionally public" a visible, grep-able,
-    diffable statement in the source, and to let the import-time enforcer
-    in ``typed()`` tell the difference between "intentionally public" and
-    "someone forgot to add an auth decorator".
-    """
+    """Marker for routes that require no authentication."""
     return _mark("public", func)
 
 
-def _mark[F: Callable[..., Any]](level: AuthLevel, func: F) -> F:
-    """Attach the auth-level sentinel to ``func``.
+def trusted_publisher_context() -> TrustedPublisherContext:
+    """Return the TrustedPublisherContext placed by @body_oidc on quart.g."""
+    ctx = getattr(quart.g, _TP_CONTEXT_ATTR, None)
+    if ctx is None:
+        raise RuntimeError("trusted_publisher_context() called outside a @api.auth.body_oidc handler")
+    return ctx
 
-    Raises TypeError if ``func`` has already been marked with a different
-    level (i.e. someone stacked two auth decorators).
-    """
+
+def _mark[F: Callable[..., Any]](level: AuthLevel, func: F) -> F:
+    """Attach the auth-level sentinel to func; reject re-marking with a different level."""
     existing = getattr(func, AUTH_LEVEL_ATTR, None)
     if (existing is not None) and (existing != level):
         raise TypeError(
-            f"{getattr(func, '__name__', func)!r}: cannot apply "
-            f"@api.auth.{level} on top of @api.auth.{existing}. "
-            "A route may declare exactly one auth level."
+            f"{getattr(func, '__name__', func)!r}: cannot apply @api.auth.{level} on top of @api.auth.{existing}"
         )
     setattr(func, AUTH_LEVEL_ATTR, level)
     return func
