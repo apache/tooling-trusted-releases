@@ -234,6 +234,25 @@ async def has_blocker_checks(
     return count > 0
 
 
+async def latest_ballot_for_voter(
+    release_key: str,
+    vote_seq: int,
+    voter_asf_uid: str,
+    caller_data: db.Session | None = None,
+) -> sql.BallotPaper | None:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.BallotPaper)
+            .where(sql.BallotPaper.release_key == release_key)
+            .where(sql.BallotPaper.vote_seq == vote_seq)
+            .where(sql.BallotPaper.voter_asf_uid == voter_asf_uid)
+            .order_by(via(sql.BallotPaper.id).desc())
+            .limit(1)
+        )
+        return (await data.execute(query)).scalar_one_or_none()
+
+
 async def latest_info(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:

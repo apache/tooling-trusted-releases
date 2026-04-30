@@ -197,6 +197,42 @@ async def selected(
     return await render_options_page(session, release, user_category, latest_vote_task)
 
 
+async def _append_cast_vote_form(
+    page: htm.Block,
+    release: sql.Release,
+    vote_widget: htm.Element,
+    *,
+    submit_disabled: bool = False,
+    submit_label: str = "Submit vote",
+    pre_submit: htm.Element | None = None,
+    skip: list[str] | None = None,
+) -> None:
+    defaults: dict[str, object] = {
+        "vote_seq": release.current_vote_seq,
+        "vote_mode": release.effective_vote_mode,
+    }
+    if (skip is None) or ("comment" not in skip):
+        defaults["comment"] = release.project.policy_vote_comment_template
+
+    vote_action_url = util.as_url(
+        post.vote.selected_post,
+        project_key=release.project.key,
+        version_key=release.version,
+    )
+    cast_vote_form = await form.render(
+        model_cls=shared.vote.CastVoteForm,
+        action=vote_action_url,
+        submit_label=submit_label,
+        form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
+        custom={"decision": vote_widget},
+        defaults=defaults,
+        submit_disabled=submit_disabled,
+        pre_submit=pre_submit,
+        skip=skip,
+    )
+    page.append(cast_vote_form)
+
+
 def _download_browse(release: sql.Release) -> htm.Element:
     browse_url = util.as_url(
         download.path_empty,
@@ -279,6 +315,14 @@ def _download_zip(release: sql.Release) -> htm.Element:
     ]
 
 
+def _format_utc(timestamp: datetime.datetime) -> str:
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=datetime.UTC)
+    else:
+        timestamp = timestamp.astimezone(datetime.UTC)
+    return timestamp.strftime("%Y-%m-%d %H:%M UTC")
+
+
 def _format_vote_end(vote_end: datetime.datetime) -> str:
     now = datetime.datetime.now(datetime.UTC)
     timestamp = vote_end.strftime("%a %Y-%m-%d at %H:%M UTC")
@@ -323,6 +367,32 @@ def _is_podling_round_two(release: sql.Release) -> bool:
     # We should deduplicate this
     committee = release.committee
     return (committee is not None) and committee.is_podling and (release.podling_thread_id is not None)
+
+
+def _message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
+    list_id = vote_recipient.replace("@", ".")
+    query = urllib.parse.urlencode(
+        {"id": f"<{message_id}>", "listid": f"<{list_id}>"},
+        quote_via=urllib.parse.quote,
+        safe="@",
+    )
+    return f"https://lists.apache.org/api/source.lua?{query}"
+
+
+def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str) -> None:
+    if is_binding:
+        page.p[
+            f"As a member of the {binding_committee} committee, your vote is ",
+            htpy.strong["binding"],
+            ".",
+        ]
+    else:
+        page.p[
+            f"You are not a member of the {binding_committee} committee. ",
+            "Your vote will be recorded as ",
+            htpy.strong["non-binding"],
+            " but is still valued by the community.",
+        ]
 
 
 def _render_checklist_card(page: htm.Block, release: sql.Release) -> None:
@@ -541,6 +611,64 @@ async def _render_section_vote(
         await _render_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
 
 
+async def _render_trusted_vote_authenticated(
+    page: htm.Block,
+    release: sql.Release,
+    session: web.Committer,
+    archive_url: str | None,
+    vote_recipient: str,
+    latest_vote_task: sql.Task | None,
+) -> None:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+
+    latest_ballot = None
+    if release.current_vote_seq is not None:
+        latest_ballot = await interaction.latest_ballot_for_voter(
+            release.key,
+            release.current_vote_seq,
+            session.uid,
+        )
+
+    vote_round = _vote_round(release)
+    is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
+    potency = "Binding" if is_binding else "Non-binding"
+    _render_binding_status(page, is_binding, binding_committee)
+
+    if latest_ballot is not None:
+        page.append(_trusted_vote_status(latest_ballot, vote_recipient))
+        page.p[
+            "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
+        ]
+
+    task_mid = interaction.task_mid_get(latest_vote_task) if latest_vote_task is not None else None
+    casting_enabled = (release.current_vote_seq is not None) and (task_mid is not None)
+    vote_widget = _vote_decision_widget(potency, disabled=not casting_enabled)
+    submit_label = "Resubmit vote" if (latest_ballot is not None) else "Submit vote"
+
+    if casting_enabled:
+        _render_vote_delivery(
+            page,
+            archive_url,
+            vote_recipient,
+            trusted_vote=True,
+            recast=latest_ballot is not None,
+        )
+        await _append_cast_vote_form(page, release, vote_widget, submit_label=submit_label)
+        return
+
+    pre_submit = _trusted_casting_disabled_notice(archive_url, vote_recipient)
+    await _append_cast_vote_form(
+        page,
+        release,
+        vote_widget,
+        submit_disabled=True,
+        submit_label=submit_label,
+        pre_submit=pre_submit,
+        skip=["comment"],
+    )
+
+
 async def _render_vote_authenticated(
     page: htm.Block,
     release: sql.Release,
@@ -554,43 +682,41 @@ async def _render_vote_authenticated(
     if session is None:
         raise ValueError("Session required for authenticated vote")
 
-    trusted_vote = release.effective_vote_mode == sql.VoteMode.TRUSTED
-    if trusted_vote:
-        task_mid = interaction.task_mid_get(latest_vote_task) if latest_vote_task is not None else None
-        if (release.current_vote_seq is None) or (task_mid is None):
-            page.p["This vote is not ready for trusted casting yet. Please refresh after the vote email has been sent."]
-            return
+    if release.effective_vote_mode == sql.VoteMode.TRUSTED:
+        await _render_trusted_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
+        return
 
-    vote_round = None
-    if release.committee.is_podling:
-        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    vote_round = _vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
 
     potency = "Binding" if is_binding else "Non-binding"
-    if is_binding:
-        page.p[
-            f"As a member of the {binding_committee} committee, your vote is ",
-            htpy.strong["binding"],
-            ".",
-        ]
-    else:
-        page.p[
-            f"You are not a member of the {binding_committee} committee. ",
-            "Your vote will be recorded as ",
-            htpy.strong["non-binding"],
-            " but is still valued by the community.",
-        ]
+    _render_binding_status(page, is_binding, binding_committee)
+    _render_vote_delivery(page, archive_url, vote_recipient, trusted_vote=False)
+    vote_widget = _vote_decision_widget(potency)
+    await _append_cast_vote_form(page, release, vote_widget)
 
+
+def _render_vote_delivery(
+    page: htm.Block,
+    archive_url: str | None,
+    vote_recipient: str,
+    *,
+    trusted_vote: bool,
+    recast: bool = False,
+) -> None:
     if trusted_vote and archive_url:
+        prefix = "A new submission will be" if recast else "Your vote will be"
         page.p[
-            "Your vote will be recorded by ATR and a receipt will be sent to ",
+            prefix,
+            " recorded by ATR and a receipt will be queued for ",
             htpy.code[vote_recipient],
             " (",
             htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
             ").",
         ]
     elif trusted_vote:
-        page.p["Your vote will be recorded by ATR and a receipt will be sent to ", htpy.code[vote_recipient], "."]
+        prefix = "A new submission will be" if recast else "Your vote will be"
+        page.p[prefix, " recorded by ATR and a receipt will be queued for ", htpy.code[vote_recipient], "."]
     elif archive_url:
         page.p[
             "Your vote will be sent to ",
@@ -601,37 +727,6 @@ async def _render_vote_authenticated(
         ]
     else:
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
-
-    # Build the vote widget
-    vote_widget = htpy.div(id="decision", class_="btn-group", role="group")[
-        htpy.input(type="radio", class_="btn-check", name="decision", id="decision_0", value="+1", autocomplete="off"),
-        htpy.label(class_="btn btn-outline-success", for_="decision_0")[f"+1 ({potency})"],
-        htpy.input(type="radio", class_="btn-check", name="decision", id="decision_1", value="0", autocomplete="off"),
-        htpy.label(class_="btn btn-outline-secondary", for_="decision_1")["0"],
-        htpy.input(type="radio", class_="btn-check", name="decision", id="decision_2", value="-1", autocomplete="off"),
-        htpy.label(class_="btn btn-outline-danger", for_="decision_2")[f"-1 ({potency})"],
-    ]
-
-    # Render the form
-    vote_action_url = util.as_url(
-        post.vote.selected_post,
-        project_key=release.project.key,
-        version_key=release.version,
-    )
-    vote_comment_template = release.project.policy_vote_comment_template
-    cast_vote_form = await form.render(
-        model_cls=shared.vote.CastVoteForm,
-        action=vote_action_url,
-        submit_label="Submit vote",
-        form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
-        custom={"decision": vote_widget},
-        defaults={
-            "comment": vote_comment_template,
-            "vote_seq": release.current_vote_seq,
-            "vote_mode": release.effective_vote_mode,
-        },
-    )
-    page.append(cast_vote_form)
 
 
 def _render_vote_unauthenticated(
@@ -688,12 +783,83 @@ def _render_vote_unauthenticated(
     page.append(email_box.collect())
 
 
+def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: str) -> htm.Element:
+    children: list[str | htm.Element] = [
+        "Trusted ballots are unavailable until the vote-start email has a message ID. ",
+        "Trusted votes will be recorded by ATR and receipts will be queued for ",
+        htpy.code[vote_recipient],
+    ]
+    if archive_url is not None:
+        children.extend(
+            [
+                " (",
+                htpy.a(href=archive_url, target="_blank", rel="noopener")["view thread"],
+                ")",
+            ]
+        )
+    children.append(".")
+    return htm.div(".alert.alert-info.mb-3", role="alert")[children]
+
+
+def _trusted_vote_status(latest_ballot: sql.BallotPaper, vote_recipient: str) -> htm.Element:
+    receipt_archive_url = _message_id_source_archive_url(latest_ballot.receipt_message_id, vote_recipient)
+    return htm.div(".card.mb-3")[
+        htm.div(".card-header.bg-light")["You already cast a vote"],
+        htm.div(".card-body")[
+            htm.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]],
+            htm.p(".mb-2")["Recorded: ", _format_utc(latest_ballot.created)],
+            htm.p(".mb-0")[
+                "Receipt message ID: ",
+                htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
+                    htpy.code[latest_ballot.receipt_message_id]
+                ],
+            ],
+        ],
+    ]
+
+
 def _vote_committee_name(release: sql.Release) -> str:
     if release.committee is None:
         raise ValueError("Release has no committee")
     if _is_podling_round_two(release):
         return "Incubator"
     return release.committee.display_name
+
+
+def _vote_decision_widget(potency: str, *, disabled: bool = False) -> htm.Element:
+    input_attrs = {"disabled": True} if disabled else {}
+    return htpy.div(id="decision", class_="btn-group", role="group")[
+        htpy.input(
+            type="radio",
+            class_="btn-check",
+            name="decision",
+            id="decision_0",
+            value="+1",
+            autocomplete="off",
+            **input_attrs,
+        ),
+        htpy.label(class_="btn btn-outline-success", for_="decision_0")[f"+1 ({potency})"],
+        htpy.input(
+            type="radio",
+            class_="btn-check",
+            name="decision",
+            id="decision_1",
+            value="0",
+            autocomplete="off",
+            **input_attrs,
+        ),
+        htpy.label(class_="btn btn-outline-secondary", for_="decision_1")["0"],
+        htpy.input(
+            type="radio",
+            class_="btn-check",
+            name="decision",
+            id="decision_2",
+            value="-1",
+            autocomplete="off",
+            **input_attrs,
+        ),
+        htpy.label(class_="btn btn-outline-danger", for_="decision_2")[f"-1 ({potency})"],
+    ]
 
 
 def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> str:
@@ -708,3 +874,9 @@ def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> 
     if _is_podling_round_two(release):
         return util.INCUBATOR_GENERAL_ADDRESS
     return f"dev@{release.committee.key}.apache.org"
+
+
+def _vote_round(release: sql.Release) -> int | None:
+    if (release.committee is not None) and release.committee.is_podling:
+        return 2 if (release.podling_thread_id is not None) else 1
+    return None
