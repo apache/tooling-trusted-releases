@@ -363,15 +363,17 @@ def _is_podling_round_two(release: sql.Release) -> bool:
 
 def _render_binding_status(page: htm.Block, is_binding: bool, binding_committee: str, vote_round: int | None) -> None:
     binding_word, non_binding_word = user.binding_terminology(vote_round)
+    committee_membership = _voting_committee_membership(binding_committee, vote_round)
+    article = "an" if committee_membership[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
     if is_binding:
         page.p[
-            f"As a member of the {binding_committee} committee, your vote is ",
+            f"As {article} {committee_membership}, your vote is ",
             htpy.strong[binding_word.lower()],
             ".",
         ]
     else:
         page.p[
-            f"You are not a member of the {binding_committee} committee. ",
+            f"You are not {article} {committee_membership}. ",
             "Your vote will be recorded as ",
             htpy.strong[non_binding_word.lower()],
             " but is still valued by the community.",
@@ -865,3 +867,11 @@ def _vote_round(release: sql.Release) -> int | None:
     if (release.committee is not None) and release.committee.is_podling:
         return 2 if (release.podling_thread_id is not None) else 1
     return None
+
+
+def _voting_committee_membership(binding_committee: str, vote_round: int | None) -> str:
+    if binding_committee == "Incubator":
+        return f"{binding_committee} IPMC member"
+    if vote_round == 1:
+        return f"{binding_committee} PPMC member"
+    return f"{binding_committee} PMC member"
