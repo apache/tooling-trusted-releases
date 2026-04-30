@@ -33,7 +33,7 @@ async def selected(
     _resolve: Literal["resolve"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    submit_form: shared.resolve.SubmitForm,
+    submit_form: shared.resolve.ResolveForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /resolve/<project_key>/<version_key>

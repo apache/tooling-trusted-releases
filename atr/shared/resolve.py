@@ -15,16 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Literal
+from typing import Annotated, Literal
 
 import pydantic
 
 import atr.form as form
 import atr.models.sql as sql
 
+type CANCEL_SUBMIT = Literal["cancel_submit"]
+type SUBMIT = Literal["submit"]
+
 
 class CancelSubmitForm(form.Form):
+    variant: CANCEL_SUBMIT = form.value(CANCEL_SUBMIT)
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
+    confirm_cancel: Literal["CONFIRM"] = form.label(
+        "Confirm",
+        "Type CONFIRM (in capitals) to cancel this vote.",
+    )
     vote_result: Literal["Cancelled"] = form.label("Vote result", default="Cancelled", widget=form.Widget.HIDDEN)
     vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
     vote_seq: int | None = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
@@ -38,6 +46,7 @@ class CancelSubmitForm(form.Form):
 
 
 class SubmitForm(form.Form):
+    variant: SUBMIT = form.value(SUBMIT)
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
     vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
@@ -49,3 +58,9 @@ class SubmitForm(form.Form):
         if value == "":
             return None
         return value
+
+
+type ResolveForm = Annotated[
+    CancelSubmitForm | SubmitForm,
+    form.DISCRIMINATOR,
+]

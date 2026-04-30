@@ -209,20 +209,23 @@ async def selected(  # noqa: C901
     if trusted_summary is not None:
         trusted_outcome = _trusted_outcome(trusted_summary, binding_label)
 
+    cancel_only = False
+    submit_classes = "btn-primary"
     submit_label = "Resolve vote"
-    trusted_duration_blocks_result = is_trusted_mode and (vote_end is not None) and (not pass_fail_allowed)
-    if trusted_duration_blocks_result and (not bypass_active):
+    duration_blocks_result = (not pass_fail_allowed) and (not bypass_active)
+    if duration_blocks_result:
+        cancel_only = True
         form_cls = shared.resolve.CancelSubmitForm
+        submit_classes = "btn-danger"
+        submit_label = "Cancel vote"
     elif is_trusted_mode:
         form_cls = shared.resolve.SubmitForm
         vote_result_choices = [("Failed", "Failed"), ("Cancelled", "Cancelled")]
         if binding_sufficient or bypass_active:
             vote_result_choices.insert(0, ("Passed", "Passed"))
         defaults["vote_result"] = vote_result_choices
-    elif pass_fail_allowed or bypass_active:
-        form_cls = shared.resolve.SubmitForm
     else:
-        form_cls = shared.resolve.CancelSubmitForm
+        form_cls = shared.resolve.SubmitForm
 
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
@@ -249,6 +252,7 @@ async def selected(  # noqa: C901
     resolve_form = await atr.form.render(
         model_cls=form_cls,
         action=util.as_url(post.resolve.selected, project_key=release.project.key, version_key=release.version),
+        submit_classes=submit_classes,
         submit_label=submit_label,
         textarea_rows=24,
         defaults=defaults,
@@ -264,6 +268,7 @@ async def selected(  # noqa: C901
         resolve_form=resolve_form,
         fetch_error=fetch_error,
         archive_url=archive_url,
+        cancel_only=cancel_only,
         email_context_summary=email_context_summary,
         email_context_votes=email_context_votes,
         trusted_ballots=trusted_ballot_rows,
@@ -312,18 +317,6 @@ def _email_context_status_label(status: models.tabulate.VoteStatus) -> str:
             return "Unknown email"
 
 
-def _email_context_vote_label(vote: models.tabulate.Vote) -> str:
-    match vote:
-        case models.tabulate.Vote.YES:
-            return "+1"
-        case models.tabulate.Vote.NO:
-            return "-1"
-        case models.tabulate.Vote.ABSTAIN:
-            return "0"
-        case models.tabulate.Vote.UNKNOWN:
-            return "?"
-
-
 def _email_context_summary_rows(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> list[VoteCountRow]:
     counts = {status: [0, 0, 0, 0] for status in models.tabulate.VoteStatus}
     for vote_detail in tabulated_votes.values():
@@ -349,6 +342,18 @@ def _email_context_summary_rows(tabulated_votes: dict[str, models.tabulate.VoteE
         for status, count in counts.items()
         if count[3] > 0
     ]
+
+
+def _email_context_vote_label(vote: models.tabulate.Vote) -> str:
+    match vote:
+        case models.tabulate.Vote.YES:
+            return "+1"
+        case models.tabulate.Vote.NO:
+            return "-1"
+        case models.tabulate.Vote.ABSTAIN:
+            return "0"
+        case models.tabulate.Vote.UNKNOWN:
+            return "?"
 
 
 def _tabulation_error(error: util.FetchError | ValueError) -> str:

@@ -243,7 +243,7 @@
     {% endif %}
   {% endif %}
   {% if resolve_form %}
-    <h2>Resolve vote</h2>
+    <h2>{% if cancel_only %}Cancel vote{% else %}Resolve vote{% endif %}</h2>
     {% if not pass_fail_allowed %}
       {% if bypass_active %}
         <div class="border rounded bg-warning-subtle p-3 mb-3">
@@ -260,15 +260,20 @@
         <div class="border rounded bg-info-subtle p-3 mb-3">
           <i class="bi bi-clock me-1"></i>
           {% if vote_end %}
-            The voting period has not ended yet. The vote ends <strong>{{ vote_end.strftime('%Y-%m-%d %H:%M:%S UTC') }}</strong>.
+            The vote has not yet finished, but you can cancel this vote.
+            The vote ends <strong>{{ vote_end.strftime('%Y-%m-%d %H:%M:%S UTC') }}</strong>.
           {% else %}
-            The end of the vote could not be determined.
+            The end of the vote could not be determined. You can cancel this vote.
           {% endif %}
-          Resolving as passed or failed is not available. You may still cancel the vote.
         </div>
       {% endif %}
     {% endif %}
-    {% if trusted_mode %}
+    {% if cancel_only %}
+      <p>
+        Enter the cancellation email body here. Sending this will send the email to a new vote result thread,
+        cancel the vote, and return the release candidate to draft.
+      </p>
+    {% elif trusted_mode %}
       <p>
         After reviewing the trusted ballot record and any email thread context, please enter the resolution email body here. Sending this will send the email to a new vote result thread, and the vote will be resolved from the trusted ballot record.
       </p>

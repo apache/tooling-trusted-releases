@@ -35,6 +35,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.tabulate as models_tabulate
 import atr.sessions as sessions
+import atr.shared as shared
 import atr.storage as storage
 import atr.storage.writers.vote as vote
 
@@ -608,6 +609,47 @@ async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
     vote_details.assert_awaited_once()
 
 
+def test_resolve_page_cancel_form_requires_confirmation() -> None:
+    with pytest.raises(ValueError):
+        shared.resolve.CancelSubmitForm(
+            csrf_token="csrf",
+            email_body="The vote has been cancelled.",
+            confirm_cancel="WRONG",
+            vote_result="Cancelled",
+            vote_mode=sql.VoteMode.EMAIL,
+            vote_seq=None,
+        )
+
+    form = shared.resolve.CancelSubmitForm(
+        csrf_token="csrf",
+        email_body="The vote has been cancelled.",
+        confirm_cancel="CONFIRM",
+        vote_result="Cancelled",
+        vote_mode=sql.VoteMode.EMAIL,
+        vote_seq=None,
+    )
+
+    assert form.confirm_cancel == "CONFIRM"
+
+
+@pytest.mark.asyncio
+async def test_resolve_page_uses_cancel_form_before_vote_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vote_end = datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC)
+
+    context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        pass_fail_allowed=False,
+        vote_end=vote_end,
+    )
+
+    assert context["cancel_only"] is True
+    assert form_render.call_args.kwargs["model_cls"] is shared.resolve.CancelSubmitForm
+    assert form_render.call_args.kwargs["submit_classes"] == "btn-danger"
+    assert form_render.call_args.kwargs["submit_label"] == "Cancel vote"
+
+
 @pytest.mark.asyncio
 async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Writer rejects Failed when the end of the vote has not been reached and no bypass is active."""
@@ -971,6 +1013,29 @@ async def test_trusted_resolve_page_passes_receipt_exclusions_to_tabulation(
     assert vote_details.await_args.kwargs["excluded_message_ids"] == {"receipt@apache.org"}
 
 
+@pytest.mark.asyncio
+async def test_trusted_resolve_page_uses_cancel_form_before_vote_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.release_policy = SimpleNamespace(vote_mode=sql.VoteMode.TRUSTED)
+    release.current_vote_seq = 7
+    vote_end = datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC)
+
+    context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+        pass_fail_allowed=False,
+        vote_end=vote_end,
+    )
+
+    assert context["cancel_only"] is True
+    assert form_render.call_args.kwargs["model_cls"] is shared.resolve.CancelSubmitForm
+    assert form_render.call_args.kwargs["submit_label"] == "Cancel vote"
+
+
 def test_vote_end_get_returns_datetime_for_valid_task() -> None:
     """vote_end_get returns a UTC datetime for a valid VoteInitiate task."""
     task = _latest_vote_task()
@@ -1260,6 +1325,8 @@ async def _render_standard_resolve_page(
     release: SimpleNamespace | None = None,
     ballot_receipt_message_ids: mock.AsyncMock | None = None,
     ballots_for_resolution: mock.AsyncMock | None = None,
+    pass_fail_allowed: bool = True,
+    vote_end: datetime.datetime | None = None,
 ) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
     release = release or _candidate_release()
     session = SimpleNamespace(
@@ -1305,8 +1372,8 @@ async def _render_standard_resolve_page(
         resolve.interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
     )
     monkeypatch.setattr(resolve.interaction, "vote_duration_bypass", lambda: False)
-    monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: None)
-    monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: True)
+    monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: vote_end)
+    monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: pass_fail_allowed)
     monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
     monkeypatch.setattr(resolve.interaction, "ballots_for_resolution", ballots_for_resolution)
     monkeypatch.setattr(resolve.storage, "write", _write_context)
