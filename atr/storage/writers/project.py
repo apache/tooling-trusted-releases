@@ -92,8 +92,10 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
-    async def category_add(self, project: sql.Project, new_category: str) -> bool:
-        project = await self.__data.merge(project)
+    async def category_add(self, project_key: safe.ProjectKey, new_category: str) -> bool:
+        project = await self.__data.project(key=str(project_key)).get()
+        if not project:
+            raise storage.AccessError(f"Project '{project_key}' not found.")
         new_category = new_category.strip()
         current_categories = self.__current_categories(project)
         if new_category and (new_category not in current_categories):
@@ -115,8 +117,10 @@ class CommitteeMember(CommitteeParticipant):
             return True
         return False
 
-    async def category_remove(self, project: sql.Project, action_value: str) -> bool:
-        project = await self.__data.merge(project)
+    async def category_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
+        project = await self.__data.project(key=str(project_key)).get()
+        if not project:
+            raise storage.AccessError(f"Project '{project_key}' not found.")
         current_categories = self.__current_categories(project)
         if action_value in current_categories:
             if action_value in registry.FORBIDDEN_PROJECT_CATEGORIES:
@@ -206,8 +210,10 @@ class CommitteeMember(CommitteeParticipant):
         )
         return None
 
-    async def language_add(self, project: sql.Project, new_language: str) -> bool:
-        project = await self.__data.merge(project)
+    async def language_add(self, project_key: safe.ProjectKey, new_language: str) -> bool:
+        project = await self.__data.project(key=str(project_key)).get()
+        if not project:
+            raise storage.AccessError(f"Project '{project_key}' not found.")
         new_language = new_language.strip()
         current_languages = self.__current_languages(project)
         if new_language and (new_language not in current_languages):
@@ -227,8 +233,10 @@ class CommitteeMember(CommitteeParticipant):
             return True
         return False
 
-    async def language_remove(self, project: sql.Project, action_value: str) -> bool:
-        project = await self.__data.merge(project)
+    async def language_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
+        project = await self.__data.project(key=str(project_key)).get()
+        if not project:
+            raise storage.AccessError(f"Project '{project_key}' not found.")
         current_languages = self.__current_languages(project)
         if action_value in current_languages:
             current_languages.remove(action_value)

@@ -19,14 +19,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
-import atr.db as db
 import atr.get as get
 import atr.models.safe as safe
-import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
@@ -127,40 +124,40 @@ async def view(
 
 
 async def _metadata_category_add(
-    wacm: storage.WriteAsCommitteeMember, project: sql.Project, category_to_add: str
+    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, category_to_add: str
 ) -> bool:
     try:
-        return await wacm.project.category_add(project, category_to_add.strip())
+        return await wacm.project.category_add(project_key, category_to_add.strip())
     except storage.AccessError as e:
         await quart.flash(f"Error adding category: {e}", "error")
         return False
 
 
 async def _metadata_category_remove(
-    wacm: storage.WriteAsCommitteeMember, project: sql.Project, action_value: str
+    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, action_value: str
 ) -> bool:
     try:
-        return await wacm.project.category_remove(project, action_value)
+        return await wacm.project.category_remove(project_key, action_value)
     except storage.AccessError as e:
         await quart.flash(f"Error removing category: {e}", "error")
         return False
 
 
 async def _metadata_language_add(
-    wacm: storage.WriteAsCommitteeMember, project: sql.Project, language_to_add: str
+    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, language_to_add: str
 ) -> bool:
     try:
-        return await wacm.project.language_add(project, language_to_add)
+        return await wacm.project.language_add(project_key, language_to_add)
     except storage.AccessError as e:
         await quart.flash(f"Error adding language: {e}", "error")
         return False
 
 
 async def _metadata_language_remove(
-    wacm: storage.WriteAsCommitteeMember, project: sql.Project, action_value: str
+    wacm: storage.WriteAsCommitteeMember, project_key: safe.ProjectKey, action_value: str
 ) -> bool:
     try:
-        return await wacm.project.language_remove(project, action_value)
+        return await wacm.project.language_remove(project_key, action_value)
     except storage.AccessError as e:
         await quart.flash(f"Error removing language: {e}", "error")
         return False
@@ -174,11 +171,7 @@ async def _process_add_category(
 
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_key)
-        async with db.session() as data:
-            project = await data.project(key=str(project_key)).demand(
-                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
-            )
-        modified = await _metadata_category_add(wacm, project, category_to_add)
+        modified = await _metadata_category_add(wacm, project_key, category_to_add)
 
     if modified:
         return await session.redirect(
@@ -197,11 +190,7 @@ async def _process_add_language(
 
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_key)
-        async with db.session() as data:
-            project = await data.project(key=str(project_key)).demand(
-                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
-            )
-        modified = await _metadata_language_add(wacm, project, language_to_add)
+        modified = await _metadata_language_add(wacm, project_key, language_to_add)
 
     if modified:
         return await session.redirect(
@@ -273,11 +262,7 @@ async def _process_remove_category(
 
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_key)
-        async with db.session() as data:
-            project = await data.project(key=str(project_key)).demand(
-                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
-            )
-        modified = await _metadata_category_remove(wacm, project, category_to_remove)
+        modified = await _metadata_category_remove(wacm, project_key, category_to_remove)
 
     if modified:
         return await session.redirect(
@@ -296,11 +281,7 @@ async def _process_remove_language(
 
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(project_key)
-        async with db.session() as data:
-            project = await data.project(key=str(project_key)).demand(
-                base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
-            )
-        modified = await _metadata_language_remove(wacm, project, language_to_remove)
+        modified = await _metadata_language_remove(wacm, project_key, language_to_remove)
 
     if modified:
         return await session.redirect(
