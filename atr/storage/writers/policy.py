@@ -69,7 +69,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -87,7 +87,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -106,7 +106,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -198,7 +198,7 @@ class CommitteeMember(CommitteeParticipant):
         project, release_policy = await self.__get_or_create_policy(project_key)
         vote_mode = form.vote_mode
         if (vote_mode == models.sql.VoteMode.MANUAL) and (project.committee and project.committee.is_podling):
-            raise storage.AccessError("Manual voting is not allowed for podlings.")
+            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
 
         release_policy.vote_mode = vote_mode
 
@@ -226,7 +226,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
         project = await self.__data.project(
             key=str(project_key), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
-        ).demand(storage.AccessError(f"Project {project_key} not found"))
+        ).demand(storage.AccessError(f"Project {project_key} not found", status=404))
 
         release_policy = project.release_policy
         if release_policy is None:
@@ -293,7 +293,7 @@ class CommitteeMember(CommitteeParticipant):
             raise ValueError("Field 'manual_vote' does not accept null")
         if update.manual_vote:
             if project.committee and project.committee.is_podling:
-                raise storage.AccessError("Manual voting is not allowed for podlings.")
+                raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
             release_policy.vote_mode = models.sql.VoteMode.MANUAL
         else:
             release_policy.vote_mode = models.sql.VoteMode.EMAIL

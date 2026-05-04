@@ -44,6 +44,7 @@ import quart
 import quart_rate_limiter as rate_limiter
 import quart_schema
 import quart_wtf
+import werkzeug.exceptions as exceptions
 import werkzeug.routing as routing
 
 import atr
@@ -984,6 +985,16 @@ async def _register_recurrent_tasks() -> None:
 
 def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
     # Add a global error handler to show helpful error messages with tracebacks
+    @app.errorhandler(exceptions.HTTPException)
+    async def handle_http_exception(error: exceptions.HTTPException) -> Any:
+        status_code = error.code or 500
+        name = error.name or "HTTP error"
+        description = error.description or name
+        message = f"{status_code} {name}: {description}"
+        if quart.request.path.startswith("/api"):
+            return quart.jsonify({"error": message}), status_code
+        return await template.render("error.html", error=message, status_code=status_code), status_code
+
     @app.errorhandler(Exception)
     async def handle_any_exception(error: Exception) -> Any:
         import traceback

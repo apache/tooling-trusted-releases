@@ -144,12 +144,12 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
 
 
 @get.typed
-async def notfound(_session: web.Public, _about: Literal["notfound"]) -> str:
+async def notfound(_session: web.Public, _about: Literal["notfound"]) -> tuple[str, int]:
     """
     URL: /notfound
     Not found page.
     """
-    return await template.render("notfound.html", error="404 Not Found", status_code=404)
+    return await template.render("notfound.html", error="404 Not Found", status_code=404), 404
 
 
 @get.typed

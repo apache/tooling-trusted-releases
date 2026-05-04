@@ -52,7 +52,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
     async def add_key(self, key: str) -> str:
@@ -65,7 +65,7 @@ class FoundationCommitter(GeneralPublic):
         ssh_key = await self.__data.ssh_key(
             fingerprint=fingerprint,
             asf_uid=self.__asf_uid,
-        ).demand(storage.AccessError(f"Key not found: {fingerprint}"))
+        ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
         await self.__data.delete(ssh_key)
         await self.__data.commit()
         message = mail.Message(
@@ -92,7 +92,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -148,7 +148,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -166,7 +166,7 @@ class FoundationAdmin(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
     async def revoke_all_user_keys(self, target_asf_uid: str) -> tuple[int, int]:

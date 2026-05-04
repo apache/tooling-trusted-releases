@@ -50,7 +50,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -68,7 +68,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -87,7 +87,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -132,7 +132,7 @@ class CommitteeMember(CommitteeParticipant):
     async def ignore_delete(self, id: int) -> None:
         cri = await self.__data.get(sql.CheckResultIgnore, id)
         if cri is None:
-            raise storage.AccessError(f"Ignore {id} not found")
+            raise storage.AccessError(f"Ignore {id} not found", status=404)
         await self.__validate_project_in_committee(cri.project_key)
         via = sql.validate_instrumented_attribute
         await self.__data.execute(sqlmodel.delete(sql.CheckResultIgnore).where(via(sql.CheckResultIgnore.id) == id))
@@ -155,7 +155,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         cri = await self.__data.get(sql.CheckResultIgnore, id)
         if cri is None:
-            raise storage.AccessError(f"Ignore {id} not found")
+            raise storage.AccessError(f"Ignore {id} not found", status=404)
         await self.__validate_project_in_committee(cri.project_key)
         _validate_ignore_patterns(
             release_glob,
@@ -182,9 +182,9 @@ class CommitteeMember(CommitteeParticipant):
     async def __validate_project_in_committee(self, project_key: str) -> None:
         project = await self.__data.project(project_key, _committee=True).get()
         if project is None:
-            raise storage.AccessError(f"Project {project_key} not found")
+            raise storage.AccessError(f"Project {project_key} not found", status=404)
         if project.committee_key != self.__committee_key:
-            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}")
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
 
 
 def _validate_ignore_patterns(*patterns: str | None) -> None:

@@ -294,9 +294,7 @@ async def distribute_ssh_register(
     )
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
-        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(
-            exceptions.Unauthorized("Unauthorized"),
-        )
+        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -335,7 +333,7 @@ async def distribution_record(
             version=str(data.version),
         ).demand(exceptions.NotFound(f"Release {data.project!s} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.key} has no committee")
+        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -381,13 +379,11 @@ async def distribution_record_from_workflow(
     )
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
-        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(
-            exceptions.Unauthorized("Unauthorized"),
-        )
+        await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.key} has no committee")
+        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -762,7 +758,9 @@ async def policy_update(
     try:
         async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
             await wacm.policy.edit_policy(data.project, data)
-    except (storage.AccessError, ValueError) as e:
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    except ValueError as e:
         raise exceptions.BadRequest(str(e))
     return models.api.PolicyUpdateResults(
         endpoint="/policy/update",
@@ -858,7 +856,7 @@ async def publisher_distribution_record(
             version=str(data.version),
         ).demand(exceptions.NotFound(f"Release {project.key} {data.version!s} not found"))
     if release.committee is None:
-        raise exceptions.NotFound(f"Release {release.key} has no committee")
+        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -909,7 +907,7 @@ async def publisher_release_announce(
                 fullname=asf_uid,
             )
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
 
     return models.api.PublisherReleaseAnnounceResults(
         endpoint="/publisher/release/announce",
@@ -976,7 +974,7 @@ async def publisher_vote_resolve(
                 f"The vote {data.resolution}.",
             )
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
 
     return models.api.PublisherVoteResolveResults(
         endpoint="/publisher/vote/resolve",
@@ -1018,7 +1016,7 @@ async def release_announce(
                 fullname=asf_uid,
             )
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
 
     return models.api.ReleaseAnnounceResults(
         endpoint="/release/announce",
@@ -1049,7 +1047,7 @@ async def release_create(
             wacp = await write.as_project_committee_participant(data.project)
             release, _project = await wacp.release.start(data.project, data.version)
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
 
     return models.api.ReleaseCreateResults(
         endpoint="/release/create",
@@ -1543,7 +1541,7 @@ async def vote_resolve(
                 f"The vote {data.resolution}.",
             )
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
     # except Exception as e:
     #     import atr.log as log
     #     import traceback
@@ -1575,11 +1573,11 @@ async def vote_start(
     try:
         async with db.session() as db_data:
             project = await db_data.project(key=str(data.project), _committee=True).demand(
-                storage.AccessError(f"Project not found: {data.project}")
+                storage.AccessError(f"Project not found: {data.project}", status=404)
             )
             committee = project.committee
             if committee is None:
-                raise storage.AccessError("No committee found for project - Invalid state")
+                raise storage.AccessError("No committee found for project - Invalid state", status=500)
         async with storage.write_as_committee_participant(committee.key, asf_uid) as wacp:
             permitted_recipients = util.permitted_podling_first_round_recipients(
                 asf_uid,
@@ -1610,7 +1608,7 @@ async def vote_start(
     #     log.info(traceback.format_exc())
     #     raise exceptions.BadRequest(str(e))
     except storage.AccessError as e:
-        raise exceptions.BadRequest(str(e))
+        raise _http_exception_from_storage_access_error(e) from e
 
     return models.api.VoteStartResults(
         endpoint="/vote/start",
@@ -1659,6 +1657,24 @@ async def vote_tabulate(
         endpoint="/vote/tabulate",
         details=details,
     ).model_dump(mode="json"), 200
+
+
+def _http_exception_from_storage_access_error(error: storage.AccessError) -> exceptions.HTTPException:
+    message = str(error)
+    status = error.status or 500
+    if status == 400:
+        return exceptions.BadRequest(message)
+    if status == 401:
+        return exceptions.Unauthorized(message)
+    if status == 403:
+        return exceptions.Forbidden(message)
+    if status == 404:
+        return exceptions.NotFound(message)
+    if status == 409:
+        return exceptions.Conflict(message)
+    if status == 502:
+        return exceptions.BadGateway(message)
+    return exceptions.InternalServerError(message)
 
 
 def _issuer_matches_component(

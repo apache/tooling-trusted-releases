@@ -33,6 +33,7 @@ import werkzeug.exceptions as exceptions
 import atr.blueprints.common as common
 import atr.config as config
 import atr.log as log
+import atr.storage as storage
 import atr.web as web
 
 _BLUEPRINT_NAME: Final = "api_blueprint"
@@ -182,6 +183,11 @@ async def _handle_request_validation(err: quart_schema.RequestSchemaValidationEr
         raise err.validation_error
     verr: pydantic.ValidationError = err.validation_error
     return _json_error("Input validation failed", 400, {"validation_details": verr.errors()})
+
+
+@_BLUEPRINT.errorhandler(storage.AccessError)
+async def _handle_storage_access_error(err: storage.AccessError) -> tuple[quart.Response, int]:
+    return _json_error(str(err), err.status or 500)
 
 
 def _json_error(

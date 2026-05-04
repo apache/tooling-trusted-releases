@@ -201,7 +201,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
         # Specific to this module
@@ -213,7 +213,7 @@ class FoundationCommitter(GeneralPublic):
                 fingerprint=fingerprint,
                 apache_uid=self.__asf_uid,
                 _committees=True,
-            ).demand(storage.AccessError(f"Key not found: {fingerprint}"))
+            ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
             await self.__data.delete(key)
             await self.__data.commit()
@@ -262,13 +262,13 @@ class FoundationCommitter(GeneralPublic):
 
     async def keys_file_text(self, committee_key: str) -> str:
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
-            storage.AccessError(f"Committee not found: {committee_key}")
+            storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
         return await self._keys_file_text(committee)
 
     async def _keys_file_text(self, committee: sql.Committee) -> str:
         if not committee.public_signing_keys:
-            raise storage.AccessError(f"No keys found for committee {committee.key} to generate KEYS file.")
+            raise storage.AccessError(f"No keys found for committee {committee.key} to generate KEYS file.", status=404)
 
         sorted_keys = sorted(committee.public_signing_keys, key=lambda k: k.fingerprint)
 
@@ -311,7 +311,7 @@ class FoundationCommitter(GeneralPublic):
 
     async def _sync_committee_keys_file(self, committee_key: str) -> str | None:
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
-            storage.AccessError(f"Committee not found: {committee_key}")
+            storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
         committee_keys_path = self._committee_keys_path(committee)
         committee_keys_dir = committee_keys_path.parent
@@ -321,7 +321,9 @@ class FoundationCommitter(GeneralPublic):
                 if await aiofiles.os.path.exists(committee_keys_path):
                     await aiofiles.os.remove(committee_keys_path)
             except OSError as e:
-                raise storage.AccessError(f"Failed to remove KEYS file for committee {committee_key}: {e}") from e
+                raise storage.AccessError(
+                    f"Failed to remove KEYS file for committee {committee_key}: {e}", status=500
+                ) from e
             return None
 
         full_keys_file_content = await self._keys_file_text(committee)
@@ -330,18 +332,21 @@ class FoundationCommitter(GeneralPublic):
             await asyncio.to_thread(util.chmod_directories, committee_keys_dir, permissions=0o755)
             await asyncio.to_thread(committee_keys_path.path.write_text, full_keys_file_content, encoding="utf-8")
         except OSError as e:
-            raise storage.AccessError(f"Failed to write KEYS file for committee {committee_key}: {e}") from e
+            raise storage.AccessError(
+                f"Failed to write KEYS file for committee {committee_key}: {e}", status=500
+            ) from e
         except Exception as e:
             log.exception(f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}")
             raise storage.AccessError(
-                f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}"
+                f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}",
+                status=500,
             ) from e
         return str(committee_keys_path)
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
         """Delete all OpenPGP keys and their links for a test user."""
         if not config.is_test_mode():
-            return outcome.Error(storage.AccessError("Test key deletion not enabled"))
+            return outcome.Error(storage.AccessError("Test key deletion not enabled", status=403))
 
         try:
             test_user_keys = await self.__data.public_signing_key(apache_uid=test_uid, _committees=True).all()
@@ -389,7 +394,7 @@ class FoundationCommitter(GeneralPublic):
             _committees=True,
         ).get()
         if not key:
-            raise storage.AccessError("Key not found or not owned by you")
+            raise storage.AccessError("Key not found or not owned by you", status=404)
 
         old_committee_keys = {c.key for c in key.committees}
         new_committee_keys = set(selected_committee_keys)
@@ -592,7 +597,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -639,20 +644,24 @@ class CommitteeParticipant(FoundationCommitter):
             committee = await self.committee()
             if not committee.public_signing_keys:
                 return outcome.Error(
-                    storage.AccessError(f"No keys found for committee {self.__committee_key} to generate KEYS file.")
+                    storage.AccessError(
+                        f"No keys found for committee {self.__committee_key} to generate KEYS file.", status=404
+                    )
                 )
             synced_path = await self._sync_committee_keys_file(self.__committee_key)
         except Exception as e:
             return outcome.Error(e)
         if synced_path is None:
             return outcome.Error(
-                storage.AccessError(f"No keys found for committee {self.__committee_key} to generate KEYS file.")
+                storage.AccessError(
+                    f"No keys found for committee {self.__committee_key} to generate KEYS file.", status=404
+                )
             )
         return outcome.Result(synced_path)
 
     async def committee(self) -> sql.Committee:
         return await self.__data.committee(key=self.__committee_key, _public_signing_keys=True).demand(
-            storage.AccessError(f"Committee not found: {self.__committee_key}")
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
 
     @property
@@ -690,15 +699,16 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
-        ).demand(storage.AccessError(f"Release not found: {project_key} {version_key}"))
+        ).demand(storage.AccessError(f"Release not found: {project_key} {version_key}", status=404))
         keys_path = paths.release_directory(release) / "KEYS"
         async with aiofiles.open(keys_path, encoding="utf-8") as f:
             keys_file_text = await f.read()
         if release.committee is None:
-            raise storage.AccessError("No committee found for release - Invalid state")
+            raise storage.AccessError("No committee found for release - Invalid state", status=500)
         if release.committee.key != self.__committee_key:
             raise storage.AccessError(
-                f"Release {project_key!s} {version_key!s} is not associated with committee {self.__committee_key}"
+                f"Release {project_key!s} {version_key!s} is not associated with committee {self.__committee_key}",
+                status=403,
             )
 
         outcomes = await self.ensure_associated(keys_file_text)
@@ -890,7 +900,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -909,7 +919,7 @@ class FoundationAdmin(CommitteeMember):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -923,7 +933,9 @@ class FoundationAdmin(CommitteeMember):
         committee_query.query = committee_query.query.options(
             orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
         )
-        committee = await committee_query.demand(storage.AccessError(f"Committee not found: {self.__committee_key}"))
+        committee = await committee_query.demand(
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+        )
 
         keys_to_check = list(committee.public_signing_keys)
         if not keys_to_check:

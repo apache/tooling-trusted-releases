@@ -143,7 +143,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -161,7 +161,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -175,7 +175,7 @@ class CommitteeParticipant(FoundationCommitter):
         """Handle the deletion of database records and filesystem data for a release."""
         release = await self.__data.release(
             project_key=str(project_key), version=str(version), phase=phase, _committee=True
-        ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found."))
+        ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
         release_dirs = [
             paths.release_directory_base(release),
             paths.get_attestable_dir() / str(project_key) / str(version),
@@ -290,7 +290,7 @@ class CommitteeParticipant(FoundationCommitter):
             if not await aiofiles.os.path.exists(path_in_new_revision):
                 # This indicates a potential severe issue with hard linking or logic
                 log.error(f"SEVERE ERROR! File {rel_path_to_delete} not found in new revision before deletion")
-                raise storage.AccessError("File to delete was not found in the new revision")
+                raise storage.AccessError("File to delete was not found in the new revision", status=500)
 
             # Check whether the file is an artifact
             if analysis.is_artifact(path_in_new_revision.path):
@@ -338,11 +338,11 @@ class CommitteeParticipant(FoundationCommitter):
             # Check that the source file exists in the new revision
             if not await aiofiles.os.path.exists(path_in_new_revision):
                 log.error(f"Source file {rel_path} not found in new revision for hash generation.")
-                raise storage.AccessError("Source file not found in the new revision.")
+                raise storage.AccessError("Source file not found in the new revision.", status=500)
 
             # Check that the hash file does not already exist in the new revision
             if await aiofiles.os.path.exists(hash_path_in_new_revision):
-                raise storage.AccessError("SHA512 file already exists")
+                raise storage.AccessError("SHA512 file already exists", status=409)
 
             if not await aiofiles.os.path.exists(signature_path_in_new_revision):
                 raise types.FailedError(
@@ -491,7 +491,7 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> tuple[sql.Release, int, sql.VoteMode]:
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
-        ).demand(storage.AccessError("Release candidate draft not found"))
+        ).demand(storage.AccessError("Release candidate draft not found", status=404))
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number
@@ -500,15 +500,15 @@ class CommitteeParticipant(FoundationCommitter):
         else:
             vote_mode = release_for_pre_checks.vote_mode
             if vote_mode is None:
-                raise storage.AccessError("The release state has changed, please refresh and try again")
+                raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
         if vote_mode not in allowed_vote_modes:
-            raise storage.AccessError("This release's vote mode does not allow that action")
+            raise storage.AccessError("This release's vote mode does not allow that action", status=409)
 
         # Check for ongoing tasks
         if promote:
             ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, selected_revision_number)
             if ongoing_tasks > 0:
-                raise storage.AccessError("All checks must be completed before starting a vote")
+                raise storage.AccessError("All checks must be completed before starting a vote", status=409)
 
         # Verify that it's in the correct phase
         expected_phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -516,25 +516,28 @@ class CommitteeParticipant(FoundationCommitter):
             expected_phase = sql.ReleasePhase.RELEASE_CANDIDATE
         if release_for_pre_checks.phase != expected_phase:
             if promote:
-                raise storage.AccessError("This release is not in the candidate draft phase")
-            raise storage.AccessError("The release state has changed, please refresh and try again")
+                raise storage.AccessError("This release is not in the candidate draft phase", status=409)
+            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
 
         # Check that the revision number is the latest
         if revision_number != selected_revision_number:
-            raise storage.AccessError("The selected revision number does not match the latest revision number")
+            raise storage.AccessError(
+                "The selected revision number does not match the latest revision number", status=409
+            )
 
         if await interaction.has_blocker_checks(
             release_for_pre_checks, selected_revision_number, caller_data=self.__data
         ):
             raise storage.AccessError(
-                "This release candidate draft has blockers. Please fix the blockers before starting a vote."
+                "This release candidate draft has blockers. Please fix the blockers before starting a vote.",
+                status=409,
             )
 
         # Check that there is at least one file in the draft
         if promote:
             file_count = await util.number_of_release_files(release_for_pre_checks)
             if file_count == 0:
-                raise storage.AccessError("This candidate draft is empty, containing no files")
+                raise storage.AccessError("This candidate draft is empty, containing no files", status=400)
 
         # Promote it to RELEASE_CANDIDATE
         via = sql.validate_instrumented_attribute
@@ -560,9 +563,9 @@ class CommitteeParticipant(FoundationCommitter):
         result = await self.__data.execute(stmt.values(**values))
         if not isinstance(result, engine.CursorResult):
             log.error(f"Expected cursor result, got {type(result)}")
-            raise storage.AccessError("An error occurred while promoting the release candidate")
+            raise storage.AccessError("An error occurred while promoting the release candidate", status=500)
         if result.rowcount != 1:
-            raise storage.AccessError("A newer revision appeared, please refresh and try again.")
+            raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         await self.__data.refresh(release_for_pre_checks)
         return release_for_pre_checks, vote_seq, vote_mode
 
@@ -610,7 +613,7 @@ class CommitteeParticipant(FoundationCommitter):
             key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True
         ).get()
         if not project:
-            raise storage.AccessError(f"Project {project_key} not found")
+            raise storage.AccessError(f"Project {project_key} not found", status=404)
 
         tests_allowed = config.is_test_mode()
         committee = project.committee
@@ -621,7 +624,8 @@ class CommitteeParticipant(FoundationCommitter):
             display_name = project.display_name
             if committee is None:
                 raise storage.AccessError(
-                    f"You must be a member or committer of the {display_name} committee to start a release draft."
+                    f"You must be a member or committer of the {display_name} committee to start a release draft.",
+                    status=403,
                 )
 
             is_committee_member = self.__asf_uid in committee.committee_members
@@ -630,7 +634,8 @@ class CommitteeParticipant(FoundationCommitter):
 
             if not has_committee_access:
                 raise storage.AccessError(
-                    f"You must be a member or committer of the {display_name} committee to start a release draft."
+                    f"You must be a member or committer of the {display_name} committee to start a release draft.",
+                    status=403,
                 )
 
         # TODO: Consider using Release.revision instead of ./latest
@@ -645,13 +650,13 @@ class CommitteeParticipant(FoundationCommitter):
                     phase_desc = "A release preview (being finished)"
                 case sql.ReleasePhase.RELEASE:
                     phase_desc = "A finished release"
-            raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.")
+            raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
 
         # Validate the version name
         # TODO: We should check that it's bigger than the current version
         # We have the packaging library as a dependency, but it is Python specific
         if version_key_error := util.version_key_error(str(version)):
-            raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}')
+            raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
         release = sql.Release(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             project_key=project.key,
@@ -705,7 +710,7 @@ class CommitteeParticipant(FoundationCommitter):
             return await data.revision(
                 release_key=str(release_key),
                 number=result.number,
-            ).demand(storage.AccessError("Revision not found"))
+            ).demand(storage.AccessError("Revision not found", status=404))
 
     async def upload_files(
         self,
@@ -720,7 +725,7 @@ class CommitteeParticipant(FoundationCommitter):
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
             for file in files:
                 if not file.filename:
-                    raise storage.AccessError("No filename provided")
+                    raise storage.AccessError("No filename provided", status=400)
                 # Validate the filename from multipart upload and construct the new path
                 target_path = path / str(safe.RelPath(file.filename))
                 await aiofiles.os.makedirs(target_path.parent, exist_ok=True)
@@ -1005,7 +1010,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -1018,5 +1023,5 @@ class FoundationAdmin(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid

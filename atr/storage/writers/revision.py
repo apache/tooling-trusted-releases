@@ -366,7 +366,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -384,7 +384,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -601,11 +601,13 @@ class CommitteeParticipant(FoundationCommitter):
     ) -> None:
         tag = tag.strip()
         if not tag:
-            raise storage.AccessError("Tag is required")
+            raise storage.AccessError("Tag is required", status=400)
         if re.match(r"^[a-zA-Z0-9+_.-]+$", tag) is None:
-            raise storage.AccessError("Tag must contain only letters, numbers, plus, underscore, dot, or hyphen")
+            raise storage.AccessError(
+                "Tag must contain only letters, numbers, plus, underscore, dot, or hyphen", status=400
+            )
         if len(tag.encode("utf-8")) > 256:
-            raise storage.AccessError("Tag must be at most 256 bytes")
+            raise storage.AccessError("Tag must be at most 256 bytes", status=400)
 
         release_key = sql.release_key(str(project_key), str(version_key))
         via = sql.validate_instrumented_attribute
@@ -624,7 +626,7 @@ class CommitteeParticipant(FoundationCommitter):
             revision = await self.__data.revision(release_key=release_key, number=revision_number).get()
             if revision is None:
                 raise base.ASFQuartException(f"Revision {revision_number} not found", errorcode=404)
-            raise storage.AccessError(f"Revision {revision_number} already has a tag and cannot be changed")
+            raise storage.AccessError(f"Revision {revision_number} already has a tag and cannot be changed", status=409)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
@@ -721,6 +723,6 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key

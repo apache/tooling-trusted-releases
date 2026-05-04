@@ -59,7 +59,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
     async def cast_trusted(  # noqa: C901
@@ -222,7 +222,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -331,7 +331,7 @@ class CommitteeParticipant(FoundationCommitter):
                         version=str(version_key),
                         _project=True,
                         _committee=True,
-                    ).demand(storage.AccessError("Release not found"))
+                    ).demand(storage.AccessError("Release not found", status=404))
                 release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
                     release.safe_key,
                     selected_revision_number,
@@ -340,7 +340,7 @@ class CommitteeParticipant(FoundationCommitter):
                     expected_podling_thread_id=release.podling_thread_id,
                 )
             if release.committee is None:
-                raise storage.AccessError("Release has no committee")
+                raise storage.AccessError("Release has no committee", status=500)
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
@@ -352,7 +352,7 @@ class CommitteeParticipant(FoundationCommitter):
                 if addr not in permitted_recipients:
                     # This will be checked again by tasks/vote.py for extra safety
                     log.info(f"Invalid mailing list choice: {addr} not in {permitted_recipients}")
-                    raise storage.AccessError("Invalid mailing list choice")
+                    raise storage.AccessError("Invalid mailing list choice", status=403)
 
             if second_round_email_to is not None:
                 second_round_permitted = util.permitted_podling_second_round_recipients(self.__asf_uid)
@@ -361,7 +361,7 @@ class CommitteeParticipant(FoundationCommitter):
                         "Invalid second round mailing list choice: "
                         f"{second_round_email_to} not in {second_round_permitted}"
                     )
-                    raise storage.AccessError("Invalid second round mailing list choice")
+                    raise storage.AccessError("Second round mailing list choice is not permitted", status=403)
 
             # TODO: We also need to store the duration of the vote
             # We can't allow resolution of the vote until the duration has elapsed
@@ -428,7 +428,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -449,11 +449,11 @@ class CommitteeMember(CommitteeParticipant):
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(storage.AccessError("Release not found"))
+        ).demand(storage.AccessError("Release not found", status=404))
         if (expected_vote_mode is not None) and (release.effective_vote_mode != expected_vote_mode):
-            raise storage.AccessError("The resolve form is stale, please refresh and try again")
+            raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
-            raise storage.AccessError("Release is configured for manual voting")
+            raise storage.AccessError("Release is configured for manual voting", status=409)
         podling_round_one_thread_id = None
         if release.effective_vote_mode == sql.VoteMode.TRUSTED:
             if (
@@ -485,7 +485,7 @@ class CommitteeMember(CommitteeParticipant):
             and (release.current_vote_seq is not None)
             and (release.current_vote_seq != expected_vote_seq)
         ):
-            raise storage.AccessError("The resolve form is stale, please refresh and try again")
+            raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
 
         is_podling = False
         if release.project.committee is not None:
@@ -494,7 +494,7 @@ class CommitteeMember(CommitteeParticipant):
 
         latest_vote_task = await interaction.release_current_vote_task(release)
         if latest_vote_task is None:
-            raise storage.AccessError("No vote task found, unable to send resolution message.")
+            raise storage.AccessError("No vote task found, unable to send resolution message.", status=404)
 
         if (
             (vote_result != "cancelled")
@@ -502,14 +502,15 @@ class CommitteeMember(CommitteeParticipant):
             and (not interaction.vote_duration_bypass())
         ):
             raise storage.AccessError(
-                "The vote cannot be resolved before the voting period has ended unless it is cancelled."
+                "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
+                status=409,
             )
 
         voting_round = None
         if is_podling is True:
             voting_round = 1 if (podling_thread_id is None) else 2
         if release.committee is None:
-            raise storage.AccessError("Project has no committee - Invalid state")
+            raise storage.AccessError("Project has no committee - Invalid state", status=500)
 
         return await self.resolve_release(
             project_key,
@@ -534,16 +535,16 @@ class CommitteeMember(CommitteeParticipant):
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,
-        ).demand(storage.AccessError("Release not found"))
+        ).demand(storage.AccessError("Release not found", status=404))
 
         if release.effective_vote_mode != sql.VoteMode.MANUAL:
-            raise storage.AccessError("Release is not configured for manual voting")
+            raise storage.AccessError("Release is not configured for manual voting", status=409)
 
         if release.vote_started is None:
-            raise storage.AccessError("Vote has not been started")
+            raise storage.AccessError("Vote has not been started", status=409)
 
         if (release.project.committee is not None) and release.project.committee.is_podling:
-            raise storage.AccessError("Podling releases require the standard two round vote process")
+            raise storage.AccessError("Podling releases require the standard two round vote process", status=409)
 
         match vote_result:
             case "passed":
@@ -621,7 +622,7 @@ class CommitteeMember(CommitteeParticipant):
                 task_recipient = interaction.task_recipient_get(latest_vote_task)
                 archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
                 if archive_url is None:
-                    raise ValueError("No archive URL found for podling vote")
+                    raise storage.AccessError("No archive URL found for podling vote", status=404)
                 thread_id = archive_url.split("/")[-1]
                 await self._resolve_transition(
                     release,
@@ -637,10 +638,10 @@ class CommitteeMember(CommitteeParticipant):
                     latest_vote_task.task_args.get("second_round_email_to") or util.INCUBATOR_GENERAL_ADDRESS
                 )
                 if not release.project.committee:
-                    raise ValueError("Project has no committee - Invalid state")
+                    raise storage.AccessError("Project has no committee - Invalid state", status=500)
                 revision_number = release.latest_revision_number
                 if revision_number is None:
-                    raise ValueError("Release has no revision number - Invalid state")
+                    raise storage.AccessError("Release has no revision number - Invalid state", status=500)
                 vote_duration = latest_vote_task.task_args["vote_duration"]
                 subject_template = await construct.start_vote_subject_default(release.safe_project_key)
                 body_template = await construct.start_vote_default(release.safe_project_key)
@@ -670,7 +671,7 @@ class CommitteeMember(CommitteeParticipant):
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
-                    raise ValueError("Second round vote sequence is invalid")
+                    raise storage.AccessError("Second round vote sequence is invalid", status=500)
                 second_round_vote_mode = release.effective_vote_mode
                 await self.__data.commit()
                 await self.__data.refresh(release)
@@ -855,17 +856,17 @@ class CommitteeMember(CommitteeParticipant):
                 _committee=True,
                 _release_policy=True,
                 _project_release_policy=True,
-            ).demand(storage.AccessError("Release not found"))
+            ).demand(storage.AccessError("Release not found", status=404))
             if (expected_vote_mode is not None) and (expected_vote_mode != sql.VoteMode.TRUSTED):
-                raise storage.AccessError("The resolve form is stale, please refresh and try again")
+                raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
             if release.effective_vote_mode != sql.VoteMode.TRUSTED:
-                raise storage.AccessError("Release is not configured for trusted voting")
+                raise storage.AccessError("Release is not configured for trusted voting", status=409)
             if release.current_vote_seq is None:
-                raise storage.AccessError("Vote serial is missing, please refresh and try again")
+                raise storage.AccessError("Vote serial is missing, please refresh and try again", status=409)
             if (expected_vote_seq is not None) and (release.current_vote_seq != expected_vote_seq):
-                raise storage.AccessError("The resolve form is stale, please refresh and try again")
+                raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
             if release.committee is None:
-                raise storage.AccessError("Project has no committee - Invalid state")
+                raise storage.AccessError("Project has no committee - Invalid state", status=500)
 
             vote_seq = release.current_vote_seq
             voting_round = None
@@ -882,7 +883,8 @@ class CommitteeMember(CommitteeParticipant):
                 and (not resolution_bypass)
             ):
                 raise storage.AccessError(
-                    "The vote cannot be resolved before the voting period has ended unless it is cancelled."
+                    "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
+                    status=409,
                 )
 
             ballots = await interaction.ballots_for_resolution(release.key, vote_seq, self.__data)
@@ -894,14 +896,15 @@ class CommitteeMember(CommitteeParticipant):
             ):
                 binding_label, _non_binding_label = user.binding_terminology(voting_round)
                 raise storage.AccessError(
-                    f"The trusted ballot record does not have enough {binding_label.lower()} +1 votes to pass."
+                    f"The trusted ballot record does not have enough {binding_label.lower()} +1 votes to pass.",
+                    status=409,
                 )
 
             if (voting_round == 1) and (vote_result == "passed"):
                 if latest_vote_task is None:
-                    raise storage.AccessError("No vote task found, unable to start the Incubator vote.")
+                    raise storage.AccessError("No vote task found, unable to start the Incubator vote.", status=404)
                 if podling_round_one_thread_id is None:
-                    raise storage.AccessError("No archive URL found for podling vote")
+                    raise storage.AccessError("No archive URL found for podling vote", status=404)
                 await self._resolve_transition(
                     release,
                     expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -917,7 +920,7 @@ class CommitteeMember(CommitteeParticipant):
                 )
                 revision_number = release.latest_revision_number
                 if revision_number is None:
-                    raise storage.AccessError("Release has no revision number - Invalid state")
+                    raise storage.AccessError("Release has no revision number - Invalid state", status=500)
                 vote_duration = latest_vote_task.task_args["vote_duration"]
                 subject_template = await construct.start_vote_subject_default(release.safe_project_key)
                 body_template = await construct.start_vote_default(release.safe_project_key)
@@ -947,7 +950,7 @@ class CommitteeMember(CommitteeParticipant):
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
-                    raise storage.AccessError("Second round vote sequence is invalid")
+                    raise storage.AccessError("Second round vote sequence is invalid", status=500)
                 second_round_vote_mode = release.effective_vote_mode
                 await self.__data.commit()
                 await self.__data.refresh(release)
@@ -1064,7 +1067,7 @@ class CommitteeMember(CommitteeParticipant):
         )
         if getattr(result, "rowcount", 0) != 1:
             await self.__data.rollback()
-            raise storage.AccessError("The release state has changed, please refresh and try again")
+            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

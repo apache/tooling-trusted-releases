@@ -59,7 +59,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -77,7 +77,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -96,7 +96,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -117,7 +117,7 @@ class CommitteeMember(CommitteeParticipant):
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted:
-                raise storage.AccessError(f"You are not permitted to send announcements to {addr}")
+                raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
 
         unfinished_dir: str = ""
         finished_dir: str = ""
@@ -134,10 +134,11 @@ class CommitteeMember(CommitteeParticipant):
         ).demand(
             storage.AccessError(
                 f"Release {project_key!s} {version_key!s} {preview_revision_number!s} does not exist",
+                status=404,
             )
         )
         if (committee := release.project.committee) is None:
-            raise storage.AccessError("Release has no committee - Invalid state")
+            raise storage.AccessError("Release has no committee - Invalid state", status=500)
 
         policy = release.release_policy or release.project.release_policy
         if policy and policy.file_tag_mappings:
@@ -153,7 +154,8 @@ class CommitteeMember(CommitteeParticipant):
                 raise storage.AccessError(
                     f"This release cannot be announced until the following distributions have been recorded: {
                         ', '.join(missing)
-                    }"
+                    }",
+                    status=409,
                 )
 
         # Fetch the current subject template and verify the hash
@@ -161,7 +163,7 @@ class CommitteeMember(CommitteeParticipant):
         if subject_template_hash is not None:
             current_hash = construct.template_hash(subject_template)
             if current_hash != subject_template_hash:
-                raise storage.AccessError("Subject template has been modified since the form was loaded")
+                raise storage.AccessError("Subject template has been modified since the form was loaded", status=409)
 
         # Substitute the subject template
         options = construct.AnnounceReleaseOptions(
@@ -182,7 +184,7 @@ class CommitteeMember(CommitteeParticipant):
         finished_path = paths.release_directory(predicted_finished_release)
         finished_dir = str(finished_path)
         if await aiofiles.os.path.exists(finished_dir):
-            raise storage.AccessError("Release already exists")
+            raise storage.AccessError("Release already exists", status=409)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
         preserve = release.project.policy_preserve_download_files
@@ -216,7 +218,7 @@ class CommitteeMember(CommitteeParticipant):
                     reason=f"user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
                 )
         except Exception as e:
-            raise storage.AccessError(f"Error moving files: {e!s}")
+            raise storage.AccessError(f"Error moving files: {e!s}", status=500)
 
         # TODO: Add an audit log entry here
         # TODO: We should consider copying the files instead of hard linking
@@ -250,11 +252,12 @@ class CommitteeMember(CommitteeParticipant):
 
             await self.__promote_in_database(release, preview_revision_number, release_date)
             await self.__data.commit()
-        except storage.AccessError as e:
-            raise e
+        except storage.AccessError:
+            raise
         except Exception as e:
             raise storage.AccessError(
-                f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed."
+                f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed.",
+                status=500,
             )
 
     async def __hard_link_downloads(

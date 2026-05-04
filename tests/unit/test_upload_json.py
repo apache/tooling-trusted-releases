@@ -38,9 +38,9 @@ async def test_add_files_html_redirect_on_success(app):
     session = mock.AsyncMock()
     session.redirect = mock.AsyncMock(return_value=redirect_response)
 
-    patched = _mock_storage(None, 2, False)
+    storage_write = _mock_storage_write(None, 2, False)
 
-    with mock.patch.object(upload, "storage", patched):
+    with mock.patch.object(upload.storage, "write", storage_write):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
                 session,
@@ -56,9 +56,9 @@ async def test_add_files_html_redirect_on_success(app):
 
 @pytest.mark.asyncio
 async def test_add_files_json_creation_error(app):
-    patched = _mock_storage("No files provided", 0, False)
+    storage_write = _mock_storage_write("No files provided", 0, False)
 
-    with mock.patch.object(upload, "storage", patched):
+    with mock.patch.object(upload.storage, "write", storage_write):
         async with app.test_request_context("/upload/test/1.0"):
             result = await upload._add_files(
                 mock.AsyncMock(),
@@ -77,10 +77,10 @@ async def test_add_files_json_creation_error(app):
 
 @pytest.mark.asyncio
 async def test_add_files_json_success(app):
-    patched = _mock_storage(None, 2, False)
+    storage_write = _mock_storage_write(None, 2, False)
 
     with (
-        mock.patch.object(upload, "storage", patched),
+        mock.patch.object(upload.storage, "write", storage_write),
         mock.patch.object(upload.util, "as_url", return_value="/compose/test/1.0"),
     ):
         async with app.test_request_context("/upload/test/1.0"):
@@ -100,7 +100,7 @@ async def test_add_files_json_success(app):
     assert "2 files" in data["message"]
 
 
-def _mock_storage(creation_error, number_of_files, was_quarantined):
+def _mock_storage_write(creation_error, number_of_files, was_quarantined):
     wacp = mock.AsyncMock()
     wacp.release.upload_files = mock.AsyncMock(
         return_value=(creation_error, number_of_files, was_quarantined),
@@ -111,4 +111,4 @@ def _mock_storage(creation_error, number_of_files, was_quarantined):
     cm = mock.AsyncMock()
     cm.__aenter__.return_value = write
 
-    return mock.MagicMock(write=mock.MagicMock(return_value=cm))
+    return mock.MagicMock(return_value=cm)

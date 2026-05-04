@@ -51,7 +51,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -69,7 +69,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -88,14 +88,14 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
     async def category_add(self, project_key: safe.ProjectKey, new_category: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
         new_category = new_category.strip()
         current_categories = self.__current_categories(project)
         if new_category and (new_category not in current_categories):
@@ -120,7 +120,7 @@ class CommitteeMember(CommitteeParticipant):
     async def category_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
         current_categories = self.__current_categories(project)
         if action_value in current_categories:
             if action_value in registry.FORBIDDEN_PROJECT_CATEGORIES:
@@ -154,7 +154,7 @@ class CommitteeMember(CommitteeParticipant):
 
         # Check whether the project already exists
         if await self.__data.project(key=label).get():
-            raise storage.AccessError(f"Project {label} already exists")
+            raise storage.AccessError(f"Project {label} already exists", status=409)
 
         project = sql.Project(
             key=label,
@@ -186,7 +186,7 @@ class CommitteeMember(CommitteeParticipant):
                 and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
                 and ("project.key" in str(e.orig))
             ):
-                raise storage.AccessError(f"Project {label} already exists")
+                raise storage.AccessError(f"Project {label} already exists", status=409)
             else:
                 raise
 
@@ -196,11 +196,13 @@ class CommitteeMember(CommitteeParticipant):
         ).get()
 
         if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
 
         # Prevent deletion if there are associated releases or channels
         if project.releases:
-            raise storage.AccessError(f"Cannot delete project '{project_key}' because it has associated releases.")
+            raise storage.AccessError(
+                f"Cannot delete project '{project_key}' because it has associated releases.", status=409
+            )
 
         await self.__data.delete(project)
         await self.__data.commit()
@@ -213,7 +215,7 @@ class CommitteeMember(CommitteeParticipant):
     async def language_add(self, project_key: safe.ProjectKey, new_language: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
         new_language = new_language.strip()
         current_languages = self.__current_languages(project)
         if new_language and (new_language not in current_languages):
@@ -236,7 +238,7 @@ class CommitteeMember(CommitteeParticipant):
     async def language_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()
         if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
+            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
         current_languages = self.__current_languages(project)
         if action_value in current_languages:
             current_languages.remove(action_value)

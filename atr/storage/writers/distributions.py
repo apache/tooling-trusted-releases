@@ -51,7 +51,7 @@ class FoundationCommitter(GeneralPublic):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
 
@@ -69,7 +69,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -88,7 +88,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
-            raise storage.AccessError("Not authorized")
+            raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
@@ -244,10 +244,10 @@ class CommitteeMember(CommitteeParticipant):
                         web_url=None,
                     )
                     return dist, added, None
-                raise storage.AccessError(f"Failed to get API response from distribution platform: {error}")
+                raise storage.AccessError(f"Failed to get API response from distribution platform: {error}", status=502)
         upload_date = distribution.distribution_upload_date(dd.platform, result, dd.version)
         if upload_date is None:
-            raise storage.AccessError("Failed to get upload date from distribution platform")
+            raise storage.AccessError("Failed to get upload date from distribution platform", status=502)
         web_url = distribution.distribution_web_url(dd.platform, result, dd.version)
         metadata = models.distribution.Metadata(
             api_url=api_url,

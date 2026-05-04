@@ -110,6 +110,17 @@ async def _add_files(
             project_key=project_key,
             version_key=version_key,
         )
+    except storage.AccessError as e:
+        status = e.status or 500
+        log.warning(f"Upload access error: {e!s}")
+        if wants_json:
+            return quart.jsonify(ok=False, message=str(e)), status
+        await quart.flash(str(e), "error")
+        return await session.redirect(
+            get.upload.selected,
+            project_key=project_key,
+            version_key=version_key,
+        )
     except Exception as e:
         log.exception("Error adding file:")
         if wants_json:
