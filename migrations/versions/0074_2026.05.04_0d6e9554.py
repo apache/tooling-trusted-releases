@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.Column("begin", sql.UTCDateTime(timezone=True), nullable=True),
         sa.Column("latest", sql.UTCDateTime(timezone=True), nullable=True),
         sa.Column("eod", sql.UTCDateTime(timezone=True), nullable=True),
-        sa.Column("eom", sql.UTCDateTime(timezone=True), nullable=True),
+        sa.Column("eos", sql.UTCDateTime(timezone=True), nullable=True),
         sa.Column("eol", sql.UTCDateTime(timezone=True), nullable=True),
         sa.Column("lts", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.ForeignKeyConstraint(

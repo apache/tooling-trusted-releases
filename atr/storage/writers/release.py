@@ -32,6 +32,7 @@ import sqlmodel
 
 import atr.analysis as analysis
 import atr.config as config
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
@@ -656,11 +657,28 @@ class CommitteeParticipant(FoundationCommitter):
         # We have the packaging library as a dependency, but it is Python specific
         if version_key_error := util.version_key_error(str(version)):
             raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
+        try:
+            cycle_name = cycles.cycle_name_for_version(project, str(version))
+        except ValueError as exc:
+            raise storage.AccessError(str(exc)) from exc
+        cycle_key = f"{project.key}-{cycle_name}"
+
+        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
+            self.__data.add(
+                sql.ProjectCycle(
+                    cycle_key=cycle_key,
+                    cycle=cycle_name,
+                    project_key=project.key,
+                    lts=False,
+                )
+            )
+
         release = sql.Release(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             project_key=project.key,
             project=project,
             version=str(version),
+            cycle_key=cycle_key,
             created=datetime.datetime.now(datetime.UTC),
         )
         self.__data.add(release)
