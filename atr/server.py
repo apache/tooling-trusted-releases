@@ -984,7 +984,7 @@ async def _register_recurrent_tasks() -> None:
 
 
 def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
-    # Add a global error handler to show helpful error messages with tracebacks
+    # Preserve HTTP status codes for errors that are raised outside blueprint-specific handlers
     @app.errorhandler(exceptions.HTTPException)
     async def handle_http_exception(error: exceptions.HTTPException) -> Any:
         status_code = error.code or 500

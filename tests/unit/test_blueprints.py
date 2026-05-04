@@ -16,16 +16,19 @@
 # under the License.
 
 import dataclasses
+import json
 from typing import Literal
 
 import asfquart
 import pytest
 
 import atr.blueprints as blueprints
+import atr.blueprints.api as api_blueprint
 import atr.blueprints.common as common
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.schema as schema
+import atr.storage as storage
 import atr.util as util
 import atr.web as web
 
@@ -70,6 +73,21 @@ async def test_all_routes_support_url_construction(monkeypatch):
         raise AssertionError("Routes incompatible with as_url:\n" + "\n".join(failures))
 
 
+@pytest.mark.asyncio
+async def test_api_storage_access_error_uses_embedded_status(monkeypatch):
+    monkeypatch.setattr("asfquart.APP", None)
+
+    app = asfquart.construct("test-api-errors")
+
+    async with app.test_request_context("/api/test"):
+        response, status = await api_blueprint._handle_storage_access_error(
+            storage.AccessError("Release not found", status=404)
+        )
+
+    assert status == 404
+    assert json.loads(await response.data) == {"error": "Release not found"}
+
+
 def test_build_api_path_body_param():
     class RequestBody(schema.Strict):
         value: int
@@ -101,6 +119,19 @@ def test_build_api_path_literal_and_safe():
     assert optional == []
 
 
+def test_build_api_path_optional_non_safe_type_not_in_validated():
+    async def route(
+        _session: web.Committer,
+        _page: Literal["items"],
+        _category: str | None = None,
+    ) -> str:
+        return ""
+
+    _, validated, _, _, _, _, optional = common.build_api_path(route)
+    assert optional == ["_category"]
+    assert all(name != "_category" for name, _ in validated)
+
+
 def test_build_api_path_optional_param():
     async def route(
         _session: web.Committer,
@@ -126,19 +157,6 @@ def test_build_api_path_optional_safe_type_included_in_validated():
     assert path == "/project/<_project_key>"
     assert optional == ["_project_key"]
     assert ("_project_key", safe.ProjectKey) in validated
-
-
-def test_build_api_path_optional_non_safe_type_not_in_validated():
-    async def route(
-        _session: web.Committer,
-        _page: Literal["items"],
-        _category: str | None = None,
-    ) -> str:
-        return ""
-
-    _, validated, _, _, _, _, optional = common.build_api_path(route)
-    assert optional == ["_category"]
-    assert all(name != "_category" for name, _ in validated)
 
 
 def test_build_api_path_query_param():
@@ -330,6 +348,15 @@ def test_setup_wrapper_sets_metadata():
 
 
 @pytest.mark.asyncio
+async def test_validate_params_raises_on_invalid_optional():
+    import asfquart.base as base
+
+    kwargs: dict = {"project_key": "INVALID KEY WITH SPACES"}
+    with pytest.raises(base.ASFQuartException):
+        await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
+
+
+@pytest.mark.asyncio
 async def test_validate_params_skips_absent_optional():
     kwargs: dict = {}
     await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
@@ -341,12 +368,3 @@ async def test_validate_params_validates_present_optional():
     kwargs: dict = {"project_key": "myproject"}
     await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
     assert isinstance(kwargs["project_key"], safe.ProjectKey)
-
-
-@pytest.mark.asyncio
-async def test_validate_params_raises_on_invalid_optional():
-    import asfquart.base as base
-
-    kwargs: dict = {"project_key": "INVALID KEY WITH SPACES"}
-    with pytest.raises(base.ASFQuartException):
-        await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
