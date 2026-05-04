@@ -429,6 +429,30 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def project_cycle(
+        self,
+        cycle_key: Opt[str] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
+        cycle: Opt[str] = NOT_SET,
+        _project: bool = False,
+        _releases: bool = False,
+    ) -> Query[sql.ProjectCycle]:
+        query = sqlmodel.select(sql.ProjectCycle)
+
+        if is_defined(cycle_key):
+            query = query.where(sql.ProjectCycle.cycle_key == cycle_key)
+        if is_defined(project_key):
+            query = query.where(sql.ProjectCycle.project_key == project_key)
+        if is_defined(cycle):
+            query = query.where(sql.ProjectCycle.cycle == cycle)
+
+        if _project:
+            query = query.options(joined_load(sql.ProjectCycle.project))
+        if _releases:
+            query = query.options(select_in_load(sql.ProjectCycle.releases))
+
+        return Query(self, query)
+
     def public_signing_key(
         self,
         fingerprint: Opt[str] = NOT_SET,
@@ -527,6 +551,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         _project_release_policy: bool = False,
         _revisions: bool = False,
         _distributions: bool = False,
+        _cycle: bool = False,
     ) -> Query[sql.Release]:
         query = sqlmodel.select(sql.Release)
 
@@ -566,6 +591,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.options(select_in_load(sql.Release.revisions))
         if _distributions:
             query = query.options(joined_load(sql.Release.distributions))
+        if _cycle:
+            query = query.options(joined_load(sql.Release.cycle))
 
         return Query(self, query)
 

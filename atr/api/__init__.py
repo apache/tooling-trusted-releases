@@ -30,6 +30,7 @@ import sqlmodel
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.api as api
+import atr.cle as cle
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
@@ -173,6 +174,78 @@ async def checks_ongoing(
         endpoint="/checks/ongoing",
         ongoing=ongoing_tasks_count,
     ).model_dump(mode="json"), 200
+
+
+@api.typed
+async def cle_project(
+    _cle_project: Literal["cle/project"],
+    project_key: safe.ProjectKey,
+) -> DictResponse:
+    """
+    URL: GET /cle/project/<project_key>
+
+    Generate an ECMA-428 Common Lifecycle Enumeration document covering every
+    cycle and release of a project. This is the canonical form per the spec -
+    one document per component. The body is the raw CLE document, with no ATR
+    envelope, so it can be consumed directly by tooling that expects spec-shaped
+    CLE JSON.
+    """
+    async with db.session() as data:
+        project = await data.project(key=str(project_key)).demand(
+            exceptions.NotFound(f"Project '{project_key!s}' was not found")
+        )
+        # Load every release for the project, regardless of phase. LifecycleEvent
+        # is the source of truth for what's emitted; releases are only consulted
+        # to resolve version strings, and an event can reference a release that
+        # has since changed phase (eg backfilled from `released` on a row that's
+        # back in preview).
+        releases = await data.release(project_key=str(project_key)).all()
+        events_stmt = sqlmodel.select(sql.LifecycleEvent).where(sql.LifecycleEvent.project_key == str(project_key))
+        events = (await data.execute(events_stmt)).scalars().all()
+    return cle.project_document(project, events, releases, now=datetime.datetime.now(datetime.UTC)), 200
+
+
+@api.typed
+async def cle_release(
+    _cle_release: Literal["cle/release"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> DictResponse:
+    """
+    URL: GET /cle/release/<project_key>/<version_key>
+
+    Generate a CLE document filtered to a single release. This is a derived
+    view rather than a spec form - the document still has the per-component
+    shape ECMA-428 prescribes, but only includes events that touch this
+    release: its own released and archived events, plus the lifecycle events
+    of the cycle it belongs to.
+    """
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        release_obj = await data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            _cycle=True,
+        ).demand(exceptions.NotFound(f"Release '{project_key!s}-{version_key!s}' was not found"))
+        if release_obj.phase != sql.ReleasePhase.RELEASE:
+            raise exceptions.NotFound(f"Release '{project_key!s}-{version_key!s}' is not released")
+        # Events touching this release: its own version-scoped events plus the
+        # cycle-scoped events for its cycle. Cycle-scoped events have null
+        # version_key.
+        events_stmt = sqlmodel.select(sql.LifecycleEvent).where(
+            (via(sql.LifecycleEvent.version_key) == release_obj.key)
+            | (
+                via(sql.LifecycleEvent.version_key).is_(None)
+                & (via(sql.LifecycleEvent.cycle_key) == release_obj.cycle_key)
+            )
+        )
+        events = (await data.execute(events_stmt)).scalars().all()
+    return cle.release_document(
+        release_obj.project,
+        release_obj,
+        events,
+        now=datetime.datetime.now(datetime.UTC),
+    ), 200
 
 
 @api.typed

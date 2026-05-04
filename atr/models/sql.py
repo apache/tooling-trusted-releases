@@ -257,6 +257,15 @@ class VoteChoice(enum.StrEnum):
     NO = "-1"
 
 
+class LifecycleEventType(enum.StrEnum):
+    RELEASE = "release"
+    ARCHIVE = "archive"
+    WITHDRAW = "withdraw"
+    EOD = "eod"
+    EOS = "eos"
+    EOL = "eol"
+
+
 # Pydantic models
 
 
@@ -993,8 +1002,11 @@ class ProjectCycle(sqlmodel.SQLModel, table=True):
 
     Every project has at least one cycle. Projects whose `version_method` is
     "simple" keep a single cycle named "default" and never expose cycle UI.
-    The date columns (start, begin, latest, eod, eom, eol) are a denormalised
-    cache; events from #914 are the canonical writers.
+
+    The lifecycle date columns (eod, eos, eol) mirror the most recent
+    LifecycleEvent of that kind for the cycle. The events table is the
+    source of truth; these columns are kept as denormalised caches so that
+    "what is currently planned" reads cheaply.
     """
 
     # We guarantee that "{project_key}-{cycle}" is unique
@@ -1022,12 +1034,13 @@ class ProjectCycle(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
     )
 
-    # Lifecycle dates, set as the cycle reaches each milestone (see #914).
+    # Mirrors the latest LifecycleEvent of the matching kind for this cycle.
+    # Writers update both the column and the event row in the same transaction.
     eod: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
     )
-    eom: datetime.datetime | None = sqlmodel.Field(
+    eos: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
     )
@@ -1061,8 +1074,9 @@ class Release(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2025, 6, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
-    # Set when the release leaves /dist/release. Sourced by whatever archival flow
-    # #507 eventually settles on; null for releases that are still current.
+    # Mirrors the latest archive LifecycleEvent for this release. Null for
+    # releases that haven't been archived. Sourced by whatever archival flow
+    # #507 eventually settles on.
     archived: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
@@ -1238,6 +1252,60 @@ class Release(sqlmodel.SQLModel, table=True):
 
 
 # SQL models referencing Committee, Project, or Release
+
+
+# LifecycleEvent: append-only log of project / cycle / release lifecycle moments.
+# Cache columns on Release and ProjectCycle (released, archived, eod, eos, eol)
+# mirror the most recent event of each kind for fast read paths; this table is
+# the source of truth for ECMA-428 output and audit. See issues #912 and #914.
+#
+# Search invariants for #914's three shapes (project, project+cycle, project+cycle+version):
+#   - version-scoped events (release, archive, withdraw) carry both version_key
+#     and cycle_key (the release's cycle), so cycle history queries find them.
+#   - cycle-scoped events (eod, eos, eol) carry cycle_key only.
+#   - project-scoped events (none today) would carry neither.
+class LifecycleEvent(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+
+    project_key: str = sqlmodel.Field(foreign_key="project.key", ondelete="CASCADE", **example("example"))
+
+    cycle_key: str | None = sqlmodel.Field(
+        default=None, foreign_key="projectcycle.cycle_key", **example("example-default")
+    )
+
+    version_key: str | None = sqlmodel.Field(default=None, foreign_key="release.key", **example("example-0.0.1"))
+
+    event: LifecycleEventType = sqlmodel.Field(**example(LifecycleEventType.RELEASE))
+
+    # When the event takes effect. Past for things that have happened, future for
+    # planned milestones such as a planned eol date years out.
+    effective: datetime.datetime = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+
+    # When the row was recorded. Maps to ECMA-428 `published` and orders the
+    # spec id sequence, so retroactive entries get later ids than older ones.
+    published: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+
+    # Set only on withdraw rows; points at the event being retracted.
+    target_event_id: int | None = sqlmodel.Field(default=None, foreign_key="lifecycleevent.id", index=True)
+
+    # Supporting links: vote thread, announce@ message, GitHub issue, etc.
+    reference_urls: list[str] = sqlmodel.Field(
+        default_factory=list,
+        sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False),
+        **example([]),
+    )
+
+    __table_args__ = (
+        sqlalchemy.Index("ix_lifecycleevent_project_event", "project_key", "event"),
+        sqlalchemy.Index("ix_lifecycleevent_cycle_event", "cycle_key", "event"),
+        sqlalchemy.Index("ix_lifecycleevent_version_event", "version_key", "event"),
+    )
 
 
 # BallotPaper: Release
