@@ -239,6 +239,12 @@ class UserRole(enum.StrEnum):
     SYSADMIN = "sysadmin"
 
 
+class VersionMethod(enum.StrEnum):
+    SIMPLE = "simple"
+    SEMVER = "semver"
+    CALVER = "calver"
+
+
 class VoteMode(enum.StrEnum):
     MANUAL = "manual"
     EMAIL = "email"
@@ -712,6 +718,13 @@ class Project(sqlmodel.SQLModel, table=True):
     category: str | None = sqlmodel.Field(default=None, **example("data,storage"))
     programming_languages: str | None = sqlmodel.Field(default=None, **example("c,python"))
 
+    # Version-scheme metadata (#912). For "simple" projects the pattern fields are null
+    # and the project keeps a single "default" cycle.
+    version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))
+    version_pattern: str | None = sqlmodel.Field(default=None, **example(r"^\d+\.\d+\.\d+$"))
+    cycle_match: str | None = sqlmodel.Field(default=None, **example(r"^(\d+)\.\d+\.\d+$"))
+    branch_template: str | None = sqlmodel.Field(default=None, **example("release-{cycle}"))
+
     # M-1: Project -> Committee
     # 1-M: Committee -> [Project]
     committee_key: str | None = sqlmodel.Field(default=None, foreign_key="committee.key", **example("example"))
@@ -722,6 +735,14 @@ class Project(sqlmodel.SQLModel, table=True):
     # M-1: Release -> Project
     # see_also(Release.project)
     releases: list["Release"] = sqlmodel.Relationship(back_populates="project")
+
+    # 1-M: Project -C-> [ProjectCycle]
+    # M-1: ProjectCycle -> Project
+    cycles: list["ProjectCycle"] = sqlmodel.Relationship(
+        back_populates="project",
+        cascade_delete=True,
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
     # # 1-M: Project -> [DistributionChannel]
     # # M-1: DistributionChannel -> Project
@@ -966,6 +987,63 @@ Thanks,
         return policy.preserve_download_files
 
 
+# ProjectCycle: Project Release
+class ProjectCycle(sqlmodel.SQLModel, table=True):
+    """A release cycle within a project, e.g. "2.x", "default", or "2026".
+
+    Every project has at least one cycle. Projects whose `version_method` is
+    "simple" keep a single cycle named "default" and never expose cycle UI.
+    The date columns (start, begin, latest, eod, eom, eol) are a denormalised
+    cache; events from #914 are the canonical writers.
+    """
+
+    # We guarantee that "{project_key}-{cycle}" is unique
+    # Therefore we can use that for the key
+    cycle_key: str = sqlmodel.Field(default="", primary_key=True, unique=True, **example("example-default"))
+    cycle: str = sqlmodel.Field(**example("default"))
+
+    # M-1: ProjectCycle -> Project
+    # 1-M: Project -> [ProjectCycle]
+    project_key: str = sqlmodel.Field(foreign_key="project.key", ondelete="CASCADE", **example("example"))
+    project: Project = sqlmodel.Relationship(back_populates="cycles")
+    see_also(Project.cycles)
+
+    # Release-derived cache, updated as releases reach the relevant phases.
+    start: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+    begin: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+    latest: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+
+    # Lifecycle dates, set as the cycle reaches each milestone (see #914).
+    eod: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+    eom: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+    eol: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+    )
+    lts: bool = sqlmodel.Field(default=False)
+
+    # 1-M: ProjectCycle -> [Release]
+    # M-1: Release -> ProjectCycle
+    releases: list["Release"] = sqlmodel.Relationship(back_populates="cycle")
+
+    __table_args__ = (sqlmodel.UniqueConstraint("project_key", "cycle", name="unique_project_cycle"),)
+
+
 # Release: Project ReleasePolicy Revision CheckResult
 class Release(sqlmodel.SQLModel, table=True):
     # model_config = compat.SQLModelConfig(extra="forbid", from_attributes=True)
@@ -991,6 +1069,16 @@ class Release(sqlmodel.SQLModel, table=True):
     project_key: str = sqlmodel.Field(foreign_key="project.key", **example("example"))
     project: Project = sqlmodel.Relationship(back_populates="releases")
     see_also(Project.releases)
+
+    # M-1: Release -> ProjectCycle
+    # 1-M: ProjectCycle -> [Release]
+    # cycle_key defaults to "{project_key}-default" via model_post_init below. That
+    # fallback is correct for "simple" projects (every project today) and an inert
+    # default for semver/calver projects, where writers will compute a real
+    # cycle_key from the version string and override it.
+    cycle_key: str = sqlmodel.Field(default="", foreign_key="projectcycle.cycle_key", **example("example-default"))
+    cycle: "ProjectCycle" = sqlmodel.Relationship(back_populates="releases")
+    see_also(ProjectCycle.releases)
 
     package_managers: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example([])
@@ -1122,6 +1210,11 @@ class Release(sqlmodel.SQLModel, table=True):
 
         if isinstance(self.phase, str):
             self.phase = ReleasePhase(self.phase)
+
+        # Fall back to the project's "default" cycle when no cycle_key is set.
+        # See the field comment above for why this is the right phase-1 default.
+        if (not self.cycle_key) and self.project_key:
+            self.cycle_key = f"{self.project_key}-default"
 
     # NOTE: This does not work
     # But it we set it with Release.latest_revision_number_query = ..., it might work
@@ -1646,6 +1739,24 @@ def populate_revision_sequence_and_key(
     parent_row = connection.execute(parent_stmt).fetchone()
     if parent_row is not None:
         revision.parent_key = parent_row[0]
+
+
+@event.listens_for(Project, "after_insert")
+def populate_default_project_cycle(_mapper: orm.Mapper, connection: sqlalchemy.Connection, project: Project) -> None:
+    # Every project gets a "default" cycle automatically so Release.cycle_key
+    # has a valid FK target without writers having to do the bookkeeping. For
+    # "simple" projects this is the only cycle they'll ever have; semver and
+    # calver projects get additional cycles when versions match cycle_match.
+    connection.execute(
+        sqlite.insert(ProjectCycle)
+        .values(
+            cycle_key=f"{project.key}-default",
+            cycle="default",
+            project_key=project.key,
+            lts=False,
+        )
+        .on_conflict_do_nothing(index_elements=["cycle_key"])
+    )
 
 
 @event.listens_for(Release, "before_insert")
