@@ -28,7 +28,7 @@ import atr.tasks.checks as checks
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -64,15 +64,18 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
         async with aiofiles.open(hash_abs_path) as f:
             expected_hash = await f.read()
-        # May be in the format "HASH FILENAME\n"
-        artifact_name = artifact_abs_path.name
-        if expected_hash.startswith(artifact_name):
+        expected_hash_parts = expected_hash.strip().split()
+        if (len(expected_hash_parts) > 3) and (expected_hash_parts[0] == "SHA512") and (expected_hash_parts[2] == "="):
+            # This convention comes from the FreeBSD family of checksum commands
+            expected_hash = expected_hash_parts[3]
+        elif expected_hash.startswith(artifact_abs_path.name):
             # Fineract use the format "FILENAME: HASH HASH\n   HASH HASH\n..."
-            expected_hash = expected_hash.removeprefix(artifact_name + ":")
+            expected_hash = expected_hash.removeprefix(artifact_abs_path.name + ":")
             expected_hash = expected_hash.replace(" ", "").replace("\n", "")
         else:
-            # TODO: Check the FILENAME part
-            expected_hash = expected_hash.strip().split()[0]
+            # Otherwise, probably in the format "HASH FILENAME\n"
+            # TODO: Check the FILENAME part?
+            expected_hash = expected_hash_parts[0]
         expected_hash = expected_hash.lower()
 
         if secrets.compare_digest(computed_hash, expected_hash):
