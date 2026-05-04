@@ -56,7 +56,14 @@ import atr.paths as paths
 import atr.registry as registry
 import atr.user as user
 
-ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = ("-binary-assembly", "-binary", "-bin", "-source", "-src")
+ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
+    "-binary-assembly",
+    "-binary",
+    "-bin",
+    "-source-release",
+    "-source",
+    "-src",
+)
 DIRECTORY_PERMISSIONS: Final[int] = 0o755
 DEV_TEST_MID: Final[str] = "818a44a3-6984-4aba-a650-834e86780b43@apache.org"
 DEV_THREAD_URLS: Final[dict[str, str]] = {

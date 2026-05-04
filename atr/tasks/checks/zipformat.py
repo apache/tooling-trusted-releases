@@ -29,7 +29,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "2"
+CHECK_VERSION_STRUCTURE: Final[str] = "3"
 
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:
