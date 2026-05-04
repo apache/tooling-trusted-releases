@@ -483,6 +483,8 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
 
     logger = structlog.get_logger("atr.request")
 
+    app.before_request(_apply_upload_body_timeout)
+
     @app.before_request
     async def bind_request_context_vars() -> None:
         await _reset_request_log_context()
@@ -631,6 +633,12 @@ async def _app_shutdown_log_listeners(app):
         request_listener.stop()
     if listener := app.extensions.get("logging_listener"):
         listener.stop()
+
+
+async def _apply_upload_body_timeout() -> None:
+    if not _uses_upload_body_timeout(quart.request.method, quart.request.path):
+        return
+    quart.request.body_timeout = config.get().UPLOAD_BODY_TIMEOUT
 
 
 async def _backfill_archive_cache() -> None:
@@ -1021,6 +1029,16 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             return quart.jsonify({"error": "413 Payload Too Large"}), 413
         return await template.render("error.html", error="413 Payload Too Large", traceback="", status_code=413), 413
 
+    @app.errorhandler(408)
+    async def handle_request_timeout(error: Exception) -> Any:
+        timeout = quart.request.body_timeout
+        log.warning(f"Request timed out while reading request body after {timeout} seconds")
+        message = f"408 Request Timeout: request body did not finish before the server timeout of {timeout} seconds."
+        wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
+        if quart.request.path.startswith("/api") or wants_json:
+            return quart.jsonify({"error": message}), 408
+        return await template.render("error.html", error=message, traceback="", status_code=408), 408
+
     # Add a global error handler in case a page does not exist.
     @app.errorhandler(404)
     async def handle_not_found(error: Exception) -> Any:
@@ -1076,6 +1094,12 @@ def _set_file_permissions_to_read_only() -> None:
                 fixed_count += 1
     if fixed_count > 0:
         log.info(f"Set permissions of {fixed_count} files to read only (0o444)")
+
+
+def _uses_upload_body_timeout(method: str, path: str) -> bool:
+    if method != "POST":
+        return False
+    return path.startswith("/upload/") or (path == "/api/release/upload")
 
 
 def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> None:
