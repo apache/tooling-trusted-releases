@@ -16,7 +16,6 @@
 # under the License.
 import datetime
 import inspect
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
@@ -31,7 +30,7 @@ import quart_schema
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.common as common
-import atr.config as config
+import atr.errors as errors
 import atr.log as log
 import atr.storage as storage
 import atr.web as web
@@ -151,25 +150,25 @@ def _exempt_blueprint(app: base.QuartApp) -> None:
 
 @_BLUEPRINT.errorhandler(base.ASFQuartException)
 async def _handle_asfquart_exception(err: base.ASFQuartException) -> tuple[quart.Response, int]:
-    status = getattr(err, "errorcode", 500)
-    message = str(err)
-    if (status >= 500) and (not config.is_dev_environment()):
+    status = errors.response_status_code(err)
+    if status >= 500:
         log.error("Unhandled exception", exc_info=(type(err), err, err.__traceback__))
-        message = "Internal server error"
-    return _json_error(message, status)
+    return _json_error(errors.message(err), status, error=err)
 
 
 @_BLUEPRINT.errorhandler(Exception)
 async def _handle_generic_exception(err: Exception) -> tuple[quart.Response, int]:
     log.error("Unhandled exception", exc_info=(type(err), err, err.__traceback__))
-    if config.is_dev_environment():
-        return _json_error(str(err), 500)
-    return _json_error("Internal server error", 500)
+    return _json_error(errors.message(err), 500, error=err)
 
 
 @_BLUEPRINT.errorhandler(exceptions.HTTPException)
 async def _handle_http_exception(err: exceptions.HTTPException) -> tuple[quart.Response, int]:
-    return _json_error(err.description or err.name, err.code)
+    status = errors.response_status_code(err)
+    message = err.description or err.name
+    if status >= 500:
+        log.error("HTTP server exception", exc_info=(type(err), err, err.__traceback__))
+    return _json_error(message, status, error=err)
 
 
 @_BLUEPRINT.errorhandler(exceptions.NotFound)
@@ -187,22 +186,25 @@ async def _handle_request_validation(err: quart_schema.RequestSchemaValidationEr
 
 @_BLUEPRINT.errorhandler(storage.AccessError)
 async def _handle_storage_access_error(err: storage.AccessError) -> tuple[quart.Response, int]:
-    return _json_error(str(err), err.status or 500)
+    status = errors.response_status_code(err)
+    if status >= 500:
+        log.error("Storage access server error", exc_info=(type(err), err, err.__traceback__))
+    return _json_error(errors.message(err), status, error=err)
 
 
 def _json_error(
-    message: str, status_code: int | None, extra: dict[str, Any] | None = None
+    message: str,
+    status_code: int,
+    extra: dict[str, Any] | None = None,
+    error: BaseException | None = None,
 ) -> tuple[quart.Response, int]:
     payload = {"error": message}
-    show_traceback = False
-    if show_traceback:
-        import traceback
-
-        traceback_str = "".join(traceback.format_exception(*sys.exc_info()))
-        payload["traceback"] = traceback_str
+    if error is not None:
+        # audit_guidance JSON tracebacks expose public ATR code locations but not frame locals
+        payload.update(errors.traceback_fields(error, status_code))
     if extra is not None:
         payload.update(extra)
-    return quart.jsonify(payload), status_code or 500
+    return quart.jsonify(payload), status_code
 
 
 @_BLUEPRINT.record_once

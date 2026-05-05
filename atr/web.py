@@ -346,3 +346,7 @@ def valid_url(
     if (not allow_fragment) and parsed.fragment:
         return False
     return True
+
+
+def wants_json_response() -> bool:
+    return quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"

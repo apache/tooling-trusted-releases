@@ -20,6 +20,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.errors as errors
 import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
@@ -39,8 +40,7 @@ async def selected(
     """
     URL: /finish/<project_key>/<version_key>
     """
-    wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
-    respond = _respond_helper(session, project_key, version_key, wants_json)
+    respond = _respond_helper(session, project_key, version_key)
 
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
@@ -63,9 +63,9 @@ async def _delete_empty_directory(
             creation_error = await wacp.release.delete_empty_directory(
                 project_key, version_key, dir_to_delete_rel.as_path()
             )
-    except Exception:
+    except Exception as e:
         log.exception(f"Unexpected error deleting directory {dir_to_delete_rel} for {project_key}/{version_key}")
-        return await respond(500, "An unexpected error occurred.")
+        return await _server_error(respond, e, "An unexpected error occurred.")
 
     if creation_error is not None:
         return await respond(400, creation_error)
@@ -100,11 +100,12 @@ async def _remove_rc_tags(
         return await respond(200, "No items required RC tag removal or no changes were made.")
 
     except Exception as e:
-        return await respond(500, f"Unexpected error: {e!s}")
+        log.exception(f"Unexpected error removing RC tags for {project_key}/{version_key}")
+        return await _server_error(respond, e, f"Unexpected error: {e!s}")
 
 
 def _respond_helper(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, wants_json: bool
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> shared.finish.Respond:
     """Create a response helper function for the finish route."""
     import atr.get as get
@@ -114,9 +115,19 @@ def _respond_helper(
         msg: str,
     ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
         ok = http_status < 300
-        if wants_json:
+        if web.wants_json_response():
             return quart.jsonify(ok=ok, message=msg), http_status
         await quart.flash(msg, "success" if ok else "error")
         return await session.redirect(get.finish.selected, project_key=str(project_key), version_key=str(version_key))
 
     return respond
+
+
+async def _server_error(
+    respond: shared.finish.Respond,
+    error: BaseException,
+    summary: str,
+) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
+    if web.wants_json_response():
+        return errors.action_error_response(error, summary=summary, status=500)
+    return await respond(500, summary)

@@ -74,6 +74,26 @@ async def test_all_routes_support_url_construction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_api_generic_500_includes_traceback(monkeypatch):
+    monkeypatch.setattr("asfquart.APP", None)
+
+    app = asfquart.construct("test-api-generic-errors")
+
+    async with app.test_request_context("/api/test"):
+        try:
+            _raise_runtime_error()
+        except RuntimeError as err:
+            response, status = await api_blueprint._handle_generic_exception(err)
+
+    assert status == 500
+    data = json.loads(await response.data)
+    assert data["error"] == "diagnostic failure"
+    assert data["exception_type"] == "RuntimeError"
+    assert "RuntimeError: diagnostic failure" in data["traceback"]
+    assert "_raise_runtime_error" in data["traceback"]
+
+
+@pytest.mark.asyncio
 async def test_api_storage_access_error_uses_embedded_status(monkeypatch):
     monkeypatch.setattr("asfquart.APP", None)
 
@@ -86,6 +106,25 @@ async def test_api_storage_access_error_uses_embedded_status(monkeypatch):
 
     assert status == 404
     assert json.loads(await response.data) == {"error": "Release not found"}
+
+
+@pytest.mark.asyncio
+async def test_api_storage_access_error_with_500_includes_traceback(monkeypatch):
+    monkeypatch.setattr("asfquart.APP", None)
+
+    app = asfquart.construct("test-api-storage-server-errors")
+
+    async with app.test_request_context("/api/test"):
+        try:
+            raise storage.AccessError("Invalid release state", status=500)
+        except storage.AccessError as err:
+            response, status = await api_blueprint._handle_storage_access_error(err)
+
+    assert status == 500
+    data = json.loads(await response.data)
+    assert data["error"] == "Invalid release state"
+    assert data["exception_type"] == "AccessError"
+    assert "Invalid release state" in data["traceback"]
 
 
 def test_build_api_path_body_param():
@@ -368,3 +407,7 @@ async def test_validate_params_validates_present_optional():
     kwargs: dict = {"project_key": "myproject"}
     await common.validate_params(kwargs, [("project_key", safe.ProjectKey)])
     assert isinstance(kwargs["project_key"], safe.ProjectKey)
+
+
+def _raise_runtime_error() -> None:
+    raise RuntimeError("diagnostic failure")

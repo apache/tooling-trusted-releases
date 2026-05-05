@@ -53,6 +53,7 @@ import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.errors as errors
 import atr.filters as filters
 import atr.form as form
 import atr.jwtoken as jwtoken
@@ -987,49 +988,60 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
     # Preserve HTTP status codes for errors that are raised outside blueprint-specific handlers
     @app.errorhandler(exceptions.HTTPException)
     async def handle_http_exception(error: exceptions.HTTPException) -> Any:
-        status_code = error.code or 500
+        status_code = errors.response_status_code(error)
         name = error.name or "HTTP error"
         description = error.description or name
         message = f"{status_code} {name}: {description}"
+        if status_code >= 500:
+            log.error("HTTP server exception", exc_info=(type(error), error, error.__traceback__))
         if quart.request.path.startswith("/api"):
-            return quart.jsonify({"error": message}), status_code
-        return await template.render("error.html", error=message, status_code=status_code), status_code
+            payload = {"error": message}
+            payload.update(errors.traceback_fields(error, status_code))
+            return quart.jsonify(payload), status_code
+        return await template.render(
+            "error.html",
+            error=message,
+            # audit_guidance HTML tracebacks expose public ATR code locations but not frame locals
+            traceback=errors.traceback_text(error) if errors.should_show_traceback(status_code) else "",
+            status_code=status_code,
+        ), status_code
 
     @app.errorhandler(Exception)
     async def handle_any_exception(error: Exception) -> Any:
-        import traceback
-
         exc_info = (type(error), error, error.__traceback__)
+        message = errors.message(error)
 
         if quart.request.path.startswith("/api"):
-            status_code = getattr(error, "code", 500) if isinstance(error, Exception) else 500
             log.error("Unhandled exception", exc_info=exc_info)
-            if config.is_dev_environment():
-                return quart.jsonify({"error": str(error)}), status_code
-            return quart.jsonify({"error": "Internal server error"}), status_code
+            payload = {"error": message}
+            payload.update(errors.traceback_fields(error, 500))
+            return quart.jsonify(payload), 500
 
         log.error("Unhandled exception", exc_info=exc_info)
-        if config.is_dev_environment():
-            return await template.render(
-                "error.html",
-                error=str(error),
-                traceback=traceback.format_exc(),
-                status_code=500,
-            ), 500
-        return await template.render("error.html", error="Internal server error", status_code=500), 500
+        return await template.render(
+            "error.html",
+            error=message,
+            traceback=errors.traceback_text(error),
+            status_code=500,
+        ), 500
 
     @app.errorhandler(base.ASFQuartException)
     async def handle_asfquart_exception(error: base.ASFQuartException) -> Any:
-        # TODO: Figure out why pyright doesn't know about this attribute
-        errorcode = getattr(error, "errorcode", 500)
-        message = str(error)
-        if (errorcode >= 500) and (not config.is_dev_environment()):
-            exc_info = (type(error), error, error.__traceback__)
-            log.error("Unhandled exception", exc_info=exc_info)
-            message = "Internal server error"
+        status_code = errors.response_status_code(error)
+        message = errors.message(error)
+        if status_code >= 500:
+            log.error("Application server exception", exc_info=(type(error), error, error.__traceback__))
         if quart.request.path.startswith("/api"):
-            return quart.jsonify({"error": message}), errorcode
-        return await template.render("error.html", error=message, status_code=errorcode), errorcode
+            payload = {"error": message}
+            payload.update(errors.traceback_fields(error, status_code))
+            return quart.jsonify(payload), status_code
+        return await template.render(
+            "error.html",
+            error=message,
+            # audit_guidance HTML tracebacks expose public ATR code locations but not frame locals
+            traceback=errors.traceback_text(error) if errors.should_show_traceback(status_code) else "",
+            status_code=status_code,
+        ), status_code
 
     # Add a global error handler for payload too large which will normally be handled in front in httpd server
     @app.errorhandler(413)

@@ -100,6 +100,29 @@ async def test_add_files_json_success(app):
     assert "2 files" in data["message"]
 
 
+@pytest.mark.asyncio
+async def test_add_files_json_unexpected_error_includes_traceback(app):
+    storage_write = mock.MagicMock(side_effect=RuntimeError("Storage unavailable"))
+
+    with mock.patch.object(upload.storage, "write", storage_write):
+        async with app.test_request_context("/upload/test/1.0"):
+            result = await upload._add_files(
+                mock.AsyncMock(),
+                mock.MagicMock(),
+                mock.MagicMock(),
+                mock.MagicMock(),
+                wants_json=True,
+            )
+
+    response, status = result
+    assert status == 500
+    data = json.loads(await response.data)
+    assert data["ok"] is False
+    assert data["message"] == "Error adding file: Storage unavailable"
+    assert data["exception_type"] == "RuntimeError"
+    assert "Storage unavailable" in data["traceback"]
+
+
 def _mock_storage_write(creation_error, number_of_files, was_quarantined):
     wacp = mock.AsyncMock()
     wacp.release.upload_files = mock.AsyncMock(

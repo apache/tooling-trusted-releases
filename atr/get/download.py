@@ -28,6 +28,7 @@ import zipstream
 import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
+import atr.errors as errors
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.safe as safe
@@ -151,7 +152,7 @@ async def urls_selected(
     except ValueError as e:
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:
-        return web.TextResponse(f"Internal server error: {e}", status=500)
+        return web.TextResponse(_text_error(e), status=500)
 
 
 @get.typed
@@ -172,7 +173,7 @@ async def zip_selected(
     except ValueError as e:
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:
-        return web.TextResponse(f"Server error: {e}", status=500)
+        return web.TextResponse(_text_error(e), status=500)
 
     base_dir = paths.release_directory(release)
     files_to_zip = []
@@ -291,3 +292,7 @@ async def _list(
     html.body[div.collect(separator=htm.br)]
     response_body = html.collect()
     return web.ElementResponse(response_body)
+
+
+def _text_error(error: BaseException) -> str:
+    return f"{errors.message(error)}\n\n{errors.traceback_text(error)}"

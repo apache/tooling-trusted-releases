@@ -21,6 +21,7 @@ import quart
 
 import atr.blueprints.post as post
 import atr.db as db
+import atr.errors as errors
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
@@ -111,10 +112,10 @@ async def _add_files(
             version_key=version_key,
         )
     except storage.AccessError as e:
-        status = e.status or 500
-        log.warning(f"Upload access error: {e!s}")
+        status = errors.response_status_code(e)
+        _log_access_error(e, status)
         if wants_json:
-            return quart.jsonify(ok=False, message=str(e)), status
+            return errors.action_error_response(e, status=status)
         await quart.flash(str(e), "error")
         return await session.redirect(
             get.upload.selected,
@@ -124,7 +125,7 @@ async def _add_files(
     except Exception as e:
         log.exception("Error adding file:")
         if wants_json:
-            return quart.jsonify(ok=False, message=f"Error adding file: {e!s}"), 500
+            return errors.action_error_response(e, summary=f"Error adding file: {e!s}", status=500)
         await quart.flash(f"Error adding file: {e!s}", "error")
         return await session.redirect(
             get.upload.selected,
@@ -139,6 +140,13 @@ def _construct_svn_url(
     if is_podling:
         return path.prepend(f"{area.value}/incubator/{committee_key}")
     return path.prepend(f"{area.value}/{committee_key}")
+
+
+def _log_access_error(error: storage.AccessError, status: int) -> None:
+    if status >= 500:
+        log.error("Upload storage access server error", exc_info=(type(error), error, error.__traceback__))
+        return
+    log.warning(f"Upload access error: {error!s}")
 
 
 async def _svn_import(

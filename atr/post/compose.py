@@ -20,6 +20,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.errors as errors
 import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
@@ -38,8 +39,7 @@ async def selected(
     """
     URL: /compose/<project_key>/<version_key>
     """
-    wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
-    respond = _respond_helper(session, project_key, version_key, wants_json)
+    respond = _respond_helper(session, project_key, version_key)
 
     return await _move_file_to_revision(move_form, session, project_key, version_key, respond)
 
@@ -82,14 +82,14 @@ async def _move_file_to_revision(
         return await respond(400, "Error: Source file not found during move operation.")
     except OSError as e:
         log.exception("Error moving file in new revision")
-        return await respond(500, f"Error moving file: {e}")
+        return await _server_error(respond, e, f"Error moving file: {e}")
     except Exception as e:
         log.exception("Unexpected error during file move")
-        return await respond(500, f"ERROR: {e!s}")
+        return await _server_error(respond, e, f"ERROR: {e!s}")
 
 
 def _respond_helper(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, wants_json: bool
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> shared.compose.Respond:
     """Create a response helper function for the compose route."""
     import atr.get as get
@@ -99,9 +99,19 @@ def _respond_helper(
         msg: str,
     ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
         ok = http_status < 300
-        if wants_json:
+        if web.wants_json_response():
             return quart.jsonify(ok=ok, message=msg), http_status
         await quart.flash(msg, "success" if ok else "error")
         return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
     return respond
+
+
+async def _server_error(
+    respond: shared.compose.Respond,
+    error: BaseException,
+    summary: str,
+) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
+    if web.wants_json_response():
+        return errors.action_error_response(error, summary=summary, status=500)
+    return await respond(500, summary)
