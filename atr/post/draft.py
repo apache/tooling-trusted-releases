@@ -86,13 +86,13 @@ async def cache_reset(
 @post.typed
 async def delete(
     session: web.Committer,
-    _compose: Literal["compose"],
+    _draft_delete: Literal["draft/delete"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     _form: form.Empty,
 ) -> web.WerkzeugResponse:
     """
-    URL: /compose/<project_key>/<version_key>
+    URL: /draft/delete/<project_key>/<version_key>
     Delete a candidate draft and all its associated files.
     """
     # Delete the metadata from the database

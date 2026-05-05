@@ -675,6 +675,7 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     db.init_database(app)
     _register_routes(app)
     blueprints.register(app)
+    _unique_routes_check(app)
     filters.register_filters(app)
     _app_setup_context(app)
     _app_setup_security_headers(app)
@@ -1117,6 +1118,17 @@ def _set_file_permissions_to_read_only() -> None:
                 fixed_count += 1
     if fixed_count > 0:
         log.info(f"Set permissions of {fixed_count} files to read only (0o444)")
+
+
+def _unique_routes_check(app: base.QuartApp) -> None:
+    seen: dict[tuple[str, str], list[str]] = {}
+    for rule in app.url_map.iter_rules():
+        for method in (rule.methods or set()) - {"HEAD", "OPTIONS"}:
+            seen.setdefault((method, rule.rule), []).append(rule.endpoint)
+    duplicates = {key: endpoints for key, endpoints in seen.items() if len(endpoints) > 1}
+    if duplicates:
+        details = "; ".join(f"{method} {path} -> {endpoints}" for (method, path), endpoints in duplicates.items())
+        raise RuntimeError(f"Duplicate route registrations detected: {details}")
 
 
 def _uses_upload_body_timeout(method: str, path: str) -> bool:

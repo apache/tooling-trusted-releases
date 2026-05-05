@@ -127,7 +127,9 @@ async def selected(
 
     delete_form = await form.render(
         model_cls=form.Empty,
-        action=util.as_url(selected, project_key=release.safe_project_key, version_key=release.safe_version_key),
+        action=util.as_url(
+            post.draft.delete, project_key=release.safe_project_key, version_key=release.safe_version_key
+        ),
         submit_label="Delete this draft",
         submit_classes="btn btn-danger",
         empty=True,
