@@ -21,6 +21,7 @@ import enum
 from collections.abc import Sequence
 from typing import Final
 
+import asfquart.base as base
 import packaging.version as version
 import sqlalchemy
 import sqlalchemy.orm as orm
@@ -674,7 +675,14 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
         raise InteractionError(f"Publisher {publisher} not supported")
     payload = await jwtoken.verify_github_oidc(jwt)
     if payload.actor_id != _GITHUB_TRUSTED_ROLE_NID:
-        asf_uid = await ldap.github_to_apache(payload.actor_id)
+        try:
+            asf_uid = await ldap.github_to_apache(payload.actor_id)
+        except ldap.LookupError as e:
+            message = (
+                f"GitHub account {payload.actor} (ID {payload.actor_id}) is not yet linked to an ASF user "
+                "in gitbox.apache.org/boxer"
+            )
+            raise base.ASFQuartException(message, errorcode=403) from e
     else:
         asf_uid = None
     return payload, asf_uid
