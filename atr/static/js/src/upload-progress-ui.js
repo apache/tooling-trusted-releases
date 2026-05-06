@@ -131,7 +131,7 @@ window.UploadUI = {
 				const retryBtn = document.createElement("button");
 				retryBtn.type = "button";
 				retryBtn.className = "btn btn-outline-primary ms-3";
-				retryBtn.textContent = "Try again";
+				retryBtn.textContent = "Return to upload form";
 				retryBtn.addEventListener("click", onRetry);
 				alert.append(retryBtn);
 			}
