@@ -162,7 +162,9 @@ async def _render_resolve_page(release: sql.Release) -> htm.Element:
     page.p[
         "This is a manual vote resolution. "
         "Provide the vote thread URL and the URL of the thread where you posted the result. "
-        "For a cancellation, provide the URL of the thread where you sent the cancellation notice."
+        "For a cancellation, provide the URL of the thread where you sent the cancellation notice. "
+        "ATR uses these URLs only to verify that both threads belong to the same mailing list, "
+        "and does not store them."
     ]
 
     await form.render_block(

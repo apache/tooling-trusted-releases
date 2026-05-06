@@ -308,6 +308,9 @@ async def test_manual_passed_creates_preview_revision() -> None:
     assert release.vote_resolved is not None
     assert success == "Vote marked as passed"
     write_as.revision.create_revision_with_quarantine.assert_awaited_once()
+    revision_call = write_as.revision.create_revision_with_quarantine.await_args
+    assert revision_call is not None
+    assert revision_call.kwargs["allowed_phases"] == frozenset({sql.ReleasePhase.RELEASE_PREVIEW})
 
 
 @pytest.mark.asyncio
@@ -339,6 +342,7 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
     assert "manual vote resolution" in html
     assert "where you posted the result" in html
     assert "cancellation notice" in html
+    assert "does not store them" in html
 
 
 @pytest.mark.asyncio

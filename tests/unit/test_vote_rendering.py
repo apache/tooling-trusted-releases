@@ -28,6 +28,7 @@ import sqlmodel
 
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.get.projects as projects
 import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.results as results
@@ -272,6 +273,55 @@ async def test_latest_ballot_for_voter_uses_highest_id_not_timestamp(sqlite_sess
     assert found.receipt_message_id == "highest-id@apache.org"
 
 
+@pytest.mark.asyncio
+async def test_manual_mode_authenticated_renders_notice_and_no_cast_form(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_section_vote(
+            page,
+            _release(sql.VoteMode.MANUAL),
+            _session(),
+            vote.UserCategory.PMC_MEMBER_RM,
+            None,
+            None,
+        )
+
+    html = str(page.collect())
+    assert "This release uses manual voting." in html
+    assert "reply to the vote thread directly" in html
+    assert "<textarea" not in html
+    assert 'name="vote_seq"' not in html
+    assert 'name="decision"' not in html
+    assert "Submit vote" not in html
+
+
+@pytest.mark.asyncio
+async def test_manual_mode_unauthenticated_renders_notice_without_archive_message(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+
+    async with render_app.test_request_context("/vote/project/1.0.0"):
+        page = htm.Block()
+        await vote._render_section_vote(
+            page,
+            _release(sql.VoteMode.MANUAL),
+            None,
+            vote.UserCategory.UNAUTHENTICATED,
+            None,
+            None,
+        )
+
+    html = str(page.collect())
+    assert "This release uses manual voting." in html
+    assert "The vote thread archive is not yet available" not in html
+    assert "Log in to vote" not in html
+
+
 def test_message_id_source_archive_url_encodes_message_id_and_listid() -> None:
     url = shared.vote.message_id_source_archive_url(
         "CAA9ykM+bMPNk=BOF@apache.org",
@@ -282,6 +332,30 @@ def test_message_id_source_archive_url_encodes_message_id_and_listid() -> None:
         url == "https://lists.apache.org/api/source.lua?"
         "id=%3CCAA9ykM%2BbMPNk%3DBOF@apache.org%3E&listid=%3Cuser-tests.tooling.apache.org%3E"
     )
+
+
+def test_non_podling_vote_mode_radios_includes_manual() -> None:
+    project = SimpleNamespace(
+        committee=SimpleNamespace(is_podling=False),
+        policy_vote_mode=sql.VoteMode.EMAIL,
+    )
+
+    html = str(projects._vote_mode_radios(project))
+
+    assert 'value="manual"' in html
+
+
+def test_podling_vote_mode_radios_omits_manual() -> None:
+    project = SimpleNamespace(
+        committee=SimpleNamespace(is_podling=True),
+        policy_vote_mode=sql.VoteMode.EMAIL,
+    )
+
+    html = str(projects._vote_mode_radios(project))
+
+    assert 'value="email"' in html
+    assert 'value="trusted"' in html
+    assert 'value="manual"' not in html
 
 
 @pytest.mark.asyncio

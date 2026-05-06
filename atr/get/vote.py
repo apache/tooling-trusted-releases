@@ -589,6 +589,10 @@ async def _render_section_vote(
     if release.committee is None:
         raise ValueError("Release has no committee")
 
+    if release.effective_vote_mode == sql.VoteMode.MANUAL:
+        _render_vote_manual(page)
+        return
+
     vote_recipient = _vote_recipient(release, latest_vote_task)
     if user_category == UserCategory.UNAUTHENTICATED:
         _render_vote_unauthenticated(page, release, archive_url, vote_recipient)
@@ -714,6 +718,15 @@ def _render_vote_delivery(
         ]
     else:
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
+
+
+def _render_vote_manual(page: htm.Block) -> None:
+    page.div(".alert.alert-info", role="alert")[
+        htpy.i(".bi.bi-info-circle.me-2"),
+        "This release uses manual voting. The vote thread is hosted on the project mailing list, ",
+        "and ATR cannot record votes or display the thread for it. ",
+        "To participate, reply to the vote thread directly on the mailing list.",
+    ]
 
 
 def _render_vote_unauthenticated(
