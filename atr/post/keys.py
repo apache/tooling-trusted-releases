@@ -91,6 +91,7 @@ async def add(
                 await quart.flash(str(p), "warning")
             else:
                 await quart.flash(f"OpenPGP key {fingerprint_upper} added successfully.", "success")
+            await _flash_openpgp_key_uid_warning(key.key_model, session.asf_uid)
 
     except PrivateKeyUploadError:
         await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
@@ -334,6 +335,35 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
         raise base.ASFQuartException(f"Unable to fetch keys from remote server: {e.status} {e.message}", errorcode=502)
     except aiohttp.ClientError as e:
         raise base.ASFQuartException(f"Network error while fetching keys: {e}", errorcode=503)
+
+
+async def _flash_openpgp_key_uid_warning(key_model: sql.PublicSigningKey, current_asf_uid: str) -> None:
+    warning = _openpgp_key_uid_warning(key_model, current_asf_uid)
+    if warning is not None:
+        await quart.flash(str(warning), "warning")
+
+
+def _openpgp_key_uid_warning(key_model: sql.PublicSigningKey, current_asf_uid: str) -> htm.Element | None:
+    fingerprint_upper = key_model.fingerprint.upper()
+    if key_model.apache_uid is None:
+        details_url = util.as_url(get.keys.details, fingerprint=key_model.fingerprint)
+        return htm.p[
+            f"OpenPGP key {fingerprint_upper} was uploaded and associated, but ATR could not determine an ASF UID "
+            "from the key user IDs. ",
+            htm.a(href=details_url)["Review key details"],
+            ".",
+        ]
+
+    if key_model.apache_uid.lower() != current_asf_uid.lower():
+        details_url = util.as_url(get.keys.details, fingerprint=key_model.fingerprint)
+        return htm.p[
+            f"OpenPGP key {fingerprint_upper} was uploaded and associated, but it appears to belong to ASF UID "
+            f"{key_model.apache_uid}, not {current_asf_uid}. ",
+            htm.a(href=details_url)["Review key details"],
+            ".",
+        ]
+
+    return None
 
 
 async def _process_keys(keys_text: str, selected_committee: str) -> str:
