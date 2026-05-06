@@ -95,6 +95,19 @@ def test_files_binary_multiple_license_no_failure(tmp_path):
     assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
 
 
+def test_files_license_accepts_https_urls(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    license_text = constants.APACHE_LICENSE_2_0.replace(
+        "http://www.apache.org/licenses/", "https://www.apache.org/licenses/"
+    )
+    (root / "LICENSE").path.write_text(license_text)
+    (root / "NOTICE").path.write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
+    artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
+    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+
+
 def test_files_missing_cache_dir():
     results = list(
         license._files_check_core_logic(safe.StatePath(pathlib.Path("/nonexistent")), is_podling=False, is_binary=False)

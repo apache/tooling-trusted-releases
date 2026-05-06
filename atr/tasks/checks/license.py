@@ -82,12 +82,16 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "4"
+CHECK_VERSION_FILES: Final[str] = "5"
 CHECK_VERSION_HEADERS: Final[str] = "3"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
 _MAX_LICENSE_NOTICE_SIZE: Final[int] = 1024 * 1024
+_APACHE_LICENSE_URLS: Final[dict[str, str]] = {
+    "https://www.apache.org/licenses/": "http://www.apache.org/licenses/",
+    "https://www.apache.org/licenses/LICENSE-2.0": "http://www.apache.org/licenses/LICENSE-2.0",
+}
 
 # Types
 
@@ -359,8 +363,8 @@ def _files_check_core_logic_license(file_path: pathlib.Path) -> str | None:
     expected_lines = constants.APACHE_LICENSE_2_0.splitlines()
     actual_lines = package_license.splitlines()
 
-    expected_lines = _normal_whitespace(expected_lines)
-    actual_lines = _normal_whitespace(actual_lines)
+    expected_lines = _normal_license_lines(expected_lines)
+    actual_lines = _normal_license_lines(actual_lines)
     # Allow extra lines at the bottom of the license
     # This could invalidate the license, but we cannot check that automatically
     # if len(actual_lines) > len(expected_lines):
@@ -646,6 +650,10 @@ def _license_results(
                 message=f"{filename} is invalid",
                 data={"diff": license_diff},
             )
+
+
+def _normal_license_lines(lines: list[str]) -> list[str]:
+    return [_APACHE_LICENSE_URLS.get(line, line) for line in _normal_whitespace(lines)]
 
 
 def _normal_whitespace(lines: list[str]) -> list[str]:
