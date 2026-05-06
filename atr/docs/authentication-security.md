@@ -104,6 +104,7 @@ API access uses a two-token system: Personal Access Tokens (PATs) for long-term 
 Committers can obtain PATs from the `/tokens` page on the ATR website. PATs have the following properties:
 
 * **Validity**: 180 days from creation, while LDAP account is still active
+* **Format**: New PATs are Noisy Secrets using the `tooling.apache.org` namespace
 * **Storage**: ATR stores only SHA3-256 hashes, never the plaintext PAT
 * **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any user via the admin "Revoke user tokens" page
 * **Purpose**: PATs are used solely to obtain JWTs; they cannot be used directly for API access

@@ -17,7 +17,6 @@
 
 import datetime
 import hashlib
-import secrets
 from typing import Final, Literal
 
 import quart_rate_limiter as rate_limiter
@@ -25,12 +24,14 @@ import quart_rate_limiter as rate_limiter
 import atr.blueprints.post as post
 import atr.get as get
 import atr.htm as htm
+import atr.noisy as noisy
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
 
 _EXPIRY_DAYS: Final[int] = 180
+_PAT_NOISY_SECRET_DOMAIN: Final[bytes] = b"tooling.apache.org"
 
 
 @post.typed
@@ -66,7 +67,7 @@ async def tokens(
 
 
 async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenForm) -> web.WerkzeugResponse:
-    plaintext = secrets.token_urlsafe(32)
+    plaintext = noisy.create(_PAT_NOISY_SECRET_DOMAIN).decode("ascii")
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=_EXPIRY_DAYS)
@@ -84,7 +85,7 @@ async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenFor
         htm.p[
             htm.strong["Your new token"],
             " is ",
-            htm.code(".bg-light.border.rounded.px-1")[plaintext],
+            htm.code(".bg-light.border.rounded.px-1.text-break")[plaintext],
         ],
         htm.p(".mb-0")["Copy it now as you will not be able to see it again."],
     )
