@@ -170,6 +170,7 @@ async def test_signature_provenance_metadata_for_filters_unknown_fields():
     parent_revision = SimpleNamespace(safe_number=safe.RevisionNumber("00005"))
     result = SimpleNamespace(
         message="Signature verified successfully",
+        revision_number="00005",
         status=sql.CheckResultStatus.SUCCESS,
         data={
             "fingerprint": "ABCDEF",
@@ -237,6 +238,7 @@ async def test_signature_provenance_metadata_for_requires_successful_check():
     parent_revision = SimpleNamespace(safe_number=safe.RevisionNumber("00005"))
     result = SimpleNamespace(
         message="No valid signature found",
+        revision_number="00005",
         status=sql.CheckResultStatus.FAILURE,
         data={},
     )

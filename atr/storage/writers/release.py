@@ -78,19 +78,17 @@ async def _signature_provenance_metadata_for(
     if parent_revision is None:
         raise types.FailedError("SHA512 generation requires a parent revision with a verified signature.")
     release_key = sql.release_key(str(project_key), str(version_key))
-    parent_number = str(parent_revision.safe_number)
+    parent_revision_number = parent_revision.safe_number
+    parent_number = str(parent_revision_number)
     signature_rel_str = str(signature_rel_path)
-    async with db.session() as data:
-        check_results = await (
-            data.check_result(
-                release_key=release_key,
-                revision_number=parent_number,
-                checker=_SIGNATURE_CHECKER_KEY,
-                primary_rel_path=signature_rel_str,
-            )
-            .order_by(sql.validate_instrumented_attribute(sql.CheckResult.created).desc())
-            .all()
-        )
+    check_results = await interaction.check_results_for_revision(
+        project_key,
+        version_key,
+        parent_revision_number,
+        checker=_SIGNATURE_CHECKER_KEY,
+        include_legacy_revision_results=True,
+        rel_path=signature_rel_str,
+    )
     if not check_results:
         log.info(
             "SHA512 generation is waiting for signature verification"
@@ -105,6 +103,7 @@ async def _signature_provenance_metadata_for(
     log.info(
         "SHA512 generation found signature check result"
         f" release={release_key} revision={parent_number} path={signature_rel_str}"
+        f" result_revision={latest.revision_number}"
         f" status={latest.status.value} message={latest_message!r}"
     )
     if latest.status != sql.CheckResultStatus.SUCCESS:
