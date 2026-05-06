@@ -46,16 +46,7 @@ async def selected(
     View all the files in a release (any phase).
     """
     release = await session.release(project_key, version_key, phase=None)
-
-    if release.phase == sql.ReleasePhase.RELEASE:
-        file_stats = [stat async for stat in util.content_list(paths.get_finished_dir(), project_key, version_key)]
-    else:
-        revision_number = release.safe_latest_revision_number
-        file_stats = [
-            stat
-            async for stat in util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
-        ]
-    file_stats.sort(key=lambda fs: fs.path)
+    file_stats = await _release_file_stats(release, project_key, version_key)
 
     block = htm.Block()
 
@@ -218,6 +209,21 @@ def _phase_display_name(phase: sql.ReleasePhase) -> str:
     elif phase == sql.ReleasePhase.RELEASE:
         return "release"
     return "release"
+
+
+async def _release_file_stats(
+    release: sql.Release,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> list[util.FileStat]:
+    if release.phase == sql.ReleasePhase.RELEASE:
+        gen = util.content_list(paths.get_finished_dir(), project_key, version_key)
+    else:
+        revision_number = release.safe_latest_revision_number
+        gen = util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
+    file_stats = [stat async for stat in gen]
+    file_stats.sort(key=lambda fs: fs.path)
+    return file_stats
 
 
 def _render_file_content(block: htm.Block, content: str, is_text: bool, is_truncated: bool, max_view_size: int) -> None:
