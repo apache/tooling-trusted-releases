@@ -47,11 +47,10 @@ async def selected(
     """
     release = await session.release(project_key, version_key, phase=None)
 
-    revision_number = release.safe_latest_revision_number
-    file_stats = []
     if release.phase == sql.ReleasePhase.RELEASE:
         file_stats = [stat async for stat in util.content_list(paths.get_finished_dir(), project_key, version_key)]
     else:
+        revision_number = release.safe_latest_revision_number
         file_stats = [
             stat
             async for stat in util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
