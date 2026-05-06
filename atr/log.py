@@ -172,6 +172,13 @@ def get_recent_logs() -> list[str] | None:
         return list(_global_recent_logs)
 
 
+def get_request_id() -> str | None:
+    request_id = get_context("request_id")
+    if not isinstance(request_id, str) or (request_id == ""):
+        return None
+    return request_id
+
+
 def info(msg: str, **kwargs) -> None:
     _event(logging.INFO, msg, **kwargs)
 
@@ -197,6 +204,13 @@ def performance_init() -> None:
 
 def python_repr(object_name: str) -> str:
     return f"<{object_name}>"
+
+
+def request_context_fields() -> dict[str, str]:
+    request_id = get_request_id()
+    if request_id is None:
+        return {}
+    return {"request_id": request_id}
 
 
 def set_asf_uid(asfuid: str | None) -> None:

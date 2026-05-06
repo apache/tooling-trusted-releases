@@ -13,20 +13,26 @@
 
       {% if status_code %}
         <p>
-          <strong>Status Code:</strong> {{ status_code }}
+          <strong>Status code:</strong> {{ status_code }}
+        </p>
+      {% endif %}
+
+      {% if request_id %}
+        <p>
+          <strong>Request ID:</strong> <code>{{ request_id }}</code>
         </p>
       {% endif %}
 
       {% if traceback %}
         <div class="mt-4">
-          <h3>Technical Details</h3>
+          <h3>Technical details</h3>
           <pre class="bg-light p-3 overflow-auto font-monospace border rounded">{{ traceback }}</pre>
         </div>
       {% endif %}
     </div>
 
     <div class="mt-4">
-      <a href="{{ as_url(get.root.index) }}" class="btn btn-primary">Return to Home</a>
+      <a href="{{ as_url(get.root.index) }}" class="btn btn-primary">Return to home</a>
     </div>
   </div>
 {% endblock content %}

@@ -199,6 +199,7 @@ def _json_error(
     error: BaseException | None = None,
 ) -> tuple[quart.Response, int]:
     payload = {"error": message}
+    payload.update(log.request_context_fields())
     if error is not None:
         # audit_guidance JSON tracebacks expose public ATR code locations but not frame locals
         payload.update(errors.traceback_fields(error, status_code))

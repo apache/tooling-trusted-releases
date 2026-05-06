@@ -27,6 +27,7 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
 import atr.htm as htm
+import atr.log as log
 import atr.models.sql as sql
 import atr.sessions as sessions
 import atr.template as template
@@ -149,7 +150,12 @@ async def notfound(_session: web.Public, _about: Literal["notfound"]) -> tuple[s
     URL: /notfound
     Not found page.
     """
-    return await template.render("notfound.html", error="404 Not Found", status_code=404), 404
+    return await template.render(
+        "notfound.html",
+        error="404 Not Found",
+        request_id=log.get_request_id(),
+        status_code=404,
+    ), 404
 
 
 @get.typed

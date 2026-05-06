@@ -22,6 +22,8 @@ import asfquart.base as base
 import quart
 import werkzeug.exceptions as exceptions
 
+import atr.log as log
+
 
 def action_error_response(
     error: BaseException,
@@ -33,6 +35,7 @@ def action_error_response(
         status = response_status_code(error)
     text = summary if (summary is not None) else message(error)
     payload: dict[str, Any] = {"ok": False, "message": text}
+    payload.update(log.request_context_fields())
     payload.update(traceback_fields(error, status))
     return quart.jsonify(payload), status
 

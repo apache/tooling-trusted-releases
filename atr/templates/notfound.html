@@ -2,7 +2,7 @@
 
 {%- block title -%}404 ~ ATR{%- endblock title -%}
 
-{%- block description -%}An error occurred while cessing your request.{%- endblock description -%}
+{%- block description -%}An error occurred while processing your request.{%- endblock description -%}
 
 {% block content %}
   <div>
@@ -15,13 +15,19 @@
 
       {% if status_code %}
         <p>
-          <strong>Status Code:</strong> {{ status_code }}
+          <strong>Status code:</strong> {{ status_code }}
+        </p>
+      {% endif %}
+
+      {% if request_id %}
+        <p>
+          <strong>Request ID:</strong> <code>{{ request_id }}</code>
         </p>
       {% endif %}
     </div>
 
     <div class="mt-4">
-      <a href="{{ as_url(get.root.index) }}" class="btn btn-primary">Return to Home</a>
+      <a href="{{ as_url(get.root.index) }}" class="btn btn-primary">Return to home</a>
     </div>
   </div>
 {% endblock content %}

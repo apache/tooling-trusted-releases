@@ -537,6 +537,8 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
 
     @app.after_request
     async def log_request(response: quart.Response) -> quart.Response:
+        # request_id is bound in _reset_request_log_context
+        # atr.loggers.shared_processors merges it into this event
         logger.info(
             "request",
             method=quart.request.method,
@@ -997,6 +999,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             log.error("HTTP server exception", exc_info=(type(error), error, error.__traceback__))
         if quart.request.path.startswith("/api"):
             payload = {"error": message}
+            payload.update(log.request_context_fields())
             payload.update(errors.traceback_fields(error, status_code))
             return quart.jsonify(payload), status_code
         return await template.render(
@@ -1004,6 +1007,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             error=message,
             # audit_guidance HTML tracebacks expose public ATR code locations but not frame locals
             traceback=errors.traceback_text(error) if errors.should_show_traceback(status_code) else "",
+            request_id=log.get_request_id(),
             status_code=status_code,
         ), status_code
 
@@ -1015,6 +1019,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
         if quart.request.path.startswith("/api"):
             log.error("Unhandled exception", exc_info=exc_info)
             payload = {"error": message}
+            payload.update(log.request_context_fields())
             payload.update(errors.traceback_fields(error, 500))
             return quart.jsonify(payload), 500
 
@@ -1023,6 +1028,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             "error.html",
             error=message,
             traceback=errors.traceback_text(error),
+            request_id=log.get_request_id(),
             status_code=500,
         ), 500
 
@@ -1034,6 +1040,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             log.error("Application server exception", exc_info=(type(error), error, error.__traceback__))
         if quart.request.path.startswith("/api"):
             payload = {"error": message}
+            payload.update(log.request_context_fields())
             payload.update(errors.traceback_fields(error, status_code))
             return quart.jsonify(payload), status_code
         return await template.render(
@@ -1041,6 +1048,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
             error=message,
             # audit_guidance HTML tracebacks expose public ATR code locations but not frame locals
             traceback=errors.traceback_text(error) if errors.should_show_traceback(status_code) else "",
+            request_id=log.get_request_id(),
             status_code=status_code,
         ), status_code
 
@@ -1050,8 +1058,16 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
         log.error("Payload_too_large")
         log.error("Ignore any following stack traces from form parsing")
         if quart.request.path.startswith("/api"):
-            return quart.jsonify({"error": "413 Payload Too Large"}), 413
-        return await template.render("error.html", error="413 Payload Too Large", traceback="", status_code=413), 413
+            payload = {"error": "413 Payload Too Large"}
+            payload.update(log.request_context_fields())
+            return quart.jsonify(payload), 413
+        return await template.render(
+            "error.html",
+            error="413 Payload Too Large",
+            traceback="",
+            request_id=log.get_request_id(),
+            status_code=413,
+        ), 413
 
     @app.errorhandler(408)
     async def handle_request_timeout(error: Exception) -> Any:
@@ -1060,16 +1076,32 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
         message = f"408 Request Timeout: request body did not finish before the server timeout of {timeout} seconds."
         wants_json = quart.request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
         if quart.request.path.startswith("/api") or wants_json:
-            return quart.jsonify({"error": message}), 408
-        return await template.render("error.html", error=message, traceback="", status_code=408), 408
+            payload = {"error": message}
+            payload.update(log.request_context_fields())
+            return quart.jsonify(payload), 408
+        return await template.render(
+            "error.html",
+            error=message,
+            traceback="",
+            request_id=log.get_request_id(),
+            status_code=408,
+        ), 408
 
     # Add a global error handler in case a page does not exist.
     @app.errorhandler(404)
     async def handle_not_found(error: Exception) -> Any:
         # Serve JSON for API endpoints, HTML otherwise
         if quart.request.path.startswith("/api"):
-            return quart.jsonify({"error": "404 Not Found"}), 404
-        return await template.render("notfound.html", error="404 Not Found", traceback="", status_code=404), 404
+            payload = {"error": "404 Not Found"}
+            payload.update(log.request_context_fields())
+            return quart.jsonify(payload), 404
+        return await template.render(
+            "notfound.html",
+            error="404 Not Found",
+            traceback="",
+            request_id=log.get_request_id(),
+            status_code=404,
+        ), 404
 
     @app.errorhandler(429)
     async def handle_rate_limit(e):
@@ -1077,14 +1109,20 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
         await _reset_request_log_context()
 
         if quart.request.path.startswith("/api"):
-            return quart.jsonify(
-                {
-                    "error": "rate_limit_exceeded",
-                    "detail": "Too many requests, please retry later.",
-                    "retry_after": getattr(e, "retry_after", None),
-                }
-            ), 429
-        return await template.render("error.html", error="429 Too Many Requests", traceback="", status_code=429), 429
+            payload = {
+                "error": "rate_limit_exceeded",
+                "detail": "Too many requests, please retry later.",
+                "retry_after": getattr(e, "retry_after", None),
+            }
+            payload.update(log.request_context_fields())
+            return quart.jsonify(payload), 429
+        return await template.render(
+            "error.html",
+            error="429 Too Many Requests",
+            traceback="",
+            request_id=log.get_request_id(),
+            status_code=429,
+        ), 429
 
 
 async def _reset_request_log_context():
