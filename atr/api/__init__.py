@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import datetime
+import gc
 import hashlib
 from typing import Any, Final, Literal
 
@@ -284,6 +285,10 @@ async def distribute_ssh_register(
     Register an SSH key sent with a corroborating Trusted Publisher JWT,
     validating the requested release is in the correct phase.
     """
+    if util.contains_private_key_text(data.ssh_key):
+        vars(data)["ssh_key"] = ""
+        gc.collect()
+        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     payload, asf_uid, project, release = await interaction.trusted_jwt_for_dist(
         data.publisher,
         data.jwt,
@@ -531,6 +536,10 @@ async def key_add(
     Once associated with the specified committees, the key will appear in the
     automatically generated KEYS file for each committee.
     """
+    if util.contains_private_key_text(data.key):
+        vars(data)["key"] = ""
+        gc.collect()
+        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     asf_uid = _jwt_asf_uid()
     selected_committee_keys = data.committees
 
@@ -629,8 +638,13 @@ async def keys_upload(
 
     Upload a public OpenPGP KEYS file.
     """
-    asf_uid = _jwt_asf_uid()
     filetext = data.filetext
+    if util.contains_private_key_text(filetext):
+        vars(data)["filetext"] = ""
+        del filetext
+        gc.collect()
+        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
+    asf_uid = _jwt_asf_uid()
     selected_committee_key = data.committee
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(selected_committee_key)
@@ -926,6 +940,10 @@ async def publisher_ssh_register(
 
     Register an SSH key sent with a corroborating Trusted Publisher JWT.
     """
+    if util.contains_private_key_text(data.ssh_key):
+        vars(data)["ssh_key"] = ""
+        gc.collect()
+        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     payload, asf_uid, project = await interaction.trusted_jwt(
         data.publisher, data.jwt, interaction.TrustedProjectPhase.COMPOSE
     )
@@ -1341,6 +1359,10 @@ async def ssh_key_add(
 
     An SSH key is associated with a single user.
     """
+    if util.contains_private_key_text(data.text):
+        vars(data)["text"] = ""
+        gc.collect()
+        raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     asf_uid = _jwt_asf_uid()
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()

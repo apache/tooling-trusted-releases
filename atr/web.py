@@ -115,6 +115,12 @@ class Committer:
         # Avoid mutations from writing back to our copy
         return self.__form_data.copy()
 
+    def form_data_discard(self, field_names: Sequence[str]) -> None:
+        if self.__form_data is None:
+            return
+        for field_name in field_names:
+            self.__form_data.pop(field_name, None)
+
     async def form_error(self, field_name: str, error_msg: str) -> WerkzeugResponse:
         if self.__form_cls is None:
             raise ValueError("Form class not set")

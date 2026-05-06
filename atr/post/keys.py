@@ -17,6 +17,8 @@
 
 
 import asyncio
+import contextlib
+import gc
 from typing import Final, Literal
 
 import aiohttp
@@ -48,6 +50,10 @@ _MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
 _MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
 
 
+class PrivateKeyUploadError(Exception):
+    pass
+
+
 @post.typed
 async def add(
     session: web.Committer,
@@ -59,7 +65,7 @@ async def add(
     Add a new public signing key to the user's account.
     """
     try:
-        key_text = await _add_key_text_resolve(add_openpgp_key_form)
+        key_text = await _add_key_text_resolve(session, add_openpgp_key_form)
         selected_committee_keys = add_openpgp_key_form.selected_committees
 
         async with storage.write() as write:
@@ -86,6 +92,8 @@ async def add(
             else:
                 await quart.flash(f"OpenPGP key {fingerprint_upper} added successfully.", "success")
 
+    except PrivateKeyUploadError:
+        await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
     except web.FlashError as e:
         log.warning(f"FlashError adding OpenPGP key: {e}")
         await quart.flash(str(e), "error")
@@ -186,11 +194,20 @@ async def ssh_add(
     Add a new SSH key to the user's account.
     """
     try:
+        key_text = add_ssh_key_form.key
+        if util.contains_private_key_text(key_text):
+            vars(add_ssh_key_form)["key"] = ""
+            session.form_data_discard(["key"])
+            del key_text
+            gc.collect()
+            raise PrivateKeyUploadError
         async with storage.write(session) as write:
             wafc = write.as_foundation_committer()
-            fingerprint = await wafc.ssh.add_key(add_ssh_key_form.key)
+            fingerprint = await wafc.ssh.add_key(key_text)
 
         await quart.flash(f"SSH key added successfully: {fingerprint}", "success")
+    except PrivateKeyUploadError:
+        await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
     except util.SshFingerprintError as e:
         await quart.flash(str(e), "error")
     except Exception as e:
@@ -202,7 +219,7 @@ async def ssh_add(
 
 @post.typed
 async def upload(
-    _session: web.Committer,
+    session: web.Committer,
     _keys_upload: Literal["keys/upload"],
     upload_form: shared.keys.UploadKeysForm,
 ) -> str:
@@ -212,21 +229,40 @@ async def upload(
     """
     match upload_form:
         case shared.keys.UploadFileForm() as upload_file_form:
-            return await _upload_file_keys(upload_file_form)
+            return await _upload_file_keys(session, upload_file_form)
         case shared.keys.UploadRemoteForm() as upload_remote_form:
             return await _upload_remote_keys(upload_remote_form)
 
 
-async def _add_key_text_resolve(add_form: shared.keys.AddOpenPGPKeyForm) -> str:
+async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.AddOpenPGPKeyForm) -> str:
     if (file := add_form.public_key_file) is None:
-        return add_form.public_key
+        key_text = add_form.public_key
+        if util.contains_private_key_text(key_text):
+            vars(add_form)["public_key"] = ""
+            session.form_data_discard(["public_key", "public_key_file"])
+            del key_text
+            gc.collect()
+            raise PrivateKeyUploadError
+        return key_text
     data = await asyncio.to_thread(file.read)
     if len(data) > _MAX_PUBLIC_KEY_SIZE:
         raise web.FlashError(f"Uploaded key file too large (limit {_MAX_PUBLIC_KEY_SIZE} bytes)")
     try:
-        return data.decode("utf-8")
+        key_text = data.decode("utf-8")
     except UnicodeDecodeError as e:
         raise web.FlashError(f"Uploaded key file is not valid UTF-8: {e}")
+    if util.contains_private_key_text(key_text):
+        vars(add_form)["public_key"] = ""
+        vars(add_form)["public_key_file"] = None
+        session.form_data_discard(["public_key", "public_key_file"])
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(file.close)
+        del data
+        del file
+        del key_text
+        gc.collect()
+        raise PrivateKeyUploadError
+    return key_text
 
 
 def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
@@ -302,6 +338,12 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
 
 async def _process_keys(keys_text: str, selected_committee: str) -> str:
     """Process keys text and associate with committee."""
+    if util.contains_private_key_text(keys_text):
+        del keys_text
+        gc.collect()
+        await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+        return await shared.keys.render_upload_page(error=True)
+
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
         outcomes = await wacp.keys.ensure_associated(keys_text)
@@ -338,15 +380,27 @@ async def _update_committee_keys(
     return await session.redirect(get.keys.keys)
 
 
-async def _upload_file_keys(upload_file_form: shared.keys.UploadFileForm) -> str:
+async def _upload_file_keys(session: web.Committer, upload_file_form: shared.keys.UploadFileForm) -> str:
     """Handle file upload."""
     try:
-        if upload_file_form.key is None:
+        uploaded_file = upload_file_form.key
+        if uploaded_file is None:
             await quart.flash("No KEYS file uploaded", "error")
             return await shared.keys.render_upload_page(error=True)
 
-        keys_content = await asyncio.to_thread(upload_file_form.key.read)
+        keys_content = await asyncio.to_thread(uploaded_file.read)
         keys_text = keys_content.decode("utf-8", errors="replace")
+        if util.contains_private_key_text(keys_text):
+            vars(upload_file_form)["key"] = None
+            session.form_data_discard(["key"])
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(uploaded_file.close)
+            del keys_content
+            del keys_text
+            del uploaded_file
+            gc.collect()
+            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+            return await shared.keys.render_upload_page(error=True)
 
         if not keys_text:
             await quart.flash("No KEYS data found", "error")
@@ -374,6 +428,11 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
         keys_url = _construct_keys_url(selected_committee, is_podling=is_podling)
         keys_text = await _fetch_keys_from_url(keys_url)
 
+        if util.contains_private_key_text(keys_text):
+            del keys_text
+            gc.collect()
+            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+            return await shared.keys.render_upload_page(error=True)
         if not keys_text:
             await quart.flash("No KEYS data found at ASF downloads", "error")
             return await shared.keys.render_upload_page(error=True)

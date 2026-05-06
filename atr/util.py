@@ -79,6 +79,11 @@ DEV_THREAD_URLS: Final[dict[str, str]] = {
 }
 INCUBATOR_GENERAL_ADDRESS: Final[str] = "general@incubator.apache.org"
 NPM_PACKAGE_JSON_MAX_SIZE: Final[int] = 512 * 1024
+PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
+    "Private key upload blocked. You appear to have uploaded a private key, not a public key. ATR has rejected it "
+    "and attempted to discard the uploaded material from server memory. Treat this key as compromised: revoke it "
+    "immediately, remove it anywhere that it grants access, and generate a new key before signing releases."
+)
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
@@ -102,6 +107,18 @@ EXPECTED_DEFAULT_TLS_CIPHER_NAMES: Final[tuple[str, ...]] = (
     "DHE-RSA-AES128-GCM-SHA256",
     "DHE-RSA-AES256-SHA256",
     "DHE-RSA-AES128-SHA256",
+)
+# We have to do this interpolation because of our private key detection lint
+_PEM_PRIVATE: Final[str] = "PRIVATE"
+_PRIVATE_KEY_MARKERS: Final[tuple[str, ...]] = (
+    f"-----BEGIN PGP {_PEM_PRIVATE} KEY BLOCK-----",
+    f"-----BEGIN OPENSSH {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN ENCRYPTED {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN RSA {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN DSA {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN EC {_PEM_PRIVATE} KEY-----",
+    f"-----BEGIN ED25519 {_PEM_PRIVATE} KEY-----",
 )
 
 
@@ -268,6 +285,10 @@ def conjunction(items: Sequence[str], empty: str | None = None) -> str:
             return f"{items[0]} and {items[1]}"
         case _:
             return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def contains_private_key_text(key_text: str) -> bool:
+    return any(marker in key_text for marker in _PRIVATE_KEY_MARKERS)
 
 
 async def content_list(
