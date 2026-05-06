@@ -40,8 +40,15 @@ type UPLOAD_FILE_KEYS = Literal["upload_file_keys"]
 class AddOpenPGPKeyForm(form.Form):
     public_key: str = form.label(
         "Public OpenPGP key",
-        'Your public key should be in ASCII-armored format, starting with "-----BEGIN PGP PUBLIC KEY BLOCK-----"',
+        'Your public key should be in ASCII-armored format, starting with "-----BEGIN PGP PUBLIC KEY BLOCK-----".'
+        " Paste the key here, or upload it as a file below.",
+        default="",
         widget=form.Widget.TEXTAREA,
+    )
+    public_key_file: form.File = form.label(
+        "Public OpenPGP key file",
+        "Alternatively, upload an ASCII-armored OpenPGP public key file.",
+        default=None,
     )
     selected_committees: form.StrList = form.label(
         "Associate key with committees",
@@ -52,6 +59,16 @@ class AddOpenPGPKeyForm(form.Form):
     def validate_at_least_one_committee(self) -> "AddOpenPGPKeyForm":
         if not self.selected_committees:
             raise ValueError("You must select at least one committee to associate with this key")
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def validate_exactly_one_key_source(self) -> "AddOpenPGPKeyForm":
+        has_text = bool(self.public_key.strip())
+        has_file = self.public_key_file is not None
+        if has_text and has_file:
+            raise ValueError("Provide either pasted key text or an uploaded file, not both")
+        if (not has_text) and (not has_file):
+            raise ValueError("Provide either pasted key text or an uploaded file")
         return self
 
 

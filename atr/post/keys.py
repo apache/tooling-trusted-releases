@@ -45,6 +45,8 @@ _KEYS_BASE_URL: Final[str] = "https://downloads.apache.org"
 # The Apache Subversion KEYS file is largest at 3732091 bytes
 _MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
 
+_MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
+
 
 @post.typed
 async def add(
@@ -57,7 +59,7 @@ async def add(
     Add a new public signing key to the user's account.
     """
     try:
-        key_text = add_openpgp_key_form.public_key
+        key_text = await _add_key_text_resolve(add_openpgp_key_form)
         selected_committee_keys = add_openpgp_key_form.selected_committees
 
         async with storage.write() as write:
@@ -213,6 +215,18 @@ async def upload(
             return await _upload_file_keys(upload_file_form)
         case shared.keys.UploadRemoteForm() as upload_remote_form:
             return await _upload_remote_keys(upload_remote_form)
+
+
+async def _add_key_text_resolve(add_form: shared.keys.AddOpenPGPKeyForm) -> str:
+    if (file := add_form.public_key_file) is None:
+        return add_form.public_key
+    data = await asyncio.to_thread(file.read)
+    if len(data) > _MAX_PUBLIC_KEY_SIZE:
+        raise web.FlashError(f"Uploaded key file too large (limit {_MAX_PUBLIC_KEY_SIZE} bytes)")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise web.FlashError(f"Uploaded key file is not valid UTF-8: {e}")
 
 
 def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
