@@ -133,16 +133,19 @@ def _key_length(key: openpgp.PublicKey) -> int:
     rsa_bits = public_params.rsa_bits
     if isinstance(rsa_bits, int):
         return rsa_bits
-    dsa_bits = public_params.dsa_bits
-    if isinstance(dsa_bits, int):
-        return dsa_bits
     curve_bits = public_params.curve_bits
     if isinstance(curve_bits, int):
         return curve_bits
-    raise ValueError(
-        f"Key size is not available for algorithm {key.public_key_algorithm}:"
-        f" rsa_bits={rsa_bits!r}, dsa_bits={dsa_bits!r}, curve_bits={curve_bits!r}"
-    )
+    # rpgp-py 0.19.7's PublicParamsInfo does not expose a bit-length
+    # field for DSA keys: kind == "dsa" but rsa_bits, curve_bits, and
+    # secret_key_length are all None. Until rpgp-py exposes the DSA
+    # parameter size we cannot validate the key size for DSA keys.
+    if public_params.kind == "dsa":
+        raise ValueError(
+            f"DSA key bit-length is not currently retrievable via rpgp-py "
+            f"({key.public_key_algorithm}); see TODO upstream issue"
+        )
+    raise ValueError(f"Key size is not available for algorithm {key.public_key_algorithm}")
 
 
 def _key_expires_at(key: openpgp.PublicKey) -> datetime.datetime | None:
