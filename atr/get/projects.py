@@ -21,6 +21,7 @@ from typing import Literal
 
 import asfquart.base as base
 import htpy
+import quart
 import strictyaml
 
 import atr.blueprints.get as get
@@ -158,8 +159,9 @@ async def view(
         project = await data.project(
             key=str(project_key), _committee=True, _committee_public_signing_keys=True, _release_policy=True
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+        cycles = list(await data.project_cycle(project_key=str(project_key)).all())
 
-    is_committee_member = project.committee and (user.is_committee_member(project.committee, session.uid))
+    is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     is_privileged = session.is_admin
     can_edit = is_committee_member or is_privileged
 
@@ -186,33 +188,59 @@ async def view(
         else "",
     ]
     page.append(title_row)
-
-    page.p(".mb-4")[
-        htm.a(".btn.btn-sm.btn-outline-primary", href=util.as_url(start.selected, project_key=str(project.key)))[
-            "Start a new release"
-        ]
-    ]
-
     page.append(_render_project_label_card(project))
     page.append(_render_pmc_card(project))
-    page.append(_render_description_card(project))
+
+    tab_items: list[htm.Tab] = []
+
+    if is_committee_member or is_privileged:
+        tab_items.append(
+            htm.Tab(
+                key="releases",
+                label="Releases",
+                render=lambda: _render_releases_tab(
+                    project,
+                    cycles,
+                    candidate_drafts,
+                    candidates,
+                    previews,
+                    full_releases,
+                    can_edit=can_edit,
+                ),
+            )
+        )
+
+    tab_items.append(
+        htm.Tab(
+            key="metadata",
+            label="Metadata",
+            render=lambda: _render_metadata_tab(project, can_edit=can_edit),
+        )
+    )
 
     if project.status == sql.ProjectStatus.ACTIVE:
         if can_edit:
-            page.append(await _render_compose_form(project))
-            page.append(await _render_vote_form(project))
-            page.append(await _render_finish_form(project))
-            page.append(await _render_trusted_publishing_form(project))
+            tab_items.extend(
+                [
+                    htm.Tab("compose", "Compose", lambda: _render_compose_form(project)),
+                    htm.Tab("vote", "Vote", lambda: _render_vote_form(project)),
+                    htm.Tab("finish", "Finish", lambda: _render_finish_form(project)),
+                    htm.Tab(
+                        "trusted-publishing",
+                        "Trusted publishing",
+                        lambda: _render_trusted_publishing_form(project),
+                    ),
+                ]
+            )
         else:
-            page.append(_render_policy_readonly(project))
+            tab_items.append(htm.Tab("policy", "Policy", lambda: _render_policy_readonly(project)))
 
-    if can_edit:
-        page.append(_render_categories_section(project))
-        page.append(_render_languages_section(project))
+    active_tab = quart.request.args.get("tab", tab_items[0].key)
+    base_url = util.as_url(view, project_key=str(project.key))
+    page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=base_url))
 
+    # Below the tabs: admin-only project actions.
     if is_committee_member or is_privileged:
-        page.append(await _render_releases_sections(project, candidate_drafts, candidates, previews, full_releases))
-
         if project.created_by == session.uid:
             page.append(await _render_delete_section(project))
 
@@ -234,6 +262,10 @@ async def view(
         content=content,
         javascripts=javascripts,
     )
+
+
+def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
+    return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
 
 
 def _input_with_variables(
@@ -367,6 +399,72 @@ async def _render_compose_form(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
+def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
+    # The "default" cycle is what every project gets when it has no cycle_match
+    # set, so showing the literal "default" in headings is jargon. Render it as
+    # "No cycle" instead; named cycles render as their name.
+    return "No cycle" if cycle.cycle == "default" else f"Cycle {cycle.cycle}"
+
+
+def _render_cycle_dates_card(cycle: sql.ProjectCycle) -> htm.Element:
+    card = htm.Block(htm.details, classes=".card.mb-4")
+    card.summary(".card-header.bg-light")[htm.h3(".mb-0.d-inline-block")["Cycle dates"]]
+    rows = []
+    # Order matches the rough lifecycle reading: when did things start, when
+    # do they wind down, and is this an LTS line.
+    # Labels match the column semantics in #912.
+    date_fields: list[tuple[str, str]] = [
+        ("First release candidate", "begin"),
+        ("First release", "start"),
+        ("Latest release", "latest"),
+        ("End of development", "eod"),
+        ("End of support", "eos"),
+        ("End of life", "eol"),
+    ]
+    for label, attr in date_fields:
+        value = getattr(cycle, attr)
+        value_cell = (
+            htm.td[value.strftime("%Y-%m-%d")] if value is not None else htm.td(".text-muted.fst-italic")["Not set"]
+        )
+        rows.append(
+            htm.tr[
+                htm.td(".pe-3.text-muted")[label],
+                value_cell,
+            ]
+        )
+    if cycle.lts:
+        rows.append(
+            htm.tr[
+                htm.td(".pe-3.text-muted")["Long-term support"],
+                htm.td[htm.span(".badge.text-bg-info")["LTS"]],
+            ]
+        )
+    with card.block(htm.div, classes=".card-body") as body:
+        body.append(htm.table(".table.table-sm.mb-0")[*rows])
+    return card.collect()
+
+
+async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle) -> htm.Element:
+    card = htm.Block(htm.details, classes=".card.mb-4")
+    card.summary(".card-header.bg-light")[htm.h3(".mb-0.d-inline-block")["Cycle dates"]]
+    with card.block(htm.div, classes=".card-body") as body:
+        await form.render_block(
+            body,
+            model_cls=shared.projects.EditCycleDatesForm,
+            action=util.as_url(post.projects.view, name=str(project.key)),
+            submit_label="Save cycle dates",
+            defaults={
+                "project_key": str(project.key),
+                "cycle_key": cycle.cycle_key,
+                "eod": cycle.eod.date() if cycle.eod is not None else None,
+                "eos": cycle.eos.date() if cycle.eos is not None else None,
+                "eol": cycle.eol.date() if cycle.eol is not None else None,
+                "lts": cycle.lts,
+            },
+        )
+    return card.collect()
+
+
 async def _render_delete_section(project: sql.Project) -> htm.Element:
     section = htm.Block(htm.div)
     section.h2["Actions"]
@@ -480,6 +578,16 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
+async def _render_metadata_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
+    block = htm.Block()
+    block.append(_render_description_card(project))
+    if can_edit:
+        block.append(await _render_version_scheme_form(project))
+        block.append(_render_categories_section(project))
+        block.append(_render_languages_section(project))
+    return block.collect()
+
+
 def _render_pmc_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["PMC"]]
@@ -535,11 +643,17 @@ async def _render_releases_sections(
     candidates: list[sql.Release],
     previews: list[sql.Release],
     full_releases: list[sql.Release],
+    *,
+    nested: bool = False,
 ) -> htm.Element:
+    # When `nested` is true the section sits beneath a cycle heading (h2), so
+    # we demote the section titles to h3. Otherwise keep them as h2 so the
+    # tab content has top-level structure.
+    heading = htm.h3 if nested else htm.h2
     sections = htm.Block(htm.div)
 
     if candidate_drafts:
-        sections.h2["Draft candidate releases"]
+        sections.append(heading["Draft candidate releases"])
         draft_buttons = []
         for drf in candidate_drafts:
             file_count = await util.number_of_release_files(drf)
@@ -556,7 +670,7 @@ async def _render_releases_sections(
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*draft_buttons]
 
     if candidates:
-        sections.h2["Candidate releases"]
+        sections.append(heading["Candidate releases"])
         candidate_buttons = []
         for cnd in candidates:
             file_count = await util.number_of_release_files(cnd)
@@ -573,7 +687,7 @@ async def _render_releases_sections(
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*candidate_buttons]
 
     if previews:
-        sections.h2["Preview releases"]
+        sections.append(heading["Preview releases"])
         preview_buttons = []
         for prv in previews:
             file_count = await util.number_of_release_files(prv)
@@ -590,7 +704,7 @@ async def _render_releases_sections(
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*preview_buttons]
 
     if full_releases:
-        sections.h2["Full releases"]
+        sections.append(heading["Full releases"])
         release_buttons = []
         for rel in full_releases:
             file_count = await util.number_of_release_files(rel)
@@ -607,6 +721,58 @@ async def _render_releases_sections(
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*release_buttons]
 
     return sections.collect()
+
+
+async def _render_releases_tab(
+    project: sql.Project,
+    cycles: list[sql.ProjectCycle],
+    candidate_drafts: list[sql.Release],
+    candidates: list[sql.Release],
+    previews: list[sql.Release],
+    full_releases: list[sql.Release],
+    *,
+    can_edit: bool,
+) -> htm.Element:
+    block = htm.Block()
+    block.p(".mb-4")[
+        htm.a(
+            ".btn.btn-sm.btn-outline-primary",
+            href=util.as_url(start.selected, project_key=str(project.key)),
+        )["Start a new release"]
+    ]
+
+    # Stay flat for projects with only the implicit "default" cycle and no
+    # cycle dates set. Once cycles get used or dates get filled in, headings
+    # surface automatically. The card / form surfaces whenever can_edit, so a
+    # PMC of a simple-default project can still set eod/eos/eol/lts.
+    show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
+
+    for cycle in cycles:
+        cycle_drafts = [r for r in candidate_drafts if r.cycle_key == cycle.cycle_key]
+        cycle_candidates = [r for r in candidates if r.cycle_key == cycle.cycle_key]
+        cycle_previews = [r for r in previews if r.cycle_key == cycle.cycle_key]
+        cycle_full = [r for r in full_releases if r.cycle_key == cycle.cycle_key]
+
+        cycle_has_dates = _cycle_has_dates(cycle)
+        cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)
+        if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit):
+            continue
+
+        if show_cycle_heading:
+            block.h2(".mt-4.mb-3")[_cycle_display_name(cycle)]
+
+        if can_edit:
+            block.append(await _render_cycle_dates_form(project, cycle))
+        elif cycle_has_dates:
+            block.append(_render_cycle_dates_card(cycle))
+
+        block.append(
+            await _render_releases_sections(
+                project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
+            )
+        )
+
+    return block.collect()
 
 
 async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
@@ -632,6 +798,26 @@ async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
             form_classes=".atr-canary.py-4.px-5",
             border=True,
             textarea_rows=5,
+        )
+    return card.collect()
+
+
+async def _render_version_scheme_form(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-0")["Version scheme"]]
+    with card.block(htm.div, classes=".card-body") as body:
+        await form.render_block(
+            body,
+            model_cls=shared.projects.EditVersionSchemeForm,
+            action=util.as_url(post.projects.view, name=str(project.key)),
+            submit_label="Save",
+            defaults={
+                "project_key": str(project.key),
+                "version_method": project.version_method,
+                "version_pattern": project.version_pattern or "",
+                "cycle_match": project.cycle_match or "",
+                "branch_template": project.branch_template or "",
+            },
         )
     return card.collect()
 

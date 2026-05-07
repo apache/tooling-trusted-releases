@@ -18,8 +18,11 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+import datetime
+import re
 from typing import TYPE_CHECKING, Any, Final
 
+import sqlmodel
 import strictyaml
 import strictyaml.ruamel.error as error
 
@@ -139,6 +142,80 @@ class CommitteeMember(CommitteeParticipant):
 
         await self.__commit_and_log(str(project_key))
 
+    async def edit_cycle_dates(self, form: shared.projects.EditCycleDatesForm) -> None:
+        project_key = form.project_key
+        cycle = await self.__data.project_cycle(cycle_key=form.cycle_key).demand(
+            storage.AccessError(f"Cycle {form.cycle_key} not found")
+        )
+        if cycle.project_key != str(project_key):
+            raise storage.AccessError(f"Cycle {form.cycle_key} does not belong to project {project_key}")
+
+        via = models.sql.validate_instrumented_attribute
+        now = datetime.datetime.now(datetime.UTC)
+        # Each entry: form/column attribute name and the matching event type.
+        date_fields: list[tuple[str, models.sql.LifecycleEventType]] = [
+            ("eod", models.sql.LifecycleEventType.EOD),
+            ("eos", models.sql.LifecycleEventType.EOS),
+            ("eol", models.sql.LifecycleEventType.EOL),
+        ]
+        for attr, event_type in date_fields:
+            new_value: datetime.date | None = getattr(form, attr)
+            old_value: datetime.datetime | None = getattr(cycle, attr)
+            old_date = old_value.date() if old_value is not None else None
+            if new_value == old_date:
+                continue
+            if new_value is None:
+                # Forward-only: clearing a once-set date is not supported in v1.
+                raise ValueError(f"{attr} cannot be cleared once set. Set a new date instead.")
+
+            # Changing an existing date pairs a withdraw of the prior event
+            # with the new event, per the lifecycle event design. The cache
+            # rule (most recent of kind X) means the cache picks the new
+            # event regardless, but the withdraw row carries the audit signal
+            # that the prior plan no longer applies.
+            if old_value is not None:
+                prior_event_id = (
+                    await self.__data.execute(
+                        sqlmodel.select(via(models.sql.LifecycleEvent.id))
+                        .where(
+                            via(models.sql.LifecycleEvent.cycle_key) == cycle.cycle_key,
+                            via(models.sql.LifecycleEvent.event) == event_type,
+                        )
+                        .order_by(via(models.sql.LifecycleEvent.published).desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if prior_event_id is not None:
+                    self.__data.add(
+                        models.sql.LifecycleEvent(
+                            project_key=cycle.project_key,
+                            cycle_key=cycle.cycle_key,
+                            version_key=None,
+                            event=models.sql.LifecycleEventType.WITHDRAW,
+                            effective=now,
+                            published=now,
+                            target_event_id=prior_event_id,
+                        )
+                    )
+
+            new_datetime = datetime.datetime.combine(new_value, datetime.time.min, tzinfo=datetime.UTC)
+            setattr(cycle, attr, new_datetime)
+            self.__data.add(
+                models.sql.LifecycleEvent(
+                    project_key=cycle.project_key,
+                    cycle_key=cycle.cycle_key,
+                    version_key=None,
+                    event=event_type,
+                    effective=new_datetime,
+                    published=now,
+                )
+            )
+
+        if cycle.lts != form.lts:
+            cycle.lts = form.lts
+
+        await self.__commit_and_log(str(project_key))
+
     async def edit_policy(
         self,
         project_key: models.safe.ProjectKey,
@@ -190,6 +267,41 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.github_compose_workflow_path = _split_lines(form.github_compose_workflow_path)
         release_policy.github_vote_workflow_path = _split_lines(form.github_vote_workflow_path)
         release_policy.github_finish_workflow_path = _split_lines(form.github_finish_workflow_path)
+
+        await self.__commit_and_log(str(project_key))
+
+    async def edit_version_scheme(self, form: shared.projects.EditVersionSchemeForm) -> None:
+        project_key = form.project_key
+        project = await self.__data.project(key=str(project_key), status=models.sql.ProjectStatus.ACTIVE).demand(
+            storage.AccessError(f"Project {project_key} not found")
+        )
+
+        # Validate cycle_match by trying to compile it. Empty becomes None
+        # so we don't store empty strings in nullable columns.
+        cycle_match = form.cycle_match.strip() or None
+        if cycle_match is not None:
+            try:
+                compiled = re.compile(cycle_match)
+            except re.error as exc:
+                raise ValueError(f"Invalid cycle_match regex: {exc}") from exc
+            if compiled.groups < 1:
+                raise ValueError("cycle_match must contain at least one capture group")
+
+        version_pattern = form.version_pattern.strip() or None
+        if version_pattern is not None:
+            try:
+                re.compile(version_pattern)
+            except re.error as exc:
+                raise ValueError(f"Invalid version_pattern regex: {exc}") from exc
+
+        try:
+            version_method = models.sql.VersionMethod(form.version_method)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported version method: {form.version_method}") from exc
+        project.version_method = version_method
+        project.version_pattern = version_pattern
+        project.cycle_match = cycle_match
+        project.branch_template = form.branch_template.strip() or None
 
         await self.__commit_and_log(str(project_key))
 

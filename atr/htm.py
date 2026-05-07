@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import inspect
 from typing import TYPE_CHECKING, Any
 
 import htpy
@@ -26,7 +28,7 @@ import markupsafe
 from . import log
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Awaitable, Callable, Generator
 
 type Element = htpy.Element
 type VoidElement = htpy.VoidElement
@@ -288,3 +290,49 @@ def icon(name: str, classes="") -> Element:
 def ul_links(*items: tuple[str, str]) -> Element:
     li_items = [li[a(href=item[0])[item[1]]] for item in items]
     return ul[*li_items]
+
+
+@dataclasses.dataclass(frozen=True)
+class Tab:
+    """One tab in a tab strip rendered by `tabs()`.
+
+    `render` is a thunk - sync or async - returning the tab's body. Only
+    the active tab's render is invoked, so inactive tabs are cheap.
+    """
+
+    key: str
+    label: str
+    render: Callable[[], Element | Awaitable[Element]]
+
+
+async def tabs(items: list[Tab], *, active_key: str, base_url: str) -> Element:
+    """Render a Bootstrap nav-tabs strip plus the active tab's content.
+
+    Tab navigation is via full page load: each tab link targets `base_url`
+    with `?tab=<key>` appended, so every tab is its own bookmarkable and
+    history-tracked URL. No client-side JS is used.
+
+    If `active_key` doesn't match any tab the first item is rendered as a
+    fallback.
+    """
+    if not items:
+        raise ValueError("tabs() requires at least one tab")
+    if not any(item.key == active_key for item in items):
+        active_key = items[0].key
+
+    nav_items = []
+    for item in items:
+        link_classes = ".nav-link.active" if item.key == active_key else ".nav-link"
+        nav_items.append(
+            li(".nav-item", role="presentation")[
+                a(link_classes, href=f"{base_url}?tab={item.key}", role="tab")[item.label]
+            ]
+        )
+    nav = ul(".nav.nav-tabs.mb-3", role="tablist")[*nav_items]
+
+    active_item = next(item for item in items if item.key == active_key)
+    content = active_item.render()
+    if inspect.isawaitable(content):
+        content = await content
+
+    return div[nav, content]
