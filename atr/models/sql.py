@@ -788,7 +788,10 @@ class Project(sqlmodel.SQLModel, table=True):
     @property
     def short_display_name(self) -> str:
         """Get the short display name for the Project."""
-        return self.display_name.removeprefix("Apache ")
+        name = self.display_name
+        if name.startswith("Apache Software Foundation "):
+            return f"ASF {name.removeprefix('Apache Software Foundation ')}"
+        return name.removeprefix("Apache ")
 
     @property
     def policy_announce_release_default(self) -> str:
