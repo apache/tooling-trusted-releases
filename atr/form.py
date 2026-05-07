@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import datetime
 import enum
 import pathlib
 import re
@@ -63,6 +64,7 @@ class Widget(enum.Enum):
     CHECKBOX = "checkbox"
     CHECKBOXES = "checkboxes"
     CUSTOM = "custom"
+    DATE = "date"
     EMAIL = "email"
     FILE = "file"
     FILES = "files"
@@ -499,6 +501,12 @@ Bool = Annotated[
     pydantic.Field(default=False),
 ]
 
+OptionalDate = Annotated[
+    datetime.date | None,
+    functional_validators.BeforeValidator(lambda v: None if v == "" else v),
+    pydantic.Field(default=None),
+]
+
 Email = pydantic.EmailStr
 
 
@@ -713,6 +721,9 @@ def _get_widget_type(field_info: pydantic.fields.FieldInfo) -> Widget:  # noqa: 
     if annotation is bool:
         return Widget.CHECKBOX
 
+    if annotation is datetime.date:
+        return Widget.DATE
+
     if annotation is pydantic.EmailStr:
         return Widget.EMAIL
 
@@ -810,6 +821,12 @@ def _render_field_value(
         field_value = flash_error_data[field_name]["original"]
     elif has_flash_data:
         field_value = flash_error_data[f"!{field_name}"]["original"]
+    elif flash_error_data and (_get_widget_type(field_info) == Widget.CHECKBOX):
+        # An unticked checkbox is absent from form data, so doesn't appear in
+        # flash_error_data either. In flash-rerender mode treat as unticked
+        # rather than falling back to the default - otherwise the checkbox
+        # appears ticked even though the user submitted it unticked.
+        field_value = False
     elif defaults:
         field_value = defaults.get(field_name)
     elif not field_info.is_required():
@@ -970,6 +987,15 @@ def _render_widget(  # noqa: C901
                 widget = custom.pop(field_name)
             else:
                 widget = htm.div[f"Custom widget for {field_name} not provided"]
+
+        case Widget.DATE:
+            attrs = {**base_attrs, "type": "date"}
+            if isinstance(field_value, datetime.date):
+                attrs["value"] = field_value.isoformat()
+            elif field_value:
+                # Already a string (eg from form-flash data round-tripped via JSON).
+                attrs["value"] = str(field_value)
+            widget = htpy.input(**attrs)
 
         case Widget.EMAIL:
             attrs = {**base_attrs, "type": "email"}

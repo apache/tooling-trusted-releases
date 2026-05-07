@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import quart
 
@@ -28,6 +28,9 @@ import atr.models.unsafe as unsafe
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 @post.typed
@@ -94,33 +97,7 @@ async def view(
     """
     URL: /projects/<name>
     """
-    match project_form:
-        case shared.projects.AddCategoryForm() as add_category_form:
-            return await _process_add_category(session, add_category_form)
-
-        case shared.projects.AddLanguageForm() as add_language_form:
-            return await _process_add_language(session, add_language_form)
-
-        case shared.projects.ComposePolicyForm() as compose_form:
-            return await _process_compose_form(session, compose_form)
-
-        case shared.projects.DeleteProjectForm() as delete_form:
-            return await _process_delete_project(session, delete_form)
-
-        case shared.projects.FinishPolicyForm() as finish_form:
-            return await _process_finish_form(session, finish_form)
-
-        case shared.projects.TrustedPublishingPolicyForm() as tp_form:
-            return await _process_trusted_publishing_form(session, tp_form)
-
-        case shared.projects.RemoveCategoryForm() as remove_form:
-            return await _process_remove_category(session, remove_form)
-
-        case shared.projects.RemoveLanguageForm() as remove_form:
-            return await _process_remove_language(session, remove_form)
-
-        case shared.projects.VotePolicyForm() as vote_form:
-            return await _process_vote_form(session, vote_form)
+    return await _VIEW_HANDLERS[type(project_form)](session, project_form)
 
 
 async def _metadata_category_add(
@@ -235,6 +212,46 @@ async def _process_delete_project(
     return await session.redirect(get.projects.projects, success=f"Project '{project_key}' deleted successfully.")
 
 
+async def _process_edit_cycle_dates_form(
+    session: web.Committer, edit_form: shared.projects.EditCycleDatesForm
+) -> web.WerkzeugResponse:
+    project_key = edit_form.project_key
+
+    async with storage.write(session) as write:
+        wacm = await write.as_project_committee_member(project_key)
+        try:
+            await wacm.policy.edit_cycle_dates(edit_form)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view, project_key=str(project_key), error=f"Error saving cycle dates: {e}"
+            )
+        except ValueError as e:
+            return await session.redirect(get.projects.view, project_key=str(project_key), error=str(e))
+
+    return await session.redirect(get.projects.view, project_key=str(project_key), success="Cycle dates saved.")
+
+
+async def _process_edit_version_scheme_form(
+    session: web.Committer, edit_form: shared.projects.EditVersionSchemeForm
+) -> web.WerkzeugResponse:
+    project_key = edit_form.project_key
+
+    async with storage.write(session) as write:
+        wacm = await write.as_project_committee_member(project_key)
+        try:
+            await wacm.policy.edit_version_scheme(edit_form)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                error=f"Error saving version scheme: {e}",
+            )
+        except ValueError as e:
+            return await session.redirect(get.projects.view, project_key=str(project_key), error=str(e))
+
+    return await session.redirect(get.projects.view, project_key=str(project_key), success="Version scheme saved.")
+
+
 async def _process_finish_form(
     session: web.Committer, finish_form: shared.projects.FinishPolicyForm
 ) -> web.WerkzeugResponse:
@@ -326,3 +343,18 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
     return await session.redirect(
         get.projects.view, project_key=project_key, success="Vote options saved successfully."
     )
+
+
+_VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.WerkzeugResponse]]]] = {
+    shared.projects.AddCategoryForm: _process_add_category,
+    shared.projects.AddLanguageForm: _process_add_language,
+    shared.projects.ComposePolicyForm: _process_compose_form,
+    shared.projects.DeleteProjectForm: _process_delete_project,
+    shared.projects.EditCycleDatesForm: _process_edit_cycle_dates_form,
+    shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,
+    shared.projects.FinishPolicyForm: _process_finish_form,
+    shared.projects.TrustedPublishingPolicyForm: _process_trusted_publishing_form,
+    shared.projects.RemoveCategoryForm: _process_remove_category,
+    shared.projects.RemoveLanguageForm: _process_remove_language,
+    shared.projects.VotePolicyForm: _process_vote_form,
+}

@@ -29,6 +29,8 @@ import atr.models.validation as validation
 import atr.util as util
 
 type COMPOSE = Literal["compose"]
+type EDIT_CYCLE_DATES = Literal["edit_cycle_dates"]
+type EDIT_VERSION_SCHEME = Literal["edit_version_scheme"]
 type FINISH = Literal["finish"]
 type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
 type VOTE = Literal["vote"]
@@ -178,6 +180,52 @@ class VotePolicyForm(form.Form):
         return self
 
 
+class EditCycleDatesForm(form.Form):
+    variant: EDIT_CYCLE_DATES = form.value(EDIT_CYCLE_DATES)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    cycle_key: str = form.label("Cycle key", widget=form.Widget.HIDDEN)
+    eod: form.OptionalDate = form.label(
+        "End of development",
+        "When active development on this cycle is planned to stop.",
+    )
+    eos: form.OptionalDate = form.label(
+        "End of support",
+        "When this cycle is planned to stop receiving support.",
+    )
+    eol: form.OptionalDate = form.label(
+        "End of life",
+        "When this cycle is planned to be retired entirely.",
+    )
+    lts: form.Bool = form.label(
+        "Long-term support",
+        "Mark this cycle as a long-term support line.",
+    )
+
+
+class EditVersionSchemeForm(form.Form):
+    variant: EDIT_VERSION_SCHEME = form.value(EDIT_VERSION_SCHEME)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    version_method: form.Enum[sql.VersionMethod] = form.label(
+        "Version method",
+        "How this project numbers releases. Determines how cycles are derived from versions.",
+        widget=form.Widget.RADIO,
+    )
+    version_pattern: str = form.label(
+        "Version pattern",
+        "Optional regex that release versions must match. Leave empty to accept any version.",
+    )
+    cycle_match: str = form.label(
+        "Cycle match",
+        "Regex applied to the version string; capture group 1 is the cycle name."
+        r" For example, (\d+)\..* maps version 2.0.1 into cycle 2."
+        " Leave empty for projects that keep a single default cycle.",
+    )
+    branch_template: str = form.label(
+        "Branch template",
+        "Optional naming hint for source branches per cycle. Not currently enforced.",
+    )
+
+
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
@@ -280,6 +328,8 @@ class DeleteSelectedProject(form.Form):
 
 type ProjectViewForm = Annotated[
     ComposePolicyForm
+    | EditCycleDatesForm
+    | EditVersionSchemeForm
     | FinishPolicyForm
     | TrustedPublishingPolicyForm
     | VotePolicyForm

@@ -251,6 +251,17 @@ class CommitteeMember(CommitteeParticipant):
             self.__data.add(task)
 
             await self.__promote_in_database(release, preview_revision_number, release_date)
+            self.__data.add(
+                sql.LifecycleEvent(
+                    project_key=release.project_key,
+                    cycle_key=release.cycle_key,
+                    version_key=release.key,
+                    event=sql.LifecycleEventType.RELEASE,
+                    effective=release_date,
+                    published=release_date,
+                    reference_urls=[f"https://lists.apache.org/list.html?{email_to}"],
+                )
+            )
             await self.__data.commit()
         except storage.AccessError:
             raise
@@ -292,7 +303,10 @@ class CommitteeMember(CommitteeParticipant):
         return predicted_finished_release
 
     async def __promote_in_database(
-        self, release: sql.Release, preview_revision_number: safe.RevisionNumber, release_date: datetime.datetime
+        self,
+        release: sql.Release,
+        preview_revision_number: safe.RevisionNumber,
+        release_date: datetime.datetime,
     ) -> None:
         """Promote a release preview to a release and delete its old revisions."""
         via = sql.validate_instrumented_attribute

@@ -22,6 +22,7 @@ import asyncio
 import base64
 import contextlib
 import datetime
+import re
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
@@ -657,6 +658,13 @@ class CommitteeParticipant(FoundationCommitter):
         # We have the packaging library as a dependency, but it is Python specific
         if version_key_error := util.version_key_error(str(version)):
             raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
+
+        if (project.version_pattern is not None) and (not re.fullmatch(project.version_pattern, str(version))):
+            raise storage.AccessError(
+                f'Version "{version!s}" does not match the project\'s version pattern',
+                status=400,
+            )
+
         try:
             cycle_name = cycles.cycle_name_for_version(project, str(version))
         except ValueError as exc:
