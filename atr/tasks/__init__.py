@@ -240,43 +240,6 @@ async def keys_import_file(
         await data.commit()
 
 
-async def run_maintenance(
-    asf_uid: str,
-    caller_data: db.Session | None = None,
-    schedule: datetime.datetime | None = None,
-    schedule_next: bool = False,
-) -> sql.Task:
-    """Queue a maintenance task."""
-    task_args = args.MaintenanceArgs(asf_uid=asf_uid, next_schedule_seconds=0)
-    if schedule_next:
-        task_args.next_schedule_seconds = _DAILY
-    async with db.ensure_session(caller_data) as data:
-        task = sql.Task(
-            status=sql.TaskStatus.QUEUED,
-            task_type=sql.TaskType.MAINTENANCE,
-            task_args=task_args.model_dump(),
-            asf_uid=asf_uid,
-            revision_number=None,
-            primary_rel_path=None,
-            project_key=None,
-            version_key=None,
-        )
-        if schedule:
-            task.scheduled = schedule
-        if (schedule is not None) or schedule_next:
-            await data.begin_immediate()
-            await _clear_existing_scheduled(
-                data,
-                sql.TaskType.MAINTENANCE,
-                asf_uid,
-                include_unscheduled=schedule_next,
-            )
-        data.add(task)
-        await data.commit()
-        await data.flush()
-        return task
-
-
 async def metadata_update(
     asf_uid: str,
     caller_data: db.Session | None = None,
@@ -402,6 +365,51 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         # Otherwise we lose exhaustiveness checking
 
 
+async def run_maintenance(
+    asf_uid: str,
+    caller_data: db.Session | None = None,
+    schedule: datetime.datetime | None = None,
+    schedule_next: bool = False,
+) -> sql.Task:
+    """Queue a maintenance task."""
+    task_args = args.MaintenanceArgs(asf_uid=asf_uid, next_schedule_seconds=0)
+    if schedule_next:
+        task_args.next_schedule_seconds = _DAILY
+    async with db.ensure_session(caller_data) as data:
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.MAINTENANCE,
+            task_args=task_args.model_dump(),
+            asf_uid=asf_uid,
+            revision_number=None,
+            primary_rel_path=None,
+            project_key=None,
+            version_key=None,
+        )
+        if schedule:
+            task.scheduled = schedule
+        if (schedule is not None) or schedule_next:
+            await data.begin_immediate()
+            await _clear_existing_scheduled(
+                data,
+                sql.TaskType.MAINTENANCE,
+                asf_uid,
+                include_unscheduled=schedule_next,
+            )
+        data.add(task)
+        await data.commit()
+        await data.flush()
+        return task
+
+
+async def schedule_next(asf_uid: str, seconds: int, task: Callable[..., Awaitable[sql.Task]]) -> None:
+    """Schedule the next run of a recurring task."""
+    if seconds > 0:
+        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=seconds)
+        await task(asf_uid, schedule=next_schedule, schedule_next=True)
+        log.info(f"Scheduled next run for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
 async def sha_checks(
     asf_uid: str, release: sql.Release, revision: safe.RevisionNumber, hash_file: str, data: db.Session
 ) -> list[sql.Task | None]:
@@ -428,14 +436,6 @@ async def sha_checks(
     )
 
     return await asyncio.gather(*tasks)
-
-
-async def schedule_next(asf_uid: str, seconds: int, task: Callable[..., Awaitable[sql.Task]]) -> None:
-    """Schedule the next run of a recurring task."""
-    if seconds > 0:
-        next_schedule = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=seconds)
-        await task(asf_uid, schedule=next_schedule, schedule_next=True)
-        log.info(f"Scheduled next run for: {next_schedule.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 async def tar_gz_checks(
