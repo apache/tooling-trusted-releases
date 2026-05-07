@@ -783,14 +783,14 @@ async def test_trusted_ballot_rows_use_recomputed_bindingness_and_receipt_contex
         created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
     )
     is_binding_for_release = mock.AsyncMock(return_value=(True, "Project"))
-    monkeypatch.setattr(resolve.user, "is_binding_for_release", is_binding_for_release)
+    monkeypatch.setattr(interaction.user, "is_binding_for_release", is_binding_for_release)
 
-    rows, summary = await resolve._trusted_ballot_rows_and_summary(
+    details, summary = await interaction.trusted_ballot_details_from_ballots(
         release,
         [ballot],
-        "dev@project.apache.org",
         None,
     )
+    rows = resolve._trusted_ballot_rows(details, "dev@project.apache.org")
 
     assert rows == [
         resolve.TrustedBallotRow(
@@ -1141,6 +1141,7 @@ async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: 
         mock.AsyncMock(return_value=_latest_vote_task()),
     )
     monkeypatch.setattr(atr.api.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
+    monkeypatch.setattr(atr.api.interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(atr.api.tabulate, "vote_committee", vote_committee)
     monkeypatch.setattr(atr.api.tabulate, "vote_details", vote_details)
 
@@ -1154,6 +1155,9 @@ async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: 
     ballot_receipt_message_ids.assert_awaited_once_with("project-1.0.0", 7)
     vote_details.assert_awaited_once()
     assert vote_details.await_args.kwargs["excluded_message_ids"] == {"receipt@apache.org"}
+    assert response["trusted_ballots"] == []
+    assert response["trusted_passed"] is False
+    assert response["vote_mode"] == sql.VoteMode.TRUSTED.value
 
 
 def _api_vote_tabulate_handler():

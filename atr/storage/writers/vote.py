@@ -69,8 +69,8 @@ class FoundationCommitter(GeneralPublic):
         choice: sql.VoteChoice,
         comment: str,
         fullname: str,
-        expected_vote_seq: int,
-        expected_vote_mode: sql.VoteMode,
+        expected_vote_seq: int | None = None,
+        expected_vote_mode: sql.VoteMode | None = None,
     ) -> tuple[list[str], str]:
         await self.__data.begin_immediate()
         try:
@@ -84,7 +84,7 @@ class FoundationCommitter(GeneralPublic):
             if release is None:
                 await self.__data.rollback()
                 return [], "Vote is no longer open."
-            if expected_vote_mode != sql.VoteMode.TRUSTED:
+            if (expected_vote_mode is not None) and (expected_vote_mode != sql.VoteMode.TRUSTED):
                 await self.__data.rollback()
                 return [], "The vote form is stale, please refresh and try again."
             if release.effective_vote_mode != sql.VoteMode.TRUSTED:
@@ -93,7 +93,7 @@ class FoundationCommitter(GeneralPublic):
             if release.current_vote_seq is None:
                 await self.__data.rollback()
                 return [], "Vote serial is missing, please refresh and try again."
-            if release.current_vote_seq != expected_vote_seq:
+            if (expected_vote_seq is not None) and (release.current_vote_seq != expected_vote_seq):
                 await self.__data.rollback()
                 return [], "The vote form is stale, please refresh and try again."
             if release.committee is None:
@@ -873,9 +873,7 @@ class CommitteeMember(CommitteeParticipant):
                 raise storage.AccessError("Project has no committee - Invalid state", status=500)
 
             vote_seq = release.current_vote_seq
-            voting_round = None
-            if release.committee.is_podling:
-                voting_round = 1 if (release.podling_thread_id is None) else 2
+            voting_round = interaction.trusted_vote_round(release)
 
             latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
             vote_end = interaction.vote_end_get(latest_vote_task)

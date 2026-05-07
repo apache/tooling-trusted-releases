@@ -146,7 +146,7 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         # TODO: Ideally we would centralise the validation in this method
         project, release_policy = await self.__get_or_create_policy(project_key)
-        fields_to_update = update.model_fields_set - {"manual_vote", "project"}
+        fields_to_update = update.model_fields_set - {"manual_vote", "project", "vote_mode"}
         normalised_values: dict[str, Any] = {}
 
         self.__set_policy_vote_mode_from_api(project, release_policy, update)
@@ -287,6 +287,13 @@ class CommitteeMember(CommitteeParticipant):
         release_policy: models.sql.ReleasePolicy,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
+        if "vote_mode" in update.model_fields_set:
+            if update.vote_mode is None:
+                raise ValueError("Field 'vote_mode' does not accept null")
+            if (update.vote_mode == models.sql.VoteMode.MANUAL) and project.committee and project.committee.is_podling:
+                raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
+            release_policy.vote_mode = update.vote_mode
+            return
         if "manual_vote" not in update.model_fields_set:
             return
         if update.manual_vote is None:

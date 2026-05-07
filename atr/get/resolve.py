@@ -17,7 +17,6 @@
 
 import dataclasses
 import datetime
-from collections.abc import Sequence
 from typing import Literal
 
 import htpy
@@ -146,9 +145,7 @@ async def selected(  # noqa: C901
     bypass_active = interaction.vote_duration_bypass()
     vote_end = interaction.vote_end_get(latest_vote_task)
     is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
-    vote_round: int | None = None
-    if (release.committee is not None) and release.committee.is_podling:
-        vote_round = 2 if (release.podling_thread_id is not None) else 1
+    vote_round = interaction.trusted_vote_round(release)
     binding_label, non_binding_label = user.binding_terminology(vote_round)
     vote_seq = release.current_vote_seq
     trusted_ballot_rows: list[TrustedBallotRow] = []
@@ -158,10 +155,12 @@ async def selected(  # noqa: C901
     trusted_passed = False
     vote_recipient = interaction.task_recipient_get(latest_vote_task) if (latest_vote_task is not None) else None
     if is_trusted_mode and (vote_seq is not None):
-        trusted_ballots = await interaction.ballots_for_resolution(release.key, vote_seq)
-        trusted_ballot_rows, trusted_summary = await _trusted_ballot_rows_and_summary(
-            release, trusted_ballots, vote_recipient, vote_round
+        trusted_ballot_details, trusted_summary = await interaction.trusted_ballot_details(
+            release,
+            vote_seq,
+            vote_round,
         )
+        trusted_ballot_rows = _trusted_ballot_rows(trusted_ballot_details, vote_recipient)
         trusted_passed = tabulate.binding_vote_passes(
             trusted_summary.binding_votes_yes, trusted_summary.binding_votes_no
         )
@@ -369,64 +368,31 @@ def _tabulation_error(error: util.FetchError | ValueError) -> str:
     )
 
 
-async def _trusted_ballot_rows_and_summary(
-    release: sql.Release,
-    ballots: Sequence[sql.BallotPaper],
+def _trusted_ballot_rows(
+    trusted_ballot_details: list[interaction.TrustedBallotDetail],
     vote_recipient: str | None,
-    expected_vote_round: int | None,
-) -> tuple[list[TrustedBallotRow], interaction.TrustedVoteSummary]:
-    if release.committee is None:
-        raise ValueError("Release has no committee")
+) -> list[TrustedBallotRow]:
     rows: list[TrustedBallotRow] = []
-    summary = interaction.TrustedVoteSummary()
-    for ballot in ballots:
-        if ballot.vote_round != expected_vote_round:
-            raise ValueError("Trusted ballot vote round does not match the active vote round")
-        is_binding, _binding_committee = await user.is_binding_for_release(
-            release.committee,
-            ballot.voter_asf_uid,
-            ballot.vote_round,
-        )
-        _trusted_summary_add(summary, ballot.choice, is_binding)
-        binding_label, non_binding_label = user.binding_terminology(ballot.vote_round)
+    for detail in trusted_ballot_details:
         receipt_url = None
         if vote_recipient is not None:
-            receipt_url = shared.vote.message_id_source_archive_url(ballot.receipt_message_id, vote_recipient)
+            receipt_url = shared.vote.message_id_source_archive_url(detail.receipt_message_id, vote_recipient)
         rows.append(
             TrustedBallotRow(
-                cast_at=format_utc(ballot.created),
-                choice=ballot.choice.value,
-                is_binding=is_binding,
-                receipt_message_id=ballot.receipt_message_id,
+                cast_at=format_utc(detail.cast_at),
+                choice=detail.choice.value,
+                is_binding=detail.is_binding,
+                receipt_message_id=detail.receipt_message_id,
                 receipt_url=receipt_url,
-                status_label=binding_label if is_binding else non_binding_label,
-                voter_asf_uid=ballot.voter_asf_uid,
-                voter_fullname=ballot.voter_fullname,
+                status_label=detail.status_label,
+                voter_asf_uid=detail.voter_asf_uid,
+                voter_fullname=detail.voter_fullname,
             )
         )
-    return rows, summary
+    return rows
 
 
 def _trusted_outcome(summary: interaction.TrustedVoteSummary, binding_label: str) -> str:
     if tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no):
         return f"The ATR ballot record satisfies the {binding_label.lower()} vote threshold for passing."
     return f"The ATR ballot record does not satisfy the {binding_label.lower()} vote threshold for passing."
-
-
-def _trusted_summary_add(summary: interaction.TrustedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:
-    match choice:
-        case sql.VoteChoice.YES:
-            if is_binding:
-                summary.binding_votes_yes += 1
-            else:
-                summary.non_binding_votes_yes += 1
-        case sql.VoteChoice.ABSTAIN:
-            if is_binding:
-                summary.binding_votes_abstain += 1
-            else:
-                summary.non_binding_votes_abstain += 1
-        case sql.VoteChoice.NO:
-            if is_binding:
-                summary.binding_votes_no += 1
-            else:
-                summary.non_binding_votes_no += 1

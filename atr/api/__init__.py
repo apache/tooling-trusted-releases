@@ -36,6 +36,7 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
 import atr.jwtoken as jwtoken
+import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
 import atr.models.safe as safe
@@ -817,6 +818,7 @@ async def policy_get(
         policy_mailto_addresses=project.policy_mailto_addresses,
         policy_manual_vote=project.policy_manual_vote,
         policy_min_hours=project.policy_min_hours,
+        policy_vote_mode=project.policy_vote_mode,
         policy_preserve_download_files=project.policy_preserve_download_files,
         policy_release_checklist=project.policy_release_checklist,
         policy_source_artifact_paths=project.policy_source_artifact_paths,
@@ -1605,7 +1607,45 @@ async def users_list(
     ).model_dump(mode="json"), 200
 
 
-# TODO: Add endpoints to allow users to vote
+@api.typed
+@rate_limiter.rate_limit(60, datetime.timedelta(hours=1))
+@jwtoken.require
+@quart_schema.security_scheme([{"BearerAuth": []}])
+@quart_schema.validate_response(models.api.VoteCastResults, 200)
+async def vote_cast(
+    _vote_cast: Literal["vote/cast"],
+    data: models.api.VoteCastArgs,
+) -> DictResponse:
+    """
+    URL: POST /vote/cast
+
+    Cast a Trusted Vote ballot.
+    """
+    asf_uid = _jwt_asf_uid()
+    fullname = await _ldap_fullname(asf_uid)
+    try:
+        async with storage.write(asf_uid) as write:
+            wafc = write.as_foundation_committer()
+            email_to, error_message = await wafc.vote.cast_trusted(
+                data.project,
+                data.version,
+                data.choice,
+                data.comment,
+                fullname,
+            )
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+
+    if error_message:
+        raise exceptions.Conflict(error_message)
+
+    return models.api.VoteCastResults(
+        endpoint="/vote/cast",
+        success=True,
+        receipt_email_to=email_to,
+    ).model_dump(mode="json"), 200
+
+
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
 @jwtoken.require
@@ -1696,6 +1736,8 @@ async def vote_start(
                 asf_uid,
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
+                second_round_email_to=data.second_round_email_to,
+                notify_when_finished=data.notify_when_finished,
             )
     # except Exception as e:
     #     import traceback
@@ -1722,35 +1764,26 @@ async def vote_tabulate(
     """
     URL: POST /vote/tabulate
 
-    Tabulate a vote. Public data which is available to all logged-in committers (JWT Auth)
+    Tabulate a vote. Public data which is available to all logged-in committers (JWT Auth).
     """
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
-        release = await db_data.release(key=str(release_key), _project_release_policy=True).demand(
+        release = await db_data.release(key=str(release_key), _project_release_policy=True, _committee=True).demand(
             exceptions.NotFound(f"Release {release_key} not found"),
         )
 
-    latest_vote_task = await interaction.release_current_vote_task(release)
-    if latest_vote_task is None:
-        raise exceptions.NotFound("No vote task found")
-    task_mid = interaction.task_mid_get(latest_vote_task)
-    task_recipient = interaction.task_recipient_get(latest_vote_task)
+    is_trusted = (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None)
+    trusted_ballots, trusted_summary, trusted_passed = await _vote_tabulate_trusted(release, is_trusted)
+    details = await _vote_tabulate_email_details(release, is_trusted)
 
-    async with storage.write() as write:
-        wagp = write.as_general_public()
-        archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient)
-    if archive_url is None:
-        raise exceptions.NotFound("No archive URL found")
-
-    thread_id = archive_url.split("/")[-1]
-    committee = await tabulate.vote_committee(thread_id, release)
-    excluded_message_ids = None
-    if (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None):
-        excluded_message_ids = await interaction.ballot_receipt_message_ids(release.key, release.current_vote_seq)
-    details = await tabulate.vote_details(committee, thread_id, release, excluded_message_ids=excluded_message_ids)
     return models.api.VoteTabulateResults(
         endpoint="/vote/tabulate",
         details=details,
+        vote_mode=release.effective_vote_mode,
+        vote_seq=release.current_vote_seq,
+        trusted_ballots=trusted_ballots,
+        trusted_summary=trusted_summary,
+        trusted_passed=trusted_passed,
     ).model_dump(mode="json"), 200
 
 
@@ -1788,6 +1821,17 @@ def _jwt_asf_uid() -> str:
     asf_uid = claims.get("sub")
     if not isinstance(asf_uid, str):
         raise base.ASFQuartException(f"Invalid token subject: {asf_uid!r}, type: {type(asf_uid)}", errorcode=401)
+    return asf_uid
+
+
+async def _ldap_fullname(asf_uid: str) -> str:
+    try:
+        result = await ldap.account_lookup(asf_uid)
+    except Exception as e:
+        log.warning(f"LDAP fullname lookup failed for {asf_uid}: {e}")
+        return asf_uid
+    if (result is not None) and result.cn:
+        return result.cn[0]
     return asf_uid
 
 
@@ -1905,3 +1949,79 @@ async def _resolve_signing_key_from_signature(
         if matched_fingerprint is not None:
             return stored, matched_fingerprint
     raise exceptions.NotFound("No matching signing key found for signature")
+
+
+async def _vote_tabulate_email_details(
+    release: sql.Release,
+    is_trusted: bool,
+) -> models.tabulate.VoteDetails | None:
+    latest_vote_task = await interaction.release_current_vote_task(release)
+    if latest_vote_task is None:
+        if is_trusted:
+            return None
+        raise exceptions.NotFound("No vote task found")
+    task_mid = interaction.task_mid_get(latest_vote_task)
+    task_recipient = interaction.task_recipient_get(latest_vote_task)
+    async with storage.write() as write:
+        wagp = write.as_general_public()
+        archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient)
+    if archive_url is None:
+        if is_trusted:
+            return None
+        raise exceptions.NotFound("No archive URL found")
+
+    thread_id = archive_url.split("/")[-1]
+    excluded_message_ids = None
+    if is_trusted and (release.current_vote_seq is not None):
+        excluded_message_ids = await interaction.ballot_receipt_message_ids(release.key, release.current_vote_seq)
+    try:
+        committee = await tabulate.vote_committee(thread_id, release)
+        return await tabulate.vote_details(committee, thread_id, release, excluded_message_ids=excluded_message_ids)
+    except (util.FetchError, ValueError) as e:
+        if is_trusted:
+            log.warning(f"Email tabulation unavailable for {release.key}: {e}")
+            return None
+        raise
+
+
+async def _vote_tabulate_trusted(
+    release: sql.Release,
+    is_trusted: bool,
+) -> tuple[list[models.api.TrustedBallotEntry] | None, models.api.TrustedVoteSummary | None, bool | None]:
+    if not is_trusted:
+        return None, None, None
+    if release.committee is None:
+        raise exceptions.InternalServerError("Release has no committee")
+    vote_seq = release.current_vote_seq
+    if vote_seq is None:
+        return None, None, None
+    vote_round = interaction.trusted_vote_round(release)
+    trusted_ballot_details, summary = await interaction.trusted_ballot_details(release, vote_seq, vote_round)
+    entries: list[models.api.TrustedBallotEntry] = []
+    for detail in trusted_ballot_details:
+        entries.append(
+            models.api.TrustedBallotEntry(
+                voter_asf_uid=detail.voter_asf_uid,
+                voter_fullname=detail.voter_fullname,
+                choice=detail.choice,
+                comment=detail.comment,
+                is_binding=detail.is_binding,
+                vote_round=detail.vote_round,
+                revision_number_at_cast=detail.revision_number_at_cast,
+                receipt_message_id=detail.receipt_message_id,
+                cast_at=detail.cast_at,
+            )
+        )
+    passed = tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no)
+    return entries, _vote_tabulate_trusted_summary(summary), passed
+
+
+def _vote_tabulate_trusted_summary(summary: interaction.TrustedVoteSummary) -> models.api.TrustedVoteSummary:
+    return models.api.TrustedVoteSummary(
+        binding_votes_yes=summary.binding_votes_yes,
+        binding_votes_no=summary.binding_votes_no,
+        binding_votes_abstain=summary.binding_votes_abstain,
+        non_binding_votes_yes=summary.non_binding_votes_yes,
+        non_binding_votes_no=summary.non_binding_votes_no,
+        non_binding_votes_abstain=summary.non_binding_votes_abstain,
+    )

@@ -44,6 +44,7 @@ import atr.web as web
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
+_NO_EXPECTED_VOTE_ROUND: Final[object] = object()
 
 
 class ApacheUserMissingError(RuntimeError):
@@ -87,6 +88,20 @@ class TrustedVoteSummary:
     @property
     def non_binding_votes(self) -> int:
         return self.non_binding_votes_yes + self.non_binding_votes_no + self.non_binding_votes_abstain
+
+
+@dataclasses.dataclass(frozen=True)
+class TrustedBallotDetail:
+    cast_at: datetime.datetime
+    choice: sql.VoteChoice
+    comment: str
+    is_binding: bool
+    receipt_message_id: str
+    revision_number_at_cast: str
+    status_label: str
+    voter_asf_uid: str
+    voter_fullname: str
+    vote_round: int | None
 
 
 async def all_releases(project: sql.Project) -> list[sql.Release]:
@@ -570,37 +585,48 @@ async def tasks_ongoing_revision(
         return task_count, latest_revision
 
 
+async def trusted_ballot_details(
+    release: sql.Release,
+    vote_seq: int,
+    expected_vote_round: int | None,
+    caller_data: db.Session | None = None,
+) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
+    if caller_data is None:
+        ballots = await ballots_for_resolution(release.key, vote_seq)
+    else:
+        ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
+    return await trusted_ballot_details_from_ballots(
+        release,
+        ballots,
+        expected_vote_round,
+        caller_data=caller_data,
+    )
+
+
+async def trusted_ballot_details_from_ballots(
+    release: sql.Release,
+    ballots: Sequence[sql.BallotPaper],
+    expected_vote_round: int | None,
+    caller_data: db.Session | None = None,
+) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
+    return await _trusted_ballot_details_from_ballots(
+        release,
+        ballots,
+        expected_vote_round=expected_vote_round,
+        caller_data=caller_data,
+    )
+
+
 async def trusted_ballot_summary(
     release: sql.Release,
     ballots: Sequence[sql.BallotPaper],
     caller_data: db.Session | None = None,
 ) -> TrustedVoteSummary:
-    if release.committee is None:
-        raise ValueError("Release has no committee")
-    summary = TrustedVoteSummary()
-    for ballot in ballots:
-        is_binding, _binding_committee = await user.is_binding_for_release(
-            release.committee,
-            ballot.voter_asf_uid,
-            ballot.vote_round,
-            caller_data=caller_data,
-        )
-        match ballot.choice:
-            case sql.VoteChoice.YES:
-                if is_binding:
-                    summary.binding_votes_yes += 1
-                else:
-                    summary.non_binding_votes_yes += 1
-            case sql.VoteChoice.ABSTAIN:
-                if is_binding:
-                    summary.binding_votes_abstain += 1
-                else:
-                    summary.non_binding_votes_abstain += 1
-            case sql.VoteChoice.NO:
-                if is_binding:
-                    summary.binding_votes_no += 1
-                else:
-                    summary.non_binding_votes_no += 1
+    _details, summary = await _trusted_ballot_details_from_ballots(
+        release,
+        ballots,
+        caller_data=caller_data,
+    )
     return summary
 
 
@@ -642,6 +668,12 @@ async def trusted_jwt_for_dist(
             raise InteractionError(f"Release {version_key} is not in finish phase")
 
     return payload, asf_uid, project, release
+
+
+def trusted_vote_round(release: sql.Release) -> int | None:
+    if (release.committee is not None) and release.committee.is_podling:
+        return 1 if (release.podling_thread_id is None) else 2
+    return None
 
 
 async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Release]]]:
@@ -770,6 +802,52 @@ async def wait_for_task(
     return False
 
 
+async def _trusted_ballot_details_from_ballots(
+    release: sql.Release,
+    ballots: Sequence[sql.BallotPaper],
+    *,
+    expected_vote_round: int | None | object = _NO_EXPECTED_VOTE_ROUND,
+    caller_data: db.Session | None = None,
+) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    details: list[TrustedBallotDetail] = []
+    summary = TrustedVoteSummary()
+    for ballot in ballots:
+        if (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND) and (ballot.vote_round != expected_vote_round):
+            raise ValueError("Trusted ballot vote round does not match the active vote round")
+        if caller_data is None:
+            is_binding, _binding_committee = await user.is_binding_for_release(
+                release.committee,
+                ballot.voter_asf_uid,
+                ballot.vote_round,
+            )
+        else:
+            is_binding, _binding_committee = await user.is_binding_for_release(
+                release.committee,
+                ballot.voter_asf_uid,
+                ballot.vote_round,
+                caller_data=caller_data,
+            )
+        _trusted_summary_add(summary, ballot.choice, is_binding)
+        binding_label, non_binding_label = user.binding_terminology(ballot.vote_round)
+        details.append(
+            TrustedBallotDetail(
+                cast_at=ballot.created,
+                choice=ballot.choice,
+                comment=ballot.comment,
+                is_binding=is_binding,
+                receipt_message_id=ballot.receipt_message_id,
+                revision_number_at_cast=ballot.revision_number_at_cast,
+                status_label=binding_label if is_binding else non_binding_label,
+                voter_asf_uid=ballot.voter_asf_uid,
+                voter_fullname=ballot.voter_fullname,
+                vote_round=ballot.vote_round,
+            )
+        )
+    return details, summary
+
+
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:
     # Debugging
     log.info(f"GitHub OIDC JWT payload: {repository} {workflow_ref}")
@@ -823,3 +901,22 @@ def _trusted_project_checks(repository: str, workflow_ref: str) -> tuple[str, st
     if not workflow_path.startswith(".github/workflows/"):
         raise InteractionError(f"Workflow path must start with '.github/workflows/', got {workflow_path}")
     return repository_name, workflow_path
+
+
+def _trusted_summary_add(summary: TrustedVoteSummary, choice: sql.VoteChoice, is_binding: bool) -> None:
+    match choice:
+        case sql.VoteChoice.YES:
+            if is_binding:
+                summary.binding_votes_yes += 1
+            else:
+                summary.non_binding_votes_yes += 1
+        case sql.VoteChoice.ABSTAIN:
+            if is_binding:
+                summary.binding_votes_abstain += 1
+            else:
+                summary.non_binding_votes_abstain += 1
+        case sql.VoteChoice.NO:
+            if is_binding:
+                summary.binding_votes_no += 1
+            else:
+                summary.non_binding_votes_no += 1
