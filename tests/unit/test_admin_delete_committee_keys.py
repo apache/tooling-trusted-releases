@@ -35,7 +35,7 @@ async def test_delete_committee_keys_post_surfaces_storage_error(monkeypatch):
         confirm_delete="DELETE KEYS",
         csrf_token="csrf",
     )
-    delete_error = storage.AccessError("Failed to remove KEYS file for committee alpha: boom")
+    delete_error = storage.AccessError("Failed to remove KEYS file for committee alpha: permission denied")
     keys = SimpleNamespace(delete_committee_keys=mock.AsyncMock(side_effect=delete_error))
     waca = SimpleNamespace(keys=keys)
     write = SimpleNamespace(as_committee_admin=mock.MagicMock(return_value=waca))

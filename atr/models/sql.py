@@ -224,6 +224,7 @@ class TaskType(enum.StrEnum):
     SVN_IMPORT_FILES = "svn_import_files"
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
+    VOTE_END_NOTIFY = "vote_end_notify"
     VOTE_INITIATE = "vote_initiate"
     WORKFLOW_STATUS = "workflow_status"
     ZIPFORMAT_INTEGRITY = "zipformat_integrity"

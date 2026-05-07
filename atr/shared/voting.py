@@ -39,6 +39,11 @@ class StartVotingForm(form.Form):
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
+    notify_when_finished: form.Bool = form.label(
+        "Email reminder",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
 
     @pydantic.field_validator("vote_duration")

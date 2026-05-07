@@ -111,12 +111,14 @@ async def selected_revision(
             revision_number=str(revision),
             permitted_recipients=permitted_recipients,
             second_round_recipients=second_round_recipients,
+            podling_vote_round=_podling_vote_round(release, committee),
             default_subject=default_subject,
             subject_template_hash=subject_template_hash,
             default_body=default_body,
             min_hours=min_hours,
             vote_mode=vote_mode,
             keys_warning=keys_warning,
+            asf_uid=session.uid,
         )
 
         return await template.blank(
@@ -129,6 +131,12 @@ async def selected_revision(
 async def _check_keys_warning(committee: sql.Committee) -> bool:
     keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
     return not await aiofiles.os.path.isfile(keys_file_path)
+
+
+def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int | None:
+    if not committee.is_podling:
+        return None
+    return 2 if (release.podling_thread_id is not None) else 1
 
 
 def _render_body_field(default_body: str, project_key: str) -> htm.Element:
@@ -154,12 +162,14 @@ async def _render_page(
     revision_number: str,
     permitted_recipients: list[str],
     second_round_recipients: list[str],
+    podling_vote_round: int | None,
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
     min_hours: int,
     vote_mode: sql.VoteMode,
     keys_warning: bool,
+    asf_uid: str,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -244,6 +254,28 @@ async def _render_page(
         ]
     else:
         skip.append("second_round_email_to")
+
+    if vote_mode == sql.VoteMode.TRUSTED:
+        if podling_vote_round == 1:
+            vote_label = "first round vote"
+        elif podling_vote_round == 2:
+            vote_label = "second round vote"
+        else:
+            vote_label = "vote"
+        custom["notify_when_finished"] = htm.div[
+            htpy.input(
+                type="checkbox",
+                name="notify_when_finished",
+                id="notify_when_finished",
+                value="on",
+                class_="form-check-input",
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                f"If enabled, ATR will send a reminder to {asf_uid}@apache.org when the {vote_label} finishes.",
+            ],
+        ]
+    else:
+        skip.append("notify_when_finished")
 
     vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,

@@ -306,6 +306,7 @@ class CommitteeParticipant(FoundationCommitter):
         email_bcc: list[str] | None = None,
         second_round_email_to: str | None = None,
         expected_vote_mode: sql.VoteMode | None = None,
+        notify_when_finished: bool = False,
     ) -> sql.Task:
         if promote:
             await self.__data.begin_immediate()
@@ -341,6 +342,8 @@ class CommitteeParticipant(FoundationCommitter):
                 )
             if release.committee is None:
                 raise storage.AccessError("Release has no committee", status=500)
+            if notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
+                raise storage.AccessError("Vote end reminders are only available in Trusted Vote mode", status=403)
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
@@ -386,6 +389,7 @@ class CommitteeParticipant(FoundationCommitter):
                     email_cc=email_cc or [],
                     email_bcc=email_bcc or [],
                     second_round_email_to=second_round_email_to,
+                    notify_when_finished=notify_when_finished,
                 ).model_dump(),
                 asf_uid=self.__asf_uid,
                 project_key=str(project_key),
@@ -679,7 +683,7 @@ class CommitteeMember(CommitteeParticipant):
                 await self.__data.rollback()
                 raise
             success_message = (
-                f"Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
+                f"First round vote marked as passed, and second round vote automatically started"
                 f" (sent to {incubator_vote_address})"
             )
         elif vote_result == "passed":
@@ -955,7 +959,7 @@ class CommitteeMember(CommitteeParticipant):
                 await self.__data.commit()
                 await self.__data.refresh(release)
                 success_message = (
-                    f"Project PPMC vote marked as passed, and Incubator PMC vote automatically started"
+                    f"First round vote marked as passed, and second round vote automatically started"
                     f" (sent to {incubator_vote_address})"
                 )
             elif vote_result == "passed":
@@ -1068,6 +1072,29 @@ class CommitteeMember(CommitteeParticipant):
         if getattr(result, "rowcount", 0) != 1:
             await self.__data.rollback()
             raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
+        await self._cancel_pending_end_notify(release)
+
+    async def _cancel_pending_end_notify(self, release: sql.Release) -> None:
+        # There is no CANCELLED status for tasks
+        # The best alternatives are to either delete it, or mark it as FAILED
+        # Deleting it is simpler, but then we have no record of the task
+        # Therefore, although it's not exactly correct, we mark it as FAILED
+        via = sql.validate_instrumented_attribute
+        stmt = (
+            sqlmodel.update(sql.Task)
+            .where(
+                via(sql.Task.task_type) == sql.TaskType.VOTE_END_NOTIFY,
+                via(sql.Task.status) == sql.TaskStatus.QUEUED,
+                via(sql.Task.project_key) == release.project.key,
+                via(sql.Task.version_key) == release.version,
+            )
+            .values(
+                status=sql.TaskStatus.FAILED,
+                completed=datetime.datetime.now(datetime.UTC),
+                error="Vote resolved before reminder fired",
+            )
+        )
+        await self.__data.execute(stmt)
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

@@ -223,6 +223,16 @@ class SvnImportFiles(schema.Strict):
     msg: str = schema.description("The message from the SVN import")
 
 
+class VoteEndNotify(schema.Strict):
+    """Result of the task to notify the initiator that a vote has ended."""
+
+    kind: Literal["vote_end_notify"] = schema.Field(alias="kind")
+    sent: bool = schema.description("Whether a reminder email was actually sent")
+    skip_reason: str | None = schema.description("The reason the reminder was skipped, if present")
+    mid: str | None = schema.description("The message ID of the reminder email as sent")
+    mail_send_warnings: list[str] = schema.description("Warnings from the mail server")
+
+
 class VoteInitiate(schema.Strict):
     """Result of the task to initiate a vote."""
 
@@ -264,6 +274,7 @@ Results = Annotated[
     | SBOMQsScore
     | SBOMToolScore
     | SvnImportFiles
+    | VoteEndNotify
     | VoteInitiate,
     schema.Field(discriminator="kind"),
 ]

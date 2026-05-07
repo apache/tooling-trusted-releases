@@ -353,6 +353,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             raise ValueError("TARGZ_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.TARGZ_STRUCTURE:
             return targz.structure
+        case sql.TaskType.VOTE_END_NOTIFY:
+            return vote.end_notify
         case sql.TaskType.VOTE_INITIATE:
             return vote.initiate
         case sql.TaskType.WORKFLOW_STATUS:

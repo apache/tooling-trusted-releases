@@ -102,6 +102,10 @@ class Initiate(schema.Strict):
         default=None,
         description="Optional mailing list To address for an automatically started podling second round vote",
     )
+    notify_when_finished: bool = pydantic.Field(
+        default=False,
+        description="Send a self addressed reminder email when the vote ends",
+    )
 
 
 class MaintenanceArgs(schema.Strict):
@@ -180,6 +184,16 @@ class Update(schema.Strict):
 
     asf_uid: str = schema.description("The ASF UID of the user triggering the update")
     next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
+
+
+class VoteEndNotify(schema.Strict):
+    """Arguments for the task to notify the user that a vote has ended."""
+
+    release_key: str = schema.description("The release key the vote belongs to")
+    vote_seq: int = schema.description("The vote sequence at the time of scheduling")
+    recipient_id: str = schema.description("ASF UID of the user who opted in to receive the reminder")
+    # This property is used to compose the reminder email
+    vote_end: str = schema.description("Human readable vote end timestamp announced in the vote email")
 
 
 class WorkflowStatusCheck(schema.Strict):

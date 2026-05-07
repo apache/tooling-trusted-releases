@@ -122,6 +122,9 @@ async def selected_revision(
                 "The vote mode has changed since you loaded the form. Please reload and try again.",
             )
 
+        if (notify_error := await _notify_opt_in_error(session, start_voting_form, vote_mode)) is not None:
+            return notify_error
+
         permitted_recipients = util.permitted_podling_first_round_recipients(
             session.uid,
             committee.key,
@@ -181,6 +184,7 @@ async def selected_revision(
                 email_bcc=start_voting_form.email_bcc,
                 second_round_email_to=second_round_email_to,
                 expected_vote_mode=start_voting_form.vote_mode,
+                notify_when_finished=start_voting_form.notify_when_finished,
             )
 
         log.info(f"Vote email will be sent to: {all_addrs}")
@@ -190,3 +194,16 @@ async def selected_revision(
             project_key=str(project_key),
             version_key=str(version_key),
         )
+
+
+async def _notify_opt_in_error(
+    session: web.Committer,
+    start_voting_form: shared.voting.StartVotingForm,
+    vote_mode: sql.VoteMode,
+) -> web.WerkzeugResponse | None:
+    if start_voting_form.notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
+        return await session.form_error(
+            "notify_when_finished",
+            "Vote end reminders are only available in Trusted Vote mode.",
+        )
+    return None

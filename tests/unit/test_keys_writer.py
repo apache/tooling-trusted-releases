@@ -118,14 +118,14 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails():
     initial_committee = SimpleNamespace(public_signing_keys=[key_orphaned])
     data = MockData(None, committees_after_commit={"alpha": initial_committee})
     writer, write_as = _make_foundation_admin(data, "alpha")
-    error_message = "Failed to remove KEYS file for committee alpha: boom"
+    error_message = "Failed to remove KEYS file for committee alpha: permission denied"
 
     with mock.patch.object(
         writer,
         "_sync_committee_keys_file",
         new=mock.AsyncMock(side_effect=storage.AccessError(error_message)),
     ):
-        with pytest.raises(storage.AccessError, match="boom"):
+        with pytest.raises(storage.AccessError, match="permission denied"):
             await writer.delete_committee_keys()
 
     data.commit.assert_awaited_once()

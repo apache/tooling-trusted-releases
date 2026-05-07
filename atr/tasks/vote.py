@@ -17,6 +17,7 @@
 
 import datetime
 
+import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
@@ -34,6 +35,62 @@ class VoteInitiationError(Exception):
     pass
 
 
+@checks.with_model(args.VoteEndNotify)
+async def end_notify(task_args: args.VoteEndNotify) -> results.Results | None:
+    """Send a self addressed reminder when a vote ends, if it has not been resolved."""
+    async with db.session() as data:
+        release = await data.release(key=task_args.release_key, _project=True, _committee=True).get()
+        if release is None:
+            log.info(f"Vote end notify skipped: release {task_args.release_key} not found")
+            return _end_notify_skipped("release_not_found")
+        if release.vote_resolved is not None:
+            log.info(f"Vote end notify skipped for {task_args.release_key}: already resolved")
+            return _end_notify_skipped("already_resolved")
+        if release.current_vote_seq != task_args.vote_seq:
+            log.info(
+                f"Vote end notify skipped for {task_args.release_key}: vote_seq changed "
+                f"({release.current_vote_seq} != {task_args.vote_seq})"
+            )
+            return _end_notify_skipped("vote_seq_changed")
+        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
+            log.info(f"Vote end notify skipped for {task_args.release_key}: not in candidate phase")
+            return _end_notify_skipped("not_in_candidate_phase")
+        if release.effective_vote_mode != sql.VoteMode.TRUSTED:
+            log.info(f"Vote end notify skipped for {task_args.release_key}: not in trusted mode")
+            return _end_notify_skipped("not_trusted_mode")
+        review_url = f"https://{config.get().APP_HOST}/vote/{release.project.key}/{release.version}"
+
+    sender_recipient = f"{task_args.recipient_id}@apache.org"
+    subject = f"[ATR] Vote ready to resolve: {task_args.release_key}"
+    body = (
+        f"The vote for {task_args.release_key} reached its scheduled end at {task_args.vote_end}.\n\n"
+        f"Please review the recorded ballots and resolve the vote in ATR:\n{review_url}"
+    )
+    message = mail.Message(
+        email_sender=sender_recipient,
+        email_to=sender_recipient,
+        subject=subject,
+        body=body,
+    )
+
+    async with storage.write(task_args.recipient_id) as write:
+        wafc = write.as_foundation_committer()
+        mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.AUTO)
+
+    if mail_errors:
+        log.warning(f"Vote end notify mail to {sender_recipient} produced warnings: {mail_errors}")
+    else:
+        log.info(f"Vote end notify mail sent to {sender_recipient}")
+
+    return results.VoteEndNotify(
+        kind="vote_end_notify",
+        sent=True,
+        skip_reason=None,
+        mid=mid,
+        mail_send_warnings=mail_errors,
+    )
+
+
 @checks.with_model(args.Initiate)
 async def initiate(task_args: args.Initiate) -> results.Results | None:
     """Initiate a vote for a release."""
@@ -46,6 +103,16 @@ async def initiate(task_args: args.Initiate) -> results.Results | None:
     except Exception as e:
         log.exception(f"Unexpected error during vote initiation: {e}")
         raise
+
+
+def _end_notify_skipped(reason: str) -> results.VoteEndNotify:
+    return results.VoteEndNotify(
+        kind="vote_end_notify",
+        sent=False,
+        skip_reason=reason,
+        mid=None,
+        mail_send_warnings=[],
+    )
 
 
 async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | None:  # noqa: C901
@@ -154,4 +221,56 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
         log.warning(f"Start vote for {task_args.release_key}: sending to {all_destinations} gave errors: {mail_errors}")
     else:
         log.info(f"Vote email sent successfully to {all_destinations}")
+
+    if (
+        task_args.notify_when_finished
+        and (task_args.vote_seq is not None)
+        and (vote_duration_hours > 0)
+        and (release.effective_vote_mode == sql.VoteMode.TRUSTED)
+    ):
+        try:
+            await _schedule_end_notify(
+                task_args=task_args,
+                project_key=release.project.key,
+                version_key=release.version,
+                vote_end=vote_end,
+                vote_end_str=vote_end_str,
+            )
+        except Exception as schedule_error:
+            # TODO: Should we do anything else here?
+            # This is effectively a silent failure, from the user's perspective
+            log.exception(f"Vote end notify could not be scheduled for {task_args.release_key}: {schedule_error}")
+
     return result
+
+
+async def _schedule_end_notify(
+    *,
+    task_args: args.Initiate,
+    project_key: str,
+    version_key: str,
+    vote_end: datetime.datetime,
+    vote_end_str: str,
+) -> None:
+    if task_args.vote_seq is None:
+        return
+    recipient_id = task_args.initiator_id
+    notify_args = args.VoteEndNotify(
+        release_key=task_args.release_key,
+        vote_seq=task_args.vote_seq,
+        recipient_id=recipient_id,
+        vote_end=vote_end_str,
+    )
+    notify_task = sql.Task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.VOTE_END_NOTIFY,
+        task_args=notify_args.model_dump(),
+        asf_uid=recipient_id,
+        project_key=project_key,
+        version_key=version_key,
+    )
+    notify_task.scheduled = vote_end
+    async with db.session() as data:
+        data.add(notify_task)
+        await data.commit()
+    log.info(f"Vote end notify scheduled for {task_args.release_key} at {vote_end_str} (recipient={recipient_id})")
