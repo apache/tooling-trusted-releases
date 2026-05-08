@@ -190,6 +190,7 @@ async def view(
     page.append(title_row)
     page.append(_render_project_label_card(project))
     page.append(_render_pmc_card(project))
+    page.append(_render_description_card(project))
 
     tab_items: list[htm.Tab] = []
 
@@ -339,7 +340,11 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
     for cat in current_categories:
         remove_button = (
             # Manual form as badges are not handled by the form system
-            htm.form(".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=str(project.key)))[
+            htm.form(
+                ".d-inline.m-0",
+                method="post",
+                action=_view_action(project, "metadata"),
+            )[
                 form.csrf_input(),
                 htpy.input(type="hidden", name="project_key", value=str(project.key)),
                 htpy.input(type="hidden", name="variant", value="remove_category"),
@@ -357,7 +362,11 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
         ]
         category_badges.append(badge)
 
-    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=str(project.key)))[
+    add_form = htm.form(
+        ".mb-3",
+        method="post",
+        action=_view_action(project, "metadata"),
+    )[
         form.csrf_input(),
         htpy.input(type="hidden", name="project_key", value=str(project.key)),
         htpy.input(type="hidden", name="variant", value="add_category"),
@@ -391,7 +400,7 @@ async def _render_compose_form(project: sql.Project) -> htm.Element:
         await form.render_block(
             card_body,
             model_cls=shared.projects.ComposePolicyForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "compose"),
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
@@ -458,7 +467,7 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
         await form.render_block(
             body,
             model_cls=shared.projects.EditCycleDatesForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "lifecycle"),
             submit_label="Save cycle dates",
             defaults={
                 "project_key": str(project.key),
@@ -494,7 +503,25 @@ async def _render_delete_section(project: sql.Project) -> htm.Element:
 def _render_description_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Description"]]
-    card.div(".card-body")[htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")[htm.span(".fs-6")[project.description]]]
+    rows: list[htm.Element] = []
+    if project.short_description:
+        rows.append(
+            htm.tr[
+                htm.th(".border-0.w-25")["Short description"],
+                htm.td(".text-break.border-0")[project.short_description],
+            ]
+        )
+    if project.description:
+        rows.append(
+            htm.tr[
+                htm.th(".border-0.w-25")["Description"],
+                htm.td(".text-break.border-0")[project.description],
+            ]
+        )
+    if rows:
+        card.div(".card-body")[htm.table(".table.mb-0")[htm.tbody[*rows]]]
+    else:
+        card.div(".card-body")[htm.div(".text-muted.fst-italic")["No description set."]]
     return card.collect()
 
 
@@ -523,7 +550,7 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
         await form.render_block(
             card_body,
             model_cls=shared.projects.FinishPolicyForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "finish"),
             submit_label="Save",
             defaults={
                 "project_key": project.key,
@@ -552,7 +579,9 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     for lang in current_languages:
         # Manual form as badges are not handled by the form system
         remove_button = htm.form(
-            ".d-inline.m-0", method="post", action=util.as_url(post.projects.view, name=str(project.key))
+            ".d-inline.m-0",
+            method="post",
+            action=_view_action(project, "metadata"),
         )[
             form.csrf_input(),
             htpy.input(type="hidden", name="project_key", value=str(project.key)),
@@ -566,7 +595,11 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
         ]
         language_badges.append(badge)
 
-    add_form = htm.form(".mb-3", method="post", action=util.as_url(post.projects.view, name=str(project.key)))[
+    add_form = htm.form(
+        ".mb-3",
+        method="post",
+        action=_view_action(project, "metadata"),
+    )[
         form.csrf_input(),
         htpy.input(type="hidden", name="project_key", value=str(project.key)),
         htpy.input(type="hidden", name="variant", value="add_language"),
@@ -592,12 +625,75 @@ async def _render_lifecycle_tab(project: sql.Project, *, can_edit: bool) -> htm.
     return block.collect()
 
 
+def _render_metadata_card(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Reference metadata"]]
+
+    rows: list[htm.Element] = []
+    for label, url in [
+        ("Homepage", project.homepage),
+        ("Lifecycle page", project.lifecycle_page),
+        ("Download page", project.download_page),
+        ("Bug database", project.bug_database),
+        ("Mailing lists", project.mailing_lists),
+    ]:
+        if url:
+            rows.append(
+                htm.tr[
+                    htm.th(".border-0.w-25")[label],
+                    htm.td(".text-break.border-0")[htm.a(href=url, target="_blank", rel="noopener")[url]],
+                ]
+            )
+
+    for label, urls in [("Repositories", project.repository), ("Standards", project.standards)]:
+        if urls:
+            rows.append(
+                htm.tr[
+                    htm.th(".border-0.w-25")[label],
+                    htm.td(".text-break.border-0")[
+                        htm.ul(".mb-0.ps-3")[*[htm.li[htm.a(href=u, target="_blank", rel="noopener")[u]] for u in urls]]
+                    ],
+                ]
+            )
+
+    if rows:
+        card.div(".card-body")[htm.table(".table.mb-0")[htm.tbody[*rows]]]
+    else:
+        card.div(".card-body")[htm.div(".text-muted.fst-italic")["No reference metadata set."]]
+    return card.collect()
+
+
+async def _render_metadata_form(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-0")["Reference metadata"]]
+    with card.block(htm.div, classes=".card-body") as body:
+        await form.render_block(
+            body,
+            model_cls=shared.projects.EditMetadataForm,
+            action=_view_action(project, "metadata"),
+            submit_label="Save",
+            defaults={
+                "project_key": str(project.key),
+                "homepage": project.homepage or "",
+                "lifecycle_page": project.lifecycle_page or "",
+                "download_page": project.download_page or "",
+                "bug_database": project.bug_database or "",
+                "mailing_lists": project.mailing_lists or "",
+                "repository": "\n".join(project.repository),
+                "standards": "\n".join(project.standards),
+            },
+        )
+    return card.collect()
+
+
 async def _render_metadata_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
     block = htm.Block()
-    block.append(_render_description_card(project))
     if can_edit:
+        block.append(await _render_metadata_form(project))
         block.append(_render_categories_section(project))
         block.append(_render_languages_section(project))
+    else:
+        block.append(_render_metadata_card(project))
     return block.collect()
 
 
@@ -801,7 +897,7 @@ async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
         await form.render_block(
             card_body,
             model_cls=shared.projects.TrustedPublishingPolicyForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "trusted-publishing"),
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
@@ -825,7 +921,7 @@ async def _render_version_scheme_form(project: sql.Project) -> htm.Element:
         await form.render_block(
             body,
             model_cls=shared.projects.EditVersionSchemeForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "lifecycle"),
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
@@ -885,7 +981,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         await form.render_block(
             card_body,
             model_cls=shared.projects.VotePolicyForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            action=_view_action(project, "vote"),
             submit_label="Save",
             defaults=defaults_dict,
             form_classes=".atr-canary.py-4.px-5",
@@ -953,6 +1049,10 @@ def _textarea_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+def _view_action(project: sql.Project, tab: str) -> str:
+    return util.as_url(post.projects.view, name=str(project.key)) + f"?tab={tab}"
 
 
 def _vote_mode_label(mode: sql.VoteMode) -> str:
