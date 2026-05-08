@@ -42,9 +42,15 @@ class _Query:
 
 
 class _MockData:
-    def __init__(self, *, project=None, cycle=None, prior_event_id=None):
+    def __init__(self, *, project=None, cycle=None, prior_event_id=None, releases=None, cycles_by_key=None):
         self._project = project
         self._cycle = cycle
+        self._releases = releases or []
+        self._cycles_by_key = cycles_by_key or {}
+        # Older tests pass `cycle=...`; mirror it into the by-key index so the
+        # writer's lookups via cycle_key still find it.
+        if cycle is not None and getattr(cycle, "cycle_key", None) is not None:
+            self._cycles_by_key.setdefault(cycle.cycle_key, cycle)
         self.added: list[object] = []
         self.commit = mock.AsyncMock()
         self.execute = mock.AsyncMock()
@@ -54,12 +60,22 @@ class _MockData:
 
     def add(self, item):
         self.added.append(item)
+        # Track newly-added cycles so subsequent project_cycle lookups find them.
+        if isinstance(item, sql.ProjectCycle):
+            self._cycles_by_key[item.cycle_key] = item
 
     def project(self, **_kwargs):
         return _Query(self._project)
 
-    def project_cycle(self, **_kwargs):
+    def project_cycle(self, *, cycle_key=None, **_kwargs):
+        if cycle_key is not None:
+            return _Query(self._cycles_by_key.get(cycle_key))
         return _Query(self._cycle)
+
+    def release(self, **_kwargs):
+        # The writer calls .all() on this query path.
+        all_mock = mock.AsyncMock(return_value=list(self._releases))
+        return SimpleNamespace(all=all_mock)
 
 
 def _make_committee_member(data):
@@ -90,6 +106,14 @@ def _project(
         version_pattern=version_pattern,
         cycle_match=cycle_match,
         branch_template=branch_template,
+    )
+
+
+def _release(version, project_key="example", cycle_key=None):
+    return SimpleNamespace(
+        version=version,
+        project_key=project_key,
+        cycle_key=cycle_key or f"{project_key}-default",
     )
 
 
@@ -268,3 +292,61 @@ async def test_edit_version_scheme_raises_when_project_missing():
 
     with pytest.raises(storage.AccessError, match="not found"):
         await writer.edit_version_scheme(form)
+
+
+async def test_edit_version_scheme_reassigns_releases_into_new_cycles():
+    project = _project()
+    releases = [_release("0.1"), _release("0.2"), _release("1.5")]
+    default_cycle = SimpleNamespace(cycle_key="example-default")
+    data = _MockData(
+        project=project,
+        releases=releases,
+        cycles_by_key={"example-default": default_cycle},
+    )
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(cycle_match=r"^(\d+)\.\d+$")
+
+    await writer.edit_version_scheme(form)
+
+    assert releases[0].cycle_key == "example-0"
+    assert releases[1].cycle_key == "example-0"
+    assert releases[2].cycle_key == "example-1"
+    new_cycles = [c for c in data.added if isinstance(c, sql.ProjectCycle)]
+    assert {c.cycle_key for c in new_cycles} == {"example-0", "example-1"}
+
+
+async def test_edit_version_scheme_moves_unmatched_releases_to_default():
+    project = _project()
+    releases = [_release("1.2.3"), _release("weird-version")]
+    default_cycle = SimpleNamespace(cycle_key="example-default")
+    data = _MockData(
+        project=project,
+        releases=releases,
+        cycles_by_key={"example-default": default_cycle},
+    )
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(cycle_match=r"^(\d+)\.\d+\.\d+$")
+
+    await writer.edit_version_scheme(form)
+
+    assert releases[0].cycle_key == "example-1"
+    assert releases[1].cycle_key == "example-default"
+
+
+async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
+    project = _project()
+    releases = [_release("0.1", cycle_key="example-0")]
+    cycle_zero = SimpleNamespace(cycle_key="example-0")
+    data = _MockData(
+        project=project,
+        releases=releases,
+        cycles_by_key={"example-0": cycle_zero, "example-default": SimpleNamespace(cycle_key="example-default")},
+    )
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(cycle_match=r"^(\d+)\.\d+$")
+
+    await writer.edit_version_scheme(form)
+
+    assert releases[0].cycle_key == "example-0"
+    new_cycles = [c for c in data.added if isinstance(c, sql.ProjectCycle)]
+    assert new_cycles == []
