@@ -218,6 +218,15 @@ async def view(
         )
     )
 
+    if can_edit:
+        tab_items.append(
+            htm.Tab(
+                key="lifecycle",
+                label="Lifecycle",
+                render=lambda: _render_lifecycle_tab(project, can_edit=can_edit),
+            )
+        )
+
     if project.status == sql.ProjectStatus.ACTIVE:
         if can_edit:
             tab_items.extend(
@@ -401,9 +410,7 @@ async def _render_compose_form(project: sql.Project) -> htm.Element:
 
 def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
     # The "default" cycle is what every project gets when it has no cycle_match
-    # set, so showing the literal "default" in headings is jargon. Render it as
-    # "No cycle" instead; named cycles render as their name.
-    return "No cycle" if cycle.cycle == "default" else f"Cycle {cycle.cycle}"
+    return "No lifecycle information" if cycle.cycle == "default" else f"Version {cycle.cycle}"
 
 
 def _render_cycle_dates_card(cycle: sql.ProjectCycle) -> htm.Element:
@@ -446,7 +453,7 @@ def _render_cycle_dates_card(cycle: sql.ProjectCycle) -> htm.Element:
 
 async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle) -> htm.Element:
     card = htm.Block(htm.details, classes=".card.mb-4")
-    card.summary(".card-header.bg-light")[htm.h3(".mb-0.d-inline-block")["Cycle dates"]]
+    card.summary(".card-header.bg-light")[htm.h3(".mb-0.d-inline-block")["Lifecycle"]]
     with card.block(htm.div, classes=".card-body") as body:
         await form.render_block(
             body,
@@ -578,11 +585,17 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
+async def _render_lifecycle_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
+    block = htm.Block()
+    if can_edit:
+        block.append(await _render_version_scheme_form(project))
+    return block.collect()
+
+
 async def _render_metadata_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
     block = htm.Block()
     block.append(_render_description_card(project))
     if can_edit:
-        block.append(await _render_version_scheme_form(project))
         block.append(_render_categories_section(project))
         block.append(_render_languages_section(project))
     return block.collect()
@@ -761,10 +774,13 @@ async def _render_releases_tab(
         if show_cycle_heading:
             block.h2(".mt-4.mb-3")[_cycle_display_name(cycle)]
 
-        if can_edit:
-            block.append(await _render_cycle_dates_form(project, cycle))
-        elif cycle_has_dates:
-            block.append(_render_cycle_dates_card(cycle))
+        # Skip cycle dates UI for the default cycle - it's the catch-all for
+        # projects without cycle_match and shouldn't carry lifecycle dates.
+        if cycle.cycle != "default":
+            if can_edit:
+                block.append(await _render_cycle_dates_form(project, cycle))
+            elif cycle_has_dates:
+                block.append(_render_cycle_dates_card(cycle))
 
         block.append(
             await _render_releases_sections(
