@@ -152,10 +152,16 @@ async def _process_add_category(
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_key=str(project_key), success=f"Category '{category_to_add}' added."
+            get.projects.view,
+            project_key=str(project_key),
+            tab="metadata",
+            success=f"Category '{category_to_add}' added.",
         )
     return await session.redirect(
-        get.projects.view, project_key=str(project_key), error=f"Category '{category_to_add}' already exists."
+        get.projects.view,
+        project_key=str(project_key),
+        tab="metadata",
+        error=f"Category '{category_to_add}' already exists.",
     )
 
 
@@ -171,10 +177,16 @@ async def _process_add_language(
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_key=str(project_key), success=f"Language '{language_to_add}' added."
+            get.projects.view,
+            project_key=str(project_key),
+            tab="metadata",
+            success=f"Language '{language_to_add}' added.",
         )
     return await session.redirect(
-        get.projects.view, project_key=str(project_key), error=f"Language '{language_to_add}' already exists."
+        get.projects.view,
+        project_key=str(project_key),
+        tab="metadata",
+        error=f"Language '{language_to_add}' already exists.",
     )
 
 
@@ -189,11 +201,17 @@ async def _process_compose_form(
             await wacm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_key=project_key, error=f"Error editing compose policy: {e}"
+                get.projects.view,
+                project_key=project_key,
+                tab="compose",
+                error=f"Error editing compose policy: {e}",
             )
 
     return await session.redirect(
-        get.projects.view, project_key=project_key, success="Compose options saved successfully."
+        get.projects.view,
+        project_key=project_key,
+        tab="compose",
+        success="Compose options saved successfully.",
     )
 
 
@@ -223,12 +241,43 @@ async def _process_edit_cycle_dates_form(
             await wacm.policy.edit_cycle_dates(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_key=str(project_key), error=f"Error saving cycle dates: {e}"
+                get.projects.view,
+                project_key=str(project_key),
+                tab="lifecycle",
+                error=f"Error saving cycle dates: {e}",
             )
         except ValueError as e:
-            return await session.redirect(get.projects.view, project_key=str(project_key), error=str(e))
+            return await session.redirect(
+                get.projects.view, project_key=str(project_key), tab="lifecycle", error=str(e)
+            )
 
-    return await session.redirect(get.projects.view, project_key=str(project_key), success="Cycle dates saved.")
+    return await session.redirect(
+        get.projects.view, project_key=str(project_key), tab="lifecycle", success="Cycle dates saved."
+    )
+
+
+async def _process_edit_metadata_form(
+    session: web.Committer, edit_form: shared.projects.EditMetadataForm
+) -> web.WerkzeugResponse:
+    project_key = edit_form.project_key
+
+    async with storage.write(session) as write:
+        wacm = await write.as_project_committee_member(project_key)
+        try:
+            await wacm.project.edit_metadata(edit_form)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                tab="metadata",
+                error=f"Error saving metadata: {e}",
+            )
+        except ValueError as e:
+            return await session.redirect(get.projects.view, project_key=str(project_key), tab="metadata", error=str(e))
+
+    return await session.redirect(
+        get.projects.view, project_key=str(project_key), tab="metadata", success="Metadata saved."
+    )
 
 
 async def _process_edit_version_scheme_form(
@@ -244,12 +293,17 @@ async def _process_edit_version_scheme_form(
             return await session.redirect(
                 get.projects.view,
                 project_key=str(project_key),
+                tab="lifecycle",
                 error=f"Error saving version scheme: {e}",
             )
         except ValueError as e:
-            return await session.redirect(get.projects.view, project_key=str(project_key), error=str(e))
+            return await session.redirect(
+                get.projects.view, project_key=str(project_key), tab="lifecycle", error=str(e)
+            )
 
-    return await session.redirect(get.projects.view, project_key=str(project_key), success="Version scheme saved.")
+    return await session.redirect(
+        get.projects.view, project_key=str(project_key), tab="lifecycle", success="Version scheme saved."
+    )
 
 
 async def _process_finish_form(
@@ -263,11 +317,17 @@ async def _process_finish_form(
             await wacm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_key=project_key, error=f"Error editing finish policy: {e}"
+                get.projects.view,
+                project_key=project_key,
+                tab="finish",
+                error=f"Error editing finish policy: {e}",
             )
 
     return await session.redirect(
-        get.projects.view, project_key=project_key, success="Finish options saved successfully."
+        get.projects.view,
+        project_key=project_key,
+        tab="finish",
+        success="Finish options saved successfully.",
     )
 
 
@@ -283,10 +343,16 @@ async def _process_remove_category(
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_key=str(project_key), success=f"Category '{category_to_remove}' removed."
+            get.projects.view,
+            project_key=str(project_key),
+            tab="metadata",
+            success=f"Category '{category_to_remove}' removed.",
         )
     return await session.redirect(
-        get.projects.view, project_key=str(project_key), error=f"Category '{category_to_remove}' does not exist."
+        get.projects.view,
+        project_key=str(project_key),
+        tab="metadata",
+        error=f"Category '{category_to_remove}' does not exist.",
     )
 
 
@@ -302,10 +368,16 @@ async def _process_remove_language(
 
     if modified:
         return await session.redirect(
-            get.projects.view, project_key=project_key, success=f"Language '{language_to_remove}' removed."
+            get.projects.view,
+            project_key=project_key,
+            tab="metadata",
+            success=f"Language '{language_to_remove}' removed.",
         )
     return await session.redirect(
-        get.projects.view, project_key=project_key, error=f"Language '{language_to_remove}' does not exist."
+        get.projects.view,
+        project_key=project_key,
+        tab="metadata",
+        error=f"Language '{language_to_remove}' does not exist.",
     )
 
 
@@ -320,11 +392,17 @@ async def _process_trusted_publishing_form(
             await wacm.policy.edit_trusted_publishing(tp_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_key=project_key, error=f"Error editing Trusted Publishing policy: {e}"
+                get.projects.view,
+                project_key=project_key,
+                tab="trusted-publishing",
+                error=f"Error editing Trusted Publishing policy: {e}",
             )
 
     return await session.redirect(
-        get.projects.view, project_key=project_key, success="Trusted Publishing options saved successfully."
+        get.projects.view,
+        project_key=project_key,
+        tab="trusted-publishing",
+        success="Trusted Publishing options saved successfully.",
     )
 
 
@@ -337,11 +415,17 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
             await wacm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
             return await session.redirect(
-                get.projects.view, project_key=project_key, error=f"Error editing vote policy: {e}"
+                get.projects.view,
+                project_key=project_key,
+                tab="vote",
+                error=f"Error editing vote policy: {e}",
             )
 
     return await session.redirect(
-        get.projects.view, project_key=project_key, success="Vote options saved successfully."
+        get.projects.view,
+        project_key=project_key,
+        tab="vote",
+        success="Vote options saved successfully.",
     )
 
 
@@ -351,6 +435,7 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.ComposePolicyForm: _process_compose_form,
     shared.projects.DeleteProjectForm: _process_delete_project,
     shared.projects.EditCycleDatesForm: _process_edit_cycle_dates_form,
+    shared.projects.EditMetadataForm: _process_edit_metadata_form,
     shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,
     shared.projects.FinishPolicyForm: _process_finish_form,
     shared.projects.TrustedPublishingPolicyForm: _process_trusted_publishing_form,

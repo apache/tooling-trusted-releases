@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime
 import sqlite3
+from typing import TYPE_CHECKING
 
 import sqlalchemy.exc
 
@@ -28,6 +29,9 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.registry as registry
 import atr.storage as storage
+
+if TYPE_CHECKING:
+    import atr.shared as shared
 
 
 class GeneralPublic:
@@ -211,6 +215,25 @@ class CommitteeMember(CommitteeParticipant):
             project_key=str(project_key),
         )
         return None
+
+    async def edit_metadata(self, form: shared.projects.EditMetadataForm) -> None:
+        project = await self.__data.project(key=str(form.project_key)).get()
+        if not project:
+            raise storage.AccessError(f"Project '{form.project_key}' not found.", status=404)
+
+        project.homepage = str(form.homepage) if form.homepage else None
+        project.lifecycle_page = str(form.lifecycle_page) if form.lifecycle_page else None
+        project.download_page = str(form.download_page) if form.download_page else None
+        project.bug_database = str(form.bug_database) if form.bug_database else None
+        project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
+        project.repository = list(form.repository)
+        project.standards = list(form.standards)
+
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project.key),
+        )
 
     async def language_add(self, project_key: safe.ProjectKey, new_language: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()

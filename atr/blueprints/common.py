@@ -249,7 +249,9 @@ async def flash_form_error(form_cls: type, error: pydantic.ValidationError) -> A
     summary = form.flash_error_summary(errors, flash_data)
     await quart.flash(summary, category="error")
     await sessions.form_error_put(quart.request.path, flash_data)
-    return quart.redirect(quart.request.path)
+    # Persist the query string if required
+    redirect_url = quart.request.full_path if quart.request.query_string else quart.request.path
+    return quart.redirect(redirect_url)
 
 
 async def parse_body(
