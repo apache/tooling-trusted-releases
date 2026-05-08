@@ -790,7 +790,7 @@ class Project(sqlmodel.SQLModel, table=True):
         """Get the short display name for the Project."""
         name = self.display_name
         if name.startswith("Apache Software Foundation "):
-            return f"ASF {name.removeprefix('Apache Software Foundation ')}"
+            return name.removeprefix("Apache Software Foundation ")
         return name.removeprefix("Apache ")
 
     @property
