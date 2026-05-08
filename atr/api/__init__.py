@@ -2009,6 +2009,7 @@ async def _vote_tabulate_trusted(
                 choice=detail.choice,
                 comment=detail.comment,
                 is_binding=detail.is_binding,
+                is_carried=detail.is_carried,
                 vote_round=detail.vote_round,
                 revision_number_at_cast=detail.revision_number_at_cast,
                 receipt_message_id=detail.receipt_message_id,

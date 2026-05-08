@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import unittest.mock as mock
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
+import atr.api
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.models.sql as sql
@@ -42,6 +44,48 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
     sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
     yield sessionmaker
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_api_vote_tabulate_trusted_surfaces_is_carried_for_carried_ballot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detail = interaction.TrustedBallotDetail(
+        cast_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        choice=sql.VoteChoice.YES,
+        comment="",
+        is_binding=True,
+        is_carried=True,
+        receipt_message_id="r1@apache.org",
+        revision_number_at_cast="00001",
+        status_label="Binding",
+        voter_asf_uid="ipmc",
+        voter_fullname="IPMC Member",
+        vote_round=1,
+    )
+    summary = interaction.TrustedVoteSummary(binding_votes_yes=1)
+    monkeypatch.setattr(atr.api.interaction, "effective_trusted_ballots", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        atr.api.interaction,
+        "trusted_ballot_details_from_ballots",
+        mock.AsyncMock(return_value=([detail], summary)),
+    )
+
+    release = SimpleNamespace(
+        key="myproject-1.0.0",
+        committee=SimpleNamespace(key="myproject", is_podling=True),
+        current_vote_seq=2,
+        podling_thread_id="thread-abc",
+    )
+
+    entries, _summary, _passed = await atr.api._vote_tabulate_trusted(release, is_trusted=True)
+
+    assert entries is not None
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.is_carried is True
+    assert entry.vote_round == 1
+    assert entry.receipt_message_id == "r1@apache.org"
 
 
 @pytest.mark.asyncio
