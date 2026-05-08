@@ -328,7 +328,7 @@ async def tabs(items: list[Tab], *, active_key: str, base_url: str) -> Element:
                 a(link_classes, href=f"{base_url}?tab={item.key}", role="tab")[item.label]
             ]
         )
-    nav = ul(".nav.nav-tabs.mb-3", role="tablist")[*nav_items]
+    nav = ul(".nav.nav-pills.mb-3", role="tablist")[*nav_items]
 
     active_item = next(item for item in items if item.key == active_key)
     content = active_item.render()

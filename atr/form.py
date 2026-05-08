@@ -989,7 +989,17 @@ def _render_widget(  # noqa: C901
                 widget = htm.div[f"Custom widget for {field_name} not provided"]
 
         case Widget.DATE:
-            attrs = {**base_attrs, "type": "date"}
+            # Plain text input with YYYY-MM-DD format rather than `type="date"`
+            # because the native picker displays in browser-locale order, which
+            # is inconsistent for international users. Pattern enforces shape
+            # client-side; pydantic parses on submit.
+            attrs = {
+                **base_attrs,
+                "type": "text",
+                "placeholder": "YYYY-MM-DD",
+                "pattern": r"\d{4}-\d{2}-\d{2}",
+                "inputmode": "numeric",
+            }
             if isinstance(field_value, datetime.date):
                 attrs["value"] = field_value.isoformat()
             elif field_value:
