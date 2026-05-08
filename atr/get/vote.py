@@ -613,8 +613,8 @@ async def _render_trusted_vote_authenticated(
 
     latest_ballot = None
     if release.current_vote_seq is not None:
-        latest_ballot = await interaction.latest_ballot_for_voter(
-            release.key,
+        latest_ballot = await interaction.effective_latest_ballot_for_voter(
+            release,
             release.current_vote_seq,
             session.uid,
         )
@@ -626,7 +626,11 @@ async def _render_trusted_vote_authenticated(
     _render_binding_status(page, is_binding, binding_committee, vote_round)
 
     if latest_ballot is not None:
-        page.append(_trusted_vote_status(latest_ballot, vote_recipient))
+        is_carried = (latest_ballot.vote_round == 1) and (vote_round == 2)
+        receipt_recipient: str | None = vote_recipient
+        if is_carried and (release.current_vote_seq is not None):
+            receipt_recipient = await interaction.previous_round_one_recipient(release, release.current_vote_seq)
+        page.append(_trusted_vote_status(latest_ballot, receipt_recipient, is_carried=is_carried))
         page.p[
             "Submitting again records a new ballot. New ballots during the voting period always replace old ballots."
         ]
@@ -801,20 +805,38 @@ def _trusted_casting_disabled_notice(archive_url: str | None, vote_recipient: st
     return htm.div(".alert.alert-info.mb-3", role="alert")[children]
 
 
-def _trusted_vote_status(latest_ballot: sql.BallotPaper, vote_recipient: str) -> htm.Element:
-    receipt_archive_url = shared.vote.message_id_source_archive_url(latest_ballot.receipt_message_id, vote_recipient)
-    return htm.div(".card.mb-3")[
-        htm.div(".card-header.bg-light")["You already cast a vote"],
-        htm.div(".card-body")[
-            htm.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]],
-            htm.p(".mb-2")["Recorded: ", resolve.format_utc(latest_ballot.created)],
-            htm.p(".mb-0")[
-                "Receipt message ID: ",
-                htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
-                    htpy.code[latest_ballot.receipt_message_id]
-                ],
+def _trusted_vote_status(
+    latest_ballot: sql.BallotPaper,
+    vote_recipient: str | None,
+    *,
+    is_carried: bool = False,
+) -> htm.Element:
+    header = "You already cast a vote (carried from the first round)" if is_carried else "You already cast a vote"
+    body = htm.Block(htm.div, classes=".card-body")
+    body.p(".mb-2")["Choice: ", htpy.strong[latest_ballot.choice.value]]
+    body.p(".mb-2")["Recorded: ", resolve.format_utc(latest_ballot.created)]
+    receipt_class = ".mb-2" if is_carried else ".mb-0"
+    if vote_recipient is None:
+        body.p(receipt_class)["Receipt message ID: ", htpy.code[latest_ballot.receipt_message_id]]
+    else:
+        receipt_archive_url = shared.vote.message_id_source_archive_url(
+            latest_ballot.receipt_message_id, vote_recipient
+        )
+        body.p(receipt_class)[
+            "Receipt message ID: ",
+            htpy.a(href=receipt_archive_url, target="_blank", rel="noopener")[
+                htpy.code[latest_ballot.receipt_message_id]
             ],
-        ],
+        ]
+    if is_carried:
+        body.div(".alert.alert-info.mb-0", role="alert")[
+            "Your first round PPMC ballot is being counted as a binding Incubator vote in this round ",
+            "because you are on the Incubator PMC. Submitting a new ballot below will replace your ",
+            "carried vote for this round.",
+        ]
+    return htm.div(".card.mb-3")[
+        htm.div(".card-header.bg-light")[header],
+        body.collect(),
     ]
 
 

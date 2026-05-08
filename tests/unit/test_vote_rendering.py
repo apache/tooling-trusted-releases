@@ -359,6 +359,60 @@ def test_podling_vote_mode_radios_omits_manual() -> None:
 
 
 @pytest.mark.asyncio
+async def test_trusted_rendering_round_two_carryover_shows_carried_card_and_resubmit_label(
+    render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _patch_render_dependencies(monkeypatch)
+    carried = _ballot(
+        release_key="myproject-1.0.0",
+        vote_seq=1,
+        voter_asf_uid="voter",
+        choice=sql.VoteChoice.YES,
+        receipt_message_id="r1@apache.org",
+        created=datetime.datetime(2026, 1, 2, 3, 4, tzinfo=datetime.UTC),
+    )
+    carried.id = 1
+    carried.vote_round = 1
+    monkeypatch.setattr(vote.interaction, "effective_latest_ballot_for_voter", mock.AsyncMock(return_value=carried))
+    monkeypatch.setattr(
+        vote.interaction,
+        "previous_round_one_recipient",
+        mock.AsyncMock(return_value="dev@myproject.apache.org"),
+    )
+
+    podling_release = SimpleNamespace(
+        key="myproject-1.0.0",
+        committee=SimpleNamespace(key="myproject", is_podling=True),
+        current_vote_seq=2,
+        effective_vote_mode=sql.VoteMode.TRUSTED,
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        podling_thread_id="thread-abc",
+        project=SimpleNamespace(
+            key="myproject",
+            policy_vote_comment_template="Default comment",
+        ),
+        version="1.0.0",
+    )
+
+    async with render_app.test_request_context("/vote/myproject/1.0.0"):
+        page = htm.Block()
+        await vote._render_vote_authenticated(
+            page,
+            podling_release,
+            _session(),
+            None,
+            "general@incubator.apache.org",
+            _completed_vote_task(),
+        )
+
+    html = str(page.collect())
+    assert "You already cast a vote (carried from the first round)" in html
+    assert "Resubmit vote" in html
+    assert "first round PPMC ballot is being counted" in html
+    assert "listid=%3Cdev.myproject.apache.org%3E" in html
+
+
+@pytest.mark.asyncio
 async def test_trusted_rendering_with_current_vote_seq_none_does_not_query_ballots(
     render_app: quart.Quart, monkeypatch: pytest.MonkeyPatch
 ) -> None:

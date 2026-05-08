@@ -335,6 +335,40 @@ async def count_checks_for_revision_by_status(
         return result.scalar_one()
 
 
+async def effective_latest_ballot_for_voter(
+    release: sql.Release,
+    vote_seq: int,
+    voter_asf_uid: str,
+    caller_data: db.Session | None = None,
+) -> sql.BallotPaper | None:
+    if caller_data is None:
+        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid)
+    else:
+        current_ballot = await latest_ballot_for_voter(release.key, vote_seq, voter_asf_uid, caller_data)
+    if current_ballot is not None:
+        return current_ballot
+    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
+        return None
+    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
+    if r1_seq is None:
+        return None
+    if caller_data is None:
+        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid)
+    else:
+        r1_ballot = await latest_ballot_for_voter(release.key, r1_seq, voter_asf_uid, caller_data)
+    if r1_ballot is None:
+        return None
+    is_binding, _binding_committee = await user.is_binding_for_release(
+        release.committee,
+        voter_asf_uid,
+        2,
+        caller_data=caller_data,
+    )
+    if not is_binding:
+        return None
+    return r1_ballot
+
+
 async def effective_trusted_ballots(
     release: sql.Release,
     vote_seq: int,
@@ -431,6 +465,38 @@ async def latest_revision(release: sql.Release, caller_data: db.Session | None =
 async def previews(project: sql.Project) -> list[sql.Release]:
     """Get the preview releases for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
+
+
+async def previous_round_one_recipient(
+    release: sql.Release,
+    current_vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> str | None:
+    if (release.committee is None) or (not release.committee.is_podling):
+        return None
+    if trusted_vote_round(release) != 2:
+        return None
+    r1_seq = await previous_round_one_vote_seq(release.key, current_vote_seq, caller_data)
+    if r1_seq is None:
+        return None
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == release.project_key)
+            .where(sql.Task.version_key == release.version)
+            .where(sql.Task.task_type == sql.TaskType.VOTE_INITIATE)
+            .where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.vote_seq") == r1_seq)
+            .order_by(via(sql.Task.added).desc())
+            .limit(1)
+        )
+        task = (await data.execute(query)).scalar_one_or_none()
+    if task is None:
+        return None
+    email_to = task.task_args.get("email_to")
+    if isinstance(email_to, str) and email_to:
+        return email_to
+    return None
 
 
 async def previous_round_one_vote_seq(
