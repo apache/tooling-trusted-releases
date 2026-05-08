@@ -40,7 +40,12 @@
               <td class="atr-nowrap text-center {% if ballot.choice == '+1' %}atr-green{% elif ballot.choice == '-1' %}atr-red{% endif %}">
                 {{ ballot.choice }}
               </td>
-              <td class="atr-nowrap text-center {% if ballot.is_binding %}fw-bold{% endif %}">{{ ballot.status_label }}</td>
+              <td class="atr-nowrap text-center {% if ballot.is_binding %}fw-bold{% endif %}">
+                {{ ballot.status_label }}
+                {% if ballot.is_carried %}
+                  <span class="badge bg-secondary ms-1">Carried</span>
+                {% endif %}
+              </td>
               <td class="atr-nowrap">{{ ballot.cast_at }}</td>
               <td class="atr-nowrap">
                 {% if ballot.receipt_url %}

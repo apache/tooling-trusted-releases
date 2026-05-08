@@ -340,13 +340,19 @@ async def effective_trusted_ballots(
     vote_seq: int,
     caller_data: db.Session | None = None,
 ) -> list[sql.BallotPaper]:
-    current_ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
+    if caller_data is None:
+        current_ballots = await ballots_for_resolution(release.key, vote_seq)
+    else:
+        current_ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
     if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
         return current_ballots
     r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
     if r1_seq is None:
         return current_ballots
-    r1_ballots = await ballots_for_resolution(release.key, r1_seq, caller_data)
+    if caller_data is None:
+        r1_ballots = await ballots_for_resolution(release.key, r1_seq)
+    else:
+        r1_ballots = await ballots_for_resolution(release.key, r1_seq, caller_data)
     current_voted_uids = {b.voter_asf_uid for b in current_ballots}
     carried: list[sql.BallotPaper] = []
     for ballot in r1_ballots:

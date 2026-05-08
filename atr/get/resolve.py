@@ -49,11 +49,12 @@ class EmailContextRow:
     vote: str
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class TrustedBallotRow:
     cast_at: str
     choice: str
     is_binding: bool
+    is_carried: bool = False
     receipt_message_id: str
     receipt_url: str | None
     status_label: str
@@ -155,9 +156,10 @@ async def selected(  # noqa: C901
     trusted_passed = False
     vote_recipient = interaction.task_recipient_get(latest_vote_task) if (latest_vote_task is not None) else None
     if is_trusted_mode and (vote_seq is not None):
-        trusted_ballot_details, trusted_summary = await interaction.trusted_ballot_details(
+        ballots = await interaction.effective_trusted_ballots(release, vote_seq)
+        trusted_ballot_details, trusted_summary = await interaction.trusted_ballot_details_from_ballots(
             release,
-            vote_seq,
+            ballots,
             vote_round,
         )
         trusted_ballot_rows = _trusted_ballot_rows(trusted_ballot_details, vote_recipient)
@@ -375,13 +377,14 @@ def _trusted_ballot_rows(
     rows: list[TrustedBallotRow] = []
     for detail in trusted_ballot_details:
         receipt_url = None
-        if vote_recipient is not None:
+        if (vote_recipient is not None) and (not detail.is_carried):
             receipt_url = shared.vote.message_id_source_archive_url(detail.receipt_message_id, vote_recipient)
         rows.append(
             TrustedBallotRow(
                 cast_at=format_utc(detail.cast_at),
                 choice=detail.choice.value,
                 is_binding=detail.is_binding,
+                is_carried=detail.is_carried,
                 receipt_message_id=detail.receipt_message_id,
                 receipt_url=receipt_url,
                 status_label=detail.status_label,

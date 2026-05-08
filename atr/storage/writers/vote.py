@@ -889,7 +889,7 @@ class CommitteeMember(CommitteeParticipant):
                     status=409,
                 )
 
-            ballots = await interaction.ballots_for_resolution(release.key, vote_seq, self.__data)
+            ballots = await interaction.effective_trusted_ballots(release, vote_seq, self.__data)
             summary = await interaction.trusted_ballot_summary(release, ballots, self.__data)
             if (
                 (vote_result == "passed")

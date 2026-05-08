@@ -1996,7 +1996,10 @@ async def _vote_tabulate_trusted(
     if vote_seq is None:
         return None, None, None
     vote_round = interaction.trusted_vote_round(release)
-    trusted_ballot_details, summary = await interaction.trusted_ballot_details(release, vote_seq, vote_round)
+    ballots = await interaction.effective_trusted_ballots(release, vote_seq)
+    trusted_ballot_details, summary = await interaction.trusted_ballot_details_from_ballots(
+        release, ballots, vote_round
+    )
     entries: list[models.api.TrustedBallotEntry] = []
     for detail in trusted_ballot_details:
         entries.append(
