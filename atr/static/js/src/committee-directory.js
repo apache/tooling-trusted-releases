@@ -103,11 +103,24 @@ if (participantButton) {
 	});
 }
 
-function setupImageErrorHandlers() {
+function applyImageFallback(img) {
+	const fallbackSrc = img.dataset.fallbackSrc;
+	if (fallbackSrc && img.dataset.fallbackApplied !== "true") {
+		img.dataset.fallbackApplied = "true";
+		img.src = fallbackSrc;
+	} else {
+		img.style.display = "none";
+	}
+}
+
+function setupImageFallbackHandlers() {
 	document.querySelectorAll(".page-logo").forEach((img) => {
 		img.addEventListener("error", function () {
-			this.style.display = "none";
+			applyImageFallback(this);
 		});
+		if (img.complete && img.naturalWidth === 0) {
+			applyImageFallback(img);
+		}
 	});
 }
 
@@ -187,8 +200,7 @@ function setupProjectToggleButtons() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-	// Hide images that fail to load
-	setupImageErrorHandlers();
+	setupImageFallbackHandlers();
 	initCommitteeVisibility();
 	// Add a click listener to project subcards to handle navigation
 	// Note that we should improve accessibility here

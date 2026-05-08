@@ -13,6 +13,7 @@
 
         .page-logo {
             max-height: 100%;
+            max-width: 100%;
             width: auto;
             object-fit: contain;
         }
@@ -101,10 +102,12 @@
                             <div class="page-logo-container">
                                 {% if (committee.key == "incubator") or committee.key.startswith("incubator-") %}
                                     <img src="https://www.apache.org/logos/res/incubator/default.png"
+                                         data-fallback-src="{{ static_url('svg/apache_incubator.svg') }}"
                                          alt=""
                                          class="page-logo" />
                                 {% else %}
                                     <img src="https://www.apache.org/logos/res/{{ committee.key }}/default.png"
+                                         data-fallback-src="{{ static_url('svg/ASF_short-horizontal-color.svg') }}"
                                          alt=""
                                          class="page-logo" />
                                 {% endif %}
