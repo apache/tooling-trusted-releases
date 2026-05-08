@@ -398,6 +398,23 @@ async def previews(project: sql.Project) -> list[sql.Release]:
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
 
 
+async def previous_round_one_vote_seq(
+    release_key: str,
+    current_vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> int | None:
+    # This works because there must be a round one vote to get to round two
+    # We get the latest round one before the current round for the same release
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sqlalchemy.func.max(sql.BallotPaper.vote_seq))
+            .where(sql.BallotPaper.release_key == release_key)
+            .where(sql.BallotPaper.vote_round == 1)
+            .where(sql.BallotPaper.vote_seq < current_vote_seq)
+        )
+        return (await data.execute(query)).scalar_one_or_none()
+
+
 async def release_current_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
     current_vote_seq = getattr(release, "current_vote_seq", None)
     if current_vote_seq is None:
