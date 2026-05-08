@@ -17,6 +17,7 @@
 
 import datetime
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy
@@ -41,6 +42,46 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
     sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
     yield sessionmaker
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_effective_trusted_ballots_carries_ipmc_round_one_ballot(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        incubator = sql.Committee(
+            key="incubator",
+            name="Incubator",
+            is_podling=False,
+            committee_members=["ipmc"],
+        )
+        data.add(incubator)
+        await data.commit()
+
+        round_one = _ballot(
+            release_key="project-1.0.0",
+            vote_seq=1,
+            vote_round=1,
+            voter_asf_uid="ipmc",
+            choice=sql.VoteChoice.YES,
+            receipt_message_id="r1@apache.org",
+        )
+        data.add(round_one)
+        await data.commit()
+
+        release = SimpleNamespace(
+            key="project-1.0.0",
+            committee=SimpleNamespace(is_podling=True, key="myproject"),
+            podling_thread_id="thread-abc",
+        )
+        result = await interaction.effective_trusted_ballots(release, 2, data)
+        details, summary = await interaction.trusted_ballot_details_from_ballots(release, result, 2, data)
+
+    assert [b.receipt_message_id for b in result] == ["r1@apache.org"]
+    assert result[0].vote_round == 1
+    assert details[0].is_carried is True
+    assert details[0].is_binding is True
+    assert details[0].status_label == "Binding"
+    assert summary.binding_votes_yes == 1
+    assert summary.non_binding_votes_yes == 0
 
 
 @pytest.mark.asyncio

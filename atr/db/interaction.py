@@ -90,12 +90,13 @@ class TrustedVoteSummary:
         return self.non_binding_votes_yes + self.non_binding_votes_no + self.non_binding_votes_abstain
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class TrustedBallotDetail:
     cast_at: datetime.datetime
     choice: sql.VoteChoice
     comment: str
     is_binding: bool
+    is_carried: bool = False
     receipt_message_id: str
     revision_number_at_cast: str
     status_label: str
@@ -332,6 +333,34 @@ async def count_checks_for_revision_by_status(
         )
         result = await data.execute(query)
         return result.scalar_one()
+
+
+async def effective_trusted_ballots(
+    release: sql.Release,
+    vote_seq: int,
+    caller_data: db.Session | None = None,
+) -> list[sql.BallotPaper]:
+    current_ballots = await ballots_for_resolution(release.key, vote_seq, caller_data)
+    if (release.committee is None) or (not release.committee.is_podling) or (trusted_vote_round(release) != 2):
+        return current_ballots
+    r1_seq = await previous_round_one_vote_seq(release.key, vote_seq, caller_data)
+    if r1_seq is None:
+        return current_ballots
+    r1_ballots = await ballots_for_resolution(release.key, r1_seq, caller_data)
+    current_voted_uids = {b.voter_asf_uid for b in current_ballots}
+    carried: list[sql.BallotPaper] = []
+    for ballot in r1_ballots:
+        if ballot.voter_asf_uid in current_voted_uids:
+            continue
+        is_binding, _binding_committee = await user.is_binding_for_release(
+            release.committee,
+            ballot.voter_asf_uid,
+            2,
+            caller_data=caller_data,
+        )
+        if is_binding:
+            carried.append(ballot)
+    return current_ballots + carried
 
 
 async def full_releases(project: sql.Project) -> list[sql.Release]:
@@ -828,32 +857,40 @@ async def _trusted_ballot_details_from_ballots(
 ) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
     if release.committee is None:
         raise ValueError("Release has no committee")
+    active_round = trusted_vote_round(release)
     details: list[TrustedBallotDetail] = []
     summary = TrustedVoteSummary()
     for ballot in ballots:
-        if (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND) and (ballot.vote_round != expected_vote_round):
+        is_carried = (ballot.vote_round == 1) and (active_round == 2)
+        round_mismatch = (
+            (expected_vote_round is not _NO_EXPECTED_VOTE_ROUND)
+            and (ballot.vote_round != expected_vote_round)
+            and (not is_carried)
+        )
+        if round_mismatch:
             raise ValueError("Trusted ballot vote round does not match the active vote round")
         if caller_data is None:
             is_binding, _binding_committee = await user.is_binding_for_release(
                 release.committee,
                 ballot.voter_asf_uid,
-                ballot.vote_round,
+                active_round,
             )
         else:
             is_binding, _binding_committee = await user.is_binding_for_release(
                 release.committee,
                 ballot.voter_asf_uid,
-                ballot.vote_round,
+                active_round,
                 caller_data=caller_data,
             )
         _trusted_summary_add(summary, ballot.choice, is_binding)
-        binding_label, non_binding_label = user.binding_terminology(ballot.vote_round)
+        binding_label, non_binding_label = user.binding_terminology(active_round)
         details.append(
             TrustedBallotDetail(
                 cast_at=ballot.created,
                 choice=ballot.choice,
                 comment=ballot.comment,
                 is_binding=is_binding,
+                is_carried=is_carried,
                 receipt_message_id=ballot.receipt_message_id,
                 revision_number_at_cast=ballot.revision_number_at_cast,
                 status_label=binding_label if is_binding else non_binding_label,
