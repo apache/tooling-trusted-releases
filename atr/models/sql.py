@@ -729,6 +729,21 @@ class Project(sqlmodel.SQLModel, table=True):
     category: str | None = sqlmodel.Field(default=None, **example("data,storage"))
     programming_languages: str | None = sqlmodel.Field(default=None, **example("c,python"))
 
+    short_description: str | None = sqlmodel.Field(default=None, **example("A simple example project"))
+    homepage: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/"))
+    lifecycle_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/lifecycle"))
+    download_page: str | None = sqlmodel.Field(default=None, **example("https://example.apache.org/download"))
+    bug_database: str | None = sqlmodel.Field(default=None, **example("https://issues.apache.org/jira/browse/EXAMPLE"))
+    mailing_lists: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/community/mailing-lists")
+    )
+    repository: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+    standards: list[str] = sqlmodel.Field(
+        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+
     # Version-scheme metadata (#912). For "simple" projects the pattern fields are null
     # and the project keeps a single "default" cycle.
     version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))

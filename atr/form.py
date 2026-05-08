@@ -492,6 +492,31 @@ def to_str_list(v: Any) -> list[str]:
     raise ValueError(f"Expected a string or list of strings, got {type(v).__name__}")
 
 
+def to_url_list(v: Any) -> list[str]:
+    if v is None or v == "":
+        return []
+    if isinstance(v, list):
+        items = [str(item) for item in v if item not in (None, "")]
+    elif isinstance(v, str):
+        items = [line.strip() for line in v.split("\n") if line.strip()]
+    else:
+        raise ValueError(f"Expected a string or list of URLs, got {type(v).__name__}")
+
+    # Re-raise as ValueError so pydantic's error.input stays the full input;
+    # a leaked inner ValidationError would replace it with just the bad line.
+    adapter = pydantic.TypeAdapter(pydantic.AnyUrl)
+    urls: list[str] = []
+    invalid: list[str] = []
+    for item in items:
+        try:
+            urls.append(str(adapter.validate_python(item)))
+        except pydantic.ValidationError:
+            invalid.append(item)
+    if invalid:
+        raise ValueError(f"Invalid URL{'s' if len(invalid) > 1 else ''}: {', '.join(invalid)}")
+    return urls
+
+
 # Validator types come before other functions
 # We must not use the "type" keyword here, otherwise Pydantic complains
 
@@ -584,6 +609,12 @@ RelPathList = Annotated[
 StrList = Annotated[
     list[str],
     functional_validators.BeforeValidator(to_str_list),
+    pydantic.Field(default_factory=list),
+]
+
+URLList = Annotated[
+    list[str],
+    functional_validators.BeforeValidator(to_url_list),
     pydantic.Field(default_factory=list),
 ]
 

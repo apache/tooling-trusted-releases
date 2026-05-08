@@ -334,6 +334,18 @@ async def update_metadata() -> tuple[int, int]:
     return added_count, updated_count
 
 
+def _doap_repository_urls(items: list[str | dict]) -> list[str]:
+    urls: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            urls.append(item)
+        elif isinstance(item, dict):
+            location = item.get("location")
+            if isinstance(location, str):
+                urls.append(location)
+    return urls
+
+
 async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
@@ -499,6 +511,14 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.category = ", ".join(project_status.category) or None
         project_model.description = project_status.description
         project_model.programming_languages = ", ".join(project_status.programming_language) or None
+
+        project_model.short_description = project_status.shortdesc
+        project_model.homepage = project_status.homepage
+        project_model.download_page = project_status.download_page
+        project_model.bug_database = project_status.bug_database
+        project_model.mailing_lists = project_status.mailing_list
+        project_model.repository = _doap_repository_urls(project_status.repository)
+        project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
 
     return added_count, updated_count
 

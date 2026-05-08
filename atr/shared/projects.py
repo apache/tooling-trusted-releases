@@ -30,6 +30,7 @@ import atr.util as util
 
 type COMPOSE = Literal["compose"]
 type EDIT_CYCLE_DATES = Literal["edit_cycle_dates"]
+type EDIT_METADATA = Literal["edit_metadata"]
 type EDIT_VERSION_SCHEME = Literal["edit_version_scheme"]
 type FINISH = Literal["finish"]
 type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
@@ -202,6 +203,43 @@ class EditCycleDatesForm(form.Form):
     )
 
 
+class EditMetadataForm(form.Form):
+    variant: EDIT_METADATA = form.value(EDIT_METADATA)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    homepage: form.OptionalURL = form.label(
+        "Homepage",
+        "Project website URL.",
+    )
+    lifecycle_page: form.OptionalURL = form.label(
+        "Lifecycle page",
+        "URL of the page describing this project's release support and lifecycle plans.",
+    )
+    download_page: form.OptionalURL = form.label(
+        "Download page",
+        "URL of the project's official download page.",
+    )
+    bug_database: form.OptionalURL = form.label(
+        "Bug database",
+        "URL of the project's issue tracker (Bugzilla, JIRA, GitHub Issues, etc).",
+    )
+    mailing_lists: form.OptionalURL = form.label(
+        "Mailing lists page",
+        "URL of the page on the project website that lists its mailing lists.",
+    )
+    repository: form.URLList = form.label(
+        "Repositories",
+        "Repository URLs, one per line.",
+        widget=form.Widget.TEXTAREA,
+        rows=3,
+    )
+    standards: form.URLList = form.label(
+        "Standards",
+        "URLs of standards this project implements, one per line.",
+        widget=form.Widget.TEXTAREA,
+        rows=3,
+    )
+
+
 class EditVersionSchemeForm(form.Form):
     variant: EDIT_VERSION_SCHEME = form.value(EDIT_VERSION_SCHEME)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
@@ -329,6 +367,7 @@ class DeleteSelectedProject(form.Form):
 type ProjectViewForm = Annotated[
     ComposePolicyForm
     | EditCycleDatesForm
+    | EditMetadataForm
     | EditVersionSchemeForm
     | FinishPolicyForm
     | TrustedPublishingPolicyForm
