@@ -15,10 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""ECMA-428 Common Lifecycle Enumeration document generator.
+"""ECMA-428 CLE document generator for ATR.
 
-Reads from `LifecycleEvent` rows and renders to ECMA-428 wire format.
-Internal event names map to spec event types via `_SPEC_TYPE`:
+Reads from `LifecycleEvent` rows and renders to ECMA-428 format
+via the `atr.cle` data model. ATR-specific concerns (PURL identifier,
+Apache license, support policy id, cycle-name semver bounds) live here;
+the spec-level data model lives in `cle`.
+
+Internal `LifecycleEventType` values map to spec event types as:
 
     release  -> released
     archive  -> endOfDistribution
@@ -30,33 +34,28 @@ Internal event names map to spec event types via `_SPEC_TYPE`:
 Per ECMA-428 section 7.9, a `withdrawn` event retracts the *publication*
 of a previously-emitted event - typically a correction. The withdrawn
 event itself and the targeted event both remain in the document; the
-withdrawal references its target via the `eventId` field. ATR mostly uses it
-for corrections to previously-published cycle dates (see
+withdrawal references its target via the `eventId` field. ATR mostly uses
+it for corrections to previously-published cycle dates (see
 policy.edit_cycle_dates).
 
-We don't emit endOfMarketing, supersededBy, or componentRenamed.
+We don't use endOfMarketing, supersededBy, or componentRenamed.
 """
 
 from __future__ import annotations
 
-import datetime
 from typing import TYPE_CHECKING, Any, Final
 
+import atr.models.cle as cle
 import atr.models.sql as sql
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Iterable
 
-CLE_SCHEMA_URL: Final[str] = "https://ecma-tc54.github.io/ECMA-428/cle.v1.0.0.schema.json"
+CLE_SCHEMA_URL: Final[str] = cle.CLE_SCHEMA_URL
 
-_SPEC_TYPE: Final[dict[sql.LifecycleEventType, str]] = {
-    sql.LifecycleEventType.RELEASE: "released",
-    sql.LifecycleEventType.ARCHIVE: "endOfDistribution",
-    sql.LifecycleEventType.EOD: "endOfDevelopment",
-    sql.LifecycleEventType.EOS: "endOfSupport",
-    sql.LifecycleEventType.EOL: "endOfLife",
-    sql.LifecycleEventType.WITHDRAW: "withdrawn",
-}
+_SUPPORT_DEFAULT_DESCRIPTION: Final[str] = "Apache project community support"
+_SUPPORT_DEFAULT_ID: Final[str] = "default"
 
 
 def project_document(
@@ -92,6 +91,25 @@ def release_document(
     return _document(project, list(events), [release], now=now)
 
 
+def _definitions_for(
+    events: list[cle.CleEvent],
+) -> dict[str, list[cle.SupportDefinition]] | None:
+    """Build the document's `definitions.support` block, if any event needs it.
+
+    The default support policy is currently the only one ATR emits.
+    """
+    if any(isinstance(e, cle.EndOfDevelopmentEvent | cle.EndOfSupportEvent) for e in events):
+        return {
+            "support": [
+                cle.SupportDefinition(
+                    id=_SUPPORT_DEFAULT_ID,
+                    description=_SUPPORT_DEFAULT_DESCRIPTION,
+                ),
+            ],
+        }
+    return None
+
+
 def _document(
     project: sql.Project,
     events: list[sql.LifecycleEvent],
@@ -99,47 +117,19 @@ def _document(
     *,
     now: datetime.datetime,
 ) -> dict[str, Any]:
-    rendered_events = _events(project, events, releases)
-    # Document is "as of" the latest event's publication. Falls back to `now`
-    # when no events are present so the field is always populated.
-    updated_at = max((e.published for e in events if e.id is not None), default=now)
-    doc: dict[str, Any] = {
-        "$schema": CLE_SCHEMA_URL,
-        "identifier": _identifier(project),
-        "updatedAt": _iso(updated_at),
-        "events": rendered_events,
-    }
-    # Patch in the support information - currently static
-    if any(e["type"] in {"endOfDevelopment", "endOfSupport"} for e in rendered_events):
-        doc["definitions"] = {
-            "support": [
-                {"id": "default", "description": "Apache project community support"},
-            ]
-        }
-    return doc
-
-
-def _events(
-    project: sql.Project,
-    events: list[sql.LifecycleEvent],
-    releases: list[sql.Release],
-) -> list[dict[str, Any]]:
-    """Render lifecycle event rows to ECMA-428 events.
-
-    Spec id is the db id. Output is sorted descending by id per § 6.2.
-    """
     releases_by_key = {r.key: r for r in releases}
     releases_by_cycle = _releases_by_cycle(releases)
-
-    emit = [event for event in events if event.id is not None]
-    emit.sort(key=lambda e: e.id or 0, reverse=True)
-
-    rendered: list[dict[str, Any]] = []
-    for event in emit:
-        rendered_event = _render_event(project, event, releases_by_key, releases_by_cycle)
-        rendered_event["id"] = event.id
-        rendered.append(rendered_event)
-    return rendered
+    # Spec id is the db id, so events without one can't be rendered.
+    cle_events = [
+        _to_cle_event(project, event, releases_by_key, releases_by_cycle) for event in events if event.id is not None
+    ]
+    doc = cle.CleDocument.from_events(
+        identifier=_identifier(project),
+        events=cle_events,
+        definitions=_definitions_for(cle_events),
+        now=now,
+    )
+    return doc.to_dict()
 
 
 def _identifier(project: sql.Project) -> str:
@@ -150,15 +140,6 @@ def _identifier(project: sql.Project) -> str:
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
     return f"pkg:apache/{project.key}"
-
-
-def _iso(value: datetime.datetime) -> str:
-    """Render a UTC datetime as ISO 8601 with a Z suffix."""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=datetime.UTC)
-    else:
-        value = value.astimezone(datetime.UTC)
-    return value.isoformat().replace("+00:00", "Z")
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:
@@ -180,49 +161,6 @@ def _releases_by_cycle(releases: list[sql.Release]) -> dict[str, list[sql.Releas
     for release in releases:
         grouped.setdefault(release.cycle_key, []).append(release)
     return grouped
-
-
-def _render_event(
-    project: sql.Project,
-    event: sql.LifecycleEvent,
-    releases_by_key: dict[str, sql.Release],
-    releases_by_cycle: dict[str, list[sql.Release]],
-) -> dict[str, Any]:
-    """Render one LifecycleEvent to its CLE spec dict shape. id is set by the caller."""
-    rendered: dict[str, Any] = {
-        "type": _SPEC_TYPE[event.event],
-        "effective": _iso(event.effective),
-        "published": _iso(event.published),
-    }
-
-    if event.event is sql.LifecycleEventType.RELEASE:
-        release = _release_for(event, releases_by_key)
-        rendered["version"] = release.version
-        rendered["license"] = "Apache-2.0"
-    elif event.event is sql.LifecycleEventType.ARCHIVE:
-        release = _release_for(event, releases_by_key)
-        rendered["versions"] = [{"range": _vers_literal(project, release.version)}]
-    elif event.event in (
-        sql.LifecycleEventType.EOD,
-        sql.LifecycleEventType.EOS,
-        sql.LifecycleEventType.EOL,
-    ):
-        if event.cycle_key is None:
-            raise ValueError(f"{event.event} event requires cycle_key")
-        cycle_name = event.cycle_key.removeprefix(f"{project.key}-")
-        cycle_releases = releases_by_cycle.get(event.cycle_key, [])
-        rendered["versions"] = [{"range": _vers_for_cycle(project, cycle_name, cycle_releases)}]
-        if event.event in (sql.LifecycleEventType.EOD, sql.LifecycleEventType.EOS):
-            rendered["supportId"] = "default"
-    elif event.event is sql.LifecycleEventType.WITHDRAW:
-        if event.target_event_id is None:
-            raise ValueError("withdraw event requires target_event_id")
-        rendered["eventId"] = event.target_event_id
-
-    if event.reference_urls:
-        rendered["references"] = list(event.reference_urls)
-
-    return rendered
 
 
 def _semver_bounds_for_cycle_name(name: str) -> tuple[str, str] | None:
@@ -252,6 +190,92 @@ def _semver_bounds_for_cycle_name(name: str) -> tuple[str, str] | None:
         ceiling_parts.append(0)
     ceiling = ".".join(str(n) for n in ceiling_parts)
     return floor, ceiling
+
+
+def _to_cle_event(
+    project: sql.Project,
+    event: sql.LifecycleEvent,
+    releases_by_key: dict[str, sql.Release],
+    releases_by_cycle: dict[str, list[sql.Release]],
+) -> cle.CleEvent:
+    """Convert a `sql.LifecycleEvent` row to a typed `cle` event.
+
+    VERS ranges are resolved here from cycle membership and project version
+    method; `cle` treats them as opaque strings.
+    """
+    if event.id is None:
+        raise ValueError("LifecycleEvent.id is required for CLE rendering")
+    references = list(event.reference_urls or [])
+
+    if event.event is sql.LifecycleEventType.RELEASE:
+        release = _release_for(event, releases_by_key)
+        return cle.ReleasedEvent(
+            id=event.id,
+            effective=event.effective,
+            published=event.published,
+            references=references,
+            version=release.version,
+            license="Apache-2.0",
+        )
+
+    if event.event is sql.LifecycleEventType.ARCHIVE:
+        release = _release_for(event, releases_by_key)
+        return cle.EndOfDistributionEvent(
+            id=event.id,
+            effective=event.effective,
+            published=event.published,
+            references=references,
+            versions=[_vers_literal(project, release.version)],
+        )
+
+    if event.event in (
+        sql.LifecycleEventType.EOD,
+        sql.LifecycleEventType.EOS,
+        sql.LifecycleEventType.EOL,
+    ):
+        if event.cycle_key is None:
+            raise ValueError(f"{event.event} event requires cycle_key")
+        cycle_name = event.cycle_key.removeprefix(f"{project.key}-")
+        cycle_releases = releases_by_cycle.get(event.cycle_key, [])
+        versions = [_vers_for_cycle(project, cycle_name, cycle_releases)]
+        if event.event is sql.LifecycleEventType.EOD:
+            return cle.EndOfDevelopmentEvent(
+                id=event.id,
+                effective=event.effective,
+                published=event.published,
+                references=references,
+                versions=versions,
+                support_id=_SUPPORT_DEFAULT_ID,
+            )
+        if event.event is sql.LifecycleEventType.EOS:
+            return cle.EndOfSupportEvent(
+                id=event.id,
+                effective=event.effective,
+                published=event.published,
+                references=references,
+                versions=versions,
+                support_id=_SUPPORT_DEFAULT_ID,
+            )
+        return cle.EndOfLifeEvent(
+            id=event.id,
+            effective=event.effective,
+            published=event.published,
+            references=references,
+            versions=versions,
+        )
+
+    if event.event is sql.LifecycleEventType.WITHDRAW:
+        if event.target_event_id is None:
+            raise ValueError("withdraw event requires target_event_id")
+        return cle.WithdrawnEvent(
+            id=event.id,
+            effective=event.effective,
+            published=event.published,
+            references=references,
+            event_id=event.target_event_id,
+        )
+
+    raise ValueError(f"unsupported lifecycle event type: {event.event}")
 
 
 def _vers_for_cycle(project: sql.Project, cycle_name: str, cycle_releases: list[sql.Release]) -> str:

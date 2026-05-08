@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 import atr.cle as cle
+import atr.models.cle as cle_lib
 import atr.models.sql as sql
 
 
@@ -33,7 +34,7 @@ def _event(
     cycle_key: str | None = None,
     reference_urls: list[str] | None = None,
     target_event_id: int | None = None,
-    row_id: int | None = None,
+    row_id: int | None = 1,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=row_id,
@@ -45,6 +46,11 @@ def _event(
         reference_urls=reference_urls or [],
         target_event_id=target_event_id,
     )
+
+
+def _render(project, event, releases_by_key, releases_by_cycle):
+    typed = cle._to_cle_event(project, event, releases_by_key, releases_by_cycle)
+    return cle_lib.event_to_dict(typed)
 
 
 def test_identifier_renders_apache_purl():
@@ -65,7 +71,7 @@ def test_render_event_release_emits_version_and_separate_dates():
         version_key="foo-1.2.3",
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {"foo-1.2.3": rel}, {"foo-default": [rel]})
+    rendered = _render(project, event, {"foo-1.2.3": rel}, {"foo-default": [rel]})
     assert rendered["type"] == "released"
     assert rendered["effective"] == "2026-01-01T00:00:00Z"
     assert rendered["published"] == "2025-12-01T00:00:00Z"
@@ -80,7 +86,7 @@ def test_render_event_release_raises_when_version_key_missing():
         effective=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
     )
     with pytest.raises(ValueError, match="requires version_key"):
-        cle._render_event(project, event, {}, {})
+        _render(project, event, {}, {})
 
 
 def test_render_event_release_raises_when_release_unknown():
@@ -91,7 +97,7 @@ def test_render_event_release_raises_when_release_unknown():
         version_key="foo-1.0.0",
     )
     with pytest.raises(ValueError, match="references unknown release"):
-        cle._render_event(project, event, {}, {})
+        _render(project, event, {}, {})
 
 
 def test_render_event_archive_emits_versions_range():
@@ -103,7 +109,7 @@ def test_render_event_archive_emits_versions_range():
         version_key="foo-1.0.0",
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
+    rendered = _render(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
     assert rendered["type"] == "endOfDistribution"
     assert rendered["versions"] == [{"range": "vers:generic/1.0.0"}]
 
@@ -119,7 +125,7 @@ def test_render_event_eod_uses_cycle_releases_for_range():
         effective=datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {r.key: r for r in rels}, {"foo-default": rels})
+    rendered = _render(project, event, {r.key: r for r in rels}, {"foo-default": rels})
     assert rendered["type"] == "endOfDevelopment"
     assert rendered["versions"] == [{"range": "vers:generic/1.0.0|1.1.0"}]
     assert rendered["supportId"] == "default"
@@ -132,7 +138,7 @@ def test_render_event_eos_uses_wildcard_for_empty_cycle():
         effective=datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {}, {})
+    rendered = _render(project, event, {}, {})
     assert rendered["type"] == "endOfSupport"
     assert rendered["versions"] == [{"range": "vers:generic/*"}]
     assert rendered["supportId"] == "default"
@@ -145,7 +151,7 @@ def test_render_event_eol_omits_support_id():
         effective=datetime.datetime(2027, 6, 1, tzinfo=datetime.UTC),
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {}, {})
+    rendered = _render(project, event, {}, {})
     assert rendered["type"] == "endOfLife"
     assert "supportId" not in rendered
 
@@ -157,7 +163,7 @@ def test_render_event_eol_raises_when_cycle_key_missing():
         effective=datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
     )
     with pytest.raises(ValueError, match="requires cycle_key"):
-        cle._render_event(project, event, {}, {})
+        _render(project, event, {}, {})
 
 
 def test_render_event_includes_references_when_set():
@@ -170,7 +176,7 @@ def test_render_event_includes_references_when_set():
         cycle_key="foo-default",
         reference_urls=["https://lists.apache.org/thread/abc", "https://example.com/announce"],
     )
-    rendered = cle._render_event(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
+    rendered = _render(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
     assert rendered["references"] == [
         "https://lists.apache.org/thread/abc",
         "https://example.com/announce",
@@ -186,7 +192,7 @@ def test_render_event_omits_references_when_empty():
         version_key="foo-1.0.0",
         cycle_key="foo-default",
     )
-    rendered = cle._render_event(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
+    rendered = _render(project, event, {"foo-1.0.0": rel}, {"foo-default": [rel]})
     assert "references" not in rendered
 
 
@@ -238,7 +244,7 @@ def test_render_event_eol_for_semver_uses_derived_range():
         effective=datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC),
         cycle_key="foo-2.x",
     )
-    rendered = cle._render_event(project, event, {}, {})
+    rendered = _render(project, event, {}, {})
     assert rendered["versions"] == [{"range": "vers:semver/>=2.0.0|<3.0.0"}]
 
 
