@@ -274,8 +274,26 @@ async def _render_page(
                 f"If enabled, ATR will send a reminder to {asf_uid}@apache.org when the {vote_label} finishes.",
             ],
         ]
+        if podling_vote_round is None:
+            custom["automatic_resolve_when_finished"] = htm.div[
+                htpy.input(
+                    type="checkbox",
+                    name="automatic_resolve_when_finished",
+                    id="automatic_resolve_when_finished",
+                    value="on",
+                    checked=True,
+                    class_="form-check-input",
+                ),
+                htm.div(".form-text.text-muted.mt-1")[
+                    f"If enabled, ATR will resolve the {vote_label} automatically, "
+                    "using only ATR ballots, when the voting period ends.",
+                ],
+            ]
+        else:
+            skip.append("automatic_resolve_when_finished")
     else:
         skip.append("notify_when_finished")
+        skip.append("automatic_resolve_when_finished")
 
     vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,

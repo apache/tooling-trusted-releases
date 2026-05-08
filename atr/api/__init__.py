@@ -1738,6 +1738,7 @@ async def vote_start(
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,
                 notify_when_finished=data.notify_when_finished,
+                automatic_resolve_when_finished=data.automatic_resolve_when_finished,
             )
     # except Exception as e:
     #     import traceback

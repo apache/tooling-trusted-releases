@@ -683,6 +683,7 @@ class VoteStartArgs(schema.Strict):
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 0.0.1...")
     second_round_email_to: str | None = schema.default_example(None, "general@incubator.apache.org")
     notify_when_finished: bool = schema.default_example(False, False)
+    automatic_resolve_when_finished: bool = schema.default_example(False, False)
 
 
 class VoteStartResults(schema.Strict):

@@ -27,12 +27,113 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.tabulate as tabulate
 import atr.tasks.checks as checks
+import atr.user as user
 import atr.util as util
 
 
 class VoteInitiationError(Exception):
     pass
+
+
+@checks.with_model(args.VoteAutoResolve)
+async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | None:  # noqa: C901
+    """Automatically resolve a non-podling Trusted Vote after its scheduled end."""
+    async with db.session() as data:
+        release = await data.release(
+            key=task_args.release_key,
+            _project=True,
+            _committee=True,
+            _release_policy=True,
+            _project_release_policy=True,
+        ).get()
+
+        def _why(label: str, reason: str) -> results.VoteAutoResolve:
+            log.info(f"Vote automatic resolution skipped for {task_args.release_key}: {reason}")
+            return _auto_resolve_skipped(label)
+
+        if release is None:
+            return _why("release_not_found", "release not found")
+        if release.vote_resolved is not None:
+            return _why("already_resolved", "already resolved")
+        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE:
+            return _why("not_in_candidate_phase", "not in candidate phase")
+        if release.effective_vote_mode != sql.VoteMode.TRUSTED:
+            return _why("not_trusted_mode", "not in trusted mode")
+        if release.committee is None:
+            return _why("committee_missing", "committee missing")
+        if release.committee.is_podling:
+            return _why("podling_not_supported", "podling votes are not supported yet")
+        if release.current_vote_seq != task_args.vote_seq:
+            return _why("vote_seq_changed", f"vote_seq changed ({release.current_vote_seq} != {task_args.vote_seq})")
+
+        latest_vote_task = await interaction.release_current_vote_task(release, data)
+        if latest_vote_task is None:
+            return _why("vote_task_missing", "vote task missing")
+        if not isinstance(latest_vote_task.result, results.VoteInitiate):
+            return _why("vote_task_result_unavailable", "vote task result unavailable")
+        vote_end = interaction.vote_end_get(latest_vote_task)
+        if vote_end is None:
+            return _why("vote_end_unavailable", "vote end unavailable")
+        if datetime.datetime.now(datetime.UTC) < vote_end:
+            return _why("vote_not_ended", "vote has not ended")
+
+        vote_seq = task_args.vote_seq
+
+        ballots = await interaction.effective_trusted_ballots(release, vote_seq, data)
+        summary = await interaction.trusted_ballot_summary(release, ballots, data)
+        passed = tabulate.binding_vote_passes(summary.binding_votes_yes, summary.binding_votes_no)
+        vote_result = "passed" if passed else "failed"
+        vote_round = interaction.trusted_vote_round(release)
+        binding_label, non_binding_label = user.binding_terminology(vote_round)
+        project_key = release.safe_project_key
+        version_key = release.safe_version_key
+        task_mid = interaction.task_mid_get(latest_vote_task)
+        task_recipient = interaction.task_recipient_get(latest_vote_task)
+
+    thread_id = await _thread_id_for_vote_task(task_mid, task_recipient, task_args.resolver_id)
+    resolution_body = tabulate.trusted_vote_resolution(
+        release,
+        summary,
+        passed,
+        task_args.resolver_fullname,
+        task_args.resolver_id,
+        thread_id,
+        binding_label,
+        non_binding_label,
+    )
+
+    try:
+        async with storage.write_as_project_committee_member(project_key, task_args.resolver_id) as wacm:
+            _release, _voting_round, success_message, error_message = await wacm.vote.resolve(
+                project_key,
+                version_key,
+                vote_result,
+                task_args.resolver_fullname,
+                resolution_body,
+                expected_vote_seq=vote_seq,
+                expected_vote_mode=sql.VoteMode.TRUSTED,
+            )
+    except storage.AccessError as e:
+        log.info(f"Vote automatic resolution skipped for {task_args.release_key}: writer rejected resolution: {e}")
+        return results.VoteAutoResolve(
+            kind="vote_auto_resolve",
+            resolved=False,
+            vote_result=vote_result,
+            skip_reason="resolve_rejected",
+            success_message=None,
+            error_message=str(e),
+        )
+
+    return results.VoteAutoResolve(
+        kind="vote_auto_resolve",
+        resolved=True,
+        vote_result=vote_result,
+        skip_reason=None,
+        success_message=success_message,
+        error_message=error_message,
+    )
 
 
 @checks.with_model(args.VoteEndNotify)
@@ -103,6 +204,17 @@ async def initiate(task_args: args.Initiate) -> results.Results | None:
     except Exception as e:
         log.exception(f"Unexpected error during vote initiation: {e}")
         raise
+
+
+def _auto_resolve_skipped(reason: str) -> results.VoteAutoResolve:
+    return results.VoteAutoResolve(
+        kind="vote_auto_resolve",
+        resolved=False,
+        vote_result=None,
+        skip_reason=reason,
+        success_message=None,
+        error_message=None,
+    )
 
 
 def _end_notify_skipped(reason: str) -> results.VoteEndNotify:
@@ -222,7 +334,27 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
     else:
         log.info(f"Vote email sent successfully to {all_destinations}")
 
-    if (
+    if task_args.automatic_resolve_when_finished:
+        if (
+            (task_args.vote_seq is not None)
+            and (vote_duration_hours > 0)
+            and (release.effective_vote_mode == sql.VoteMode.TRUSTED)
+            and (not release.committee.is_podling)
+        ):
+            try:
+                await _schedule_auto_resolve(
+                    task_args=task_args,
+                    project_key=release.project.key,
+                    version_key=release.version,
+                    vote_end=vote_end,
+                )
+            except Exception as schedule_error:
+                log.exception(
+                    f"Vote automatic resolution could not be scheduled for {task_args.release_key}: {schedule_error}"
+                )
+        else:
+            log.info(f"Vote automatic resolution not scheduled for {task_args.release_key}: unsupported vote state")
+    elif (
         task_args.notify_when_finished
         and (task_args.vote_seq is not None)
         and (vote_duration_hours > 0)
@@ -242,6 +374,36 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
             log.exception(f"Vote end notify could not be scheduled for {task_args.release_key}: {schedule_error}")
 
     return result
+
+
+async def _schedule_auto_resolve(
+    *,
+    task_args: args.Initiate,
+    project_key: str,
+    version_key: str,
+    vote_end: datetime.datetime,
+) -> None:
+    if task_args.vote_seq is None:
+        return
+    resolve_args = args.VoteAutoResolve(
+        release_key=task_args.release_key,
+        vote_seq=task_args.vote_seq,
+        resolver_id=task_args.initiator_id,
+        resolver_fullname=task_args.initiator_fullname,
+    )
+    resolve_task = sql.Task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.VOTE_AUTO_RESOLVE,
+        task_args=resolve_args.model_dump(),
+        asf_uid=task_args.initiator_id,
+        project_key=project_key,
+        version_key=version_key,
+    )
+    resolve_task.scheduled = vote_end
+    async with db.session() as data:
+        data.add(resolve_task)
+        await data.commit()
+    log.info(f"Vote automatic resolution scheduled for {task_args.release_key} at {vote_end.isoformat()}")
 
 
 async def _schedule_end_notify(
@@ -274,3 +436,18 @@ async def _schedule_end_notify(
         data.add(notify_task)
         await data.commit()
     log.info(f"Vote end notify scheduled for {task_args.release_key} at {vote_end_str} (recipient={recipient_id})")
+
+
+async def _thread_id_for_vote_task(task_mid: str | None, task_recipient: str | None, resolver_id: str) -> str | None:
+    if task_mid is None:
+        return None
+    try:
+        async with storage.write(resolver_id) as write:
+            wagp = write.as_general_public()
+            archive_url = await wagp.cache.get_message_archive_url(task_mid, task_recipient)
+    except Exception as e:
+        log.warning(f"Vote automatic resolution could not find vote thread URL for {task_mid}: {e}")
+        return None
+    if archive_url is None:
+        return None
+    return archive_url.split("/")[-1]

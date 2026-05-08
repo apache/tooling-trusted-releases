@@ -146,7 +146,11 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
 
     release = SimpleNamespace(
         key="project-1.0.0",
-        committee=SimpleNamespace(key="project", is_podling=False),
+        project_key="project",
+    )
+    committee = SimpleNamespace(key="project", is_podling=False, committee_members=["chair"])
+    data.project = mock.MagicMock(
+        return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
     release_writer = SimpleNamespace(
         _start_vote_no_commit=mock.AsyncMock(return_value=(release, 7, sql.VoteMode.EMAIL)),

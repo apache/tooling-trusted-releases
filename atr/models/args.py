@@ -106,6 +106,10 @@ class Initiate(schema.Strict):
         default=False,
         description="Send a self addressed reminder email when the vote ends",
     )
+    automatic_resolve_when_finished: bool = pydantic.Field(
+        default=False,
+        description="Automatically resolve a non-podling Trusted Vote when the voting period ends",
+    )
 
 
 class MaintenanceArgs(schema.Strict):
@@ -184,6 +188,15 @@ class Update(schema.Strict):
 
     asf_uid: str = schema.description("The ASF UID of the user triggering the update")
     next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
+
+
+class VoteAutoResolve(schema.Strict):
+    """Arguments for the task to automatically resolve a vote."""
+
+    release_key: str = schema.description("The release key for the release that the vote belongs to")
+    vote_seq: int = schema.description("The vote sequence at the time of scheduling")
+    resolver_id: str = schema.description("ASF UID of the user who selected automatic resolution")
+    resolver_fullname: str = schema.description("Full name of the resolver, used in the resolution email")
 
 
 class VoteEndNotify(schema.Strict):

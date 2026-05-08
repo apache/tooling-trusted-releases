@@ -44,6 +44,11 @@ class StartVotingForm(form.Form):
         widget=form.Widget.CUSTOM,
         default=False,
     )
+    automatic_resolve_when_finished: form.Bool = form.label(
+        "Automatically resolve this vote",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
 
     @pydantic.field_validator("vote_duration")

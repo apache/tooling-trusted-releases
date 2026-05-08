@@ -307,6 +307,7 @@ class CommitteeParticipant(FoundationCommitter):
         second_round_email_to: str | None = None,
         expected_vote_mode: sql.VoteMode | None = None,
         notify_when_finished: bool = False,
+        automatic_resolve_when_finished: bool = False,
     ) -> sql.Task:
         if promote:
             await self.__data.begin_immediate()
@@ -340,15 +341,28 @@ class CommitteeParticipant(FoundationCommitter):
                     promote=False,
                     expected_podling_thread_id=release.podling_thread_id,
                 )
-            if release.committee is None:
+            committee = await self._committee_for_release(release)
+            if committee is None:
                 raise storage.AccessError("Release has no committee", status=500)
             if notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
                 raise storage.AccessError("Vote end reminders are only available in Trusted Vote mode", status=403)
+            if automatic_resolve_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
+                raise storage.AccessError(
+                    "Automatic vote resolution is only available in Trusted Vote mode", status=403
+                )
+            if automatic_resolve_when_finished and committee.is_podling:
+                raise storage.AccessError(
+                    "Automatic vote resolution is not yet available for podling votes", status=403
+                )
+            if automatic_resolve_when_finished and (self.__asf_uid not in committee.committee_members):
+                # TODO: Maybe we should modularise all of this?
+                # Then we could use the relevant permissions class
+                raise storage.AccessError("Automatic vote resolution requires a committee member initiator", status=403)
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
-                    release.committee.key,
-                    is_podling=release.committee.is_podling,
+                    committee.key,
+                    is_podling=committee.is_podling,
                 )
             all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
             for addr in all_addrs:
@@ -390,6 +404,7 @@ class CommitteeParticipant(FoundationCommitter):
                     email_bcc=email_bcc or [],
                     second_round_email_to=second_round_email_to,
                     notify_when_finished=notify_when_finished,
+                    automatic_resolve_when_finished=automatic_resolve_when_finished,
                 ).model_dump(),
                 asf_uid=self.__asf_uid,
                 project_key=str(project_key),
@@ -416,6 +431,12 @@ class CommitteeParticipant(FoundationCommitter):
         # And can be warned if there was a failure
         # (The message should be shown on the vote resolution page)
         return task
+
+    async def _committee_for_release(self, release: sql.Release) -> sql.Committee | None:
+        project = await self.__data.project(key=release.project_key, _committee=True).get()
+        if project is None:
+            return None
+        return project.committee
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -1070,13 +1091,13 @@ class CommitteeMember(CommitteeParticipant):
         if getattr(result, "rowcount", 0) != 1:
             await self.__data.rollback()
             raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
-        await self._cancel_pending_end_notify(release)
+        await self._cancel_pending_vote_followups(release)
 
-    async def _cancel_pending_end_notify(self, release: sql.Release) -> None:
+    async def _cancel_pending_vote_followups(self, release: sql.Release) -> None:
         # There is no CANCELLED status for tasks
-        # The best alternatives are to either delete it, or mark it as FAILED
-        # Deleting it is simpler, but then we have no record of the task
-        # Therefore, although it's not exactly correct, we mark it as FAILED
+        # The best alternatives are to either delete them, or mark them as FAILED
+        # Deleting them is simpler, but then we have no record of the tasks
+        # Therefore, although it's not exactly correct, we mark them as FAILED
         via = sql.validate_instrumented_attribute
         stmt = (
             sqlmodel.update(sql.Task)
@@ -1093,6 +1114,21 @@ class CommitteeMember(CommitteeParticipant):
             )
         )
         await self.__data.execute(stmt)
+        auto_resolve_stmt = (
+            sqlmodel.update(sql.Task)
+            .where(
+                via(sql.Task.task_type) == sql.TaskType.VOTE_AUTO_RESOLVE,
+                via(sql.Task.status) == sql.TaskStatus.QUEUED,
+                via(sql.Task.project_key) == release.project.key,
+                via(sql.Task.version_key) == release.version,
+            )
+            .values(
+                status=sql.TaskStatus.FAILED,
+                completed=datetime.datetime.now(datetime.UTC),
+                error="Vote resolved before auto-resolution fired",
+            )
+        )
+        await self.__data.execute(auto_resolve_stmt)
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

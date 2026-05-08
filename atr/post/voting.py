@@ -122,7 +122,13 @@ async def selected_revision(
                 "The vote mode has changed since you loaded the form. Please reload and try again.",
             )
 
-        if (notify_error := await _notify_opt_in_error(session, start_voting_form, vote_mode)) is not None:
+        notify_error = await _notify_opt_in_error(
+            session,
+            start_voting_form,
+            vote_mode,
+            committee.is_podling,
+        )
+        if notify_error is not None:
             return notify_error
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
@@ -185,6 +191,7 @@ async def selected_revision(
                 second_round_email_to=second_round_email_to,
                 expected_vote_mode=start_voting_form.vote_mode,
                 notify_when_finished=start_voting_form.notify_when_finished,
+                automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
             )
 
         log.info(f"Vote email will be sent to: {all_addrs}")
@@ -200,10 +207,21 @@ async def _notify_opt_in_error(
     session: web.Committer,
     start_voting_form: shared.voting.StartVotingForm,
     vote_mode: sql.VoteMode,
+    is_podling: bool,
 ) -> web.WerkzeugResponse | None:
     if start_voting_form.notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
         return await session.form_error(
             "notify_when_finished",
             "Vote end reminders are only available in Trusted Vote mode.",
+        )
+    if start_voting_form.automatic_resolve_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
+        return await session.form_error(
+            "automatic_resolve_when_finished",
+            "Automatic vote resolution is only available in Trusted Vote mode.",
+        )
+    if start_voting_form.automatic_resolve_when_finished and is_podling:
+        return await session.form_error(
+            "automatic_resolve_when_finished",
+            "Automatic vote resolution is not yet available for podling votes.",
         )
     return None

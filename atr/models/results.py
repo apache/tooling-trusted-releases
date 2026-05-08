@@ -223,6 +223,17 @@ class SvnImportFiles(schema.Strict):
     msg: str = schema.description("The message from the SVN import")
 
 
+class VoteAutoResolve(schema.Strict):
+    """Result of the task to automatically resolve a vote."""
+
+    kind: Literal["vote_auto_resolve"] = schema.Field(alias="kind")
+    resolved: bool = schema.description("Whether the vote was actually resolved by this task")
+    vote_result: Literal["passed", "failed"] | None = schema.description("The decision posted")
+    skip_reason: str | None = schema.description("The reason why the resolution was skipped")
+    success_message: str | None = schema.description("Writer success message")
+    error_message: str | None = schema.description("Writer error message")
+
+
 class VoteEndNotify(schema.Strict):
     """Result of the task to notify the initiator that a vote has ended."""
 
@@ -274,6 +285,7 @@ Results = Annotated[
     | SBOMQsScore
     | SBOMToolScore
     | SvnImportFiles
+    | VoteAutoResolve
     | VoteEndNotify
     | VoteInitiate,
     schema.Field(discriminator="kind"),

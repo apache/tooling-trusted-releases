@@ -54,7 +54,7 @@ async def sqlite_sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_se
 
 
 @pytest.mark.asyncio
-async def test_cancel_pending_end_notify_marks_queued_tasks_failed(sqlite_sessionmaker) -> None:
+async def test_cancel_pending_vote_followups_marks_queued_tasks_failed(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         seeded = await _seed_release(
             data,
@@ -83,7 +83,7 @@ async def test_cancel_pending_end_notify_marks_queued_tasks_failed(sqlite_sessio
 
         writer = object.__new__(vote_writer.CommitteeMember)
         writer._CommitteeMember__data = data
-        await writer._cancel_pending_end_notify(seeded)
+        await writer._cancel_pending_vote_followups(seeded)
         await data.commit()
 
     async with sqlite_sessionmaker() as data:
@@ -517,10 +517,13 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     data.begin_immediate = mock.AsyncMock()
     data.commit = mock.AsyncMock()
     data.rollback = mock.AsyncMock()
+    committee = SimpleNamespace(key="project", is_podling=False, committee_members=["chair"])
+    data.project = mock.MagicMock(
+        return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
+    )
 
     release_for_start = SimpleNamespace(
-        committee=SimpleNamespace(key="project", is_podling=False),
-        project=SimpleNamespace(key="project"),
+        project_key="project",
         version="1.0.0",
         key="project-1.0.0",
     )
@@ -552,7 +555,11 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     data.commit.assert_not_awaited()
 
 
-def _initiate_release_namespace(vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED) -> SimpleNamespace:
+def _initiate_release_namespace(
+    vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED,
+    *,
+    committee_key: str = "project",
+) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         current_vote_seq=1,
@@ -562,7 +569,7 @@ def _initiate_release_namespace(vote_mode: sql.VoteMode = sql.VoteMode.TRUSTED) 
         safe_project_key=SimpleNamespace(__str__=lambda self: "project"),
         safe_version_key=SimpleNamespace(__str__=lambda self: "1.0.0"),
         safe_latest_revision_number=SimpleNamespace(__str__=lambda self: "00001"),
-        committee=SimpleNamespace(is_podling=False, key="project"),
+        committee=SimpleNamespace(is_podling=False, key=committee_key),
         podling_thread_id=None,
         effective_vote_mode=vote_mode,
     )
