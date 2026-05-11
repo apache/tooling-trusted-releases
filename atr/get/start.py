@@ -24,6 +24,7 @@ import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
+import atr.get.projects as projects
 import atr.get.root as root
 import atr.htm as htm
 import atr.models.safe as safe
@@ -47,10 +48,28 @@ async def selected(session: web.Committer, _start: Literal["start"], project_key
 
     releases = await interaction.all_releases(project)
     content = await _render_page(project, releases)
+    javascripts = ["start-cycle-preview"] if project.cycle_match else None
     return await template.blank(
         title=f"Start a new release for {project.display_name}",
         content=content,
+        javascripts=javascripts,
     )
+
+
+def _cycle_preview(project: sql.Project) -> htm.Element | None:
+    # Simple projects always use the default cycle, so there's nothing to show.
+    if not project.cycle_match:
+        return None
+    lifecycle_url = util.as_url(projects.view, project_key=str(project.key)) + "?tab=lifecycle"
+    config = htpy.div(
+        "#start-cycle-config.d-none",
+        data_cycle_match=project.cycle_match,
+        data_lifecycle_url=lifecycle_url,
+    )
+    placeholder = htm.div("#start-cycle-preview.alert.alert-light.mt-2")[
+        "Enter a version to see which cycle it lands in."
+    ]
+    return htm.div[config, placeholder]
 
 
 def _existing_releases(ul: htm.Block, releases: list[sql.Release], max_revisions: int = 18) -> None:
@@ -106,6 +125,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
         defaults={"project_key": project.key},
+        pre_submit=_cycle_preview(project),
     )
     if releases:
         page.h2(".mt-5")["Existing releases"]
