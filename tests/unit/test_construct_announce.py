@@ -52,7 +52,17 @@ class MockDBSession:
 @pytest.mark.asyncio
 async def test_announce_release_subject_and_body_uses_podling_downloads_url(monkeypatch) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject (podling)")
-    project = SimpleNamespace(short_display_name="Apache MyProject", name="MyProject", key="myproject")
+    project = SimpleNamespace(
+        short_display_name="Apache MyProject",
+        name="MyProject",
+        key="myproject",
+        bug_database="bug_database",
+        download_page="download_page",
+        homepage="homepage",
+        lifecycle_page="lifecycle_page",
+        mailing_lists="mailing_lists",
+        repository="repository",
+    )
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
@@ -60,7 +70,7 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     subject, body = await construct.announce_release_subject_and_body(
-        "{{PROJECT}} {{VERSION}}",
+        "{{PROJECT_NAME}} {{VERSION}}",
         "{{DOWNLOAD_URL}}",
         construct.AnnounceReleaseOptions(
             asfuid="sbp",
@@ -79,7 +89,17 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
 @pytest.mark.asyncio
 async def test_announce_release_subject_and_body_uses_top_level_downloads_url(monkeypatch) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
-    project = SimpleNamespace(short_display_name="Apache MyProject", name="MyProject", key="myproject")
+    project = SimpleNamespace(
+        short_display_name="Apache MyProject",
+        name="MyProject",
+        key="myproject",
+        bug_database="bug_database",
+        download_page="download_page",
+        homepage="homepage",
+        lifecycle_page="lifecycle_page",
+        mailing_lists="mailing_lists",
+        repository="repository",
+    )
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
@@ -87,7 +107,7 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     _subject, body = await construct.announce_release_subject_and_body(
-        "{{PROJECT}} {{VERSION}}",
+        "{{PROJECT_NAME}} {{VERSION}}",
         "{{DOWNLOAD_URL}}",
         construct.AnnounceReleaseOptions(
             asfuid="sbp",
