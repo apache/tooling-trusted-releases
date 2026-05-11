@@ -813,7 +813,7 @@ class Project(sqlmodel.SQLModel, table=True):
     def policy_announce_release_default(self) -> str:
         return """\
 The Apache {{COMMITTEE}} project team is pleased to announce the
-release of {{PROJECT}} {{VERSION}}.
+release of {{PROJECT_NAME}} {{VERSION}}.
 
 This is a stable release available for production use.
 
@@ -828,14 +828,14 @@ On behalf of the Apache {{COMMITTEE}} project team,
 
     @property
     def policy_announce_release_subject_default(self) -> str:
-        return "[ANNOUNCE] {{PROJECT}} {{VERSION}} released"
+        return "[ANNOUNCE] {{PROJECT_NAME}} {{VERSION}} released"
 
     @property
     def policy_start_vote_default(self) -> str:
         return """Hello {{COMMITTEE}},
 
 I'd like to call a vote on releasing the following artifacts as
-Apache {{PROJECT}} {{VERSION}}. This vote is being conducted using an
+Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using an
 Alpha version of the Apache Trusted Releases (ATR) platform.
 Please report any bugs or issues to the ASF Tooling team.
 
@@ -864,7 +864,7 @@ Thanks,
 
     @property
     def policy_start_vote_subject_default(self) -> str:
-        return "[VOTE] Release {{PROJECT}} {{VERSION}}"
+        return "[VOTE] Release {{PROJECT_NAME}} {{VERSION}}"
 
     @property
     def policy_default_min_hours(self) -> int:
