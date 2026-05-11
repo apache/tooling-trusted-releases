@@ -17,7 +17,10 @@
 
 from typing import Literal
 
+import quart
+
 import atr.blueprints.get as get
+import atr.config as config
 import atr.form as form
 import atr.htm as htm
 import atr.shared as shared
@@ -32,6 +35,9 @@ async def cache_get(session: web.Committer, _user_cache: Literal["user/cache"]) 
     """
     URL: /user/cache
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     cache_data = await util.session_cache_read()
     user_cached = session.uid in cache_data
 

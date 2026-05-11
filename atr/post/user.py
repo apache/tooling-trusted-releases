@@ -19,6 +19,7 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.form as form
 import atr.get as get
 import atr.htm as htm
@@ -57,6 +58,9 @@ async def session_post(
     """
     URL: /user/cache
     """
+    if config.is_production_mode():
+        return quart.abort(404)
+
     match user_cache_form:
         case shared.user.CacheUserForm():
             await _cache_session(session)
