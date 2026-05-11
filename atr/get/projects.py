@@ -31,8 +31,11 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.committees as committees
+import atr.get.compose as compose
 import atr.get.file as file
+import atr.get.finish as finish
 import atr.get.start as start
+import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -746,6 +749,20 @@ def _render_project_label_card(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
+def _release_url(project: sql.Project, release: sql.Release) -> str:
+    project_key = str(project.key)
+    version_key = str(release.version)
+    match release.phase:
+        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            return util.as_url(compose.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE_CANDIDATE:
+            return util.as_url(vote.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE_PREVIEW:
+            return util.as_url(finish.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE:
+            return util.as_url(file.selected, project_key=project_key, version_key=version_key)
+
+
 async def _render_releases_sections(
     project: sql.Project,
     candidate_drafts: list[sql.Release],
@@ -769,7 +786,7 @@ async def _render_releases_sections(
             draft_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-secondary.py-2.px-3",
-                    href=util.as_url(file.selected, project_key=str(project.key), version_key=str(drf.version)),
+                    href=_release_url(project, drf),
                     title=f"View draft {project.key} {drf.version}",
                 )[
                     f"{project.key} {drf.version} ",
@@ -786,7 +803,7 @@ async def _render_releases_sections(
             candidate_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-info.py-2.px-3",
-                    href=util.as_url(file.selected, project_key=str(project.key), version_key=str(cnd.version)),
+                    href=_release_url(project, cnd),
                     title=f"View candidate {project.key} {cnd.version}",
                 )[
                     f"{project.key} {cnd.version} ",
@@ -803,7 +820,7 @@ async def _render_releases_sections(
             preview_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-warning.py-2.px-3",
-                    href=util.as_url(file.selected, project_key=str(project.key), version_key=str(prv.version)),
+                    href=_release_url(project, prv),
                     title=f"View preview {project.key} {prv.version}",
                 )[
                     f"{project.key} {prv.version} ",
@@ -820,7 +837,7 @@ async def _render_releases_sections(
             release_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-success.py-2.px-3",
-                    href=util.as_url(file.selected, project_key=str(project.key), version_key=str(rel.version)),
+                    href=_release_url(project, rel),
                     title=f"View release {project.key} {rel.version}",
                 )[
                     f"{project.key} {rel.version} ",
