@@ -24,7 +24,7 @@ import atr.models.attestable as models
 import atr.models.safe as safe
 
 # TODO: Widen the range of types checked here
-QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip")
+QUARANTINE_ARCHIVE_SUFFIXES: Final[tuple[str, ...]] = (".tar.gz", ".tgz", ".zip", ".bz2", ".xz")
 
 _BZIP2_TYPES: Final[set[str]] = {"application/x-bzip2"}
 _DEB_TYPES: Final[set[str]] = {"application/vnd.debian.binary-package", "application/x-archive"}
