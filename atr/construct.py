@@ -18,7 +18,8 @@
 import dataclasses
 import datetime
 import hashlib
-from typing import Literal
+from collections.abc import Mapping
+from typing import Final, Literal, TypedDict, overload
 
 import aiofiles.os
 import quart
@@ -32,23 +33,92 @@ import atr.util as util
 
 type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
 
-TEMPLATE_VARIABLES: list[tuple[str, str, set[Context]]] = [
-    ("CHECKLIST_URL", "URL to the release checklist", {"vote"}),
-    ("COMMITTEE", "Committee display name", {"announce", "checklist", "vote", "vote_subject"}),
-    ("DISCLAIMER", "Podling incubation disclaimer", {"announce"}),
-    ("DOWNLOAD_URL", "URL to download the release", {"announce"}),
-    ("DURATION", "Vote duration in hours", {"vote"}),
-    ("KEYS_FILE", "URL to the KEYS file", {"vote"}),
-    ("PROJECT", "Project display name", {"announce", "announce_subject", "checklist", "vote", "vote_subject"}),
-    ("RELEASE_CHECKLIST", "Release checklist content", {"vote"}),
-    ("REVIEW_URL", "URL to review the release", {"checklist", "vote"}),
-    ("REVISION", "Revision number", {"announce", "checklist", "vote", "vote_subject"}),
-    ("TAG", "Revision tag, if set", {"announce", "checklist", "vote", "vote_subject"}),
-    ("VERSION", "Version name", {"announce", "announce_subject", "checklist", "vote", "vote_subject"}),
-    ("VOTE_ENDS_UTC", "Vote end date and time in UTC", {"vote_subject"}),
-    ("YOUR_ASF_ID", "Your Apache UID", {"announce", "vote"}),
-    ("YOUR_FULL_NAME", "Your full name", {"announce", "vote"}),
-]
+
+class _AnnounceSubjectValues(TypedDict):
+    PROJECT: str
+    VERSION: str
+
+
+class _AnnounceValues(TypedDict):
+    BUG_DATABASE: str
+    COMMITTEE: str
+    DISCLAIMER: str
+    DOWNLOAD_PAGE: str
+    DOWNLOAD_URL: str
+    HOMEPAGE: str
+    LIFECYCLE_PAGE: str
+    MAILING_LISTS: str
+    PROJECT: str
+    REPOSITORY: str
+    REVISION: str
+    TAG: str
+    VERSION: str
+    YOUR_ASF_ID: str
+    YOUR_FULL_NAME: str
+
+
+class _ChecklistValues(TypedDict):
+    COMMITTEE: str
+    HOMEPAGE: str
+    PROJECT: str
+    REVIEW_URL: str
+    REVISION: str
+    SHORT_DESCRIPTION: str
+    TAG: str
+    VERSION: str
+
+
+class _VoteSubjectValues(TypedDict):
+    COMMITTEE: str
+    PROJECT: str
+    REVISION: str
+    TAG: str
+    VERSION: str
+    VOTE_ENDS_UTC: str
+
+
+class _VoteValues(TypedDict):
+    BUG_DATABASE: str
+    CHECKLIST_URL: str
+    COMMITTEE: str
+    DURATION: str
+    HOMEPAGE: str
+    KEYS_FILE: str
+    PROJECT: str
+    RELEASE_CHECKLIST: str
+    REPOSITORY: str
+    REVIEW_URL: str
+    REVISION: str
+    TAG: str
+    VERSION: str
+    YOUR_ASF_ID: str
+    YOUR_FULL_NAME: str
+
+
+TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
+    "BUG_DATABASE": "Bug database URL",
+    "CHECKLIST_URL": "URL to the release checklist",
+    "COMMITTEE": "Committee display name",
+    "DISCLAIMER": "Podling incubation disclaimer",
+    "DOWNLOAD_PAGE": "Download page URL",
+    "DOWNLOAD_URL": "URL to download the release",
+    "DURATION": "Vote duration in hours",
+    "HOMEPAGE": "Homepage URL",
+    "KEYS_FILE": "URL to the KEYS file",
+    "LIFECYCLE_PAGE": "Lifecycle page URL",
+    "MAILING_LISTS": "Mailing lists page URL",
+    "PROJECT": "Project display name",
+    "RELEASE_CHECKLIST": "Release checklist content",
+    "REPOSITORY": "Source repository URLs",
+    "REVIEW_URL": "URL to review the release",
+    "REVISION": "Revision number",
+    "SHORT_DESCRIPTION": "Short project description",
+    "TAG": "Revision tag, if set",
+    "VERSION": "Version name",
+    "VOTE_ENDS_UTC": "Vote end date and time in UTC",
+    "YOUR_ASF_ID": "Your Apache UID",
+    "YOUR_FULL_NAME": "Your full name",
+}
 
 
 @dataclasses.dataclass
@@ -104,27 +174,32 @@ async def announce_release_subject_and_body(
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
-    project_display_name = release.project.short_display_name if release.project else str(options.project_key)
+    project = release.project
+    project_display_name = project.short_display_name if project else str(options.project_key)
     download_url = paths.committee_downloads_url(host, committee)
     if options.download_path_suffix is not None:
         download_url += f"/{options.download_path_suffix!s}"
     download_url += "/"
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{PROJECT}}", project_display_name)
-    subject = subject.replace("{{VERSION}}", str(options.version_key))
-
-    # Perform substitutions in the body
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
-    body = body.replace("{{DISCLAIMER}}", _podling_disclaimer(release.project, committee))
-    body = body.replace("{{DOWNLOAD_URL}}", download_url)
-    body = body.replace("{{PROJECT}}", project_display_name)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", str(options.version_key))
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
-
+    values: _AnnounceValues = {
+        "BUG_DATABASE": project.bug_database or "",
+        "COMMITTEE": committee.display_name,
+        "DISCLAIMER": _podling_disclaimer(project, committee),
+        "DOWNLOAD_PAGE": project.download_page or "",
+        "DOWNLOAD_URL": download_url,
+        "HOMEPAGE": project.homepage or "",
+        "LIFECYCLE_PAGE": project.lifecycle_page or "",
+        "MAILING_LISTS": project.mailing_lists or "",
+        "PROJECT": project_display_name,
+        "REPOSITORY": "\n".join(project.repository),
+        "REVISION": revision_number,
+        "TAG": revision_tag,
+        "VERSION": str(options.version_key),
+        "YOUR_ASF_ID": options.asfuid,
+        "YOUR_FULL_NAME": options.fullname,
+    }
+    subject = _substitute(subject, values, "announce_subject")
+    body = _substitute(body, values, "announce")
     return subject, body
 
 
@@ -138,11 +213,11 @@ async def announce_release_subject_default(project_key: safe.ProjectKey) -> str:
 
 
 def announce_subject_template_variables() -> list[tuple[str, str]]:
-    return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "announce_subject" in contexts]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_AnnounceSubjectValues.__required_keys__)]
 
 
 def announce_template_variables() -> list[tuple[str, str]]:
-    return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "announce" in contexts]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_AnnounceValues.__required_keys__)]
 
 
 def checklist_body(
@@ -164,17 +239,21 @@ def checklist_body(
     review_path = util.as_url(vote.selected, project_key=project.key, version_key=version_key)
     review_url = f"https://{host}{review_path}"
 
-    markdown = markdown.replace("{{COMMITTEE}}", committee.display_name)
-    markdown = markdown.replace("{{PROJECT}}", project.short_display_name)
-    markdown = markdown.replace("{{REVIEW_URL}}", review_url)
-    markdown = markdown.replace("{{REVISION}}", revision_number)
-    markdown = markdown.replace("{{TAG}}", revision_tag)
-    markdown = markdown.replace("{{VERSION}}", str(version_key))
-    return markdown
+    values: _ChecklistValues = {
+        "COMMITTEE": committee.display_name,
+        "HOMEPAGE": project.homepage or "",
+        "PROJECT": project.short_display_name,
+        "REVIEW_URL": review_url,
+        "REVISION": revision_number,
+        "SHORT_DESCRIPTION": project.short_description or "",
+        "TAG": revision_tag,
+        "VERSION": str(version_key),
+    }
+    return _substitute(markdown, values, "checklist")
 
 
 def checklist_template_variables() -> list[tuple[str, str]]:
-    return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "checklist" in contexts]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_ChecklistValues.__required_keys__)]
 
 
 async def start_vote_default(project_key: safe.ProjectKey) -> str:
@@ -217,7 +296,8 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     checklist_url = f"https://{host}{checklist_path}"
     review_path = util.as_url(vote.selected, project_key=str(options.project_key), version_key=str(options.version_key))
     review_url = f"https://{host}{review_path}"
-    project_display_name = release.project.short_display_name if release.project else str(options.project_key)
+    project = release.project
+    project_display_name = project.short_display_name if project else str(options.project_key)
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
     vote_end_str = f"{vote_end.day} {vote_end.strftime('%b %H:%M')} UTC"
 
@@ -234,38 +314,43 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         if release_policy:
             checklist_content = release_policy.release_checklist or ""
 
-    if checklist_content and release.project:
+    if checklist_content and project:
         checklist_content = checklist_body(
             checklist_content,
-            project=release.project,
+            project=project,
             version_key=options.version_key,
             committee=committee,
             revision=revision,
         )
 
-    # Perform substitutions in the subject
-    subject = subject.replace("{{COMMITTEE}}", committee.display_name)
-    subject = subject.replace("{{PROJECT}}", str(project_display_name))
-    subject = subject.replace("{{REVISION}}", revision_number)
-    subject = subject.replace("{{TAG}}", revision_tag)
-    subject = subject.replace("{{VERSION}}", str(options.version_key))
-    subject = subject.replace("{{VOTE_ENDS_UTC}}", vote_end_str)
-
-    # Perform substitutions in the body
+    subject_values: _VoteSubjectValues = {
+        "COMMITTEE": committee.display_name,
+        "PROJECT": project_display_name,
+        "REVISION": revision_number,
+        "TAG": revision_tag,
+        "VERSION": str(options.version_key),
+        "VOTE_ENDS_UTC": vote_end_str,
+    }
     # TODO: Handle the DURATION == 0 case
-    body = body.replace("{{CHECKLIST_URL}}", checklist_url)
-    body = body.replace("{{COMMITTEE}}", committee.display_name)
-    body = body.replace("{{DURATION}}", str(options.vote_duration))
-    body = body.replace("{{KEYS_FILE}}", keys_file or "(Sorry, the KEYS file is missing!)")
-    body = body.replace("{{PROJECT}}", str(project_display_name))
-    body = body.replace("{{RELEASE_CHECKLIST}}", checklist_content)
-    body = body.replace("{{REVIEW_URL}}", review_url)
-    body = body.replace("{{REVISION}}", revision_number)
-    body = body.replace("{{TAG}}", revision_tag)
-    body = body.replace("{{VERSION}}", str(options.version_key))
-    body = body.replace("{{YOUR_ASF_ID}}", options.asfuid)
-    body = body.replace("{{YOUR_FULL_NAME}}", options.fullname)
-
+    body_values: _VoteValues = {
+        "BUG_DATABASE": project.bug_database or "",
+        "CHECKLIST_URL": checklist_url,
+        "COMMITTEE": committee.display_name,
+        "DURATION": str(options.vote_duration),
+        "HOMEPAGE": project.homepage or "",
+        "KEYS_FILE": keys_file or "(Sorry, the KEYS file is missing!)",
+        "PROJECT": project_display_name,
+        "RELEASE_CHECKLIST": checklist_content,
+        "REPOSITORY": "\n".join(project.repository),
+        "REVIEW_URL": review_url,
+        "REVISION": revision_number,
+        "TAG": revision_tag,
+        "VERSION": str(options.version_key),
+        "YOUR_ASF_ID": options.asfuid,
+        "YOUR_FULL_NAME": options.fullname,
+    }
+    subject = _substitute(subject, subject_values, "vote_subject")
+    body = _substitute(body, body_values, "vote")
     return subject, body
 
 
@@ -284,11 +369,11 @@ def template_hash(template: str) -> str:
 
 
 def vote_subject_template_variables() -> list[tuple[str, str]]:
-    return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "vote_subject" in contexts]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_VoteSubjectValues.__required_keys__)]
 
 
 def vote_template_variables() -> list[tuple[str, str]]:
-    return [(name, desc) for (name, desc, contexts) in TEMPLATE_VARIABLES if "vote" in contexts]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_VoteValues.__required_keys__)]
 
 
 def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:
@@ -307,3 +392,20 @@ def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:
         "does indicate that the project has yet to be fully endorsed "
         "by the ASF.\n"
     )
+
+
+@overload
+def _substitute(text: str, values: _AnnounceSubjectValues, context: Literal["announce_subject"]) -> str: ...
+@overload
+def _substitute(text: str, values: _AnnounceValues, context: Literal["announce"]) -> str: ...
+@overload
+def _substitute(text: str, values: _ChecklistValues, context: Literal["checklist"]) -> str: ...
+@overload
+def _substitute(text: str, values: _VoteSubjectValues, context: Literal["vote_subject"]) -> str: ...
+@overload
+def _substitute(text: str, values: _VoteValues, context: Literal["vote"]) -> str: ...
+def _substitute(text: str, values: Mapping[str, object], context: Context) -> str:
+    _ = context  # marks as unused for pyright - we're using the value to pick the right overload
+    for name, value in values.items():
+        text = text.replace(f"{{{{{name}}}}}", str(value))
+    return text
