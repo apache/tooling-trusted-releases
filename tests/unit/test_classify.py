@@ -63,15 +63,15 @@ async def test_binary_stem_heuristic():
 
 
 def test_counts_docs_only():
-    assert classify.classify_from_counts(0, 0, 1) == classify.FileType.DOCS
+    assert classify.classify_from_counts("", 0, 0, 1) == classify.FileType.DOCS
 
 
 def test_counts_docs_with_binary():
-    assert classify.classify_from_counts(0, 1, 1) == classify.FileType.BINARY
+    assert classify.classify_from_counts("", 0, 1, 1) == classify.FileType.BINARY
 
 
 def test_counts_docs_with_source():
-    assert classify.classify_from_counts(1, 0, 1) == classify.FileType.SOURCE
+    assert classify.classify_from_counts("", 1, 0, 1) == classify.FileType.SOURCE
 
 
 async def test_disallowed_files_detected():

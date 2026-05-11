@@ -110,7 +110,7 @@ _SRC_SOURCE_RE: Final[re.Pattern[str]] = re.compile(r"(^|[-_.])(project|source|s
 
 _TOKEN_SPLIT_RE: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
 
-_UNCLASSIFIED_SOURCE_SUFFIXES: Final[frozenset[str]] = frozenset({"-source.jar", "-sources.jar", "-src.jar"})
+_DEFAULT_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".jar"})
 
 
 class FileType(enum.Enum):
@@ -140,7 +140,7 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
     return source_count, binary_count, docs_count
 
 
-async def classify(  # noqa: C901
+async def classify(
     path: safe.RelPath,
     base_path: safe.StatePath | None = None,
     source_matcher: Callable[[str], bool] | None = None,
@@ -172,22 +172,20 @@ async def classify(  # noqa: C901
         return FileType.BINARY
     stem = path_str[: search.start()]
     if not any(path_str.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
-        if any(path_str.endswith(suffix) for suffix in _UNCLASSIFIED_SOURCE_SUFFIXES):
-            # This is a temporary workaround for some archives that are not yet quarantined
-            # TODO: Remove this once these archives are quarantined
-            return FileType.SOURCE
         return FileType.BINARY
     if archive_cache_dir is not None:
         marker = await _content_markers(archive_cache_dir)
         if marker is not None:
             return marker
-    return classify_from_counts(*archive_marker_counts(stem, path.as_path()))
+    return classify_from_counts(path_str, *archive_marker_counts(stem, path.as_path()))
 
 
-def classify_from_counts(source_count: int, binary_count: int, docs_count: int) -> FileType:
+def classify_from_counts(path_str: str, source_count: int, binary_count: int, docs_count: int) -> FileType:
     if (source_count == 0) and (binary_count == 0):
         if docs_count > 0:
             return FileType.DOCS
+        if any(path_str.endswith(suffix) for suffix in _DEFAULT_BINARY_EXTENSIONS):
+            return FileType.BINARY
         return FileType.SOURCE
     if source_count >= binary_count:
         return FileType.SOURCE
