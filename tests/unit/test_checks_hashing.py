@@ -39,6 +39,18 @@ async def test_check_accepts_freebsd_sha512_format(tmp_path: pathlib.Path) -> No
     assert artifact_path.exists()
 
 
+async def test_check_blocks_on_empty_checksum_file(tmp_path: pathlib.Path) -> None:
+    artifact_path = tmp_path / "artifact.tar.gz"
+    artifact_path.write_bytes(b"payload")
+    hash_path = tmp_path / "artifact.tar.gz.sha512"
+    hash_path.write_text("")
+    recorder = await _run_hash_check(hash_path)
+
+    assert len(recorder.messages) == 1
+    assert recorder.messages[0][:2] == (sql.CheckResultStatus.BLOCKER.value, "Malformed checksum file")
+    assert artifact_path.exists()
+
+
 async def test_check_retains_hash_filename_format(tmp_path: pathlib.Path) -> None:
     _artifact_path, hash_path, expected_hash = _write_hash_fixture(tmp_path, "{digest}  {name}\n")
     recorder = await _run_hash_check(hash_path)
