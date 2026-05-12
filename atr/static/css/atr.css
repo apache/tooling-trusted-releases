@@ -914,8 +914,20 @@ td.atr-checkbox-col {
 }
 
 .atr-bg-blocker {
-    background-color: rgb(111 0 193 / 75%);
+    background-color: #dc3545;
     color: #ffffff;
+}
+
+.atr-cbm-deuteranopia .atr-bg-blocker {
+    background-color: #ee7733 !important;
+}
+
+.atr-cbm-protanopia .atr-bg-blocker {
+    background-color: #cc6600 !important;
+}
+
+.atr-cbm-tritanopia .atr-bg-blocker {
+    background-color: #cc3366 !important;
 }
 
 .atr-bg-exception {
@@ -936,32 +948,265 @@ td.atr-checkbox-col {
 }
 
 .btn.atr-btn-blocker {
-    background-color: rgb(111 0 193 / 75%);
-    border-color: rgb(111 0 193 / 75%);
+    background-color: #dc3545;
+    border-color: #dc3545;
     color: #ffffff;
 }
 
 .btn.atr-btn-blocker:hover {
-    background-color: rgb(111 0 193 / 90%);
-    border-color: rgb(111 0 193 / 90%);
+    background-color: #bd2130;
+    border-color: #bd2130;
     color: #ffffff;
 }
 
 .btn.atr-btn-outline-blocker {
     background-color: transparent;
-    border-color: rgb(111 0 193 / 75%);
-    color: rgb(111 0 193);
+    border-color: #dc3545;
+    color: #dc3545;
 }
 
 .btn.atr-btn-outline-blocker:hover {
-    background-color: rgb(111 0 193 / 75%);
-    border-color: rgb(111 0 193 / 75%);
+    background-color: #dc3545;
+    border-color: #dc3545;
     color: #ffffff;
 }
 
-/* We use rgb for the purple so it can easily be compared to "/ N%" versions */
 .atr-text-blocker {
-    color: rgb(111 0 193) !important;
+    color: #dc3545 !important;
+}
+
+.atr-cbm-deuteranopia .atr-text-blocker {
+    color: #ee7733 !important;
+}
+
+.atr-cbm-protanopia .atr-text-blocker {
+    color: #cc6600 !important;
+}
+
+.atr-cbm-tritanopia .atr-text-blocker {
+    color: #cc3366 !important;
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-blocker {
+    background-color: #ee7733;
+    border-color: #ee7733;
+}
+
+.atr-cbm-protanopia .btn.atr-btn-blocker {
+    background-color: #cc6600;
+    border-color: #cc6600;
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-blocker {
+    background-color: #cc3366;
+    border-color: #cc3366;
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-outline-blocker {
+    border-color: #ee7733;
+    color: #ee7733;
+}
+
+.atr-cbm-protanopia .btn.atr-btn-outline-blocker {
+    border-color: #cc6600;
+    color: #cc6600;
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-outline-blocker {
+    border-color: #cc3366;
+    color: #cc3366;
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-outline-blocker:hover {
+    background-color: #ee7733;
+    border-color: #ee7733;
+    color: #ffffff;
+}
+
+.atr-cbm-protanopia .btn.atr-btn-outline-blocker:hover {
+    background-color: #cc6600;
+    border-color: #cc6600;
+    color: #ffffff;
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-outline-blocker:hover {
+    background-color: #cc3366;
+    border-color: #cc3366;
+    color: #ffffff;
+}
+
+.atr-bg-suggestion {
+    background-color: rgb(31 78 121 / 90%);
+    color: #ffffff;
+}
+
+.atr-cbm-deuteranopia .atr-bg-suggestion {
+    background-color: rgb(0 51 102 / 95%) !important;
+}
+
+.atr-cbm-protanopia .atr-bg-suggestion {
+    background-color: rgb(0 51 102 / 95%) !important;
+}
+
+.atr-cbm-tritanopia .atr-bg-suggestion {
+    background-color: rgb(23 59 92 / 95%) !important;
+}
+
+.btn.atr-btn-suggestion {
+    background-color: rgb(31 78 121 / 90%);
+    border-color: rgb(31 78 121 / 90%);
+    color: #ffffff;
+}
+
+.btn.atr-btn-suggestion:hover {
+    background-color: rgb(23 59 92);
+    border-color: rgb(23 59 92);
+    color: #ffffff;
+}
+
+.btn.atr-btn-outline-suggestion {
+    background-color: transparent;
+    border-color: rgb(31 78 121 / 90%);
+    color: rgb(31 78 121);
+}
+
+.btn.atr-btn-outline-suggestion:hover {
+    background-color: rgb(31 78 121 / 90%);
+    border-color: rgb(31 78 121 / 90%);
+    color: #ffffff;
+}
+
+.atr-text-suggestion {
+    color: rgb(31 78 121) !important;
+}
+
+.atr-cbm-deuteranopia .atr-text-suggestion {
+    color: rgb(0 51 102) !important;
+}
+
+.atr-cbm-protanopia .atr-text-suggestion {
+    color: rgb(0 51 102) !important;
+}
+
+.atr-cbm-tritanopia .atr-text-suggestion {
+    color: rgb(23 59 92) !important;
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-suggestion {
+    background-color: rgb(0 51 102 / 95%);
+    border-color: rgb(0 51 102 / 95%);
+}
+
+.atr-cbm-protanopia .btn.atr-btn-suggestion {
+    background-color: rgb(0 51 102 / 95%);
+    border-color: rgb(0 51 102 / 95%);
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-suggestion {
+    background-color: rgb(23 59 92 / 95%);
+    border-color: rgb(23 59 92 / 95%);
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-outline-suggestion {
+    border-color: rgb(0 51 102 / 95%);
+    color: rgb(0 51 102);
+}
+
+.atr-cbm-protanopia .btn.atr-btn-outline-suggestion {
+    border-color: rgb(0 51 102 / 95%);
+    color: rgb(0 51 102);
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-outline-suggestion {
+    border-color: rgb(23 59 92 / 95%);
+    color: rgb(23 59 92);
+}
+
+.atr-bg-concern {
+    background-color: rgb(204 122 0 / 90%);
+    color: #ffffff;
+}
+
+.atr-cbm-deuteranopia .atr-bg-concern {
+    background-color: rgb(140 95 0 / 95%) !important;
+}
+
+.atr-cbm-protanopia .atr-bg-concern {
+    background-color: rgb(140 95 0 / 95%) !important;
+}
+
+.atr-cbm-tritanopia .atr-bg-concern {
+    background-color: rgb(192 130 0 / 95%) !important;
+}
+
+.btn.atr-btn-concern {
+    background-color: rgb(204 122 0 / 90%);
+    border-color: rgb(204 122 0 / 90%);
+    color: #ffffff;
+}
+
+.btn.atr-btn-concern:hover {
+    background-color: rgb(173 103 0);
+    border-color: rgb(173 103 0);
+    color: #ffffff;
+}
+
+.btn.atr-btn-outline-concern {
+    background-color: transparent;
+    border-color: rgb(204 122 0 / 90%);
+    color: rgb(204 122 0);
+}
+
+.btn.atr-btn-outline-concern:hover {
+    background-color: rgb(204 122 0 / 90%);
+    border-color: rgb(204 122 0 / 90%);
+    color: #ffffff;
+}
+
+.atr-text-concern {
+    color: rgb(204 122 0) !important;
+}
+
+.atr-cbm-deuteranopia .atr-text-concern {
+    color: rgb(140 95 0) !important;
+}
+
+.atr-cbm-protanopia .atr-text-concern {
+    color: rgb(140 95 0) !important;
+}
+
+.atr-cbm-tritanopia .atr-text-concern {
+    color: rgb(192 130 0) !important;
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-concern {
+    background-color: rgb(140 95 0 / 95%);
+    border-color: rgb(140 95 0 / 95%);
+}
+
+.atr-cbm-protanopia .btn.atr-btn-concern {
+    background-color: rgb(140 95 0 / 95%);
+    border-color: rgb(140 95 0 / 95%);
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-concern {
+    background-color: rgb(192 130 0 / 95%);
+    border-color: rgb(192 130 0 / 95%);
+}
+
+.atr-cbm-deuteranopia .btn.atr-btn-outline-concern {
+    border-color: rgb(140 95 0 / 95%);
+    color: rgb(140 95 0);
+}
+
+.atr-cbm-protanopia .btn.atr-btn-outline-concern {
+    border-color: rgb(140 95 0 / 95%);
+    color: rgb(140 95 0);
+}
+
+.atr-cbm-tritanopia .btn.atr-btn-outline-concern {
+    border-color: rgb(192 130 0 / 95%);
+    color: rgb(192 130 0);
 }
 
 .atr-classification-badge {
@@ -976,11 +1221,16 @@ td.atr-checkbox-col {
 }
 
 .atr-text-blocker .atr-classification-badge {
-    background-color: #f8f3fd;
+    background-color: #fdf6f6;
+}
+
+.atr-text-concern .atr-classification-badge {
+    background-color: #fdf3e8;
 }
 
 .text-success .atr-classification-badge {
     background-color: #f3f9f6;
+    color: #000000;
 }
 
 .text-danger .atr-classification-badge {

@@ -50,8 +50,8 @@
   <div class="fs-3 bg-light p-3 border rounded mb-4">
     <code>{{ package.filename }}</code>
   </div>
-  {% set btn_filled = {"note": "btn-success", "suggestion": "btn-warning", "concern": "btn-danger", "blocker": "atr-btn-blocker", "exception": "btn-danger"} %}
-  {% set btn_outline = {"note": "btn-outline-success", "suggestion": "btn-outline-warning", "concern": "btn-outline-danger", "blocker": "atr-btn-outline-blocker", "exception": "btn-outline-danger"} %}
+  {% set btn_filled = {"note": "btn-success", "suggestion": "atr-btn-suggestion", "concern": "atr-btn-concern", "blocker": "atr-btn-blocker", "exception": "btn-danger"} %}
+  {% set btn_outline = {"note": "btn-outline-success", "suggestion": "atr-btn-outline-suggestion", "concern": "atr-btn-outline-concern", "blocker": "atr-btn-outline-blocker", "exception": "btn-outline-danger"} %}
   {% if primary_results %}
     {% set status_counts = {
     "note": primary_results|selectattr("status.value", "equalto", "note")|list|length,
@@ -220,7 +220,7 @@
               </td>
               <td class="align-middle text-center atr-sans">
                 <div class="d-inline-flex flex-column align-items-center gap-1">
-                  <span class="badge rounded-pill {% if primary_result.status.value == "note" %}bg-success {% elif primary_result.status.value == "concern" %}bg-danger {% elif primary_result.status.value == "blocker" %}atr-bg-blocker {% elif primary_result.status.value == "suggestion" %}bg-warning {% elif primary_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
+                  <span class="badge rounded-pill {% if primary_result.status.value == "note" %}bg-success {% elif primary_result.status.value == "concern" %}atr-bg-concern {% elif primary_result.status.value == "blocker" %}atr-bg-blocker {% elif primary_result.status.value == "suggestion" %}atr-bg-suggestion {% elif primary_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
                     {{ primary_result.status.value|title }}
                   </span>
                   {% if primary_result.cached %}
@@ -307,7 +307,7 @@
                 </td>
                 <td class="align-middle text-center atr-sans">
                   <div class="d-inline-flex flex-column align-items-center gap-1">
-                    <span class="badge rounded-pill {% if member_result.status.value == "note" %}bg-success {% elif member_result.status.value == "concern" %}bg-danger {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "suggestion" %}bg-warning {% elif member_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
+                    <span class="badge rounded-pill {% if member_result.status.value == "note" %}bg-success {% elif member_result.status.value == "concern" %}atr-bg-concern {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "suggestion" %}atr-bg-suggestion {% elif member_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
                       {{ member_result.status.value|title }}
                     </span>
                     {% if member_result.cached %}

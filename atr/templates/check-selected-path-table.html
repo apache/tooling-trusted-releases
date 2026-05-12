@@ -21,9 +21,9 @@
         {% elif has_exceptions %}
           {% set path_style_class = "text-danger" %}
         {% elif has_concerns %}
-          {% set path_style_class = "text-danger" %}
+          {% set path_style_class = "atr-text-concern" %}
         {% elif has_suggestions %}
-          {% set path_style_class = "text-warning" %}
+          {% set path_style_class = "atr-text-suggestion" %}
         {% endif %}
 
         {% set icon_class = "text-success" %}
@@ -32,9 +32,9 @@
         {% elif has_exceptions %}
           {% set icon_class = "text-danger" %}
         {% elif has_concerns %}
-          {% set icon_class = "text-danger" %}
+          {% set icon_class = "atr-text-concern" %}
         {% elif has_suggestions %}
-          {% set icon_class = "text-warning" %}
+          {% set icon_class = "atr-text-suggestion" %}
         {% endif %}
 
         <tr class="{{ row_bg_class }}">
@@ -86,10 +86,10 @@
                    class="btn btn-sm btn-outline-danger">Show {{ info.exceptions[path]|length }} {{ "exception" if info.exceptions[path]|length == 1 else "exceptions" }}</a>
               {% elif has_concerns %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm btn-outline-danger"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.concerns[path]|length }} {{ "concern" if info.concerns[path]|length == 1 else "concerns" }}</a>
+                   class="btn btn-sm atr-btn-outline-concern"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.concerns[path]|length }} {{ "concern" if info.concerns[path]|length == 1 else "concerns" }}</a>
               {% elif has_suggestions %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm btn-outline-warning">Show {{ info.suggestions[path]|length }} {{ "suggestion" if info.suggestions[path]|length == 1 else "suggestions" }}</a>
+                   class="btn btn-sm atr-btn-outline-suggestion">Show {{ info.suggestions[path]|length }} {{ "suggestion" if info.suggestions[path]|length == 1 else "suggestions" }}</a>
               {% elif info and (path in info.notes) %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-success"

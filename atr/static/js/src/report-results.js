@@ -30,8 +30,11 @@ function toggleAllDetails() {
 
 const statusButtonClasses = {
 	note: { filled: "btn-success", outline: "btn-outline-success" },
-	suggestion: { filled: "btn-warning", outline: "btn-outline-warning" },
-	concern: { filled: "btn-danger", outline: "btn-outline-danger" },
+	suggestion: {
+		filled: "atr-btn-suggestion",
+		outline: "atr-btn-outline-suggestion",
+	},
+	concern: { filled: "atr-btn-concern", outline: "atr-btn-outline-concern" },
 	blocker: { filled: "atr-btn-blocker", outline: "atr-btn-outline-blocker" },
 	exception: { filled: "btn-danger", outline: "btn-outline-danger" },
 };

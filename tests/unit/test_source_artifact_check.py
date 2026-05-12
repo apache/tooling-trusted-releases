@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 import datetime
 import unittest.mock as mock
 
@@ -198,6 +199,26 @@ async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp
     failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
+
+
+def test_render_checks_summary_emits_new_badge_classes():
+    info = types.PathInfo()
+    stat = types.CheckerStats(
+        checker="atr.tasks.checks.paths.check_errors",
+        counts=collections.Counter(
+            {
+                sql.CheckResultStatus.SUGGESTION: 1,
+                sql.CheckResultStatus.CONCERN: 1,
+            }
+        ),
+        files={},
+    )
+    info.checker_stats.append(stat)
+    element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    assert element is not None
+    rendered = str(element)
+    assert "atr-bg-suggestion" in rendered
+    assert "atr-bg-concern" in rendered
 
 
 def test_render_checks_summary_returns_none_when_no_errors():

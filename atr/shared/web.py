@@ -34,8 +34,8 @@ _NON_NOTE_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
 )
 
 _STATUS_BADGE_CLASSES: Final[dict[sql.CheckResultStatus, str]] = {
-    sql.CheckResultStatus.SUGGESTION: ".bg-warning.text-dark",
-    sql.CheckResultStatus.CONCERN: ".bg-danger",
+    sql.CheckResultStatus.SUGGESTION: ".atr-bg-suggestion",
+    sql.CheckResultStatus.CONCERN: ".atr-bg-concern",
     sql.CheckResultStatus.BLOCKER: ".atr-bg-blocker",
     sql.CheckResultStatus.EXCEPTION: ".atr-bg-exception",
 }
