@@ -37,11 +37,11 @@ class DistributionWorkflow(schema.Strict):
     package: str = schema.description("Package to distribute")
     version: str = schema.description("Version to distribute")
     staging: bool = schema.description("Whether this is a staging distribution")
-    project_key: str = schema.description("Project name in ATR")
-    version_key: str = schema.description("Version name in ATR")
+    project_key: str = schema.description("Project key in ATR")
+    version_key: str = schema.description("Version key in ATR")
     phase: str = schema.description("Release phase in ATR")
     asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
-    committee_key: str = schema.description("Committee name in ATR")
+    committee_key: str = schema.description("Committee key in ATR")
     platform: str = schema.description("Distribution platform")
     arguments: dict[str, str] = schema.description("Workflow arguments")
     name: str = schema.description("Name of the run")
@@ -57,8 +57,8 @@ class DistributionStatusCheckArgs(schema.Strict):
 class FileArgs(schema.Strict):
     """Arguments for SBOM file processing tasks."""
 
-    project_key: safe.ProjectKey = schema.description("Project name")
-    version_key: safe.VersionKey = schema.description("Version name")
+    project_key: safe.ProjectKey = schema.description("Project key")
+    version_key: safe.VersionKey = schema.description("Version key")
     revision_number: safe.RevisionNumber = schema.description("Revision number")
     file_path: safe.RelPath = schema.description("Relative path to the SBOM file")
     asf_uid: str | None = None
@@ -88,7 +88,7 @@ class ImportFile(schema.Strict):
 class Initiate(schema.Strict):
     """Arguments for the task to start a vote."""
 
-    release_key: str = schema.description("The name of the release to vote on")
+    release_key: str = schema.description("The key of the release to vote on")
     email_to: pydantic.EmailStr = schema.description("The mailing list To address")
     vote_duration: int = schema.description("Duration of the vote in hours")
     initiator_id: str = schema.description("ASF ID of the vote initiator")
