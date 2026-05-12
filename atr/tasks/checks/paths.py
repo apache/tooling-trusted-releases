@@ -42,7 +42,7 @@ _ALLOWED_TOP_LEVEL: Final = frozenset(
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION: Final[str] = "4"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -168,10 +168,10 @@ async def _check_metadata_rules(
         blockers.append("The use of .md5 is forbidden, please use .sha512")
     if ".sha1" in suffixes:
         # Deprecated by RDP
-        errors.append("The use of .sha1 is deprecated, please use .sha512")
+        warnings.append("The use of .sha1 is deprecated, please use .sha512")
     if ".sha" in suffixes:
         # Discouraged by RDP
-        errors.append("The use of .sha is discouraged, please use .sha512")
+        warnings.append("The use of .sha is discouraged, please use .sha512")
     if ".sig" in suffixes:
         # Forbidden by RCP, forbidden by RDP
         blockers.append("Binary signature files (.sig) are forbidden, please use .asc")
@@ -181,7 +181,7 @@ async def _check_metadata_rules(
     # Also .mds is allowed, but we'll ignore that for now
     # TODO: Is .mds supported in analysis.METADATA_SUFFIXES?
     if ext_metadata not in {".asc", ".cdx.json", ".sha256", ".sha512", ".md5", ".sha", ".sha1"}:
-        errors.append("The use of this metadata file is discouraged")
+        warnings.append("The use of this metadata file is discouraged")
 
     # Check whether the corresponding artifact exists
     artifact_path_base = str(relative_path).removesuffix(ext_metadata)
@@ -220,16 +220,19 @@ async def _check_path_process_single(  # noqa: C901
     # The Release Distribution Policy specifically allows README and CHANGES, etc.
     # We assume that LICENSE and NOTICE are permitted also
     path = relative_path.as_path()
-    if path.name == "KEYS":
-        errors.append("The KEYS file should be uploaded via the 'Keys' section, not included in the artifact bundle")
     if path.name in analysis.DISALLOWED_FILENAMES:
+        blocker_text = (
+            "The KEYS file should be uploaded via the 'Keys' section, not included in the artifact bundle"
+            if path.name == "KEYS"
+            else f"Disallowed file: {path.name}"
+        )
         await _record(
             recorder_problems,
             recorder_suggestions,
             recorder_notes,
             relative_path,
             errors,
-            [f"Disallowed file: {path.name}"],
+            [blocker_text],
             warnings,
         )
         return
@@ -349,7 +352,7 @@ async def _check_source_artifact_present(
     )
 
     if not source_artifacts:
-        await recorder_problems.concern(
+        await recorder_problems.blocker(
             "Release must contain at least one source release artifact",
             {},
             primary_rel_path=None,

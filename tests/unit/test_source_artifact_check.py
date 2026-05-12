@@ -17,6 +17,7 @@
 
 import collections
 import datetime
+import pathlib
 import unittest.mock as mock
 
 import pytest
@@ -33,7 +34,7 @@ from tests.unit.recorders import RecorderStub
 
 @pytest.mark.asyncio
 async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-bin.tar.gz": "binary",
@@ -42,9 +43,9 @@ async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
-    assert len(failures) == 1
-    assert "source release artifact" in failures[0][1]
+    blockers = [(s, m) for s, m, _ in recorder.messages if s == "blocker"]
+    assert len(blockers) == 1
+    assert "source release artifact" in blockers[0][1]
 
 
 @pytest.mark.asyncio
@@ -87,7 +88,7 @@ async def test_concern_without_path_goes_to_release_level_concerns():
 
 @pytest.mark.asyncio
 async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-source.tar.gz.sha512": "metadata",
@@ -99,12 +100,12 @@ async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.Monke
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     attestable_data = mock.MagicMock()
@@ -118,12 +119,12 @@ async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPa
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
@@ -132,14 +133,14 @@ async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pyt
         safe.RelPath("apache-test-1.0-bin.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
-    assert len(failures) == 1
-    assert "source release artifact" in failures[0][1]
+    blockers = [(s, m) for s, m, _ in recorder.messages if s == "blocker"]
+    assert len(blockers) == 1
+    assert "source release artifact" in blockers[0][1]
 
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     attestable_data = mock.MagicMock()
@@ -151,12 +152,12 @@ async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch:
         safe.RelPath("my-project-1.0.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr(
         "atr.db.session",
@@ -168,12 +169,12 @@ async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: py
         safe.RelPath("my-project-1.0.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_when_no_attestable(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
@@ -182,12 +183,44 @@ async def test_fallback_to_classify_when_no_attestable(monkeypatch: pytest.Monke
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_keys_file_records_single_actionable_blocker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    (tmp_path / "KEYS").write_text("", encoding="utf-8")
+    monkeypatch.setattr(paths.user, "is_admin_async", mock.AsyncMock(return_value=False))
+    recorder_problems = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder_suggestions = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_warnings", "4")
+    recorder_notes = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_success", "4")
+
+    await paths._check_path_process_single(
+        "testuser",
+        safe.StatePath(tmp_path),
+        safe.RelPath("KEYS"),
+        recorder_problems,
+        recorder_suggestions,
+        recorder_notes,
+        {"KEYS"},
+        False,
+    )
+
+    assert recorder_problems.messages == [
+        (
+            "blocker",
+            "KEYS: The KEYS file should be uploaded via the 'Keys' section, not included in the artifact bundle",
+            {},
+        )
+    ]
+    assert recorder_suggestions.messages == []
+    assert recorder_notes.messages == []
 
 
 @pytest.mark.asyncio
 async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     classifications = {
         "README.md": "docs",
@@ -196,9 +229,9 @@ async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
-    assert len(failures) == 1
-    assert "source release artifact" in failures[0][1]
+    blockers = [(s, m) for s, m, _ in recorder.messages if s == "blocker"]
+    assert len(blockers) == 1
+    assert "source release artifact" in blockers[0][1]
 
 
 def test_render_checks_summary_emits_new_badge_classes():
@@ -231,7 +264,7 @@ def test_render_checks_summary_shows_release_level_errors():
     info = types.PathInfo()
     result = _make_check_result(
         sql.CheckResultStatus.CONCERN,
-        "Release must contain at least one source release artifact",
+        "Some path issue",
     )
     info.release_level_concerns.append(result)
     element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
@@ -240,7 +273,7 @@ def test_render_checks_summary_shows_release_level_errors():
 
 @pytest.mark.asyncio
 async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-source.tar.gz": "source",
@@ -249,12 +282,12 @@ async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "concern" for s, _, _ in recorder.messages)
+    assert not any(s in {"concern", "blocker"} for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
 async def test_source_classified_non_artifact_still_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "3")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)
     classifications = {
         "README.md": "source",
@@ -262,9 +295,9 @@ async def test_source_classified_non_artifact_still_records_failure(monkeypatch:
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
-    assert len(failures) == 1
-    assert "source release artifact" in failures[0][1]
+    blockers = [(s, m) for s, m, _ in recorder.messages if s == "blocker"]
+    assert len(blockers) == 1
+    assert "source release artifact" in blockers[0][1]
 
 
 def _make_check_result(
@@ -277,7 +310,7 @@ def _make_check_result(
         release_key="test-1.0",
         revision_number="00001",
         checker="atr.tasks.checks.paths.check_errors",
-        checker_version="3",
+        checker_version="4",
         primary_rel_path=primary_rel_path,
         member_rel_path=None,
         created=datetime.datetime.now(datetime.UTC),

@@ -40,6 +40,8 @@ OPENPGP_TEST_UID: Final[str] = "<apache-tooling@example.invalid>"
 SSH_KEY_COMMENT: Final[str] = "atr-playwright-test@127.0.0.1"
 SSH_KEY_PATH: Final[str] = "/root/.ssh/id_ed25519"
 TEST_PROJECT: Final[str] = "test"
+TEST_SOURCE_ARTIFACT_DIR: Final[str] = "apache-test-0.2"
+TEST_SOURCE_ARTIFACT_NAME: Final[str] = "apache-test-0.2.tar.gz"
 
 
 @dataclasses.dataclass
@@ -99,6 +101,17 @@ def go_to_path(page: Page, path: str, wait: bool = True) -> None:
         wait_for_path(page, path)
 
 
+def latest_revision(page: Page, project_key: str, version_key: str) -> str:
+    revision_link_locator = page.locator(f'a[href^="/revisions/{project_key}/{version_key}#"]')
+    expect(revision_link_locator).to_be_visible()
+    revision_href = revision_link_locator.get_attribute("href")
+    if not revision_href:
+        raise RuntimeError("Could not find revision link href")
+    revision = revision_href.split("#", 1)[-1]
+    logging.info(f"Found revision: {revision}")
+    return revision
+
+
 def lifecycle_01_add_draft(page: Page, credentials: Credentials, version_key: str) -> None:
     logging.info("Following link to start a new release")
     go_to_path(page, f"/start/{TEST_PROJECT}")
@@ -142,9 +155,9 @@ def lifecycle_03_add_file(page: Page, credentials: Credentials, version_key: str
     file_input_locator = page.locator('input[name="file_data"]')
     expect(file_input_locator).to_be_visible()
 
-    example_txt = os.path.join(os.getcwd(), "example.txt")
-    logging.info(f"Setting the input file to {example_txt}")
-    file_input_locator.set_input_files(example_txt)
+    source_artifact_paths = lifecycle_source_artifact_paths()
+    logging.info(f"Setting the input files to {source_artifact_paths}")
+    file_input_locator.set_input_files(source_artifact_paths)
 
     logging.info("Locating and activating the add files button")
     submit_button_locator = page.get_by_role("button", name="Add files")
@@ -158,17 +171,11 @@ def lifecycle_03_add_file(page: Page, credentials: Credentials, version_key: str
     wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
     logging.info("Add file actions completed successfully")
 
-    logging.info(f"Navigating back to /compose/{TEST_PROJECT}/{version_key}")
-    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
+    logging.info(f"Waiting for source artifact to appear on /compose/{TEST_PROJECT}/{version_key}")
+    wait_for_release_file(page, TEST_PROJECT, version_key, TEST_SOURCE_ARTIFACT_NAME)
 
-    logging.info("Extracting latest revision from compose page")
-    revision_link_locator = page.locator(f'a[href^="/revisions/{TEST_PROJECT}/{version_key}#"]')
-    expect(revision_link_locator).to_be_visible()
-    revision_href = revision_link_locator.get_attribute("href")
-    if not revision_href:
-        raise RuntimeError("Could not find revision link href")
-    revision = revision_href.split("#", 1)[-1]
-    logging.info(f"Found revision: {revision}")
+    logging.info(f"Extracting latest revision from /compose/{TEST_PROJECT}/{version_key}")
+    revision = latest_revision(page, TEST_PROJECT, version_key)
 
     logging.info("Polling for task completion after file upload")
     poll_for_tasks_completion(page, TEST_PROJECT, version_key, revision)
@@ -304,6 +311,31 @@ def lifecycle_07_release_exists(page: Page, credentials: Credentials, version_ke
     expect(release_card_locator).to_be_visible()
     logging.info(f"Found card for {TEST_PROJECT} {version_key} release")
     logging.info(f"Release {TEST_PROJECT} {version_key} confirmed exists on /releases/finished/{TEST_PROJECT}")
+
+
+def lifecycle_set_local_check_cache(page: Page, credentials: Credentials, version_key: str) -> None:
+    logging.info(f"Setting release-local check cache for {TEST_PROJECT} {version_key}")
+    go_to_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
+    recheck_form_locator = page.locator(f'form[action="/draft/recheck/{TEST_PROJECT}/{version_key}"]')
+    expect(recheck_form_locator).to_be_visible()
+    submit_button_locator = recheck_form_locator.get_by_role("button", name="Recheck with fresh cache")
+    expect(submit_button_locator).to_be_enabled()
+    submit_button_locator.click()
+    wait_for_path(page, f"/compose/{TEST_PROJECT}/{version_key}")
+    logging.info(f"Release-local check cache set for {TEST_PROJECT} {version_key}")
+
+
+def lifecycle_source_artifact_paths() -> list[str]:
+    source_dir = os.path.join(os.getcwd(), TEST_SOURCE_ARTIFACT_DIR)
+    paths = [
+        os.path.join(source_dir, TEST_SOURCE_ARTIFACT_NAME),
+        os.path.join(source_dir, f"{TEST_SOURCE_ARTIFACT_NAME}.asc"),
+        os.path.join(source_dir, f"{TEST_SOURCE_ARTIFACT_NAME}.sha512"),
+    ]
+    for path in paths:
+        if not os.path.exists(path):
+            raise RuntimeError(f"Test source artifact fixture does not exist: {path}")
+    return paths
 
 
 def main() -> None:
@@ -533,17 +565,18 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
         test_projects_01_update,
         test_projects_02_check_directory,
     ]
+    tests["openpgp"] = [
+        test_openpgp_01_upload,
+    ]
     tests["lifecycle"] = [
         test_lifecycle_01_add_draft,
         test_lifecycle_02_check_draft_added,
+        test_lifecycle_03_set_local_check_cache,
         test_lifecycle_03_add_file,
         test_lifecycle_04_start_vote,
         test_lifecycle_05_resolve_vote,
         test_lifecycle_06_announce_preview,
         test_lifecycle_07_release_exists,
-    ]
-    tests["openpgp"] = [
-        test_openpgp_01_upload,
     ]
     tests["ssh"] = [
         test_ssh_01_add_key,
@@ -754,6 +787,10 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
     report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting check cache checks for {filename_targz}")
+    logging.info(f"Extracting the current revision for {filename_targz} before creating a new revision")
+    go_to_path(page, f"/compose/{project_key}/{version_key}")
+    expected_revision = latest_revision(page, project_key, version_key)
+
     logging.info("Uploading new file to create new revision")
     logging.info(f"Navigating to the upload file page for {TEST_PROJECT} {version_key}")
     go_to_path(page, f"/upload/{TEST_PROJECT}/{version_key}")
@@ -795,7 +832,10 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
     wait_for_path(page, check_link_url)
     check_result = json.loads(page.locator("pre").inner_text())
     logging.info("Verifying revision number")
-    assert check_result["revision_number"] == "00001"
+    actual_revision = check_result["revision_number"]
+    assert actual_revision == expected_revision, (
+        f"Expected cached Targz Structure result from revision {expected_revision}, got {actual_revision}"
+    )
 
 
 def test_openpgp_01_upload(page: Page, credentials: Credentials) -> None:
@@ -883,6 +923,13 @@ def test_lifecycle_03_add_file(page: Page, credentials: Credentials) -> None:
     lifecycle_03_add_file(page, credentials, version_key="0.1+candidate")
     lifecycle_03_add_file(page, credentials, version_key="0.1+preview")
     lifecycle_03_add_file(page, credentials, version_key="0.1+release")
+
+
+def test_lifecycle_03_set_local_check_cache(page: Page, credentials: Credentials) -> None:
+    lifecycle_set_local_check_cache(page, credentials, version_key="0.1+draft")
+    lifecycle_set_local_check_cache(page, credentials, version_key="0.1+candidate")
+    lifecycle_set_local_check_cache(page, credentials, version_key="0.1+preview")
+    lifecycle_set_local_check_cache(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_04_start_vote(page: Page, credentials: Credentials) -> None:
@@ -1478,6 +1525,23 @@ def wait_for_path(page: Page, path: str, timeout: int = 30000) -> None:
     page.wait_for_url(f"**{path}", timeout=timeout)
     page.wait_for_load_state()
     logging.info(f"Current URL: {page.url}")
+
+
+def wait_for_release_file(
+    page: Page, project_key: str, version_key: str, filename: str, *, max_wait_seconds: int = 60
+) -> None:
+    compose_path = f"/compose/{project_key}/{version_key}"
+    start_time = time.monotonic()
+    while True:
+        go_to_path(page, compose_path)
+        file_locator = page.locator("#files-table-container").get_by_role("cell", name=filename, exact=True)
+        if file_locator.count() > 0:
+            logging.info(f"Found file: {filename}")
+            return
+        elapsed = time.monotonic() - start_time
+        if elapsed > max_wait_seconds:
+            raise TimeoutError(f"{filename} did not appear on {compose_path} within {max_wait_seconds} seconds")
+        time.sleep(1)
 
 
 if __name__ == "__main__":

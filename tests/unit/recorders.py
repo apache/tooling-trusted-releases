@@ -70,6 +70,11 @@ class RecorderStub(checks.Recorder):
             inputs_hash=None,
         )
 
+    async def blocker(
+        self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
+    ) -> sql.CheckResult:
+        return await self._add(sql.CheckResultStatus.BLOCKER, message, data, primary_rel_path, member_rel_path)
+
     async def concern(
         self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> sql.CheckResult:
