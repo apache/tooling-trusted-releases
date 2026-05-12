@@ -102,6 +102,7 @@ class GeneralPublic:
         self.__accumulate_results(info.successes, paths_set, checker_data)
         self.__accumulate_results(info.warnings, paths_set, checker_data)
         self.__accumulate_results(info.errors, paths_set, checker_data)
+        self.__accumulate_results(info.exceptions, paths_set, checker_data)
 
         for checker, acc in sorted(checker_data.items()):
             non_success_total = sum(
@@ -135,6 +136,7 @@ class GeneralPublic:
         await self.__successes(cs)
         await self.__warnings(cs)
         await self.__errors(cs)
+        await self.__exceptions(cs)
         await self.__blocker(cs)
 
     async def __blocker(self, cs: types.ChecksSubset) -> None:
@@ -155,6 +157,17 @@ class GeneralPublic:
                 cs.info.errors.setdefault(path, []).append(error)
             else:
                 cs.info.release_level_errors.append(error)
+
+    async def __exceptions(self, cs: types.ChecksSubset) -> None:
+        exceptions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.EXCEPTION]
+        for exception in exceptions:
+            if cs.match_ignore(exception):
+                cs.info.ignored_exceptions.append(exception)
+                continue
+            if path := exception.safe_primary_rel_path:
+                cs.info.exceptions.setdefault(path, []).append(exception)
+            else:
+                cs.info.release_level_exceptions.append(exception)
 
     async def __successes(self, cs: types.ChecksSubset) -> None:
         successes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUCCESS]

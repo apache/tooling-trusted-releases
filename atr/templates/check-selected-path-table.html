@@ -6,6 +6,7 @@
         {% set has_errors = info and (info.errors[path]|length > 0) %}
         {% set has_blockers = has_errors and (info.errors[path]|selectattr("status.value", "equalto", "blocker")|list|length > 0) %}
         {% set has_warnings = info and (info.warnings[path]|length > 0) %}
+        {% set has_exceptions = info and (info.exceptions[path]|length > 0) %}
         {% set row_id = path|string|slugify %}
 
         {# Manual striping for pairs of rows #}
@@ -19,6 +20,8 @@
           {% set path_style_class = "atr-text-blocker" %}
         {% elif has_errors %}
           {% set path_style_class = "text-danger" %}
+        {% elif has_exceptions %}
+          {% set path_style_class = "text-danger" %}
         {% elif has_warnings %}
           {% set path_style_class = "text-warning" %}
         {% endif %}
@@ -27,6 +30,8 @@
         {% if has_blockers %}
           {% set icon_class = "atr-text-blocker" %}
         {% elif has_errors %}
+          {% set icon_class = "text-danger" %}
+        {% elif has_exceptions %}
           {% set icon_class = "text-danger" %}
         {% elif has_warnings %}
           {% set icon_class = "text-warning" %}
@@ -51,7 +56,7 @@
             <a href="{{ as_url(get.file.selected_path, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                title="View file {{ path }}"
                class="text-decoration-none text-reset">
-              {% if has_errors or has_warnings %}
+              {% if has_errors or has_warnings or has_exceptions %}
                 <strong><code class="{{ path_style_class }}">{{ path }}</code></strong>
               {% else %}
                 <code>{{ path }}</code>
@@ -79,6 +84,9 @@
               {% elif has_errors %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-danger"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.errors[path]|length }} {{ "error" if info.errors[path]|length == 1 else "errors" }}</a>
+              {% elif has_exceptions %}
+                <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
+                   class="btn btn-sm btn-outline-danger">Show {{ info.exceptions[path]|length }} {{ "exception" if info.exceptions[path]|length == 1 else "exceptions" }}</a>
               {% elif has_warnings %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm btn-outline-warning">Show {{ info.warnings[path]|length }} {{ "warning" if info.warnings[path]|length == 1 else "warnings" }}</a>

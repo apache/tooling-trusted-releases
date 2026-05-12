@@ -918,6 +918,23 @@ td.atr-checkbox-col {
     color: #ffffff;
 }
 
+.atr-bg-exception {
+    background-color: rgb(180 83 9 / 90%);
+    color: #ffffff;
+}
+
+.atr-cbm-deuteranopia .atr-bg-exception {
+    background-color: rgb(107 44 0 / 95%) !important;
+}
+
+.atr-cbm-protanopia .atr-bg-exception {
+    background-color: rgb(94 36 0 / 95%) !important;
+}
+
+.atr-cbm-tritanopia .atr-bg-exception {
+    background-color: rgb(180 83 9 / 90%) !important;
+}
+
 .btn.atr-btn-blocker {
     background-color: rgb(111 0 193 / 75%);
     border-color: rgb(111 0 193 / 75%);

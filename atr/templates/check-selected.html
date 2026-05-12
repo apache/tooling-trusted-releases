@@ -182,11 +182,12 @@
     </div>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>
-    {% if info.ignored_errors or info.ignored_warnings %}
+    {% if info.ignored_errors or info.ignored_warnings or info.ignored_exceptions %}
       {% set ignored_errors_count = info.ignored_errors|length %}
       {% set ignored_warnings_count = info.ignored_warnings|length %}
+      {% set ignored_exceptions_count = info.ignored_exceptions|length %}
       <p>
-        There were {{ ignored_errors_count }} {{ 'error' if ignored_errors_count == 1 else 'errors' }} and {{ ignored_warnings_count }} {{ 'warning' if ignored_warnings_count == 1 else 'warnings' }} ignored by policy set by project committee members. This does not include archive member checks.
+        There were {{ ignored_errors_count }} {{ 'error' if ignored_errors_count == 1 else 'errors' }}, {{ ignored_warnings_count }} {{ 'warning' if ignored_warnings_count == 1 else 'warnings' }} and {{ ignored_exceptions_count }} {{ 'exception' if ignored_exceptions_count == 1 else 'exceptions' }} ignored by policy set by project committee members. This does not include archive member checks.
       </p>
       <details>
         <summary>Show ignored checks</summary>
@@ -213,6 +214,17 @@
               </tr>
             {% endfor %}
             {% for ignored_result in info.ignored_warnings %}
+              <tr>
+                <td class="text-nowrap">
+                  {{ ignored_result.checker }}
+                  <br />
+                  {{ ignored_result.primary_rel_path }}
+                </td>
+                <td>{{ ignored_result.message }}</td>
+                <td class="text-nowrap">{{ ignored_result.status.value|title }}</td>
+              </tr>
+            {% endfor %}
+            {% for ignored_result in info.ignored_exceptions %}
               <tr>
                 <td class="text-nowrap">
                   {{ ignored_result.checker }}

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import collections
 import datetime
 import unittest.mock as mock
@@ -57,6 +58,24 @@ def test_checker_stats_counts_and_files_by_status():
         sql.CheckResultStatus.FAILURE: {str(path): 1},
         sql.CheckResultStatus.BLOCKER: {str(path): 1},
     }
+
+
+def test_exceptions_bucketed_into_path_info():
+    path = safe.RelPath("apache-test-1.0-source.tar.gz")
+    exception = _make_check_result(sql.CheckResultStatus.EXCEPTION, "Error", primary_rel_path=str(path))
+    release_level = _make_check_result(sql.CheckResultStatus.EXCEPTION, "Tooling failure", primary_rel_path=None)
+    info = types.PathInfo()
+    subset = types.ChecksSubset(checks=[exception, release_level], info=info, match_ignore=lambda _: False)
+    reader = _make_reader()
+    bucket_exceptions = getattr(reader, "_GeneralPublic__exceptions")
+
+    asyncio.run(bucket_exceptions(subset))
+
+    assert info.exceptions[path] == [exception]
+    assert path not in info.errors
+    assert info.release_level_exceptions == [release_level]
+    assert info.release_level_errors == []
+    assert info.ignored_exceptions == []
 
 
 def _make_check_result(
