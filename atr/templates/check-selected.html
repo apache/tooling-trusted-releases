@@ -182,12 +182,12 @@
     </div>
     <h2 id="more-actions">More actions</h2>
     <h3 id="ignored-checks" class="mt-4">Ignored checks</h3>
-    {% if info.ignored_errors or info.ignored_warnings or info.ignored_exceptions %}
-      {% set ignored_errors_count = info.ignored_errors|length %}
-      {% set ignored_warnings_count = info.ignored_warnings|length %}
+    {% if info.ignored_concerns or info.ignored_suggestions or info.ignored_exceptions %}
+      {% set ignored_concerns_count = info.ignored_concerns|length %}
+      {% set ignored_suggestions_count = info.ignored_suggestions|length %}
       {% set ignored_exceptions_count = info.ignored_exceptions|length %}
       <p>
-        There were {{ ignored_errors_count }} {{ 'error' if ignored_errors_count == 1 else 'errors' }}, {{ ignored_warnings_count }} {{ 'warning' if ignored_warnings_count == 1 else 'warnings' }} and {{ ignored_exceptions_count }} {{ 'exception' if ignored_exceptions_count == 1 else 'exceptions' }} ignored by policy set by project committee members. This does not include archive member checks.
+        There were {{ ignored_concerns_count }} {{ 'concern' if ignored_concerns_count == 1 else 'concerns' }}, {{ ignored_suggestions_count }} {{ 'suggestion' if ignored_suggestions_count == 1 else 'suggestions' }} and {{ ignored_exceptions_count }} {{ 'exception' if ignored_exceptions_count == 1 else 'exceptions' }} ignored by policy set by project committee members. This does not include archive member checks.
       </p>
       <details>
         <summary>Show ignored checks</summary>
@@ -202,7 +202,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for ignored_result in info.ignored_errors %}
+            {% for ignored_result in info.ignored_concerns %}
               <tr>
                 <td class="text-nowrap">
                   {{ ignored_result.checker }}
@@ -213,7 +213,7 @@
                 <td class="text-nowrap">{{ ignored_result.status.value|title }}</td>
               </tr>
             {% endfor %}
-            {% for ignored_result in info.ignored_warnings %}
+            {% for ignored_result in info.ignored_suggestions %}
               <tr>
                 <td class="text-nowrap">
                   {{ ignored_result.checker }}

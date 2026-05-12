@@ -456,42 +456,42 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
 
     body = htm.Block(htm.div, classes=".card-body")
 
-    pass_count = file_totals.file_after[sql.CheckResultStatus.SUCCESS]
-    warn_count = file_totals.file_after[sql.CheckResultStatus.WARNING]
-    err_count = (
-        file_totals.file_after[sql.CheckResultStatus.FAILURE]
+    note_count = file_totals.file_after[sql.CheckResultStatus.NOTE]
+    suggestion_count = file_totals.file_after[sql.CheckResultStatus.SUGGESTION]
+    issue_count = (
+        file_totals.file_after[sql.CheckResultStatus.CONCERN]
         + file_totals.file_after[sql.CheckResultStatus.BLOCKER]
         + file_totals.file_after[sql.CheckResultStatus.EXCEPTION]
     )
 
-    check_word = util.plural(pass_count, "check", include_count=False)
-    warn_word = util.plural(warn_count, "warning", include_count=False)
-    err_word = util.plural(err_count, "error", include_count=False)
+    note_word = util.plural(note_count, "note", include_count=False)
+    suggestion_word = util.plural(suggestion_count, "suggestion", include_count=False)
+    issue_word = util.plural(issue_count, "issue", include_count=False)
 
     checks_list = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
     checks_list.span(".text-success")[
         htpy.i(".bi.bi-check-circle-fill.me-2"),
-        f"{pass_count} {check_word} passed",
+        f"{note_count} {note_word}",
     ]
-    if warn_count > 0:
+    if suggestion_count > 0:
         checks_list.span(".text-warning")[
             htpy.i(".bi.bi-exclamation-triangle-fill.me-2"),
-            f"{warn_count} {warn_word}",
+            f"{suggestion_count} {suggestion_word}",
         ]
     else:
         checks_list.span(".text-muted")[
             htpy.i(".bi.bi-exclamation-triangle.me-2"),
-            "0 warnings",
+            "0 suggestions",
         ]
-    if err_count > 0:
+    if issue_count > 0:
         checks_list.span(".text-danger")[
             htpy.i(".bi.bi-x-circle-fill.me-2"),
-            f"{err_count} {err_word}",
+            f"{issue_count} {issue_word}",
         ]
     else:
         checks_list.span(".text-muted")[
             htpy.i(".bi.bi-x-circle.me-2"),
-            "0 errors",
+            "0 issues",
         ]
     body.append(checks_list.collect())
 

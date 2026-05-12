@@ -63,17 +63,17 @@ class LinkedCommittee:
 class PathInfo(schema.Strict):
     blockers: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     checker_stats: list[CheckerStats] = schema.factory(list)
-    errors: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
+    concerns: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     exceptions: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     file_types: dict[safe.RelPath, classify.FileType] = schema.factory(dict)
-    ignored_errors: list[sql.CheckResult] = schema.factory(list)
+    ignored_concerns: list[sql.CheckResult] = schema.factory(list)
     ignored_exceptions: list[sql.CheckResult] = schema.factory(list)
-    ignored_warnings: list[sql.CheckResult] = schema.factory(list)
+    ignored_suggestions: list[sql.CheckResult] = schema.factory(list)
+    notes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     release_level_blockers: list[sql.CheckResult] = schema.factory(list)
-    release_level_errors: list[sql.CheckResult] = schema.factory(list)
+    release_level_concerns: list[sql.CheckResult] = schema.factory(list)
     release_level_exceptions: list[sql.CheckResult] = schema.factory(list)
-    successes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
-    warnings: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
+    suggestions: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
 
 
 class PersonalAccessTokenSafe(schema.Strict):

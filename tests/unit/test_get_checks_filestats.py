@@ -31,9 +31,9 @@ import atr.models.sql as sql
 async def test_compute_stats_counts_by_status_before_and_after(monkeypatch: pytest.MonkeyPatch) -> None:
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
     check_results = [
-        _make_check_result(sql.CheckResultStatus.SUCCESS, "Success", str(path)),
-        _make_check_result(sql.CheckResultStatus.WARNING, "Warning", str(path)),
-        _make_check_result(sql.CheckResultStatus.FAILURE, "Failure", str(path)),
+        _make_check_result(sql.CheckResultStatus.NOTE, "Success", str(path)),
+        _make_check_result(sql.CheckResultStatus.SUGGESTION, "Warning", str(path)),
+        _make_check_result(sql.CheckResultStatus.CONCERN, "Failure", str(path)),
         _make_check_result(sql.CheckResultStatus.BLOCKER, "Blocker", str(path), "apache-test-1.0/pom.xml"),
         _make_check_result(sql.CheckResultStatus.EXCEPTION, "Exception", str(path), "apache-test-1.0/build.xml"),
     ]
@@ -48,15 +48,15 @@ async def test_compute_stats_counts_by_status_before_and_after(monkeypatch: pyte
 
     assert stats.file_before == collections.Counter(
         {
-            sql.CheckResultStatus.SUCCESS: 1,
-            sql.CheckResultStatus.WARNING: 1,
-            sql.CheckResultStatus.FAILURE: 1,
+            sql.CheckResultStatus.NOTE: 1,
+            sql.CheckResultStatus.SUGGESTION: 1,
+            sql.CheckResultStatus.CONCERN: 1,
         }
     )
     assert stats.file_after == collections.Counter(
         {
-            sql.CheckResultStatus.SUCCESS: 1,
-            sql.CheckResultStatus.FAILURE: 1,
+            sql.CheckResultStatus.NOTE: 1,
+            sql.CheckResultStatus.CONCERN: 1,
         }
     )
     assert stats.member_before == collections.Counter(
@@ -98,8 +98,8 @@ def _make_check_result(
 
 def _match_ignore(check_result: sql.CheckResult) -> bool:
     return check_result.status in (
-        sql.CheckResultStatus.SUCCESS,
-        sql.CheckResultStatus.WARNING,
+        sql.CheckResultStatus.NOTE,
+        sql.CheckResultStatus.SUGGESTION,
         sql.CheckResultStatus.EXCEPTION,
     )
 

@@ -69,28 +69,28 @@ class DistributionPlatformValue:
 
 class CheckResultStatus(enum.StrEnum):
     BLOCKER = "blocker"
+    CONCERN = "concern"
     EXCEPTION = "exception"
-    FAILURE = "failure"
-    SUCCESS = "success"
-    WARNING = "warning"
+    NOTE = "note"
+    SUGGESTION = "suggestion"
 
 
 class CheckResultStatusIgnore(enum.StrEnum):
+    CONCERN = "concern"
     EXCEPTION = "exception"
-    FAILURE = "failure"
-    WARNING = "warning"
+    SUGGESTION = "suggestion"
 
     @classmethod
     def from_form_field(cls, status: str) -> Optional["CheckResultStatusIgnore"]:
         match status:
             case "None":
                 return None
+            case "CheckResultStatusIgnore.CONCERN":
+                return cls.CONCERN
             case "CheckResultStatusIgnore.EXCEPTION":
                 return cls.EXCEPTION
-            case "CheckResultStatusIgnore.FAILURE":
-                return cls.FAILURE
-            case "CheckResultStatusIgnore.WARNING":
-                return cls.WARNING
+            case "CheckResultStatusIgnore.SUGGESTION":
+                return cls.SUGGESTION
             case _:
                 raise ValueError(f"Invalid status: {status}")
 
@@ -1293,7 +1293,9 @@ class LifecycleEvent(sqlmodel.SQLModel, table=True):
         default=None, foreign_key="projectcycle.cycle_key", **example("example-default")
     )
 
-    version_key: str | None = sqlmodel.Field(default=None, foreign_key="release.key", **example("example-0.0.1"))
+    version_key: str | None = sqlmodel.Field(
+        default=None, foreign_key="release.key", ondelete="CASCADE", **example("example-0.0.1")
+    )
 
     event: LifecycleEventType = sqlmodel.Field(**example(LifecycleEventType.RELEASE))
 
@@ -1397,7 +1399,7 @@ class CheckResult(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
-    status: CheckResultStatus = sqlmodel.Field(default=CheckResultStatus.SUCCESS, **example(CheckResultStatus.SUCCESS))
+    status: CheckResultStatus = sqlmodel.Field(default=CheckResultStatus.NOTE, **example(CheckResultStatus.NOTE))
     message: str = sqlmodel.Field(**example("sha512 matches for apache-example-0.0.1/pom.xml"))
     data: Any = sqlmodel.Field(
         sa_column=sqlalchemy.Column(sqlalchemy.JSON), **example({"expected": "...", "found": "..."})
@@ -1426,7 +1428,7 @@ class CheckResultIgnore(sqlmodel.SQLModel, table=True):
     member_rel_path_glob: str | None = sqlmodel.Field(**example("apache-example-0.0.1/*.xml"))
     status: CheckResultStatusIgnore | None = sqlmodel.Field(
         default=None,
-        **example(CheckResultStatusIgnore.FAILURE),
+        **example(CheckResultStatusIgnore.CONCERN),
     )
     message_glob: str | None = sqlmodel.Field(**example("sha512 matches for apache-example-0.0.1/*.xml"))
 

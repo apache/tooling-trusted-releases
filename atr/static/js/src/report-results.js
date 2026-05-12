@@ -28,6 +28,14 @@ function toggleAllDetails() {
 	});
 }
 
+const statusButtonClasses = {
+	note: { filled: "btn-success", outline: "btn-outline-success" },
+	suggestion: { filled: "btn-warning", outline: "btn-outline-warning" },
+	concern: { filled: "btn-danger", outline: "btn-outline-danger" },
+	blocker: { filled: "atr-btn-blocker", outline: "atr-btn-outline-blocker" },
+	exception: { filled: "btn-danger", outline: "btn-outline-danger" },
+};
+
 function toggleStatusVisibility(type, status) {
 	const btn = document.getElementById(`btn-toggle-${type}-${status}`);
 	const targets = document.querySelectorAll(
@@ -42,17 +50,13 @@ function toggleStatusVisibility(type, status) {
 			el.classList.add("atr-hide");
 		}
 	});
-	let filledClass;
-	let outlineClass;
-	if (status === "blocker") {
-		filledClass = "atr-btn-blocker";
-		outlineClass = "atr-btn-outline-blocker";
-	} else {
-		const bsSt =
-			status === "failure" || status === "exception" ? "danger" : status;
-		filledClass = `btn-${bsSt}`;
-		outlineClass = `btn-outline-${bsSt}`;
+	const mapping = statusButtonClasses[status];
+	if (!mapping) {
+		console.error("Unknown status:", status);
+		return;
 	}
+	const filledClass = mapping.filled;
+	const outlineClass = mapping.outline;
 	const cntMatch = btn.textContent.match(/\((\d+)\)/);
 	if (!cntMatch) {
 		console.error("Button text regex mismatch for:", btn.textContent);

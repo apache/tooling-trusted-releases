@@ -101,7 +101,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             return None
         extracted_dir = await checks.resolve_archive_dir(args)
         if extracted_dir is None:
-            await recorder.failure(
+            await recorder.concern(
                 "Extracted archive tree is not available",
                 {"rel_path": args.primary_rel_path},
             )
@@ -113,20 +113,20 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             await aiofiles.os.makedirs(github_dir, exist_ok=True)
             checkout_dir = await _checkout_github_source(payload, github_dir)
             if checkout_dir is None:
-                await recorder.failure(
+                await recorder.concern(
                     "Failed to clone GitHub repository for comparison",
                     {"repo_url": f"https://github.com/{payload.repository}.git", "sha": payload.sha},
                 )
                 return None
             archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
             if archive_root_result.root is None:
-                await recorder.failure(
+                await recorder.concern(
                     "Could not determine archive root directory for comparison",
                     {"archive_path": str(primary_abs_path), "extract_dir": str(extracted_dir)},
                 )
                 return None
             if archive_root_result.extra_entries:
-                await recorder.failure(
+                await recorder.concern(
                     "Archive contains entries outside the root directory",
                     {
                         "archive_path": str(primary_abs_path),
@@ -140,7 +140,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             try:
                 comparison = await _compare_trees(github_dir, archive_content_dir)
             except RuntimeError as exc:
-                await recorder.failure(
+                await recorder.concern(
                     "Failed to compare source tree against GitHub checkout",
                     {"error": str(exc)},
                 )
@@ -154,13 +154,13 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
                     invalid_filtered.add(path)
             if invalid_filtered:
                 invalid_list = sorted(invalid_filtered)
-                await recorder.failure(
+                await recorder.concern(
                     "Source archive contains files not in GitHub checkout or with different content",
                     {"invalid_count": len(invalid_list), "invalid_paths": invalid_list},
                 )
                 return None
             repo_only_list = sorted(comparison.repo_only)
-            await recorder.success(
+            await recorder.note(
                 "Source archive is a valid subset of GitHub checkout",
                 {
                     "repo_only_count": len(repo_only_list),

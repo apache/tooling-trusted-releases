@@ -56,7 +56,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     # https://incubator.apache.org/policy/incubation.html
     base_recorder = await args.recorder(CHECK_VERSION)
 
-    recorder_errors = await checks.Recorder.create(
+    recorder_problems = await checks.Recorder.create(
         checker=checks.function_key(check) + "_errors",
         checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
@@ -66,7 +66,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         primary_rel_path=None,
         afresh=True,
     )
-    recorder_warnings = await checks.Recorder.create(
+    recorder_suggestions = await checks.Recorder.create(
         checker=checks.function_key(check) + "_warnings",
         checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
@@ -76,7 +76,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         primary_rel_path=None,
         afresh=True,
     )
-    recorder_success = await checks.Recorder.create(
+    recorder_notes = await checks.Recorder.create(
         checker=checks.function_key(check) + "_success",
         checker_version=CHECK_VERSION,
         inputs_hash=base_recorder.input_hash or "",
@@ -88,7 +88,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     )
 
     # As primary_rel_path is None, the base path is the release candidate draft directory
-    if not (base_path := await recorder_success.abs_path()):
+    if not (base_path := await recorder_notes.abs_path()):
         return
 
     if not await aiofiles.os.path.isdir(base_path):
@@ -105,14 +105,14 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             args.asf_uid,
             base_path,
             relative_path,
-            recorder_errors,
-            recorder_warnings,
-            recorder_success,
+            recorder_problems,
+            recorder_suggestions,
+            recorder_notes,
             relative_paths_set,
             is_podling,
         )
 
-    await _check_source_artifact_present(args, recorder_errors, relative_paths, base_path)
+    await _check_source_artifact_present(args, recorder_problems, relative_paths, base_path)
 
     return None
 
@@ -199,9 +199,9 @@ async def _check_path_process_single(  # noqa: C901
     asf_uid: str,
     base_path: safe.StatePath,
     relative_path: safe.RelPath,
-    recorder_errors: checks.Recorder,
-    recorder_warnings: checks.Recorder,
-    recorder_success: checks.Recorder,
+    recorder_problems: checks.Recorder,
+    recorder_suggestions: checks.Recorder,
+    recorder_notes: checks.Recorder,
     relative_paths: set[str],
     is_podling: bool,
 ) -> None:
@@ -224,9 +224,9 @@ async def _check_path_process_single(  # noqa: C901
         errors.append("The KEYS file should be uploaded via the 'Keys' section, not included in the artifact bundle")
     if path.name in analysis.DISALLOWED_FILENAMES:
         await _record(
-            recorder_errors,
-            recorder_warnings,
-            recorder_success,
+            recorder_problems,
+            recorder_suggestions,
+            recorder_notes,
             relative_path,
             errors,
             [f"Disallowed file: {path.name}"],
@@ -235,9 +235,9 @@ async def _check_path_process_single(  # noqa: C901
         return
     elif path.suffix in analysis.DISALLOWED_SUFFIXES:
         await _record(
-            recorder_errors,
-            recorder_warnings,
-            recorder_success,
+            recorder_problems,
+            recorder_suggestions,
+            recorder_notes,
             relative_path,
             errors,
             [f"Disallowed file type: {path.suffix}"],
@@ -285,9 +285,9 @@ async def _check_path_process_single(  # noqa: C901
             errors.append(f"Unknown top level file: {path.name}")
 
     await _record(
-        recorder_errors,
-        recorder_warnings,
-        recorder_success,
+        recorder_problems,
+        recorder_suggestions,
+        recorder_notes,
         relative_path,
         errors,
         blockers,
@@ -297,7 +297,7 @@ async def _check_path_process_single(  # noqa: C901
 
 async def _check_source_artifact_present(
     args: checks.FunctionArguments,
-    recorder_errors: checks.Recorder,
+    recorder_problems: checks.Recorder,
     relative_paths: list[safe.RelPath],
     base_path: safe.StatePath,
 ) -> None:
@@ -349,7 +349,7 @@ async def _check_source_artifact_present(
     )
 
     if not source_artifacts:
-        await recorder_errors.failure(
+        await recorder_problems.concern(
             "Release must contain at least one source release artifact",
             {},
             primary_rel_path=None,
@@ -357,22 +357,22 @@ async def _check_source_artifact_present(
 
 
 async def _record(
-    recorder_errors: checks.Recorder,
-    recorder_warnings: checks.Recorder,
-    recorder_success: checks.Recorder,
+    recorder_problems: checks.Recorder,
+    recorder_suggestions: checks.Recorder,
+    recorder_notes: checks.Recorder,
     relative_path: safe.RelPath,
     errors: list[str],
     blockers: list[str],
     warnings: list[str],
 ) -> None:
     for error in errors:
-        await recorder_errors.failure(f"{relative_path}: {error}", {}, primary_rel_path=relative_path)
+        await recorder_problems.concern(f"{relative_path}: {error}", {}, primary_rel_path=relative_path)
     for item in blockers:
-        await recorder_errors.blocker(f"{relative_path}: {item}", {}, primary_rel_path=relative_path)
+        await recorder_problems.blocker(f"{relative_path}: {item}", {}, primary_rel_path=relative_path)
     for warning in warnings:
-        await recorder_warnings.warning(f"{relative_path}: {warning}", {}, primary_rel_path=relative_path)
+        await recorder_suggestions.suggestion(f"{relative_path}: {warning}", {}, primary_rel_path=relative_path)
     if not (errors or blockers or warnings):
-        await recorder_success.success(
+        await recorder_notes.note(
             f"{relative_path}: Path structure and naming conventions conform to policy",
             {},
             primary_rel_path=relative_path,

@@ -26,23 +26,23 @@ import atr.models.sql as sql
 import atr.storage.types as types
 import atr.util as util
 
-_NON_SUCCESS_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
-    sql.CheckResultStatus.WARNING,
-    sql.CheckResultStatus.FAILURE,
+_NON_NOTE_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
+    sql.CheckResultStatus.SUGGESTION,
+    sql.CheckResultStatus.CONCERN,
     sql.CheckResultStatus.BLOCKER,
     sql.CheckResultStatus.EXCEPTION,
 )
 
 _STATUS_BADGE_CLASSES: Final[dict[sql.CheckResultStatus, str]] = {
-    sql.CheckResultStatus.WARNING: ".bg-warning.text-dark",
-    sql.CheckResultStatus.FAILURE: ".bg-danger",
+    sql.CheckResultStatus.SUGGESTION: ".bg-warning.text-dark",
+    sql.CheckResultStatus.CONCERN: ".bg-danger",
     sql.CheckResultStatus.BLOCKER: ".atr-bg-blocker",
     sql.CheckResultStatus.EXCEPTION: ".atr-bg-exception",
 }
 
 _STATUS_LABELS: Final[dict[sql.CheckResultStatus, str]] = {
-    sql.CheckResultStatus.WARNING: "warning",
-    sql.CheckResultStatus.FAILURE: "error",
+    sql.CheckResultStatus.SUGGESTION: "suggestion",
+    sql.CheckResultStatus.CONCERN: "concern",
     sql.CheckResultStatus.BLOCKER: "blocker",
     sql.CheckResultStatus.EXCEPTION: "exception",
 }
@@ -55,7 +55,7 @@ def render_checks_summary(
         return None
     if (
         (not info.checker_stats)
-        and (not info.release_level_errors)
+        and (not info.release_level_concerns)
         and (not info.release_level_exceptions)
         and (not info.release_level_blockers)
     ):
@@ -67,7 +67,7 @@ def render_checks_summary(
     body = htm.Block(htm.div, classes=".card-body")
 
     release_problems_by_checker: dict[str, list[sql.CheckResult]] = {}
-    for result in info.release_level_errors:
+    for result in info.release_level_concerns:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
     for result in info.release_level_exceptions:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
@@ -105,7 +105,7 @@ def _render_checker_entry(
     release_counts = collections.Counter(p.status for p in release_problems)
 
     summary_content: list[htm.Element | str] = []
-    for status in _NON_SUCCESS_STATUSES:
+    for status in _NON_NOTE_STATUSES:
         total = counts[status] + release_counts[status]
         if total > 0:
             summary_content.append(htpy.span(f".badge{_STATUS_BADGE_CLASSES[status]}.me-2")[str(total)])
@@ -140,12 +140,12 @@ def _render_stat_files(
     version_key: safe.VersionKey,
 ) -> None:
     all_files: set[str] = set()
-    for status in _NON_SUCCESS_STATUSES:
+    for status in _NON_NOTE_STATUSES:
         all_files |= set(stat.files.get(status, {}))
     for file_path in sorted(all_files):
         report_url = f"/report/{project_key!s}/{version_key!s}/{file_path}"
         file_content: list[htm.Element | str] = []
-        for status in _NON_SUCCESS_STATUSES:
+        for status in _NON_NOTE_STATUSES:
             count = stat.files.get(status, {}).get(file_path, 0)
             if count > 0:
                 badge_class = _STATUS_BADGE_CLASSES[status]

@@ -39,7 +39,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     algorithm = hash_abs_path.path.suffix.lstrip(".")
     if algorithm not in {"sha256", "sha512"}:
-        await recorder.failure("Unsupported hash algorithm", {"algorithm": algorithm})
+        await recorder.concern("Unsupported hash algorithm", {"algorithm": algorithm})
         return None
 
     # Remove the hash file suffix to get the artifact path
@@ -79,7 +79,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         expected_hash = expected_hash.lower()
 
         if secrets.compare_digest(computed_hash, expected_hash):
-            await recorder.success(
+            await recorder.note(
                 f"Hash ({algorithm}) matches expected value",
                 {"computed_hash": computed_hash, "expected_hash": expected_hash},
             )
@@ -89,5 +89,5 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
                 {"computed_hash": computed_hash, "expected_hash": expected_hash},
             )
     except Exception as e:
-        await recorder.failure("Unable to verify hash", {"error": str(e)})
+        await recorder.concern("Unable to verify hash", {"error": str(e)})
     return None

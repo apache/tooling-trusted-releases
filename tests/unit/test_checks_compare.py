@@ -213,17 +213,17 @@ class RecorderStub(atr.tasks.checks.Recorder):
             member_rel_path=None,
             afresh=False,
         )
-        self.failure_calls: list[tuple[str, object]] = []
-        self.success_calls: list[tuple[str, object]] = []
+        self.concern_calls: list[tuple[str, object]] = []
+        self.note_calls: list[tuple[str, object]] = []
         self._is_source = is_source
 
     async def primary_path_is_source(self) -> bool:
         return self._is_source
 
-    async def failure(
+    async def concern(
         self, message: str, data: object, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> atr.models.sql.CheckResult:
-        self.failure_calls.append((message, data))
+        self.concern_calls.append((message, data))
         return atr.models.sql.CheckResult(
             release_key=self.release_key,
             revision_number=self.revision_number,
@@ -232,16 +232,16 @@ class RecorderStub(atr.tasks.checks.Recorder):
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
-            status=atr.models.sql.CheckResultStatus.FAILURE,
+            status=atr.models.sql.CheckResultStatus.CONCERN,
             message=message,
             data=data,
             cached=False,
         )
 
-    async def success(
+    async def note(
         self, message: str, data: object, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> atr.models.sql.CheckResult:
-        self.success_calls.append((message, data))
+        self.note_calls.append((message, data))
         return atr.models.sql.CheckResult(
             release_key=None,
             revision_number=None,
@@ -250,7 +250,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
             primary_rel_path=primary_rel_path or self.primary_rel_path,
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
-            status=atr.models.sql.CheckResultStatus.SUCCESS,
+            status=atr.models.sql.CheckResultStatus.NOTE,
             message=message,
             data=data,
             cached=False,
@@ -660,8 +660,8 @@ async def test_source_trees_creates_temp_workspace_and_cleans_up(
     assert checkout_dir.parent.path.name.startswith("trees-")
     assert await aiofiles.os.path.exists(tmp_root)
     assert not await aiofiles.os.path.exists(checkout_dir.parent)
-    assert len(recorder.success_calls) == 1
-    message, data = recorder.success_calls[0]
+    assert len(recorder.note_calls) == 1
+    message, data = recorder.note_calls[0]
     assert message == "Source archive is a valid subset of GitHub checkout"
     assert isinstance(data, dict)
     assert data["repo_only_count"] == 2
@@ -710,8 +710,8 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.failure_calls) == 0
-    assert len(recorder.success_calls) == 1
+    assert len(recorder.concern_calls) == 0
+    assert len(recorder.note_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -738,9 +738,9 @@ async def test_source_trees_records_failure_when_archive_has_invalid_files(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.failure_calls) == 1
-    assert len(recorder.success_calls) == 0
-    message, data = recorder.failure_calls[0]
+    assert len(recorder.concern_calls) == 1
+    assert len(recorder.note_calls) == 0
+    message, data = recorder.concern_calls[0]
     assert message == "Source archive contains files not in GitHub checkout or with different content"
     assert isinstance(data, dict)
     assert data["invalid_count"] == 2
@@ -769,8 +769,8 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.failure_calls) == 1
-    message, data = recorder.failure_calls[0]
+    assert len(recorder.concern_calls) == 1
+    message, data = recorder.concern_calls[0]
     assert message == "Could not determine archive root directory for comparison"
     assert isinstance(data, dict)
 
@@ -794,8 +794,8 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.failure_calls) == 1
-    message, data = recorder.failure_calls[0]
+    assert len(recorder.concern_calls) == 1
+    message, data = recorder.concern_calls[0]
     assert message == "Extracted archive tree is not available"
     assert isinstance(data, dict)
 
@@ -822,8 +822,8 @@ async def test_source_trees_records_failure_when_extra_entries_in_archive(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.failure_calls) == 1
-    message, data = recorder.failure_calls[0]
+    assert len(recorder.concern_calls) == 1
+    message, data = recorder.concern_calls[0]
     assert message == "Archive contains entries outside the root directory"
     assert isinstance(data, dict)
     assert data["root"] == "artifact"
@@ -855,8 +855,8 @@ async def test_source_trees_reports_repo_only_sample_limited_to_five(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.success_calls) == 1
-    _message, data = recorder.success_calls[0]
+    assert len(recorder.note_calls) == 1
+    _message, data = recorder.note_calls[0]
     assert isinstance(data, dict)
     assert data["repo_only_count"] == 10
     assert len(data["repo_only_paths_sample"]) == 5

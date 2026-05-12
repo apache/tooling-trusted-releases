@@ -44,7 +44,7 @@ def test_files_binary_license_notice_in_subdir(tmp_path):
     (meta_inf / "NOTICE").path.write_text(NOTICE_VALID)
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
-    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
 def test_files_binary_license_txt_notice_txt_nested(tmp_path):
@@ -56,7 +56,7 @@ def test_files_binary_license_txt_notice_txt_nested(tmp_path):
     (nested / "NOTICE.txt").path.write_text(NOTICE_VALID)
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
-    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
 def test_files_binary_missing_license(tmp_path):
@@ -92,7 +92,7 @@ def test_files_binary_multiple_license_no_failure(tmp_path):
     (meta_inf / "NOTICE").path.write_text(NOTICE_VALID)
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=True))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
-    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
 def test_files_license_accepts_https_urls(tmp_path):
@@ -105,7 +105,7 @@ def test_files_license_accepts_https_urls(tmp_path):
     (root / "NOTICE").path.write_text(NOTICE_VALID)
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
-    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
 def test_files_missing_cache_dir():
@@ -113,7 +113,7 @@ def test_files_missing_cache_dir():
         license._files_check_core_logic(safe.StatePath(pathlib.Path("/nonexistent")), is_podling=False, is_binary=False)
     )
     assert len(results) == 1
-    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert results[0].status == sql.CheckResultStatus.CONCERN
     assert "not available" in results[0].message.lower()
 
 
@@ -125,7 +125,7 @@ def test_files_multiple_root_dirs(tmp_path):
     (cache_dir / "root-b").path.mkdir()
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     assert len(results) >= 1
-    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert results[0].status == sql.CheckResultStatus.CONCERN
     assert "root directory" in results[0].message.lower()
 
 
@@ -136,7 +136,7 @@ def test_files_no_root_dirs(tmp_path):
     (cache_dir / "LICENSE").path.write_text("stray file")
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     assert len(results) >= 1
-    assert results[0].status == sql.CheckResultStatus.FAILURE
+    assert results[0].status == sql.CheckResultStatus.CONCERN
     assert "0" in results[0].message
 
 
@@ -158,7 +158,7 @@ def test_files_single_root_with_stray_top_level_file(tmp_path):
     (cache_dir / "stray.txt").path.write_text("ignored")
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
-    assert sql.CheckResultStatus.SUCCESS in statuses
+    assert sql.CheckResultStatus.NOTE in statuses
 
 
 def test_files_source_nested_license_notice_ignored(tmp_path):
@@ -183,7 +183,7 @@ def test_files_valid_license_and_notice(tmp_path):
     (root / "NOTICE").path.write_text(NOTICE_VALID)
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     artifact_results = [r for r in results if isinstance(r, license.ArtifactResult)]
-    assert all(r.status == sql.CheckResultStatus.SUCCESS for r in artifact_results)
+    assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
 def test_headers_check_data_fields_match_model(tmp_path):

@@ -31,7 +31,7 @@ async def test_check_accepts_freebsd_sha512_format(tmp_path: pathlib.Path) -> No
 
     assert recorder.messages == [
         (
-            sql.CheckResultStatus.SUCCESS.value,
+            sql.CheckResultStatus.NOTE.value,
             "Hash (sha512) matches expected value",
             {"computed_hash": expected_hash, "expected_hash": expected_hash},
         )
@@ -45,7 +45,7 @@ async def test_check_retains_hash_filename_format(tmp_path: pathlib.Path) -> Non
 
     assert recorder.messages == [
         (
-            sql.CheckResultStatus.SUCCESS.value,
+            sql.CheckResultStatus.NOTE.value,
             "Hash (sha512) matches expected value",
             {"computed_hash": expected_hash, "expected_hash": expected_hash},
         )

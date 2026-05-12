@@ -147,7 +147,7 @@ class Recorder:
             #     await self.clear(primary_rel_path=primary_rel_path, member_rel_path=member_rel_path)
 
         if member_rel_path is not None:
-            if status != sql.CheckResultStatus.SUCCESS:
+            if status != sql.CheckResultStatus.NOTE:
                 self.member_problems[status] = self.member_problems.get(status, 0) + 1
 
         result = sql.CheckResult(
@@ -269,6 +269,22 @@ class Recorder:
         )
         return result
 
+    async def concern(
+        self,
+        message: str,
+        data: Any,
+        primary_rel_path: safe.RelPath | None = None,
+        member_rel_path: str | None = None,
+    ) -> sql.CheckResult:
+        result = await self._add(
+            sql.CheckResultStatus.CONCERN,
+            message,
+            data,
+            primary_rel_path=primary_rel_path,
+            member_rel_path=member_rel_path,
+        )
+        return result
+
     async def exception(
         self,
         message: str,
@@ -285,7 +301,7 @@ class Recorder:
         )
         return result
 
-    async def failure(
+    async def note(
         self,
         message: str,
         data: Any,
@@ -293,7 +309,7 @@ class Recorder:
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
-            sql.CheckResultStatus.FAILURE,
+            sql.CheckResultStatus.NOTE,
             message,
             data,
             primary_rel_path=primary_rel_path,
@@ -301,7 +317,7 @@ class Recorder:
         )
         return result
 
-    async def success(
+    async def suggestion(
         self,
         message: str,
         data: Any,
@@ -309,23 +325,7 @@ class Recorder:
         member_rel_path: str | None = None,
     ) -> sql.CheckResult:
         result = await self._add(
-            sql.CheckResultStatus.SUCCESS,
-            message,
-            data,
-            primary_rel_path=primary_rel_path,
-            member_rel_path=member_rel_path,
-        )
-        return result
-
-    async def warning(
-        self,
-        message: str,
-        data: Any,
-        primary_rel_path: safe.RelPath | None = None,
-        member_rel_path: str | None = None,
-    ) -> sql.CheckResult:
-        result = await self._add(
-            sql.CheckResultStatus.WARNING,
+            sql.CheckResultStatus.SUGGESTION,
             message,
             data,
             primary_rel_path=primary_rel_path,

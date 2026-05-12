@@ -41,7 +41,7 @@ async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
+    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
 
@@ -53,12 +53,12 @@ async def test_blocker_with_path_goes_to_blockers():
     cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
-    assert len(info.release_level_errors) == 0
+    assert len(info.release_level_concerns) == 0
     assert len(info.release_level_blockers) == 0
     path = safe.RelPath("some-file.tar.gz")
     assert path in info.blockers
     assert info.blockers[path][0] is result
-    assert path not in info.errors
+    assert path not in info.concerns
 
 
 @pytest.mark.asyncio
@@ -70,18 +70,18 @@ async def test_blocker_without_path_goes_to_release_level_blockers():
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
     assert len(info.release_level_blockers) == 1
     assert info.release_level_blockers[0] is result
-    assert len(info.release_level_errors) == 0
+    assert len(info.release_level_concerns) == 0
 
 
 @pytest.mark.asyncio
-async def test_failure_without_path_goes_to_release_level_errors():
+async def test_concern_without_path_goes_to_release_level_concerns():
     info = types.PathInfo()
-    result = _make_check_result(sql.CheckResultStatus.FAILURE, "Some failure")
+    result = _make_check_result(sql.CheckResultStatus.CONCERN, "Some failure")
     cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
-    await reader._GeneralPublic__errors(cs)  # type: ignore[attr-defined]
-    assert len(info.release_level_errors) == 1
-    assert info.release_level_errors[0] is result
+    await reader._GeneralPublic__concerns(cs)  # type: ignore[attr-defined]
+    assert len(info.release_level_concerns) == 1
+    assert info.release_level_concerns[0] is result
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,7 @@ async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.Monke
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -117,7 +117,7 @@ async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPa
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pyt
         safe.RelPath("apache-test-1.0-bin.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
+    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
 
@@ -150,7 +150,7 @@ async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch:
         safe.RelPath("my-project-1.0.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -167,7 +167,7 @@ async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: py
         safe.RelPath("my-project-1.0.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_fallback_to_classify_when_no_attestable(monkeypatch: pytest.Monke
         safe.RelPath("apache-test-1.0-source.tar.gz.sha512"),
     ]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
+    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
 
@@ -209,10 +209,10 @@ def test_render_checks_summary_returns_none_when_no_errors():
 def test_render_checks_summary_shows_release_level_errors():
     info = types.PathInfo()
     result = _make_check_result(
-        sql.CheckResultStatus.FAILURE,
+        sql.CheckResultStatus.CONCERN,
         "Release must contain at least one source release artifact",
     )
-    info.release_level_errors.append(result)
+    info.release_level_concerns.append(result)
     element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is not None
 
@@ -228,7 +228,7 @@ async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    assert not any(s == "failure" for s, _, _ in recorder.messages)
+    assert not any(s == "concern" for s, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -241,7 +241,7 @@ async def test_source_classified_non_artifact_still_records_failure(monkeypatch:
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session(classifications))
     relative_paths = [safe.RelPath(p) for p in classifications]
     await paths._check_source_artifact_present(args, recorder, relative_paths, safe.StatePath(tmp_path))
-    failures = [(s, m) for s, m, _ in recorder.messages if s == "failure"]
+    failures = [(s, m) for s, m, _ in recorder.messages if s == "concern"]
     assert len(failures) == 1
     assert "source release artifact" in failures[0][1]
 

@@ -78,45 +78,45 @@ def test_member_status_toggle_buttons_exist(page_report: Page, member_rows: Loca
     expect(toggle_buttons.first).to_be_attached()
 
 
+def test_primary_note_toggle_shows_hidden_rows(
+    page_report: Page,
+    primary_note_toggle: Locator,
+    primary_note_rows: Locator,
+) -> None:
+    """Clicking the primary success toggle should show hidden success rows."""
+    primary_note_toggle.click()
+
+    expect(primary_note_rows.first).not_to_have_class(re.compile(r"atr-hide"))
+
+
 def test_primary_status_toggle_buttons_exist(page_report: Page) -> None:
     """At least one primary status toggle button should exist."""
     toggle_buttons = page_report.locator(".page-toggle-status[data-type='primary']")
     expect(toggle_buttons.first).to_be_attached()
 
 
-def test_primary_success_toggle_shows_hidden_rows(
-    page_report: Page,
-    primary_success_toggle: Locator,
-    primary_success_rows: Locator,
-) -> None:
-    """Clicking the primary success toggle should show hidden success rows."""
-    primary_success_toggle.click()
-
-    expect(primary_success_rows.first).not_to_have_class(re.compile(r"atr-hide"))
-
-
 def test_primary_toggle_button_style_changes(
     page_report: Page,
-    primary_success_toggle: Locator,
+    primary_note_toggle: Locator,
 ) -> None:
     """Clicking a primary toggle button should change its style."""
-    expect(primary_success_toggle).to_have_class(re.compile(r"btn-outline-success"))
+    expect(primary_note_toggle).to_have_class(re.compile(r"btn-outline-success"))
 
-    primary_success_toggle.click()
+    primary_note_toggle.click()
 
-    expect(primary_success_toggle).to_have_class(re.compile(r"btn-success"))
-    expect(primary_success_toggle).not_to_have_class(re.compile(r"btn-outline-success"))
+    expect(primary_note_toggle).to_have_class(re.compile(r"btn-success"))
+    expect(primary_note_toggle).not_to_have_class(re.compile(r"btn-outline-success"))
 
 
 def test_primary_toggle_button_text_changes(
     page_report: Page,
-    primary_success_toggle: Locator,
+    primary_note_toggle: Locator,
 ) -> None:
     """Clicking a primary toggle button should change its text."""
-    btn_span = primary_success_toggle.locator("span")
+    btn_span = primary_note_toggle.locator("span")
     expect(btn_span).to_have_text("Show")
 
-    primary_success_toggle.click()
+    primary_note_toggle.click()
 
     expect(btn_span).to_have_text("Hide")
 
@@ -127,7 +127,7 @@ def test_row_striping_updates_after_filter(page_report: Page) -> None:
         const tbody = document.querySelector('.atr-result-member').closest('tbody');
         for (const path of ['synth/alpha.py', 'synth/beta.py', 'synth/gamma.py']) {
             const tr = document.createElement('tr');
-            tr.className = 'atr-result-member atr-result-status-success';
+            tr.className = 'atr-result-member atr-result-status-note';
             const td = document.createElement('td');
             td.textContent = path;
             tr.appendChild(td);

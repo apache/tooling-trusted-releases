@@ -175,7 +175,7 @@ class IgnoreAddArgs(schema.Strict):
     checker_glob: str | None = schema.default_example(None, "atr.tasks.checks.license.files")
     primary_rel_path_glob: str | None = schema.default_example(None, "apache-example-0.0.1-*.tar.gz")
     member_rel_path_glob: str | None = schema.default_example(None, "apache-example-0.0.1/*.xml")
-    status: sql.CheckResultStatusIgnore | None = schema.default_example(None, sql.CheckResultStatusIgnore.FAILURE)
+    status: sql.CheckResultStatusIgnore | None = schema.default_example(None, sql.CheckResultStatusIgnore.CONCERN)
     message_glob: str | None = schema.default_example(None, "sha512 matches for apache-example-0.0.1/*.xml")
 
     @pydantic.model_validator(mode="after")

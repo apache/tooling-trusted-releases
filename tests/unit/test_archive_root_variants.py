@@ -43,8 +43,8 @@ async def test_targz_structure_accepts_npm_pack_root(tmp_path: pathlib.Path) -> 
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
-    assert not any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.NOTE.value for status, _, _ in recorder.messages)
+    assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ async def test_targz_structure_accepts_source_release_suffix_variant(tmp_path: p
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.NOTE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -66,7 +66,7 @@ async def test_targz_structure_accepts_source_suffix_variant(tmp_path: pathlib.P
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.NOTE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -77,7 +77,7 @@ async def test_targz_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.SUCCESS.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.NOTE.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -87,7 +87,7 @@ async def test_targz_structure_fails_when_cache_unavailable(tmp_path: pathlib.Pa
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=None)):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
     assert any("extracted archive tree is not available" in message.lower() for _, message, _ in recorder.messages)
 
 
@@ -105,7 +105,7 @@ async def test_targz_structure_rejects_npm_pack_filename_mismatch(tmp_path: path
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
     assert any("npm pack layout detected" in message for _, message, _ in recorder.messages)
 
 
@@ -122,7 +122,7 @@ async def test_targz_structure_rejects_package_root_without_package_json(tmp_pat
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -133,7 +133,7 @@ async def test_targz_structure_rejects_source_root_when_filename_has_no_suffix(t
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_targz_structure_rejects_source_root_when_filename_has_src_suffix(
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_targz_structure_rejects_src_root_when_filename_has_no_suffix(tmp_
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -166,7 +166,7 @@ async def test_targz_structure_rejects_src_root_when_filename_has_source_suffix(
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -179,7 +179,7 @@ async def test_targz_structure_rejects_symlink_root(tmp_path: pathlib.Path) -> N
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 @pytest.mark.asyncio
@@ -197,7 +197,7 @@ async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.FAILURE.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
 def test_zipformat_structure_accepts_bin_suffix_variant(tmp_path: pathlib.Path) -> None:

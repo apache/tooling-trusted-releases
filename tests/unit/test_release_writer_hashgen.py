@@ -171,7 +171,7 @@ async def test_signature_provenance_metadata_for_filters_unknown_fields():
     result = SimpleNamespace(
         message="Signature verified successfully",
         revision_number="00005",
-        status=sql.CheckResultStatus.SUCCESS,
+        status=sql.CheckResultStatus.NOTE,
         data={
             "fingerprint": "ABCDEF",
             "key_id": "Not available",
@@ -239,7 +239,7 @@ async def test_signature_provenance_metadata_for_requires_successful_check():
     result = SimpleNamespace(
         message="No valid signature found",
         revision_number="00005",
-        status=sql.CheckResultStatus.FAILURE,
+        status=sql.CheckResultStatus.CONCERN,
         data={},
     )
     session = CheckResultSession([result])
@@ -256,7 +256,7 @@ async def test_signature_provenance_metadata_for_requires_successful_check():
                 signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
             )
     assert log_info_mock.call_count == 1
-    assert "status=failure" in log_info_mock.call_args.args[0]
+    assert "status=concern" in log_info_mock.call_args.args[0]
 
 
 def _make_participant(

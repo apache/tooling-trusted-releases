@@ -30,11 +30,11 @@ Project policy tells ATR which artifacts are source artifacts and which are bina
 
 ## Understanding check results and ignores
 
-Each check result has a status of success, warning, failure, or exception. Success indicates that the check completed without issues. Warning indicates a potential policy concern that needs review. Failure indicates a clear problem such as a missing file, invalid signature, or invalid license. Exception indicates that the check could not complete due to some unexpected internal ATR error.
+Each check result has a status of note, suggestion, concern, blocker, or exception. A note indicates that the check ran and has nothing substantial to report. A suggestion indicates a structural or recommendation difference that release managers may consider but is not a policy violation. A concern indicates that ATR could not be certain about a condition and the release manager must investigate. A blocker indicates that a mandatory policy condition was violated and the release cannot proceed. An exception indicates that the check could not complete due to some unexpected internal ATR error.
 
 If certain checks are producing false positives, or outcomes that you'd like to ignore for reasons particular to your project, then you can ignore them using special rules. Please try to minimise the use of such rules. If you would like checks to change for all projects, you can file an ATR issue.
 
-Ignore rules match on the checker key and other fields. Only warning, failure, and exception results can be ignored. Each check section below names the exact checker key that ATR records for that check.
+Ignore rules match on the checker key and other fields. Only suggestion, concern, and exception results can be ignored. Each check section below names the exact checker key that ATR records for that check.
 
 You can [read more about check ignores](check-ignores).
 
@@ -44,9 +44,9 @@ You can [read more about check ignores](check-ignores).
 
 ATR validates the file layout of the revision against ASF release rules. For each artifact it expects a matching signature file with the `.asc` suffix and at least one checksum file with the `.sha256` or `.sha512` suffix. It verifies that metadata files correspond to an existing artifact and warns when a metadata suffix is recommended against by policy. It rejects `.md5` checksums and `.sig` signature files and warns about `.sha1` and `.sha`. It rejects dotfiles except for those under the `.atr` directory, and it rejects a `KEYS` file inside the artifact bundle because keys are managed through the keys section. If the project is a podling, it requires the word "incubating" in artifact filenames.
 
-This check records separate checker keys for errors, warnings, and success. Use `atr.tasks.checks.paths.check_errors` for failures and `atr.tasks.checks.paths.check_warnings` for warnings when you configure ignores.
+This check records separate checker keys for concerns, suggestions, and notes. Use `atr.tasks.checks.paths.check_errors` for concerns and `atr.tasks.checks.paths.check_warnings` for suggestions when you configure ignores.
 
-(Success results use `atr.tasks.checks.paths.check_success` but are not eligible for ignores.)
+(Note results use `atr.tasks.checks.paths.check_success` but are not eligible for ignores.)
 
 ### Hash verification
 
@@ -68,9 +68,9 @@ The checker key for tar based archives is `atr.tasks.checks.targz.integrity`, an
 
 ### Archive structure checks
 
-ATR expects each archive to contain exactly one root directory. The expected root name is derived from the archive filename base, without extension. When the archive filename base ends with the suffix `source` or `src`, ATR accepts a root directory that either includes that suffix or omits it. When the archive filename base has no such suffix, the root directory must match the base. If the root does not match, ATR records a warning so that you can review project conventions. Structure checks are skipped for artifacts that are classified as binary by project policy.
+ATR expects each archive to contain exactly one root directory. The expected root name is derived from the archive filename base, without extension. When the archive filename base ends with the suffix `source` or `src`, ATR accepts a root directory that either includes that suffix or omits it. When the archive filename base has no such suffix, the root directory must match the base. If the root does not match, ATR records a concern so that you can review project conventions. Structure checks are skipped for artifacts that are classified as binary by project policy.
 
-ATR also recognizes `npm pack` archives. When the root directory is named package, ATR looks for a file named `package.json` and validates that it contains a name and version. If the file is present and valid, ATR treats this layout as acceptable. If the package name and version do not match the archive filename base, ATR records a warning.
+ATR also recognizes `npm pack` archives. When the root directory is named package, ATR looks for a file named `package.json` and validates that it contains a name and version. If the file is present and valid, ATR treats this layout as acceptable. If the package name and version do not match the archive filename base, ATR records a concern.
 
 The checker key for tar based structure checks is `atr.tasks.checks.targz.structure`. The checker key for zip structure checks is `atr.tasks.checks.zipformat.structure`.
 
@@ -92,7 +92,7 @@ You can [read more about license checks](license-checks).
 
 ### Apache RAT license scan
 
-ATR can run Apache RAT on source archives unless your project policy selects lightweight mode only. RAT runs in a temporary extraction directory, uses standard exclusions for common SCM and IDE files, and always excludes known generated file patterns. If the archive includes a RAT excludes file with the standard name `.rat-excludes`, ATR uses it as the exclusion file and sets the scan root to the directory that contains it. ATR records an error if more than one such file is present or if files exist outside that scan root. If no such file exists, ATR can apply project policy RAT exclusions and an extended set of standard exclusions. The check records failures for unapproved or unknown licenses, and records per file results for those files. RAT does not run for binary artifacts, even if those files are packaged in an archive format that otherwise triggers license checks.
+ATR can run Apache RAT on source archives unless your project policy selects lightweight mode only. RAT runs in a temporary extraction directory, uses standard exclusions for common SCM and IDE files, and always excludes known generated file patterns. If the archive includes a RAT excludes file with the standard name `.rat-excludes`, ATR uses it as the exclusion file and sets the scan root to the directory that contains it. ATR records a concern if more than one such file is present or if files exist outside that scan root. If no such file exists, ATR can apply project policy RAT exclusions and an extended set of standard exclusions. The check records concerns for unapproved or unknown licenses, and records per file results for those files. RAT does not run for binary artifacts, even if those files are packaged in an archive format that otherwise triggers license checks.
 
 The checker key is `atr.tasks.checks.rat.check`.
 
@@ -142,6 +142,6 @@ If the project belongs to an incubating podling, ATR passes this to certain chec
 
 ### Check ignores
 
-Check ignore rules do not change which checks run or what they report, but they do change which results are shown. Ignored results are removed from the warning and error counts and shown separately Ignores are managed from the release checks page and apply at the project level, not per release.
+Check ignore rules do not change which checks run or what they report, but they do change which results are shown. Ignored results are removed from the suggestion and concern counts and shown separately Ignores are managed from the release checks page and apply at the project level, not per release.
 
 You can [read more about check ignores](check-ignores).

@@ -91,7 +91,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.failure(
+        await recorder.concern(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -105,7 +105,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await _check_core(args, recorder, archive_dir, policy_excludes)
     except Exception as e:
         # TODO: Or bubble for task failure?
-        await recorder.failure("Error running Apache RAT check", {"error": str(e)})
+        await recorder.concern("Error running Apache RAT check", {"error": str(e)})
 
     return None
 
@@ -172,19 +172,19 @@ async def _check_core(
 
     # Record individual file failures before the overall result
     for file in result.unknown_license_files:
-        await recorder.failure("Unknown license", None, member_rel_path=file.name)
+        await recorder.concern("Unknown license", None, member_rel_path=file.name)
     for file in result.unapproved_files:
-        await recorder.failure("Unapproved license", {"license": file.license}, member_rel_path=file.name)
+        await recorder.concern("Unapproved license", {"license": file.license}, member_rel_path=file.name)
 
     # Convert to dict for storage, excluding the file lists, which are already recorded
     result_data = result.model_dump(exclude={"unapproved_files", "unknown_license_files"})
 
     if result.warning:
-        await recorder.warning(result.warning, result_data)
+        await recorder.suggestion(result.warning, result_data)
     elif (not result.valid) or result.errors:
-        await recorder.failure(result.message, result_data)
+        await recorder.concern(result.message, result_data)
     else:
-        await recorder.success(result.message, result_data)
+        await recorder.note(result.message, result_data)
 
 
 def _check_core_logic_execute_rat(

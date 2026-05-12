@@ -70,25 +70,25 @@ class RecorderStub(checks.Recorder):
             inputs_hash=None,
         )
 
+    async def concern(
+        self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
+    ) -> sql.CheckResult:
+        return await self._add(sql.CheckResultStatus.CONCERN, message, data, primary_rel_path, member_rel_path)
+
     async def exception(
         self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> sql.CheckResult:
         return await self._add(sql.CheckResultStatus.EXCEPTION, message, data, primary_rel_path, member_rel_path)
 
-    async def failure(
+    async def note(
         self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> sql.CheckResult:
-        return await self._add(sql.CheckResultStatus.FAILURE, message, data, primary_rel_path, member_rel_path)
+        return await self._add(sql.CheckResultStatus.NOTE, message, data, primary_rel_path, member_rel_path)
 
-    async def success(
+    async def suggestion(
         self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
     ) -> sql.CheckResult:
-        return await self._add(sql.CheckResultStatus.SUCCESS, message, data, primary_rel_path, member_rel_path)
-
-    async def warning(
-        self, message: str, data: Any, primary_rel_path: str | None = None, member_rel_path: str | None = None
-    ) -> sql.CheckResult:
-        return await self._add(sql.CheckResultStatus.WARNING, message, data, primary_rel_path, member_rel_path)
+        return await self._add(sql.CheckResultStatus.SUGGESTION, message, data, primary_rel_path, member_rel_path)
 
 
 def get_recorder(recorder: checks.Recorder) -> Callable[[str | None], Awaitable[checks.Recorder]]:

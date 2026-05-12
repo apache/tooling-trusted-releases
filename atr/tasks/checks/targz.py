@@ -83,7 +83,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.failure(
+        await recorder.concern(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -108,7 +108,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
             "expected_roots": expected_roots,
         }
         if root in expected_roots:
-            await recorder.success("Archive contains exactly one root directory matching an expected name", data)
+            await recorder.note("Archive contains exactly one root directory matching an expected name", data)
         elif root == "package":
             if package_json is not None:
                 npm_info, npm_error = util.parse_npm_pack_info(package_json, basename_from_filename)
@@ -119,27 +119,27 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
                         "filename_match": npm_info.filename_match,
                     }
                     if npm_info.filename_match is False:
-                        await recorder.failure(
+                        await recorder.concern(
                             "npm pack layout detected but filename does not match package.json", data
                         )
                     else:
-                        await recorder.success("npm pack layout detected, allowing package/ root", data)
+                        await recorder.note("npm pack layout detected, allowing package/ root", data)
                 else:
                     if npm_error is not None:
                         data["npm_pack_error"] = npm_error
-                    await recorder.failure(
+                    await recorder.concern(
                         f"Root directory '{root}' does not match expected names '{expected_roots_display}'", data
                     )
             else:
-                await recorder.failure(
+                await recorder.concern(
                     f"Root directory '{root}' does not match expected names '{expected_roots_display}'", data
                 )
         else:
-            await recorder.failure(
+            await recorder.concern(
                 f"Root directory '{root}' does not match expected names '{expected_roots_display}'", data
             )
     except RootDirectoryError as e:
-        await recorder.failure("Could not get the root directory of the archive", {"error": str(e)})
+        await recorder.concern("Could not get the root directory of the archive", {"error": str(e)})
     except Exception as e:
-        await recorder.failure("Unable to verify archive structure", {"error": str(e)})
+        await recorder.concern("Unable to verify archive structure", {"error": str(e)})
     return None

@@ -104,8 +104,8 @@ class GeneralPublic:
 
     def __check_ignore_match(self, cr: sql.CheckResult, cri: sql.CheckResultIgnore) -> bool:
         # Does not check that the project name matches
-        if cr.status == sql.CheckResultStatus.SUCCESS:
-            # Successes are never ignored
+        if cr.status == sql.CheckResultStatus.NOTE:
+            # Notes are never ignored
             return False
         if cr.status == sql.CheckResultStatus.BLOCKER:
             # Blockers are never ignored
@@ -129,7 +129,7 @@ class GeneralPublic:
             if not self.__check_ignore_match_pattern(cri.member_rel_path_glob, cr.member_rel_path):
                 return False
         if cri.status is not None:
-            if cr.status != cri.status:
+            if cr.status.value != cri.status.value:
                 return False
         if cri.message_glob is not None:
             if not self.__check_ignore_match_pattern(cri.message_glob, cr.message):

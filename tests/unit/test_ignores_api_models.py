@@ -115,12 +115,12 @@ def test_ignore_add_args_accepts_all_fields() -> None:
         checker_glob="atr.tasks.checks.rat.*",
         primary_rel_path_glob="*.tar.gz",
         member_rel_path_glob="*.java",
-        status=sql.CheckResultStatusIgnore.WARNING,
+        status=sql.CheckResultStatusIgnore.SUGGESTION,
         message_glob="*warning*",
     )
     assert args.project_key == safe.ProjectKey("example")
     assert args.release_glob == "example-1.0.*"
-    assert args.status == sql.CheckResultStatusIgnore.WARNING
+    assert args.status == sql.CheckResultStatusIgnore.SUGGESTION
 
 
 def test_ignore_add_args_rejects_invalid_pattern() -> None:

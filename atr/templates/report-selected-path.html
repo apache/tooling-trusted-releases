@@ -50,12 +50,14 @@
   <div class="fs-3 bg-light p-3 border rounded mb-4">
     <code>{{ package.filename }}</code>
   </div>
+  {% set btn_filled = {"note": "btn-success", "suggestion": "btn-warning", "concern": "btn-danger", "blocker": "atr-btn-blocker", "exception": "btn-danger"} %}
+  {% set btn_outline = {"note": "btn-outline-success", "suggestion": "btn-outline-warning", "concern": "btn-outline-danger", "blocker": "atr-btn-outline-blocker", "exception": "btn-outline-danger"} %}
   {% if primary_results %}
     {% set status_counts = {
-    "success": primary_results|selectattr("status.value", "equalto", "success")|list|length,
-    "failure": primary_results|selectattr("status.value", "equalto", "failure")|list|length,
+    "note": primary_results|selectattr("status.value", "equalto", "note")|list|length,
+    "concern": primary_results|selectattr("status.value", "equalto", "concern")|list|length,
     "blocker": primary_results|selectattr("status.value", "equalto", "blocker")|list|length,
-    "warning": primary_results|selectattr("status.value", "equalto", "warning")|list|length,
+    "suggestion": primary_results|selectattr("status.value", "equalto", "suggestion")|list|length,
     "exception": primary_results|selectattr("status.value", "equalto", "exception")|list|length
     } %}
     {% set earliest_checked = primary_results|min(attribute="created") %}
@@ -71,24 +73,23 @@
   <h2>Report results</h2>
 
   <div class="d-flex flex-wrap gap-3 mb-4">
-    {% if primary_results and (status_counts.success > 0 or status_counts.failure > 0 or status_counts.blocker > 0 or status_counts.warning > 0 or status_counts.exception > 0) %}
-      {% set all_primary_are_success = status_counts.failure == 0 and status_counts.blocker == 0 and status_counts.warning == 0 and status_counts.exception == 0 %}
+    {% if primary_results and (status_counts.note > 0 or status_counts.concern > 0 or status_counts.blocker > 0 or status_counts.suggestion > 0 or status_counts.exception > 0) %}
+      {% set all_primary_are_notes = (status_counts.concern == 0) and (status_counts.blocker == 0) and (status_counts.suggestion == 0) and (status_counts.exception == 0) %}
       {% for status, count in status_counts.items() %}
         {% if count > 0 %}
-          {% set bs_status = 'danger' if status == 'exception' or status == 'failure' else status %}
           <button id="btn-toggle-primary-{{ status }}"
                   type="button"
-                  class="btn page-toggle-status {% if status == 'success' and not all_primary_are_success %}btn-outline-success{% elif status == 'success' and all_primary_are_success %}btn-success{% elif status == 'blocker' %}atr-btn-blocker{% else %}btn-{{ bs_status }}{% endif %}"
+                  class="btn page-toggle-status {% if (status == 'note') and (not all_primary_are_notes) %}{{ btn_outline[status] }}{% else %}{{ btn_filled[status] }}{% endif %}"
                   data-type="primary"
                   data-status="{{ status }}">
             <span>
-              {% if status == 'success' and not all_primary_are_success %}
+              {% if (status == 'note') and (not all_primary_are_notes) %}
                 Show
               {% else %}
                 Hide
               {% endif %}
             </span>
-            {{ "Blocker" if status == "blocker" else status|title }} (<code>{{ count }}</code>)
+            {{ status|title }} (<code>{{ count }}</code>)
           </button>
         {% endif %}
       {% endfor %}
@@ -108,7 +109,7 @@
         </thead>
         <tbody>
           {% for primary_result in primary_results %}
-            <tr class="atr-result-primary atr-result-status-{{ primary_result.status.value }} {% if primary_result.status.value == 'success' and not all_primary_are_success %}atr-hide{% endif %}">
+            <tr class="atr-result-primary atr-result-status-{{ primary_result.status.value }} {% if (primary_result.status.value == 'note') and (not all_primary_are_notes) %}atr-hide{% endif %}">
               <th scope="row" class="align-middle fw-bold">
                 <a class="atr-link-plain"
                    href="{{ as_url(get.result.data, project_key=project_key, version_key=version_key, check_id=primary_result.id) }}">
@@ -219,8 +220,8 @@
               </td>
               <td class="align-middle text-center atr-sans">
                 <div class="d-inline-flex flex-column align-items-center gap-1">
-                  <span class="badge rounded-pill {% if primary_result.status.value == "success" %}bg-success {% elif primary_result.status.value == "failure" %}bg-danger {% elif primary_result.status.value == "blocker" %}atr-bg-blocker {% elif primary_result.status.value == "warning" %}bg-warning {% elif primary_result.status.value == "exception" %}bg-danger {% else %}bg-secondary{% endif %}">
-                    {{ "Blocker" if primary_result.status.value == "blocker" else primary_result.status.value|title }}
+                  <span class="badge rounded-pill {% if primary_result.status.value == "note" %}bg-success {% elif primary_result.status.value == "concern" %}bg-danger {% elif primary_result.status.value == "blocker" %}atr-bg-blocker {% elif primary_result.status.value == "suggestion" %}bg-warning {% elif primary_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
+                    {{ primary_result.status.value|title }}
                   </span>
                   {% if primary_result.cached %}
                     <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle small"
@@ -242,7 +243,7 @@
     {% if member_results %}
       <h2>Member results</h2>
       <p>This file is an archive. We have extracted the contents of the archive and checked each file individually.</p>
-      {% set member_status_counts = {"success": 0, "failure": 0, "blocker": 0, "warning": 0, "exception": 0} %}
+      {% set member_status_counts = {"note": 0, "concern": 0, "blocker": 0, "suggestion": 0, "exception": 0} %}
       {% for path, m_results in member_results.items() %}
         {% for m_result in m_results %}
           {% if m_result.status.value in member_status_counts %}
@@ -250,25 +251,24 @@
           {% endif %}
         {% endfor %}
       {% endfor %}
-      {% if member_status_counts.success > 0 or member_status_counts.failure > 0 or member_status_counts.blocker > 0 or member_status_counts.warning > 0 or member_status_counts.exception > 0 %}
-        {% set all_member_are_success = member_status_counts.failure == 0 and member_status_counts.blocker == 0 and member_status_counts.warning == 0 and member_status_counts.exception == 0 %}
+      {% if (member_status_counts.note > 0) or (member_status_counts.concern > 0) or (member_status_counts.blocker > 0) or (member_status_counts.suggestion > 0) or (member_status_counts.exception > 0) %}
+        {% set all_member_are_notes = (member_status_counts.concern == 0) and (member_status_counts.blocker == 0) and (member_status_counts.suggestion == 0) and (member_status_counts.exception == 0) %}
         <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
           {% for status, count in member_status_counts.items() %}
             {% if count > 0 %}
-              {% set bs_status = 'danger' if status == 'exception' or status == 'failure' else status %}
               <button id="btn-toggle-member-{{ status }}"
                       type="button"
-                      class="btn page-toggle-status {% if status == 'success' and not all_member_are_success %}btn-outline-success{% elif status == 'success' and all_member_are_success %}btn-success{% elif status == 'blocker' %}atr-btn-blocker{% else %}btn-{{ bs_status }}{% endif %}"
+                      class="btn page-toggle-status {% if (status == 'note') and (not all_member_are_notes) %}{{ btn_outline[status] }}{% else %}{{ btn_filled[status] }}{% endif %}"
                       data-type="member"
                       data-status="{{ status }}">
                 <span>
-                  {% if status == 'success' and not all_member_are_success %}
+                  {% if (status == 'note') and (not all_member_are_notes) %}
                     Show
                   {% else %}
                     Hide
                   {% endif %}
                 </span>
-                {{ "Blocker" if status == "blocker" else status|title }} (<code>{{ count }}</code>)
+                {{ status|title }} (<code>{{ count }}</code>)
               </button>
             {% endif %}
           {% endfor %}
@@ -294,7 +294,7 @@
             {% for member_result in member_results_list %}
               {# The striping class here is now technically redundant because of the JS striping #}
               {# But we leave it here for clean initial page rendering #}
-              <tr class="atr-result-member atr-result-status-{{ member_result.status.value }} {% if member_result.status.value == 'success' and not all_member_are_success %}atr-hide{% endif %} {% if loop.index is odd %}page-member-visible-odd{% endif %} ">
+              <tr class="atr-result-member atr-result-status-{{ member_result.status.value }} {% if (member_result.status.value == 'note') and (not all_member_are_notes) %}atr-hide{% endif %} {% if loop.index is odd %}page-member-visible-odd{% endif %} ">
                 <td class="align-middle">{{ member_rel_path }}</td>
                 <th scope="row" class="align-middle fw-bold">
                   <a class="atr-link-plain"
@@ -307,8 +307,8 @@
                 </td>
                 <td class="align-middle text-center atr-sans">
                   <div class="d-inline-flex flex-column align-items-center gap-1">
-                    <span class="badge rounded-pill {% if member_result.status.value == "success" %}bg-success {% elif member_result.status.value == "failure" %}bg-danger {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "warning" %}bg-warning {% elif member_result.status.value == "exception" %}bg-danger {% else %}bg-secondary{% endif %}">
-                      {{ "Blocker" if member_result.status.value == "blocker" else member_result.status.value|title }}
+                    <span class="badge rounded-pill {% if member_result.status.value == "note" %}bg-success {% elif member_result.status.value == "concern" %}bg-danger {% elif member_result.status.value == "blocker" %}atr-bg-blocker {% elif member_result.status.value == "suggestion" %}bg-warning {% elif member_result.status.value == "exception" %}atr-bg-exception {% else %}bg-secondary{% endif %}">
+                      {{ member_result.status.value|title }}
                     </span>
                     {% if member_result.cached %}
                       <span class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle small"

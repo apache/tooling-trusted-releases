@@ -66,9 +66,9 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             signature_path=str(primary_abs_path),
         )
         if result_data.get("error"):
-            await recorder.failure(result_data["error"], result_data)
+            await recorder.concern(result_data["error"], result_data)
         elif result_data.get("verified"):
-            await recorder.success("Signature verified successfully", result_data)
+            await recorder.note("Signature verified successfully", result_data)
         else:
             # Shouldn't happen
             await recorder.exception("Signature verification failed for unknown reasons", result_data)

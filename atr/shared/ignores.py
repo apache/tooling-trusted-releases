@@ -36,9 +36,9 @@ class IgnoreStatus(enum.Enum):
     """Wrapper enum for ignore status."""
 
     NO_STATUS = "-"
+    CONCERN = "Concern"
     EXCEPTION = "Exception"
-    FAILURE = "Failure"
-    WARNING = "Warning"
+    SUGGESTION = "Suggestion"
 
 
 class AddIgnoreForm(form.Form):
@@ -134,12 +134,12 @@ def ignore_status_to_sql(status: IgnoreStatus | None) -> sql.CheckResultStatusIg
     if (status is None) or (status == IgnoreStatus.NO_STATUS):
         return None
     match status:
+        case IgnoreStatus.CONCERN:
+            return sql.CheckResultStatusIgnore.CONCERN
         case IgnoreStatus.EXCEPTION:
             return sql.CheckResultStatusIgnore.EXCEPTION
-        case IgnoreStatus.FAILURE:
-            return sql.CheckResultStatusIgnore.FAILURE
-        case IgnoreStatus.WARNING:
-            return sql.CheckResultStatusIgnore.WARNING
+        case IgnoreStatus.SUGGESTION:
+            return sql.CheckResultStatusIgnore.SUGGESTION
 
 
 def sql_to_ignore_status(status: sql.CheckResultStatusIgnore | None) -> IgnoreStatus:
@@ -147,12 +147,12 @@ def sql_to_ignore_status(status: sql.CheckResultStatusIgnore | None) -> IgnoreSt
     if status is None:
         return IgnoreStatus.NO_STATUS
     match status:
+        case sql.CheckResultStatusIgnore.CONCERN:
+            return IgnoreStatus.CONCERN
         case sql.CheckResultStatusIgnore.EXCEPTION:
             return IgnoreStatus.EXCEPTION
-        case sql.CheckResultStatusIgnore.FAILURE:
-            return IgnoreStatus.FAILURE
-        case sql.CheckResultStatusIgnore.WARNING:
-            return IgnoreStatus.WARNING
+        case sql.CheckResultStatusIgnore.SUGGESTION:
+            return IgnoreStatus.SUGGESTION
 
 
 def _validate_ignore_form_patterns(*patterns: str) -> None:

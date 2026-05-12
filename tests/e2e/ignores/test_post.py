@@ -21,7 +21,7 @@ from playwright.sync_api import Page, expect
 
 def test_add_ignore_creates_card(page_ignores: Page) -> None:
     helpers.input_checker_glob(page_ignores).fill("atr.tasks.checks.rat.*")
-    helpers.select_status(page_ignores).select_option("Warning")
+    helpers.select_status(page_ignores).select_option("Suggestion")
     helpers.button_add_ignore(page_ignores).click()
     page_ignores.wait_for_load_state()
 
@@ -42,7 +42,7 @@ def test_add_ignore_persists_values(page_ignores: Page) -> None:
 
 def test_delete_ignore_removes_card(page_ignores: Page) -> None:
     helpers.input_checker_glob(page_ignores).fill("atr.tasks.checks.license.*")
-    helpers.select_status(page_ignores).select_option("Failure")
+    helpers.select_status(page_ignores).select_option("Concern")
     helpers.button_add_ignore(page_ignores).click()
     page_ignores.wait_for_load_state()
 

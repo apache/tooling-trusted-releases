@@ -55,7 +55,7 @@ class GeneralPublic:
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             return None
-        await self.__successes_errors_warnings(release, release.safe_latest_revision_number, info)
+        await self.__notes_suggestions_concerns(release, release.safe_latest_revision_number, info)
         base_path = paths.release_directory(release)
         revision_seq = int(str(release.safe_latest_revision_number))
         db_classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
@@ -90,7 +90,7 @@ class GeneralPublic:
                 acc = checker_data.setdefault(result.checker, CheckerAccumulator())
                 status = result.status
                 acc.counts[status] += 1
-                if status != sql.CheckResultStatus.SUCCESS:
+                if status != sql.CheckResultStatus.NOTE:
                     path_str = str(path)
                     files_for_status = acc.files.setdefault(status, {})
                     files_for_status[path_str] = files_for_status.get(path_str, 0) + 1
@@ -99,17 +99,17 @@ class GeneralPublic:
         paths_set = set(paths)
         checker_data: dict[str, CheckerAccumulator] = {}
 
-        self.__accumulate_results(info.successes, paths_set, checker_data)
-        self.__accumulate_results(info.warnings, paths_set, checker_data)
-        self.__accumulate_results(info.errors, paths_set, checker_data)
+        self.__accumulate_results(info.notes, paths_set, checker_data)
+        self.__accumulate_results(info.suggestions, paths_set, checker_data)
+        self.__accumulate_results(info.concerns, paths_set, checker_data)
         self.__accumulate_results(info.exceptions, paths_set, checker_data)
         self.__accumulate_results(info.blockers, paths_set, checker_data)
 
         for checker, acc in sorted(checker_data.items()):
-            non_success_total = sum(
-                count for status, count in acc.counts.items() if (status != sql.CheckResultStatus.SUCCESS)
+            non_note_total = sum(
+                count for status, count in acc.counts.items() if (status != sql.CheckResultStatus.NOTE)
             )
-            if non_success_total == 0:
+            if non_note_total == 0:
                 continue
             info.checker_stats.append(
                 types.CheckerStats(
@@ -119,7 +119,7 @@ class GeneralPublic:
                 )
             )
 
-    async def __successes_errors_warnings(
+    async def __notes_suggestions_concerns(
         self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: types.PathInfo
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_key)
@@ -134,9 +134,9 @@ class GeneralPublic:
         )
         # TODO: These get just the ones for the revision.
         # It might be better to get all like we do in by_release_path, filter by hash, then filter by status
-        await self.__successes(cs)
-        await self.__warnings(cs)
-        await self.__errors(cs)
+        await self.__notes(cs)
+        await self.__suggestions(cs)
+        await self.__concerns(cs)
         await self.__exceptions(cs)
         await self.__blocker(cs)
 
@@ -148,16 +148,16 @@ class GeneralPublic:
             else:
                 cs.info.release_level_blockers.append(result)
 
-    async def __errors(self, cs: types.ChecksSubset) -> None:
-        errors = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.FAILURE]
-        for error in errors:
-            if cs.match_ignore(error):
-                cs.info.ignored_errors.append(error)
+    async def __concerns(self, cs: types.ChecksSubset) -> None:
+        concerns = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.CONCERN]
+        for concern in concerns:
+            if cs.match_ignore(concern):
+                cs.info.ignored_concerns.append(concern)
                 continue
-            if path := error.safe_primary_rel_path:
-                cs.info.errors.setdefault(path, []).append(error)
+            if path := concern.safe_primary_rel_path:
+                cs.info.concerns.setdefault(path, []).append(concern)
             else:
-                cs.info.release_level_errors.append(error)
+                cs.info.release_level_concerns.append(concern)
 
     async def __exceptions(self, cs: types.ChecksSubset) -> None:
         exceptions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.EXCEPTION]
@@ -170,18 +170,18 @@ class GeneralPublic:
             else:
                 cs.info.release_level_exceptions.append(exception)
 
-    async def __successes(self, cs: types.ChecksSubset) -> None:
-        successes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUCCESS]
-        for success in successes:
-            # Successes cannot be ignored
-            if path := success.safe_primary_rel_path:
-                cs.info.successes.setdefault(path, []).append(success)
+    async def __notes(self, cs: types.ChecksSubset) -> None:
+        notes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.NOTE]
+        for note in notes:
+            # Notes cannot be ignored
+            if path := note.safe_primary_rel_path:
+                cs.info.notes.setdefault(path, []).append(note)
 
-    async def __warnings(self, cs: types.ChecksSubset) -> None:
-        warnings = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.WARNING]
-        for warning in warnings:
-            if cs.match_ignore(warning):
-                cs.info.ignored_warnings.append(warning)
+    async def __suggestions(self, cs: types.ChecksSubset) -> None:
+        suggestions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUGGESTION]
+        for suggestion in suggestions:
+            if cs.match_ignore(suggestion):
+                cs.info.ignored_suggestions.append(suggestion)
                 continue
-            if path := warning.safe_primary_rel_path:
-                cs.info.warnings.setdefault(path, []).append(warning)
+            if path := suggestion.safe_primary_rel_path:
+                cs.info.suggestions.setdefault(path, []).append(suggestion)

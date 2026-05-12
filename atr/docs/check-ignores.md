@@ -14,7 +14,7 @@
 
 ## Overview
 
-Check ignores let project committee members hide specific check results in the UI. Ignored checks are removed from the warning and error counts shown on the checks pages and are shown separately in _Ignored checks_ sections.
+Check ignores let project committee members hide specific check results in the UI. Ignored checks are removed from the suggestion and concern counts shown on the checks pages and are shown separately in _Ignored checks_ sections.
 
 ### Where to manage ignores
 
@@ -30,11 +30,11 @@ Please note that on the release checks page, the _Ignored checks_ list includes 
 
 ### Fields and what they match
 
-Each ignore rule can match on any combination of fields, and any field you leave blank does not restrict matching. The release pattern matches the release name in the `project-version` format; the revision number is a literal string match (for example `00005`) and cannot use patterns; the checker pattern matches the full checker key; the primary rel path pattern matches the artifact filename; the member rel path pattern matches a path inside the archive; the status matches `Exception`, `Failure`, or `Warning`; and the message pattern matches the check message text.
+Each ignore rule can match on any combination of fields, and any field you leave blank does not restrict matching. The release pattern matches the release name in the `project-version` format; the revision number is a literal string match (for example `00005`) and cannot use patterns; the checker pattern matches the full checker key; the primary rel path pattern matches the artifact filename; the member rel path pattern matches a path inside the archive; the status matches `Concern`, `Exception`, or `Suggestion`; and the message pattern matches the check message text.
 
 ### Matching rules
 
-Success is never ignored, so only `Exception`, `Failure`, and `Warning` results can match. When a rule includes multiple fields, all filled fields must match for the ignore to apply, and if any ignore rule matches a check result then the check result is ignored.
+Notes and blockers are never ignored, so only `Concern`, `Exception`, and `Suggestion` results can match. When a rule includes multiple fields, all filled fields must match for the ignore to apply, and if any ignore rule matches a check result then the check result is ignored.
 
 ### Pattern syntax
 
@@ -58,20 +58,20 @@ Negation and missing values are handled with a leading exclamation mark. Prefix 
 
 ## Examples
 
-To ignore all RAT warnings for your project, set the checker pattern to `atr.tasks.checks.rat.check` and the status to `Warning`.
+To ignore all RAT suggestions for your project, set the checker pattern to `atr.tasks.checks.rat.check` and the status to `Suggestion`.
 
-To ignore license header failures for a specific release series, set the release pattern to `apache-example-1.2.*`, the checker pattern to `atr.tasks.checks.license.headers`, and the status to `Failure`.
+To ignore license header concerns for a specific release series, set the release pattern to `apache-example-1.2.*`, the checker pattern to `atr.tasks.checks.license.headers`, and the status to `Concern`.
 
-To ignore only a specific revision, set the release pattern to `apache-example-2.0.0`, set the revision number to the literal value `00005`, and set the status to `Warning`.
+To ignore only a specific revision, set the release pattern to `apache-example-2.0.0`, set the revision number to the literal value `00005`, and set the status to `Suggestion`.
 
-To ignore a single artifact file, set the primary rel path pattern to `apache-example-2.0.0-source.tar.gz`, the checker pattern to `atr.tasks.checks.signature.check`, and the status to `Failure`.
+To ignore a single artifact file, set the primary rel path pattern to `apache-example-2.0.0-source.tar.gz`, the checker pattern to `atr.tasks.checks.signature.check`, and the status to `Concern`.
 
-To ignore warnings for one file inside the archive, set the member rel path pattern to `apache-example-2.0.0/src/main/java/Foo.java`, set the checker pattern to `atr.tasks.checks.license.headers`, and set the status to `Warning`.
+To ignore suggestions for one file inside the archive, set the member rel path pattern to `apache-example-2.0.0/src/main/java/Foo.java`, set the checker pattern to `atr.tasks.checks.license.headers`, and set the status to `Suggestion`.
 
-To match only primary results with no member path, set the member rel path pattern to `!`, set the checker pattern to `atr.tasks.checks.paths.check`, and set the status to `Warning`.
+To match only primary results with no member path, set the member rel path pattern to `!`, set the checker pattern to `atr.tasks.checks.paths.check`, and set the status to `Suggestion`.
 
-To use regex for an exact release name, set the release pattern to `^apache-example-[0-9]+\.[0-9]+\.[0-9]+$` and set the status to `Failure`.
+To use regex for an exact release name, set the release pattern to `^apache-example-[0-9]+\.[0-9]+\.[0-9]+$` and set the status to `Concern`.
 
-To ignore all warnings except the ATR license header checks, set the checker pattern to `!atr.tasks.checks.license.headers` and set the status to `Warning`.
+To ignore all suggestions except the ATR license header checks, set the checker pattern to `!atr.tasks.checks.license.headers` and set the status to `Suggestion`.
 
-Try setting multiple ignores to understand how matching works. Separate ignores are ORed together, so e.g. one rule that ignores RAT warnings and another separate rule that ignores signature failures will result in any checks that match either rule being ignored.
+Try setting multiple ignores to understand how matching works. Separate ignores are ORed together, so e.g. one rule that ignores RAT suggestions and another separate rule that ignores signature concerns will result in any checks that match either rule being ignored.

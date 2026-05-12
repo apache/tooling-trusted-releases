@@ -108,7 +108,7 @@ async def _signature_provenance_metadata_for(
         f" result_revision={latest.revision_number}"
         f" status={latest.status.value} message={latest_message!r}"
     )
-    if latest.status != sql.CheckResultStatus.SUCCESS:
+    if latest.status != sql.CheckResultStatus.NOTE:
         if latest_message:
             raise types.FailedError(f"Signature verification for {signature_rel_path.name} failed: {latest_message}")
         raise types.FailedError(

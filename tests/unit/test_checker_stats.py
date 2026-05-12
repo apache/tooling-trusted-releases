@@ -28,14 +28,14 @@ import atr.storage.types as types
 
 def test_checker_stats_counts_and_files_by_status():
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
-    success = _make_check_result(sql.CheckResultStatus.SUCCESS, "Success", primary_rel_path=str(path))
-    warning = _make_check_result(sql.CheckResultStatus.WARNING, "Warning", primary_rel_path=str(path))
-    failure = _make_check_result(sql.CheckResultStatus.FAILURE, "Failure", primary_rel_path=str(path))
+    success = _make_check_result(sql.CheckResultStatus.NOTE, "Success", primary_rel_path=str(path))
+    warning = _make_check_result(sql.CheckResultStatus.SUGGESTION, "Warning", primary_rel_path=str(path))
+    failure = _make_check_result(sql.CheckResultStatus.CONCERN, "Failure", primary_rel_path=str(path))
     blocker = _make_check_result(sql.CheckResultStatus.BLOCKER, "Blocker", primary_rel_path=str(path))
     info = types.PathInfo(
-        successes={path: [success]},
-        warnings={path: [warning]},
-        errors={path: [failure]},
+        notes={path: [success]},
+        suggestions={path: [warning]},
+        concerns={path: [failure]},
         blockers={path: [blocker]},
     )
     reader = _make_reader()
@@ -48,15 +48,15 @@ def test_checker_stats_counts_and_files_by_status():
     assert stat.checker == "atr.tasks.checks.paths.check_errors"
     assert stat.counts == collections.Counter(
         {
-            sql.CheckResultStatus.SUCCESS: 1,
-            sql.CheckResultStatus.WARNING: 1,
-            sql.CheckResultStatus.FAILURE: 1,
+            sql.CheckResultStatus.NOTE: 1,
+            sql.CheckResultStatus.SUGGESTION: 1,
+            sql.CheckResultStatus.CONCERN: 1,
             sql.CheckResultStatus.BLOCKER: 1,
         }
     )
     assert stat.files == {
-        sql.CheckResultStatus.WARNING: {str(path): 1},
-        sql.CheckResultStatus.FAILURE: {str(path): 1},
+        sql.CheckResultStatus.SUGGESTION: {str(path): 1},
+        sql.CheckResultStatus.CONCERN: {str(path): 1},
         sql.CheckResultStatus.BLOCKER: {str(path): 1},
     }
 
@@ -73,9 +73,9 @@ def test_exceptions_bucketed_into_path_info():
     asyncio.run(bucket_exceptions(subset))
 
     assert info.exceptions[path] == [exception]
-    assert path not in info.errors
+    assert path not in info.concerns
     assert info.release_level_exceptions == [release_level]
-    assert info.release_level_errors == []
+    assert info.release_level_concerns == []
     assert info.ignored_exceptions == []
 
 

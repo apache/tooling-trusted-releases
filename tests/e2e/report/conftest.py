@@ -74,20 +74,20 @@ def page_report(report_context: BrowserContext) -> Generator[Page]:
 
 
 @pytest.fixture
-def primary_success_rows(page_report: Page) -> Locator:
-    """Get primary success rows, fail if none exist."""
-    rows = page_report.locator(".atr-result-primary.atr-result-status-success")
+def primary_note_rows(page_report: Page) -> Locator:
+    """Get primary note rows, fail if none exist."""
+    rows = page_report.locator(".atr-result-primary.atr-result-status-note")
     if rows.count() == 0:
-        pytest.fail("No primary success rows found")
+        pytest.fail("No primary note rows found")
     return rows
 
 
 @pytest.fixture
-def primary_success_toggle(page_report: Page) -> Locator:
-    """Get primary success toggle button, fail if not present."""
-    toggle = page_report.locator("#btn-toggle-primary-success")
+def primary_note_toggle(page_report: Page) -> Locator:
+    """Get primary note toggle button, fail if not present."""
+    toggle = page_report.locator("#btn-toggle-primary-note")
     if toggle.count() == 0:
-        pytest.fail("Primary success toggle not present")
+        pytest.fail("Primary note toggle not present")
     return toggle
 
 

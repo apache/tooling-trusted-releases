@@ -227,7 +227,7 @@ async def _compute_stats(
 
 def _error_count(counts: collections.Counter[sql.CheckResultStatus]) -> int:
     return (
-        counts[sql.CheckResultStatus.FAILURE]
+        counts[sql.CheckResultStatus.CONCERN]
         + counts[sql.CheckResultStatus.BLOCKER]
         + counts[sql.CheckResultStatus.EXCEPTION]
     )
@@ -251,7 +251,7 @@ def _file_stats_result_add(stats: FileStats, check_result: sql.CheckResult, is_i
         after = stats.member_after
 
     before[check_result.status] += 1
-    if (check_result.status == sql.CheckResultStatus.SUCCESS) or (not is_ignored):
+    if (check_result.status == sql.CheckResultStatus.NOTE) or (not is_ignored):
         after[check_result.status] += 1
 
 
@@ -273,9 +273,9 @@ def _render_checks_table(
     # It is convenient, and we should consider whether or not to allow it
     thead.tr[
         htpy.th(".py-2.ps-3")["Path"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Pass"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Warning"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Error"],
+        htpy.th(".py-2.text-center", style="width: 5em")["Notes"],
+        htpy.th(".py-2.text-center", style="width: 5em")["Suggestions"],
+        htpy.th(".py-2.text-center", style="width: 5em")["Issues"],
         htpy.th(".py-2.text-end.pe-3")[""],
     ]
     table.append(thead.collect())
@@ -339,23 +339,23 @@ def _render_debug_table(
         stats = per_file_stats.get(path, empty_stats)
         tbody.tr[
             htpy.td(class_="text-start")[htpy.code[str(path)]],
-            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.SUCCESS])],
-            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.NOTE])],
+            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.SUGGESTION])],
             htpy.td(style=stripe_a)[str(_error_count(stats.file_before))],
-            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.SUCCESS])],
-            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.NOTE])],
+            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.SUGGESTION])],
             htpy.td(style=stripe_b)[str(_error_count(stats.file_after))],
-            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.SUCCESS])],
-            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.NOTE])],
+            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.SUGGESTION])],
             htpy.td(style=stripe_a)[str(_error_count(stats.member_before))],
-            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.SUCCESS])],
-            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.NOTE])],
+            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.SUGGESTION])],
             htpy.td(style=stripe_b)[str(_error_count(stats.member_after))],
-            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.SUCCESS))],
-            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.WARNING))],
+            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.NOTE))],
+            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.SUGGESTION))],
             htpy.td(style=stripe_a)[str(_total_error_before(stats))],
-            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.SUCCESS))],
-            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.WARNING))],
+            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.NOTE))],
+            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.SUGGESTION))],
             htpy.td(style=stripe_b)[str(_total_error_after(stats))],
         ]
     table.append(tbody.collect())
@@ -377,16 +377,16 @@ def _render_file_row(
     path_str = str(path)
     num_style = "font-size: 1.1rem;"
 
-    pass_count = stats.file_after[sql.CheckResultStatus.SUCCESS]
-    warn_count = stats.file_after[sql.CheckResultStatus.WARNING]
-    err_count = _error_count(stats.file_after)
+    note_count = stats.file_after[sql.CheckResultStatus.NOTE]
+    suggestion_count = stats.file_after[sql.CheckResultStatus.SUGGESTION]
+    issue_count = _error_count(stats.file_after)
     before_total = (
-        stats.file_before[sql.CheckResultStatus.SUCCESS]
-        + stats.file_before[sql.CheckResultStatus.WARNING]
+        stats.file_before[sql.CheckResultStatus.NOTE]
+        + stats.file_before[sql.CheckResultStatus.SUGGESTION]
         + _error_count(stats.file_before)
     )
     has_checks_before = before_total > 0
-    has_checks_after = (pass_count + warn_count + err_count) > 0
+    has_checks_after = (note_count + suggestion_count + issue_count) > 0
 
     report_url = util.as_url(
         report.selected_path,
@@ -406,45 +406,45 @@ def _render_file_row(
 
     if not has_checks_before:
         path_display = htpy.code(".text-muted")[path_str]
-        pass_cell = htpy.span(".text-muted", style=num_style)["-"]
-        warn_cell = htpy.span(".text-muted", style=num_style)["-"]
-        err_cell = htpy.span(".text-muted", style=num_style)["-"]
+        note_cell = htpy.span(".text-muted", style=num_style)["-"]
+        suggestion_cell = htpy.span(".text-muted", style=num_style)["-"]
+        issue_cell = htpy.span(".text-muted", style=num_style)["-"]
         report_btn = htpy.span(".btn.btn-sm.btn-outline-secondary.disabled")["No checks"]
     elif not has_checks_after:
         path_display = htpy.code[path_str]
-        pass_cell = htpy.span(".text-muted", style=num_style)["0"]
-        warn_cell = htpy.span(".text-muted", style=num_style)["0"]
-        err_cell = htpy.span(".text-muted", style=num_style)["0"]
+        note_cell = htpy.span(".text-muted", style=num_style)["0"]
+        suggestion_cell = htpy.span(".text-muted", style=num_style)["0"]
+        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=report_url)["Show details"]
-    elif err_count > 0:
+    elif issue_count > 0:
         path_display = htpy.strong[htpy.code(".text-danger")[path_str]]
-        pass_cell = (
-            htpy.span(".text-success", style=num_style)[str(pass_count)]
-            if (pass_count > 0)
+        note_cell = (
+            htpy.span(".text-success", style=num_style)[str(note_count)]
+            if (note_count > 0)
             else htpy.span(".text-muted", style=num_style)["0"]
         )
-        warn_cell = (
-            htpy.span(".text-warning", style=num_style)[str(warn_count)]
-            if (warn_count > 0)
+        suggestion_cell = (
+            htpy.span(".text-warning", style=num_style)[str(suggestion_count)]
+            if (suggestion_count > 0)
             else htpy.span(".text-muted", style=num_style)["0"]
         )
-        err_cell = htpy.span(".text-danger.fw-bold", style=num_style)[str(err_count)]
+        issue_cell = htpy.span(".text-danger.fw-bold", style=num_style)[str(issue_count)]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-danger", href=report_url)["Show details"]
-    elif warn_count > 0:
+    elif suggestion_count > 0:
         path_display = htpy.strong[htpy.code(".text-warning")[path_str]]
-        pass_cell = (
-            htpy.span(".text-success", style=num_style)[str(pass_count)]
-            if (pass_count > 0)
+        note_cell = (
+            htpy.span(".text-success", style=num_style)[str(note_count)]
+            if (note_count > 0)
             else htpy.span(".text-muted", style=num_style)["0"]
         )
-        warn_cell = htpy.span(".text-warning.fw-bold", style=num_style)[str(warn_count)]
-        err_cell = htpy.span(".text-muted", style=num_style)["0"]
+        suggestion_cell = htpy.span(".text-warning.fw-bold", style=num_style)[str(suggestion_count)]
+        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-warning", href=report_url)["Show details"]
     else:
         path_display = htpy.code[path_str]
-        pass_cell = htpy.span(".text-success", style=num_style)[str(pass_count)]
-        warn_cell = htpy.span(".text-muted", style=num_style)["0"]
-        err_cell = htpy.span(".text-muted", style=num_style)["0"]
+        note_cell = htpy.span(".text-success", style=num_style)[str(note_count)]
+        suggestion_cell = htpy.span(".text-muted", style=num_style)["0"]
+        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
         report_btn = htpy.a(".btn.btn-sm.btn-outline-success", href=report_url)["Show details"]
 
     # <a href="{{ as_url(get.sbom.report, project=project_key, version=version_key, file_path=path) }}"
@@ -456,9 +456,9 @@ def _render_file_row(
 
     tbody.tr[
         htpy.td(".py-2.ps-3")[path_display],
-        htpy.td(".py-2.text-center")[pass_cell],
-        htpy.td(".py-2.text-center")[warn_cell],
-        htpy.td(".py-2.text-center")[err_cell],
+        htpy.td(".py-2.text-center")[note_cell],
+        htpy.td(".py-2.text-center")[suggestion_cell],
+        htpy.td(".py-2.text-center")[issue_cell],
         htpy.td(".text-end.text-nowrap.py-2.pe-3")[
             htpy.div(".d-flex.justify-content-end.align-items-center.gap-2")[
                 report_btn,
@@ -502,69 +502,69 @@ def _render_summary(
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
-    files_with_errors = sum(1 for s in per_file_stats.values() if _error_count(s.file_after) > 0)
-    files_with_warnings = sum(
+    files_with_issues = sum(1 for s in per_file_stats.values() if _error_count(s.file_after) > 0)
+    files_with_suggestions = sum(
         1
         for s in per_file_stats.values()
-        if (s.file_after[sql.CheckResultStatus.WARNING] > 0) and (_error_count(s.file_after) == 0)
+        if (s.file_after[sql.CheckResultStatus.SUGGESTION] > 0) and (_error_count(s.file_after) == 0)
     )
-    files_passed = sum(
+    files_with_notes = sum(
         1
         for s in per_file_stats.values()
-        if (s.file_after[sql.CheckResultStatus.SUCCESS] > 0)
-        and (s.file_after[sql.CheckResultStatus.WARNING] == 0)
+        if (s.file_after[sql.CheckResultStatus.NOTE] > 0)
+        and (s.file_after[sql.CheckResultStatus.SUGGESTION] == 0)
         and (_error_count(s.file_after) == 0)
     )
-    files_skipped = len(paths) - files_passed - files_with_warnings - files_with_errors
+    files_skipped = len(paths) - files_with_notes - files_with_suggestions - files_with_issues
 
     file_word = "file" if (len(paths) == 1) else "files"
-    passed_word = "file passed" if (files_passed == 1) else "files passed"
-    warn_file_word = "file has" if (files_with_warnings == 1) else "files have"
-    err_file_word = "file has" if (files_with_errors == 1) else "files have"
+    note_file_word = "file has" if (files_with_notes == 1) else "files have"
+    suggestion_file_word = "file has" if (files_with_suggestions == 1) else "files have"
+    issue_file_word = "file has" if (files_with_issues == 1) else "files have"
     skipped_word = "file did not require checking" if (files_skipped == 1) else "files did not require checking"
-    no_errors_word = "no" if ((files_passed > 0) or (files_with_warnings > 0)) else "No"
+    no_issues_word = "no" if ((files_with_notes > 0) or (files_with_suggestions > 0)) else "No"
 
     page.p[
         f"Showing check results for {len(paths)} {file_word}. ",
-        f"{files_passed} {passed_word} all checks, " if (files_passed > 0) else "",
-        f"{files_with_warnings} {warn_file_word} warnings, " if (files_with_warnings > 0) else "",
-        f"{files_with_errors} {err_file_word} errors."
-        if (files_with_errors > 0)
-        else f"{no_errors_word} files have errors.",
+        f"{files_with_notes} {note_file_word} only notes, " if (files_with_notes > 0) else "",
+        f"{files_with_suggestions} {suggestion_file_word} suggestions, " if (files_with_suggestions > 0) else "",
+        f"{files_with_issues} {issue_file_word} issues."
+        if (files_with_issues > 0)
+        else f"{no_issues_word} files have issues.",
         f" {files_skipped} {skipped_word}." if (files_skipped > 0) else "",
     ]
 
-    pass_count = totals.file_after[sql.CheckResultStatus.SUCCESS]
-    warn_count = totals.file_after[sql.CheckResultStatus.WARNING]
-    err_count = _error_count(totals.file_after)
-    check_word = util.plural(pass_count, "check", include_count=False)
-    warn_word = util.plural(warn_count, "warning", include_count=False)
-    err_word = util.plural(err_count, "error", include_count=False)
+    note_count = totals.file_after[sql.CheckResultStatus.NOTE]
+    suggestion_count = totals.file_after[sql.CheckResultStatus.SUGGESTION]
+    issue_count = _error_count(totals.file_after)
+    note_word = util.plural(note_count, "note", include_count=False)
+    suggestion_word = util.plural(suggestion_count, "suggestion", include_count=False)
+    issue_word = util.plural(issue_count, "issue", include_count=False)
 
     summary_div = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
     summary_div.span(".text-success")[
         htpy.i(".bi.bi-check-circle-fill.me-2"),
-        f"{pass_count} {check_word} passed",
+        f"{note_count} {note_word}",
     ]
-    if warn_count > 0:
+    if suggestion_count > 0:
         summary_div.span(".text-warning")[
             htpy.i(".bi.bi-exclamation-triangle-fill.me-2"),
-            f"{warn_count} {warn_word}",
+            f"{suggestion_count} {suggestion_word}",
         ]
     else:
         summary_div.span(".text-muted")[
             htpy.i(".bi.bi-exclamation-triangle.me-2"),
-            "0 warnings",
+            "0 suggestions",
         ]
-    if err_count > 0:
+    if issue_count > 0:
         summary_div.span(".text-danger")[
             htpy.i(".bi.bi-x-circle-fill.me-2"),
-            f"{err_count} {err_word}",
+            f"{issue_count} {issue_word}",
         ]
     else:
         summary_div.span(".text-muted")[
             htpy.i(".bi.bi-x-circle.me-2"),
-            "0 errors",
+            "0 issues",
         ]
     page.append(summary_div.collect())
 

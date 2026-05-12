@@ -152,7 +152,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.failure(
+        await recorder.concern(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -195,7 +195,7 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.failure(
+        await recorder.concern(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -277,12 +277,12 @@ def _files_check_binary_license(paths: list[pathlib.Path], root_path: pathlib.Pa
         if _files_check_core_logic_license(path) is None:
             rel_path = str(path.relative_to(root_path))
             return ArtifactResult(
-                status=sql.CheckResultStatus.SUCCESS,
+                status=sql.CheckResultStatus.NOTE,
                 message=f"{rel_path} is valid",
                 data=None,
             )
     return ArtifactResult(
-        status=sql.CheckResultStatus.FAILURE,
+        status=sql.CheckResultStatus.CONCERN,
         message="No valid LICENSE or LICENSE.txt file found",
         data=None,
     )
@@ -300,12 +300,12 @@ def _files_check_binary_notice(paths: list[pathlib.Path], root_path: pathlib.Pat
         if notice_ok:
             rel_path = str(path.relative_to(root_path))
             return ArtifactResult(
-                status=sql.CheckResultStatus.SUCCESS,
+                status=sql.CheckResultStatus.NOTE,
                 message=f"{rel_path} is valid",
                 data=None,
             )
     return ArtifactResult(
-        status=sql.CheckResultStatus.FAILURE,
+        status=sql.CheckResultStatus.CONCERN,
         message="No valid NOTICE or NOTICE.txt file found",
         data=None,
     )
@@ -316,7 +316,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
         yield ArtifactResult(
-            status=sql.CheckResultStatus.FAILURE,
+            status=sql.CheckResultStatus.CONCERN,
             message="Cache directory is not available",
             data=None,
         )
@@ -327,7 +327,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
     root_dirs = [e for e in top_entries if (archive_dir / e).path.is_dir()]
     if len(root_dirs) != 1:
         yield ArtifactResult(
-            status=sql.CheckResultStatus.FAILURE,
+            status=sql.CheckResultStatus.CONCERN,
             message=f"Expected single root directory, found {len(root_dirs)}",
             data=None,
         )
@@ -466,7 +466,7 @@ def _headers_check_core_logic(  # noqa: C901
 
     if not archive_dir.path.is_dir():
         yield ArtifactResult(
-            status=sql.CheckResultStatus.FAILURE,
+            status=sql.CheckResultStatus.CONCERN,
             message="Cache directory is not available",
             data=None,
         )
@@ -495,11 +495,11 @@ def _headers_check_core_logic(  # noqa: C901
                 case ArtifactResult() | MemberResult() as result:
                     artifact_data.files_checked += 1
                     match result.status:
-                        case sql.CheckResultStatus.SUCCESS:
+                        case sql.CheckResultStatus.NOTE:
                             artifact_data.files_with_valid_headers += 1
-                        case sql.CheckResultStatus.WARNING:
+                        case sql.CheckResultStatus.SUGGESTION:
                             artifact_data.files_with_invalid_headers += 1
-                        case sql.CheckResultStatus.FAILURE:
+                        case sql.CheckResultStatus.CONCERN:
                             artifact_data.files_with_invalid_headers += 1
                         case sql.CheckResultStatus.BLOCKER:
                             artifact_data.files_with_invalid_headers += 1
@@ -510,7 +510,7 @@ def _headers_check_core_logic(  # noqa: C901
                     artifact_data.files_skipped += 1
 
     yield ArtifactResult(
-        status=sql.CheckResultStatus.SUCCESS,
+        status=sql.CheckResultStatus.NOTE,
         message=f"Checked {util.plural(artifact_data.files_checked, 'file')},"
         f" found {artifact_data.files_with_valid_headers} with valid headers,"
         f" {artifact_data.files_with_invalid_headers} with invalid headers,"
@@ -546,14 +546,14 @@ def _headers_check_core_logic_process_file(
         is_valid, error = headers_validate(content, rel_path)
         if is_valid:
             return MemberResult(
-                status=sql.CheckResultStatus.SUCCESS,
+                status=sql.CheckResultStatus.NOTE,
                 path=rel_path,
                 message="Valid license header",
                 data=None,
             )
         else:
             return MemberResult(
-                status=sql.CheckResultStatus.FAILURE,
+                status=sql.CheckResultStatus.CONCERN,
                 path=rel_path,
                 message=f"Invalid license header: {error}",
                 data=None,
@@ -602,10 +602,10 @@ async def _headers_core(
                     await _record_member(recorder, result)
                 case MemberSkippedResult():
                     pass
-        member_failures = recorder.member_problems.get(sql.CheckResultStatus.FAILURE, 0)
-        if member_failures > 0:
-            await recorder.failure(
-                f"Some files had invalid license headers ({member_failures} failures)",
+        member_concerns = recorder.member_problems.get(sql.CheckResultStatus.CONCERN, 0)
+        if member_concerns > 0:
+            await recorder.concern(
+                f"Some files had invalid license headers ({member_concerns} concerns)",
                 None,
             )
 
@@ -630,7 +630,7 @@ def _license_results(
 
     if license_files_size > 1:
         yield ArtifactResult(
-            status=sql.CheckResultStatus.FAILURE,
+            status=sql.CheckResultStatus.CONCERN,
             message="Multiple LICENSE files found",
             data=None,
         )
@@ -640,13 +640,13 @@ def _license_results(
         # Unpack the single result by iterating
         if license_diff is None:
             yield ArtifactResult(
-                status=sql.CheckResultStatus.SUCCESS,
+                status=sql.CheckResultStatus.NOTE,
                 message=f"{filename} is valid",
                 data=None,
             )
         else:
             yield ArtifactResult(
-                status=sql.CheckResultStatus.FAILURE,
+                status=sql.CheckResultStatus.CONCERN,
                 message=f"{filename} is invalid",
                 data={"diff": license_diff},
             )
@@ -680,7 +680,7 @@ def _notice_results(
 
     if notice_files_size > 1:
         yield ArtifactResult(
-            status=sql.CheckResultStatus.FAILURE,
+            status=sql.CheckResultStatus.CONCERN,
             message="Multiple NOTICE files found",
             data=None,
         )
@@ -690,13 +690,13 @@ def _notice_results(
         # Unpack the single result by iterating
         if notice_ok:
             yield ArtifactResult(
-                status=sql.CheckResultStatus.SUCCESS,
+                status=sql.CheckResultStatus.NOTE,
                 message=f"{filename} is valid",
                 data=None,
             )
         else:
             yield ArtifactResult(
-                status=sql.CheckResultStatus.FAILURE,
+                status=sql.CheckResultStatus.CONCERN,
                 message=f"{filename} is invalid",
                 data={"issues": notice_issues, "preamble": notice_preamble},
             )
@@ -704,12 +704,12 @@ def _notice_results(
 
 async def _record_artifact(recorder: checks.Recorder, result: ArtifactResult) -> None:
     match result.status:
-        case sql.CheckResultStatus.SUCCESS:
-            await recorder.success(result.message, result.data)
-        case sql.CheckResultStatus.WARNING:
-            await recorder.warning(result.message, result.data)
-        case sql.CheckResultStatus.FAILURE:
-            await recorder.failure(result.message, result.data)
+        case sql.CheckResultStatus.NOTE:
+            await recorder.note(result.message, result.data)
+        case sql.CheckResultStatus.SUGGESTION:
+            await recorder.suggestion(result.message, result.data)
+        case sql.CheckResultStatus.CONCERN:
+            await recorder.concern(result.message, result.data)
         case sql.CheckResultStatus.BLOCKER:
             await recorder.blocker(result.message, result.data)
         case sql.CheckResultStatus.EXCEPTION:
@@ -718,12 +718,12 @@ async def _record_artifact(recorder: checks.Recorder, result: ArtifactResult) ->
 
 async def _record_member(recorder: checks.Recorder, result: MemberResult) -> None:
     match result.status:
-        case sql.CheckResultStatus.SUCCESS:
-            await recorder.success(result.message, result.data, member_rel_path=result.path)
-        case sql.CheckResultStatus.WARNING:
-            await recorder.warning(result.message, result.data, member_rel_path=result.path)
-        case sql.CheckResultStatus.FAILURE:
-            await recorder.failure(result.message, result.data, member_rel_path=result.path)
+        case sql.CheckResultStatus.NOTE:
+            await recorder.note(result.message, result.data, member_rel_path=result.path)
+        case sql.CheckResultStatus.SUGGESTION:
+            await recorder.suggestion(result.message, result.data, member_rel_path=result.path)
+        case sql.CheckResultStatus.CONCERN:
+            await recorder.concern(result.message, result.data, member_rel_path=result.path)
         case sql.CheckResultStatus.BLOCKER:
             await recorder.blocker(result.message, result.data, member_rel_path=result.path)
         case sql.CheckResultStatus.EXCEPTION:

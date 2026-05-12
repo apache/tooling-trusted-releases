@@ -388,18 +388,18 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
     raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
 
 
-def ensure_success_results_are_visible(page: Page, result_type: str) -> None:
-    button_id = f"#btn-toggle-{result_type}-success"
-    show_success_btn = page.locator(button_id)
+def ensure_note_results_are_visible(page: Page, result_type: str) -> None:
+    button_id = f"#btn-toggle-{result_type}-note"
+    show_note_btn = page.locator(button_id)
 
-    if show_success_btn.is_visible(timeout=500):
-        raw_button_text = show_success_btn.text_content() or ""
-        if "Show Success" in " ".join(raw_button_text.split()):
-            show_success_btn.click()
-            expect(show_success_btn).to_contain_text("Hide Success", timeout=2000)
-            first_success_row = page.locator(f".atr-result-{result_type}.atr-result-status-success").first
-            if first_success_row.is_visible(timeout=500):
-                expect(first_success_row).not_to_have_class("atr-hide", timeout=1000)
+    if show_note_btn.is_visible(timeout=500):
+        raw_button_text = show_note_btn.text_content() or ""
+        if "Show Note" in " ".join(raw_button_text.split()):
+            show_note_btn.click()
+            expect(show_note_btn).to_contain_text("Hide Note", timeout=2000)
+            first_note_row = page.locator(f".atr-result-{result_type}.atr-result-status-note").first
+            if first_note_row.is_visible(timeout=500):
+                expect(first_note_row).not_to_have_class("atr-hide", timeout=1000)
 
 
 def release_remove(page: Page, release_key: str) -> None:
@@ -598,16 +598,16 @@ def test_checks_01_hashing_sha512(page: Page, credentials: Credentials) -> None:
     wait_for_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying Hashing Check status")
     check_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Hashing Check'))")
     expect(check_row_locator).to_be_visible()
     logging.info("Located Hashing Check row")
 
-    success_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(success_badge_locator).to_be_visible()
-    logging.info("Hashing Check status verified as Success")
+    note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(note_badge_locator).to_be_visible()
+    logging.info("Hashing Check status verified as Note")
 
 
 def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
@@ -635,16 +635,16 @@ def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
     wait_for_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying License Files check status")
     check_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('License Files'))")
     expect(check_row_locator).to_have_count(2)
     logging.info("Located 2 License Files check rows")
 
-    success_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(success_badge_locator).to_have_count(2)
-    logging.info("License Files check status verified as Success for 2 rows")
+    note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(note_badge_locator).to_have_count(2)
+    logging.info("License Files check status verified as Note for 2 rows")
 
 
 def test_checks_03_license_headers(page: Page, credentials: Credentials) -> None:
@@ -660,16 +660,16 @@ def test_checks_03_license_headers(page: Page, credentials: Credentials) -> None
     go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying License Headers check status")
     check_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('License Headers'))")
     expect(check_row_locator).to_be_visible()
     logging.info("Located License Headers check row")
 
-    success_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(success_badge_locator).to_be_visible()
-    logging.info("License Headers check status verified as Success")
+    note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(note_badge_locator).to_be_visible()
+    logging.info("License Headers check status verified as Note")
 
 
 def test_checks_04_paths(page: Page, credentials: Credentials) -> None:
@@ -684,7 +684,7 @@ def test_checks_04_paths(page: Page, credentials: Credentials) -> None:
     go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     # TODO: It's a bit strange to have the status in the check name
     # But we have to do this because we need separate Recorder objects
@@ -695,9 +695,9 @@ def test_checks_04_paths(page: Page, credentials: Credentials) -> None:
     expect(check_row_locator).to_be_visible()
     logging.info("Located Paths Check Success row")
 
-    success_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(success_badge_locator).to_be_visible()
-    logging.info("Paths Check Success status verified as Success")
+    note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(note_badge_locator).to_be_visible()
+    logging.info("Paths Check Success status verified as Note")
 
 
 def test_checks_05_signature(page: Page, credentials: Credentials) -> None:
@@ -712,16 +712,16 @@ def test_checks_05_signature(page: Page, credentials: Credentials) -> None:
     go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying Signature Check status")
     check_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Signature Check'))")
     expect(check_row_locator).to_be_visible()
     logging.info("Located Signature Check row")
 
-    success_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(success_badge_locator).to_be_visible()
-    logging.info("Signature Check status verified as Success")
+    note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(note_badge_locator).to_be_visible()
+    logging.info("Signature Check status verified as Note")
 
 
 def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
@@ -736,15 +736,15 @@ def test_checks_06_targz(page: Page, credentials: Credentials) -> None:
     go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying Targz Structure status")
     structure_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Structure'))")
     expect(structure_row_locator).to_be_visible()
     logging.info("Located Targz Structure row")
-    structure_success_badge = structure_row_locator.locator("td span.badge.bg-success:text-is('Success')")
-    expect(structure_success_badge).to_be_visible()
-    logging.info("Targz Structure status verified as Success")
+    structure_note_badge = structure_row_locator.locator("td span.badge.bg-success:text-is('Note')")
+    expect(structure_note_badge).to_be_visible()
+    logging.info("Targz Structure status verified as Note")
 
 
 def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
@@ -781,7 +781,7 @@ def test_checks_07_cache(page: Page, credentials: Credentials) -> None:
     go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
-    ensure_success_results_are_visible(page, "primary")
+    ensure_note_results_are_visible(page, "primary")
 
     logging.info("Verifying Targz Structure status exists")
     structure_row_locator = page.locator("tr.atr-result-primary:has(th:has-text('Targz Structure'))")
