@@ -35,7 +35,8 @@ def test_checker_stats_counts_and_files_by_status():
     info = types.PathInfo(
         successes={path: [success]},
         warnings={path: [warning]},
-        errors={path: [failure, blocker]},
+        errors={path: [failure]},
+        blockers={path: [blocker]},
     )
     reader = _make_reader()
     compute_checker_stats = getattr(reader, "_GeneralPublic__compute_checker_stats")

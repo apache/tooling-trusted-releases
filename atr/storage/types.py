@@ -61,6 +61,7 @@ class LinkedCommittee:
 
 
 class PathInfo(schema.Strict):
+    blockers: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     checker_stats: list[CheckerStats] = schema.factory(list)
     errors: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
     exceptions: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
@@ -68,6 +69,7 @@ class PathInfo(schema.Strict):
     ignored_errors: list[sql.CheckResult] = schema.factory(list)
     ignored_exceptions: list[sql.CheckResult] = schema.factory(list)
     ignored_warnings: list[sql.CheckResult] = schema.factory(list)
+    release_level_blockers: list[sql.CheckResult] = schema.factory(list)
     release_level_errors: list[sql.CheckResult] = schema.factory(list)
     release_level_exceptions: list[sql.CheckResult] = schema.factory(list)
     successes: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)

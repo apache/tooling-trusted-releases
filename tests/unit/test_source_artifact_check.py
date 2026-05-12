@@ -47,27 +47,30 @@ async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_blocker_with_path_goes_to_errors():
+async def test_blocker_with_path_goes_to_blockers():
     info = types.PathInfo()
     result = _make_check_result(sql.CheckResultStatus.BLOCKER, "Bad path", primary_rel_path="some-file.tar.gz")
     cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
     assert len(info.release_level_errors) == 0
+    assert len(info.release_level_blockers) == 0
     path = safe.RelPath("some-file.tar.gz")
-    assert path in info.errors
-    assert info.errors[path][0] is result
+    assert path in info.blockers
+    assert info.blockers[path][0] is result
+    assert path not in info.errors
 
 
 @pytest.mark.asyncio
-async def test_blocker_without_path_goes_to_release_level_errors():
+async def test_blocker_without_path_goes_to_release_level_blockers():
     info = types.PathInfo()
     result = _make_check_result(sql.CheckResultStatus.BLOCKER, "No source artifact")
     cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
-    assert len(info.release_level_errors) == 1
-    assert info.release_level_errors[0] is result
+    assert len(info.release_level_blockers) == 1
+    assert info.release_level_blockers[0] is result
+    assert len(info.release_level_errors) == 0
 
 
 @pytest.mark.asyncio

@@ -53,7 +53,12 @@ def render_checks_summary(
 ) -> htm.Element | None:
     if info is None:
         return None
-    if (not info.checker_stats) and (not info.release_level_errors) and (not info.release_level_exceptions):
+    if (
+        (not info.checker_stats)
+        and (not info.release_level_errors)
+        and (not info.release_level_exceptions)
+        and (not info.release_level_blockers)
+    ):
         return None
 
     card = htm.Block(htm.div, classes=".card.mb-4")
@@ -65,6 +70,8 @@ def render_checks_summary(
     for result in info.release_level_errors:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
     for result in info.release_level_exceptions:
+        release_problems_by_checker.setdefault(result.checker, []).append(result)
+    for result in info.release_level_blockers:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
 
     stats_by_checker = {stat.checker: stat for stat in info.checker_stats}
