@@ -20,17 +20,17 @@ import os
 from typing import Any
 
 from atr.datasources.apache import (
-    CommitteeData,
     GroupsData,
     LDAPProjectsData,
     PodlingsData,
     ProjectsData,
     RetiredCommitteeData,
+    WhimsyCommitteeData,
 )
 
 
 def test_committee_data_model():
-    committees = CommitteeData.model_validate(_load_test_data("committees"))
+    committees = WhimsyCommitteeData.model_validate(_load_test_data("committees"))
 
     assert committees is not None
     assert committees.pmc_count == 1

@@ -41,6 +41,7 @@ import atr.util as util
 _WHIMSY_COMMITTEE_INFO_URL: Final[str] = "https://whimsy.apache.org/public/committee-info.json"
 _WHIMSY_COMMITTEE_RETIRED_URL: Final[str] = "https://whimsy.apache.org/public/committee-retired.json"
 _WHIMSY_PROJECTS_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_projects.json"
+_PROJECTS_COMMITTEE_URL: Final[str] = "https://projects.apache.org/json/foundation/committees.json"
 _PROJECTS_PROJECTS_URL: Final[str] = "https://projects.apache.org/json/foundation/projects.json"
 _PROJECTS_PODLINGS_URL: Final[str] = "https://projects.apache.org/json/foundation/podlings.json"
 _PROJECTS_GROUPS_URL: Final[str] = "https://projects.apache.org/json/foundation/groups.json"
@@ -81,6 +82,20 @@ class User(schema.Strict):
 
 
 class Committee(schema.Strict):
+    chair: str
+    charter: str
+    established: str
+    group: str
+    homepage: str
+    id: str
+    name: str
+    rdf: str
+    reporting: int | None = None
+    roster: Annotated[list[User], helpers.DictToList(key="id")]
+    shortdesc: str
+
+
+class WhimsyCommittee(schema.Strict):
     name: str
     display_name: str
     site: str | None
@@ -94,14 +109,14 @@ class Committee(schema.Strict):
     pmc: bool
 
 
-class CommitteeData(schema.Strict):
+class WhimsyCommitteeData(schema.Strict):
     last_updated: str
     committee_count: int
     pmc_count: int
     roster_counts: dict[str, int] = schema.factory(dict)
     officers: dict[str, Any] = schema.factory(dict)
     board: dict[str, Any] = schema.factory(dict)
-    committees: Annotated[list[Committee], helpers.DictToList(key="name")]
+    committees: Annotated[list[WhimsyCommittee], helpers.DictToList(key="name")]
     next_board_meetings: dict[str, Any] = schema.alias_opt("nextBoardMeetings")
 
 
@@ -234,7 +249,18 @@ class ProjectsData(helpers.DictRoot[ProjectStatus]):
     pass
 
 
-async def get_active_committee_data() -> CommitteeData:
+async def get_committee_data() -> dict[str, Committee]:
+    """Returns the list of committees from projects.a.o."""
+
+    async with util.create_secure_session() as session:
+        async with session.get(_PROJECTS_COMMITTEE_URL) as response:
+            response.raise_for_status()
+            data: list = await response.json()
+
+    return {c.get("id"): Committee.model_validate(c) for c in data}
+
+
+async def get_whimsy_committee_data() -> WhimsyCommitteeData:
     """Returns the list of currently active committees."""
 
     async with util.create_secure_session() as session:
@@ -242,7 +268,7 @@ async def get_active_committee_data() -> CommitteeData:
             response.raise_for_status()
             data = await response.json()
 
-    return CommitteeData.model_validate(data)
+    return WhimsyCommitteeData.model_validate(data)
 
 
 async def get_current_podlings_data() -> PodlingsData:
@@ -301,17 +327,18 @@ async def update_metadata() -> tuple[int, int]:
     ldap_projects = await get_ldap_projects_data()
     projects = await get_projects_data()
     podlings_data = await get_current_podlings_data()
-    committees = await get_active_committee_data()
+    whimsy_committees = await get_whimsy_committee_data()
+    committees = await get_committee_data()
 
     ldap_projects_by_name: Mapping[str, LDAPProject] = {p.name: p for p in ldap_projects.projects}
-    committees_by_name: Mapping[str, Committee] = {c.name: c for c in committees.committees}
+    whimsy_committees_by_name: Mapping[str, WhimsyCommittee] = {c.name: c for c in whimsy_committees.committees}
 
     added_count = 0
     updated_count = 0
 
     async with db.session() as data:
         async with data.begin():
-            added, updated = await _update_committees(data, ldap_projects, committees_by_name)
+            added, updated = await _update_committees(data, ldap_projects, whimsy_committees_by_name, committees)
             added_count += added
             updated_count += updated
 
@@ -384,7 +411,10 @@ def _project_status(pmc: sql.Committee, project_key: str, project_status: Projec
 
 
 async def _update_committees(
-    data: db.Session, ldap_projects: LDAPProjectsData, committees_by_name: Mapping[str, Committee]
+    data: db.Session,
+    ldap_projects: LDAPProjectsData,
+    whimsy_committees_by_name: Mapping[str, WhimsyCommittee],
+    committees: dict[str, Committee],
 ) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
@@ -409,9 +439,12 @@ async def _update_committees(
         committee.committers = project.members
         # We create PMCs for now
         committee.is_podling = False
-        committee_info = committees_by_name.get(name)
+        whimsy_info = whimsy_committees_by_name.get(name)
+        if whimsy_info:
+            committee.name = whimsy_info.display_name
+        committee_info = committees.get(name)
         if committee_info:
-            committee.name = committee_info.display_name
+            committee.charter = committee_info.charter
 
         updated_count += 1
 
@@ -473,6 +506,9 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         if project_key.startswith("webservices-"):
             project_key = project_key.replace("webservices-", "ws-")
             project_status.pmc = "ws"
+        # Fixup data from accumulo-fluo_recipes
+        if "_" in project_key:
+            project_key = project_key.replace("_", "-")
 
         # TODO: Annotator is in both projects and ldap_projects
         # The projects version is called "incubator-annotator", with "incubator" as its pmc

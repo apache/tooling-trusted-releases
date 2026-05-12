@@ -25,6 +25,7 @@ from typing import Annotated, Any, Final
 import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+_PROJECT_CHARS: Final = _ALPHANUM | frozenset("+")
 _ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
 _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")
@@ -207,8 +208,12 @@ class Numeric(SafeType):
         return _NUMERIC
 
 
-class ProjectKey(Alphanumeric):
+class ProjectKey(SafeType):
     """A project name that has been validated for safety."""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _PROJECT_CHARS
 
 
 class ReleaseKey(Alphanumeric):

@@ -659,6 +659,7 @@ class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
 class Committee(sqlmodel.SQLModel, table=True):
     key: str = sqlmodel.Field(unique=True, primary_key=True, **example("example"))
     name: str | None = sqlmodel.Field(default=None, **example("Example"))
+    charter: str | None = sqlmodel.Field(default=None, **example("Example"))
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
 
