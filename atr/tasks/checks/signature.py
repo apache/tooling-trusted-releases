@@ -32,7 +32,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -65,16 +65,19 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             artifact_path=str(artifact_abs_path),
             signature_path=str(primary_abs_path),
         )
-        if result_data.get("error"):
-            await recorder.concern(result_data["error"], result_data)
-        elif result_data.get("verified"):
-            await recorder.note("Signature verified successfully", result_data)
-        else:
-            # Shouldn't happen
-            await recorder.exception("Signature verification failed for unknown reasons", result_data)
-
     except Exception as e:
         await recorder.exception("Error during signature check execution", {"error": str(e)})
+        return None
+
+    match result_data.get("error_kind"):
+        case "missing_signature" | "no_asf_uid":
+            await recorder.blocker(result_data["error"], result_data)
+        case _ if result_data.get("error"):
+            await recorder.concern(result_data["error"], result_data)
+        case _ if result_data.get("verified"):
+            await recorder.note("Signature verified successfully", result_data)
+        case _:
+            await recorder.exception("Signature verification failed for unknown reasons", result_data)
 
     return None
 
@@ -147,6 +150,7 @@ def _check_core_logic_verify_signature(
         return {
             "verified": False,
             "error": "No valid signature found",
+            "error_kind": "missing_signature",
             "debug_info": _debug_info(
                 key=None,
                 signature_info=None,
@@ -177,6 +181,7 @@ def _check_core_logic_verify_signature(
         return {
             "verified": False,
             "error": "No valid signature found",
+            "error_kind": "missing_signature",
             "debug_info": _debug_info(
                 key=None,
                 signature_info=signature_info,
@@ -202,6 +207,7 @@ def _check_core_logic_verify_signature(
         return {
             "verified": False,
             "error": "Verifying key lacks an ASF UID",
+            "error_kind": "no_asf_uid",
             "debug_info": debug_info,
         }
 

@@ -19,8 +19,25 @@ import base64
 import pathlib
 
 import openpgp
+import pytest
 
+import atr.models.safe as safe
+import atr.models.sql as sql
+import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature_check
+import tests.unit.recorders as recorders
+
+
+class SignatureRecorderStub(recorders.RecorderStub):
+    def __init__(self, primary_path: pathlib.Path, base_dir: pathlib.Path, checker: str) -> None:
+        super().__init__(safe.StatePath(primary_path), checker)
+        self._base_dir = base_dir
+
+    async def abs_path(self, rel_path: str | None = None) -> safe.StatePath | None:
+        if rel_path is None:
+            return self._path
+        return safe.StatePath(self._base_dir / rel_path)
+
 
 _PRIMARY_FINGERPRINT = "557f8d855def8bbe2dc5603b64c271bb87b7fe7b"
 _SIGNING_SUBKEY_ID = "a1f5f85d9baea612"
@@ -163,6 +180,43 @@ lmpqKhMLtpSS8gGgHPWwye4u84Kj0DxDgtv3fXYYdtg/tV/P/0cnI+v94fH7x6hT8/+xidP7
 s/1/jcfp+ztTP+Z/8fwhh1F4Rg9j9tfz/1Rk7ORuNz89Oz8bjMfj/+cno+f//+5r+j/H+IFU
 9ffHsHs/P8/P8PD9/2Oc/nCsYWABCAAA=
 """
+
+
+async def test_check_blocks_on_missing_signature_error_kind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    signature_path = tmp_path / "artifact.tar.gz.asc"
+    signature_path.write_text("not a signature", encoding="utf-8")
+    recorder = SignatureRecorderStub(signature_path, tmp_path, "atr.tasks.checks.signature.check")
+
+    async def check_core_logic(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        return {
+            "verified": False,
+            "error": "No valid signature found",
+            "error_kind": "missing_signature",
+        }
+
+    monkeypatch.setattr(signature_check, "_check_core_logic", check_core_logic)
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="tester",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("1.0"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath(signature_path.name),
+        extra_args={"committee_key": "test"},
+    )
+
+    await signature_check.check(args)
+
+    assert recorder.messages == [
+        (
+            sql.CheckResultStatus.BLOCKER.value,
+            "No valid signature found",
+            {"verified": False, "error": "No valid signature found", "error_kind": "missing_signature"},
+        )
+    ]
 
 
 def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: pathlib.Path) -> None:
