@@ -2,7 +2,7 @@ name: CodeQL
 
 on:
   push:
-    branches: [altera, arm, main, sbp]
+    branches: [altera, arm, main, sbp, tertia]
   pull_request:
     branches: [main]
   schedule:
