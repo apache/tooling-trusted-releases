@@ -28,8 +28,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final
 
+import atr.models.sql as sql
+
 if TYPE_CHECKING:
-    import atr.models.sql as sql
+    import atr.db as db
 
 _DEFAULT_CYCLE: Final[str] = "default"
 
@@ -59,3 +61,31 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
         raise ValueError(f"cycle_match for project {project.key!r} captured empty string from version {version!r}")
 
     return cycle
+
+
+async def reassign_release_cycles(data: db.Session, project: sql.Project) -> None:
+    """Re-resolve cycle membership for every release in the project.
+
+    Releases whose version doesn't match the current `cycle_match` fall
+    back to the default cycle. New cycles get auto-created in the same
+    transaction.
+    """
+    releases = await data.release(project_key=str(project.key)).all()
+    for release in releases:
+        try:
+            cycle_name = cycle_name_for_version(project, release.version)
+        except ValueError:
+            cycle_name = _DEFAULT_CYCLE
+        new_cycle_key = f"{project.key}-{cycle_name}"
+        if release.cycle_key == new_cycle_key:
+            continue
+        if not await data.project_cycle(cycle_key=new_cycle_key).get():
+            data.add(
+                sql.ProjectCycle(
+                    cycle_key=new_cycle_key,
+                    cycle=cycle_name,
+                    project_key=project.key,
+                    lts=False,
+                )
+            )
+        release.cycle_key = new_cycle_key

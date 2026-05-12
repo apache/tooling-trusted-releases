@@ -181,7 +181,7 @@ async def _handle_request_validation(err: quart_schema.RequestSchemaValidationEr
     if not isinstance(err.validation_error, pydantic.ValidationError):
         raise err.validation_error
     verr: pydantic.ValidationError = err.validation_error
-    return _json_error("Input validation failed", 400, {"validation_details": verr.errors()})
+    return _json_error("Input validation failed", 400, {"validation_details": verr.errors(include_context=False)})
 
 
 @_BLUEPRINT.errorhandler(storage.AccessError)

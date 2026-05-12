@@ -17,8 +17,9 @@
 
 import dataclasses
 import datetime
+import re
 from collections.abc import Callable, Sequence
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, Self, TypeVar
 
 import pydantic
 
@@ -316,8 +317,11 @@ class PolicyGetResults(schema.Strict):
     policy_vote_comment_template: str
 
 
-class PolicyUpdateArgs(schema.Strict):
-    project: safe.ProjectKey = schema.example("example")
+class PolicyArgsBase(schema.Strict):
+    """
+    Base class to allow one endpoint to take a project key and another not
+    """
+
     announce_release_subject: str | None = None
     announce_release_template: str | None = None
     binary_artifact_paths: list[str] | None = None
@@ -352,7 +356,7 @@ class PolicyUpdateArgs(schema.Strict):
         return v
 
     @pydantic.model_validator(mode="after")
-    def validate_policy_fields(self) -> "PolicyUpdateArgs":
+    def validate_policy_fields(self) -> Self:
         if ("manual_vote" in self.model_fields_set) and ("vote_mode" in self.model_fields_set):
             raise ValueError("Specify either 'manual_vote' or 'vote_mode', not both")
 
@@ -377,9 +381,75 @@ class PolicyUpdateArgs(schema.Strict):
         return self
 
 
+class PolicyUpdateArgs(PolicyArgsBase):
+    project: safe.ProjectKey = schema.example("example")
+
+
 class PolicyUpdateResults(schema.Strict):
     endpoint: Literal["/policy/update"] = schema.alias("endpoint")
     success: Literal[True] = schema.example(True)
+
+
+class ProjectConfigProjectArgs(schema.Strict):
+    name: str | None = None
+    description: str | None = None
+    short_description: str | None = None
+    homepage: pydantic.HttpUrl | None = None
+    lifecycle_page: pydantic.HttpUrl | None = None
+    download_page: pydantic.HttpUrl | None = None
+    bug_database: pydantic.HttpUrl | None = None
+    mailing_lists: pydantic.HttpUrl | None = None
+    repository: list[pydantic.AnyUrl] | None = None
+    standards: list[str] | None = None
+    # Changing any of these four reassigns existing releases to the cycle
+    # their version string now maps to.
+    version_method: sql.VersionMethod | None = None
+    version_pattern: str | None = None
+    cycle_match: str | None = None
+    branch_template: str | None = None
+
+    @pydantic.field_validator("version_method", mode="before")
+    @classmethod
+    def version_method_to_enum(cls, v):
+        if isinstance(v, str):
+            try:
+                return sql.VersionMethod(v)
+            except ValueError:
+                raise ValueError(f"'{v}' is not a valid VersionMethod")
+        return v
+
+    @pydantic.model_validator(mode="after")
+    def _validate_version_scheme(self) -> Self:
+        if ("version_method" in self.model_fields_set) and (self.version_method is None):
+            raise ValueError("Field 'version_method' does not accept null")
+        for field in ("version_pattern", "cycle_match"):
+            value = getattr(self, field)
+            if not (isinstance(value, str) and value.strip()):
+                continue
+            try:
+                compiled = re.compile(value.strip())
+            except re.error as exc:
+                raise ValueError(f"Invalid {field} regex: {exc}") from exc
+            if (field == "cycle_match") and (compiled.groups < 1):
+                raise ValueError("cycle_match must contain at least one capture group")
+        return self
+
+
+class ProjectConfigPolicyArgs(PolicyArgsBase):
+    pass
+
+
+class ProjectConfigArgs(schema.Strict):
+    project_key: safe.ProjectKey = schema.example("example")
+    committee_key: safe.CommitteeKey = schema.example("example")
+    project: ProjectConfigProjectArgs | None = None
+    policy: ProjectConfigPolicyArgs | None = None
+
+
+class ProjectConfigResults(schema.Strict):
+    endpoint: Literal["/project/config"] = schema.alias("endpoint")
+    success: Literal[True] = schema.example(True)
+    created: bool = schema.example(False)
 
 
 class ProjectReleasesResults(schema.Strict):

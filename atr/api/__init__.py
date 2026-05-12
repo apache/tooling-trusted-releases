@@ -858,6 +858,39 @@ async def policy_update(
 
 
 @api.typed
+@jwtoken.require
+@quart_schema.security_scheme([{"BearerAuth": []}])
+@quart_schema.validate_response(models.api.ProjectConfigResults, 200)
+async def project_config_upsert(
+    _project_config: Literal["project/config"],
+    data: models.api.ProjectConfigArgs,
+) -> DictResponse:
+    """
+    URL: POST /project/config
+
+    Upsert a project's full configuration.
+
+    Creates a project if it on by the specified key does not yet exist.
+    Otherwise, updates all specified fields for an existing project.
+    The caller must be a committee member of the specified committee,
+    and for an existing project committee_key must match the current value.
+    """
+    asf_uid = _jwt_asf_uid()
+    try:
+        async with storage.write_as_committee_member(str(data.committee_key), asf_uid) as wacm:
+            created = await wacm.project.upsert_config(data)
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    except ValueError as e:
+        raise exceptions.BadRequest(str(e))
+    return models.api.ProjectConfigResults(
+        endpoint="/project/config",
+        success=True,
+        created=created,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
 async def project_get(
     _project_get: Literal["project/get"],

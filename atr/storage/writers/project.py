@@ -24,7 +24,9 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy.exc
 
+import atr.cycles as cycles
 import atr.db as db
+import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.registry as registry
@@ -143,6 +145,29 @@ class CommitteeMember(CommitteeParticipant):
         return False
 
     async def create(self, committee_key: safe.CommitteeKey, display_name: str, label: str) -> None:
+        try:
+            await self._build_and_add_project_no_commit(committee_key, display_name, label)
+            await self.__data.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            if (
+                isinstance(e.orig, sqlite3.IntegrityError)
+                and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
+                and ("project.key" in str(e.orig))
+            ):
+                raise storage.AccessError(f"Project {label} already exists", status=409)
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=str(committee_key),
+            project_key=label,
+        )
+
+    async def _build_and_add_project_no_commit(
+        self,
+        committee_key: safe.CommitteeKey,
+        display_name: str,
+        label: str,
+    ) -> sql.Project:
         super_project = None
         # TODO: Do we need to do any additional validation on the string value?
         # Get the base project to derive from
@@ -172,27 +197,10 @@ class CommitteeMember(CommitteeParticipant):
             created=datetime.datetime.now(datetime.UTC),
             created_by=self.__asf_uid,
         )
-
         if super_project and super_project.release_policy:
             project.release_policy = super_project.release_policy.duplicate()
-
-        try:
-            self.__data.add(project)
-            await self.__data.commit()
-            self.__write_as.append_to_audit_log(
-                asf_uid=self.__asf_uid,
-                committee_key=str(committee_key),
-                project_key=label,
-            )
-        except sqlalchemy.exc.IntegrityError as e:
-            if (
-                isinstance(e.orig, sqlite3.IntegrityError)
-                and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
-                and ("project.key" in str(e.orig))
-            ):
-                raise storage.AccessError(f"Project {label} already exists", status=409)
-            else:
-                raise
+        self.__data.add(project)
+        return project
 
     async def delete(self, project_key: safe.ProjectKey) -> None:
         project = await self.__data.project(
@@ -276,6 +284,99 @@ class CommitteeMember(CommitteeParticipant):
             )
             return True
         return False
+
+    async def upsert_config(
+        self,
+        args: api.ProjectConfigArgs,
+    ) -> bool:
+        try:
+            await self.__data.begin_immediate()
+            project, created = await self._resolve_or_create_project_no_commit(args)
+            project_args = args.project
+            if (project_args is not None) and project_args.model_fields_set:
+                await self._apply_project_args_no_commit(project, project_args)
+            policy_args = args.policy
+            if (policy_args is not None) and policy_args.model_fields_set:
+                policy_update = api.PolicyUpdateArgs(
+                    project=args.project_key,
+                    **policy_args.model_dump(exclude_unset=True),
+                )
+                await self.__write_as.policy._edit_policy_no_commit(args.project_key, policy_update)
+            await self.__data.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            await self.__data.rollback()
+            if (
+                isinstance(e.orig, sqlite3.IntegrityError)
+                and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
+                and ("project.key" in str(e.orig))
+            ):
+                raise storage.AccessError(f"Project {args.project_key} already exists", status=409)
+            raise
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=str(args.committee_key),
+            project_key=str(args.project_key),
+            created=created,
+        )
+        return created
+
+    async def _resolve_or_create_project_no_commit(
+        self,
+        args: api.ProjectConfigArgs,
+    ) -> tuple[sql.Project, bool]:
+        existing = await self.__data.project(key=str(args.project_key)).get()
+        if (existing is not None) and (existing.committee_key != str(args.committee_key)):
+            raise storage.AccessError(
+                f"Project '{args.project_key}' does not belong to committee '{args.committee_key}'",
+                status=400,
+            )
+        if existing is not None:
+            return existing, False
+        if (args.project is None) or (args.project.name is None) or (not args.project.name.strip()):
+            raise ValueError(f"Project '{args.project_key}' does not exist; project.name is required to create it")
+        project = await self._build_and_add_project_no_commit(
+            args.committee_key, display_name=args.project.name, label=str(args.project_key)
+        )
+        return project, True
+
+    async def _apply_project_args_no_commit(
+        self,
+        project: sql.Project,
+        args: api.ProjectConfigProjectArgs,
+    ) -> None:
+        str_fields = {
+            "name",
+            "description",
+            "short_description",
+            "homepage",
+            "lifecycle_page",
+            "download_page",
+            "bug_database",
+            "mailing_lists",
+            "version_pattern",
+            "cycle_match",
+            "branch_template",
+        }
+        list_fields = {"repository", "standards"}
+        version_scheme_fields = {"version_method", "version_pattern", "cycle_match", "branch_template"}
+        provided = args.model_fields_set
+
+        for field in str_fields & provided:
+            value = getattr(args, field)
+            if value is not None:
+                value = str(value).strip() or None
+            setattr(project, field, value)
+        for field in list_fields & provided:
+            setattr(project, field, [str(item) for item in getattr(args, field) or []])
+        if "version_method" in provided:
+            project.version_method = args.version_method or sql.VersionMethod.SIMPLE
+
+        if version_scheme_fields & provided:
+            await cycles.reassign_release_cycles(self.__data, project)
 
     def __current_categories(self, project: sql.Project) -> list[str]:
         return (

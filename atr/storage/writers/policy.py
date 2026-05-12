@@ -222,6 +222,14 @@ class CommitteeMember(CommitteeParticipant):
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
+        await self._edit_policy_no_commit(project_key, update)
+        await self.__commit_and_log(str(project_key))
+
+    async def _edit_policy_no_commit(
+        self,
+        project_key: models.safe.ProjectKey,
+        update: models.api.PolicyUpdateArgs,
+    ) -> None:
         # TODO: Ideally we would centralise the validation in this method
         project, release_policy = await self.__get_or_create_policy(project_key)
         fields_to_update = update.model_fields_set - {"manual_vote", "project", "vote_mode"}
@@ -246,8 +254,6 @@ class CommitteeMember(CommitteeParticipant):
 
         for field in fields_to_update:
             setattr(release_policy, field, normalised_values[field])
-
-        await self.__commit_and_log(str(project_key))
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
         project_key = form.project_key
@@ -304,7 +310,7 @@ class CommitteeMember(CommitteeParticipant):
         project.cycle_match = cycle_match
         project.branch_template = form.branch_template.strip() or None
 
-        await self.__reassign_release_cycles(project)
+        await cycles.reassign_release_cycles(self.__data, project)
         await self.__commit_and_log(str(project_key))
 
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:
@@ -327,33 +333,6 @@ class CommitteeMember(CommitteeParticipant):
             raise ValueError(f"Unsupported vote mode: {release_policy.vote_mode}")
 
         await self.__commit_and_log(str(str(project_key)))
-
-    async def __reassign_release_cycles(self, project: models.sql.Project) -> None:
-        """Re-resolve cycle membership for every release in the project.
-
-        Releases whose version doesn't match the current `cycle_match` move
-        to the default cycle. New cycles get auto-created in the same
-        transaction.
-        """
-        releases = await self.__data.release(project_key=str(project.key)).all()
-        for release in releases:
-            try:
-                cycle_name = cycles.cycle_name_for_version(project, release.version)
-            except ValueError:
-                cycle_name = "default"
-            new_cycle_key = f"{project.key}-{cycle_name}"
-            if release.cycle_key == new_cycle_key:
-                continue
-            if not await self.__data.project_cycle(cycle_key=new_cycle_key).get():
-                self.__data.add(
-                    models.sql.ProjectCycle(
-                        cycle_key=new_cycle_key,
-                        cycle=cycle_name,
-                        project_key=project.key,
-                        lts=False,
-                    )
-                )
-            release.cycle_key = new_cycle_key
 
     async def __commit_and_log(self, project_key: str) -> None:
         await self.__data.commit()
