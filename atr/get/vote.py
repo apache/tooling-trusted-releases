@@ -456,9 +456,13 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
 
     body = htm.Block(htm.div, classes=".card-body")
 
-    pass_count = file_totals.file_pass_after
-    warn_count = file_totals.file_warn_after
-    err_count = file_totals.file_err_after
+    pass_count = file_totals.file_after[sql.CheckResultStatus.SUCCESS]
+    warn_count = file_totals.file_after[sql.CheckResultStatus.WARNING]
+    err_count = (
+        file_totals.file_after[sql.CheckResultStatus.FAILURE]
+        + file_totals.file_after[sql.CheckResultStatus.BLOCKER]
+        + file_totals.file_after[sql.CheckResultStatus.EXCEPTION]
+    )
 
     check_word = util.plural(pass_count, "check", include_count=False)
     warn_word = util.plural(warn_count, "warning", include_count=False)

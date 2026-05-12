@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 from collections.abc import Callable
 from typing import Literal, NamedTuple
 
@@ -46,42 +47,16 @@ import atr.web as web
 
 
 class FileStats(NamedTuple):
-    file_pass_before: int
-    file_warn_before: int
-    file_err_before: int
-    file_pass_after: int
-    file_warn_after: int
-    file_err_after: int
-    member_pass_before: int
-    member_warn_before: int
-    member_err_before: int
-    member_pass_after: int
-    member_warn_after: int
-    member_err_after: int
+    file_before: collections.Counter[sql.CheckResultStatus]
+    file_after: collections.Counter[sql.CheckResultStatus]
+    member_before: collections.Counter[sql.CheckResultStatus]
+    member_after: collections.Counter[sql.CheckResultStatus]
 
-    @property
-    def total_pass_before(self) -> int:
-        return self.file_pass_before + self.member_pass_before
+    def total_before(self, status: sql.CheckResultStatus) -> int:
+        return self.file_before[status] + self.member_before[status]
 
-    @property
-    def total_warn_before(self) -> int:
-        return self.file_warn_before + self.member_warn_before
-
-    @property
-    def total_err_before(self) -> int:
-        return self.file_err_before + self.member_err_before
-
-    @property
-    def total_pass_after(self) -> int:
-        return self.file_pass_after + self.member_pass_after
-
-    @property
-    def total_warn_after(self) -> int:
-        return self.file_warn_after + self.member_warn_after
-
-    @property
-    def total_err_after(self) -> int:
-        return self.file_err_after + self.member_err_after
+    def total_after(self, status: sql.CheckResultStatus) -> int:
+        return self.file_after[status] + self.member_after[status]
 
 
 async def get_file_totals(release: sql.Release, session: web.Committer | None) -> FileStats:
@@ -216,82 +191,68 @@ async def selected_revision(
     )
 
 
-async def _compute_stats(  # noqa: C901
+async def _compute_stats(
     release: sql.Release,
     paths: list[safe.RelPath],
     match_ignore: Callable[[sql.CheckResult], bool],
 ) -> tuple[dict[safe.RelPath, FileStats], FileStats]:
-    per_file: dict[safe.RelPath, dict[str, int]] = {
-        p: {
-            "file_pass_before": 0,
-            "file_warn_before": 0,
-            "file_err_before": 0,
-            "file_pass_after": 0,
-            "file_warn_after": 0,
-            "file_err_after": 0,
-            "member_pass_before": 0,
-            "member_warn_before": 0,
-            "member_err_before": 0,
-            "member_pass_after": 0,
-            "member_warn_after": 0,
-            "member_err_after": 0,
-        }
-        for p in paths
-    }
+    per_file = {path: _file_stats_empty() for path in paths}
 
     if release.latest_revision_number is None:
-        # TODO: Or raise an exception?
-        empty_stats = FileStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        return {p: empty_stats for p in paths}, empty_stats
+        return per_file, _file_stats_empty()
 
     async with db.session() as data:
         check_results = await interaction.checks_for(release, caller_data=data)
 
-    for cr in check_results:
-        if not cr.primary_rel_path:
+    for check_result in check_results:
+        if not check_result.primary_rel_path:
             continue
 
-        file_path = safe.RelPath(cr.primary_rel_path)
-        if file_path not in per_file:
+        file_path = safe.RelPath(check_result.primary_rel_path)
+        stats = per_file.get(file_path)
+        if stats is None:
             continue
 
-        is_member = cr.member_rel_path is not None
-        is_ignored = match_ignore(cr)
-        prefix = "member" if is_member else "file"
+        _file_stats_result_add(stats, check_result, match_ignore(check_result))
 
-        if cr.status == sql.CheckResultStatus.SUCCESS:
-            per_file[file_path][f"{prefix}_pass_before"] += 1
-            per_file[file_path][f"{prefix}_pass_after"] += 1
-        elif cr.status == sql.CheckResultStatus.WARNING:
-            per_file[file_path][f"{prefix}_warn_before"] += 1
-            if not is_ignored:
-                per_file[file_path][f"{prefix}_warn_after"] += 1
-        else:
-            per_file[file_path][f"{prefix}_err_before"] += 1
-            if not is_ignored:
-                per_file[file_path][f"{prefix}_err_after"] += 1
+    totals = _file_stats_empty()
+    for stats in per_file.values():
+        totals.file_before.update(stats.file_before)
+        totals.file_after.update(stats.file_after)
+        totals.member_before.update(stats.member_before)
+        totals.member_after.update(stats.member_after)
 
-    per_file_stats = {p: FileStats(**c) for p, c in per_file.items()}
+    return per_file, totals
 
-    total_counts = {
-        "file_pass_before": 0,
-        "file_warn_before": 0,
-        "file_err_before": 0,
-        "file_pass_after": 0,
-        "file_warn_after": 0,
-        "file_err_after": 0,
-        "member_pass_before": 0,
-        "member_warn_before": 0,
-        "member_err_before": 0,
-        "member_pass_after": 0,
-        "member_warn_after": 0,
-        "member_err_after": 0,
-    }
-    for stats in per_file_stats.values():
-        for field in total_counts:
-            total_counts[field] += getattr(stats, field)
 
-    return per_file_stats, FileStats(**total_counts)
+def _error_count(counts: collections.Counter[sql.CheckResultStatus]) -> int:
+    return (
+        counts[sql.CheckResultStatus.FAILURE]
+        + counts[sql.CheckResultStatus.BLOCKER]
+        + counts[sql.CheckResultStatus.EXCEPTION]
+    )
+
+
+def _file_stats_empty() -> FileStats:
+    return FileStats(
+        file_before=collections.Counter[sql.CheckResultStatus](),
+        file_after=collections.Counter[sql.CheckResultStatus](),
+        member_before=collections.Counter[sql.CheckResultStatus](),
+        member_after=collections.Counter[sql.CheckResultStatus](),
+    )
+
+
+def _file_stats_result_add(stats: FileStats, check_result: sql.CheckResult, is_ignored: bool) -> None:
+    if check_result.member_rel_path is None:
+        before = stats.file_before
+        after = stats.file_after
+    else:
+        before = stats.member_before
+        after = stats.member_after
+
+    before[check_result.status] += 1
+    if (check_result.status == sql.CheckResultStatus.SUCCESS) or (not is_ignored):
+        after[check_result.status] += 1
 
 
 def _render_checks_table(
@@ -319,10 +280,10 @@ def _render_checks_table(
     ]
     table.append(thead.collect())
 
+    empty_stats = _file_stats_empty()
     tbody = htm.Block(htpy.tbody)
     for path in paths:
-        stats = per_file_stats.get(path, FileStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
-        _render_file_row(tbody, release, path, stats)
+        _render_file_row(tbody, release, path, per_file_stats.get(path, empty_stats))
     table.append(tbody.collect())
 
     page.div(".table-responsive.card.mb-4")[table.collect()]
@@ -372,29 +333,30 @@ def _render_debug_table(
     ]
     table.append(thead.collect())
 
+    empty_stats = _file_stats_empty()
     tbody = htm.Block(htpy.tbody)
     for path in paths:
-        stats = per_file_stats.get(path, FileStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        stats = per_file_stats.get(path, empty_stats)
         tbody.tr[
             htpy.td(class_="text-start")[htpy.code[str(path)]],
-            htpy.td(style=stripe_a)[str(stats.file_pass_before)],
-            htpy.td(style=stripe_a)[str(stats.file_warn_before)],
-            htpy.td(style=stripe_a)[str(stats.file_err_before)],
-            htpy.td(style=stripe_b)[str(stats.file_pass_after)],
-            htpy.td(style=stripe_b)[str(stats.file_warn_after)],
-            htpy.td(style=stripe_b)[str(stats.file_err_after)],
-            htpy.td(style=stripe_a)[str(stats.member_pass_before)],
-            htpy.td(style=stripe_a)[str(stats.member_warn_before)],
-            htpy.td(style=stripe_a)[str(stats.member_err_before)],
-            htpy.td(style=stripe_b)[str(stats.member_pass_after)],
-            htpy.td(style=stripe_b)[str(stats.member_warn_after)],
-            htpy.td(style=stripe_b)[str(stats.member_err_after)],
-            htpy.td(style=stripe_a)[str(stats.total_pass_before)],
-            htpy.td(style=stripe_a)[str(stats.total_warn_before)],
-            htpy.td(style=stripe_a)[str(stats.total_err_before)],
-            htpy.td(style=stripe_b)[str(stats.total_pass_after)],
-            htpy.td(style=stripe_b)[str(stats.total_warn_after)],
-            htpy.td(style=stripe_b)[str(stats.total_err_after)],
+            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.SUCCESS])],
+            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_a)[str(_error_count(stats.file_before))],
+            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.SUCCESS])],
+            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_b)[str(_error_count(stats.file_after))],
+            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.SUCCESS])],
+            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_a)[str(_error_count(stats.member_before))],
+            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.SUCCESS])],
+            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.WARNING])],
+            htpy.td(style=stripe_b)[str(_error_count(stats.member_after))],
+            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.SUCCESS))],
+            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.WARNING))],
+            htpy.td(style=stripe_a)[str(_total_error_before(stats))],
+            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.SUCCESS))],
+            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.WARNING))],
+            htpy.td(style=stripe_b)[str(_total_error_after(stats))],
         ]
     table.append(tbody.collect())
 
@@ -415,10 +377,15 @@ def _render_file_row(
     path_str = str(path)
     num_style = "font-size: 1.1rem;"
 
-    pass_count = stats.file_pass_after
-    warn_count = stats.file_warn_after
-    err_count = stats.file_err_after
-    has_checks_before = (stats.file_pass_before + stats.file_warn_before + stats.file_err_before) > 0
+    pass_count = stats.file_after[sql.CheckResultStatus.SUCCESS]
+    warn_count = stats.file_after[sql.CheckResultStatus.WARNING]
+    err_count = _error_count(stats.file_after)
+    before_total = (
+        stats.file_before[sql.CheckResultStatus.SUCCESS]
+        + stats.file_before[sql.CheckResultStatus.WARNING]
+        + _error_count(stats.file_before)
+    )
+    has_checks_before = before_total > 0
     has_checks_after = (pass_count + warn_count + err_count) > 0
 
     report_url = util.as_url(
@@ -535,12 +502,18 @@ def _render_summary(
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
-    files_with_errors = sum(1 for s in per_file_stats.values() if s.file_err_after > 0)
-    files_with_warnings = sum(1 for s in per_file_stats.values() if (s.file_warn_after > 0) and (s.file_err_after == 0))
+    files_with_errors = sum(1 for s in per_file_stats.values() if _error_count(s.file_after) > 0)
+    files_with_warnings = sum(
+        1
+        for s in per_file_stats.values()
+        if (s.file_after[sql.CheckResultStatus.WARNING] > 0) and (_error_count(s.file_after) == 0)
+    )
     files_passed = sum(
         1
         for s in per_file_stats.values()
-        if (s.file_pass_after > 0) and (s.file_warn_after == 0) and (s.file_err_after == 0)
+        if (s.file_after[sql.CheckResultStatus.SUCCESS] > 0)
+        and (s.file_after[sql.CheckResultStatus.WARNING] == 0)
+        and (_error_count(s.file_after) == 0)
     )
     files_skipped = len(paths) - files_passed - files_with_warnings - files_with_errors
 
@@ -561,29 +534,32 @@ def _render_summary(
         f" {files_skipped} {skipped_word}." if (files_skipped > 0) else "",
     ]
 
-    check_word = util.plural(totals.file_pass_after, "check", include_count=False)
-    warn_word = util.plural(totals.file_warn_after, "warning", include_count=False)
-    err_word = util.plural(totals.file_err_after, "error", include_count=False)
+    pass_count = totals.file_after[sql.CheckResultStatus.SUCCESS]
+    warn_count = totals.file_after[sql.CheckResultStatus.WARNING]
+    err_count = _error_count(totals.file_after)
+    check_word = util.plural(pass_count, "check", include_count=False)
+    warn_word = util.plural(warn_count, "warning", include_count=False)
+    err_word = util.plural(err_count, "error", include_count=False)
 
     summary_div = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
     summary_div.span(".text-success")[
         htpy.i(".bi.bi-check-circle-fill.me-2"),
-        f"{totals.file_pass_after} {check_word} passed",
+        f"{pass_count} {check_word} passed",
     ]
-    if totals.file_warn_after > 0:
+    if warn_count > 0:
         summary_div.span(".text-warning")[
             htpy.i(".bi.bi-exclamation-triangle-fill.me-2"),
-            f"{totals.file_warn_after} {warn_word}",
+            f"{warn_count} {warn_word}",
         ]
     else:
         summary_div.span(".text-muted")[
             htpy.i(".bi.bi-exclamation-triangle.me-2"),
             "0 warnings",
         ]
-    if totals.file_err_after > 0:
+    if err_count > 0:
         summary_div.span(".text-danger")[
             htpy.i(".bi.bi-x-circle-fill.me-2"),
-            f"{totals.file_err_after} {err_word}",
+            f"{err_count} {err_word}",
         ]
     else:
         summary_div.span(".text-muted")[
@@ -591,3 +567,11 @@ def _render_summary(
             "0 errors",
         ]
     page.append(summary_div.collect())
+
+
+def _total_error_after(stats: FileStats) -> int:
+    return _error_count(stats.file_after) + _error_count(stats.member_after)
+
+
+def _total_error_before(stats: FileStats) -> int:
+    return _error_count(stats.file_before) + _error_count(stats.member_before)
