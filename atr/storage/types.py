@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 import dataclasses
 import datetime
 import enum
@@ -30,13 +31,8 @@ import atr.storage.outcome as outcome
 @dataclasses.dataclass
 class CheckerStats:
     checker: str
-    success_count: int
-    warning_count: int
-    failure_count: int
-    blocker_count: int
-    warning_files: dict[str, int]
-    failure_files: dict[str, int]
-    blocker_files: dict[str, int]
+    counts: collections.Counter[sql.CheckResultStatus]
+    files: dict[sql.CheckResultStatus, dict[str, int]]
 
 
 @dataclasses.dataclass

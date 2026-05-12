@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
+
 import htpy
 
 import atr.htm as htm
@@ -68,11 +70,12 @@ def _render_checker_entry(
     details = htm.Block(htm.details, classes=f".mb-0.p-2{stripe_class}")
 
     checker = stat.checker if (stat is not None) else release_errors[0].checker
-    release_failure_count = sum(1 for e in release_errors if e.status != sql.CheckResultStatus.BLOCKER)
-    release_blocker_count = sum(1 for e in release_errors if e.status == sql.CheckResultStatus.BLOCKER)
-    warning_count = stat.warning_count if (stat is not None) else 0
-    failure_count = (stat.failure_count if (stat is not None) else 0) + release_failure_count
-    blocker_count = (stat.blocker_count if (stat is not None) else 0) + release_blocker_count
+    release_failure_count = sum(1 for e in release_errors if (e.status != sql.CheckResultStatus.BLOCKER))
+    release_blocker_count = sum(1 for e in release_errors if (e.status == sql.CheckResultStatus.BLOCKER))
+    counts: collections.Counter[sql.CheckResultStatus] = stat.counts if (stat is not None) else collections.Counter()
+    warning_count = counts[sql.CheckResultStatus.WARNING]
+    failure_count = counts[sql.CheckResultStatus.FAILURE] + release_failure_count
+    blocker_count = counts[sql.CheckResultStatus.BLOCKER] + release_blocker_count
 
     summary_content: list[htm.Element | str] = []
     if warning_count > 0:
@@ -97,12 +100,19 @@ def _render_checker_entry(
         ]
 
     if stat is not None:
-        all_files = set(stat.failure_files.keys()) | set(stat.warning_files.keys()) | set(stat.blocker_files.keys())
+        all_files = (
+            set(stat.files.get(sql.CheckResultStatus.FAILURE, {}))
+            | set(stat.files.get(sql.CheckResultStatus.WARNING, {}))
+            | set(stat.files.get(sql.CheckResultStatus.BLOCKER, {}))
+        )
+        failure_files = stat.files.get(sql.CheckResultStatus.FAILURE, {})
+        blocker_files = stat.files.get(sql.CheckResultStatus.BLOCKER, {})
+        warning_files = stat.files.get(sql.CheckResultStatus.WARNING, {})
         for file_path in sorted(all_files):
             report_url = f"/report/{project_key!s}/{version_key!s}/{file_path}"
-            file_error_count = stat.failure_files.get(file_path, 0)
-            file_blocker_count = stat.blocker_files.get(file_path, 0)
-            file_warning_count = stat.warning_files.get(file_path, 0)
+            file_error_count = failure_files.get(file_path, 0)
+            file_blocker_count = blocker_files.get(file_path, 0)
+            file_warning_count = warning_files.get(file_path, 0)
 
             file_content: list[htm.Element | str] = []
             if file_error_count > 0:

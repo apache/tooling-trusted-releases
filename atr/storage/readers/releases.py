@@ -18,6 +18,7 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+import collections
 import dataclasses
 
 import atr.classify as classify
@@ -32,13 +33,8 @@ import atr.storage.types as types
 
 @dataclasses.dataclass
 class CheckerAccumulator:
-    success: int = 0
-    warning: int = 0
-    failure: int = 0
-    blocker: int = 0
-    warning_files: dict[str, int] = dataclasses.field(default_factory=dict)
-    failure_files: dict[str, int] = dataclasses.field(default_factory=dict)
-    blocker_files: dict[str, int] = dataclasses.field(default_factory=dict)
+    counts: collections.Counter[sql.CheckResultStatus] = dataclasses.field(default_factory=collections.Counter)
+    files: dict[sql.CheckResultStatus, dict[str, int]] = dataclasses.field(default_factory=dict)
 
 
 class GeneralPublic:
@@ -86,47 +82,38 @@ class GeneralPublic:
         results: dict[safe.RelPath, list[sql.CheckResult]],
         paths_set: set[safe.RelPath],
         checker_data: dict[str, CheckerAccumulator],
-        kind: str,
     ) -> None:
         for path, results_list in results.items():
             if path not in paths_set:
                 continue
             for result in results_list:
                 acc = checker_data.setdefault(result.checker, CheckerAccumulator())
-                path_str = str(path)
-                if kind == "success":
-                    acc.success += 1
-                elif kind == "warning":
-                    acc.warning += 1
-                    acc.warning_files[path_str] = acc.warning_files.get(path_str, 0) + 1
-                elif result.status == sql.CheckResultStatus.BLOCKER:
-                    acc.blocker += 1
-                    acc.blocker_files[path_str] = acc.blocker_files.get(path_str, 0) + 1
-                else:
-                    acc.failure += 1
-                    acc.failure_files[path_str] = acc.failure_files.get(path_str, 0) + 1
+                status = result.status
+                acc.counts[status] += 1
+                if status != sql.CheckResultStatus.SUCCESS:
+                    path_str = str(path)
+                    files_for_status = acc.files.setdefault(status, {})
+                    files_for_status[path_str] = files_for_status.get(path_str, 0) + 1
 
     def __compute_checker_stats(self, info: types.PathInfo, paths: list[safe.RelPath]) -> None:
         paths_set = set(paths)
         checker_data: dict[str, CheckerAccumulator] = {}
 
-        self.__accumulate_results(info.successes, paths_set, checker_data, "success")
-        self.__accumulate_results(info.warnings, paths_set, checker_data, "warning")
-        self.__accumulate_results(info.errors, paths_set, checker_data, "failure")
+        self.__accumulate_results(info.successes, paths_set, checker_data)
+        self.__accumulate_results(info.warnings, paths_set, checker_data)
+        self.__accumulate_results(info.errors, paths_set, checker_data)
 
         for checker, acc in sorted(checker_data.items()):
-            if (acc.warning == 0) and (acc.failure == 0) and (acc.blocker == 0):
+            non_success_total = sum(
+                count for status, count in acc.counts.items() if (status != sql.CheckResultStatus.SUCCESS)
+            )
+            if non_success_total == 0:
                 continue
             info.checker_stats.append(
                 types.CheckerStats(
                     checker=checker,
-                    success_count=acc.success,
-                    warning_count=acc.warning,
-                    failure_count=acc.failure,
-                    blocker_count=acc.blocker,
-                    warning_files=acc.warning_files,
-                    failure_files=acc.failure_files,
-                    blocker_files=acc.blocker_files,
+                    counts=acc.counts,
+                    files=acc.files,
                 )
             )
 
