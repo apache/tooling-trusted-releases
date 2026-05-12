@@ -147,7 +147,7 @@ def _render_body_field(default_body: str, project_key: str) -> htm.Element:
         rows="12",
     )[default_body]
 
-    settings_url = util.as_url(projects.view, project_key=project_key) + "#start_vote_template"
+    settings_url = util.as_url(projects.view, project_key=project_key) + "?tab=vote#start_vote_template"
     link = htm.div(".form-text.text-muted.mt-2")[
         "To edit the template, go to the ",
         htm.a(href=settings_url)["project settings"],

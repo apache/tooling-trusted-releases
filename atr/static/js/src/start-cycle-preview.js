@@ -20,7 +20,7 @@
 function buildLifecycleLink(lifecycleUrl) {
 	const link = document.createElement("a");
 	link.href = lifecycleUrl;
-	link.textContent = "lifecycle tab";
+	link.textContent = "lifecycle settings page";
 	return link;
 }
 
