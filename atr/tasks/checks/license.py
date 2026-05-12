@@ -82,8 +82,8 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "5"
-CHECK_VERSION_HEADERS: Final[str] = "3"
+CHECK_VERSION_FILES: Final[str] = "6"
+CHECK_VERSION_HEADERS: Final[str] = "4"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
@@ -152,7 +152,7 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.concern(
+        await recorder.exception(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -195,7 +195,7 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.concern(
+        await recorder.exception(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -282,7 +282,7 @@ def _files_check_binary_license(paths: list[pathlib.Path], root_path: pathlib.Pa
                 data=None,
             )
     return ArtifactResult(
-        status=sql.CheckResultStatus.CONCERN,
+        status=sql.CheckResultStatus.BLOCKER,
         message="No valid LICENSE or LICENSE.txt file found",
         data=None,
     )
@@ -316,7 +316,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
         yield ArtifactResult(
-            status=sql.CheckResultStatus.CONCERN,
+            status=sql.CheckResultStatus.EXCEPTION,
             message="Cache directory is not available",
             data=None,
         )
@@ -466,7 +466,7 @@ def _headers_check_core_logic(  # noqa: C901
 
     if not archive_dir.path.is_dir():
         yield ArtifactResult(
-            status=sql.CheckResultStatus.CONCERN,
+            status=sql.CheckResultStatus.EXCEPTION,
             message="Cache directory is not available",
             data=None,
         )
@@ -628,14 +628,6 @@ def _license_results(
         )
         return
 
-    if license_files_size > 1:
-        yield ArtifactResult(
-            status=sql.CheckResultStatus.CONCERN,
-            message="Multiple LICENSE files found",
-            data=None,
-        )
-        return
-
     for filename, license_diff in license_results.items():
         # Unpack the single result by iterating
         if license_diff is None:
@@ -646,7 +638,7 @@ def _license_results(
             )
         else:
             yield ArtifactResult(
-                status=sql.CheckResultStatus.CONCERN,
+                status=sql.CheckResultStatus.BLOCKER,
                 message=f"{filename} is invalid",
                 data={"diff": license_diff},
             )
@@ -674,14 +666,6 @@ def _notice_results(
         yield ArtifactResult(
             status=sql.CheckResultStatus.BLOCKER,
             message="No NOTICE file found",
-            data=None,
-        )
-        return
-
-    if notice_files_size > 1:
-        yield ArtifactResult(
-            status=sql.CheckResultStatus.CONCERN,
-            message="Multiple NOTICE files found",
             data=None,
         )
         return

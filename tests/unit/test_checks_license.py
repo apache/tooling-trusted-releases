@@ -113,7 +113,7 @@ def test_files_missing_cache_dir():
         license._files_check_core_logic(safe.StatePath(pathlib.Path("/nonexistent")), is_podling=False, is_binary=False)
     )
     assert len(results) == 1
-    assert results[0].status == sql.CheckResultStatus.CONCERN
+    assert results[0].status == sql.CheckResultStatus.EXCEPTION
     assert "not available" in results[0].message.lower()
 
 
@@ -159,6 +159,23 @@ def test_files_single_root_with_stray_top_level_file(tmp_path):
     results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
     statuses = [r.status for r in results if isinstance(r, license.ArtifactResult)]
     assert sql.CheckResultStatus.NOTE in statuses
+
+
+def test_files_source_invalid_license_is_blocker(tmp_path):
+    cache_dir = _cache_with_root(tmp_path)
+    root = cache_dir / "apache-test-0.2"
+    (root / "LICENSE").path.write_text("not the Apache 2.0 license text\n")
+    (root / "NOTICE").path.write_text(NOTICE_VALID)
+    results = list(license._files_check_core_logic(cache_dir, is_podling=False, is_binary=False))
+    license_blockers = [
+        r
+        for r in results
+        if (isinstance(r, license.ArtifactResult))
+        and (r.status == sql.CheckResultStatus.BLOCKER)
+        and ("LICENSE" in r.message)
+        and ("invalid" in r.message)
+    ]
+    assert len(license_blockers) == 1
 
 
 def test_files_source_nested_license_notice_ignored(tmp_path):
