@@ -24,6 +24,7 @@ import htpy
 import quart
 
 import atr.blueprints.get as get
+import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -41,6 +42,7 @@ import atr.render as render
 import atr.shared as shared
 import atr.shared.draft as draft
 import atr.storage as storage
+import atr.storage.types as types
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -86,6 +88,7 @@ async def selected(
             version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _committee=True,
+            _project_release_policy=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
     if release.committee is None:
@@ -98,13 +101,17 @@ async def selected(
     async with storage.read(session) as read:
         ragp = read.as_general_public()
         match_ignore = await ragp.checks.ignores_matcher(release.safe_project_key)
+        info = await ragp.releases.path_info(release, all_paths)
 
     per_file_stats, totals = await _compute_stats(release, all_paths, match_ignore)
 
     page = htm.Block()
     _render_header(page, release)
     _render_summary(page, totals, all_paths, per_file_stats)
-    _render_checks_table(page, release, all_paths, per_file_stats)
+    if info is not None:
+        if banner := render.render_exception_banner(info):
+            page.append(banner)
+    _render_checks_table(page, release, all_paths, per_file_stats, info)
     _render_ignores_section(page, release)
     _render_debug_table(page, all_paths, per_file_stats)
 
@@ -148,6 +155,12 @@ async def selected_revision(
     checks_summary_elem = shared.web.render_checks_summary(info, project_key, version_key)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
+    exception_banner_html = ""
+    if info is not None:
+        banner_elem = render.render_exception_banner(info)
+        if banner_elem is not None:
+            exception_banner_html = str(banner_elem)
+
     delete_file_forms: dict[str, str] = {}
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         for path in all_paths:
@@ -180,6 +193,7 @@ async def selected_revision(
         phase=release.phase.value,
         delete_file_forms=delete_file_forms,
         csrf_input=str(form.csrf_input()),
+        exception_banner_html=exception_banner_html,
     )
 
     return quart.jsonify(
@@ -189,6 +203,28 @@ async def selected_revision(
             "files_table_html": files_table_html,
         }
     )
+
+
+def _classification_badge_cell(
+    info: types.PathInfo | None, path: safe.RelPath, severity: sql.CheckResultStatus | None
+) -> htm.Element:
+    file_type = info.file_types.get(path) if (info is not None) else None
+    match file_type:
+        case classify.FileType.DISALLOWED:
+            label, title = "bad", "Disallowed file"
+        case classify.FileType.SOURCE:
+            label, title = "src", "Source artifact"
+        case classify.FileType.METADATA:
+            label, title = "meta", "Metadata file"
+        case classify.FileType.DOCS | classify.FileType.BINARY | None:
+            label, title = "bin", "Binary artifact"
+    if severity is not None:
+        icon_class = render.PATH_STYLE_CLASS.get(severity, "text-success")
+    else:
+        icon_class = "text-success"
+    return htpy.td(f".text-center.px-0.py-0.atr-sans.{icon_class}")[
+        htpy.span(".atr-classification-badge", title=title)[label]
+    ]
 
 
 async def _compute_stats(
@@ -225,6 +261,15 @@ async def _compute_stats(
     return per_file, totals
 
 
+def _count_cell(count: int, status: sql.CheckResultStatus, has_checks_before: bool, num_style: str) -> htm.Element:
+    if count > 0:
+        cell_class = render.CELL_TEXT_CLASS[status]
+        return htpy.td(".py-2.text-center")[htpy.span(f".{cell_class}.fw-bold", style=num_style)[str(count)]]
+    if not has_checks_before:
+        return htpy.td(".py-2.text-center")[htpy.span(".text-muted", style=num_style)["-"]]
+    return htpy.td(".py-2.text-center")[htpy.span(".text-muted", style=num_style)["0"]]
+
+
 def _error_count(counts: collections.Counter[sql.CheckResultStatus]) -> int:
     return (
         counts[sql.CheckResultStatus.CONCERN]
@@ -255,11 +300,24 @@ def _file_stats_result_add(stats: FileStats, check_result: sql.CheckResult, is_i
         after[check_result.status] += 1
 
 
+def _issue_count_after(stats: FileStats) -> int:
+    return stats.total_after(sql.CheckResultStatus.CONCERN) + stats.total_after(sql.CheckResultStatus.BLOCKER)
+
+
+def _path_display(path_str: str, severity: sql.CheckResultStatus | None, has_checks_before: bool) -> htm.Element:
+    if (severity is not None) and (severity_class := render.PATH_STYLE_CLASS.get(severity)):
+        return htpy.strong[htpy.code(f".{severity_class}")[path_str]]
+    if not has_checks_before:
+        return htpy.code(".text-muted")[path_str]
+    return htpy.code[path_str]
+
+
 def _render_checks_table(
     page: htm.Block,
     release: sql.Release,
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
+    info: types.PathInfo | None,
 ) -> None:
     if not paths:
         page.div(".alert.alert-info")["This release candidate does not have any files."]
@@ -268,22 +326,20 @@ def _render_checks_table(
     table = htm.Block(htpy.table, classes=".table.table-striped.align-middle.table-sm.mb-0.border")
 
     thead = htm.Block(htpy.thead, classes=".table-light")
-    # TODO: We forbid inline styles in Jinja2 through linting
-    # But we use it here
-    # It is convenient, and we should consider whether or not to allow it
-    thead.tr[
-        htpy.th(".py-2.ps-3")["Path"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Notes"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Suggestions"],
-        htpy.th(".py-2.text-center", style="width: 5em")["Issues"],
-        htpy.th(".py-2.text-end.pe-3")[""],
+    header_cells: list[htm.Element] = [
+        htpy.th(".py-2.text-center.px-0.atr-w-4em")[""],
+        htpy.th(".py-2")["Path"],
     ]
+    for status in render.TABLE_STATUSES:
+        header_cells.append(htpy.th(".py-2.text-center.atr-w-6em")[render.COLUMN_HEADERS[status]])
+    header_cells.append(htpy.th(".py-2.text-end.pe-3")[""])
+    thead.tr[*header_cells]
     table.append(thead.collect())
 
     empty_stats = _file_stats_empty()
     tbody = htm.Block(htpy.tbody)
     for path in paths:
-        _render_file_row(tbody, release, path, per_file_stats.get(path, empty_stats))
+        _render_file_row(tbody, release, path, per_file_stats.get(path, empty_stats), info)
     table.append(tbody.collect())
 
     page.div(".table-responsive.card.mb-4")[table.collect()]
@@ -373,20 +429,15 @@ def _render_file_row(
     release: sql.Release,
     path: safe.RelPath,
     stats: FileStats,
+    info: types.PathInfo | None,
 ) -> None:
     path_str = str(path)
     num_style = "font-size: 1.1rem;"
 
-    note_count = stats.file_after[sql.CheckResultStatus.NOTE]
-    suggestion_count = stats.file_after[sql.CheckResultStatus.SUGGESTION]
-    issue_count = _error_count(stats.file_after)
-    before_total = (
-        stats.file_before[sql.CheckResultStatus.NOTE]
-        + stats.file_before[sql.CheckResultStatus.SUGGESTION]
-        + _error_count(stats.file_before)
-    )
-    has_checks_before = before_total > 0
-    has_checks_after = (note_count + suggestion_count + issue_count) > 0
+    counts_after = {status: stats.total_after(status) for status in sql.CheckResultStatus}
+    counts_before = {status: stats.total_before(status) for status in sql.CheckResultStatus}
+    has_checks_before = sum(counts_before.values()) > 0
+    severity = render.highest_severity(counts_after)
 
     report_url = util.as_url(
         report.selected_path,
@@ -404,61 +455,23 @@ def _render_file_row(
         sbom.report, project_key=release.project.key, version_key=release.version, file_path=path_str
     )
 
-    if not has_checks_before:
-        path_display = htpy.code(".text-muted")[path_str]
-        note_cell = htpy.span(".text-muted", style=num_style)["-"]
-        suggestion_cell = htpy.span(".text-muted", style=num_style)["-"]
-        issue_cell = htpy.span(".text-muted", style=num_style)["-"]
-        report_btn = htpy.span(".btn.btn-sm.btn-outline-secondary.disabled")["No checks"]
-    elif not has_checks_after:
-        path_display = htpy.code[path_str]
-        note_cell = htpy.span(".text-muted", style=num_style)["0"]
-        suggestion_cell = htpy.span(".text-muted", style=num_style)["0"]
-        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
-        report_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=report_url)["Show details"]
-    elif issue_count > 0:
-        path_display = htpy.strong[htpy.code(".text-danger")[path_str]]
-        note_cell = (
-            htpy.span(".text-success", style=num_style)[str(note_count)]
-            if (note_count > 0)
-            else htpy.span(".text-muted", style=num_style)["0"]
-        )
-        suggestion_cell = (
-            htpy.span(".text-warning", style=num_style)[str(suggestion_count)]
-            if (suggestion_count > 0)
-            else htpy.span(".text-muted", style=num_style)["0"]
-        )
-        issue_cell = htpy.span(".text-danger.fw-bold", style=num_style)[str(issue_count)]
-        report_btn = htpy.a(".btn.btn-sm.btn-outline-danger", href=report_url)["Show details"]
-    elif suggestion_count > 0:
-        path_display = htpy.strong[htpy.code(".text-warning")[path_str]]
-        note_cell = (
-            htpy.span(".text-success", style=num_style)[str(note_count)]
-            if (note_count > 0)
-            else htpy.span(".text-muted", style=num_style)["0"]
-        )
-        suggestion_cell = htpy.span(".text-warning.fw-bold", style=num_style)[str(suggestion_count)]
-        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
-        report_btn = htpy.a(".btn.btn-sm.btn-outline-warning", href=report_url)["Show details"]
-    else:
-        path_display = htpy.code[path_str]
-        note_cell = htpy.span(".text-success", style=num_style)[str(note_count)]
-        suggestion_cell = htpy.span(".text-muted", style=num_style)["0"]
-        issue_cell = htpy.span(".text-muted", style=num_style)["0"]
-        report_btn = htpy.a(".btn.btn-sm.btn-outline-success", href=report_url)["Show details"]
+    path_display = _path_display(path_str, severity, has_checks_before)
+    report_btn = _report_button(severity, counts_after, has_checks_before, report_url)
+    badge_cell = _classification_badge_cell(info, path, severity)
 
-    # <a href="{{ as_url(get.sbom.report, project=project_key, version=version_key, file_path=path) }}"
-    # class="btn btn-sm btn-outline-secondary">Show SBOM</a>
+    count_cells: list[htm.Element] = []
+    for status in render.TABLE_STATUSES:
+        count_cells.append(_count_cell(counts_after[status], status, has_checks_before, num_style))
+
     sbom_btn = None
     if path.as_path().suffixes[-2:] == [".cdx", ".json"]:
         sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=sbom_url)["SBOM report"]
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
 
     tbody.tr[
-        htpy.td(".py-2.ps-3")[path_display],
-        htpy.td(".py-2.text-center")[note_cell],
-        htpy.td(".py-2.text-center")[suggestion_cell],
-        htpy.td(".py-2.text-center")[issue_cell],
+        badge_cell,
+        htpy.td(".py-2")[path_display],
+        *count_cells,
         htpy.td(".text-end.text-nowrap.py-2.pe-3")[
             htpy.div(".d-flex.justify-content-end.align-items-center.gap-2")[
                 report_btn,
@@ -502,25 +515,35 @@ def _render_summary(
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
-    files_with_issues = sum(1 for s in per_file_stats.values() if _error_count(s.file_after) > 0)
+    files_with_issues = sum(1 for s in per_file_stats.values() if _issue_count_after(s) > 0)
     files_with_suggestions = sum(
         1
         for s in per_file_stats.values()
-        if (s.file_after[sql.CheckResultStatus.SUGGESTION] > 0) and (_error_count(s.file_after) == 0)
+        if (s.total_after(sql.CheckResultStatus.SUGGESTION) > 0)
+        and (s.total_after(sql.CheckResultStatus.EXCEPTION) == 0)
+        and (_issue_count_after(s) == 0)
     )
     files_with_notes = sum(
         1
         for s in per_file_stats.values()
-        if (s.file_after[sql.CheckResultStatus.NOTE] > 0)
-        and (s.file_after[sql.CheckResultStatus.SUGGESTION] == 0)
-        and (_error_count(s.file_after) == 0)
+        if (s.total_after(sql.CheckResultStatus.NOTE) > 0)
+        and (s.total_after(sql.CheckResultStatus.SUGGESTION) == 0)
+        and (s.total_after(sql.CheckResultStatus.EXCEPTION) == 0)
+        and (_issue_count_after(s) == 0)
     )
-    files_skipped = len(paths) - files_with_notes - files_with_suggestions - files_with_issues
+    files_with_exceptions = sum(
+        1 for s in per_file_stats.values() if s.total_after(sql.CheckResultStatus.EXCEPTION) > 0
+    )
+    files_with_any_status = sum(
+        1 for s in per_file_stats.values() if sum(s.total_after(status) for status in sql.CheckResultStatus) > 0
+    )
+    files_skipped = len(paths) - files_with_any_status
 
     file_word = "file" if (len(paths) == 1) else "files"
     note_file_word = "file has" if (files_with_notes == 1) else "files have"
     suggestion_file_word = "file has" if (files_with_suggestions == 1) else "files have"
     issue_file_word = "file has" if (files_with_issues == 1) else "files have"
+    exception_file_word = "file has" if (files_with_exceptions == 1) else "files have"
     skipped_word = "file did not require checking" if (files_skipped == 1) else "files did not require checking"
     no_issues_word = "no" if ((files_with_notes > 0) or (files_with_suggestions > 0)) else "No"
 
@@ -531,15 +554,18 @@ def _render_summary(
         f"{files_with_issues} {issue_file_word} issues."
         if (files_with_issues > 0)
         else f"{no_issues_word} files have issues.",
+        f" {files_with_exceptions} {exception_file_word} tooling exceptions." if (files_with_exceptions > 0) else "",
         f" {files_skipped} {skipped_word}." if (files_skipped > 0) else "",
     ]
 
-    note_count = totals.file_after[sql.CheckResultStatus.NOTE]
-    suggestion_count = totals.file_after[sql.CheckResultStatus.SUGGESTION]
-    issue_count = _error_count(totals.file_after)
+    note_count = totals.total_after(sql.CheckResultStatus.NOTE)
+    suggestion_count = totals.total_after(sql.CheckResultStatus.SUGGESTION)
+    issue_count = _issue_count_after(totals)
+    exception_count = totals.total_after(sql.CheckResultStatus.EXCEPTION)
     note_word = util.plural(note_count, "note", include_count=False)
     suggestion_word = util.plural(suggestion_count, "suggestion", include_count=False)
     issue_word = util.plural(issue_count, "issue", include_count=False)
+    exception_word = util.plural(exception_count, "exception", include_count=False)
 
     summary_div = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
     summary_div.span(".text-success")[
@@ -566,7 +592,35 @@ def _render_summary(
             htpy.i(".bi.bi-x-circle.me-2"),
             "0 issues",
         ]
+    if exception_count > 0:
+        summary_div.span(".atr-text-exception")[
+            htpy.i(".bi.bi-cone-striped.me-2"),
+            f"{exception_count} {exception_word}",
+        ]
     page.append(summary_div.collect())
+
+
+def _report_button(
+    severity: sql.CheckResultStatus | None,
+    counts_after: dict[sql.CheckResultStatus, int],
+    has_checks_before: bool,
+    report_url: str,
+) -> htm.Element:
+    match severity:
+        case sql.CheckResultStatus.BLOCKER:
+            return htpy.a(".btn.btn-sm.atr-btn-outline-blocker", href=report_url)["Show details"]
+        case sql.CheckResultStatus.EXCEPTION:
+            return htpy.a(".btn.btn-sm.btn-outline-danger", href=report_url)["Show details"]
+        case sql.CheckResultStatus.CONCERN:
+            return htpy.a(".btn.btn-sm.atr-btn-outline-concern", href=report_url)["Show details"]
+        case sql.CheckResultStatus.SUGGESTION:
+            return htpy.a(".btn.btn-sm.atr-btn-outline-suggestion", href=report_url)["Show details"]
+        case sql.CheckResultStatus.NOTE | None:
+            if counts_after[sql.CheckResultStatus.NOTE] > 0:
+                return htpy.a(".btn.btn-sm.btn-outline-secondary", href=report_url)["Notes"]
+            if has_checks_before:
+                return htpy.a(".btn.btn-sm.btn-outline-secondary", href=report_url)["Show details"]
+            return htpy.span(".btn.btn-sm.btn-outline-secondary.disabled")["No checks"]
 
 
 def _total_error_after(stats: FileStats) -> int:

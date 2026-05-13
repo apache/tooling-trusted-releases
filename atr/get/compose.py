@@ -33,6 +33,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
+import atr.render as render
 import atr.shared as shared
 import atr.shared.draft as draft
 import atr.storage as storage
@@ -181,6 +182,11 @@ async def selected(
         blocker_errors = await interaction.has_blocker_checks(release, revision_number)
 
     checks_summary_html = shared.web.render_checks_summary(info, release.safe_project_key, release.safe_version_key)
+    exception_banner_html: str = ""
+    if info is not None:
+        banner = render.render_exception_banner(info)
+        if banner is not None:
+            exception_banner_html = str(banner)
     move_file_html = _render_move_section(10)
 
     csrf_token = utils.generate_csrf()
@@ -228,6 +234,7 @@ async def selected(
         has_files=has_files,
         blocker_errors=blocker_errors,
         checks_summary_html=checks_summary_html,
+        exception_banner_html=exception_banner_html,
         move_file_html=move_file_html,
         scripts=str(scripts),
     )

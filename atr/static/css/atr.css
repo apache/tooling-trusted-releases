@@ -1236,3 +1236,27 @@ td.atr-checkbox-col {
 .text-danger .atr-classification-badge {
     background-color: #fdf6f6;
 }
+
+.atr-text-exception {
+    color: rgb(180 83 9) !important;
+}
+
+.atr-cbm-deuteranopia .atr-text-exception {
+    color: rgb(107 44 0) !important;
+}
+
+.atr-cbm-protanopia .atr-text-exception {
+    color: rgb(94 36 0) !important;
+}
+
+.atr-cbm-tritanopia .atr-text-exception {
+    color: rgb(180 83 9) !important;
+}
+
+.atr-w-4em {
+    width: 4em;
+}
+
+.atr-w-6em {
+    width: 6em;
+}

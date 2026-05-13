@@ -456,17 +456,17 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
 
     body = htm.Block(htm.div, classes=".card-body")
 
-    note_count = file_totals.file_after[sql.CheckResultStatus.NOTE]
-    suggestion_count = file_totals.file_after[sql.CheckResultStatus.SUGGESTION]
-    issue_count = (
-        file_totals.file_after[sql.CheckResultStatus.CONCERN]
-        + file_totals.file_after[sql.CheckResultStatus.BLOCKER]
-        + file_totals.file_after[sql.CheckResultStatus.EXCEPTION]
+    note_count = file_totals.total_after(sql.CheckResultStatus.NOTE)
+    suggestion_count = file_totals.total_after(sql.CheckResultStatus.SUGGESTION)
+    issue_count = file_totals.total_after(sql.CheckResultStatus.CONCERN) + file_totals.total_after(
+        sql.CheckResultStatus.BLOCKER
     )
+    exception_count = file_totals.total_after(sql.CheckResultStatus.EXCEPTION)
 
     note_word = util.plural(note_count, "note", include_count=False)
     suggestion_word = util.plural(suggestion_count, "suggestion", include_count=False)
     issue_word = util.plural(issue_count, "issue", include_count=False)
+    exception_word = util.plural(exception_count, "exception", include_count=False)
 
     checks_list = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
     checks_list.span(".text-success")[
@@ -492,6 +492,11 @@ def _render_section_checks(page: htm.Block, release: sql.Release, file_totals: c
         checks_list.span(".text-muted")[
             htpy.i(".bi.bi-x-circle.me-2"),
             "0 issues",
+        ]
+    if exception_count > 0:
+        checks_list.span(".atr-text-exception")[
+            htpy.i(".bi.bi-cone-striped.me-2"),
+            f"{exception_count} {exception_word}",
         ]
     body.append(checks_list.collect())
 

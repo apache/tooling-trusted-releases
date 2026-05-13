@@ -15,15 +15,64 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Literal
+from collections.abc import Mapping
+from typing import Final, Literal
 
 import htpy
 
 import atr.get as get
 import atr.htm as htm
+import atr.models.sql as sql
+import atr.storage.types as types
 import atr.util as util
 
 type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
+
+BANNER_STATUS: Final[sql.CheckResultStatus] = sql.CheckResultStatus.EXCEPTION
+
+CELL_TEXT_CLASS: Final[dict[sql.CheckResultStatus, str]] = {
+    sql.CheckResultStatus.SUGGESTION: "atr-text-suggestion",
+    sql.CheckResultStatus.CONCERN: "atr-text-concern",
+    sql.CheckResultStatus.BLOCKER: "atr-text-blocker",
+}
+
+COLUMN_HEADERS: Final[dict[sql.CheckResultStatus, str]] = {
+    sql.CheckResultStatus.SUGGESTION: "Suggestions",
+    sql.CheckResultStatus.CONCERN: "Concerns",
+    sql.CheckResultStatus.BLOCKER: "Blockers",
+}
+
+HIDDEN_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (sql.CheckResultStatus.NOTE,)
+
+PATH_STYLE_CLASS: Final[dict[sql.CheckResultStatus, str]] = {
+    sql.CheckResultStatus.BLOCKER: "atr-text-blocker",
+    sql.CheckResultStatus.EXCEPTION: "text-danger",
+    sql.CheckResultStatus.CONCERN: "atr-text-concern",
+    sql.CheckResultStatus.SUGGESTION: "atr-text-suggestion",
+}
+
+TABLE_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
+    sql.CheckResultStatus.SUGGESTION,
+    sql.CheckResultStatus.CONCERN,
+    sql.CheckResultStatus.BLOCKER,
+)
+
+_SEVERITY_ORDER: Final[tuple[sql.CheckResultStatus, ...]] = (
+    sql.CheckResultStatus.BLOCKER,
+    sql.CheckResultStatus.EXCEPTION,
+    sql.CheckResultStatus.CONCERN,
+    sql.CheckResultStatus.SUGGESTION,
+    sql.CheckResultStatus.NOTE,
+)
+
+
+def highest_severity(
+    counts: Mapping[sql.CheckResultStatus, int],
+) -> sql.CheckResultStatus | None:
+    for status in _SEVERITY_ORDER:
+        if counts.get(status, 0) > 0:
+            return status
+    return None
 
 
 def html_nav(container: htm.Block, back_url: str, back_anchor: str, phase: Phase) -> None:
@@ -125,3 +174,31 @@ def html_recipients_to_radios(
     if documentation is None:
         return container
     return htm.div[container, htm.div(".text-muted.mt-1.form-text")[documentation]]
+
+
+def render_exception_banner(info: types.PathInfo) -> htm.Element | None:
+    path_count = sum(len(results) for results in info.exceptions.values())
+    release_count = len(info.release_level_exceptions)
+    total = path_count + release_count
+    if total == 0:
+        return None
+
+    affected_paths = sorted(str(p) for p in info.exceptions)
+    check_word = "check" if (total == 1) else "checks"
+
+    children: list[htm.Element | str] = [
+        htpy.i(".bi.bi-cone-striped.me-2"),
+        htpy.strong[f"ATR could not complete {total} automated {check_word}."],
+        " These results indicate a tooling failure, not a confirmed release-candidate issue. ",
+    ]
+    if affected_paths:
+        children.append("Affected files: ")
+        for index, path_str in enumerate(affected_paths):
+            if index > 0:
+                children.append(", ")
+            children.append(htpy.code[path_str])
+        children.append(". ")
+    if release_count > 0:
+        word = "exception" if (release_count == 1) else "exceptions"
+        children.append(f"{release_count} release-level {word}.")
+    return htm.div(".alert.atr-bg-exception.mb-3", role="alert")[*children]

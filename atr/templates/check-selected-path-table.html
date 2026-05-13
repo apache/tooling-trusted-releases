@@ -1,12 +1,31 @@
+{% if exception_banner_html %}{{ exception_banner_html|safe }}{% endif %}
 <div class="table-responsive">
   {# This table uses pairs of rows, so it must be manually striped #}
   <table class="table align-middle table-sm mb-0 border">
+    <thead class="table-light">
+      <tr>
+        <th class="py-2 text-center px-0 atr-w-4em"></th>
+        <th class="py-2">Path</th>
+        <th class="py-2 text-center atr-w-6em">Suggestions</th>
+        <th class="py-2 text-center atr-w-6em">Concerns</th>
+        <th class="py-2 text-center atr-w-6em">Blockers</th>
+        <th class="py-2 text-end pe-3"></th>
+      </tr>
+    </thead>
     <tbody>
       {% for path in paths %}
-        {% set has_concerns = info and (info.concerns[path]|length > 0) %}
-        {% set has_blockers = info and (info.blockers[path]|length > 0) %}
-        {% set has_suggestions = info and (info.suggestions[path]|length > 0) %}
-        {% set has_exceptions = info and (info.exceptions[path]|length > 0) %}
+        {% set notes_count = info.notes[path]|length if info else 0 %}
+        {% set suggestions_count = info.suggestions[path]|length if info else 0 %}
+        {% set concerns_count = info.concerns[path]|length if info else 0 %}
+        {% set blockers_count = info.blockers[path]|length if info else 0 %}
+        {% set exceptions_count = info.exceptions[path]|length if info else 0 %}
+        {% set has_concerns = concerns_count > 0 %}
+        {% set has_blockers = blockers_count > 0 %}
+        {% set has_suggestions = suggestions_count > 0 %}
+        {% set has_exceptions = exceptions_count > 0 %}
+        {% set has_notes = notes_count > 0 %}
+        {% set has_any = has_concerns or has_blockers or has_suggestions or has_exceptions or has_notes %}
+        {% set empty_count = "0" if has_any else "-" %}
         {% set row_id = path|string|slugify %}
 
         {# Manual striping for pairs of rows #}
@@ -47,7 +66,7 @@
               <span class="atr-classification-badge" title="Source artifact">src</span>
             {% elif file_type == "metadata" %}
               <span class="atr-classification-badge" title="Metadata file">meta</span>
-            {# elif file_type == "binary" #}
+              {# elif file_type == "binary" #}
             {% else %}
               <span class="atr-classification-badge" title="Binary artifact">bin</span>
             {% endif %}
@@ -56,12 +75,33 @@
             <a href="{{ as_url(get.file.selected_path, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                title="View file {{ path }}"
                class="text-decoration-none text-reset">
-              {% if has_blockers or has_concerns or has_suggestions or has_exceptions %}
+              {% if path_style_class %}
                 <strong><code class="{{ path_style_class }}">{{ path }}</code></strong>
               {% else %}
                 <code>{{ path }}</code>
               {% endif %}
             </a>
+          </td>
+          <td class="py-2 text-center">
+            {% if has_suggestions %}
+              <span class="atr-text-suggestion fw-bold">{{ suggestions_count }}</span>
+            {% else %}
+              <span class="text-muted">{{ empty_count }}</span>
+            {% endif %}
+          </td>
+          <td class="py-2 text-center">
+            {% if has_concerns %}
+              <span class="atr-text-concern fw-bold">{{ concerns_count }}</span>
+            {% else %}
+              <span class="text-muted">{{ empty_count }}</span>
+            {% endif %}
+          </td>
+          <td class="py-2 text-center">
+            {% if has_blockers %}
+              <span class="atr-text-blocker fw-bold">{{ blockers_count }}</span>
+            {% else %}
+              <span class="text-muted">{{ empty_count }}</span>
+            {% endif %}
           </td>
           <td class="text-end text-nowrap py-2">
             <div class="d-flex justify-content-end align-items-center gap-2">
@@ -80,20 +120,20 @@
               {% endif %}
               {% if has_blockers %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm atr-btn-outline-blocker"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.blockers[path]|length }} {{ "blocker" if info.blockers[path]|length == 1 else "blockers" }}</a>
+                   class="btn btn-sm atr-btn-outline-blocker">Show details</a>
               {% elif has_exceptions %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm btn-outline-danger">Show {{ info.exceptions[path]|length }} {{ "exception" if info.exceptions[path]|length == 1 else "exceptions" }}</a>
+                   class="btn btn-sm btn-outline-danger">Show details</a>
               {% elif has_concerns %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm atr-btn-outline-concern"><i class="bi bi-exclamation-triangle me-1"></i> Show {{ info.concerns[path]|length }} {{ "concern" if info.concerns[path]|length == 1 else "concerns" }}</a>
+                   class="btn btn-sm atr-btn-outline-concern">Show details</a>
               {% elif has_suggestions %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm atr-btn-outline-suggestion">Show {{ info.suggestions[path]|length }} {{ "suggestion" if info.suggestions[path]|length == 1 else "suggestions" }}</a>
-              {% elif info and (path in info.notes) %}
+                   class="btn btn-sm atr-btn-outline-suggestion">Show details</a>
+              {% elif has_notes %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
-                   class="btn btn-sm btn-outline-success"
-                   title="Show report for {{ path }}">Show report</a>
+                   class="btn btn-sm btn-outline-secondary"
+                   title="Show report for {{ path }}">Notes</a>
               {% else %}
                 <span class="btn btn-sm btn-outline-secondary disabled">No checks</span>
               {% endif %}
@@ -117,7 +157,7 @@
 
         {% if phase == "release_candidate_draft" %}
           <tr class="{{ row_bg_class }}">
-            <td colspan="3" class="p-0 border-0">
+            <td colspan="6" class="p-0 border-0">
               <div class="collapse px-3 py-2" id="actions-{{ row_id }}">
                 <div class="d-flex justify-content-end align-items-center gap-2"
                      role="group"
