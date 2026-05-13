@@ -37,6 +37,7 @@ import atr.web as web
 class BodyPreviewForm(form.Form):
     vote_duration: form.Int = form.label("Vote duration")
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
+    rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
 
 
 @post.typed
@@ -45,11 +46,10 @@ async def body_preview(
     _voting_body_preview: Literal["voting/body/preview"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision_number: safe.RevisionNumber,
     preview_form: BodyPreviewForm,
 ) -> web.QuartResponse:
     """
-    URL: /voting/body/preview/<project_key>/<version_key>/<revision_number>
+    URL: /voting/body/preview/<project_key>/<version_key>
     """
 
     async with db.session() as data:
@@ -74,7 +74,7 @@ async def body_preview(
         fullname=session.fullname,
         project_key=project_key,
         version_key=version_key,
-        revision_number=revision_number,
+        revision_number=preview_form.rendered_revision,
         vote_duration=preview_form.vote_duration,
     )
     _, body = await construct.start_vote_subject_and_body(default_subject_template, default_body_template, options)
@@ -83,24 +83,22 @@ async def body_preview(
 
 
 @post.typed
-async def selected_revision(
+async def selected(  # noqa: C901
     session: web.Committer,
     _voting: Literal["voting"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
     start_voting_form: shared.voting.StartVotingForm,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /voting/<project_key>/<version_key>/<revision>
+    URL: /voting/<project_key>/<version_key>
     """
 
     async with db.session() as data:
-        match await interaction.release_ready_for_vote(
+        match await interaction.release_ready_to_start_vote(
             session,
             project_key,
             version_key,
-            revision,
             data,
             frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
         ):
@@ -110,10 +108,17 @@ async def selected_revision(
                     error=error,
                     project_key=str(project_key),
                     version_key=str(version_key),
-                    revision=str(revision),
                 )
             case (release, committee):
                 pass
+
+        if start_voting_form.rendered_revision != release.safe_latest_revision_number:
+            return await session.redirect(
+                get.voting.selected,
+                error="A newer revision appeared. Please reload and review the vote before starting it.",
+                project_key=str(project_key),
+                version_key=str(version_key),
+            )
 
         vote_mode = release.effective_vote_mode
         if vote_mode != start_voting_form.vote_mode:
@@ -168,7 +173,7 @@ async def selected_revision(
             fullname=session.fullname,
             project_key=project_key,
             version_key=version_key,
-            revision_number=revision,
+            revision_number=release.safe_latest_revision_number,
             vote_duration=start_voting_form.vote_duration,
         )
         subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
@@ -178,7 +183,6 @@ async def selected_revision(
                 start_voting_form.email_to,
                 project_key,
                 version_key,
-                revision,
                 start_voting_form.vote_duration,
                 subject,
                 start_voting_form.body,
@@ -190,6 +194,7 @@ async def selected_revision(
                 email_bcc=start_voting_form.email_bcc,
                 second_round_email_to=second_round_email_to,
                 expected_vote_mode=start_voting_form.vote_mode,
+                expected_revision=start_voting_form.rendered_revision,
                 notify_when_finished=start_voting_form.notify_when_finished,
                 automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
             )

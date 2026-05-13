@@ -744,7 +744,7 @@ class VoteResolveResults(schema.Strict):
 class VoteStartArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
-    revision: safe.RevisionNumber = schema.example("00005")
+    revision: safe.RevisionNumber | None = schema.default_example(None, "00005")
     email_to: str = schema.example("dev@example.apache.org")
     email_cc: list[str] = schema.default_example([], "[dev@example.apache.org]")
     email_bcc: list[str] = schema.default_example([], "[dev@example.apache.org]")

@@ -42,23 +42,21 @@ import atr.web as web
 
 
 @get.typed
-async def selected_revision(
+async def selected(
     session: web.Committer,
     _voting: Literal["voting"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /voting/<project_key>/<version_key>/<revision>
+    URL: /voting/<project_key>/<version_key>
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
-        match await interaction.release_ready_for_vote(
+        match await interaction.release_ready_to_start_vote(
             session,
             project_key,
             version_key,
-            revision,
             data,
             frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
         ):
@@ -68,7 +66,6 @@ async def selected_revision(
                     error=error,
                     project_key=str(project_key),
                     version_key=str(version_key),
-                    revision=str(revision),
                 )
             case (release, committee):
                 pass
@@ -97,7 +94,7 @@ async def selected_revision(
             fullname=session.fullname,
             project_key=project_key,
             version_key=release.safe_version_key,
-            revision_number=revision,
+            revision_number=release.safe_latest_revision_number,
             vote_duration=min_hours,
         )
         default_subject, default_body = await construct.start_vote_subject_and_body(
@@ -108,7 +105,7 @@ async def selected_revision(
 
         content = await _render_page(
             release=release,
-            revision_number=str(revision),
+            revision_number=str(release.safe_latest_revision_number),
             permitted_recipients=permitted_recipients,
             second_round_recipients=second_round_recipients,
             podling_vote_round=_podling_vote_round(release, committee),
@@ -304,6 +301,7 @@ async def _render_page(
             "vote_mode": vote_mode,
             "subject_template_hash": subject_template_hash,
             "body": default_body,
+            "rendered_revision": revision_number,
         },
         custom=custom,
         skip=skip,
@@ -314,7 +312,6 @@ async def _render_page(
         post.voting.body_preview,
         project_key=release.project.key,
         version_key=release.version,
-        revision_number=revision_number,
     )
     page.append(htpy.div("#vote-body-config.d-none", data_preview_url=preview_url))
 

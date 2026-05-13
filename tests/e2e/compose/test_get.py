@@ -47,6 +47,19 @@ def test_file_type_badge_source_for_archive(page_compose: Page) -> None:
     expect(badge).to_have_text("src")
 
 
+def test_move_form_populates_from_json(page_compose: Page) -> None:
+    """The move form should populate rows from script JSON data."""
+    file_option = page_compose.locator("#file-list-table-body input[type='checkbox'][data-item-path]").first
+    dir_option = page_compose.locator("#dir-list-table-body input[type='radio'][name='target-directory-radio']").first
+    expect(file_option).to_be_visible()
+    expect(dir_option).to_be_visible()
+
+    toggle_button = page_compose.locator("#select-files-toggle-button")
+    expect(toggle_button).to_have_text("Select these files")
+    toggle_button.click()
+    expect(toggle_button).to_have_text("Unselect all")
+
+
 def test_ongoing_tasks_banner_appears_when_tasks_restart(page_compose: Page) -> None:
     """The ongoing tasks banner should appear when tasks are restarted."""
     banner = page_compose.locator("#ongoing-tasks-banner")
@@ -104,23 +117,10 @@ def test_start_vote_button_enabled_when_tasks_complete(page_compose: Page) -> No
 def test_start_vote_button_has_href(page_compose: Page) -> None:
     """The start vote button should have an href attribute set."""
     vote_button = page_compose.locator("#start-vote-button")
-    expect(vote_button).to_have_attribute("href", re.compile(r"/voting/test/0\.1\+e2e-compose/\d+"))
+    expect(vote_button).to_have_attribute("href", re.compile(r"/voting/test/0\.1\+e2e-compose$"))
 
 
 def test_start_vote_button_has_title(page_compose: Page) -> None:
     """The start vote button should have a descriptive title."""
     vote_button = page_compose.locator("#start-vote-button")
     expect(vote_button).to_have_attribute("title", "Start a vote on this draft")
-
-
-def test_move_form_populates_from_json(page_compose: Page) -> None:
-    """The move form should populate rows from script JSON data."""
-    file_option = page_compose.locator("#file-list-table-body input[type='checkbox'][data-item-path]").first
-    dir_option = page_compose.locator("#dir-list-table-body input[type='radio'][name='target-directory-radio']").first
-    expect(file_option).to_be_visible()
-    expect(dir_option).to_be_visible()
-
-    toggle_button = page_compose.locator("#select-files-toggle-button")
-    expect(toggle_button).to_have_text("Select these files")
-    toggle_button.click()
-    expect(toggle_button).to_have_text("Unselect all")

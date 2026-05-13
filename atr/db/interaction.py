@@ -551,11 +551,10 @@ async def release_latest_vote_task(release: sql.Release, caller_data: db.Session
         return task
 
 
-async def release_ready_for_vote(
+async def release_ready_to_start_vote(
     session: web.Committer,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
     data: db.Session,
     allowed_vote_modes: frozenset[sql.VoteMode],
 ) -> tuple[sql.Release, sql.Committee] | str:
@@ -568,12 +567,9 @@ async def release_ready_for_vote(
         with_project_release_policy=True,
     )
 
-    selected_revision_number = release.latest_revision_number
-    if selected_revision_number is None:
+    latest_revision_number = release.latest_revision_number
+    if latest_revision_number is None:
         return "No revision found for this release"
-
-    if release.safe_latest_revision_number != revision:
-        return "This revision does not match the revision you are voting on"
 
     committee = release.committee
     if committee is None:
@@ -582,7 +578,7 @@ async def release_ready_for_vote(
     if release.effective_vote_mode not in allowed_vote_modes:
         return "This release's vote mode does not allow that action"
 
-    if await has_blocker_checks(release, revision, caller_data=data):
+    if await has_blocker_checks(release, release.safe_latest_revision_number, caller_data=data):
         return "This release candidate draft has blockers. Please fix the blockers before starting a vote."
 
     if not (user.is_committee_member(committee, session.uid) or session.is_admin):

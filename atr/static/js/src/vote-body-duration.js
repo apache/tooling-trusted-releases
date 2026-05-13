@@ -60,6 +60,12 @@ function createBodyFetcher(previewUrl, csrfToken, bodyTextarea, state) {
 			if (voteModeInput) {
 				formData.append("vote_mode", voteModeInput.value);
 			}
+			const renderedRevisionInput = document.querySelector(
+				'input[name="rendered_revision"]',
+			);
+			if (renderedRevisionInput) {
+				formData.append("rendered_revision", renderedRevisionInput.value);
+			}
 			if (csrfToken) {
 				formData.append("csrf_token", csrfToken);
 			}

@@ -62,13 +62,13 @@
           {% set blocked_title = "Fix blockers before starting a vote" %}
           {% if has_files and (release_vote_mode.value == "manual") and (ongoing_tasks_count == 0) and (not vote_blocked) %}
             <a id="start-vote-button"
-               href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.manual.start_selected, project_key=release.project.key, version_key=release.version) }}"
                title="Start a manual vote on this draft"
                class="btn btn-success"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
           {% elif has_files and (release_vote_mode.value == "manual") and (not vote_blocked) %}
             <a id="start-vote-button"
-               href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
-               data-vote-href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.manual.start_selected, project_key=release.project.key, version_key=release.version) }}"
+               data-vote-href="{{ as_url(get.manual.start_selected, project_key=release.project.key, version_key=release.version) }}"
                title="Background tasks must complete first"
                class="btn btn-success disabled"
                role="button"
@@ -76,7 +76,7 @@
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
           {% elif has_files and (release_vote_mode.value == "manual") and vote_blocked %}
             <a id="start-vote-button"
-               href="{{ as_url(get.manual.start_selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.manual.start_selected, project_key=release.project.key, version_key=release.version) }}"
                title="{{ blocked_title }}"
                class="btn btn-success disabled"
                role="button"
@@ -84,13 +84,13 @@
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start manual vote</a>
           {% elif has_files and (release_vote_mode.value != "manual") and (not vote_blocked) and (ongoing_tasks_count == 0) %}
             <a id="start-vote-button"
-               href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.voting.selected, project_key=release.project.key, version_key=release.version) }}"
                title="Start a vote on this draft"
                class="btn btn-success"><i class="bi bi-check-circle me-1"></i> Start voting</a>
           {% elif has_files and (release_vote_mode.value != "manual") and (not vote_blocked) %}
             <a id="start-vote-button"
-               href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
-               data-vote-href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.voting.selected, project_key=release.project.key, version_key=release.version) }}"
+               data-vote-href="{{ as_url(get.voting.selected, project_key=release.project.key, version_key=release.version) }}"
                title="Background tasks must complete first"
                class="btn btn-success disabled"
                role="button"
@@ -98,7 +98,7 @@
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start voting</a>
           {% elif has_files and (release_vote_mode.value != "manual") and vote_blocked %}
             <a id="start-vote-button"
-               href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.voting.selected, project_key=release.project.key, version_key=release.version) }}"
                title="{{ blocked_title }}"
                class="btn btn-success disabled"
                role="button"
@@ -106,7 +106,7 @@
                tabindex="-1"><i class="bi bi-check-circle me-1"></i> Start voting</a>
           {% else %}
             <a id="start-vote-button"
-               href="{{ as_url(get.voting.selected_revision, project_key=release.project.key, version_key=release.version, revision=revision_number) }}"
+               href="{{ as_url(get.voting.selected, project_key=release.project.key, version_key=release.version) }}"
                title="Upload files to enable voting"
                class="btn btn-success disabled"
                role="button"

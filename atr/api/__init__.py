@@ -1762,7 +1762,6 @@ async def vote_start(
                 data.email_to,
                 data.project,
                 data.version,
-                data.revision,
                 data.vote_duration,
                 data.subject,
                 data.body,
@@ -1770,6 +1769,7 @@ async def vote_start(
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,
+                expected_revision=data.revision,
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,
             )

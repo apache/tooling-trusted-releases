@@ -18,6 +18,7 @@
 import pydantic
 
 import atr.form as form
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.util as util
 
@@ -50,6 +51,7 @@ class StartVotingForm(form.Form):
         default=False,
     )
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
+    rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
 
     @pydantic.field_validator("vote_duration")
     @classmethod

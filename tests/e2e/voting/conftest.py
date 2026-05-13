@@ -41,7 +41,7 @@ def page_voting(voting_context: BrowserContext) -> Generator[Page]:
     page = voting_context.new_page()
     helpers.visit(page, COMPOSE_URL)
     page.locator('a[title="Start a vote on this draft"]').click()
-    page.wait_for_url(f"**/voting/{PROJECT_KEY}/{VERSION_KEY}/**")
+    page.wait_for_url(f"**/voting/{PROJECT_KEY}/{VERSION_KEY}")
     yield page
     page.close()
 

@@ -66,20 +66,19 @@ async def resolve_selected(
 
 
 @get.typed
-async def start_selected_revision(
+async def start_selected(
     session: web.Committer,
     _manual_start: Literal["manual/start"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /manual/start/<project_key>/<version_key>/<revision>
+    URL: /manual/start/<project_key>/<version_key>
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
-        match await interaction.release_ready_for_vote(
-            session, project_key, version_key, revision, data, frozenset({sql.VoteMode.MANUAL})
+        match await interaction.release_ready_to_start_vote(
+            session, project_key, version_key, data, frozenset({sql.VoteMode.MANUAL})
         ):
             case str() as error:
                 return await session.redirect(
@@ -87,19 +86,18 @@ async def start_selected_revision(
                     error=error,
                     project_key=str(project_key),
                     version_key=str(version_key),
-                    revision=str(revision),
                 )
             case (release, _committee):
                 pass
 
-        content = await _render_page(release=release, revision=str(revision))
+        content = await _render_page(release=release, revision_number=str(release.safe_latest_revision_number))
 
         return await template.blank(
             title=f"Start manual vote on {release.project.short_display_name} {release.version}", content=content
         )
 
 
-async def _render_page(release, revision: str) -> htm.Element:
+async def _render_page(release, revision_number: str) -> htm.Element:
     page = htm.Block()
 
     back_link_url = util.as_url(
@@ -136,15 +134,15 @@ async def _render_page(release, revision: str) -> htm.Element:
 
     cancel_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
     manual_form = await form.render(
-        model_cls=form.Empty,
+        model_cls=shared.manual.StartVoteForm,
         submit_label="Start manual vote",
         cancel_url=cancel_url,
         action=util.as_url(
-            post.manual.start_selected_revision,
+            post.manual.start_selected,
             project_key=release.project.key,
             version_key=release.version,
-            revision=revision,
         ),
+        defaults={"rendered_revision": revision_number},
     )
 
     page.append(manual_form)

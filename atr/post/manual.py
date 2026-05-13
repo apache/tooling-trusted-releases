@@ -20,7 +20,6 @@ from typing import Literal
 import atr.blueprints.post as post
 import atr.db as db
 import atr.db.interaction as interaction
-import atr.form as form
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -93,21 +92,20 @@ async def resolve_selected(
 
 
 @post.typed
-async def start_selected_revision(
+async def start_selected(
     session: web.Committer,
     _manual_start: Literal["manual/start"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    revision: safe.RevisionNumber,
-    _form: form.Empty,
+    start_vote_form: shared.manual.StartVoteForm,
 ) -> web.WerkzeugResponse | str:
     """
-    URL: /manual/start/<project_key>/<version_key>/<revision>
+    URL: /manual/start/<project_key>/<version_key>
     """
 
     async with db.session() as data:
-        match await interaction.release_ready_for_vote(
-            session, project_key, version_key, revision, data, frozenset({sql.VoteMode.MANUAL})
+        match await interaction.release_ready_to_start_vote(
+            session, project_key, version_key, data, frozenset({sql.VoteMode.MANUAL})
         ):
             case str() as error:
                 return await session.redirect(
@@ -119,10 +117,18 @@ async def start_selected_revision(
             case (release, committee):
                 pass
 
+        if start_vote_form.rendered_revision != release.safe_latest_revision_number:
+            return await session.redirect(
+                get.manual.start_selected,
+                error="A newer revision appeared. Please reload and review the vote before starting it.",
+                project_key=str(project_key),
+                version_key=str(version_key),
+            )
+
         async with storage.write_as_committee_participant(committee.key, session) as wacp:
             error = await wacp.release.promote_to_candidate(
                 release.safe_key,
-                revision,
+                start_vote_form.rendered_revision,
                 allowed_vote_modes=frozenset({sql.VoteMode.MANUAL}),
             )
 

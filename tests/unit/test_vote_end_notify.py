@@ -506,6 +506,7 @@ def test_start_voting_form_accepts_notify_opt_in() -> None:
             "body": "body",
             "notify_when_finished": "on",
             "vote_mode": sql.VoteMode.TRUSTED,
+            "rendered_revision": "00001",
         }
     )
     assert parsed.notify_when_finished is True
@@ -528,7 +529,9 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
         key="project-1.0.0",
     )
     release_writer = SimpleNamespace(
-        _start_vote_no_commit=mock.AsyncMock(return_value=(release_for_start, 1, sql.VoteMode.EMAIL)),
+        _start_vote_no_commit=mock.AsyncMock(
+            return_value=(release_for_start, 1, sql.VoteMode.EMAIL, safe.RevisionNumber("00001"))
+        ),
     )
     write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
     writer = object.__new__(vote_writer.CommitteeParticipant)
@@ -542,7 +545,6 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
             "dev@project.apache.org",
             safe.ProjectKey("project"),
             safe.VersionKey("1.0.0"),
-            safe.RevisionNumber("00001"),
             72,
             "[VOTE] Release",
             "Please vote",

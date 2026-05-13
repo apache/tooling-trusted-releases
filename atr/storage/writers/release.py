@@ -451,16 +451,16 @@ class CommitteeParticipant(FoundationCommitter):
     async def promote_to_candidate(
         self,
         release_key: safe.ReleaseKey,
-        selected_revision_number: safe.RevisionNumber,
+        expected_revision: safe.RevisionNumber,
         *,
         allowed_vote_modes: frozenset[sql.VoteMode],
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
         try:
             await self.__data.begin_immediate()
-            release, vote_seq, vote_mode = await self._start_vote_no_commit(
+            release, vote_seq, vote_mode, revision_number = await self._start_vote_no_commit(
                 release_key,
-                selected_revision_number,
+                expected_revision,
                 allowed_vote_modes=allowed_vote_modes,
                 promote=True,
             )
@@ -475,7 +475,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             release_key=release.key,
-            selected_revision_number=str(selected_revision_number),
+            revision_number=str(revision_number),
             vote_seq=vote_seq,
             vote_mode=vote_mode.value,
         )
@@ -484,18 +484,21 @@ class CommitteeParticipant(FoundationCommitter):
     async def _start_vote_no_commit(  # noqa: C901
         self,
         release_key: safe.ReleaseKey,
-        selected_revision_number: safe.RevisionNumber,
+        expected_revision: safe.RevisionNumber | None,
         *,
         allowed_vote_modes: frozenset[sql.VoteMode],
         promote: bool,
         expected_podling_thread_id: str | None = None,
-    ) -> tuple[sql.Release, int, sql.VoteMode]:
+    ) -> tuple[sql.Release, int, sql.VoteMode, safe.RevisionNumber]:
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found", status=404))
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number
+        if (expected_revision is not None) and (revision_number != expected_revision):
+            raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
+        revision_for_cas = expected_revision if (expected_revision is not None) else revision_number
         if promote:
             vote_mode = release_for_pre_checks.effective_vote_mode
         else:
@@ -507,7 +510,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         # Check for ongoing tasks
         if promote:
-            ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, selected_revision_number)
+            ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, revision_number)
             if ongoing_tasks > 0:
                 raise storage.AccessError("All checks must be completed before starting a vote", status=409)
 
@@ -520,15 +523,7 @@ class CommitteeParticipant(FoundationCommitter):
                 raise storage.AccessError("This release is not in the candidate draft phase", status=409)
             raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
 
-        # Check that the revision number is the latest
-        if revision_number != selected_revision_number:
-            raise storage.AccessError(
-                "The selected revision number does not match the latest revision number", status=409
-            )
-
-        if await interaction.has_blocker_checks(
-            release_for_pre_checks, selected_revision_number, caller_data=self.__data
-        ):
+        if await interaction.has_blocker_checks(release_for_pre_checks, revision_number, caller_data=self.__data):
             raise storage.AccessError(
                 "This release candidate draft has blockers. Please fix the blockers before starting a vote.",
                 status=409,
@@ -554,7 +549,7 @@ class CommitteeParticipant(FoundationCommitter):
         stmt = sqlmodel.update(sql.Release).where(
             via(sql.Release.key) == release_for_pre_checks.key,
             via(sql.Release.phase) == expected_phase,
-            sql.latest_revision_number_query() == str(selected_revision_number),
+            sql.latest_revision_number_query() == str(revision_for_cas),
         )
         if not promote:
             if expected_podling_thread_id is None:
@@ -568,7 +563,7 @@ class CommitteeParticipant(FoundationCommitter):
         if result.rowcount != 1:
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         await self.__data.refresh(release_for_pre_checks)
-        return release_for_pre_checks, vote_seq, vote_mode
+        return release_for_pre_checks, vote_seq, vote_mode, revision_number
 
     async def __vote_seq_allocate(self, release_key: str) -> int:
         upsert_stmt = (

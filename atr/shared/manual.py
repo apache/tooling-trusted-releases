@@ -20,6 +20,7 @@ from typing import Literal
 import pydantic
 
 import atr.form as form
+import atr.models.safe as safe
 
 
 class ResolveVoteForm(form.Form):
@@ -33,3 +34,7 @@ class ResolveVoteForm(form.Form):
         if not value.startswith("https://lists.apache.org/thread/"):
             raise ValueError("URL must be a valid Apache email thread URL")
         return value
+
+
+class StartVoteForm(form.Form):
+    rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)

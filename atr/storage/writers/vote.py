@@ -294,7 +294,6 @@ class CommitteeParticipant(FoundationCommitter):
         email_to: str,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        selected_revision_number: safe.RevisionNumber,
         vote_duration_choice: int,
         subject: str,
         body_data: str,
@@ -306,6 +305,7 @@ class CommitteeParticipant(FoundationCommitter):
         email_bcc: list[str] | None = None,
         second_round_email_to: str | None = None,
         expected_vote_mode: sql.VoteMode | None = None,
+        expected_revision: safe.RevisionNumber | None = None,
         notify_when_finished: bool = False,
         automatic_resolve_when_finished: bool = False,
     ) -> sql.Task:
@@ -320,9 +320,9 @@ class CommitteeParticipant(FoundationCommitter):
                     if (expected_vote_mode is not None)
                     else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
                 )
-                release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
+                release, vote_seq, vote_mode, revision_number = await self.__write_as.release._start_vote_no_commit(
                     release_key,
-                    selected_revision_number,
+                    expected_revision,
                     allowed_vote_modes=allowed_vote_modes,
                     promote=True,
                 )
@@ -334,9 +334,9 @@ class CommitteeParticipant(FoundationCommitter):
                         _project=True,
                         _committee=True,
                     ).demand(storage.AccessError("Release not found", status=404))
-                release, vote_seq, vote_mode = await self.__write_as.release._start_vote_no_commit(
+                release, vote_seq, vote_mode, revision_number = await self.__write_as.release._start_vote_no_commit(
                     release.safe_key,
-                    selected_revision_number,
+                    expected_revision,
                     allowed_vote_modes=frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),
                     promote=False,
                     expected_podling_thread_id=release.podling_thread_id,
@@ -422,7 +422,7 @@ class CommitteeParticipant(FoundationCommitter):
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
                 release_key=release.key,
-                selected_revision_number=str(selected_revision_number),
+                revision_number=str(revision_number),
                 vote_seq=vote_seq,
                 vote_mode=vote_mode.value,
             )
@@ -686,13 +686,13 @@ class CommitteeMember(CommitteeParticipant):
                     permitted_recipients=[incubator_vote_address],
                     project_key=release.safe_project_key,
                     version_key=release.safe_version_key,
-                    selected_revision_number=release.safe_latest_revision_number,
                     asf_fullname=asf_fullname,
                     vote_duration_choice=vote_duration,
                     subject=subject_data,
                     body_data=body_data,
                     release=release,
                     promote=False,
+                    expected_revision=release.safe_latest_revision_number,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -764,7 +764,7 @@ class CommitteeMember(CommitteeParticipant):
                 release_key=release.key,
                 project_key=str(project_key),
                 version_key=release.version,
-                selected_revision_number=str(release.safe_latest_revision_number),
+                revision_number=str(release.safe_latest_revision_number),
                 vote_seq=second_round_vote_seq,
                 vote_mode=second_round_vote_mode.value,
                 vote_result=vote_result,
@@ -963,13 +963,13 @@ class CommitteeMember(CommitteeParticipant):
                     permitted_recipients=[incubator_vote_address],
                     project_key=release.safe_project_key,
                     version_key=release.safe_version_key,
-                    selected_revision_number=release.safe_latest_revision_number,
                     asf_fullname=asf_fullname,
                     vote_duration_choice=vote_duration,
                     subject=subject_data,
                     body_data=body_data,
                     release=release,
                     promote=False,
+                    expected_revision=release.safe_latest_revision_number,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -1044,7 +1044,7 @@ class CommitteeMember(CommitteeParticipant):
             release_key=release.key,
             project_key=str(project_key),
             version_key=release.version,
-            selected_revision_number=release.latest_revision_number,
+            revision_number=release.latest_revision_number,
             vote_result=vote_result,
             voting_round=voting_round,
             vote_seq=vote_seq,
