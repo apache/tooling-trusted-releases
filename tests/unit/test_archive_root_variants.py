@@ -286,6 +286,18 @@ def test_zipformat_structure_accepts_src_suffix_variant(tmp_path: pathlib.Path) 
     assert result.get("root_dir") == "apache-example-1.2.3"
 
 
+@pytest.mark.asyncio
+async def test_zipformat_structure_fails_when_cache_unavailable(tmp_path: pathlib.Path) -> None:
+    recorder, args = await _zipformat_structure_args(tmp_path, "apache-example-1.2.3.zip")
+
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=None)):
+        await zipformat.structure(args)
+
+    assert any(status == sql.CheckResultStatus.EXCEPTION.value for status, _, _ in recorder.messages)
+    assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
+    assert any("extracted archive tree is not available" in message.lower() for _, message, _ in recorder.messages)
+
+
 def test_zipformat_structure_rejects_dated_src_suffix(tmp_path: pathlib.Path) -> None:
     cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3/README.txt"])
 
@@ -335,6 +347,19 @@ def test_zipformat_structure_rejects_top_level_symlink(tmp_path: pathlib.Path) -
     assert "Files found directly in root" in result["error"]
 
 
+@pytest.mark.asyncio
+async def test_zipformat_structure_reports_root_mismatch_as_suggestion(tmp_path: pathlib.Path) -> None:
+    cache_dir = _make_cache_tree(tmp_path, ["apache-example-1.2.3-source/README.txt"])
+    recorder, args = await _zipformat_structure_args(tmp_path, "apache-example-1.2.3.zip")
+
+    with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
+        await zipformat.structure(args)
+
+    assert any(status == sql.CheckResultStatus.SUGGESTION.value for status, _, _ in recorder.messages)
+    assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
+    assert any("Root directory mismatch" in message for _, message, _ in recorder.messages)
+
+
 def _make_cache_tree(base: pathlib.Path, members: list[str]) -> pathlib.Path:
     """Create a directory tree simulating the quarantine extraction cache."""
     cache_dir = base / "cache"
@@ -358,6 +383,24 @@ def _make_cache_tree_with_contents(base: pathlib.Path, members: dict[str, str]) 
 
 
 async def _targz_structure_args(
+    tmp_path: pathlib.Path, archive_filename: str
+) -> tuple[recorders.RecorderStub, checks.FunctionArguments]:
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / archive_filename
+    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_archive_root_variants")
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("test"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath(archive_filename),
+        extra_args={},
+    )
+    return recorder, args
+
+
+async def _zipformat_structure_args(
     tmp_path: pathlib.Path, archive_filename: str
 ) -> tuple[recorders.RecorderStub, checks.FunctionArguments]:
     temp_dir = safe.StatePath(tmp_path)

@@ -29,7 +29,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "3"
+CHECK_VERSION_STRUCTURE: Final[str] = "4"
 
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:
@@ -46,7 +46,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.concern(
+        await recorder.exception(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -58,11 +58,11 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
         result_data = await asyncio.to_thread(_structure_check_core_logic, archive_dir, str(artifact_abs_path))
 
         if result_data.get("error"):
-            await recorder.concern(result_data["error"], result_data)
+            await recorder.suggestion(result_data["error"], result_data)
         else:
             await recorder.note(f"Zip structure OK (root: {result_data['root_dir']})", result_data)
     except Exception as e:
-        await recorder.concern("Error checking zip structure", {"error": str(e)})
+        await recorder.exception("Error checking zip structure", {"error": str(e)})
 
     return None
 
