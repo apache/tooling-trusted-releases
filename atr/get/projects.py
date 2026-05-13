@@ -867,6 +867,9 @@ async def _render_releases_tab(
         )["Start a new release"]
     ]
 
+    if not (candidate_drafts or candidates or previews or full_releases):
+        block.p(".text-muted.mb-4")["No releases found."]
+
     # Stay flat for projects with only the implicit "default" cycle and no
     # cycle dates set. Once cycles get used or dates get filled in, headings
     # surface automatically. The card / form surfaces whenever can_edit, so a
@@ -900,6 +903,8 @@ async def _render_releases_tab(
                 project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
             )
         )
+        if not cycle_has_releases and show_cycle_heading:
+            block.p(".text-muted.mb-4")["No releases."]
 
     return block.collect()
 
