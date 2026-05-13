@@ -32,7 +32,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -69,11 +69,9 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await recorder.exception("Error during signature check execution", {"error": str(e)})
         return None
 
-    match result_data.get("error_kind"):
-        case "missing_signature" | "no_asf_uid":
-            await recorder.blocker(result_data["error"], result_data)
-        case _ if result_data.get("error"):
-            await recorder.concern(result_data["error"], result_data)
+    match result_data:
+        case {"error": error} if error:
+            await recorder.blocker(error, result_data)
         case _ if result_data.get("verified"):
             await recorder.note("Signature verified successfully", result_data)
         case _:

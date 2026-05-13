@@ -182,6 +182,45 @@ s/1/jcfp+ztTP+Z/8fwhh1F4Rg9j9tfz/1Rk7ORuNz89Oz8bjMfj/+cno+f//+5r+j/H+IFU
 """
 
 
+async def test_check_blocks_on_all_verification_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    signature_path = tmp_path / "artifact.tar.gz.asc"
+    signature_path.write_text("not a signature", encoding="utf-8")
+    recorder = SignatureRecorderStub(signature_path, tmp_path, "atr.tasks.checks.signature.check")
+
+    async def check_core_logic(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        return {
+            "verified": False,
+            "error": "Signature was made by an untrusted signing key",
+            "error_kind": "untrusted_key",
+        }
+
+    monkeypatch.setattr(signature_check, "_check_core_logic", check_core_logic)
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="tester",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("1.0"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath(signature_path.name),
+        extra_args={"committee_key": "test"},
+    )
+
+    await signature_check.check(args)
+
+    assert recorder.messages == [
+        (
+            sql.CheckResultStatus.BLOCKER.value,
+            "Signature was made by an untrusted signing key",
+            {
+                "verified": False,
+                "error": "Signature was made by an untrusted signing key",
+                "error_kind": "untrusted_key",
+            },
+        )
+    ]
+
+
 async def test_check_blocks_on_missing_signature_error_kind(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
