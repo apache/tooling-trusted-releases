@@ -33,19 +33,19 @@ if TYPE_CHECKING:
 def page_project(page: Page) -> Generator[Page]:
     helpers.log_in(page)
     _clear_policy_excludes(page)
-    helpers.visit(page, policy_helpers.PROJECT_URL)
+    helpers.visit(page, policy_helpers.PROJECT_COMPOSE_URL)
     yield page
     _clear_policy_excludes(page)
 
 
 def _clear_policy_excludes(page: Page) -> None:
-    helpers.visit(page, policy_helpers.PROJECT_URL)
+    helpers.visit(page, policy_helpers.PROJECT_COMPOSE_URL)
     policy_helpers.textarea_source_excludes_lightweight(page).fill("")
     policy_helpers.textarea_source_excludes_rat(page).fill("")
     policy_helpers.compose_form_save_button(page).click()
     page.wait_for_load_state()
 
-    helpers.visit(page, policy_helpers.PROJECT_URL)
+    helpers.visit(page, policy_helpers.PROJECT_TP_URL)
     policy_helpers.input_github_repository_name(page).fill("")
     policy_helpers.input_github_repository_branch(page).fill("")
     policy_helpers.textarea_github_compose_workflow_path(page).fill("")

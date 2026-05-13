@@ -1776,7 +1776,8 @@ class Revision(sqlmodel.SQLModel, table=True):
 
 # User
 class User(sqlmodel.SQLModel, table=True):
-    asfuid: str = sqlmodel.Field(primary_key=True, default=None, **example("user"))
+    asfuid: str = sqlmodel.Field(primary_key=True, **example("user"))
+    name: str | None = sqlmodel.Field(default=None, **example("Alice Example"))
     preferences: UserPreferencesEntry = sqlmodel.Field(
         default_factory=UserPreferencesEntry, sa_column=sqlalchemy.Column(UserPreferencesJSON, nullable=False)
     )

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 import pydantic
+import sqlalchemy.dialects.sqlite as sqlite
 import sqlmodel
 
 import atr.config as config
@@ -40,6 +41,7 @@ import atr.util as util
 
 _WHIMSY_COMMITTEE_INFO_URL: Final[str] = "https://whimsy.apache.org/public/committee-info.json"
 _WHIMSY_COMMITTEE_RETIRED_URL: Final[str] = "https://whimsy.apache.org/public/committee-retired.json"
+_WHIMSY_PEOPLE_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_people.json"
 _WHIMSY_PROJECTS_URL: Final[str] = "https://whimsy.apache.org/public/public_ldap_projects.json"
 _PROJECTS_COMMITTEE_URL: Final[str] = "https://projects.apache.org/json/foundation/committees.json"
 _PROJECTS_PROJECTS_URL: Final[str] = "https://projects.apache.org/json/foundation/projects.json"
@@ -151,6 +153,15 @@ class PodlingsData(helpers.DictRoot[PodlingStatus]):
 
 class GroupsData(helpers.DictRoot[list[str]]):
     pass
+
+
+class LDAPPersonEntry(schema.Subset):
+    name: str
+
+
+class LDAPPeopleData(schema.Subset):
+    people_count: int
+    people: dict[str, LDAPPersonEntry]
 
 
 class MaintainerInfo(schema.Strict):
@@ -300,6 +311,17 @@ async def get_ldap_projects_data() -> LDAPProjectsData:
     return LDAPProjectsData.model_validate(data)
 
 
+async def get_people_data() -> LDAPPeopleData:
+    """Returns the full roster of ASF accounts with display names."""
+
+    async with util.create_secure_session() as session:
+        async with session.get(_WHIMSY_PEOPLE_URL) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+    return LDAPPeopleData.model_validate(data)
+
+
 async def get_projects_data() -> ProjectsData:
     """Returns the list of projects."""
 
@@ -325,6 +347,7 @@ async def update_metadata() -> tuple[int, int]:
     """Update metadata from remote data sources."""
 
     ldap_projects = await get_ldap_projects_data()
+    people = await get_people_data()
     projects = await get_projects_data()
     podlings_data = await get_current_podlings_data()
     whimsy_committees = await get_whimsy_committee_data()
@@ -338,6 +361,8 @@ async def update_metadata() -> tuple[int, int]:
 
     async with db.session() as data:
         async with data.begin():
+            await _update_people(data, people)
+
             added, updated = await _update_committees(data, ldap_projects, whimsy_committees_by_name, committees)
             added_count += added
             updated_count += updated
@@ -449,6 +474,22 @@ async def _update_committees(
         updated_count += 1
 
     return added_count, updated_count
+
+
+async def _update_people(data: db.Session, people: LDAPPeopleData) -> None:
+    # Upsert all ASF accounts eagerly so roster lookups always find a name.
+    # Batched to stay under SQLite's bind-parameter limit (~32766).
+    rows = [
+        {"asfuid": uid, "name": entry.name, "preferences": sql.UserPreferencesEntry()}
+        for uid, entry in people.people.items()
+    ]
+    for i in range(0, len(rows), 5000):
+        stmt = sqlite.insert(sql.User).values(rows[i : i + 5000])
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["asfuid"],
+            set_={"name": stmt.excluded.name},
+        )
+        await data.execute(stmt)
 
 
 async def _update_podlings(

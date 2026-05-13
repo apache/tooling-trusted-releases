@@ -21,6 +21,7 @@ from playwright.sync_api import Page, expect
 
 
 def test_github_repository_branch_can_be_cleared(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
     repo_input = helpers.input_github_repository_name(page_project)
     repo_input.fill("tooling-actions")
     branch_input = helpers.input_github_repository_branch(page_project)
@@ -28,18 +29,19 @@ def test_github_repository_branch_can_be_cleared(page_project: Page) -> None:
     helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
     branch_input = helpers.input_github_repository_branch(page_project)
     branch_input.fill("")
     helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
     branch_input = helpers.input_github_repository_branch(page_project)
     expect(branch_input).to_have_value("")
 
 
 def test_github_repository_branch_value_persists(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
     repo_input = helpers.input_github_repository_name(page_project)
     repo_input.fill("tooling-actions")
     branch_input = helpers.input_github_repository_branch(page_project)
@@ -47,29 +49,31 @@ def test_github_repository_branch_value_persists(page_project: Page) -> None:
     helpers.trusted_publishing_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_TP_URL)
     branch_input = helpers.input_github_repository_branch(page_project)
     expect(branch_input).to_have_value("2.5.x")
 
 
 def test_source_excludes_lightweight_can_be_cleared(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     textarea.fill("*.min.js")
     helpers.compose_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     textarea.fill("")
     helpers.compose_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     expect(textarea).to_have_value("")
 
 
 def test_source_excludes_lightweight_preserves_internal_whitespace(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     # TODO: There is a problem with leading and trailing whitespace in the form
     # Anyway, this is an edge case, and perhaps normalisation would even be better
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
@@ -77,28 +81,30 @@ def test_source_excludes_lightweight_preserves_internal_whitespace(page_project:
     helpers.compose_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     expect(textarea).to_have_value("first\n  middle with spaces  \nlast")
 
 
 def test_source_excludes_lightweight_value_persists(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     textarea.fill("*.min.js\nvendor/**")
     helpers.compose_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_lightweight(page_project)
     expect(textarea).to_have_value("*.min.js\nvendor/**")
 
 
 def test_source_excludes_rat_value_persists(page_project: Page) -> None:
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_rat(page_project)
     textarea.fill("third-party/**\n*.generated")
     helpers.compose_form_save_button(page_project).click()
     page_project.wait_for_load_state()
 
-    root_helpers.visit(page_project, helpers.PROJECT_URL)
+    root_helpers.visit(page_project, helpers.PROJECT_COMPOSE_URL)
     textarea = helpers.textarea_source_excludes_rat(page_project)
     expect(textarea).to_have_value("third-party/**\n*.generated")

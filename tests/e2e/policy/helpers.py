@@ -20,7 +20,10 @@ from typing import Final
 from playwright.sync_api import Locator, Page
 
 PROJECT_KEY: Final[str] = "test"
-PROJECT_URL: Final[str] = f"/projects/{PROJECT_KEY}"
+PROJECT_COMPOSE_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=compose"
+PROJECT_VOTE_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=vote"
+PROJECT_FINISH_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=finish"
+PROJECT_TP_URL: Final[str] = f"/projects/{PROJECT_KEY}?tab=trusted-publishing"
 
 
 def compose_form_save_button(page: Page) -> Locator:

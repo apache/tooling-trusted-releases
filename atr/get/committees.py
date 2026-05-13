@@ -19,6 +19,7 @@ import datetime
 from typing import Literal
 
 import asfquart.base as base
+import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
@@ -53,14 +54,24 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
     """
     URL: /committees/<name>
     """
-    # TODO: Could also import this from keys.py
     async with db.session() as data:
         committee = await data.committee(
             key=str(name),
             _projects=True,
             _public_signing_keys=True,
         ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
+
+        roster = sorted(set(committee.committee_members + committee.committers))
+        user_rows = await data.execute(
+            sqlmodel.select(sql.User).where(sql.validate_instrumented_attribute(sql.User.asfuid).in_(roster))
+        )
+        names: dict[str, str | None] = {u.asfuid: u.name for u in user_rows.scalars().all()}
+
     project_list = list(committee.projects)
+    signing_keys = sorted(
+        committee.public_signing_keys,
+        key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
+    )
     committee_member = False
     if isinstance(session, web.Committer):
         committee_member = await session.prevent_confusing_ui_display_committee(name, False)
@@ -71,6 +82,9 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         "committee-view.html",
         committee=committee,
         projects=project_list,
+        roster=roster,
+        names=names,
+        signing_keys=signing_keys,
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
