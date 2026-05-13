@@ -53,7 +53,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 @dataclasses.dataclass
@@ -101,7 +101,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             return None
         extracted_dir = await checks.resolve_archive_dir(args)
         if extracted_dir is None:
-            await recorder.concern(
+            await recorder.exception(
                 "Extracted archive tree is not available",
                 {"rel_path": args.primary_rel_path},
             )
@@ -113,7 +113,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             await aiofiles.os.makedirs(github_dir, exist_ok=True)
             checkout_dir = await _checkout_github_source(payload, github_dir)
             if checkout_dir is None:
-                await recorder.concern(
+                await recorder.exception(
                     "Failed to clone GitHub repository for comparison",
                     {"repo_url": f"https://github.com/{payload.repository}.git", "sha": payload.sha},
                 )
@@ -140,7 +140,7 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             try:
                 comparison = await _compare_trees(github_dir, archive_content_dir)
             except RuntimeError as exc:
-                await recorder.concern(
+                await recorder.exception(
                     "Failed to compare source tree against GitHub checkout",
                     {"error": str(exc)},
                 )

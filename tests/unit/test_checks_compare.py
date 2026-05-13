@@ -214,6 +214,7 @@ class RecorderStub(atr.tasks.checks.Recorder):
             afresh=False,
         )
         self.concern_calls: list[tuple[str, object]] = []
+        self.exception_calls: list[tuple[str, object]] = []
         self.note_calls: list[tuple[str, object]] = []
         self._is_source = is_source
 
@@ -233,6 +234,24 @@ class RecorderStub(atr.tasks.checks.Recorder):
             member_rel_path=member_rel_path,
             created=datetime.datetime.now(datetime.UTC),
             status=atr.models.sql.CheckResultStatus.CONCERN,
+            message=message,
+            data=data,
+            cached=False,
+        )
+
+    async def exception(
+        self, message: str, data: object, primary_rel_path: str | None = None, member_rel_path: str | None = None
+    ) -> atr.models.sql.CheckResult:
+        self.exception_calls.append((message, data))
+        return atr.models.sql.CheckResult(
+            release_key=self.release_key,
+            revision_number=self.revision_number,
+            checker=self.checker,
+            checker_version=self.checker_version,
+            primary_rel_path=primary_rel_path or self.primary_rel_path,
+            member_rel_path=member_rel_path,
+            created=datetime.datetime.now(datetime.UTC),
+            status=atr.models.sql.CheckResultStatus.EXCEPTION,
             message=message,
             data=data,
             cached=False,
@@ -794,8 +813,8 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
 
     await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.concern_calls) == 1
-    message, data = recorder.concern_calls[0]
+    assert len(recorder.exception_calls) == 1
+    message, data = recorder.exception_calls[0]
     assert message == "Extracted archive tree is not available"
     assert isinstance(data, dict)
 
