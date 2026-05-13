@@ -1225,12 +1225,12 @@ td.atr-checkbox-col {
 }
 
 .atr-text-concern .atr-classification-badge {
-    background-color: #fdf3e8;
+    background-color: #fbf9f7;
 }
 
 .text-success .atr-classification-badge {
-    background-color: #f3f9f6;
-    color: #000000;
+    background-color: #f6f6f6;
+    color: #777777;
 }
 
 .text-danger .atr-classification-badge {
