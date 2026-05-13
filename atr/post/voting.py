@@ -227,6 +227,6 @@ async def _notify_opt_in_error(
     if start_voting_form.automatic_resolve_when_finished and is_podling:
         return await session.form_error(
             "automatic_resolve_when_finished",
-            "Automatic vote resolution is not yet available for podling votes.",
+            "Automatic vote resolution is not available for the first round of podling votes.",
         )
     return None

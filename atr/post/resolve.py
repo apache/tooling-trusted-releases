@@ -49,6 +49,9 @@ async def selected(
         case "Cancelled":
             writer_result = "cancelled"
 
+    automatic_resolve_when_finished = _read_auto_resolve_flag(submit_form)
+    notify_when_finished = _read_notify_flag(submit_form)
+
     try:
         async with storage.write_as_project_committee_member(project_key) as wacm:
             _release, voting_round, success_message, error_message = await wacm.vote.resolve(
@@ -59,6 +62,8 @@ async def selected(
                 email_body,
                 expected_vote_seq=submit_form.vote_seq,
                 expected_vote_mode=submit_form.vote_mode,
+                automatic_resolve_when_finished=automatic_resolve_when_finished,
+                notify_when_finished=notify_when_finished,
             )
     except storage.AccessError as e:
         return await session.redirect(
@@ -84,3 +89,15 @@ async def selected(
     return await session.redirect(
         destination, project_key=str(project_key), version_key=str(version_key), success=success_message
     )
+
+
+def _read_auto_resolve_flag(submit_form: shared.resolve.ResolveForm) -> bool:
+    if isinstance(submit_form, shared.resolve.SubmitForm):
+        return bool(submit_form.automatic_resolve_when_finished)
+    return False
+
+
+def _read_notify_flag(submit_form: shared.resolve.ResolveForm) -> bool:
+    if isinstance(submit_form, shared.resolve.SubmitForm):
+        return bool(submit_form.notify_when_finished)
+    return False

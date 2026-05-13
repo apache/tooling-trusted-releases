@@ -108,7 +108,7 @@ class Initiate(schema.Strict):
     )
     automatic_resolve_when_finished: bool = pydantic.Field(
         default=False,
-        description="Automatically resolve a non-podling Trusted Vote when the voting period ends",
+        description="Automatically resolve a Trusted Vote when the voting period ends",
     )
 
 

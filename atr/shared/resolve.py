@@ -49,6 +49,16 @@ class SubmitForm(form.Form):
     variant: SUBMIT = form.value(SUBMIT)
     email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
+    automatic_resolve_when_finished: form.Bool = form.label(
+        "Automatically resolve the second round vote",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
+    notify_when_finished: form.Bool = form.label(
+        "Notify me when the second round vote ends",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
     vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
     vote_seq: int | None = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
 

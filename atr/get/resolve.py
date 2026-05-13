@@ -229,6 +229,46 @@ async def selected(  # noqa: C901
     else:
         form_cls = shared.resolve.SubmitForm
 
+    is_podling_first_round = (
+        is_trusted_mode
+        and (release.committee is not None)
+        and release.committee.is_podling
+        and (release.podling_thread_id is None)
+    )
+    custom: dict[str, htm.Element | htm.VoidElement] = {}
+    skip: list[str] = []
+    if (form_cls is shared.resolve.SubmitForm) and is_podling_first_round:
+        defaults["automatic_resolve_when_finished"] = True
+        custom["automatic_resolve_when_finished"] = htm.div[
+            htpy.input(
+                type="checkbox",
+                name="automatic_resolve_when_finished",
+                id="automatic_resolve_when_finished",
+                value="on",
+                checked=True,
+                class_="form-check-input",
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                "If enabled, ATR will resolve the second round vote automatically, "
+                "using only ATR ballots, when its voting period ends.",
+            ],
+        ]
+        custom["notify_when_finished"] = htm.div[
+            htpy.input(
+                type="checkbox",
+                name="notify_when_finished",
+                id="notify_when_finished",
+                value="on",
+                class_="form-check-input",
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                f"If enabled, ATR will send an email to {session.uid}@apache.org when the second round vote finishes.",
+            ],
+        ]
+    else:
+        skip.append("automatic_resolve_when_finished")
+        skip.append("notify_when_finished")
+
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")
@@ -258,6 +298,8 @@ async def selected(  # noqa: C901
         submit_label=submit_label,
         textarea_rows=24,
         defaults=defaults,
+        custom=custom,
+        skip=skip,
         pre_submit=pre_submit,
     )
 

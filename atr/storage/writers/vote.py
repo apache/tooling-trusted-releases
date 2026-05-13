@@ -350,9 +350,10 @@ class CommitteeParticipant(FoundationCommitter):
                 raise storage.AccessError(
                     "Automatic vote resolution is only available in Trusted Vote mode", status=403
                 )
-            if automatic_resolve_when_finished and committee.is_podling:
+            if automatic_resolve_when_finished and committee.is_podling and (release.podling_thread_id is None):
                 raise storage.AccessError(
-                    "Automatic vote resolution is not yet available for podling votes", status=403
+                    "Automatic vote resolution is not available for the first round of podling votes",
+                    status=403,
                 )
             if automatic_resolve_when_finished and (self.__asf_uid not in committee.committee_members):
                 # TODO: Maybe we should modularise all of this?
@@ -466,6 +467,8 @@ class CommitteeMember(CommitteeParticipant):
         resolution_body: str,
         expected_vote_seq: int | None = None,
         expected_vote_mode: sql.VoteMode | None = None,
+        automatic_resolve_when_finished: bool = False,
+        notify_when_finished: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
             key=sql.release_key(str(project_key), str(version_key)),
@@ -504,6 +507,8 @@ class CommitteeMember(CommitteeParticipant):
                 expected_vote_seq,
                 expected_vote_mode,
                 podling_round_one_thread_id,
+                automatic_resolve_when_finished=automatic_resolve_when_finished,
+                notify_when_finished=notify_when_finished,
             )
         if (
             (expected_vote_seq is not None)
@@ -545,6 +550,8 @@ class CommitteeMember(CommitteeParticipant):
             latest_vote_task,
             asf_fullname,
             resolution_body,
+            automatic_resolve_when_finished=automatic_resolve_when_finished,
+            notify_when_finished=notify_when_finished,
         )
 
     async def resolve_manually(
@@ -626,6 +633,8 @@ class CommitteeMember(CommitteeParticipant):
         latest_vote_task: sql.Task,
         asf_fullname: str,
         resolution_body: str,
+        automatic_resolve_when_finished: bool = False,
+        notify_when_finished: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         if (voting_round == 1) and (vote_result == "passed"):
             await self.__data.commit()
@@ -693,6 +702,8 @@ class CommitteeMember(CommitteeParticipant):
                     release=release,
                     promote=False,
                     expected_revision=release.safe_latest_revision_number,
+                    automatic_resolve_when_finished=automatic_resolve_when_finished,
+                    notify_when_finished=notify_when_finished,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -868,6 +879,9 @@ class CommitteeMember(CommitteeParticipant):
         expected_vote_seq: int | None,
         expected_vote_mode: sql.VoteMode | None,
         podling_round_one_thread_id: str | None,
+        *,
+        automatic_resolve_when_finished: bool = False,
+        notify_when_finished: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
@@ -970,6 +984,8 @@ class CommitteeMember(CommitteeParticipant):
                     release=release,
                     promote=False,
                     expected_revision=release.safe_latest_revision_number,
+                    automatic_resolve_when_finished=automatic_resolve_when_finished,
+                    notify_when_finished=notify_when_finished,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):

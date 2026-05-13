@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+from typing import Final, Literal
 
 import atr.config as config
 import atr.db as db
@@ -32,6 +33,9 @@ import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
 
+# Flip to True to restore the prior behaviour of resolving failed votes automatically
+AUTOMATICALLY_RESOLVE_ON_FAILURE: Final[bool] = False
+
 
 class VoteInitiationError(Exception):
     pass
@@ -39,7 +43,7 @@ class VoteInitiationError(Exception):
 
 @checks.with_model(args.VoteAutoResolve)
 async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | None:  # noqa: C901
-    """Automatically resolve a non-podling Trusted Vote after its scheduled end."""
+    """Automatically resolve a Trusted Vote after its scheduled end."""
     async with db.session() as data:
         release = await data.release(
             key=task_args.release_key,
@@ -63,8 +67,8 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
             return _why("not_trusted_mode", "not in trusted mode")
         if release.committee is None:
             return _why("committee_missing", "committee missing")
-        if release.committee.is_podling:
-            return _why("podling_not_supported", "podling votes are not supported yet")
+        if not _auto_resolve_supported(release.committee, release.podling_thread_id):
+            return _why("podling_first_round_not_supported", "podling first round must be resolved manually")
         if release.current_vote_seq != task_args.vote_seq:
             return _why("vote_seq_changed", f"vote_seq changed ({release.current_vote_seq} != {task_args.vote_seq})")
 
@@ -91,6 +95,29 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         version_key = release.safe_version_key
         task_mid = interaction.task_mid_get(latest_vote_task)
         task_recipient = interaction.task_recipient_get(latest_vote_task)
+        notify_when_finished = bool(latest_vote_task.task_args.get("notify_when_finished", False))
+
+    if (not passed) and (not AUTOMATICALLY_RESOLVE_ON_FAILURE):
+        log.info(
+            f"Vote automatic resolution skipped for {task_args.release_key}: "
+            "vote did not pass and AUTOMATICALLY_RESOLVE_ON_FAILURE is False"
+        )
+        if notify_when_finished:
+            await _send_auto_resolve_outcome_notify(
+                task_args.release_key,
+                str(project_key),
+                str(version_key),
+                task_args.resolver_id,
+                "failure_skipped",
+            )
+        return results.VoteAutoResolve(
+            kind="vote_auto_resolve",
+            resolved=False,
+            vote_result="failed",
+            skip_reason="vote_failed_manual_resolution_required",
+            success_message=None,
+            error_message=None,
+        )
 
     thread_id = await _thread_id_for_vote_task(task_mid, task_recipient, task_args.resolver_id)
     resolution_body = tabulate.trusted_vote_resolution(
@@ -117,6 +144,14 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
             )
     except storage.AccessError as e:
         log.info(f"Vote automatic resolution skipped for {task_args.release_key}: writer rejected resolution: {e}")
+        if notify_when_finished:
+            await _send_auto_resolve_outcome_notify(
+                task_args.release_key,
+                str(project_key),
+                str(version_key),
+                task_args.resolver_id,
+                "resolve_rejected",
+            )
         return results.VoteAutoResolve(
             kind="vote_auto_resolve",
             resolved=False,
@@ -124,6 +159,16 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
             skip_reason="resolve_rejected",
             success_message=None,
             error_message=str(e),
+        )
+
+    if notify_when_finished:
+        outcome: Literal["passed", "failed"] = "passed" if passed else "failed"
+        await _send_auto_resolve_outcome_notify(
+            task_args.release_key,
+            str(project_key),
+            str(version_key),
+            task_args.resolver_id,
+            outcome,
         )
 
     return results.VoteAutoResolve(
@@ -161,27 +206,12 @@ async def end_notify(task_args: args.VoteEndNotify) -> results.Results | None:
             return _end_notify_skipped("not_trusted_mode")
         review_url = f"https://{config.get().APP_HOST}/vote/{release.project.key}/{release.version}"
 
-    sender_recipient = f"{task_args.recipient_id}@apache.org"
-    subject = f"[ATR] Vote ready to resolve: {task_args.release_key}"
+    subject = f"[ATR] Vote ended for {task_args.release_key}"
     body = (
-        f"The vote for {task_args.release_key} reached its scheduled end at {task_args.vote_end}.\n\n"
-        f"Please review the recorded ballots and resolve the vote in ATR:\n{review_url}"
+        f"The vote for {task_args.release_key} has ended. "
+        f"Please review the recorded ballots and resolve the vote in ATR at {review_url}"
     )
-    message = mail.Message(
-        email_sender=sender_recipient,
-        email_to=sender_recipient,
-        subject=subject,
-        body=body,
-    )
-
-    async with storage.write(task_args.recipient_id) as write:
-        wafc = write.as_foundation_committer()
-        mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.AUTO)
-
-    if mail_errors:
-        log.warning(f"Vote end notify mail to {sender_recipient} produced warnings: {mail_errors}")
-    else:
-        log.info(f"Vote end notify mail sent to {sender_recipient}")
+    mid, mail_errors = await _send_vote_end_notify_mail(task_args.recipient_id, subject, body)
 
     return results.VoteEndNotify(
         kind="vote_end_notify",
@@ -215,6 +245,14 @@ def _auto_resolve_skipped(reason: str) -> results.VoteAutoResolve:
         success_message=None,
         error_message=None,
     )
+
+
+def _auto_resolve_supported(committee: sql.Committee | None, podling_thread_id: str | None) -> bool:
+    if committee is None:
+        return False
+    if not committee.is_podling:
+        return True
+    return podling_thread_id is not None
 
 
 def _end_notify_skipped(reason: str) -> results.VoteEndNotify:
@@ -339,7 +377,7 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
             (task_args.vote_seq is not None)
             and (vote_duration_hours > 0)
             and (release.effective_vote_mode == sql.VoteMode.TRUSTED)
-            and (not release.committee.is_podling)
+            and _auto_resolve_supported(release.committee, release.podling_thread_id)
         ):
             try:
                 await _schedule_auto_resolve(
@@ -436,6 +474,68 @@ async def _schedule_end_notify(
         data.add(notify_task)
         await data.commit()
     log.info(f"Vote end notify scheduled for {task_args.release_key} at {vote_end_str} (recipient={recipient_id})")
+
+
+async def _send_auto_resolve_outcome_notify(
+    release_key: str,
+    project_key: str,
+    version_key: str,
+    recipient_id: str,
+    outcome: Literal["passed", "failed", "failure_skipped", "resolve_rejected"],
+) -> None:
+    review_url = f"https://{config.get().APP_HOST}/vote/{project_key}/{version_key}"
+    subject = f"[ATR] Vote ended for {release_key}"
+    match outcome:
+        case "passed":
+            body = (
+                f"The vote for {release_key} has ended. "
+                "The vote passed and ATR has resolved it automatically. "
+                f"You can review the resolution at {review_url}"
+            )
+        case "failed":
+            body = (
+                f"The vote for {release_key} has ended. "
+                "The vote did not pass and ATR has resolved it automatically. "
+                f"You can review the resolution at {review_url}"
+            )
+        case "failure_skipped":
+            body = (
+                f"The vote for {release_key} has ended. "
+                "The vote did not pass and ATR has left it for you to resolve manually. "
+                f"You can resolve the vote at {review_url}"
+            )
+        case "resolve_rejected":
+            body = (
+                f"The vote for {release_key} has ended. "
+                "ATR could not resolve it automatically and has left it for you to resolve manually. "
+                f"You can resolve the vote at {review_url}"
+            )
+    try:
+        await _send_vote_end_notify_mail(recipient_id, subject, body)
+    except Exception as e:
+        log.warning(f"Vote automatic resolution notify mail failed for {release_key}: {e}")
+
+
+async def _send_vote_end_notify_mail(
+    recipient_id: str,
+    subject: str,
+    body: str,
+) -> tuple[str | None, list[str]]:
+    sender_recipient = f"{recipient_id}@apache.org"
+    message = mail.Message(
+        email_sender=sender_recipient,
+        email_to=sender_recipient,
+        subject=subject,
+        body=body,
+    )
+    async with storage.write(recipient_id) as write:
+        wafc = write.as_foundation_committer()
+        mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.AUTO)
+    if mail_errors:
+        log.warning(f"Vote end notify mail to {sender_recipient} produced warnings: {mail_errors}")
+    else:
+        log.info(f"Vote end notify mail sent to {sender_recipient}")
+    return mid, mail_errors
 
 
 async def _thread_id_for_vote_task(task_mid: str | None, task_recipient: str | None, resolver_id: str) -> str | None:
