@@ -18,10 +18,17 @@
 import pathlib
 import shlex
 import tarfile
+import types
+import unittest.mock as mock
 
 import pytest
 
+import atr.models.checkdata as checkdata
+import atr.models.safe as safe
+import atr.models.sql as sql
+import atr.tasks.checks as checks
 import atr.tasks.checks.rat as rat
+import tests.unit.recorders as recorders
 
 # Archive WITHOUT .rat-excludes
 # (It still uses the old, now removed, rat-excludes.txt convention)
@@ -147,6 +154,61 @@ def test_sanitise_command_replaces_absolute_paths():
     assert result[10] == ".atr-policy-rat-excludes"
 
 
+@pytest.mark.asyncio
+async def test_check_routes_errors_to_exception(tmp_path: pathlib.Path) -> None:
+    recorder, args = await _rat_check_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
+    project = types.SimpleNamespace(
+        policy_license_check_mode=sql.LicenseCheckMode.BOTH,
+        policy_source_excludes_rat=[],
+    )
+    result = checkdata.Rat(
+        valid=False,
+        message="Apache RAT process failed with code 1",
+        errors=["simulated tooling failure"],
+    )
+
+    with (
+        mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
+        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
+    ):
+        await rat.check(args)
+
+    statuses = [status for status, _, _ in recorder.messages]
+
+    assert statuses == [sql.CheckResultStatus.EXCEPTION.value]
+    assert any("Apache RAT process failed" in message for _, message, _ in recorder.messages)
+
+
+@pytest.mark.asyncio
+async def test_check_routes_invalid_without_errors_to_concern(tmp_path: pathlib.Path) -> None:
+    recorder, args = await _rat_check_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
+    project = types.SimpleNamespace(
+        policy_license_check_mode=sql.LicenseCheckMode.BOTH,
+        policy_source_excludes_rat=[],
+    )
+    result = checkdata.Rat(
+        valid=False,
+        message="Found 1 file with unapproved licenses",
+        errors=[],
+        unapproved_files=[checkdata.RatFileEntry(name="x.java", license="GPL")],
+    )
+
+    with (
+        mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
+        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
+    ):
+        await rat.check(args)
+
+    statuses = [status for status, _, _ in recorder.messages]
+    concerns = [message for status, message, _ in recorder.messages if status == sql.CheckResultStatus.CONCERN.value]
+
+    assert statuses == [sql.CheckResultStatus.CONCERN.value, sql.CheckResultStatus.CONCERN.value]
+    assert "Unapproved license" in concerns
+    assert "Found 1 file with unapproved licenses" in concerns
+
+
 def _command_args(command: str) -> list[str]:
     return shlex.split(command)
 
@@ -157,6 +219,24 @@ def _extract_test_archive(tmp_path: pathlib.Path, archive: pathlib.Path) -> path
     with tarfile.open(archive) as tf:
         tf.extractall(cache_dir, filter="data")
     return cache_dir
+
+
+async def _rat_check_args(
+    tmp_path: pathlib.Path, archive_filename: str
+) -> tuple[recorders.RecorderStub, checks.FunctionArguments]:
+    temp_dir = safe.StatePath(tmp_path)
+    archive_path = temp_dir / archive_filename
+    recorder = recorders.RecorderStub(archive_path, "tests.unit.test_checks_rat")
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("test"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath(archive_filename),
+        extra_args={},
+    )
+    return recorder, args
 
 
 def _skip_if_unavailable(rat_available: tuple[bool, bool]) -> None:

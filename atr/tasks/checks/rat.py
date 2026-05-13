@@ -68,7 +68,7 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "2"
+CHECK_VERSION: Final[str] = "3"
 
 
 class RatError(RuntimeError):
@@ -91,7 +91,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.concern(
+        await recorder.exception(
             "Extracted archive tree is not available",
             {"rel_path": args.primary_rel_path},
         )
@@ -105,7 +105,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         await _check_core(args, recorder, archive_dir, policy_excludes)
     except Exception as e:
         # TODO: Or bubble for task failure?
-        await recorder.concern("Error running Apache RAT check", {"error": str(e)})
+        await recorder.exception("Error running Apache RAT check", {"error": str(e)})
 
     return None
 
@@ -179,9 +179,9 @@ async def _check_core(
     # Convert to dict for storage, excluding the file lists, which are already recorded
     result_data = result.model_dump(exclude={"unapproved_files", "unknown_license_files"})
 
-    if result.warning:
-        await recorder.suggestion(result.warning, result_data)
-    elif (not result.valid) or result.errors:
+    if result.errors:
+        await recorder.exception(result.message, result_data)
+    elif not result.valid:
         await recorder.concern(result.message, result_data)
     else:
         await recorder.note(result.message, result_data)
