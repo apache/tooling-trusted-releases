@@ -29,15 +29,19 @@ import quart_rate_limiter as rate_limiter
 import quart_schema
 import werkzeug.exceptions as exceptions
 
+import atr.blueprints.api_auth as auth
 import atr.blueprints.common as common
 import atr.errors as errors
 import atr.log as log
 import atr.storage as storage
 import atr.web as web
 
+__all__ = ["auth", "register", "typed"]
+
 _BLUEPRINT_NAME: Final = "api_blueprint"
 _BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
 _routes: list[str] = []
+_route_auth_levels: dict[str, auth.AuthLevel] = {}
 
 
 def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
@@ -45,6 +49,11 @@ def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
 
     app.register_blueprint(_BLUEPRINT)
     return api, _routes
+
+
+def route_auth_levels() -> dict[str, auth.AuthLevel]:
+    """Return a snapshot of the (route function name -> auth level) map."""
+    return dict(_route_auth_levels)
 
 
 def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
@@ -57,8 +66,12 @@ def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
     - str | None parameters create optional URL segments (two routes registered)
     - int, float use Quart's built-in type converters
     - HTTP method is POST if a body param is present, GET otherwise
+
+    Routes must also declare an auth level via @api.auth.<level> (see
+    atr.blueprints.api_auth); a missing marker raises TypeError at import.
     """
     original = inspect.unwrap(func)
+    _require_auth_level(func, original)
     path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
         original
     )
@@ -206,6 +219,24 @@ def _json_error(
     if extra is not None:
         payload.update(extra)
     return quart.jsonify(payload), status_code
+
+
+def _require_auth_level(func: Callable[..., Any], original: Callable[..., Any]) -> auth.AuthLevel:
+    """Detect the auth level marker on a route, or raise TypeError if absent."""
+    level = getattr(func, auth.AUTH_LEVEL_ATTR, None) or getattr(original, auth.AUTH_LEVEL_ATTR, None)
+    if level is None:
+        raise TypeError(
+            f"API route {original.__name__!r} in {original.__module__} is missing "
+            "an auth decorator. Apply exactly one of @api.auth.public, "
+            "@api.auth.bearer, @api.auth.body_oidc, or @api.auth.pat. "
+            "See atr/blueprints/api_auth.py for details."
+        )
+    if level not in auth.VALID_LEVELS:
+        raise TypeError(
+            f"API route {original.__name__!r}: unknown auth level {level!r}. Valid levels: {sorted(auth.VALID_LEVELS)}"
+        )
+    _route_auth_levels[original.__name__] = level
+    return level
 
 
 @_BLUEPRINT.record_once

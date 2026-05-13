@@ -35,7 +35,6 @@ import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
-import atr.jwtoken as jwtoken
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -65,6 +64,7 @@ ROUTES_MODULE: Final[Literal[True]] = True
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list(
     _checks_list: Literal["checks/list"],
@@ -99,6 +99,7 @@ async def checks_list(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ChecksListResults, 200)
 async def checks_list_revision(
     _checks_list: Literal["checks/list"],
@@ -140,6 +141,7 @@ async def checks_list_revision(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ChecksOngoingResults, 200)
 async def checks_ongoing(
     _checks_ongoing: Literal["checks/ongoing"],
@@ -178,6 +180,7 @@ async def checks_ongoing(
 
 
 @api.typed
+@api.auth.public
 async def cle_project(
     _cle_project: Literal["cle/project"],
     project_key: safe.ProjectKey,
@@ -207,6 +210,7 @@ async def cle_project(
 
 
 @api.typed
+@api.auth.public
 async def cle_release(
     _cle_release: Literal["cle/release"],
     project_key: safe.ProjectKey,
@@ -250,6 +254,7 @@ async def cle_release(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.CommitteeGetResults, 200)
 async def committee_get(
     _committee_get: Literal["committee/get"],
@@ -276,6 +281,7 @@ async def committee_get(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.CommitteeKeysResults, 200)
 async def committee_keys(
     _committee_keys: Literal["committee/keys"],
@@ -302,6 +308,7 @@ async def committee_keys(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.CommitteeProjectsResults, 200)
 async def committee_projects(
     _committee_projects: Literal["committee/projects"],
@@ -328,6 +335,7 @@ async def committee_projects(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.CommitteesListResults, 200)
 async def committees_list(
     _committees_list: Literal["committees/list"],
@@ -349,6 +357,7 @@ async def committees_list(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.body_oidc
 async def distribute_ssh_register(
     _distribute_ssh_register: Literal["distribute/ssh/register"],
     data: models.api.DistributeSshRegisterArgs,
@@ -363,14 +372,16 @@ async def distribute_ssh_register(
         vars(data)["ssh_key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
-    payload, asf_uid, project, release = await interaction.trusted_jwt_for_dist(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    project, release = await interaction.trusted_release_for_payload(
+        ctx.asf_uid,
         data.asf_uid,
         interaction.TrustedProjectPhase(data.phase),
         data.project_key,
         data.version,
     )
+    asf_uid = data.asf_uid
+    payload = ctx.payload
     # Validate that the task ID passed exists and was started by the UID asserted
     async with db.session() as _data:
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
@@ -392,8 +403,7 @@ async def distribute_ssh_register(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.DistributionRecordResults, 200)
 async def distribution_record(
     _distribution_record: Literal["distribution/record"],
@@ -437,6 +447,7 @@ async def distribution_record(
 
 
 @api.typed
+@api.auth.body_oidc
 async def distribution_record_from_workflow(
     _distribute_record_from_workflow: Literal["distribute/record_from_workflow"],
     data: models.api.DistributionRecordFromWorkflowArgs,
@@ -448,9 +459,9 @@ async def distribution_record_from_workflow(
     Validates the caller is a Github workflow, triggered by ATR itself
     """
 
-    _payload, _asf_uid, _project, release = await interaction.trusted_jwt_for_dist(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    _project, release = await interaction.trusted_release_for_payload(
+        ctx.asf_uid,
         data.asf_uid,
         interaction.TrustedProjectPhase(data.phase),
         data.project,
@@ -484,8 +495,7 @@ async def distribution_record_from_workflow(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.IgnoreAddResults, 200)
 async def ignore_add(
     _ignore_add: Literal["ignore/add"],
@@ -518,8 +528,7 @@ async def ignore_add(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.IgnoreDeleteResults, 200)
 async def ignore_delete(
     _ignore_delete: Literal["ignore/delete"],
@@ -546,6 +555,7 @@ async def ignore_delete(
 
 # TODO: Rename to ignores
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.IgnoreListResults, 200)
 async def ignore_list(
     _ignore_list: Literal["ignore/list"],
@@ -567,6 +577,7 @@ async def ignore_list(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.pat
 async def jwt_create(
     _jwt_create: Literal["jwt/create"],
     data: models.api.JwtCreateArgs,
@@ -595,8 +606,7 @@ async def jwt_create(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.KeyAddResults, 200)
 async def key_add(
     _key_add: Literal["key/add"],
@@ -637,8 +647,7 @@ async def key_add(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.KeyDeleteResults, 200)
 async def key_delete(
     _key_delete: Literal["key/delete"],
@@ -676,6 +685,7 @@ async def key_delete(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.public
 @quart_schema.validate_response(models.api.KeyGetResults, 200)
 async def key_get(
     _key_get: Literal["key/get"],
@@ -700,8 +710,7 @@ async def key_get(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.KeysUploadResults, 200)
 async def keys_upload(
     _keys_upload: Literal["keys/upload"],
@@ -767,6 +776,7 @@ async def keys_upload(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.public
 @quart_schema.validate_response(models.api.KeysUserResults, 200)
 async def keys_user(
     _keys_user: Literal["keys/user"],
@@ -786,6 +796,7 @@ async def keys_user(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.PolicyGetResults, 200)
 async def policy_get(
     _policy_get: Literal["policy/get"],
@@ -829,8 +840,7 @@ async def policy_get(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.PolicyUpdateResults, 200)
 async def policy_update(
     _policy_update: Literal["policy/update"],
@@ -858,8 +868,7 @@ async def policy_update(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.ProjectConfigResults, 200)
 async def project_config_upsert(
     _project_config: Literal["project/config"],
@@ -872,6 +881,7 @@ async def project_config_upsert(
 
     Creates a project if it on by the specified key does not yet exist.
     Otherwise, updates all specified fields for an existing project.
+
     The caller must be a committee member of the specified committee,
     and for an existing project committee_key must match the current value.
     """
@@ -891,6 +901,7 @@ async def project_config_upsert(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ProjectGetResults, 200)
 async def project_get(
     _project_get: Literal["project/get"],
@@ -910,6 +921,7 @@ async def project_get(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ProjectReleasesResults, 200)
 async def project_releases(
     _project_releases: Literal["project/releases"],
@@ -930,6 +942,7 @@ async def project_releases(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ProjectsListResults, 200)
 async def projects_list(
     _projects_list: Literal["projects/list"],
@@ -949,6 +962,7 @@ async def projects_list(
 
 
 @api.typed
+@api.auth.body_oidc
 async def publisher_distribution_record(
     _publisher_distribution_record: Literal["publisher/distribution/record"],
     data: models.api.PublisherDistributionRecordArgs,
@@ -958,17 +972,18 @@ async def publisher_distribution_record(
 
     Record a distribution with a corroborating Trusted Publisher JWT.
     """
+    ctx = api.auth.trusted_publisher_context()
     try:
-        _payload, asf_uid, project = await interaction.trusted_jwt(
-            data.publisher,
-            data.jwt,
+        asf_uid, project = await interaction.trusted_project_for_payload(
+            ctx.payload,
+            ctx.asf_uid,
             interaction.TrustedProjectPhase.FINISH,
         )
     except interaction.ReleasePolicyNotFoundError:
         # TODO: We could perform a more advanced query with multiple in_ statements
-        _payload, asf_uid, project = await interaction.trusted_jwt(
-            data.publisher,
-            data.jwt,
+        asf_uid, project = await interaction.trusted_project_for_payload(
+            ctx.payload,
+            ctx.asf_uid,
             interaction.TrustedProjectPhase.COMPOSE,
         )
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
@@ -1001,6 +1016,7 @@ async def publisher_distribution_record(
 
 
 @api.typed
+@api.auth.body_oidc
 async def publisher_release_announce(
     _publisher_release_announce: Literal["publisher/release/announce"],
     data: models.api.PublisherReleaseAnnounceArgs,
@@ -1010,9 +1026,10 @@ async def publisher_release_announce(
 
     Announce a release with a corroborating Trusted Publisher JWT.
     """
-    _payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
         interaction.TrustedProjectPhase.FINISH,
     )
     try:
@@ -1039,6 +1056,7 @@ async def publisher_release_announce(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.body_oidc
 async def publisher_ssh_register(
     _publisher_ssh_register: Literal["publisher/ssh/register"],
     data: models.api.PublisherSshRegisterArgs,
@@ -1052,9 +1070,13 @@ async def publisher_ssh_register(
         vars(data)["ssh_key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
-    payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher, data.jwt, interaction.TrustedProjectPhase.COMPOSE
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
+        interaction.TrustedProjectPhase.COMPOSE,
     )
+    payload = ctx.payload
     async with storage.write_as_committee_member(util.unwrap(project.committee).key, asf_uid) as wacm:
         fingerprint, expires = await wacm.ssh.add_workflow_key(
             payload.actor,
@@ -1073,6 +1095,7 @@ async def publisher_ssh_register(
 
 
 @api.typed
+@api.auth.body_oidc
 async def publisher_vote_resolve(
     _publisher_vote_resolve: Literal["publisher/vote/resolve"],
     data: models.api.PublisherVoteResolveArgs,
@@ -1083,9 +1106,10 @@ async def publisher_vote_resolve(
     Resolve a vote with a corroborating Trusted Publisher JWT.
     """
     # TODO: Need to be able to resolve and make the release immutable
-    _payload, asf_uid, project = await interaction.trusted_jwt(
-        data.publisher,
-        data.jwt,
+    ctx = api.auth.trusted_publisher_context()
+    asf_uid, project = await interaction.trusted_project_for_payload(
+        ctx.payload,
+        ctx.asf_uid,
         interaction.TrustedProjectPhase.VOTE,
     )
     try:
@@ -1110,8 +1134,7 @@ async def publisher_vote_resolve(
 
 @api.typed
 @rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.ReleaseAnnounceResults, 201)
 async def release_announce(
     _release_announce: Literal["release/announce"],
@@ -1152,8 +1175,7 @@ async def release_announce(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.ReleaseCreateResults, 201)
 async def release_create(
     _release_create: Literal["release/create"],
@@ -1183,8 +1205,7 @@ async def release_create(
 
 # TODO: Duplicates the below
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.ReleaseDeleteResults, 200)
 async def release_delete(
     _release_delete: Literal["release/delete"],
@@ -1212,6 +1233,7 @@ async def release_delete(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ReleaseGetResults, 200)
 async def release_get(
     _release_get: Literal["release/get"],
@@ -1233,6 +1255,7 @@ async def release_get(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ReleasePathsResults, 200)
 async def release_paths(
     _release_paths: Literal["release/paths"],
@@ -1264,6 +1287,7 @@ async def release_paths(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ReleaseRevisionsResults, 200)
 async def release_revisions(
     _release_revisions: Literal["release/revisions"],
@@ -1288,8 +1312,7 @@ async def release_revisions(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.ReleaseUploadResults, 201)
 async def release_upload(
     _release_upload: Literal["release/upload"],
@@ -1329,6 +1352,7 @@ async def release_upload(
 
 
 @api.typed
+@api.auth.public
 @quart_schema.validate_response(models.api.ReleasesListResults, 200)
 async def releases_list(
     _releases_list: Literal["releases/list"],
@@ -1379,8 +1403,7 @@ async def releases_list(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.SignatureProvenanceResults, 200)
 async def signature_provenance(
     _signature_provenance: Literal["signature/provenance"],
@@ -1453,8 +1476,7 @@ async def signature_provenance(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.SshKeyAddResults, 201)
 async def ssh_key_add(
     _ssh_key_add: Literal["ssh-key/add"],
@@ -1483,8 +1505,7 @@ async def ssh_key_add(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.SshKeyDeleteResults, 201)
 async def ssh_key_delete(
     _ssh_key_delete: Literal["ssh-key/delete"],
@@ -1509,6 +1530,7 @@ async def ssh_key_delete(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.public
 async def ssh_keys_list(
     _ssh_keys_list: Literal["ssh-keys/list"],
     asf_uid: unsafe.UnsafeStr,
@@ -1545,6 +1567,7 @@ async def ssh_keys_list(
 
 
 @api.typed
+@api.auth.body_oidc
 async def update_distribution_task_status(
     _distribute_task_status: Literal["distribute/task/status"],
     data: models.api.DistributeStatusUpdateArgs,
@@ -1555,9 +1578,9 @@ async def update_distribution_task_status(
     Update the status of a distribution task
     Validates the caller is a Github workflow, triggered by ATR itself
     """
-    _payload, asf_uid = await interaction.validate_trusted_jwt(data.publisher, data.jwt)
+    ctx = api.auth.trusted_publisher_context()
     # If UID is not none, this is a non-ATR workflow, which is unsupported.
-    if asf_uid is not None:
+    if ctx.asf_uid is not None:
         raise exceptions.Forbidden("This endpoint may only be called by ATR")
     async with db.session() as db_data:
         status = await db_data.workflow_status(
@@ -1576,8 +1599,7 @@ async def update_distribution_task_status(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.UserInfoResults, 200)
 async def user_info(
     _user_info: Literal["user/info"],
@@ -1600,6 +1622,7 @@ async def user_info(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
+@api.auth.public
 @quart_schema.validate_response(models.api.UsersListResults, 200)
 async def users_list(
     _users_list: Literal["users/list"],
@@ -1642,8 +1665,7 @@ async def users_list(
 
 @api.typed
 @rate_limiter.rate_limit(60, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.VoteCastResults, 200)
 async def vote_cast(
     _vote_cast: Literal["vote/cast"],
@@ -1681,8 +1703,7 @@ async def vote_cast(
 
 @api.typed
 @rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.VoteResolveResults, 200)
 async def vote_resolve(
     _vote_resolve: Literal["vote/resolve"],
@@ -1724,8 +1745,7 @@ async def vote_resolve(
 
 @api.typed
 @rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.VoteStartResults, 201)
 async def vote_start(
     _vote_start: Literal["vote/start"],
@@ -1788,8 +1808,7 @@ async def vote_start(
 
 
 @api.typed
-@jwtoken.require
-@quart_schema.security_scheme([{"BearerAuth": []}])
+@api.auth.bearer
 @quart_schema.validate_response(models.api.VoteTabulateResults, 200)
 async def vote_tabulate(
     _vote_tabulate: Literal["vote/tabulate"],

@@ -766,22 +766,33 @@ async def trusted_jwt_for_dist(
     payload, asf_uid_from_jwt = await validate_trusted_jwt(publisher, jwt)
     if asf_uid_from_jwt is not None:
         raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
-    # payload, asf_uid, project = await trusted_jwt(publisher, jwt, phase)
-    async with db.session() as db_data:
-        project = await db_data.project(key=str(project_key), _committee=True).demand(
-            InteractionError(f"Project {project_key} does not exist")
-        )
-        release = await db_data.release(project_key=str(project_key), version=str(version_key)).get()
-        if not release:
-            raise InteractionError(f"Release {version_key} does not exist in project {project_key}")
-        if (phase == TrustedProjectPhase.COMPOSE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
-            raise InteractionError(f"Release {version_key} is not in compose phase")
-        if (phase == TrustedProjectPhase.VOTE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE):
-            raise InteractionError(f"Release {version_key} is not in vote phase")
-        if (phase == TrustedProjectPhase.FINISH) and (release.phase != sql.ReleasePhase.RELEASE_PREVIEW):
-            raise InteractionError(f"Release {version_key} is not in finish phase")
-
+    project, release = await _trusted_dist_lookup(asf_uid, phase, project_key, version_key)
     return payload, asf_uid, project, release
+
+
+async def trusted_project_for_payload(
+    payload: github.TrustedPublisherPayload,
+    asf_uid: str | None,
+    phase: TrustedProjectPhase,
+) -> tuple[str, sql.Project]:
+    """Look up the project for an already-verified Trusted Publisher payload."""
+    if asf_uid is None:
+        raise InteractionError("ASF user not found")
+    project = await _trusted_project(payload.repository, payload.workflow_ref, phase)
+    return asf_uid, project
+
+
+async def trusted_release_for_payload(
+    payload_asf_uid: str | None,
+    asserted_asf_uid: str,
+    phase: TrustedProjectPhase,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> tuple[sql.Project, sql.Release]:
+    """Look up project+release for an already-verified body_oidc workflow token."""
+    if payload_asf_uid is not None:
+        raise InteractionError("Must use Trusted Publishing when specifying ASF UID")
+    return await _trusted_dist_lookup(asserted_asf_uid, phase, project_key, version_key)
 
 
 def trusted_vote_round(release: sql.Release) -> int | None:
@@ -968,6 +979,29 @@ async def _trusted_ballot_details_from_ballots(
             )
         )
     return details, summary
+
+
+async def _trusted_dist_lookup(
+    asf_uid: str,
+    phase: TrustedProjectPhase,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> tuple[sql.Project, sql.Release]:
+    """Shared project + release + phase lookup for dist-style trusted calls."""
+    async with db.session() as db_data:
+        project = await db_data.project(key=str(project_key), _committee=True).demand(
+            InteractionError(f"Project {project_key} does not exist")
+        )
+        release = await db_data.release(project_key=str(project_key), version=str(version_key)).get()
+        if not release:
+            raise InteractionError(f"Release {version_key} does not exist in project {project_key}")
+        if (phase == TrustedProjectPhase.COMPOSE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT):
+            raise InteractionError(f"Release {version_key} is not in compose phase")
+        if (phase == TrustedProjectPhase.VOTE) and (release.phase != sql.ReleasePhase.RELEASE_CANDIDATE):
+            raise InteractionError(f"Release {version_key} is not in vote phase")
+        if (phase == TrustedProjectPhase.FINISH) and (release.phase != sql.ReleasePhase.RELEASE_PREVIEW):
+            raise InteractionError(f"Release {version_key} is not in finish phase")
+    return project, release
 
 
 async def _trusted_project(repository: str, workflow_ref: str, phase: TrustedProjectPhase) -> sql.Project:
