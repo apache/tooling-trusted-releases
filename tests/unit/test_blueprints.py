@@ -74,6 +74,29 @@ async def test_all_routes_support_url_construction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_check_ignores_html_routes_are_hidden(monkeypatch):
+    monkeypatch.setattr("atr.blueprints._export_routes", lambda _: None)
+    monkeypatch.setattr("asfquart.APP", None)
+
+    app = asfquart.construct("test-hidden-ignores")
+    blueprints.register(app)
+
+    matching_html_routes = [
+        rule
+        for rule in app.url_map.iter_rules()
+        if (rule.rule == "/ignores/<project_key>") and ({"GET", "POST"} & rule.methods)
+    ]
+    assert matching_html_routes == []
+
+    api_routes = {
+        (rule.rule, method) for rule in app.url_map.iter_rules() for method in rule.methods if method in {"GET", "POST"}
+    }
+    assert ("/api/ignore/add", "POST") in api_routes
+    assert ("/api/ignore/delete", "POST") in api_routes
+    assert ("/api/ignore/list/<project_key>", "GET") in api_routes
+
+
+@pytest.mark.asyncio
 async def test_api_generic_500_includes_traceback(monkeypatch):
     monkeypatch.setattr("asfquart.APP", None)
 

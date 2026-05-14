@@ -12,8 +12,7 @@
 * `2.2.` [Signing artifacts](signing-artifacts)
 * `2.3.` [Checks](checks)
 * `2.4.` [License checks](license-checks)
-* `2.5.` [Check ignores](check-ignores)
-* `2.6.` [Trusted Publishing](trusted-publishing)
+* `2.5.` [Trusted Publishing](trusted-publishing)
 
 **Sections**:
 

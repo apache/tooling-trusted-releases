@@ -22,7 +22,6 @@ import atr.post.compose as compose
 import atr.post.distribution as distribution
 import atr.post.draft as draft
 import atr.post.finish as finish
-import atr.post.ignores as ignores
 import atr.post.keys as keys
 import atr.post.manual as manual
 import atr.post.projects as projects
@@ -45,7 +44,6 @@ __all__ = [
     "distribution",
     "draft",
     "finish",
-    "ignores",
     "keys",
     "manual",
     "projects",

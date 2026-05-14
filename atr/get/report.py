@@ -99,6 +99,5 @@ async def selected_path(
         release=release,
         primary_results=check_results.primary_results_list,
         member_results=check_results.member_results_list,
-        ignored_results=check_results.ignored_checks,
         format_file_size=util.format_file_size,
     )

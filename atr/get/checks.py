@@ -29,7 +29,6 @@ import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.download as download
-import atr.get.ignores as ignores
 import atr.get.report as report
 import atr.get.sbom as sbom
 import atr.get.vote as vote
@@ -112,8 +111,6 @@ async def selected(
         if banner := render.render_exception_banner(info):
             page.append(banner)
     _render_checks_table(page, release, all_paths, per_file_stats, info)
-    _render_ignores_section(page, release)
-    _render_debug_table(page, all_paths, per_file_stats)
 
     return await template.blank(
         f"File checks for {release.project.short_display_name} {release.version}",
@@ -345,85 +342,6 @@ def _render_checks_table(
     page.div(".table-responsive.card.mb-4")[table.collect()]
 
 
-def _render_debug_table(
-    page: htm.Block,
-    paths: list[safe.RelPath],
-    per_file_stats: dict[safe.RelPath, FileStats],
-) -> None:
-    # Bootstrap does have striping, but that's for horizontal stripes
-    # These are vertical stripes, to make it easier to distinguish collections
-    stripe_a = "background-color: #f0f0f0; text-align: center;"
-    stripe_b = "background-color: #ffffff; text-align: center;"
-
-    table = htm.Block(htpy.table, classes=".table.table-bordered.table-sm.mb-0.text-center")
-
-    thead = htm.Block(htpy.thead, classes=".table-light")
-    thead.tr[
-        htpy.th(rowspan="2", style="text-align: center; vertical-align: middle;")["Path"],
-        htpy.th(colspan="3", style=stripe_a)["File (before)"],
-        htpy.th(colspan="3", style=stripe_b)["File (after)"],
-        htpy.th(colspan="3", style=stripe_a)["Member (before)"],
-        htpy.th(colspan="3", style=stripe_b)["Member (after)"],
-        htpy.th(colspan="3", style=stripe_a)["Total (before)"],
-        htpy.th(colspan="3", style=stripe_b)["Total (after)"],
-    ]
-    thead.tr[
-        htpy.th(style=stripe_a)["P"],
-        htpy.th(style=stripe_a)["W"],
-        htpy.th(style=stripe_a)["E"],
-        htpy.th(style=stripe_b)["P"],
-        htpy.th(style=stripe_b)["W"],
-        htpy.th(style=stripe_b)["E"],
-        htpy.th(style=stripe_a)["P"],
-        htpy.th(style=stripe_a)["W"],
-        htpy.th(style=stripe_a)["E"],
-        htpy.th(style=stripe_b)["P"],
-        htpy.th(style=stripe_b)["W"],
-        htpy.th(style=stripe_b)["E"],
-        htpy.th(style=stripe_a)["P"],
-        htpy.th(style=stripe_a)["W"],
-        htpy.th(style=stripe_a)["E"],
-        htpy.th(style=stripe_b)["P"],
-        htpy.th(style=stripe_b)["W"],
-        htpy.th(style=stripe_b)["E"],
-    ]
-    table.append(thead.collect())
-
-    empty_stats = _file_stats_empty()
-    tbody = htm.Block(htpy.tbody)
-    for path in paths:
-        stats = per_file_stats.get(path, empty_stats)
-        tbody.tr[
-            htpy.td(class_="text-start")[htpy.code[str(path)]],
-            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.NOTE])],
-            htpy.td(style=stripe_a)[str(stats.file_before[sql.CheckResultStatus.SUGGESTION])],
-            htpy.td(style=stripe_a)[str(_error_count(stats.file_before))],
-            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.NOTE])],
-            htpy.td(style=stripe_b)[str(stats.file_after[sql.CheckResultStatus.SUGGESTION])],
-            htpy.td(style=stripe_b)[str(_error_count(stats.file_after))],
-            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.NOTE])],
-            htpy.td(style=stripe_a)[str(stats.member_before[sql.CheckResultStatus.SUGGESTION])],
-            htpy.td(style=stripe_a)[str(_error_count(stats.member_before))],
-            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.NOTE])],
-            htpy.td(style=stripe_b)[str(stats.member_after[sql.CheckResultStatus.SUGGESTION])],
-            htpy.td(style=stripe_b)[str(_error_count(stats.member_after))],
-            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.NOTE))],
-            htpy.td(style=stripe_a)[str(stats.total_before(sql.CheckResultStatus.SUGGESTION))],
-            htpy.td(style=stripe_a)[str(_total_error_before(stats))],
-            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.NOTE))],
-            htpy.td(style=stripe_b)[str(stats.total_after(sql.CheckResultStatus.SUGGESTION))],
-            htpy.td(style=stripe_b)[str(_total_error_after(stats))],
-        ]
-    table.append(tbody.collect())
-
-    page.append(
-        htpy.details(".mt-4")[
-            htpy.summary["All statistics"],
-            htpy.div(".table-responsive.mt-3")[table.collect()],
-        ]
-    )
-
-
 def _render_file_row(
     tbody: htm.Block,
     release: sql.Release,
@@ -496,17 +414,6 @@ def _render_header(page: htm.Block, release: sql.Release) -> None:
         " ",
         htm.em[release.version],
     ]
-
-
-def _render_ignores_section(page: htm.Block, release: sql.Release) -> None:
-    # TODO: We should choose a consistent " ..." or "... " style
-    page.h2["Check ignores"]
-    page.p[
-        "Project committee members can configure rules to ignore specific check results. "
-        "Ignored checks are excluded from the counts shown above.",
-    ]
-    ignores_url = util.as_url(ignores.ignores, project_key=release.project.key)
-    page.div[htpy.a(".btn.btn-outline-primary", href=ignores_url)["Manage check ignores"],]
 
 
 def _render_summary(
@@ -621,11 +528,3 @@ def _report_button(
             if has_checks_before:
                 return htpy.a(".btn.btn-sm.btn-outline-secondary", href=report_url)["Show details"]
             return htpy.span(".btn.btn-sm.btn-outline-secondary.disabled")["No checks"]
-
-
-def _total_error_after(stats: FileStats) -> int:
-    return _error_count(stats.file_after) + _error_count(stats.member_after)
-
-
-def _total_error_before(stats: FileStats) -> int:
-    return _error_count(stats.file_before) + _error_count(stats.member_before)

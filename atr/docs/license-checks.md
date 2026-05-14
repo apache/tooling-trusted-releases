@@ -4,7 +4,7 @@
 
 **Prev**: `2.3.` [Checks](checks)
 
-**Next**: `2.5.` [Check ignores](check-ignores)
+**Next**: `2.5.` [Trusted Publishing](trusted-publishing)
 
 **Sections**:
 

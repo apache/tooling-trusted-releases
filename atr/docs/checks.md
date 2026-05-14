@@ -10,7 +10,7 @@
 
 * [Overview](#overview)
 * [How ATR selects checks](#how-atr-selects-checks)
-* [Understanding check results and ignores](#understanding-check-results-and-ignores)
+* [Understanding check results](#understanding-check-results)
 * [Individual checks](#individual-checks)
 * [SBOM checks](#sbom-checks)
 * [Check caching and reruns](#check-caching-and-reruns)
@@ -28,15 +28,11 @@ When you create or update a draft revision, ATR scans the files in the revision 
 
 Project policy tells ATR which artifacts are source artifacts and which are binary artifacts, and it supplies exclusion patterns for license related checks. Project policy also controls the license check mode for source artifacts. You can choose lightweight checks, Apache RAT, or both for source artifacts. Binary artifacts are not scanned by RAT, and always rely on the lightweight checks.
 
-## Understanding check results and ignores
+## Understanding check results
 
 Each check result has a status of note, suggestion, concern, blocker, or exception. A note indicates that the check ran and has nothing substantial to report. A suggestion indicates a structural or recommendation difference that release managers may consider but is not a policy violation. A concern indicates that ATR could not be certain about a condition and the release manager must investigate. A blocker indicates that a mandatory policy condition was violated and the release cannot proceed. An exception indicates that the check could not complete due to some unexpected internal ATR error.
 
-If certain checks are producing false positives, or outcomes that you'd like to ignore for reasons particular to your project, then you can ignore them using special rules. Please try to minimise the use of such rules. If you would like checks to change for all projects, you can file an ATR issue.
-
-Ignore rules match on the checker key and other fields. Only suggestion, concern, and exception results can be ignored. Each check section below names the exact checker key that ATR records for that check.
-
-You can [read more about check ignores](check-ignores).
+Each check section below names the exact checker key that ATR records for that check. If you would like checks to change for all projects, you can file an ATR issue.
 
 ## Individual checks
 
@@ -44,9 +40,7 @@ You can [read more about check ignores](check-ignores).
 
 ATR validates the file layout of the revision against ASF release rules. For each artifact it expects a matching signature file with the `.asc` suffix and at least one checksum file with the `.sha256` or `.sha512` suffix. It verifies that metadata files correspond to an existing artifact and warns when a metadata suffix is recommended against by policy. It rejects `.md5` checksums and `.sig` signature files and warns about `.sha1` and `.sha`. It rejects dotfiles except for those under the `.atr` directory, and it rejects a `KEYS` file inside the artifact bundle because keys are managed through the keys section. If the project is a podling, it requires the word "incubating" in artifact filenames.
 
-This check records separate checker keys for concerns, suggestions, and notes. Use `atr.tasks.checks.paths.check_errors` for concerns and `atr.tasks.checks.paths.check_warnings` for suggestions when you configure ignores.
-
-(Note results use `atr.tasks.checks.paths.check_success` but are not eligible for ignores.)
+This check records separate checker keys for concerns, suggestions, and notes. It uses `atr.tasks.checks.paths.check_errors` for concerns, `atr.tasks.checks.paths.check_warnings` for suggestions, and `atr.tasks.checks.paths.check_success` for notes.
 
 ### Hash verification
 
@@ -112,7 +106,7 @@ _For debugging only_, an admin can force a cache bust by clicking the "Disable g
 
 ## Project policy inputs
 
-Several project and committee settings influence which checks run, what they skip, and how their results are interpreted. This section lists each setting that can change the outcome of a check, where to find it, and what it does. Most of these settings live on the project settings page in the _Release policy - Compose options_ form. Committee signing keys and check ignores are, however, managed separately.
+Several project and committee settings influence which checks run, what they skip, and how their results are interpreted. This section lists each setting that can change the outcome of a check, where to find it, and what it does. Most of these settings live on the project settings page in the _Release policy - Compose options_ form. Committee signing keys are managed separately.
 
 ### Source and binary artifact paths
 
@@ -139,9 +133,3 @@ Signature verification depends on the public signing keys registered for the pro
 ### Podling status
 
 If the project belongs to an incubating podling, ATR passes this to certain checks automatically. The path and naming check requires the word "incubating" in artifact filenames for podlings, and the license file check looks for a `DISCLAIMER` or `DISCLAIMER-WIP` file in the archive root. Podling status comes from the committee record and is not something that you can configure per project.
-
-### Check ignores
-
-Check ignore rules do not change which checks run or what they report, but they do change which results are shown. Ignored results are removed from the suggestion and concern counts and shown separately Ignores are managed from the release checks page and apply at the project level, not per release.
-
-You can [read more about check ignores](check-ignores).

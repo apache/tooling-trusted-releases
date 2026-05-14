@@ -13,7 +13,6 @@
 * [LDAP integration](#ldap-integration)
 * [Access control for releases](#access-control-for-releases)
 * [Access control for tokens](#access-control-for-tokens)
-* [Access control for check ignores](#access-control-for-check-ignores)
 * [Implementation patterns](#implementation-patterns)
 * [Caching behavior](#caching-behavior)
 * [Implementation references](#implementation-references)
@@ -146,10 +145,6 @@ Token operations apply to the authenticated user:
 
 * Allowed for: Anyone with a valid PAT
 * Note: This is an unauthenticated endpoint; the PAT serves as the credential
-
-## Access control for check ignores
-
-Check ignores allow committee members to suppress specific check results from the warning and error counts. The ignores page is accessible to any authenticated committer, but only PMC members of the project's committee can add, update, or delete ignore rules. The storage writer validates that the user is a member of the committee that owns the target project by calling `is_member_of(project.committee_key)`. As additional protection, the writer also validates that the project belongs to the authorized committee before performing any operation. This ensures that even if the calling code passes an incorrect project name, the operation will be rejected.
 
 ## Implementation patterns
 

@@ -1,8 +1,8 @@
-# 2.6. Trusted Publishing
+# 2.5. Trusted Publishing
 
 **Up**: `2.` [User guide](user-guide)
 
-**Prev**: `2.5.` [Check ignores](check-ignores)
+**Prev**: `2.4.` [License checks](license-checks)
 
 **Next**: `3.1.` [Running the server](running-the-server)
 

@@ -19,7 +19,7 @@
 from typing import Literal
 
 import atr.blueprints.post as post
-import atr.get as get
+import atr.get.ignores
 import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
@@ -68,7 +68,7 @@ async def _add_ignore(
         )
 
     return await session.redirect(
-        get.ignores.ignores,
+        atr.get.ignores.ignores,
         project_key=str(project_key),
         success="Ignore added",
     )
@@ -83,7 +83,7 @@ async def _delete_ignore(
         await wacm.checks.ignore_delete(id=delete_form.id)
 
     return await session.redirect(
-        get.ignores.ignores,
+        atr.get.ignores.ignores,
         project_key=str(project_key),
         success="Ignore deleted",
     )
@@ -109,7 +109,7 @@ async def _update_ignore(
         )
 
     return await session.redirect(
-        get.ignores.ignores,
+        atr.get.ignores.ignores,
         project_key=str(project_key),
         success="Ignore updated",
     )

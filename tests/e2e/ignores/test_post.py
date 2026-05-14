@@ -16,7 +16,10 @@
 # under the License.
 
 import e2e.ignores.helpers as helpers
+import pytest
 from playwright.sync_api import Page, expect
+
+pytestmark = pytest.mark.skip(reason="Check ignores HTML UI is hidden")
 
 
 def test_add_ignore_creates_card(page_ignores: Page) -> None:

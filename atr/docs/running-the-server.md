@@ -2,7 +2,7 @@
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `2.6.` [Trusted Publishing](trusted-publishing)
+**Prev**: `2.5.` [Trusted Publishing](trusted-publishing)
 
 **Next**: `3.2.` [Overview of the code](overview-of-the-code)
 

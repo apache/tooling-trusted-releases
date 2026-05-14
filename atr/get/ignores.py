@@ -22,7 +22,7 @@ import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.post as post
+import atr.post.ignores
 import atr.shared as shared
 import atr.storage as storage
 import atr.template as template
@@ -57,7 +57,7 @@ async def ignores(
 
 
 async def _add_ignore(project_key: str) -> htm.Element:
-    form_path = util.as_url(post.ignores.ignores, project_key=project_key)
+    form_path = util.as_url(atr.post.ignores.ignores, project_key=project_key)
     block = htm.Block(htm.div)
     block.h2["Add ignore"]
     block.p["Add a new ignore for a check result."]
@@ -78,7 +78,7 @@ async def _check_result_ignore_card(cri: sql.CheckResultIgnore) -> htm.Element:
 
     # Update form
     update_form_block = htm.Block(htm.div)
-    form_path_update = util.as_url(post.ignores.ignores, project_key=cri.project_key)
+    form_path_update = util.as_url(atr.post.ignores.ignores, project_key=cri.project_key)
     status = shared.ignores.sql_to_ignore_status(cri.status)
     await form.render_block(
         update_form_block,
