@@ -843,62 +843,6 @@ async def raise_error(_session: web.Committer, _raise_error: Literal["raise-erro
 
 
 @admin.typed
-async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"]) -> str:
-    """
-    URL: GET /revoke-user-tokens
-
-    Revoke all Personal Access Tokens for a specified user.
-    """
-    token_counts: list[tuple[str, int]] = []
-    async with db.session() as data:
-        stmt = (
-            sqlmodel.select(
-                sql.PersonalAccessToken.asfuid,
-                sqlmodel.func.count(),
-            )
-            .group_by(sql.PersonalAccessToken.asfuid)
-            .order_by(sql.PersonalAccessToken.asfuid)
-        )
-        rows = await data.execute_query(stmt)
-        token_counts = [(row[0], row[1]) for row in rows]
-
-    rendered_form = await form.render(
-        model_cls=RevokeUserTokensForm,
-        submit_label="Revoke all tokens",
-    )
-    return await template.render(
-        "revoke-user-tokens.html",
-        form=rendered_form,
-        token_counts=token_counts,
-    )
-
-
-@admin.typed
-async def revoke_user_tokens_post(
-    session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"], revoke_form: RevokeUserTokensForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /revoke-user-tokens
-
-    Revoke all Personal Access Tokens for a specified user.
-    """
-    # audit_guidance PAT revocation does not terminate web sessions
-    # audit_guidance PATs and OAuth sessions are independent auth paths
-    target_uid = revoke_form.asf_uid
-
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        count = await wafa.tokens.revoke_all_user_tokens(target_uid)
-
-    if count > 0:
-        await quart.flash(f"Revoked {util.plural(count, 'token')} for {target_uid}.", "success")
-    else:
-        await quart.flash(f"No tokens found for {target_uid}.", "info")
-
-    return await session.redirect(revoke_user_tokens_get)
-
-
-@admin.typed
 async def revoke_user_ssh_keys_get(
     _session: web.Committer, _revoke_user_ssh_keys: Literal["revoke-user-ssh-keys"]
 ) -> str:
@@ -981,6 +925,62 @@ async def revoke_user_ssh_keys_post(
 
 
 @admin.typed
+async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"]) -> str:
+    """
+    URL: GET /revoke-user-tokens
+
+    Revoke all Personal Access Tokens for a specified user.
+    """
+    token_counts: list[tuple[str, int]] = []
+    async with db.session() as data:
+        stmt = (
+            sqlmodel.select(
+                sql.PersonalAccessToken.asfuid,
+                sqlmodel.func.count(),
+            )
+            .group_by(sql.PersonalAccessToken.asfuid)
+            .order_by(sql.PersonalAccessToken.asfuid)
+        )
+        rows = await data.execute_query(stmt)
+        token_counts = [(row[0], row[1]) for row in rows]
+
+    rendered_form = await form.render(
+        model_cls=RevokeUserTokensForm,
+        submit_label="Revoke all tokens",
+    )
+    return await template.render(
+        "revoke-user-tokens.html",
+        form=rendered_form,
+        token_counts=token_counts,
+    )
+
+
+@admin.typed
+async def revoke_user_tokens_post(
+    session: web.Committer, _revoke_user_tokens: Literal["revoke-user-tokens"], revoke_form: RevokeUserTokensForm
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /revoke-user-tokens
+
+    Revoke all Personal Access Tokens for a specified user.
+    """
+    # audit_guidance PAT revocation does not terminate web sessions
+    # audit_guidance PATs and OAuth sessions are independent auth paths
+    target_uid = revoke_form.asf_uid
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        count = await wafa.tokens.revoke_all_user_tokens(target_uid)
+
+    if count > 0:
+        await quart.flash(f"Revoked {util.plural(count, 'token')} for {target_uid}.", "success")
+    else:
+        await quart.flash(f"No tokens found for {target_uid}.", "info")
+
+    return await session.redirect(revoke_user_tokens_get)
+
+
+@admin.typed
 async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"]) -> str:
     """
     URL: GET /rotate-jwt-key
@@ -1004,6 +1004,33 @@ async def rotate_jwt_key_post(
         await wafa.tokens.rotate_jwt_signing_key()
     await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
     return await session.redirect(rotate_jwt_key_get)
+
+
+@admin.typed
+async def task_times(
+    _session: web.Committer,
+    _task_times: Literal["task-times"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+) -> web.QuartResponse:
+    """
+    URL: GET /task-times/<project_key>/<version_key>/<revision_number>
+    """
+    values = []
+    async with db.session() as data:
+        tasks = await data.task(
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(revision_number),
+        ).all()
+        for task in tasks:
+            if (task.started is None) or (task.completed is None):
+                continue
+            ms_elapsed = (task.completed - task.started).total_seconds() * 1000
+            values.append(f"{task.task_type} {ms_elapsed:.2f}ms")
+
+    return web.TextResponse("\n".join(values))
 
 
 @admin.typed
@@ -1039,33 +1066,6 @@ async def tasks_list(
         data=paged_tasks,
         count=count,
     ).model_dump(mode="json"), 200
-
-
-@admin.typed
-async def task_times(
-    _session: web.Committer,
-    _task_times: Literal["task-times"],
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    revision_number: safe.RevisionNumber,
-) -> web.QuartResponse:
-    """
-    URL: GET /task-times/<project_key>/<version_key>/<revision_number>
-    """
-    values = []
-    async with db.session() as data:
-        tasks = await data.task(
-            project_key=str(project_key),
-            version_key=str(version_key),
-            revision_number=str(revision_number),
-        ).all()
-        for task in tasks:
-            if (task.started is None) or (task.completed is None):
-                continue
-            ms_elapsed = (task.completed - task.started).total_seconds() * 1000
-            values.append(f"{task.task_type} {ms_elapsed:.2f}ms")
-
-    return web.TextResponse("\n".join(values))
 
 
 @admin.typed

@@ -328,6 +328,17 @@ def search(params: SearchParameters) -> None:
                 ...
 
 
+def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:
+    """Extract the ASF UID from a pubsub payload, preferring new_attributes.uid then the DN."""
+    if payload.new_attributes.uid:
+        return payload.new_attributes.uid[0]
+    parsed = parse_dn(payload.dn)
+    uids = parsed.get("uid", [])
+    if uids:
+        return uids[0]
+    return None
+
+
 async def _revoke_all_credentials(uid: str, log) -> None:
     """Revoke all sessions, PATs, and SSH keys for a banned user."""
     import asfquart
@@ -363,17 +374,6 @@ async def _revoke_all_credentials(uid: str, log) -> None:
     if ssh_keys:
         log.info(f"LDAP pubsub: revoked {len(ssh_keys)} SSH key(s) for banned user {uid}")
         log.auth_event("ssh_keys_revoked", uid)
-
-
-def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:
-    """Extract the ASF UID from a pubsub payload, preferring new_attributes.uid then the DN."""
-    if payload.new_attributes.uid:
-        return payload.new_attributes.uid[0]
-    parsed = parse_dn(payload.dn)
-    uids = parsed.get("uid", [])
-    if uids:
-        return uids[0]
-    return None
 
 
 def _search_core(params: SearchParameters) -> None:
