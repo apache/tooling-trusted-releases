@@ -19,6 +19,7 @@ import datetime
 from typing import Literal
 
 import asfquart.base as base
+import sqlalchemy
 import sqlmodel
 
 import atr.blueprints.get as get
@@ -67,6 +68,20 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         )
         names: dict[str, str | None] = {u.asfuid: u.name for u in user_rows.scalars().all()}
 
+        fingerprints = [k.fingerprint for k in committee.public_signing_keys]
+        artifact_counts: dict[str, int] = {}
+        if fingerprints:
+            via = sql.validate_instrumented_attribute
+            count_rows = await data.execute(
+                sqlalchemy.select(
+                    via(sql.Artifact.key_fingerprint),
+                    sqlalchemy.func.count(),
+                )
+                .where(via(sql.Artifact.key_fingerprint).in_(fingerprints))
+                .group_by(via(sql.Artifact.key_fingerprint))
+            )
+            artifact_counts = {fp: n for fp, n in count_rows.all() if fp is not None}
+
     project_list = list(committee.projects)
     signing_keys = sorted(
         committee.public_signing_keys,
@@ -85,6 +100,7 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         roster=roster,
         names=names,
         signing_keys=signing_keys,
+        artifact_counts=artifact_counts,
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,

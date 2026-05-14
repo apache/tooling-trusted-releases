@@ -21,6 +21,7 @@ from typing import Literal
 
 import htpy
 import quart
+import sqlalchemy
 
 import atr.blueprints.get as get
 import atr.db as db
@@ -209,6 +210,21 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
         user_keys = await data.public_signing_key(apache_uid=session.uid.lower(), _committees=True).all()
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
         user_committees_with_keys = await data.committee(name_in=committees_to_query, _public_signing_keys=True).all()
+
+        all_fingerprints = [k.fingerprint for c in user_committees_with_keys for k in c.public_signing_keys]
+        artifact_counts: dict[str, int] = {}
+        if all_fingerprints:
+            via = sql.validate_instrumented_attribute
+            count_rows = await data.execute(
+                sqlalchemy.select(
+                    via(sql.Artifact.key_fingerprint),
+                    sqlalchemy.func.count(),
+                )
+                .where(via(sql.Artifact.key_fingerprint).in_(all_fingerprints))
+                .group_by(via(sql.Artifact.key_fingerprint))
+            )
+            artifact_counts = {fp: n for fp, n in count_rows.all() if fp is not None}
+
     for key in user_keys:
         key.committees.sort(key=lambda c: c.key)
 
@@ -228,7 +244,7 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
 
     await _openpgp_keys(page, list(user_keys))
     await _ssh_keys(page, list(user_ssh_keys))
-    await _committee_keys(page, list(user_committees_with_keys))
+    await _committee_keys(page, list(user_committees_with_keys), artifact_counts)
 
     return await template.blank(
         "Manage keys",
@@ -278,7 +294,11 @@ async def upload(_session: web.Committer, _keys_upload: Literal["keys/upload"]) 
     return await shared.keys.render_upload_page()
 
 
-async def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.Committee]) -> None:
+async def _committee_keys(
+    page: htm.Block,
+    user_committees_with_keys: list[sql.Committee],
+    artifact_counts: dict[str, int],
+) -> None:
     page.h2("#your-committee-keys")["Your committee's keys"]
     page.div(".mb-4")[htm.a(".btn.btn-outline-primary", href=util.as_url(upload))["Upload a KEYS file"]]
 
@@ -287,21 +307,36 @@ async def _committee_keys(page: htm.Block, user_committees_with_keys: list[sql.C
             page.h3(f"#committee-{committee.key}.mt-3")[committee.display_name or committee.key]
 
             if committee.public_signing_keys:
+                sorted_keys = sorted(
+                    committee.public_signing_keys,
+                    key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
+                )
                 thead = htm.thead[
                     htm.tr[
                         htm.th(".px-2", scope="col")["Key ID"],
                         htm.th(".px-2", scope="col")["Email"],
                         htm.th(".px-2", scope="col")["Apache UID"],
+                        htm.th(".px-2", scope="col")["Role"],
+                        htm.th(".px-2.text-end", scope="col")["Artifacts"],
                     ]
                 ]
                 tbody = htm.Block(htm.tbody)
-                for key in committee.public_signing_keys:
+                for key in sorted_keys:
                     row = htm.Block(htm.tr)
                     details_url = util.as_url(details, fingerprint=key.fingerprint)
                     row.td(".text-break.font-monospace.px-2")[htm.a(href=details_url)[key.fingerprint[-16:].upper()]]
                     email = util.email_from_uid(key.primary_declared_uid) if key.primary_declared_uid else "-"
                     row.td(".text-break.px-2")[email or "-"]
                     row.td(".text-break.px-2")[key.apache_uid or "-"]
+                    uid = (key.apache_uid or "").lower()
+                    if uid in committee.committee_members:
+                        role = "PMC member"
+                    elif uid in committee.committers:
+                        role = "Committer"
+                    else:
+                        role = "-"
+                    row.td(".text-break.px-2")[role]
+                    row.td(".text-break.px-2.text-end")[str(artifact_counts.get(key.fingerprint, 0))]
                     tbody.append(row.collect())
 
                 page.div(".table-responsive.mb-2")[

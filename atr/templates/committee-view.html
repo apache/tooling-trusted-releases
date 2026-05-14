@@ -139,6 +139,7 @@
                   <th class="px-2" scope="col">Email</th>
                   <th class="px-2" scope="col">Apache UID</th>
                   <th class="px-2" scope="col">Role</th>
+                  <th class="px-2 text-end" scope="col">Artifacts</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,6 +159,7 @@
                         <span class="text-muted">−</span>
                       {% endif %}
                     </td>
+                    <td class="px-2 text-end">{{ artifact_counts.get(key.fingerprint, 0) }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
