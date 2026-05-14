@@ -54,6 +54,10 @@ class Key(schema.Strict):
     key_model: sql.PublicSigningKey
 
 
+class UnknownApacheUidError(ValueError):
+    pass
+
+
 @dataclasses.dataclass
 class LinkedCommittee:
     name: str

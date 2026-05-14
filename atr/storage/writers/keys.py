@@ -501,6 +501,12 @@ class FoundationCommitter(GeneralPublic):
             key = await asyncio.to_thread(self.__block_model, key_block, ldap_data)
         except Exception as e:
             return outcome.Error(e)
+        if key.key_model.apache_uid is None:
+            return outcome.Error(
+                types.UnknownApacheUidError(
+                    "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
+                )
+            )
         oc = await self.__database_add_model(key)
         return oc
 

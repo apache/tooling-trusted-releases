@@ -40,7 +40,7 @@ Request ASF Infrastructure to store the private half of the key as a repository 
 
 ### Step 4: Add the public key to your `KEYS` file
 
-Add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and you manage it through the committee keys section on ATR. Upload the public key to ATR and associate it with your committee using the key upload page. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
+Add the public key to your committee's `KEYS` file. This is the same `KEYS` file that holds committer signing keys, and you manage it through the committee keys section on ATR. Import the updated `KEYS` file through ATR rather than adding this key with the individual OpenPGP key form. ATR will parse the UID from the key and, because it has no ASF UID tied to an individual, will match it by its email address during signature verification instead.
 
 ### Step 5: Sign artifacts in your workflow
 

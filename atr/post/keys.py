@@ -95,6 +95,8 @@ async def add(
 
     except PrivateKeyUploadError:
         await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+    except types.UnknownApacheUidError as e:
+        await quart.flash(str(e), "error")
     except web.FlashError as e:
         log.warning(f"FlashError adding OpenPGP key: {e}")
         await quart.flash(str(e), "error")
@@ -346,14 +348,7 @@ async def _flash_openpgp_key_uid_warning(key_model: sql.PublicSigningKey, curren
 def _openpgp_key_uid_warning(key_model: sql.PublicSigningKey, current_asf_uid: str) -> htm.Element | None:
     fingerprint_upper = key_model.fingerprint.upper()
     if key_model.apache_uid is None:
-        details_url = util.as_url(get.keys.details, fingerprint=key_model.fingerprint)
-        return htm.p[
-            f"OpenPGP key {fingerprint_upper} was uploaded and associated, but ATR could not determine an ASF UID "
-            "from the key user IDs. ",
-            htm.a(href=details_url)["Review key details"],
-            ".",
-        ]
-
+        return None
     if key_model.apache_uid.lower() != current_asf_uid.lower():
         details_url = util.as_url(get.keys.details, fingerprint=key_model.fingerprint)
         return htm.p[

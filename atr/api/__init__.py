@@ -630,7 +630,10 @@ async def key_add(
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(data.key)
-        key = ocr.result_or_raise()
+        try:
+            key = ocr.result_or_raise()
+        except types.UnknownApacheUidError as e:
+            raise exceptions.BadRequest(str(e)) from e
 
         for selected_committee_key in selected_committee_keys:
             wacm = write.as_committee_member(selected_committee_key)

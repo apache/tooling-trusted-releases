@@ -29,17 +29,6 @@ def test_openpgp_key_uid_warning_allows_matching_asf_uid() -> None:
     assert warning is None
 
 
-def test_openpgp_key_uid_warning_flags_missing_asf_uid(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(keys.util, "as_url", lambda *_args, **_kwargs: "/keys/details/fp")
-
-    warning = keys._openpgp_key_uid_warning(_public_key(apache_uid=None), "alice")
-
-    assert warning is not None
-    warning_html = str(warning)
-    assert "could not determine an ASF UID" in warning_html
-    assert "/keys/details/fp" in warning_html
-
-
 def test_openpgp_key_uid_warning_flags_other_asf_uid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(keys.util, "as_url", lambda *_args, **_kwargs: "/keys/details/fp")
 
