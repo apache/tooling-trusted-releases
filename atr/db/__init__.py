@@ -156,6 +156,45 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     async def begin_immediate(self) -> None:
         await self.execute(sqlalchemy.text("BEGIN IMMEDIATE"))
 
+    def artifact(
+        self,
+        project_key: Opt[str] = NOT_SET,
+        version: Opt[str] = NOT_SET,
+        artifact_path: Opt[str] = NOT_SET,
+        release_key: Opt[str | None] = NOT_SET,
+        key_fingerprint: Opt[str | None] = NOT_SET,
+        signature_path: Opt[str | None] = NOT_SET,
+        checksum_path: Opt[str | None] = NOT_SET,
+        classification: Opt[str | None] = NOT_SET,
+        svn_revision: Opt[int | None] = NOT_SET,
+        _release: bool = False,
+    ) -> Query[sql.Artifact]:
+        query = sqlmodel.select(sql.Artifact)
+
+        if is_defined(project_key):
+            query = query.where(sql.Artifact.project_key == project_key)
+        if is_defined(version):
+            query = query.where(sql.Artifact.version == version)
+        if is_defined(artifact_path):
+            query = query.where(sql.Artifact.artifact_path == artifact_path)
+        if is_defined(release_key):
+            query = query.where(sql.Artifact.release_key == release_key)
+        if is_defined(key_fingerprint):
+            query = query.where(sql.Artifact.key_fingerprint == key_fingerprint)
+        if is_defined(signature_path):
+            query = query.where(sql.Artifact.signature_path == signature_path)
+        if is_defined(checksum_path):
+            query = query.where(sql.Artifact.checksum_path == checksum_path)
+        if is_defined(classification):
+            query = query.where(sql.Artifact.classification == classification)
+        if is_defined(svn_revision):
+            query = query.where(sql.Artifact.svn_revision == svn_revision)
+
+        if _release:
+            query = query.options(joined_load(sql.Artifact.release))
+
+        return Query(self, query)
+
     def check_result(
         self,
         id: Opt[int] = NOT_SET,

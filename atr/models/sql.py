@@ -1190,6 +1190,10 @@ class Release(sqlmodel.SQLModel, table=True):
         back_populates="release", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
+    # 1-M: Release -> [Artifact]
+    # M-1: Artifact -> Release
+    artifacts: list["Artifact"] = sqlmodel.Relationship(back_populates="release")
+
     # The combination of key and version must be unique
     __table_args__ = (sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),)
 
@@ -1639,6 +1643,38 @@ class ReleaseFileState(sqlmodel.SQLModel, table=True):
             name="valid_release_file_state",
         ),
     )
+
+
+# Artifact: Project, Release, Signing Key
+class Artifact(sqlmodel.SQLModel, table=True):
+    project_key: str = sqlmodel.Field(
+        primary_key=True, foreign_key="project.key", ondelete="CASCADE", **example("example")
+    )
+    version: str = sqlmodel.Field(primary_key=True, **example("0.0.1"))
+    artifact_path: str = sqlmodel.Field(primary_key=True, **example("apache-example-0.0.1.tar.gz"))
+    # Link to ATR release record when one exists - null for historical SVN artifacts
+    release_key: str | None = sqlmodel.Field(
+        default=None, foreign_key="release.key", ondelete="CASCADE", index=True, **example("example-0.0.1")
+    )
+    # Fingerprint of the GPG public key used to sign the artifact
+    key_fingerprint: str | None = sqlmodel.Field(
+        default=None,
+        foreign_key="publicsigningkey.fingerprint",
+        ondelete="SET NULL",
+        index=True,
+        **example("0123456789abcdef0123456789abcdef01234567"),
+    )
+    # Path to the .asc detached signature file
+    signature_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.asc"))
+    # Path to the strongest available checksum file (SHA-512 preferred over SHA-256 over MD5)
+    checksum_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.sha512"))
+    classification: str | None = sqlmodel.Field(default=None, **example("source"))
+    # Per-artifact SVN revision - not all artifacts in a release are added in the same commit
+    svn_revision: int | None = sqlmodel.Field(default=None, index=True, **example(12345))
+
+    # M-1: Artifact -> Release
+    # 1-M: Release -> [Artifact]
+    release: Release | None = sqlmodel.Relationship(back_populates="artifacts")
 
 
 # ReleasePolicy: Project
