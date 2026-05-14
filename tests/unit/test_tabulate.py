@@ -187,17 +187,14 @@ async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytes
         )
 
     monkeypatch.setattr(tabulate.config, "is_dev_environment", lambda: False)
-    monkeypatch.setattr(
-        tabulate.util,
-        "email_to_uid_map",
-        mock.AsyncMock(
-            return_value={
-                "receipt@example.com": "receipt-voter",
-                "other@example.com": "other-voter",
-                "midonly@example.com": "mid-only-voter",
-            }
-        ),
+    lookup = tabulate.cache.EmailUidLookup(
+        {
+            tabulate.cache._email_uid_hash("receipt@example.com"): "receipt-voter",
+            tabulate.cache._email_uid_hash("other@example.com"): "other-voter",
+            tabulate.cache._email_uid_hash("midonly@example.com"): "mid-only-voter",
+        }
     )
+    monkeypatch.setattr(tabulate.cache, "email_uid_view_or_live", mock.AsyncMock(return_value=lookup))
     monkeypatch.setattr(tabulate.util, "thread_messages", _thread_messages)
 
     _start_unixtime, tabulated_votes = await tabulate.votes(

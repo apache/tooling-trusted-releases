@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import pathlib
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -45,6 +46,13 @@ mhZeqo6zyn8zrO9RGU7+8jmeb5nVnXw1YmZcw2fiJgI9+tTMkTfomyR6k0EDvcEu
 =xsEd
 -----END PGP PUBLIC KEY BLOCK-----
 """
+
+
+def _playwright_test_key_text() -> str:
+    key_path = (
+        pathlib.Path(__file__).resolve().parents[2] / "playwright" / "557F8D855DEF8BBE2DC5603B64C271BB87B7FE7B.asc"
+    )
+    return key_path.read_text(encoding="utf-8")
 
 
 class Query:
@@ -227,10 +235,12 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
         key_model=_public_signing_key("fp1", apache_uid=None),
     )
     database_outcomes = outcome.List(outcome.Result(key))
-    ldap_data = {}
+    lookup = keys_writer.cache.EmailUidLookup({})
 
     with (
-        mock.patch.object(keys_writer.util, "email_to_uid_map", new=mock.AsyncMock()) as email_to_uid_map,
+        mock.patch.object(
+            keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock(return_value=lookup)
+        ) as email_uid_view,
         mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
         mock.patch.object(writer, "_CommitteeParticipant__block_models", return_value=[key]) as block_models,
         mock.patch.object(
@@ -239,25 +249,125 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
             new=mock.AsyncMock(return_value=database_outcomes),
         ) as database_add_models,
     ):
-        result = await writer._CommitteeParticipant__ensure("keys text", ldap_data=ldap_data)
+        result = await writer._CommitteeParticipant__ensure("keys text")
 
     assert result is database_outcomes
-    email_to_uid_map.assert_not_awaited()
-    block_models.assert_called_once_with("block-one", ldap_data)
+    email_uid_view.assert_awaited_once()
+    block_models.assert_called_once_with("block-one", lookup)
     database_add_models.assert_awaited_once()
     parsed_outcomes = database_add_models.await_args.args[0]
     assert parsed_outcomes.result_count == 1
 
 
 @pytest.mark.asyncio
-async def test_ensure_reuses_supplied_ldap_data_for_bulk_import() -> None:
+async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
+    key = keys_writer.types.Key(
+        status=keys_writer.types.KeyStatus.PARSED,
+        key_model=_public_signing_key("fp1", apache_uid="alice"),
+    )
+    database_outcome = outcome.Result(key)
+
+    with (
+        mock.patch.object(keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock()) as email_uid_view,
+        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
+        mock.patch.object(writer, "_FoundationCommitter__block_model_create", return_value=key) as block_model_create,
+        mock.patch.object(writer, "_FoundationCommitter__block_model") as block_model,
+        mock.patch.object(
+            writer,
+            "_FoundationCommitter__database_add_model",
+            new=mock.AsyncMock(return_value=database_outcome),
+        ) as database_add_model,
+    ):
+        result = await writer.ensure_stored_one("keys text")
+
+    assert result is database_outcome
+    email_uid_view.assert_not_awaited()
+    block_model_create.assert_called_once()
+    assert block_model_create.call_args.args[0] == "block-one"
+    assert isinstance(block_model_create.call_args.args[1], keys_writer.cache.EmailUidLookup)
+    block_model.assert_not_called()
+    database_add_model.assert_awaited_once_with(key)
+
+
+@pytest.mark.asyncio
+async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data, asf_uid="test")
+    key_text = _playwright_test_key_text()
+
+    with (
+        mock.patch.object(keys_writer.config, "is_test_mode", return_value=True),
+        mock.patch.object(
+            keys_writer.cache,
+            "email_uid_view_or_live",
+            new=mock.AsyncMock(side_effect=AssertionError("cache should not be needed for the test key")),
+        ) as email_uid_view,
+        mock.patch.object(
+            writer,
+            "_FoundationCommitter__database_add_model",
+            new=mock.AsyncMock(side_effect=lambda key: outcome.Result(key)),
+        ) as database_add_model,
+    ):
+        result = await writer.ensure_stored_one(key_text)
+
+    key = result.result_or_raise()
+    assert key.key_model.apache_uid == "test"
+    assert key.key_model.fingerprint == "557f8d855def8bbe2dc5603b64c271bb87b7fe7b"
+    email_uid_view.assert_not_awaited()
+    database_add_model.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
+    key = keys_writer.types.Key(
+        status=keys_writer.types.KeyStatus.PARSED,
+        key_model=_public_signing_key("fp1", apache_uid=None),
+    )
+    lookup = keys_writer.cache.EmailUidLookup({})
+
+    with (
+        mock.patch.object(
+            keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock(return_value=lookup)
+        ) as email_uid_view,
+        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
+        mock.patch.object(
+            writer, "_FoundationCommitter__block_model_create", side_effect=[key, key]
+        ) as block_model_create,
+        mock.patch.object(
+            writer,
+            "_FoundationCommitter__database_add_model",
+            new=mock.AsyncMock(),
+        ) as database_add_model,
+    ):
+        result = await writer.ensure_stored_one("keys text")
+
+    assert isinstance(result, outcome.Error)
+    error = result.error_or_none()
+    assert isinstance(error, keys_writer.types.UnknownApacheUidError)
+    assert str(error) == "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
+    email_uid_view.assert_awaited_once()
+    assert block_model_create.call_count == 2
+    assert all(call.args[0] == "block-one" for call in block_model_create.call_args_list)
+    assert isinstance(block_model_create.call_args_list[0].args[1], keys_writer.cache.EmailUidLookup)
+    assert block_model_create.call_args_list[1].args[1] is lookup
+    database_add_model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
     data = MockData(None, committees_after_commit={})
     writer, _write_as = _make_foundation_admin(data, "alpha")
     database_outcomes = outcome.List()
-    ldap_data = {"alice@example.org": "alice"}
+    lookup = keys_writer.cache.EmailUidLookup({"deadbeef": "alice"})
 
     with (
-        mock.patch.object(keys_writer.util, "email_to_uid_map", new=mock.AsyncMock()) as email_to_uid_map,
+        mock.patch.object(
+            keys_writer.cache, "email_uid_view_or_live", new=mock.AsyncMock(return_value=lookup)
+        ) as email_uid_view,
         mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one", "block-two"]),
         mock.patch.object(
             writer,
@@ -273,78 +383,16 @@ async def test_ensure_reuses_supplied_ldap_data_for_bulk_import() -> None:
             new=mock.AsyncMock(return_value=database_outcomes),
         ) as database_add_models,
     ):
-        result = await writer._CommitteeParticipant__ensure("keys text", ldap_data=ldap_data)
+        result = await writer._CommitteeParticipant__ensure("keys text")
 
     assert result is database_outcomes
-    email_to_uid_map.assert_not_awaited()
+    email_uid_view.assert_awaited_once()
     assert block_models.call_count == 2
     assert {call.args[0] for call in block_models.call_args_list} == {"block-one", "block-two"}
-    assert all(call.args[1] is ldap_data for call in block_models.call_args_list)
+    assert all(call.args[1] is lookup for call in block_models.call_args_list)
     database_add_models.assert_awaited_once()
     parsed_outcomes = database_add_models.await_args.args[0]
     assert parsed_outcomes.result_count == 2
-
-
-@pytest.mark.asyncio
-async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
-    data = MockData(None, committees_after_commit={})
-    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
-    key = keys_writer.types.Key(
-        status=keys_writer.types.KeyStatus.PARSED,
-        key_model=_public_signing_key("fp1", apache_uid="alice"),
-    )
-    database_outcome = outcome.Result(key)
-
-    with (
-        mock.patch.object(
-            keys_writer.util, "email_to_uid_map", new=mock.AsyncMock(return_value={})
-        ) as email_to_uid_map,
-        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
-        mock.patch.object(writer, "_FoundationCommitter__block_model", return_value=key) as block_model,
-        mock.patch.object(
-            writer,
-            "_FoundationCommitter__database_add_model",
-            new=mock.AsyncMock(return_value=database_outcome),
-        ) as database_add_model,
-    ):
-        result = await writer.ensure_stored_one("keys text")
-
-    assert result is database_outcome
-    email_to_uid_map.assert_awaited_once()
-    block_model.assert_called_once_with("block-one", {})
-    database_add_model.assert_awaited_once_with(key)
-
-
-@pytest.mark.asyncio
-async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
-    data = MockData(None, committees_after_commit={})
-    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
-    key = keys_writer.types.Key(
-        status=keys_writer.types.KeyStatus.PARSED,
-        key_model=_public_signing_key("fp1", apache_uid=None),
-    )
-
-    with (
-        mock.patch.object(
-            keys_writer.util, "email_to_uid_map", new=mock.AsyncMock(return_value={})
-        ) as email_to_uid_map,
-        mock.patch.object(keys_writer.util, "parse_key_blocks", return_value=["block-one"]),
-        mock.patch.object(writer, "_FoundationCommitter__block_model", return_value=key) as block_model,
-        mock.patch.object(
-            writer,
-            "_FoundationCommitter__database_add_model",
-            new=mock.AsyncMock(),
-        ) as database_add_model,
-    ):
-        result = await writer.ensure_stored_one("keys text")
-
-    assert isinstance(result, outcome.Error)
-    error = result.error_or_none()
-    assert isinstance(error, keys_writer.types.UnknownApacheUidError)
-    assert str(error) == "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
-    email_to_uid_map.assert_awaited_once()
-    block_model.assert_called_once_with("block-one", {})
-    database_add_model.assert_not_awaited()
 
 
 def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
@@ -378,7 +426,9 @@ def test_public_key_model_stores_latest_self_signature_separately_from_expiry() 
     data = MockData(None, committees_after_commit={})
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
 
-    key_model = writer.public_key_model(key, {}, original_key_block=_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    key_model = writer.public_key_model(
+        key, keys_writer.cache.EmailUidLookup({}), original_key_block=_EMBEDDED_V4_EXPIRING_KEY_ASC
+    )
     latest_self_signature = keys_writer._latest_self_signature(key)
 
     assert latest_self_signature is not None
@@ -473,9 +523,9 @@ def _make_foundation_committer(data: MockData):
     return writer, write
 
 
-def _make_foundation_committer_with_audit(data: MockData):
+def _make_foundation_committer_with_audit(data: MockData, asf_uid: str = "alice"):
     write = mock.MagicMock()
-    write.authorisation.asf_uid = "alice"
+    write.authorisation.asf_uid = asf_uid
     write.as_committee_participant = mock.MagicMock()
     write_as = mock.MagicMock()
     return keys_writer.FoundationCommitter(write, write_as, data), write, write_as

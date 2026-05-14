@@ -47,7 +47,10 @@ RESULT_ATTRIBUTES: Final[list[str]] = [
 class PubSubAttributes(schema.Subset):
     """LDAP attributes as they appear in pubsub old_attributes/new_attributes."""
 
+    asf_alt_email: list[str] = schema.Field(default_factory=list, alias="asf-altEmail")
     asf_banned: list[str] = schema.Field(default_factory=list, alias="asf-banned")
+    asf_committer_email: list[str] = schema.Field(default_factory=list, alias="asf-committer-email")
+    mail: list[str] = schema.Field(default_factory=list)
     uid: list[str] = schema.Field(default_factory=list)
 
 
@@ -259,6 +262,7 @@ async def github_to_apache(github_numeric_uid: int) -> str:
 
 
 async def handle_update(payload: dict) -> None:
+    import atr.cache as cache
     import atr.log as log
 
     try:
@@ -282,6 +286,19 @@ async def handle_update(payload: dict) -> None:
     elif was_banned and (not now_banned):
         log.info(f"LDAP pubsub: user {uid} has been reactivated")
         log.auth_event("account_reactivated", uid)
+
+    change_type = parsed.change_type.lower()
+    if change_type == "delete":
+        if cache.email_uid_purge_uid(uid):
+            await cache.email_uid_save_current_to_file()
+            log.info(f"LDAP pubsub: purged email cache entries for deleted user {uid}")
+        return
+
+    old_emails = _emails_from_pubsub(parsed.old_attributes)
+    new_emails = _emails_from_pubsub(parsed.new_attributes)
+    if cache.email_uid_apply_delta(uid, old_emails, new_emails):
+        await cache.email_uid_save_current_to_file()
+        log.info(f"LDAP pubsub: applied email cache delta for {uid}")
 
 
 async def is_active(asf_uid: str) -> bool:
@@ -326,6 +343,20 @@ def search(params: SearchParameters) -> None:
                 params.connection.unbind()
             except Exception:
                 ...
+
+
+def _emails_from_pubsub(attributes: PubSubAttributes) -> list[str]:
+    emails: list[str] = []
+    for email in attributes.mail:
+        if email:
+            emails.append(email)
+    for email in attributes.asf_alt_email:
+        if email:
+            emails.append(email)
+    for email in attributes.asf_committer_email:
+        if email:
+            emails.append(email)
+    return emails
 
 
 def _extract_uid_from_pubsub(payload: PubSubPayload) -> str | None:

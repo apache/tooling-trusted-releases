@@ -19,6 +19,7 @@ import time
 from collections.abc import Generator
 from typing import Protocol
 
+import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.log as log
@@ -209,11 +210,11 @@ async def votes(  # noqa: C901
         _message_id_normalize(message_id) for message_id in (excluded_message_ids or set()) if message_id
     }
 
-    start = time.perf_counter_ns()
-    email_to_uid = await util.email_to_uid_map()
-    end = time.perf_counter_ns()
-    log.info(f"LDAP search took {(end - start) / 1000000} ms")
-    log.info(f"Email addresses from LDAP: {len(email_to_uid)}")
+    try:
+        email_to_uid = await cache.email_uid_view_or_live()
+    except Exception as e:
+        raise ValueError(f"email-to-UID lookup unavailable for tabulation: {e}") from e
+    log.info(f"Email hashes available: {len(email_to_uid)}")
 
     start = time.perf_counter_ns()
     tabulated_votes = {}
@@ -431,7 +432,7 @@ def _vote_continue(line: str) -> bool:
 
 
 def _vote_identity(
-    from_raw: str, email_to_uid: dict[str, str], list_email: str, cc: list[str]
+    from_raw: str, email_to_uid: cache.EmailUidLookup, list_email: str, cc: list[str]
 ) -> tuple[bool, str, str, str | None]:
     from_email_lower = util.email_from_uid(from_raw)
     if not from_email_lower:

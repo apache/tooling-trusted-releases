@@ -32,6 +32,7 @@ import sqlalchemy.dialects.sqlite as sqlite
 import sqlalchemy.orm as orm
 import sqlmodel
 
+import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.log as log
@@ -235,7 +236,7 @@ class FoundationCommitter(GeneralPublic):
     def public_key_model(
         self,
         key: openpgp.PublicKey,
-        ldap_data: dict[str, str],
+        ldap_data: cache.EmailUidLookup,
         original_key_block: str | None = None,
     ) -> sql.PublicSigningKey:
         uids = list(key.user_ids)
@@ -440,7 +441,7 @@ class FoundationCommitter(GeneralPublic):
 
         return affected
 
-    def __block_model(self, key_block: str, ldap_data: dict[str, str]) -> types.Key:
+    def __block_model(self, key_block: str, ldap_data: cache.EmailUidLookup) -> types.Key:
         # This cache is only held for the session
         if key_block in self.__key_block_models_cache:
             cached_key_models = self.__key_block_models_cache[key_block]
@@ -449,12 +450,15 @@ class FoundationCommitter(GeneralPublic):
             else:
                 raise ValueError("Expected one key block, got none or multiple")
 
+        key = self.__block_model_create(key_block, ldap_data)
+        self.__key_block_models_cache[key_block] = [key]
+        return key
+
+    def __block_model_create(self, key_block: str, ldap_data: cache.EmailUidLookup) -> types.Key:
         public_key, _ = openpgp.PublicKey.from_armor(key_block)
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
         _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
-        key = types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
-        self.__key_block_models_cache[key_block] = [key]
-        return key
+        return types.Key(status=types.KeyStatus.PARSED, key_model=key_model)
 
     async def __database_add_model(
         self,
@@ -497,8 +501,12 @@ class FoundationCommitter(GeneralPublic):
             return outcome.Error(ValueError("Expected one key block, got none or multiple"))
         key_block = key_blocks[0]
         try:
-            ldap_data = await util.email_to_uid_map()
-            key = await asyncio.to_thread(self.__block_model, key_block, ldap_data)
+            key = await asyncio.to_thread(self.__block_model_create, key_block, cache.EmailUidLookup({}))
+            if key.key_model.apache_uid is None:
+                ldap_data = await cache.email_uid_view_or_live()
+                key = await asyncio.to_thread(self.__block_model, key_block, ldap_data)
+            else:
+                self.__key_block_models_cache[key_block] = [key]
         except Exception as e:
             return outcome.Error(e)
         if key.key_model.apache_uid is None:
@@ -557,7 +565,7 @@ and was published by the committee.\
         full_keys_file_content = header_content + key_blocks_str
         return full_keys_file_content
 
-    def __uids_asf_uid(self, uids: list[str], ldap_data: dict[str, str]) -> str | None:
+    def __uids_asf_uid(self, uids: list[str], ldap_data: cache.EmailUidLookup) -> str | None:
         # Test data
         test_key_uids = [
             "Apache Tooling (For test use only) <apache-tooling@example.invalid>",
@@ -674,26 +682,14 @@ class CommitteeParticipant(FoundationCommitter):
     def committee_key(self) -> str:
         return self.__committee_key
 
-    async def ensure_associated(
-        self, keys_file_text: str, ldap_data: dict[str, str] | None = None
-    ) -> outcome.List[types.Key]:
-        outcomes: outcome.List[types.Key] = await self.__ensure(
-            keys_file_text,
-            associate=True,
-            ldap_data=ldap_data,
-        )
+    async def ensure_associated(self, keys_file_text: str) -> outcome.List[types.Key]:
+        outcomes: outcome.List[types.Key] = await self.__ensure(keys_file_text, associate=True)
         if outcomes.any_result:
             await self.autogenerate_keys_file()
         return outcomes
 
-    async def ensure_stored(
-        self, keys_file_text: str, ldap_data: dict[str, str] | None = None
-    ) -> outcome.List[types.Key]:
-        outcomes: outcome.List[types.Key] = await self.__ensure(
-            keys_file_text,
-            associate=False,
-            ldap_data=ldap_data,
-        )
+    async def ensure_stored(self, keys_file_text: str) -> outcome.List[types.Key]:
+        outcomes: outcome.List[types.Key] = await self.__ensure(keys_file_text, associate=False)
         if outcomes.any_result:
             await self.autogenerate_keys_file()
         return outcomes
@@ -748,7 +744,7 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return outcomes
 
-    def __block_models(self, key_block: str, ldap_data: dict[str, str]) -> list[types.Key | Exception]:
+    def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[types.Key | Exception]:
         try:
             public_key, _ = openpgp.PublicKey.from_armor(key_block)
         except Exception as e:
@@ -864,12 +860,10 @@ class CommitteeParticipant(FoundationCommitter):
         self,
         keys_file_text: str,
         associate: bool = True,
-        ldap_data: dict[str, str] | None = None,
     ) -> outcome.List[types.Key]:
         outcomes = outcome.List[types.Key]()
         try:
-            if ldap_data is None:
-                ldap_data = await util.email_to_uid_map()
+            ldap_data = await cache.email_uid_view_or_live()
             key_blocks = util.parse_key_blocks(keys_file_text)
         except Exception as e:
             outcomes.append_error(e)

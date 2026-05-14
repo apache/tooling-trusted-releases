@@ -176,9 +176,9 @@ def asf_uid_from_email(email: str) -> str | None:
     return ldap_params.results_list[0].uid[0]
 
 
-async def asf_uid_from_uids(
-    uids: list[str], use_ldap: bool = True, ldap_data: dict[str, str] | None = None
-) -> str | None:
+async def asf_uid_from_uids(uids: list[str], use_ldap: bool = True) -> str | None:
+    import atr.cache as cache
+
     # Determine ASF UID if not provided
     emails = []
     for uid_str in uids:
@@ -188,13 +188,11 @@ async def asf_uid_from_uids(
                 return email.removesuffix("@apache.org")
             emails.append(email)
     # We did not find a direct @apache.org email address
-    # Therefore, search LDAP data, either cached or directly
-    if ldap_data is not None:
-        # Use cached LDAP data
-        for email in emails:
-            if email in ldap_data:
-                return ldap_data[email]
-        return None
+    # Therefore, search cached LDAP data, then LDAP directly if configured
+    lookup = cache.email_uid_view()
+    for email in emails:
+        if asf_uid := lookup.get(email):
+            return asf_uid
     if use_ldap:
         # Search LDAP directly
         for email in emails:
@@ -436,6 +434,8 @@ async def email_to_uid_map() -> dict[str, str]:
         bind_password_from_config=bind_password,
     )
     await asyncio.to_thread(ldap.search, ldap_params)
+    if ldap_params.err_msg:
+        raise RuntimeError(f"LDAP search failed: {ldap_params.err_msg}")
 
     # Map the LDAP addresses to Apache UIDs
     email_to_uid: dict[str, str] = {}

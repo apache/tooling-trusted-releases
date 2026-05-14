@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 sys.path.append(".")
 
 
+import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.storage as storage
@@ -143,13 +144,15 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
     print(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} by pid {os.getpid()} ---")
     sys.stdout.flush()
 
-    # Get all email addresses in LDAP
-    # We'll discard them when we're finished
     start = time.perf_counter_ns()
-    email_to_uid = await util.email_to_uid_map()
-    end = time.perf_counter_ns()
-    print_and_flush(f"LDAP search took {(end - start) / 1000000} ms")
-    print_and_flush(f"Email addresses from LDAP: {len(email_to_uid)}")
+
+    ldap_start = time.perf_counter_ns()
+    try:
+        await cache.email_uid_refresh()
+    except Exception as e:
+        print_and_flush(f"Email-to-UID cache refresh failed: {e}")
+    ldap_end = time.perf_counter_ns()
+    print_and_flush(f"LDAP refresh took {(ldap_end - ldap_start) / 1000000} ms")
 
     # Get the KEYS file of each committee
     async with db.session() as data:
@@ -181,7 +184,7 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
         async with storage.write(asf_uid) as write:
             waca = write.as_committee_admin(committee_key)
             keys_file_text = content.decode("utf-8", errors="replace")
-            outcomes = await waca.keys.ensure_associated(keys_file_text, ldap_data=email_to_uid)
+            outcomes = await waca.keys.ensure_associated(keys_file_text)
             log_outcome_errors(outcomes, committee_key)
             yes = outcomes.result_count
             no = outcomes.error_count

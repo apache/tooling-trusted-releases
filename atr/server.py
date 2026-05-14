@@ -182,6 +182,7 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "hypercorn" / "secrets",
         pathlib.Path(state_dir_str) / "logs",
         pathlib.Path(state_dir_str) / "runtime",
+        pathlib.Path(state_dir_str) / "secrets" / "cached",
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
         pathlib.Path(paths.get_archives_dir()),
@@ -319,6 +320,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         project_version_task = asyncio.create_task(cache.project_version_refresh_loop())
         app.extensions["project_version_task"] = project_version_task
 
+        await cache.email_uid_startup_load()
+
         worker_manager = manager.get_worker_manager()
         await worker_manager.start()
 
@@ -369,6 +372,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+        cache.email_uid_erase()
 
         await db.shutdown_database()
 

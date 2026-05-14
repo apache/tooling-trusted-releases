@@ -39,6 +39,7 @@ import sqlmodel
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.admin as admin
+import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.db.interaction as interaction
@@ -1293,7 +1294,7 @@ async def validate_jwt_post(
 
 
 async def _check_keys(fix: bool = False) -> str:
-    email_to_uid = await util.email_to_uid_map()
+    await cache.email_uid_view_or_live()
     bad_keys = []
     async with db.session() as data:
         keys = await data.public_signing_key().all()
@@ -1303,7 +1304,7 @@ async def _check_keys(fix: bool = False) -> str:
                 uids.append(key.primary_declared_uid)
             if key.secondary_declared_uids:
                 uids.extend(key.secondary_declared_uids)
-            asf_uid = await util.asf_uid_from_uids(uids, ldap_data=email_to_uid)
+            asf_uid = await util.asf_uid_from_uids(uids, use_ldap=False)
             if asf_uid != key.apache_uid:
                 bad_keys.append(f"{key.fingerprint} detected: {asf_uid}, key: {key.apache_uid}")
             if fix:

@@ -231,3 +231,54 @@ async def test_admins_startup_load_uses_cache_when_present(
 
     assert ldap_called is False
     assert mock_app.extensions["admins"] == frozenset({"cached_alice", "cached_bob"})
+
+
+@pytest.mark.asyncio
+async def test_email_uid_read_ignores_empty_disk_cache(state_dir: pathlib.Path):
+    cache_path = state_dir / "secrets" / "cached" / "email_uid.json"
+    cache_path.parent.mkdir(parents=True)
+    cache_data = cache.EmailUidCache(
+        refreshed=datetime.datetime.now(datetime.UTC),
+        hashes={},
+        reverse={},
+    )
+    cache_path.write_text(cache_data.model_dump_json())
+
+    assert cache._email_uid_read_from_file() is None
+    assert not cache_path.exists()
+    assert await cache._email_uid_read_from_file_async() is None
+
+
+@pytest.mark.asyncio
+async def test_email_uid_refresh_refuses_empty_ldap_mapping(
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+):
+    async def email_to_uid_map() -> dict[str, str]:
+        return {}
+
+    monkeypatch.setattr("atr.util.email_to_uid_map", email_to_uid_map)
+
+    with pytest.raises(RuntimeError, match="no usable LDAP email mappings"):
+        await cache.email_uid_refresh()
+
+    cache_path = state_dir / "secrets" / "cached" / "email_uid.json"
+    assert not cache_path.exists()
+    assert "email_uid_hashes" not in mock_app.extensions
+    assert "email_uid_reverse" not in mock_app.extensions
+
+
+@pytest.mark.asyncio
+async def test_email_uid_view_reloads_changed_disk_cache(state_dir: pathlib.Path, mock_app: MockApp):
+    old_hash = cache._email_uid_hash("old@example.org")
+    new_hash = cache._email_uid_hash("new@example.org")
+    mock_app.extensions["email_uid_hashes"] = {old_hash: "old"}
+    mock_app.extensions["email_uid_reverse"] = {"old": [old_hash]}
+    mock_app.extensions["email_uid_file_mtime_ns"] = 0
+
+    await cache.email_uid_save_to_file({new_hash: "new"}, {"new": [new_hash]})
+
+    lookup = cache.email_uid_view()
+
+    assert lookup.get("new@example.org") == "new"
+    assert lookup.get("old@example.org") is None
+    assert mock_app.extensions["email_uid_hashes"] == {new_hash: "new"}
