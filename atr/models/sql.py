@@ -700,6 +700,9 @@ class Committee(sqlmodel.SQLModel, table=True):
         back_populates="committees", link_model=KeyLink
     )
 
+    updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    updated_by: str | None = sqlmodel.Field(default=None)
+
     @property
     def display_name(self) -> str:
         """Get the display name for the committee."""
@@ -788,6 +791,9 @@ class Project(sqlmodel.SQLModel, table=True):
         **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     created_by: str | None = sqlmodel.Field(default=None, **example("user"))
+
+    updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    updated_by: str | None = sqlmodel.Field(default=None)
 
     @property
     def display_name(self) -> str:

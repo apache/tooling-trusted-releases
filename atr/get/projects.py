@@ -191,6 +191,16 @@ async def view(
         else "",
     ]
     page.append(title_row)
+    if project.updated:
+        page.append(
+            htm.div(".row.mb-2")[
+                htm.div(".col")[
+                    htm.p(".text-muted.small.mb-0")[
+                        f"Last updated {project.updated.strftime('%Y-%m-%d')} by {project.updated_by or 'unknown'}"
+                    ]
+                ]
+            ]
+        )
     page.append(_render_project_label_card(project))
     page.append(_render_pmc_card(project))
     page.append(_render_description_card(project))

@@ -471,6 +471,8 @@ async def _update_committees(
         if committee_info:
             committee.charter = committee_info.charter
 
+        committee.updated = datetime.datetime.now(datetime.UTC)
+        committee.updated_by = "bootstrap"
         updated_count += 1
 
     return added_count, updated_count
@@ -519,6 +521,9 @@ async def _update_podlings(
         else:
             log.warning(f"could not find ldap data for podling {podling_name}")
 
+        ppmc.updated = datetime.datetime.now(datetime.UTC)
+        ppmc.updated_by = "bootstrap"
+
         podling = await data.project(key=podling_name).get()
         if not podling:
             # Create the associated podling project
@@ -530,6 +535,8 @@ async def _update_podlings(
 
         podling.name = podling_data.name.removesuffix(" (Incubating)")
         podling.committee = ppmc
+        podling.updated = datetime.datetime.now(datetime.UTC)
+        podling.updated_by = "bootstrap"
         # TODO: Why did the type checkers not detect this?
         # podling.is_podling = True
 
@@ -572,15 +579,14 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
             continue
 
         project_model = await data.project(key=project_key).get()
+        if project_model:
+            continue
+
         # Check whether the project is retired, whether temporarily or otherwise
         status = _project_status(pmc, project_key, project_status)
-        if not project_model:
-            project_model = sql.Project(key=project_key, committee=pmc, status=status)
-            data.add(project_model)
-            added_count += 1
-        else:
-            project_model.status = status
-            updated_count += 1
+        project_model = sql.Project(key=project_key, committee=pmc, status=status)
+        data.add(project_model)
+        added_count += 1
 
         # Pass the project name through the validator
         safe.ProjectKey(project_model.key)
@@ -596,6 +602,8 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.mailing_lists = project_status.mailing_list
         project_model.repository = _doap_repository_urls(project_status.repository)
         project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
+        project_model.updated = datetime.datetime.now(datetime.UTC)
+        project_model.updated_by = "bootstrap"
 
     return added_count, updated_count
 
@@ -628,5 +636,7 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
     tooling_committee.committers = tooling_users
     tooling_committee.release_managers = tooling_users
     tooling_committee.is_podling = False
+    tooling_committee.updated = datetime.datetime.now(datetime.UTC)
+    tooling_committee.updated_by = "bootstrap"
 
     return added_count, updated_count

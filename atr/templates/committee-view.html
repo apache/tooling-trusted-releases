@@ -6,6 +6,11 @@
 
 {% block content %}
   <h1>{{ committee.display_name }}</h1>
+  {% if committee.updated %}
+    <div class="row mb-2">
+      <p class="text-muted small">Last updated {{ committee.updated.strftime("%Y-%m-%d") }} by {{ committee.updated_by or "unknown" }}</p>
+    </div>
+  {% endif %}
 
   {% if committee.charter %}
     <div class="card mb-4">

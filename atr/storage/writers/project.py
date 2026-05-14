@@ -114,6 +114,8 @@ class CommitteeMember(CommitteeParticipant):
             project.category = ", ".join(current_categories)
             if project.category == "":
                 project.category = None
+            project.updated = datetime.datetime.now(datetime.UTC)
+            project.updated_by = self.__asf_uid
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -135,6 +137,8 @@ class CommitteeMember(CommitteeParticipant):
             project.category = ", ".join(current_categories)
             if project.category == "":
                 project.category = None
+            project.updated = datetime.datetime.now(datetime.UTC)
+            project.updated_by = self.__asf_uid
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -185,6 +189,7 @@ class CommitteeMember(CommitteeParticipant):
         if await self.__data.project(key=label).get():
             raise storage.AccessError(f"Project {label} already exists", status=409)
 
+        now = datetime.datetime.now(datetime.UTC)
         project = sql.Project(
             key=label,
             name=display_name,
@@ -194,8 +199,10 @@ class CommitteeMember(CommitteeParticipant):
             category=super_project.category if super_project else None,
             programming_languages=super_project.programming_languages if super_project else None,
             committee_key=str(committee_key),
-            created=datetime.datetime.now(datetime.UTC),
+            created=now,
             created_by=self.__asf_uid,
+            updated=now,
+            updated_by=self.__asf_uid,
         )
         if super_project and super_project.release_policy:
             project.release_policy = super_project.release_policy.duplicate()
@@ -236,6 +243,8 @@ class CommitteeMember(CommitteeParticipant):
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
         project.repository = list(form.repository)
         project.standards = list(form.standards)
+        project.updated = datetime.datetime.now(datetime.UTC)
+        project.updated_by = self.__asf_uid
 
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
@@ -257,6 +266,8 @@ class CommitteeMember(CommitteeParticipant):
             project.programming_languages = ", ".join(current_languages)
             if project.programming_languages == "":
                 project.programming_languages = None
+            project.updated = datetime.datetime.now(datetime.UTC)
+            project.updated_by = self.__asf_uid
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -276,6 +287,8 @@ class CommitteeMember(CommitteeParticipant):
             project.programming_languages = ", ".join(current_languages)
             if project.programming_languages == "":
                 project.programming_languages = None
+            project.updated = datetime.datetime.now(datetime.UTC)
+            project.updated_by = self.__asf_uid
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -302,6 +315,8 @@ class CommitteeMember(CommitteeParticipant):
                     **policy_args.model_dump(exclude_unset=True),
                 )
                 await self.__write_as.policy._edit_policy_no_commit(args.project_key, policy_update)
+            project.updated = datetime.datetime.now(datetime.UTC)
+            project.updated_by = "API"
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             await self.__data.rollback()
