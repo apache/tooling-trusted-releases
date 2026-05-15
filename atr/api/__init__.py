@@ -1763,23 +1763,35 @@ async def vote_start(
 
     try:
         async with db.session() as db_data:
-            project = await db_data.project(key=str(data.project), _committee=True).demand(
-                storage.AccessError(f"Project not found: {data.project}", status=404)
-            )
-            committee = project.committee
+            release_key = sql.release_key(data.project, data.version)
+            release = await db_data.release(
+                key=str(release_key),
+                _project=True,
+                _committee=True,
+                _project_release_policy=True,
+            ).demand(storage.AccessError(f"Release not found: {release_key}", status=404))
+            if release.latest_revision_number is None:
+                raise exceptions.BadRequest("Release has no revisions yet")
+            committee = release.committee
             if committee is None:
                 raise storage.AccessError("No committee found for project - Invalid state", status=500)
-        async with storage.write_as_committee_participant(committee.key, asf_uid) as wacp:
-            permitted_recipients = util.permitted_podling_first_round_recipients(
-                asf_uid,
-                committee.key,
-                is_podling=committee.is_podling,
-            )
-            if data.email_to not in permitted_recipients:
-                raise exceptions.Forbidden("Invalid mailing list choice")
+            committee_key = committee.key
+            is_podling = committee.is_podling
+            scanned_revision = release.safe_latest_revision_number
+            if (data.revision is not None) and (data.revision != scanned_revision):
+                raise exceptions.Conflict("A newer revision appeared, please refresh and try again.")
 
-            util.validate_email_recipients(data)
-            util.validate_vote_duration(data.vote_duration)
+        permitted_recipients = util.permitted_podling_first_round_recipients(
+            asf_uid,
+            committee_key,
+            is_podling=is_podling,
+        )
+        if data.email_to not in permitted_recipients:
+            raise exceptions.Forbidden("Invalid mailing list choice")
+        util.validate_email_recipients(data)
+        util.validate_vote_duration(data.vote_duration)
+
+        async with storage.write_as_committee_participant(committee_key, asf_uid) as wacp:
             # TODO: Get fullname and use instead of asf_uid
             task = await wacp.vote.start(
                 data.email_to,
@@ -1792,9 +1804,10 @@ async def vote_start(
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,
-                expected_revision=data.revision,
+                expected_revision=scanned_revision,
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,
+                acknowledged_concerns=frozenset(data.concerns_noted),
             )
     # except Exception as e:
     #     import traceback

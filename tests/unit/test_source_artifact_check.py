@@ -24,7 +24,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.shared.web as web
+import atr.render as render
 import atr.storage.readers.releases as releases
 import atr.storage.types as types
 import atr.tasks.checks as checks
@@ -247,7 +247,7 @@ def test_render_checks_summary_emits_new_badge_classes():
         files={},
     )
     info.checker_stats.append(stat)
-    element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is not None
     rendered = str(element)
     assert "atr-bg-suggestion" in rendered
@@ -256,7 +256,7 @@ def test_render_checks_summary_emits_new_badge_classes():
 
 def test_render_checks_summary_returns_none_when_no_errors():
     info = types.PathInfo()
-    element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is None
 
 
@@ -267,7 +267,7 @@ def test_render_checks_summary_shows_release_level_errors():
         "Some path issue",
     )
     info.release_level_concerns.append(result)
-    element = web.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is not None
 
 

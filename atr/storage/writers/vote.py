@@ -308,6 +308,7 @@ class CommitteeParticipant(FoundationCommitter):
         expected_revision: safe.RevisionNumber | None = None,
         notify_when_finished: bool = False,
         automatic_resolve_when_finished: bool = False,
+        acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> sql.Task:
         if promote:
             await self.__data.begin_immediate()
@@ -325,6 +326,7 @@ class CommitteeParticipant(FoundationCommitter):
                     expected_revision,
                     allowed_vote_modes=allowed_vote_modes,
                     promote=True,
+                    acknowledged_concerns=acknowledged_concerns,
                 )
             else:
                 if release is None:

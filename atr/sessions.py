@@ -52,12 +52,7 @@ async def form_error_pop(path: str) -> dict[str, Any]:
     if user_session is None:
         return {}
     async with db.session() as data:
-        statement = sqlmodel.select(sql.SessionFormError).where(
-            sql.SessionFormError.sid_hash == user_session.sid_hash,
-            sql.SessionFormError.path == path,
-        )
-        result = await data.execute(statement)
-        row = result.scalar_one_or_none()
+        row = await _form_error_lookup(data, user_session.sid_hash, path)
         if row is None:
             return {}
         payload = dict(row.payload)
@@ -107,6 +102,15 @@ async def terminate_current_users_sessions(uid: str) -> int:
     await asfquart.session.aclear()
     invalidate_cache()
     return count
+
+
+async def _form_error_lookup(data: db.Session, sid_hash: str, path: str) -> sql.SessionFormError | None:
+    statement = sqlmodel.select(sql.SessionFormError).where(
+        sql.SessionFormError.sid_hash == sid_hash,
+        sql.SessionFormError.path == path,
+    )
+    result = await data.execute(statement)
+    return result.scalar_one_or_none()
 
 
 def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:

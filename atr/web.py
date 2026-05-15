@@ -129,11 +129,14 @@ class Committer:
             raise ValueError("Form class not set")
         if self.__form_data is None:
             raise ValueError("Form data not set")
+        model_fields = getattr(self.__form_cls, "model_fields", None)
+        if (model_fields is not None) and (field_name not in model_fields):
+            raise ValueError(f"Unknown form field: {field_name}")
         errors = [
             pydantic_core.ErrorDetails(
                 loc=(field_name,),
                 msg=error_msg,
-                input=self.__form_data[field_name],
+                input=self.__form_data.get(field_name),
                 type="atr_error",
             )
         ]

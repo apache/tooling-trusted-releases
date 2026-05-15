@@ -454,6 +454,7 @@ class CommitteeParticipant(FoundationCommitter):
         expected_revision: safe.RevisionNumber,
         *,
         allowed_vote_modes: frozenset[sql.VoteMode],
+        acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> str | None:
         """Promote a release candidate draft to a new phase."""
         try:
@@ -463,6 +464,7 @@ class CommitteeParticipant(FoundationCommitter):
                 expected_revision,
                 allowed_vote_modes=allowed_vote_modes,
                 promote=True,
+                acknowledged_concerns=acknowledged_concerns,
             )
             await self.__data.commit()
         except storage.AccessError as e:
@@ -489,6 +491,7 @@ class CommitteeParticipant(FoundationCommitter):
         allowed_vote_modes: frozenset[sql.VoteMode],
         promote: bool,
         expected_podling_thread_id: str | None = None,
+        acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> tuple[sql.Release, int, sql.VoteMode, safe.RevisionNumber]:
         release_for_pre_checks = await self.__data.release(
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
@@ -543,6 +546,14 @@ class CommitteeParticipant(FoundationCommitter):
             if file_count == 0:
                 raise storage.AccessError("This candidate draft is empty, containing no files", status=400)
 
+            required_groups = await self._required_concern_groups(release_for_pre_checks)
+            missing_groups = [g for g in required_groups if (g.checker not in acknowledged_concerns)]
+            if missing_groups:
+                raise storage.AccessError(
+                    util.concern_acknowledgement_error(missing_groups),
+                    status=409,
+                )
+
         # Promote it to RELEASE_CANDIDATE
         via = sql.validate_instrumented_attribute
         vote_seq = await self.__vote_seq_allocate(release_for_pre_checks.key)
@@ -572,6 +583,18 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
         await self.__data.refresh(release_for_pre_checks)
         return release_for_pre_checks, vote_seq, vote_mode, revision_number
+
+    async def _required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
+        # Avoid a filesystem walk when the DB has no concern rows at all
+        check_results = await interaction.checks_for(release, caller_data=self.__data)
+        if not any(cr.status == sql.CheckResultStatus.CONCERN for cr in check_results):
+            return []
+        read = storage.Read(self.__write.authorisation, self.__data)
+        ragp = read.as_general_public()
+        base_path = paths.release_directory(release)
+        all_paths = sorted([path async for path in util.paths_recursive(base_path)])
+        info = await ragp.releases.path_info(release, all_paths)
+        return util.concern_groups(info)
 
     async def __vote_seq_allocate(self, release_key: str) -> int:
         upsert_stmt = (

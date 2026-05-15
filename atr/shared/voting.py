@@ -15,11 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 import pydantic
 
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
+import atr.storage as storage
 import atr.util as util
 
 
@@ -50,6 +54,7 @@ class StartVotingForm(form.Form):
         widget=form.Widget.CUSTOM,
         default=False,
     )
+    concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
     rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)
 
@@ -60,6 +65,17 @@ class StartVotingForm(form.Form):
         return field
 
     @pydantic.model_validator(mode="after")
-    def _validate_recipients(self) -> "StartVotingForm":
+    def _validate_recipients(self) -> StartVotingForm:
         util.validate_email_recipients(self)
         return self
+
+
+async def concern_groups_for_release(
+    read: storage.ReadAsGeneralPublic,
+    release: sql.Release,
+) -> list[util.ConcernGroup]:
+    """Return the concern groups shown on the compose page for this release."""
+    base_path = paths.release_directory(release)
+    all_paths = sorted([path async for path in util.paths_recursive(base_path)])
+    info = await read.releases.path_info(release, all_paths)
+    return util.concern_groups(info)

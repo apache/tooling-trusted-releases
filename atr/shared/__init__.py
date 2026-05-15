@@ -36,7 +36,6 @@ import atr.shared.upload as upload
 import atr.shared.user as user
 import atr.shared.vote as vote
 import atr.shared.voting as voting
-import atr.shared.web as web
 
 # |         1 | RSA (Encrypt or Sign) [HAC]                        |
 # |         2 | RSA Encrypt-Only [HAC]                             |
@@ -85,5 +84,4 @@ __all__ = [
     "user",
     "vote",
     "voting",
-    "web",
 ]

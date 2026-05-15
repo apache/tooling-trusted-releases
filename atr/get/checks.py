@@ -38,7 +38,6 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
-import atr.shared as shared
 import atr.shared.draft as draft
 import atr.storage as storage
 import atr.storage.types as types
@@ -149,7 +148,7 @@ async def selected_revision(
 
     ongoing_count = await interaction.tasks_ongoing(project_key, version_key, revision_number)
 
-    checks_summary_elem = shared.web.render_checks_summary(info, project_key, version_key)
+    checks_summary_elem = render.render_checks_summary(info, project_key, version_key)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
     exception_banner_html = ""

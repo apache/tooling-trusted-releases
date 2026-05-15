@@ -167,6 +167,15 @@ async def selected(  # noqa: C901
                 "The subject template has been modified since you loaded the form. Please reload and try again.",
             )
 
+        async with storage.read(session) as read:
+            concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
+        missing = util.missing_concern_groups(concern_groups, start_voting_form.concerns_noted)
+        if missing:
+            return await session.form_error(
+                "concerns_noted",
+                util.concern_acknowledgement_error(missing),
+            )
+
         # Substitute the subject template (must be done here, not in task, as it requires app context)
         options = construct.StartVoteOptions(
             asfuid=session.uid,
@@ -178,25 +187,36 @@ async def selected(  # noqa: C901
         )
         subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
 
-        async with storage.write_as_committee_participant(committee.key) as wacp:
-            _task = await wacp.vote.start(
-                start_voting_form.email_to,
-                project_key,
-                version_key,
-                start_voting_form.vote_duration,
-                subject,
-                start_voting_form.body,
-                session.fullname,
-                release=release,
-                promote=True,
-                permitted_recipients=permitted_recipients,
-                email_cc=start_voting_form.email_cc,
-                email_bcc=start_voting_form.email_bcc,
-                second_round_email_to=second_round_email_to,
-                expected_vote_mode=start_voting_form.vote_mode,
-                expected_revision=start_voting_form.rendered_revision,
-                notify_when_finished=start_voting_form.notify_when_finished,
-                automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
+        try:
+            async with storage.write_as_committee_participant(committee.key) as wacp:
+                _task = await wacp.vote.start(
+                    start_voting_form.email_to,
+                    project_key,
+                    version_key,
+                    start_voting_form.vote_duration,
+                    subject,
+                    start_voting_form.body,
+                    session.fullname,
+                    release=release,
+                    promote=True,
+                    permitted_recipients=permitted_recipients,
+                    email_cc=start_voting_form.email_cc,
+                    email_bcc=start_voting_form.email_bcc,
+                    second_round_email_to=second_round_email_to,
+                    expected_vote_mode=start_voting_form.vote_mode,
+                    expected_revision=start_voting_form.rendered_revision,
+                    notify_when_finished=start_voting_form.notify_when_finished,
+                    automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
+                    acknowledged_concerns=frozenset(start_voting_form.concerns_noted),
+                )
+        except storage.AccessError as e:
+            if e.status != 409:
+                raise
+            return await session.redirect(
+                get.voting.selected,
+                error=str(e),
+                project_key=str(project_key),
+                version_key=str(version_key),
             )
 
         log.info(f"Vote email will be sent to: {all_addrs}")

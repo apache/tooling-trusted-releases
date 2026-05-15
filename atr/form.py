@@ -281,6 +281,7 @@ async def render(  # noqa: C901
     confirm: str | None = None,
     submit_disabled: bool = False,
     pre_submit: htm.Element | None = None,
+    flash_error_data: dict[str, Any] | None = None,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -294,7 +295,8 @@ async def render(  # noqa: C901
     elif border and (".px-" not in form_classes):
         form_classes += ".px-5"
 
-    flash_error_data: dict[str, Any] = await _get_flash_error_data() if use_error_data else {}
+    if flash_error_data is None:
+        flash_error_data = await _get_flash_error_data() if use_error_data else {}
     field_rows: list[htm.Element] = []
     hidden_fields: list[htm.Element | htm.VoidElement | markupsafe.Markup] = []
     hidden_fields.append(csrf_input())

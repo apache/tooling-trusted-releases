@@ -746,14 +746,15 @@ class VoteStartArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     revision: safe.RevisionNumber | None = schema.default_example(None, "00005")
     email_to: str = schema.example("dev@example.apache.org")
-    email_cc: list[str] = schema.default_example([], "[dev@example.apache.org]")
-    email_bcc: list[str] = schema.default_example([], "[dev@example.apache.org]")
+    email_cc: list[str] = schema.default_example([], ["dev@example.apache.org"])
+    email_bcc: list[str] = schema.default_example([], ["dev@example.apache.org"])
     vote_duration: int = schema.example(72)
     subject: str = schema.example("[VOTE] Apache Example 0.0.1 release")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 0.0.1...")
     second_round_email_to: str | None = schema.default_example(None, "general@incubator.apache.org")
     notify_when_finished: bool = schema.default_example(False, False)
     automatic_resolve_when_finished: bool = schema.default_example(False, False)
+    concerns_noted: list[str] = schema.default_example([], ["atr.tasks.checks.license.headers"])
 
 
 class VoteStartResults(schema.Strict):

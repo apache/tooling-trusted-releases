@@ -125,16 +125,26 @@ async def start_selected(
                 version_key=str(version_key),
             )
 
+        async with storage.read(session) as read:
+            concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
+        missing = util.missing_concern_groups(concern_groups, start_vote_form.concerns_noted)
+        if missing:
+            return await session.form_error(
+                "concerns_noted",
+                util.concern_acknowledgement_error(missing),
+            )
+
         async with storage.write_as_committee_participant(committee.key, session) as wacp:
             error = await wacp.release.promote_to_candidate(
                 release.safe_key,
                 start_vote_form.rendered_revision,
                 allowed_vote_modes=frozenset({sql.VoteMode.MANUAL}),
+                acknowledged_concerns=frozenset(start_vote_form.concerns_noted),
             )
 
         if error:
             return await session.redirect(
-                get.vote.selected,
+                get.manual.start_selected,
                 error=error,
                 project_key=str(project_key),
                 version_key=str(version_key),

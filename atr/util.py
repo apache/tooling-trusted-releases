@@ -17,6 +17,7 @@
 import asyncio
 import base64
 import binascii
+import collections
 import contextlib
 import dataclasses
 import datetime
@@ -32,7 +33,7 @@ import unicodedata
 import urllib.parse
 import uuid
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import aiofiles.os
 import aiohttp
@@ -56,6 +57,9 @@ import atr.paths as paths
 import atr.registry as registry
 import atr.user as user
 
+if TYPE_CHECKING:
+    import atr.storage.types as types
+
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
     "-binary-assembly",
     "-binary",
@@ -63,6 +67,9 @@ ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
     "-source-release",
     "-source",
     "-src",
+)
+CONCERN_ACKNOWLEDGEMENT_MESSAGE: Final[str] = (
+    "Review and acknowledge every current concern group before starting the vote"
 )
 DIRECTORY_PERMISSIONS: Final[int] = 0o755
 DEV_TEST_MID: Final[str] = "818a44a3-6984-4aba-a650-834e86780b43@apache.org"
@@ -108,6 +115,7 @@ EXPECTED_DEFAULT_TLS_CIPHER_NAMES: Final[tuple[str, ...]] = (
     "DHE-RSA-AES256-SHA256",
     "DHE-RSA-AES128-SHA256",
 )
+_CONCERN_LABELS_MAX_LISTED: Final[int] = 5
 # We have to do this interpolation because of our private key detection lint
 _PEM_PRIVATE: Final[str] = "PRIVATE"
 _PRIVATE_KEY_MARKERS: Final[tuple[str, ...]] = (
@@ -120,6 +128,13 @@ _PRIVATE_KEY_MARKERS: Final[tuple[str, ...]] = (
     f"-----BEGIN EC {_PEM_PRIVATE} KEY-----",
     f"-----BEGIN ED25519 {_PEM_PRIVATE} KEY-----",
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class ConcernGroup:
+    checker: str
+    label: str
+    count: int
 
 
 class EmailRecipients(Protocol):
@@ -246,6 +261,10 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
         raise
 
 
+def checker_display_name(checker: str) -> str:
+    return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
+
+
 def chmod_directories(path: os.PathLike, permissions: int = DIRECTORY_PERMISSIONS) -> None:
     os.chmod(path, permissions)
     for dir_path in pathlib.Path(path).rglob("*"):
@@ -262,6 +281,30 @@ def chmod_files(path: os.PathLike, permissions: int) -> None:
 
 def committee_is_standing(committee_key: str) -> bool:
     return committee_key in registry.STANDING_COMMITTEES
+
+
+def concern_acknowledgement_error(missing: Sequence[ConcernGroup]) -> str:
+    """Build a stable error sentence for unacknowledged concern groups."""
+    listed = [group.label for group in missing[:_CONCERN_LABELS_MAX_LISTED]]
+    extra = len(missing) - _CONCERN_LABELS_MAX_LISTED
+    suffix = f" and {extra} more" if (extra > 0) else ""
+    return f"{CONCERN_ACKNOWLEDGEMENT_MESSAGE}: {', '.join(listed)}{suffix}"
+
+
+def concern_groups(info: "types.PathInfo | None") -> list[ConcernGroup]:
+    if info is None:
+        return []
+    counts_by_checker: dict[str, int] = collections.defaultdict(int)
+    for stat in info.checker_stats:
+        count = stat.counts.get(sql.CheckResultStatus.CONCERN, 0)
+        if count > 0:
+            counts_by_checker[stat.checker] += count
+    for result in info.release_level_concerns:
+        counts_by_checker[result.checker] += 1
+    return [
+        ConcernGroup(checker=checker, label=checker_display_name(checker), count=count)
+        for checker, count in sorted(counts_by_checker.items())
+    ]
 
 
 def conjunction(items: Sequence[str], empty: str | None = None) -> str:
@@ -687,6 +730,14 @@ def match_ignore_pattern(pattern: str | None, value: str | None) -> bool:
     return matched
 
 
+def missing_concern_groups(
+    groups: Sequence[ConcernGroup],
+    submitted: Iterable[str],
+) -> list[ConcernGroup]:
+    submitted_set = set(submitted)
+    return [group for group in groups if (group.checker not in submitted_set)]
+
+
 async def number_of_release_files(release: sql.Release) -> int:
     """Return the number of files in a release."""
     if (path := paths.release_directory_revision(release)) is None:
@@ -936,6 +987,20 @@ def static_path(*args: str) -> str:
 def static_url(filename: str) -> str:
     """Return the URL for a static file."""
     return quart.url_for("static", filename=filename)
+
+
+def submitted_concerns_from_flash(flash_data: dict[str, Any]) -> list[str]:
+    entry = flash_data.get("concerns_noted")
+    if entry is None:
+        entry = flash_data.get("!concerns_noted")
+    if entry is None:
+        return []
+    original = entry.get("original")
+    if isinstance(original, list):
+        return [value for value in original if isinstance(value, str)]
+    if isinstance(original, str):
+        return [original]
+    return []
 
 
 async def task_archive_url(task_mid: str, recipient: str | None = None) -> str | None:

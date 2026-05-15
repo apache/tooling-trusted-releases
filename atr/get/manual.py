@@ -17,6 +17,8 @@
 
 from typing import Literal
 
+import quart
+
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
@@ -28,7 +30,9 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.render as render
+import atr.sessions as sessions
 import atr.shared as shared
+import atr.storage as storage
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -90,14 +94,31 @@ async def start_selected(
             case (release, _committee):
                 pass
 
-        content = await _render_page(release=release, revision_number=str(release.safe_latest_revision_number))
+        async with storage.read(session) as read:
+            concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
+        flash_data = await sessions.form_error_pop(quart.request.path)
+        submitted_concerns = util.submitted_concerns_from_flash(flash_data)
+
+        content = await _render_page(
+            release=release,
+            revision_number=str(release.safe_latest_revision_number),
+            concern_groups=concern_groups,
+            submitted_concerns=submitted_concerns,
+            flash_data=flash_data,
+        )
 
         return await template.blank(
             title=f"Start manual vote on {release.project.short_display_name} {release.version}", content=content
         )
 
 
-async def _render_page(release, revision_number: str) -> htm.Element:
+async def _render_page(
+    release,
+    revision_number: str,
+    concern_groups: list[util.ConcernGroup],
+    submitted_concerns: list[str],
+    flash_data: dict,
+) -> htm.Element:
     page = htm.Block()
 
     back_link_url = util.as_url(
@@ -133,6 +154,13 @@ async def _render_page(release, revision_number: str) -> htm.Element:
     ]
 
     cancel_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
+    custom: dict[str, htm.Element | htm.VoidElement] = {}
+    skip: list[str] = []
+    if concern_groups:
+        custom["concerns_noted"] = render.html_concerns_noted_checkboxes(concern_groups, checked=submitted_concerns)
+    else:
+        skip.append("concerns_noted")
+
     manual_form = await form.render(
         model_cls=shared.manual.StartVoteForm,
         submit_label="Start manual vote",
@@ -143,6 +171,9 @@ async def _render_page(release, revision_number: str) -> htm.Element:
             version_key=release.version,
         ),
         defaults={"rendered_revision": revision_number},
+        custom=custom,
+        skip=skip,
+        flash_error_data=flash_data,
     )
 
     page.append(manual_form)

@@ -39,7 +39,6 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
-import atr.shared as shared
 import atr.shared.draft as draft
 import atr.storage as storage
 import atr.template as template
@@ -182,7 +181,7 @@ async def selected(
     )
     files_card_header_html = _files_card_header_html(phase_value, revision_number)
 
-    checks_summary_html = shared.web.render_checks_summary(info, release.safe_project_key, release.safe_version_key)
+    checks_summary_html = render.render_checks_summary(info, release.safe_project_key, release.safe_version_key)
     move_file_html = _render_move_section(10)
 
     csrf_token = utils.generate_csrf()
@@ -634,7 +633,7 @@ async def _status_selected_impl(
         exception_banner_html=exception_banner_html,
     )
 
-    checks_summary_elem = shared.web.render_checks_summary(info, release.safe_project_key, release.safe_version_key)
+    checks_summary_elem = render.render_checks_summary(info, release.safe_project_key, release.safe_version_key)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
     quarantine_html = await template.render(

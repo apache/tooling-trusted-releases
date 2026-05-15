@@ -37,4 +37,5 @@ class ResolveVoteForm(form.Form):
 
 
 class StartVoteForm(form.Form):
+    concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)
     rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)

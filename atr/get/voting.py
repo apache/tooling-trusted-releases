@@ -20,6 +20,7 @@ from typing import Literal
 
 import aiofiles.os
 import htpy
+import quart
 
 import atr.blueprints.get as get
 import atr.construct as construct
@@ -35,7 +36,9 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
+import atr.sessions as sessions
 import atr.shared as shared
+import atr.storage as storage
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -103,6 +106,11 @@ async def selected(
 
         keys_warning = await _check_keys_warning(committee)
 
+        async with storage.read(session) as read:
+            concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
+        flash_data = await sessions.form_error_pop(quart.request.path)
+        submitted_concerns = util.submitted_concerns_from_flash(flash_data)
+
         content = await _render_page(
             release=release,
             revision_number=str(release.safe_latest_revision_number),
@@ -116,6 +124,9 @@ async def selected(
             vote_mode=vote_mode,
             keys_warning=keys_warning,
             asf_uid=session.uid,
+            concern_groups=concern_groups,
+            submitted_concerns=submitted_concerns,
+            flash_data=flash_data,
         )
 
         return await template.blank(
@@ -167,6 +178,9 @@ async def _render_page(
     vote_mode: sql.VoteMode,
     keys_warning: bool,
     asf_uid: str,
+    concern_groups: list[util.ConcernGroup],
+    submitted_concerns: list[str],
+    flash_data: dict,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -240,6 +254,11 @@ async def _render_page(
     }
     skip = ["email_cc", "email_bcc"]
 
+    if concern_groups:
+        custom["concerns_noted"] = render.html_concerns_noted_checkboxes(concern_groups, checked=submitted_concerns)
+    else:
+        skip.append("concerns_noted")
+
     if second_round_recipients:
         default_second_round = second_round_recipients[0]
         custom["second_round_email_to"] = htm.div[
@@ -305,6 +324,7 @@ async def _render_page(
         },
         custom=custom,
         skip=skip,
+        flash_error_data=flash_data,
     )
     page.append(vote_form)
 
