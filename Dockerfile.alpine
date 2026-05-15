@@ -20,6 +20,7 @@ WORKDIR /opt/atr
 
 # Copy only what we need to install dependencies
 COPY Makefile pyproject.toml uv.lock .
+COPY scripts/check_pth_files.py scripts/
 
 # only install runtime dependencies
 RUN make sync

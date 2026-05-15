@@ -21,3 +21,7 @@ These policies cover security and other miscellaneous policies that describe how
 ### Tasks
 
 * Secret values must never be passed to tasks. This ensures that `Task` objects and results can be considered public.
+
+### Dependencies
+
+* Every `.pth` file installed into the project's virtual environment must appear in the allowlist of [`scripts/check_pth_files.py`](/ref/scripts/check_pth_files.py), enforced by `make sync` and pre-commit, because Python executes their `import` lines on every interpreter startup and they are a known supply-chain attack vector.

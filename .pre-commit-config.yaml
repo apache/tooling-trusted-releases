@@ -191,6 +191,14 @@ repos:
       pass_filenames: false
       always_run: true
 
+    - id: check-pth-files
+      name: check .pth files in the venv
+      description: Refuse unknown .pth files in .venv; Python runs their import lines at interpreter startup, so they are a supply-chain attack vector
+      entry: python3 -S scripts/check_pth_files.py
+      language: system
+      pass_filenames: false
+      always_run: true
+
     - id: check-models-imports
       name: check models imports
       description: Ensure that the models only import from approved packages
