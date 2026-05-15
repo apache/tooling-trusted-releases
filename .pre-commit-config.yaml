@@ -92,7 +92,7 @@ repos:
       types_or: ['css']
       args: ['--fix', '--allow-empty-input']
 - repo: https://github.com/woodruffw/zizmor-pre-commit
-  rev: v1.24.1
+  rev: v1.25.0
   hooks:
     - id: zizmor
       args: [--min-severity, low]
