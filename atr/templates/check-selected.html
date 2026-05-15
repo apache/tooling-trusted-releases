@@ -79,55 +79,23 @@
     </p>
   {% endif %}
 
-  {% include "check-selected-release-info.html" %}
+  <div id="release-info-container">
+    {{ release_info_html|safe }}
+  </div>
 
-  {% if quarantined_pending %}
-    <div class="alert alert-info" role="alert">
-      <i class="bi bi-hourglass-split me-2"></i>
-      Archive validation is in progress. Uploaded archives are being checked for safety before they become available.
-    </div>
-  {% endif %}
-
-  {% for quarantined in quarantined_failed %}
-    <div class="alert alert-danger" role="alert">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <i class="bi bi-exclamation-octagon me-2"></i>
-          <strong>Archive validation failed.</strong>
-          <span class="text-muted ms-2">
-            Uploaded by {{ quarantined.asf_uid }}
-            {% if quarantined.completed %}
-              at {{ format_datetime(quarantined.completed) }}
-            {% endif %}
-            {% if quarantined.description %}
-              &mdash; {{ quarantined.description }}
-            {% endif %}
-          </span>
-          {% if quarantined.file_metadata %}
-            <ul class="mb-0 mt-2">
-              {% for entry in quarantined.file_metadata %}
-                {% if entry.errors %}
-                  {% for error in entry.errors %}
-                    <li><code>{{ entry.rel_path }}</code>: {{ error }}</li>
-                  {% endfor %}
-                {% endif %}
-              {% endfor %}
-            </ul>
-          {% endif %}
-        </div>
-        {% if quarantined.id in clear_quarantine_forms %}
-          {{ clear_quarantine_forms[quarantined.id]|safe }}
-        {% endif %}
-      </div>
-    </div>
-  {% endfor %}
+  <div id="quarantine-status-container">
+    {% include "check-selected-quarantine.html" %}
+  </div>
 
   <div id="ongoing-tasks-banner"
-       class="alert alert-warning{% if ongoing_tasks_count == 0 %} d-none{% endif %}"
+       class="alert alert-warning{% if not polling_active %} d-none{% endif %}"
        role="alert"
-       {% if revision_number %}data-api-url="/checks/{{ release.project.key }}/{{ release.version }}/{{ revision_number }}"{% endif %}>
+       data-status-url="{{ as_url(get.compose.status_selected, project_key=release.project.key, version_key=release.version) }}"
+       data-polling-active="{{ 'true' if polling_active else 'false' }}"
+       data-quarantine-pending-count="{{ quarantined_pending|length }}"
+       data-ongoing-count="{{ ongoing_tasks_count }}">
     <i class="bi bi-exclamation-triangle me-2"></i>
-    <span id="ongoing-tasks-text">There {{ 'is' if ongoing_tasks_count == 1 else 'are' }} currently <strong id="ongoing-tasks-count">{{ ongoing_tasks_count }}</strong> background verification {{ 'task' if ongoing_tasks_count == 1 else 'tasks' }} running for the latest revision. Results shown below may be incomplete or outdated until the tasks finish.</span>
+    <span id="ongoing-tasks-text">{{ banner_html|safe }}</span>
     <div id="poll-progress-container" class="progress mt-2">
       <div id="poll-progress" class="progress-bar bg-warning"></div>
     </div>
@@ -141,22 +109,13 @@
 
   <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <h5 class="mb-0">
-        Files
-        {% if phase == "release_candidate_draft" %}
-          in revision {{ revision_number }}
-        {% else %}
-          in the release candidate (revision {{ revision_number }})
-        {% endif %}
+      <h5 class="mb-0" id="files-card-header">
+        <span id="files-card-header-text">{{ files_card_header_html|safe }}</span>
       </h5>
     </div>
     <div class="card-body">
       <div id="files-table-container">
-        {% if paths|length > 0 %}
-          {% include "check-selected-path-table.html" %}
-        {% else %}
-          <div class="alert alert-info">This draft does not have any files yet.</div>
-        {% endif %}
+        {{ files_table_html|safe }}
       </div>
     </div>
   </div>

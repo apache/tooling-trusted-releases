@@ -513,6 +513,14 @@ class CommitteeParticipant(FoundationCommitter):
             ongoing_tasks = await self.__tasks_ongoing(project_key, version_key, revision_number)
             if ongoing_tasks > 0:
                 raise storage.AccessError("All checks must be completed before starting a vote", status=409)
+            pending_quarantine = await interaction.pending_quarantine_count(
+                release_for_pre_checks.key, caller_data=self.__data
+            )
+            if pending_quarantine > 0:
+                raise storage.AccessError(
+                    interaction.PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE,
+                    status=409,
+                )
 
         # Verify that it's in the correct phase
         expected_phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT

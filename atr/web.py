@@ -85,14 +85,17 @@ class Committer:
     def is_admin(self) -> bool:
         return user.is_admin(self.uid)
 
-    async def prevent_confusing_ui_display(self, project_key: str | safe.ProjectKey) -> None:
+    async def prevent_confusing_ui_display(
+        self, project_key: str | safe.ProjectKey, *, flash_admin_warning: bool = True
+    ) -> None:
         if not any((str(p.key) == str(project_key)) for p in (await self.user_projects)):
             if self.is_admin:
                 # Admins can view all projects
                 # But we must warn them when the project is not one of their own
                 # TODO: This code is difficult to test locally
                 # TODO: This flash sometimes displays after deleting a project, which is a bug
-                await quart.flash("This is not your project, but you have access as an admin", "warning")
+                if flash_admin_warning:
+                    await quart.flash("This is not your project, but you have access as an admin", "warning")
                 return
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 

@@ -41,6 +41,10 @@ import atr.user as user
 import atr.util as util
 import atr.web as web
 
+PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
+    "Archive validation is still in progress. Please wait for it to complete before starting a vote."
+)
+
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
@@ -462,6 +466,18 @@ async def latest_revision(release: sql.Release, caller_data: db.Session | None =
         return await data.revision(release_key=release.key, number=release.latest_revision_number).get()
 
 
+async def pending_quarantine_count(release_key: str, caller_data: db.Session | None = None) -> int:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.Quarantined)
+            .where(sql.Quarantined.release_key == release_key)
+            .where(via(sql.Quarantined.status).in_([sql.QuarantineStatus.STAGING, sql.QuarantineStatus.PENDING]))
+        )
+        return (await data.execute(query)).scalar_one()
+
+
 async def previews(project: sql.Project) -> list[sql.Release]:
     """Get the preview releases for the project."""
     return await releases_by_phase(project, sql.ReleasePhase.RELEASE_PREVIEW)
@@ -580,6 +596,9 @@ async def release_ready_to_start_vote(
 
     if await has_blocker_checks(release, release.safe_latest_revision_number, caller_data=data):
         return "This release candidate draft has blockers. Please fix the blockers before starting a vote."
+
+    if await pending_quarantine_count(release.key, caller_data=data) > 0:
+        return PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE
 
     if not (user.is_committee_member(committee, session.uid) or session.is_admin):
         return "You must be on the PMC of this project to start a vote"

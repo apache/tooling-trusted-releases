@@ -1,0 +1,40 @@
+{% if quarantined_pending %}
+  <div class="alert alert-info" role="alert">
+    <i class="bi bi-hourglass-split me-2"></i>
+    Archive validation is in progress. Uploaded archives are being checked for safety before they become available.
+  </div>
+{% endif %}
+
+{% for quarantined in quarantined_failed %}
+  <div class="alert alert-danger" role="alert">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <i class="bi bi-exclamation-octagon me-2"></i>
+        <strong>Archive validation failed.</strong>
+        <span class="text-muted ms-2">
+          Uploaded by {{ quarantined.asf_uid }}
+          {% if quarantined.completed %}
+            at {{ format_datetime(quarantined.completed) }}
+          {% endif %}
+          {% if quarantined.description %}
+            &mdash; {{ quarantined.description }}
+          {% endif %}
+        </span>
+        {% if quarantined.file_metadata %}
+          <ul class="mb-0 mt-2">
+            {% for entry in quarantined.file_metadata %}
+              {% if entry.errors %}
+                {% for error in entry.errors %}
+                  <li><code>{{ entry.rel_path }}</code>: {{ error }}</li>
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+      {% if quarantined.id in clear_quarantine_forms %}
+        {{ clear_quarantine_forms[quarantined.id]|safe }}
+      {% endif %}
+    </div>
+  </div>
+{% endfor %}

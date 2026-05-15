@@ -514,6 +514,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         id: Opt[int] = NOT_SET,
         release_key: Opt[str] = NOT_SET,
         status: Opt[sql.QuarantineStatus] = NOT_SET,
+        status_in: Opt[Sequence[sql.QuarantineStatus]] = NOT_SET,
         token: Opt[str] = NOT_SET,
         _release: bool = False,
     ) -> Query[sql.Quarantined]:
@@ -526,6 +527,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Quarantined.release_key == release_key)
         if is_defined(status):
             query = query.where(sql.Quarantined.status == status)
+        if is_defined(status_in):
+            query = query.where(via(sql.Quarantined.status).in_(status_in))
         if is_defined(token):
             query = query.where(sql.Quarantined.token == token)
 

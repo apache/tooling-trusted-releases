@@ -30,21 +30,36 @@
 	const banner = document.getElementById("ongoing-tasks-banner");
 	if (!banner) return;
 
-	const apiUrl = banner.dataset.apiUrl;
-	if (!apiUrl) return;
+	const statusUrl = banner.dataset.statusUrl;
+	const legacyApiUrl = banner.dataset.apiUrl;
+	const pollUrl = statusUrl || legacyApiUrl;
+	if (!pollUrl) return;
+	const isComposeStatus = Boolean(statusUrl);
 
-	const countSpan = document.getElementById("ongoing-tasks-count");
 	const textSpan = document.getElementById("ongoing-tasks-text");
-	const voteButton = document.getElementById("start-vote-button");
+	const countSpan = document.getElementById("ongoing-tasks-count");
 	const progress = document.getElementById("poll-progress");
+	const quarantineContainer = document.getElementById(
+		"quarantine-status-container",
+	);
 	const checksSummaryContainer = document.getElementById(
 		"checks-summary-container",
 	);
 	const filesTableContainer = document.getElementById("files-table-container");
+	const releaseInfoContainer = document.getElementById(
+		"release-info-container",
+	);
+	const filesCardHeaderText = document.getElementById("files-card-header-text");
 	const pollInterval = 3000;
 
-	let currentCount = parseInt(countSpan?.textContent || "0", 10);
-	if (currentCount === 0) return;
+	const initialOngoing = parseInt(banner.dataset.ongoingCount || "0", 10) || 0;
+	const initialQuarantinePending =
+		parseInt(banner.dataset.quarantinePendingCount || "0", 10) || 0;
+	const initialPollingActive = banner.dataset.pollingActive === "true";
+
+	const shouldStart =
+		initialPollingActive || initialOngoing > 0 || initialQuarantinePending > 0;
+	if (!shouldStart) return;
 
 	function restartProgress() {
 		if (!progress) return;
@@ -76,51 +91,42 @@
 		progress.classList.add("bg-warning");
 	}
 
-	function updateBanner(count) {
-		if (!countSpan || !textSpan) return;
+	function updateBannerHtml(html) {
+		if (!textSpan) return;
+		if (typeof html !== "string") return;
+		textSpan.innerHTML = html;
+	}
 
-		currentCount = count;
-
+	function updateBannerCount(count) {
+		if (!textSpan) return;
 		const taskWord = count === 1 ? "task" : "tasks";
 		const isAre = count === 1 ? "is" : "are";
 		const strong = document.createElement("strong");
 		strong.id = "ongoing-tasks-count";
-		strong.textContent = count;
+		strong.textContent = String(count);
 		textSpan.textContent = "";
 		textSpan.append(
 			`There ${isAre} currently `,
 			strong,
 			` background verification ${taskWord} running for the latest revision. Results shown below may be incomplete or outdated until the tasks finish.`,
 		);
-
-		if (count === 0) {
-			// Banner always exists, but we hide it
-			banner.classList.add("d-none");
-			enableVoteButton();
-		}
 	}
 
-	function enableVoteButton() {
-		if (!voteButton) return;
-		if (!voteButton.classList.contains("disabled")) return;
+	function hideBanner() {
+		banner.classList.add("d-none");
+	}
 
-		const voteHref =
-			voteButton.dataset.voteHref || voteButton.getAttribute("href");
-		if (!voteHref || voteHref === "#") return;
-
-		voteButton.classList.remove("disabled");
-		voteButton.removeAttribute("aria-disabled");
-		voteButton.removeAttribute("tabindex");
-		voteButton.removeAttribute("role");
-		voteButton.setAttribute("href", voteHref);
-		voteButton.setAttribute("title", "Start a vote on this draft");
+	function swapHtml(element, html) {
+		if (!element || typeof html !== "string") return;
+		element.innerHTML = html;
 	}
 
 	function updatePageContent(data) {
-		if (checksSummaryContainer && data.checks_summary_html !== undefined) {
-			checksSummaryContainer.innerHTML = data.checks_summary_html;
-		}
-		if (filesTableContainer && data.files_table_html !== undefined) {
+		swapHtml(releaseInfoContainer, data.release_info_html);
+		swapHtml(quarantineContainer, data.quarantine_html);
+		swapHtml(checksSummaryContainer, data.checks_summary_html);
+		swapHtml(filesCardHeaderText, data.files_card_header_html);
+		if (filesTableContainer && typeof data.files_table_html === "string") {
 			filesTableContainer.innerHTML = data.files_table_html;
 			reattachCollapseToggleListeners();
 		}
@@ -133,33 +139,87 @@
 		});
 	}
 
-	function pollOngoingTasks() {
-		if (currentCount === 0) return;
+	function scheduleNext(delay) {
+		restartProgress();
+		setTimeout(pollOngoingTasks, delay);
+	}
 
+	function shouldRetryStatus(status) {
+		if (status >= 500) return true;
+		return status === 408 || status === 429;
+	}
+
+	function isPollingActive(data) {
+		if (typeof data.polling_active === "boolean") return data.polling_active;
+		return (data.ongoing || 0) > 0;
+	}
+
+	function handleSuccess(data) {
+		if (isComposeStatus) {
+			updateBannerHtml(data.banner_html);
+			updatePageContent(data);
+		} else if (countSpan) {
+			updateBannerCount(data.ongoing || 0);
+			if (
+				checksSummaryContainer &&
+				typeof data.checks_summary_html === "string"
+			) {
+				checksSummaryContainer.innerHTML = data.checks_summary_html;
+			}
+			if (filesTableContainer && typeof data.files_table_html === "string") {
+				filesTableContainer.innerHTML = data.files_table_html;
+				reattachCollapseToggleListeners();
+			}
+		}
+		if (isPollingActive(data)) {
+			scheduleNext(pollInterval);
+			return;
+		}
+		hideBanner();
+	}
+
+	function handleResponse(ok, status, data) {
+		setProgressIdle();
+		if (!data) {
+			console.error("Polling response was not JSON:", status);
+			scheduleNext(pollInterval * 2);
+			return;
+		}
+		if (typeof data.redirect_url === "string" && data.redirect_url) {
+			window.location.assign(data.redirect_url);
+			return;
+		}
+		if (!ok) {
+			console.error("Polling status:", status, data.error);
+			if (shouldRetryStatus(status)) {
+				scheduleNext(pollInterval * 2);
+			} else {
+				hideBanner();
+			}
+			return;
+		}
+		handleSuccess(data);
+	}
+
+	function pollOngoingTasks() {
 		setProgressPolling();
-		fetch(apiUrl)
-			.then((response) => {
-				if (!response.ok) throw new Error(`HTTP ${response.status}`);
-				return response.json();
+		fetch(pollUrl)
+			.then(async (response) => {
+				let data = null;
+				try {
+					data = await response.json();
+				} catch {
+					data = null;
+				}
+				return { ok: response.ok, status: response.status, data };
 			})
-			.then((data) => {
-				setProgressIdle();
-				const newCount = data.ongoing || 0;
-				if (newCount !== currentCount) {
-					updateBanner(newCount);
-				}
-				updatePageContent(data);
-				if (newCount > 0) {
-					restartProgress();
-					setTimeout(pollOngoingTasks, pollInterval);
-				}
+			.then(({ ok, status, data }) => {
+				handleResponse(ok, status, data);
 			})
 			.catch((error) => {
 				console.error("Error polling ongoing tasks:", error);
 				setProgressIdle();
-				restartProgress();
-				// Double the interval when there's an error
-				setTimeout(pollOngoingTasks, pollInterval * 2);
+				scheduleNext(pollInterval * 2);
 			});
 	}
 
