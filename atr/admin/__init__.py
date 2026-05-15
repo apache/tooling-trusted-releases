@@ -1294,7 +1294,7 @@ async def validate_jwt_post(
 
 
 async def _check_keys(fix: bool = False) -> str:
-    await cache.email_uid_view_or_live()
+    email_uid_lookup = await cache.email_uid_view_or_live()
     bad_keys = []
     async with db.session() as data:
         keys = await data.public_signing_key().all()
@@ -1304,7 +1304,7 @@ async def _check_keys(fix: bool = False) -> str:
                 uids.append(key.primary_declared_uid)
             if key.secondary_declared_uids:
                 uids.extend(key.secondary_declared_uids)
-            asf_uid = await util.asf_uid_from_uids(uids, use_ldap=False)
+            asf_uid = await util.asf_uid_from_uids(uids, email_uid_lookup, use_ldap=False)
             if asf_uid != key.apache_uid:
                 bad_keys.append(f"{key.fingerprint} detected: {asf_uid}, key: {key.apache_uid}")
             if fix:

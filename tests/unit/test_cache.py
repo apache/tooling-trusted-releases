@@ -268,6 +268,25 @@ async def test_email_uid_refresh_refuses_empty_ldap_mapping(
 
 
 @pytest.mark.asyncio
+async def test_email_uid_startup_load_refreshes_ldap_instead_of_reading_disk(
+    state_dir: pathlib.Path, mock_app: MockApp, monkeypatch: "MonkeyPatch"
+):
+    old_hash = cache._email_uid_hash("old@example.org")
+    new_hash = cache._email_uid_hash("new@example.org")
+
+    async def email_to_uid_map() -> dict[str, str]:
+        return {"new@example.org": "new"}
+
+    monkeypatch.setattr("atr.util.email_to_uid_map", email_to_uid_map)
+
+    await cache.email_uid_save_to_file({old_hash: "old"}, {"old": [old_hash]})
+    await cache.email_uid_startup_load()
+
+    assert mock_app.extensions["email_uid_hashes"] == {new_hash: "new"}
+    assert mock_app.extensions["email_uid_reverse"] == {"new": [new_hash]}
+
+
+@pytest.mark.asyncio
 async def test_email_uid_view_reloads_changed_disk_cache(state_dir: pathlib.Path, mock_app: MockApp):
     old_hash = cache._email_uid_hash("old@example.org")
     new_hash = cache._email_uid_hash("new@example.org")

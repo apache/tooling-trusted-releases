@@ -256,12 +256,7 @@ async def email_uid_save_to_file(hashes: dict[str, str], reverse: dict[str, list
 
 
 async def email_uid_startup_load() -> None:
-    cache_data = await _email_uid_read_from_file_async()
-    if cache_data is not None:
-        _email_uid_update_app_extensions(cache_data.hashes, cache_data.reverse)
-        log.info(f"Loaded {len(cache_data.hashes)} email hashes from cache (refreshed: {cache_data.refreshed})")
-        return
-    log.info("No email-to-UID cache found, fetching from LDAP")
+    log.info("Fetching email-to-UID cache from LDAP at startup")
     try:
         await email_uid_refresh()
     except Exception as e:

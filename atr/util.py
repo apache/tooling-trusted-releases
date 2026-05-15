@@ -128,6 +128,10 @@ class EmailRecipients(Protocol):
     email_bcc: list[str]
 
 
+class EmailUidLookup(Protocol):
+    def get(self, email: str) -> str | None: ...
+
+
 @dataclasses.dataclass(frozen=True)
 class NpmPackInfo:
     name: str
@@ -168,17 +172,7 @@ def as_url(func: Callable, **kwargs: Any) -> str:
     return quart.url_for(annotations["endpoint"], **kwargs)
 
 
-def asf_uid_from_email(email: str) -> str | None:
-    ldap_params = ldap.SearchParameters(email_query=email)
-    ldap.search(ldap_params)
-    if not (ldap_params.results_list and ldap_params.results_list[0].uid):
-        return None
-    return ldap_params.results_list[0].uid[0]
-
-
-async def asf_uid_from_uids(uids: list[str], use_ldap: bool = True) -> str | None:
-    import atr.cache as cache
-
+async def asf_uid_from_uids(uids: list[str], email_uid_lookup: EmailUidLookup, use_ldap: bool = True) -> str | None:
     # Determine ASF UID if not provided
     emails = []
     for uid_str in uids:
@@ -189,14 +183,13 @@ async def asf_uid_from_uids(uids: list[str], use_ldap: bool = True) -> str | Non
             emails.append(email)
     # We did not find a direct @apache.org email address
     # Therefore, search cached LDAP data, then LDAP directly if configured
-    lookup = cache.email_uid_view()
     for email in emails:
-        if asf_uid := lookup.get(email):
+        if asf_uid := email_uid_lookup.get(email):
             return asf_uid
     if use_ldap:
         # Search LDAP directly
         for email in emails:
-            if asf_uid := await asyncio.to_thread(asf_uid_from_email, email):
+            if asf_uid := await asyncio.to_thread(_asf_uid_from_email, email):
                 return asf_uid
     return None
 
@@ -1276,6 +1269,14 @@ def warn_default_tls_settings_if_changed() -> None:
 async def write_session(user_session: sql.UserSession) -> None:
     await session.areplace(user_session)
     quart.g._user_session = user_session
+
+
+def _asf_uid_from_email(email: str) -> str | None:
+    ldap_params = ldap.SearchParameters(email_query=email)
+    ldap.search(ldap_params)
+    if not (ldap_params.results_list and ldap_params.results_list[0].uid):
+        return None
+    return ldap_params.results_list[0].uid[0]
 
 
 async def _create_hard_link_clone_checks(
