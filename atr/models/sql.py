@@ -1022,6 +1022,12 @@ Thanks,
             return False
         return policy.preserve_download_files
 
+    @property
+    def policy_auto_archive_prior_release(self) -> bool:
+        if (policy := self.release_policy) is None:
+            return False
+        return policy.auto_archive_prior_release
+
 
 # ProjectCycle: Project Release
 class ProjectCycle(sqlmodel.SQLModel, table=True):
@@ -1109,6 +1115,9 @@ class Release(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
     )
+    # Set at start time when the user opts in to archiving the prior release
+    # in this cycle when this release is announced.
+    archive_prior_release: bool = sqlmodel.Field(default=False)
 
     check_cache_key: str | None = sqlmodel.Field(default=None, **example("ef0ccb0a-3514-4b65-abcd-879850349f74"))
 
@@ -1718,6 +1727,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     github_finish_workflow_path: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
+    auto_archive_prior_release: bool = sqlmodel.Field(default=False)
     preserve_download_files: bool = sqlmodel.Field(default=False)
 
     # 1-1: ReleasePolicy -> Project
@@ -1747,6 +1757,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             file_tag_mappings=dict(self.file_tag_mappings),
             github_vote_workflow_path=list(self.github_vote_workflow_path),
             github_finish_workflow_path=list(self.github_finish_workflow_path),
+            auto_archive_prior_release=self.auto_archive_prior_release,
             preserve_download_files=self.preserve_download_files,
         )
 

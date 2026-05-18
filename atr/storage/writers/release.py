@@ -616,79 +616,20 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), renamed_count, error_messages
         return None, renamed_count, error_messages
 
-    async def start(self, project_key: safe.ProjectKey, version: safe.VersionKey) -> tuple[sql.Release, sql.Project]:  # noqa: C901
+    async def start(
+        self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool
+    ) -> tuple[sql.Release, sql.Project]:
         """Creates the initial release draft record and revision directory."""
-        # Get the project from the project name
         project = await self.__data.project(
             key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True
         ).get()
         if not project:
             raise storage.AccessError(f"Project {project_key} not found", status=404)
 
-        tests_allowed = config.is_test_mode()
-        committee = project.committee
-        is_test_committee = tests_allowed and (committee is not None) and (committee.key == "test")
-        should_skip_auth = is_test_committee
-
-        if not should_skip_auth:
-            display_name = project.display_name
-            if committee is None:
-                raise storage.AccessError(
-                    f"You must be a member or committer of the {display_name} committee to start a release draft.",
-                    status=403,
-                )
-
-            is_committee_member = self.__asf_uid in committee.committee_members
-            is_committee_committer = self.__asf_uid in committee.committers
-            has_committee_access = is_committee_member or is_committee_committer
-
-            if not has_committee_access:
-                raise storage.AccessError(
-                    f"You must be a member or committer of the {display_name} committee to start a release draft.",
-                    status=403,
-                )
-
-        # TODO: Consider using Release.revision instead of ./latest
-        # Check whether the release already exists
-        if release := await self.__data.release(project_key=project.key, version=str(version)).get():
-            match release.phase:
-                case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-                    phase_desc = "A draft release (being composed)"
-                case sql.ReleasePhase.RELEASE_CANDIDATE:
-                    phase_desc = "A release candidate (being voted on)"
-                case sql.ReleasePhase.RELEASE_PREVIEW:
-                    phase_desc = "A release preview (being finished)"
-                case sql.ReleasePhase.RELEASE:
-                    phase_desc = "A finished release"
-            raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
-
-        # Validate the version name
-        # TODO: We should check that it's bigger than the current version
-        # We have the packaging library as a dependency, but it is Python specific
-        if version_key_error := util.version_key_error(str(version)):
-            raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
-
-        if (project.version_pattern is not None) and (not re.fullmatch(project.version_pattern, str(version))):
-            raise storage.AccessError(
-                f'Version "{version!s}" does not match the project\'s version pattern',
-                status=400,
-            )
-
-        try:
-            cycle_name = cycles.cycle_name_for_version(project, str(version))
-        except ValueError as exc:
-            raise storage.AccessError(str(exc)) from exc
-        cycle_key = f"{project.key}-{cycle_name}"
-
-        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
-            self.__data.add(
-                sql.ProjectCycle(
-                    cycle_key=cycle_key,
-                    cycle=cycle_name,
-                    project_key=project.key,
-                    lts=False,
-                )
-            )
+        self.__assert_can_start(project)
+        await self.__assert_no_existing_release(project, project_key, version)
+        self.__validate_version(project, version)
+        cycle_key = await self.__ensure_project_cycle(project, version)
 
         release = sql.Release(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
@@ -696,6 +637,7 @@ class CommitteeParticipant(FoundationCommitter):
             project=project,
             version=str(version),
             cycle_key=cycle_key,
+            archive_prior_release=auto_archive,
             created=datetime.datetime.now(datetime.UTC),
         )
         self.__data.add(release)
@@ -717,6 +659,69 @@ class CommitteeParticipant(FoundationCommitter):
             created=release.created.isoformat(),
         )
         return release, project
+
+    def __assert_can_start(self, project: sql.Project) -> None:
+        committee = project.committee
+        if config.is_test_mode() and (committee is not None) and (committee.key == "test"):
+            return
+        display_name = project.display_name
+        if committee is None:
+            raise storage.AccessError(
+                f"You must be a member or committer of the {display_name} committee to start a release draft.",
+                status=403,
+            )
+        if (self.__asf_uid in committee.committee_members) or (self.__asf_uid in committee.committers):
+            return
+        raise storage.AccessError(
+            f"You must be a member or committer of the {display_name} committee to start a release draft.",
+            status=403,
+        )
+
+    async def __assert_no_existing_release(
+        self, project: sql.Project, project_key: safe.ProjectKey, version: safe.VersionKey
+    ) -> None:
+        # TODO: Consider using Release.revision instead of ./latest
+        release = await self.__data.release(project_key=project.key, version=str(version)).get()
+        if release is None:
+            return
+        match release.phase:
+            case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+                phase_desc = "A draft release (being composed)"
+            case sql.ReleasePhase.RELEASE_CANDIDATE:
+                phase_desc = "A release candidate (being voted on)"
+            case sql.ReleasePhase.RELEASE_PREVIEW:
+                phase_desc = "A release preview (being finished)"
+            case sql.ReleasePhase.RELEASE:
+                phase_desc = "A finished release"
+        raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
+
+    async def __ensure_project_cycle(self, project: sql.Project, version: safe.VersionKey) -> str:
+        try:
+            cycle_name = cycles.cycle_name_for_version(project, str(version))
+        except ValueError as exc:
+            raise storage.AccessError(str(exc)) from exc
+        cycle_key = f"{project.key}-{cycle_name}"
+        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
+            self.__data.add(
+                sql.ProjectCycle(
+                    cycle_key=cycle_key,
+                    cycle=cycle_name,
+                    project_key=project.key,
+                    lts=False,
+                )
+            )
+        return cycle_key
+
+    def __validate_version(self, project: sql.Project, version: safe.VersionKey) -> None:
+        # TODO: We should check that it's bigger than the current version. We
+        # have the packaging library as a dependency, but it's Python specific.
+        if version_key_error := util.version_key_error(str(version)):
+            raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
+        if (project.version_pattern is not None) and (not re.fullmatch(project.version_pattern, str(version))):
+            raise storage.AccessError(
+                f'Version "{version!s}" does not match the project\'s version pattern',
+                status=400,
+            )
 
     async def upload_file(self, args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
         file_bytes = base64.b64decode(args.content, validate=True)
@@ -1047,6 +1052,89 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def archive(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> str | None:
+        """Archive a published release.
+
+        Marks the release as archived, removes its hard-linked files from the
+        downloads area, and records an ARCHIVE lifecycle event. Returns an
+        error string if the release can't be archived, or None on success.
+        SVN-side handoff to archive.apache.org is not yet implemented.
+        """
+        via = sql.validate_instrumented_attribute
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            _committee=True,
+        ).get()
+        if release is None:
+            return f"Release {project_key!s} {version_key!s} not found"
+        if release.phase != sql.ReleasePhase.RELEASE:
+            return f"Release {project_key!s} {version_key!s} is not in the release phase"
+
+        archive_date = datetime.datetime.now(datetime.UTC)
+        update_stmt = (
+            sqlmodel.update(sql.Release)
+            .where(via(sql.Release.key) == release.key)
+            .where(via(sql.Release.archived).is_(None))
+            .values(archived=archive_date)
+        )
+        update_result = await self.__data.execute_query(update_stmt)
+        if getattr(update_result, "rowcount", 0) != 1:
+            return f"Release {project_key!s} {version_key!s} is already archived"
+
+        await self.__remove_from_downloads(release)
+        # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
+
+        self.__data.add(
+            sql.LifecycleEvent(
+                project_key=release.project_key,
+                cycle_key=release.cycle_key,
+                version_key=release.key,
+                event=sql.LifecycleEventType.ARCHIVE,
+                effective=archive_date,
+                published=archive_date,
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            archived=archive_date.isoformat(),
+        )
+        return None
+
+    async def __remove_from_downloads(self, release: sql.Release) -> None:
+        # Hard-linked downloads share an inode with the finished files, so we
+        # find them by inode rather than path - that way an unknown
+        # download_path_suffix isn't a blocker.
+        finished_dir = paths.release_directory(release)
+        if not await aiofiles.os.path.isdir(finished_dir):
+            return
+        release_inodes: set[int] = set()
+        async for file_path in util.paths_recursive(finished_dir):
+            try:
+                stat_result = await aiofiles.os.stat(finished_dir / file_path)
+                release_inodes.add(stat_result.st_ino)
+            except FileNotFoundError:
+                continue
+        if not release_inodes:
+            return
+        downloads_dir = paths.get_downloads_dir()
+        async for link_path in util.paths_recursive(downloads_dir):
+            full_link_path = downloads_dir / link_path
+            try:
+                link_stat = await aiofiles.os.stat(full_link_path)
+                if link_stat.st_ino in release_inodes:
+                    await aiofiles.os.remove(full_link_path)
+                    log.info(f"Deleted download hard link: {full_link_path}")
+            except FileNotFoundError:
+                continue
 
 
 class FoundationAdmin(FoundationCommitter):

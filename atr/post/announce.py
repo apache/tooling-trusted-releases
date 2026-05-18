@@ -21,6 +21,7 @@ from typing import Literal
 
 import atr.blueprints.post as post
 import atr.construct as construct
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.get as get
 import atr.models.safe as safe
@@ -72,18 +73,9 @@ async def selected(
     URL: /announce/<project_key>/<version_key>
     Handle the announcement form submission and promote the preview to release.
     """
-    permitted_recipients = util.permitted_announce_recipients(session.uid)
+    if response := await _validate_recipients(session, announce_form):
+        return response
 
-    # Validate that the recipients are permitted
-    all_addrs = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
-    for addr in all_addrs:
-        if addr not in permitted_recipients:
-            return await session.form_error(
-                "email_to",
-                f"You are not permitted to send announcements to {addr}",
-            )
-
-    # Get the release to find the revision number
     release = await session.release(
         project_key,
         version_key,
@@ -95,7 +87,6 @@ async def selected(
     )
     preview_revision_number = release.safe_latest_revision_number
 
-    # Validate that the revision number matches
     if announce_form.revision_number != preview_revision_number:
         return await session.redirect(
             get.announce.selected,
@@ -105,32 +96,16 @@ async def selected(
             version_key=str(version_key),
         )
 
-    policy = release.release_policy or release.project.release_policy
-    if policy and policy.file_tag_mappings:
-        missing = []
-        tags = policy.file_tag_mappings.keys()
-        distributions = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
-        for tag in tags:
-            if tag not in distributions:
-                missing.append(tag)
-        if missing:
-            return await session.redirect(
-                get.announce.selected,
-                error=f"This release cannot be announced until the following distributions have been recorded: {
-                    ', '.join(missing)
-                }",
-                project_key=str(project_key),
-                version_key=str(version_key),
-            )
+    if response := await _validate_distributions(session, release, project_key, version_key):
+        return response
+    if response := await _validate_subject_template_hash(session, project_key, announce_form):
+        return response
 
-    # Validate that the subject template hasn't changed
-    subject_template = await construct.announce_release_subject_default(project_key)
-    current_hash = construct.template_hash(subject_template)
-    if current_hash != announce_form.subject_template_hash:
-        return await session.form_error(
-            "subject_template_hash",
-            "The subject template has been modified since you loaded the form. Please reload and try again.",
-        )
+    # Re-resolve the prior release server-side rather than trusting any value
+    # the form might submit. The form's auto_archive field is the opt-in only.
+    archive_prior: sql.Release | None = None
+    if announce_form.auto_archive and release.project.policy_auto_archive_prior_release:
+        archive_prior = await interaction.prior_release_for_archive(release.project, release.version)
 
     try:
         async with storage.write_as_project_committee_member(project_key, session) as wacm:
@@ -146,6 +121,14 @@ async def selected(
                 email_cc=announce_form.email_cc,
                 email_bcc=announce_form.email_bcc,
             )
+            if archive_prior is not None:
+                archive_error = await wacm.release.archive(project_key, archive_prior.safe_version_key)
+                if archive_error is not None:
+                    raise storage.AccessError(
+                        f"Release announced, but archiving prior release"
+                        f" '{archive_prior.version}' failed: {archive_error}",
+                        status=500,
+                    )
     except storage.AccessError as e:
         return await session.redirect(
             get.announce.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)
@@ -156,4 +139,55 @@ async def selected(
         routes_release_finished,
         success="Preview successfully announced",
         project_key=str(project_key),
+    )
+
+
+async def _validate_distributions(
+    session: web.Committer,
+    release: sql.Release,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> web.WerkzeugResponse | None:
+    policy = release.release_policy or release.project.release_policy
+    if not (policy and policy.file_tag_mappings):
+        return None
+    published = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
+    missing = [tag for tag in policy.file_tag_mappings if tag not in published]
+    if not missing:
+        return None
+    return await session.redirect(
+        get.announce.selected,
+        error=f"This release cannot be announced until the following distributions have been recorded: {
+            ', '.join(missing)
+        }",
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )
+
+
+async def _validate_recipients(
+    session: web.Committer, announce_form: shared.announce.AnnounceForm
+) -> web.WerkzeugResponse | None:
+    permitted = util.permitted_announce_recipients(session.uid)
+    addresses = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
+    for addr in addresses:
+        if addr not in permitted:
+            return await session.form_error(
+                "email_to",
+                f"You are not permitted to send announcements to {addr}",
+            )
+    return None
+
+
+async def _validate_subject_template_hash(
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    announce_form: shared.announce.AnnounceForm,
+) -> web.WerkzeugResponse | None:
+    subject_template = await construct.announce_release_subject_default(project_key)
+    if construct.template_hash(subject_template) == announce_form.subject_template_hash:
+        return None
+    return await session.form_error(
+        "subject_template_hash",
+        "The subject template has been modified since you loaded the form. Please reload and try again.",
     )

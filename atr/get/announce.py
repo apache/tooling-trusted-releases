@@ -23,6 +23,7 @@ import markupsafe
 import atr.blueprints.get as get
 import atr.config as config
 import atr.construct as construct
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.projects as projects
 import atr.htm as htm
@@ -197,13 +198,13 @@ async def _render_page(
     render.html_nav_phase(page, release.project.key, release.version, staging=False)
 
     page.h1[
-        "Announce ",
+        "Publish ",
         htm.strong[release.project.short_display_name],
         " ",
         htm.em[release.version],
     ]
     page.append(_render_release_card(release))
-    page.h2["Announce this release"]
+    page.h2["Publish and announce this release"]
 
     if banner := shared.web.archived_project_banner(release.project):
         page.append(banner)
@@ -248,17 +249,29 @@ async def _render_page(
         # Custom widget for download_path_suffix with custom documentation
         download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
 
+        prior_release_version = ""
+        if release.archive_prior_release and release.project.policy_auto_archive_prior_release:
+            prior = await interaction.prior_release_for_archive(release.project, release.version)
+            if prior is not None:
+                prior_release_version = prior.version
+
         defaults_dict = {
             "revision_number": release.unwrap_revision_number,
             "subject_template_hash": subject_template_hash,
             "body": default_body,
+            "auto_archive": bool(release.archive_prior_release),
+            "auto_archive_release": prior_release_version or "",
         }
 
+        skip = ["email_cc", "email_bcc"]
+        if not prior_release_version:
+            # Prior release version will only be set if the options for archival are True *and* we found a release
+            skip.extend(["auto_archive", "auto_archive_release"])
         await form.render_block(
             page,
             model_cls=shared.announce.AnnounceForm,
             action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
-            submit_label="Send announcement email",
+            submit_label="Publish & announce",
             defaults=defaults_dict,
             custom={
                 "email_to": to_radios,
@@ -266,7 +279,7 @@ async def _render_page(
                 "body": custom_body_widget,
                 "download_path_suffix": download_path_widget,
             },
-            skip=["email_cc", "email_bcc"],
+            skip=skip,
             form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
             border=True,
             wider_widgets=True,

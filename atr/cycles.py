@@ -28,9 +28,14 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final
 
+import semver
+
 import atr.models.sql as sql
 
 if TYPE_CHECKING:
+    import datetime
+    from collections.abc import Iterable
+
     import atr.db as db
 
 _DEFAULT_CYCLE: Final[str] = "default"
@@ -63,6 +68,48 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
     return cycle
 
 
+def prior_release_in_cycle(
+    project: sql.Project,
+    version: str,
+    candidates: Iterable[sql.Release],
+) -> sql.Release | None:
+    """Pick the release immediately prior to `version` within its cycle.
+
+    Filters `candidates` to those in the same cycle as `version`, re-resolving
+    cycle membership through `cycle_name_for_version` so that any change to the
+    project's `cycle_match` since the candidates were started is honoured.
+    The prior release is then chosen per the project's `version_method`:
+
+      - SIMPLE: the most recently released candidate
+      - SEMVER: the highest semver version strictly less than `version`
+      - CALVER: not supported yet, returns None
+    """
+    try:
+        target_cycle = cycle_name_for_version(project, version)
+    except ValueError:
+        return None
+
+    same_cycle: list[sql.Release] = []
+    for candidate in candidates:
+        try:
+            candidate_cycle = cycle_name_for_version(project, candidate.version)
+        except ValueError:
+            continue
+        if candidate_cycle == target_cycle:
+            same_cycle.append(candidate)
+
+    if not same_cycle:
+        return None
+
+    match project.version_method:
+        case sql.VersionMethod.SIMPLE:
+            return _prior_release_by_released(same_cycle)
+        case sql.VersionMethod.SEMVER:
+            return _prior_release_semver(version, same_cycle)
+        case sql.VersionMethod.CALVER:
+            return None
+
+
 async def reassign_release_cycles(data: db.Session, project: sql.Project) -> None:
     """Re-resolve cycle membership for every release in the project.
 
@@ -89,3 +136,36 @@ async def reassign_release_cycles(data: db.Session, project: sql.Project) -> Non
                 )
             )
         release.cycle_key = new_cycle_key
+
+
+def _prior_release_by_released(candidates: list[sql.Release]) -> sql.Release | None:
+    timed: list[tuple[datetime.datetime, sql.Release]] = [(c.released, c) for c in candidates if c.released is not None]
+    if not timed:
+        return None
+    timed.sort(key=lambda pair: pair[0], reverse=True)
+    return timed[0][1]
+
+
+def _prior_release_semver(version: str, candidates: list[sql.Release]) -> sql.Release | None:
+    target = _semver_parse(version)
+    if target is None:
+        return None
+    ranked: list[tuple[semver.VersionInfo, sql.Release]] = []
+    for candidate in candidates:
+        parsed = _semver_parse(candidate.version)
+        if parsed is None:
+            continue
+        if parsed >= target:
+            continue
+        ranked.append((parsed, candidate))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return ranked[0][1]
+
+
+def _semver_parse(version_str: str) -> semver.VersionInfo | None:
+    try:
+        return semver.VersionInfo.parse(version_str.lstrip("v"))
+    except ValueError:
+        return None

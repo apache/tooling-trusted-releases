@@ -35,6 +35,13 @@ class AnnounceForm(form.Form):
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
     download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
+    auto_archive: form.Bool = form.label(
+        "Auto archive prior release",
+        "If set, the release shown below will be auto-archived",
+        widget=form.Widget.CHECKBOX,
+        default=False,
+    )
+    auto_archive_release: str = form.label("Version to archive", widget=form.Widget.STATIC, default="")
     confirm_announce: Literal["CONFIRM"] = form.label(
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",

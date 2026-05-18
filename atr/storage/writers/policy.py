@@ -262,6 +262,7 @@ class CommitteeMember(CommitteeParticipant):
         self.__set_announce_release_subject(form.announce_release_subject or "", project, release_policy)
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
         release_policy.preserve_download_files = form.preserve_download_files
+        release_policy.auto_archive_prior_release = form.archive_prior_release
 
         await self.__commit_and_log(str(project_key))
 

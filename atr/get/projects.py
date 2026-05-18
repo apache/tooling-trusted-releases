@@ -235,7 +235,7 @@ async def view(
 
     tab_items: list[htm.Tab] = []
 
-    if is_committee_member or is_privileged:
+    if can_edit:
         tab_items.append(
             htm.Tab(
                 key="releases",
@@ -598,6 +598,7 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
                 "announce_release_subject": project.policy_announce_release_subject or "",
                 "announce_release_template": project.policy_announce_release_template or "",
                 "preserve_download_files": project.policy_preserve_download_files,
+                "archive_prior_release": project.policy_auto_archive_prior_release,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
@@ -607,6 +608,7 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
                 "announce_release_subject": announce_release_subject_widget,
                 "announce_release_template": announce_release_template_widget,
             },
+            skip=["archive_prior_release"] if not project.cycle_match else [],
         )
     return card.collect()
 

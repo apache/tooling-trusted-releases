@@ -29,6 +29,10 @@ class StartReleaseForm(form.Form):
         " ATR generates a unique revision serial number for each voting round,"
         " and you can also set your own tag before a vote starts.",
     )
+    auto_archive_prior: form.Bool = form.label(
+        "Auto archive prior release",
+        "If set, release of this version will auto-archive the prior release in the cycle",
+    )
 
     @pydantic.field_validator("version_key", mode="after")
     @classmethod
