@@ -72,6 +72,7 @@ class Widget(enum.Enum):
     NUMBER = "number"
     RADIO = "radio"
     SELECT = "select"
+    STATIC = "static"
     TEXT = "text"
     TEXTAREA = "textarea"
     URL = "url"
@@ -173,6 +174,7 @@ def label(
     default: Any = ...,
     widget: Widget | None = None,
     max_length: int | None = None,
+    readonly: bool = False,
     **kwargs,
 ) -> Any:
     extra: dict[str, Any] = {}
@@ -180,6 +182,7 @@ def label(
         extra["widget"] = widget.value
     if documentation is not None:
         extra["documentation"] = documentation
+    extra["readonly"] = readonly
     if len(kwargs) > 0:
         extra.update(kwargs)
     return pydantic.Field(default, description=description, json_schema_extra=extra, max_length=max_length)
@@ -711,6 +714,8 @@ def _get_widget_classes(widget_type: Widget, has_errors: list[str] | None) -> st
             base_class = "form-select"
         case Widget.CHECKBOX | Widget.RADIO | Widget.CHECKBOXES:
             return "form-check-input"
+        case Widget.STATIC:
+            return "form-control-plaintext"
         case _:
             base_class = "form-control"
 
@@ -965,16 +970,20 @@ def _render_widget(  # noqa: C901
     widget_type = _get_widget_type(field_info)
     widget_classes = _get_widget_classes(widget_type, field_errors)
 
+    extra = field_info.json_schema_extra
+    is_readonly = bool(extra.get("readonly", False)) if isinstance(extra, dict) else False
+
     base_attrs: dict[str, str] = {"name": field_name, "id": field_name, "class_": widget_classes}
+    if is_readonly:
+        base_attrs["readonly"] = ""
 
     elements: list[htm.Element | htm.VoidElement] = []
 
     match widget_type:
         case Widget.CHECKBOX:
             attrs: dict[str, str] = {
+                **base_attrs,
                 "type": "checkbox",
-                "name": field_name,
-                "id": field_name,
                 "class_": "form-check-input",
             }
             if field_value:
@@ -1001,8 +1010,8 @@ def _render_widget(  # noqa: C901
             for val, label in choices:
                 checkbox_id = f"{field_name}_{val}"
                 checkbox_attrs: dict[str, str] = {
+                    **base_attrs,
                     "type": "checkbox",
-                    "name": field_name,
                     "id": checkbox_id,
                     "value": val,
                     "class_": "form-check-input",
@@ -1067,8 +1076,8 @@ def _render_widget(  # noqa: C901
             for val, label in choices:
                 radio_id = f"{field_name}_{val}"
                 radio_attrs: dict[str, str] = {
+                    **base_attrs,
                     "type": "radio",
-                    "name": field_name,
                     "id": radio_id,
                     "value": val,
                     "class_": "form-check-input",
@@ -1105,6 +1114,12 @@ def _render_widget(  # noqa: C901
                 for val, label in choices
             ]
             widget = htpy.select(**base_attrs)[options]
+
+        case Widget.STATIC:
+            # Display-only - no input element, value comes from defaults and is
+            # never submitted back. Pydantic still needs a sensible default so
+            # POST validation doesn't reject the form when this field is absent.
+            widget = htpy.div(id=field_name, class_=widget_classes)[str(field_value) if field_value else ""]
 
         case Widget.TEXT:
             attrs = {**base_attrs, "type": "text"}

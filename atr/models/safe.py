@@ -333,6 +333,11 @@ type OptionalRevisionNumber = Annotated[
     pydantic.BeforeValidator(_empty_to_none),
 ]
 
+type OptionalVersionKey = Annotated[
+    VersionKey | None,
+    pydantic.BeforeValidator(_empty_to_none),
+]
+
 
 def _assert_standard_safe_syntax(value: str) -> None:
     if unicodedata.normalize("NFC", value) != value:

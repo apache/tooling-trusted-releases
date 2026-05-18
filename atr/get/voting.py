@@ -203,7 +203,7 @@ async def _render_page(
         htm.em[release.version],
     ]
 
-    if banner := shared.web.archived_project_banner(release.project):
+    if banner := render.archived_project_banner(release.project):
         page.append(banner)
 
     page.div(".px-3.py-4.mb-4.bg-light.border.rounded")[

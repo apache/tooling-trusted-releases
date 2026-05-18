@@ -44,6 +44,7 @@ async def selected(
             new_release, _project = await wacp.release.start(
                 project_key,
                 safe.VersionKey(start_release_form.version_key),
+                start_release_form.auto_archive_prior,
             )
 
         return await session.redirect(

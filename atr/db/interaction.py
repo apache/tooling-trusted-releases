@@ -29,6 +29,7 @@ import sqlmodel
 
 import atr.attestable as attestable
 import atr.config as config
+import atr.cycles as cycles
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -530,6 +531,20 @@ async def previous_round_one_vote_seq(
             .where(sql.BallotPaper.vote_seq < current_vote_seq)
         )
         return (await data.execute(query)).scalar_one_or_none()
+
+
+async def prior_release_for_archive(project: sql.Project, version: str) -> sql.Release | None:
+    """Find the prior release in the same cycle still eligible for archival."""
+    via = sql.validate_instrumented_attribute
+    query = sqlmodel.select(sql.Release).where(
+        sql.Release.project_key == project.key,
+        sql.Release.phase == sql.ReleasePhase.RELEASE,
+        via(sql.Release.archived).is_(None),
+    )
+    async with db.session() as data:
+        result = await data.execute(query)
+        candidates = list(result.scalars().all())
+    return cycles.prior_release_in_cycle(project, version, candidates)
 
 
 async def release_current_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:

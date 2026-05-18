@@ -733,7 +733,7 @@ def _render_vote_delivery(
         ]
     else:
         page.p["Your vote will be sent to ", htpy.code[vote_recipient], "."]
-    if banner := shared.web.archived_project_banner(release.project):
+    if banner := render.archived_project_banner(release.project):
         page.append(banner)
 
 

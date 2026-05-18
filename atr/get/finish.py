@@ -310,7 +310,7 @@ async def _render_page(
         htm.em[release.version],
     ]
 
-    if banner := shared.web.archived_project_banner(release.project):
+    if banner := render.archived_project_banner(release.project):
         page.append(banner)
 
     # Release info card
@@ -460,7 +460,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 ],
                 htm.a(
                     f".btn{announce_classes}.me-2",
-                    title=f"Announce and publish {release.key}",
+                    title=f"Publish and announce {release.key}",
                     href=util.as_url(
                         announce.selected,
                         project_key=release.project.key,
@@ -470,7 +470,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     else None,
                 )[
                     htm.icon("check-circle"),
-                    " Announce and publish",
+                    " Publish and announce",
                 ],
                 htm.span(".page-preview-meta-item.page-extra-muted")[f"{announce_disable_message}"],
             ],

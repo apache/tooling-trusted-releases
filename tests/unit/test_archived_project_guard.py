@@ -21,7 +21,7 @@ import htpy
 import pytest
 
 import atr.models.sql as sql
-import atr.shared.web as shared_web
+import atr.render as render
 import atr.storage as storage
 
 
@@ -39,12 +39,12 @@ def test_ensure_project_active_raises_for_retired() -> None:
 
 def test_archived_project_banner_returns_none_for_active() -> None:
     project = SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
-    assert shared_web.archived_project_banner(project) is None
+    assert render.archived_project_banner(project) is None
 
 
 def test_archived_project_banner_returns_element_for_retired() -> None:
     project = SimpleNamespace(status=sql.ProjectStatus.RETIRED)
-    banner = shared_web.archived_project_banner(project)
+    banner = render.archived_project_banner(project)
     assert isinstance(banner, htpy.Element)
     html = str(banner)
     assert "alert-warning" in html

@@ -89,7 +89,7 @@ def test_path_rejects_hidden_directory(page_announce: Page) -> None:
 
 def test_submit_button_disabled_until_confirm_typed(page_announce: Page) -> None:
     """The submit button should be disabled until CONFIRM is typed."""
-    submit_button = page_announce.get_by_role("button", name="Send announcement email")
+    submit_button = page_announce.get_by_role("button", name="Publish & announce")
     confirm_input = page_announce.locator("#confirm_announce")
 
     expect(submit_button).to_be_disabled()

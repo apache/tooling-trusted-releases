@@ -21,6 +21,7 @@ import pathlib
 import time
 from typing import TYPE_CHECKING, Final
 
+import e2e.announce.helpers as announce_helpers
 import e2e.helpers as helpers
 import pytest
 
@@ -147,3 +148,93 @@ def _wait_for_vote_start_readiness(
         if time.monotonic() > deadline:
             raise TimeoutError(f"Checks did not finish for {checks_path} within {timeout}s")
         time.sleep(0.5)
+
+
+@pytest.fixture(scope="module")
+def auto_archive_context(browser: Browser) -> Generator[BrowserContext]:
+    """Build a published prior release and a current release sitting on announce."""
+    context = browser.new_context(
+        ignore_https_errors=True,
+        permissions=["clipboard-read", "clipboard-write"],
+    )
+    page = context.new_page()
+
+    helpers.log_in(page)
+
+    helpers.delete_release_if_exists(page, PROJECT_KEY, announce_helpers.CURRENT_VERSION)
+    helpers.delete_release_if_exists(page, PROJECT_KEY, announce_helpers.PRIOR_VERSION)
+
+    # cycle_match has to be set before policy, otherwise the finish-policy form
+    # skips the auto-archive toggle entirely.
+    announce_helpers.ensure_cycle_match(page, announce_helpers.CYCLE_MATCH)
+    announce_helpers.ensure_policy_auto_archive(page, enabled=True)
+
+    _run_release_to_finish(context, page, announce_helpers.PRIOR_VERSION, opt_in_archive=False)
+    _publish_release(page, announce_helpers.PRIOR_VERSION)
+
+    _run_release_to_finish(context, page, announce_helpers.CURRENT_VERSION, opt_in_archive=True)
+
+    page.close()
+
+    yield context
+
+    context.close()
+
+
+@pytest.fixture
+def page_auto_archive_announce(auto_archive_context: BrowserContext) -> Generator[Page]:
+    page = auto_archive_context.new_page()
+    helpers.visit(page, announce_helpers.CURRENT_ANNOUNCE_URL)
+    yield page
+    page.close()
+
+
+def _run_release_to_finish(context: BrowserContext, page: Page, version: str, opt_in_archive: bool) -> None:
+    helpers.visit(page, f"/start/{PROJECT_KEY}")
+    page.locator("input#version_key").fill(version)
+    if opt_in_archive:
+        page.locator("input#auto_archive_prior").check()
+    page.get_by_role("button", name="Start new release").click()
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{version}")
+
+    helpers.visit(page, f"/upload/{PROJECT_KEY}/{version}")
+    page.locator('input[name="file_data"]').set_input_files(
+        [
+            f"{CURRENT_DIR}/../test_files/{FILE_NAME}",
+            f"{CURRENT_DIR}/../test_files/{FILE_NAME}.sha512",
+            f"{CURRENT_DIR}/../test_files/{FILE_NAME}.asc",
+        ]
+    )
+    page.get_by_role("button", name="Add files").click()
+    page.wait_for_url(f"**/compose/{PROJECT_KEY}/{version}")
+
+    helpers.wait_for_upload_and_tasks(page, f"/compose/{PROJECT_KEY}/{version}", FILE_NAME)
+    vote_path = page.locator("#start-vote-button").get_attribute("href")
+    if vote_path is None:
+        raise RuntimeError(f"start-vote-button href missing on the compose page for {version}")
+    _wait_for_vote_start_readiness(context, vote_path)
+
+    helpers.visit(page, f"/compose/{PROJECT_KEY}/{version}")
+    page.locator('a[title="Start a vote on this draft"]').click()
+    page.wait_for_load_state()
+
+    page.locator("input#vote_duration").fill("0")
+    page.get_by_role("button", name="Send vote email").click()
+    page.wait_for_url(f"**/vote/{PROJECT_KEY}/{version}")
+
+    helpers.visit(page, f"/vote/{PROJECT_KEY}/{version}")
+    _poll_for_vote_thread_link(page)
+
+    page.get_by_role("link", name="Resolve vote").click()
+    page.wait_for_url(f"**/resolve/{PROJECT_KEY}/{version}")
+
+    page.locator('input[name="vote_result"][value="Passed"]').check()
+    page.get_by_role("button", name="Resolve vote").click()
+    page.wait_for_url(f"**/finish/{PROJECT_KEY}/{version}")
+
+
+def _publish_release(page: Page, version: str) -> None:
+    helpers.visit(page, f"/announce/{PROJECT_KEY}/{version}")
+    page.locator("input#confirm_announce").fill("CONFIRM")
+    page.get_by_role("button", name="Publish & announce").click()
+    page.wait_for_url(f"**/releases/finished/{PROJECT_KEY}**")

@@ -16,12 +16,19 @@
 # under the License.
 
 import os
+import pathlib
 import time
 from typing import Any, Final
 
 from playwright.sync_api import APIRequestContext, Page
 
 _ATR_BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
+
+_TEST_KEY_FILE: Final[pathlib.Path] = (
+    pathlib.Path(__file__).parent.resolve() / "test_files" / "ATR_Test_0x1913BD07F118B758_public.asc"
+)
+_TEST_KEY_ID: Final[str] = "1913BD07F118B758"
+_TEST_KEY_COMMITTEE: Final[str] = "test"
 
 
 def api_get(request: APIRequestContext, path: str) -> dict[str, Any]:
@@ -50,6 +57,23 @@ def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> 
 
 def log_in(page: Page) -> None:
     page.goto(f"{_ATR_BASE_URL}/test/login")
+    page.wait_for_load_state()
+    ensure_test_user_key(page)
+
+
+def ensure_test_user_key(page: Page) -> None:
+    """Make sure the bundled OpenPGP key is associated with the test user.
+
+    Idempotent - if the key already shows up on the user's keys page, this
+    is a no-op. Anything that calls log_in() gets this for free.
+    """
+    visit(page, "/keys")
+    if page.get_by_text(_TEST_KEY_ID, exact=False).count() > 0:
+        return
+    visit(page, "/keys/add")
+    page.locator('input[name="public_key_file"]').set_input_files(str(_TEST_KEY_FILE))
+    page.locator(f'input[name="selected_committees"][value="{_TEST_KEY_COMMITTEE}"]').check()
+    page.get_by_role("button", name="Add OpenPGP key").click()
     page.wait_for_load_state()
 
 

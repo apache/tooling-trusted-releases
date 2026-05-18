@@ -1260,3 +1260,11 @@ td.atr-checkbox-col {
 .atr-w-6em {
     width: 6em;
 }
+
+.atr-archived-release {
+    background-color: #f8f9fa;
+}
+
+.atr-archived-release .card-title {
+    color: #6c757d;
+}

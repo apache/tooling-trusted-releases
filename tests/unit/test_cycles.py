@@ -15,11 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 from types import SimpleNamespace
 
 import pytest
 
 import atr.cycles as cycles
+import atr.models.sql as sql
+
+
+def _release(version: str, released: datetime.datetime | None = None) -> SimpleNamespace:
+    return SimpleNamespace(version=version, released=released)
+
+
+def _ts(day: int) -> datetime.datetime:
+    return datetime.datetime(2026, 1, day, 0, 0, 0, tzinfo=datetime.UTC)
 
 
 def test_cycle_name_returns_default_when_cycle_match_unset():
@@ -53,3 +63,109 @@ def test_cycle_name_raises_when_pattern_has_no_capture_groups():
     project = SimpleNamespace(key="example", cycle_match=r"^\d+\.\d+\.\d+$")
     with pytest.raises(ValueError, match="no capture groups"):
         cycles.cycle_name_for_version(project, "1.0.0")
+
+
+def test_prior_release_simple_returns_most_recently_released():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    candidates = [
+        _release("1.0.0", _ts(1)),
+        _release("1.1.0", _ts(5)),
+        _release("1.0.1", _ts(3)),
+    ]
+    prior = cycles.prior_release_in_cycle(project, "1.2.0", candidates)
+    assert prior is not None
+    assert prior.version == "1.1.0"
+
+
+def test_prior_release_simple_returns_none_when_no_candidates():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    assert cycles.prior_release_in_cycle(project, "1.0.0", []) is None
+
+
+def test_prior_release_simple_skips_candidates_without_released_date():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    candidates = [_release("1.0.0", None), _release("1.1.0", None)]
+    assert cycles.prior_release_in_cycle(project, "1.2.0", candidates) is None
+
+
+def test_prior_release_filters_to_same_cycle_for_semver():
+    # Major version cycle, candidate in 1.x must not be picked when target is 2.x
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=r"^(\d+)\.\d+\.\d+$",
+        version_method=sql.VersionMethod.SEMVER,
+    )
+    candidates = [
+        _release("1.9.0", _ts(1)),
+        _release("2.0.0", _ts(5)),
+        _release("2.0.1", _ts(10)),
+    ]
+    prior = cycles.prior_release_in_cycle(project, "2.1.0", candidates)
+    assert prior is not None
+    assert prior.version == "2.0.1"
+
+
+def test_prior_release_semver_picks_highest_strictly_below_target():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    # Released-date ordering deliberately reversed to prove we sort by version.
+    candidates = [
+        _release("1.2.0", _ts(1)),
+        _release("1.0.1", _ts(10)),
+        _release("1.1.0", _ts(5)),
+    ]
+    prior = cycles.prior_release_in_cycle(project, "1.3.0", candidates)
+    assert prior is not None
+    assert prior.version == "1.2.0"
+
+
+def test_prior_release_semver_excludes_versions_equal_to_target():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("1.0.0", _ts(1)), _release("1.2.0", _ts(5))]
+    prior = cycles.prior_release_in_cycle(project, "1.2.0", candidates)
+    assert prior is not None
+    assert prior.version == "1.0.0"
+
+
+def test_prior_release_semver_excludes_versions_above_target():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("1.0.0", _ts(1)), _release("2.0.0", _ts(5))]
+    prior = cycles.prior_release_in_cycle(project, "1.5.0", candidates)
+    assert prior is not None
+    assert prior.version == "1.0.0"
+
+
+def test_prior_release_semver_skips_unparsable_versions():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("not-a-semver", _ts(1)), _release("1.0.0", _ts(5))]
+    prior = cycles.prior_release_in_cycle(project, "1.1.0", candidates)
+    assert prior is not None
+    assert prior.version == "1.0.0"
+
+
+def test_prior_release_semver_strips_v_prefix():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("v1.0.0", _ts(1)), _release("v1.1.0", _ts(5))]
+    prior = cycles.prior_release_in_cycle(project, "v1.2.0", candidates)
+    assert prior is not None
+    assert prior.version == "v1.1.0"
+
+
+def test_prior_release_calver_returns_none():
+    # CALVER ordering not yet implemented - confirm explicit None contract.
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=r"^(\d{4})\.\d+$",
+        version_method=sql.VersionMethod.CALVER,
+    )
+    candidates = [_release("2025.1", _ts(1)), _release("2025.2", _ts(5))]
+    assert cycles.prior_release_in_cycle(project, "2025.3", candidates) is None
+
+
+def test_prior_release_returns_none_when_target_version_invalid_for_cycle():
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=r"^(\d+)\.\d+\.\d+$",
+        version_method=sql.VersionMethod.SEMVER,
+    )
+    candidates = [_release("1.0.0", _ts(1))]
+    assert cycles.prior_release_in_cycle(project, "garbage", candidates) is None

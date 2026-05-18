@@ -267,6 +267,12 @@ class EditVersionSchemeForm(form.Form):
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    archive_prior_release: form.Bool = form.label(
+        "Allow auto-archive",
+        "If enabled, allows a new release to auto archive the prior release in the cycle",
+        widget=form.Widget.CHECKBOX,
+        default=False,
+    )
     announce_release_subject: str = form.label(
         "Announce release subject",
         widget=form.Widget.CUSTOM,
