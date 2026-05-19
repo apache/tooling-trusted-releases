@@ -91,10 +91,7 @@ async def selected(
         default_subject_template, default_body_template, options
     )
 
-    description_download_prefix = paths.committee_downloads_url(
-        config.get().APP_HOST,
-        committee,
-    )
+    description_download_prefix = paths.committee_downloads_dist_url(committee, config.get().APP_HOST)
     preview_url = util.as_url(
         post.announce.preview,
         project_key=release.project.key,

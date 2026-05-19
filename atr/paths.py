@@ -16,10 +16,13 @@
 # under the License.
 
 import pathlib
+from typing import Final
 
 import atr.config as config
 import atr.models.safe as safe
 import atr.models.sql as sql
+
+SVN_DOWNLOAD_URL_PREFIX: Final = "https://dist.apache.org/repos/dist/atr/"
 
 
 def base_path_for_revision(
@@ -33,6 +36,13 @@ def committee_downloads_dir(committee: sql.Committee) -> safe.StatePath:
     if committee.is_podling:
         return downloads_dir / "incubator" / committee.key
     return downloads_dir / committee.key
+
+
+def committee_downloads_dist_url(committee: sql.Committee, host: str) -> str:
+    if config.get().SVN_PUBLISH_URL:
+        relpath = committee_downloads_dir(committee).path.relative_to(get_downloads_dir().path)
+        return f"{SVN_DOWNLOAD_URL_PREFIX}{relpath}"
+    return committee_downloads_url(host, committee)
 
 
 def committee_downloads_url(host: str, committee: sql.Committee) -> str:
