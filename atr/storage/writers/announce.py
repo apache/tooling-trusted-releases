@@ -203,8 +203,15 @@ class CommitteeMember(CommitteeParticipant):
             if download_path_suffix is not None:
                 svn_relpath = svn_relpath / download_path_suffix.as_path()
             target_url = f"{svn_publish_url.rstrip('/')}/{svn_relpath}"
+            log_message = (
+                f"Publish {project_key!s}-{version_key!s}\n\n"
+                f"Committee: {committee.key}\n"
+                f"Project: {project_key!s}\n"
+                f"Version: {version_key!s}\n"
+                "Tool: ATR"
+            )
             try:
-                await svn.publish_release(unfinished_path.path, target_url, self.__asf_uid, subject)
+                await svn.publish_release(unfinished_path.path, target_url, self.__asf_uid, log_message)
             except svn.CommandExecutionError as e:
                 if "E160020" in e.output:
                     match = re.search(r"path '([^']+)'", e.output)
