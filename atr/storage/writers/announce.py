@@ -22,11 +22,13 @@ import asyncio
 import copy
 import datetime
 import re
+from typing import Final
 
 import aiofiles.os
 import aioshutil
 import sqlmodel
 
+import atr.analysis as analysis
 import atr.config as config
 import atr.construct as construct
 import atr.db as db
@@ -38,7 +40,11 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
 import atr.svn as svn
+import atr.tasks.checks as checks
+import atr.tasks.checks.signature as signature
 import atr.util as util
+
+_SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
 
 
 class GeneralPublic:
@@ -198,6 +204,7 @@ class CommitteeMember(CommitteeParticipant):
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
 
+        published_revision: int | None = None
         if svn_publish_url := config.get().SVN_PUBLISH_URL:
             svn_relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
             if download_path_suffix is not None:
@@ -211,7 +218,9 @@ class CommitteeMember(CommitteeParticipant):
                 "Tool: ATR"
             )
             try:
-                await svn.publish_release(unfinished_path.path, target_url, self.__asf_uid, log_message)
+                published_revision = await svn.publish_release(
+                    unfinished_path.path, target_url, self.__asf_uid, log_message
+                )
             except svn.CommandExecutionError as e:
                 if "E160020" in e.output:
                     match = re.search(r"path '([^']+)'", e.output)
@@ -287,6 +296,9 @@ class CommitteeMember(CommitteeParticipant):
                     reference_urls=[f"https://lists.apache.org/list.html?{email_to}"],
                 )
             )
+            await self.__write_artifact_rows(
+                release, finished_path, int(str(preview_revision_number)), published_revision
+            )
             await self.__data.commit()
         except storage.AccessError:
             raise
@@ -359,3 +371,60 @@ class CommitteeMember(CommitteeParticipant):
             via(sql.Revision.release_key) == release.key,
         )
         await self.__data.execute_query(delete_revisions_stmt)
+
+    async def __signature_fingerprint(self, release_key: str, signature_path: str) -> str | None:
+        via = sql.validate_instrumented_attribute
+        results = list(
+            await self.__data.check_result(
+                release_key=release_key,
+                checker=_SIGNATURE_CHECKER_KEY,
+                primary_rel_path=signature_path,
+                status=sql.CheckResultStatus.NOTE,
+            )
+            .order_by(via(sql.CheckResult.created).desc())
+            .all()
+        )
+        if not results:
+            return None
+        payload = results[0].data if isinstance(results[0].data, dict) else {}
+        candidate = payload.get("fingerprint")
+        if isinstance(candidate, str) and (stripped := candidate.strip()):
+            return stripped.lower()
+        return None
+
+    async def __write_artifact_rows(
+        self,
+        release: sql.Release,
+        finished_path: safe.StatePath,
+        revision_seq: int,
+        svn_revision: int | None,
+    ) -> None:
+        rel_paths = {str(p) async for p in util.paths_recursive(finished_path)}
+        classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
+
+        for rel in sorted(rel_paths):
+            if not analysis.is_artifact(rel):
+                continue
+            signature_path = f"{rel}.asc" if f"{rel}.asc" in rel_paths else None
+            checksum_path: str | None = None
+            for suffix in (".sha512", ".sha256"):
+                candidate = f"{rel}{suffix}"
+                if candidate in rel_paths:
+                    checksum_path = candidate
+                    break
+            fingerprint = (
+                await self.__signature_fingerprint(release.key, signature_path) if signature_path is not None else None
+            )
+            self.__data.add(
+                sql.Artifact(
+                    project_key=release.project_key,
+                    version=release.version,
+                    artifact_path=rel,
+                    release_key=release.key,
+                    key_fingerprint=fingerprint,
+                    signature_path=signature_path,
+                    checksum_path=checksum_path,
+                    classification=classifications.get(rel),
+                    svn_revision=svn_revision,
+                )
+            )

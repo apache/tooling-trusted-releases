@@ -18,6 +18,7 @@
 import asyncio
 import datetime
 import pathlib
+import re
 from typing import Final, Self
 
 import defusedxml.ElementTree as ElementTree
@@ -28,6 +29,7 @@ import atr.config as config
 import atr.log as log
 
 _ASF_TOOL: Final[str] = "atr"
+_COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
 
 
 class CommandExecutionError(RuntimeError):
@@ -141,12 +143,18 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     return SvnLog.from_xml_tree(root)
 
 
-async def publish_release(source_dir: pathlib.Path, target_url: str, username: str, message: str) -> str:
+def parse_committed_revision(output: str) -> int | None:
+    if (match := _COMMITTED_REVISION_RE.search(output)) is None:
+        return None
+    return int(match.group(1))
+
+
+async def publish_release(source_dir: pathlib.Path, target_url: str, username: str, message: str) -> int | None:
     log.debug(f"running svn import for user '{username}'")
     svn_token = config.get().SVN_TOKEN
     if svn_token is None:
         raise ValueError("SVN_TOKEN must be set")
-    return await run_command(
+    output = await run_command(
         "svn",
         "import",
         str(source_dir),
@@ -162,6 +170,10 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         "-m",
         message,
     )
+    revision = parse_committed_revision(output)
+    if revision is None:
+        log.warning(f"svn import did not emit a Committed revision line; output={output!r}")
+    return revision
 
 
 async def run_command(cmd: str, *args: str) -> str:
