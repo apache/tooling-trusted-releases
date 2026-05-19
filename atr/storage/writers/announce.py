@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
+import re
 
 import aiofiles.os
 import aioshutil
@@ -201,12 +202,15 @@ class CommitteeMember(CommitteeParticipant):
             svn_relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
             if download_path_suffix is not None:
                 svn_relpath = svn_relpath / download_path_suffix.as_path()
-            await svn.publish_release(
-                unfinished_path.path,
-                f"{svn_publish_url.rstrip('/')}/{svn_relpath}",
-                self.__asf_uid,
-                subject,
-            )
+            target_url = f"{svn_publish_url.rstrip('/')}/{svn_relpath}"
+            try:
+                await svn.publish_release(unfinished_path.path, target_url, self.__asf_uid, subject)
+            except svn.CommandExecutionError as e:
+                if "E160020" in e.output:
+                    match = re.search(r"path '([^']+)'", e.output)
+                    detail = f": {match.group(1)}" if match else ""
+                    raise storage.AccessError(f"Release file already exists in SVN{detail}", status=409) from e
+                raise storage.AccessError("SVN publish failed; release was not announced", status=500) from e
 
         try:
             # Move the release files from somewhere in unfinished to somewhere in finished

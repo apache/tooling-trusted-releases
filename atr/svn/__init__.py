@@ -31,9 +31,13 @@ _ASF_TOOL: Final[str] = "atr"
 
 
 class CommandExecutionError(RuntimeError):
-    # TODO: These are never assigned
     returncode: int
     output: str
+
+    def __init__(self, returncode: int, output: str) -> None:
+        super().__init__(output)
+        self.returncode = returncode
+        self.output = output
 
 
 class SvnInfo(pydantic.BaseModel):
