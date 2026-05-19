@@ -160,6 +160,12 @@ class LicenseCheckMode(enum.StrEnum):
     RAT = "RAT"
 
 
+class NotificationLevel(enum.StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 class ProjectStatus(enum.StrEnum):
     ACTIVE = "active"
     DORMANT = "dormant"
@@ -465,6 +471,20 @@ def example(value: Any) -> dict[Literal["schema_extra"], dict[str, Any]]:
 class KeyLink(sqlmodel.SQLModel, table=True):
     committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True)
     key_fingerprint: str = sqlmodel.Field(foreign_key="publicsigningkey.fingerprint", primary_key=True)
+
+
+# Notification:
+class Notification(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    asf_uid: str = sqlmodel.Field()
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+    level: NotificationLevel = sqlmodel.Field(default=NotificationLevel.ERROR)
+    message: str = sqlmodel.Field()
+
+    __table_args__ = (sqlalchemy.Index("ix_notification_asf_uid_created", "asf_uid", "created"),)
 
 
 # PersonalAccessToken:
