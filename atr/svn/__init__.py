@@ -137,6 +137,29 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     return SvnLog.from_xml_tree(root)
 
 
+async def publish_release(source_dir: pathlib.Path, target_url: str, username: str, message: str) -> str:
+    log.debug(f"running svn import for user '{username}'")
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    return await run_command(
+        "svn",
+        "import",
+        str(source_dir),
+        target_url,
+        "--username",
+        username,
+        "--password",
+        svn_token,
+        "--non-interactive",
+        "--no-auth-cache",
+        "--with-revprop",
+        f"asf:tool={_ASF_TOOL}",
+        "-m",
+        message,
+    )
+
+
 async def run_command(cmd: str, *args: str) -> str:
     """Run a svn command asynchronously.
 

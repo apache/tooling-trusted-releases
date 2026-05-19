@@ -26,6 +26,7 @@ import aiofiles.os
 import aioshutil
 import sqlmodel
 
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.mail as mail
@@ -35,6 +36,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
+import atr.svn as svn
 import atr.util as util
 
 
@@ -194,6 +196,17 @@ class CommitteeMember(CommitteeParticipant):
 
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
+
+        if svn_publish_url := config.get().SVN_PUBLISH_URL:
+            svn_relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
+            if download_path_suffix is not None:
+                svn_relpath = svn_relpath / download_path_suffix.as_path()
+            await svn.publish_release(
+                unfinished_path.path,
+                f"{svn_publish_url.rstrip('/')}/{svn_relpath}",
+                self.__asf_uid,
+                subject,
+            )
 
         try:
             # Move the release files from somewhere in unfinished to somewhere in finished
