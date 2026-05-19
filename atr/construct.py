@@ -31,6 +31,8 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
 
+SVN_DOWNLOAD_URL_PREFIX: Final = "https://dist.apache.org/repos/dist/atr/"
+
 type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
 
 
@@ -180,7 +182,11 @@ async def announce_release_subject_and_body(
 
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
-    download_url = paths.committee_downloads_url(host, committee)
+    if config.get().SVN_PUBLISH_URL:
+        download_relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
+        download_url = f"{SVN_DOWNLOAD_URL_PREFIX}{download_relpath}"
+    else:
+        download_url = paths.committee_downloads_url(host, committee)
     if options.download_path_suffix is not None:
         download_url += f"/{options.download_path_suffix!s}"
     download_url += "/"

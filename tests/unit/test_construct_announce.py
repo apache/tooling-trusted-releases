@@ -66,7 +66,11 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
-    monkeypatch.setattr(construct.config, "get", lambda: SimpleNamespace(APP_HOST="downloads.apache.org"))
+    monkeypatch.setattr(
+        construct.config,
+        "get",
+        lambda: SimpleNamespace(APP_HOST="downloads.apache.org", SVN_PUBLISH_URL=None),
+    )
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     subject, body = await construct.announce_release_subject_and_body(
@@ -103,7 +107,11 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
-    monkeypatch.setattr(construct.config, "get", lambda: SimpleNamespace(APP_HOST="downloads.apache.org"))
+    monkeypatch.setattr(
+        construct.config,
+        "get",
+        lambda: SimpleNamespace(APP_HOST="downloads.apache.org", SVN_PUBLISH_URL=None),
+    )
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     _subject, body = await construct.announce_release_subject_and_body(
