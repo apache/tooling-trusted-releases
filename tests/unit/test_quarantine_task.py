@@ -548,7 +548,13 @@ async def test_validate_extraction_failure_marks_failed_and_deletes_dir(tmp_path
         )
 
     assert result is None
-    mock_mark.assert_awaited_once_with(row, ok_entries, "Archive extraction failed: Extraction failure")
+    mock_mark.assert_awaited_once_with(
+        row,
+        ok_entries,
+        "Archive extraction failed: Extraction failure",
+        project_key="proj",
+        version_key="1.0",
+    )
     mock_rmtree.assert_awaited_once_with(quarantine_dir)
 
 

@@ -42,6 +42,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.storage as storage
 import atr.storage.writers.revision as revision
 import atr.tasks.checks as checks
 import atr.util as util
@@ -112,7 +113,13 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
     quarantine_dir = paths.quarantine_directory(quarantined)
 
     if not await aiofiles.os.path.isdir(quarantine_dir):
-        await _mark_failed(quarantined, None, "Quarantine directory does not exist")
+        await _mark_failed(
+            quarantined,
+            None,
+            "Quarantine directory does not exist",
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
         return None
 
     file_entries = await _build_file_entries(task_args.archives, quarantine_dir)
@@ -120,7 +127,13 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
     try:
         await _extract_archives(task_args.archives, quarantine_dir, project_key, version_key, file_entries)
     except Exception as exc:
-        await _mark_failed(quarantined, file_entries, f"Archive extraction failed: {exc}")
+        await _mark_failed(
+            quarantined,
+            file_entries,
+            f"Archive extraction failed: {exc}",
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
         await aioshutil.rmtree(quarantine_dir)
         return None
 
@@ -271,18 +284,37 @@ async def _mark_failed(
     quarantined: sql.Quarantined,
     file_entries: list[sql.QuarantineFileEntryV1] | None,
     message: str | None = None,
+    *,
+    project_key: str | None = None,
+    version_key: str | None = None,
 ) -> None:
+    asf_uid: str | None = None
     async with db.session() as data:
         managed = await data.merge(quarantined)
         managed.status = sql.QuarantineStatus.FAILED
         managed.completed = datetime.datetime.now(datetime.UTC)
         if file_entries is not None:
             managed.file_metadata = file_entries
+        if isinstance(managed.asf_uid, str):
+            asf_uid = managed.asf_uid
         await data.commit()
     if message:
         log.error(f"Quarantine {quarantined.id} failed: {message}")
     else:
         log.error(f"Quarantine {quarantined.id} failed safety checks")
+    if (not asf_uid) or (asf_uid == "system"):
+        return
+    reason = message or "safety checks failed"
+    location_parts = [part for part in (project_key, version_key) if part]
+    location = " ".join(location_parts) if location_parts else "(unknown release)"
+    try:
+        async with storage.write_as_user_service(asf_uid) as waus:
+            await waus.notifications.create(
+                f"Quarantine validation failed for {location}: {reason}",
+                sql.NotificationLevel.ERROR,
+            )
+    except Exception:
+        log.exception("Failed to record quarantine failure notification")
 
 
 async def _promote(
