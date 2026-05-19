@@ -247,6 +247,19 @@ class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
         self.keys = writers.keys.FoundationAdmin(write, self, data, committee_key)
 
 
+class WriteAsUserService(WriteAs):
+    def __init__(self, data: db.Session, asf_uid: str):
+        asf_uid = asf_uid.strip()
+        if not asf_uid:
+            raise AccessError("User service writes require an ASF UID", status=500)
+        self.__data = data
+        self.__asf_uid = asf_uid
+
+    @property
+    def asf_uid(self) -> str:
+        return self.__asf_uid
+
+
 # TODO: Could name this WriteDispatcher
 class Write:
     # Read and Write have authenticator methods which return access outcomes
@@ -452,6 +465,12 @@ def audit(**kwargs: basic.JSON) -> None:
     logger.info(msg)
 
 
+def ensure_project_active(project: sql.Project) -> None:
+    if project.status == sql.ProjectStatus.ACTIVE:
+        return
+    raise AccessError(f"Project '{project.key}' is archived; release actions are disabled.")
+
+
 @contextlib.asynccontextmanager
 async def read(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerator[Read]:
     if asf_uid is principal.ArgumentNone:
@@ -530,7 +549,8 @@ async def write_as_project_committee_member(
         yield await w.as_project_committee_member(project_key)
 
 
-def ensure_project_active(project: sql.Project) -> None:
-    if project.status == sql.ProjectStatus.ACTIVE:
-        return
-    raise AccessError(f"Project '{project.key}' is archived; release actions are disabled.")
+@contextlib.asynccontextmanager
+async def write_as_user_service(asf_uid: str) -> AsyncGenerator[WriteAsUserService]:
+    async with db.session() as data:
+        waus = WriteAsUserService(data, asf_uid)
+        yield waus
