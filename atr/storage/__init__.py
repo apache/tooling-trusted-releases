@@ -80,6 +80,7 @@ class ReadAsFoundationCommitter(ReadAsGeneralPublic):
     def __init__(self, read: Read, data: db.Session) -> None:
         # self.checks = readers.checks.FoundationCommitter(read, self, data)
         # self.releases = readers.releases.FoundationCommitter(read, self, data)
+        self.notifications = readers.notifications.FoundationCommitter(read, self, data)
         self.tokens = readers.tokens.FoundationCommitter(read, self, data)
         self.user = readers.user.FoundationCommitter(read, self, data)
 
@@ -149,6 +150,7 @@ class WriteAsFoundationCommitter(WriteAsGeneralPublic):
         self.checks = writers.checks.FoundationCommitter(write, self, data)
         self.keys = writers.keys.FoundationCommitter(write, self, data)
         self.mail = writers.mail.FoundationCommitter(write, self, data)
+        self.notifications = writers.notifications.FoundationCommitter(write, self, data)
         self.policy = writers.policy.FoundationCommitter(write, self, data)
         self.project = writers.project.FoundationCommitter(write, self, data)
         self.release = writers.release.FoundationCommitter(write, self, data)
@@ -254,6 +256,7 @@ class WriteAsUserService(WriteAs):
             raise AccessError("User service writes require an ASF UID", status=500)
         self.__data = data
         self.__asf_uid = asf_uid
+        self.notifications = writers.notifications.UserService(self, data)
 
     @property
     def asf_uid(self) -> str:

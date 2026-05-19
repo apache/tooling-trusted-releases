@@ -16,8 +16,9 @@
 # under the License.
 
 import atr.storage.readers.checks as checks
+import atr.storage.readers.notifications as notifications
 import atr.storage.readers.releases as releases
 import atr.storage.readers.tokens as tokens
 import atr.storage.readers.user as user
 
-__all__ = ["checks", "releases", "tokens", "user"]
+__all__ = ["checks", "notifications", "releases", "tokens", "user"]
