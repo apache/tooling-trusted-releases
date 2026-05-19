@@ -66,11 +66,13 @@ import atr.preload as preload
 import atr.pubsub as pubsub
 import atr.sessions as sessions
 import atr.ssh as ssh
+import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
 import atr.template as template
 import atr.user as user
 import atr.util as util
+import atr.web as web
 
 # TODO: Technically this is a global variable
 # We should probably find a cleaner way to do this
@@ -267,8 +269,9 @@ def _app_setup_context(app: base.QuartApp) -> None:
         topnav_user_projects: list[tuple[str, str]] = []
         colour_blindness_mode = sql.ColourBlindnessMode.NONE
         nav_pinned = True
-        current_uid = current_user.uid if current_user else None
-        if isinstance(current_uid, str):
+        user_notifications: list[sql.Notification] = []
+        if current_user is not None:
+            current_uid = current_user.uid
             topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
             topnav_user_projects = await interaction.user_projects(current_uid)
             async with db.session() as data:
@@ -276,6 +279,12 @@ def _app_setup_context(app: base.QuartApp) -> None:
                 if db_user:
                     colour_blindness_mode = db_user.preferences.colour_blindness_mode
                     nav_pinned = db_user.preferences.nav_pinned
+            try:
+                async with storage.read(web.Committer(current_user)) as read:
+                    rafc = read.as_foundation_committer()
+                    user_notifications = await rafc.notifications.pending()
+            except Exception:
+                log.exception("Failed to load notifications for user context")
 
         return {
             "colour_blindness_mode": colour_blindness_mode,
@@ -295,6 +304,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "topnav_unfinished_releases": topnav_unfinished_releases,
             "topnav_user_projects": topnav_user_projects,
             "release_as_url": mapping.release_as_url,
+            "user_notifications": user_notifications,
             "version": metadata.version,
         }
 

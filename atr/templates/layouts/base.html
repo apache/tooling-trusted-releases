@@ -58,7 +58,7 @@
                 <strong>Impersonation active.</strong> You are browsing as <strong>{{ current_user.uid }}</strong> (your real account: <strong>{{ current_user.admin_uid }}</strong>). To return to your own account, log out and log back in.
               </div>
             {% endif %}
-            {% from "macros/flash.html" import render_flash_messages %}
+            {% from "macros/flash.html" import render_flash_messages with context %}
             {{ render_flash_messages() }}
             {% import 'macros/forms.html' as forms %}
             {% block content %}
@@ -73,6 +73,7 @@
     {% block javascripts %}
       <script src="{{ static_url('js/min/bootstrap.bundle.min.js') }}"></script>
       <script src="{{ static_url('js/src/form-confirm.js') }}"></script>
+      <script src="{{ static_url('js/src/notifications-dismiss.js') }}"></script>
     {% endblock javascripts %}
   </body>
 </html>

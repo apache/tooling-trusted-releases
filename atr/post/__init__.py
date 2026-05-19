@@ -24,6 +24,7 @@ import atr.post.draft as draft
 import atr.post.finish as finish
 import atr.post.keys as keys
 import atr.post.manual as manual
+import atr.post.notifications as notifications
 import atr.post.projects as projects
 import atr.post.resolve as resolve
 import atr.post.revisions as revisions
@@ -46,6 +47,7 @@ __all__ = [
     "finish",
     "keys",
     "manual",
+    "notifications",
     "projects",
     "resolve",
     "revisions",

@@ -40,6 +40,7 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.tasks.task as task
@@ -47,6 +48,19 @@ import atr.tasks.task as task
 # Resource limits, 5 minutes and 3GB
 _CPU_LIMIT_SECONDS: Final = 300
 _MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
+_TASK_TYPE_LABELS: Final[dict[sql.TaskType, str]] = {
+    sql.TaskType.KEYS_IMPORT_FILE: "Key import",
+    sql.TaskType.MESSAGE_SEND: "Email send",
+    sql.TaskType.QUARANTINE_VALIDATE: "Quarantine validation",
+    sql.TaskType.SBOM_AUGMENT: "SBOM augmentation",
+    sql.TaskType.SBOM_CONVERT: "SBOM conversion",
+    sql.TaskType.SBOM_GENERATE_CYCLONEDX: "SBOM generation",
+    sql.TaskType.SBOM_OSV_SCAN: "SBOM vulnerability scan",
+    sql.TaskType.SVN_IMPORT_FILES: "SVN import",
+    sql.TaskType.VOTE_AUTO_RESOLVE: "Vote auto-resolution",
+    sql.TaskType.VOTE_END_NOTIFY: "Vote end notification",
+    sql.TaskType.VOTE_INITIATE: "Vote initiation",
+}
 
 # # Create tables if they don't exist
 # SQLModel.metadata.create_all(engine)
@@ -147,6 +161,25 @@ async def _execute_check_task(
     return handler_result
 
 
+async def _notify_task_failure(
+    asf_uid: str | None,
+    task_type: sql.TaskType,
+    project_key: str | None,
+    version_key: str | None,
+    revision_number: str | None,
+    primary_rel_path: str | None,
+    error: str,
+) -> None:
+    if (not asf_uid) or (asf_uid == "system"):
+        return
+    message = _task_failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
+    try:
+        async with storage.write_as_user_service(asf_uid) as waus:
+            await waus.notifications.create(message, sql.NotificationLevel.ERROR)
+    except Exception:
+        log.exception("Failed to record failure notification for task")
+
+
 def _setup_logging() -> None:
     import logging
 
@@ -172,6 +205,31 @@ def _setup_logging() -> None:
         conf.STORAGE_AUDIT_LOG_FILE,
         shared_processors,
     )
+
+
+def _task_failure_message(
+    task_type: sql.TaskType,
+    project_key: str | None,
+    version_key: str | None,
+    revision_number: str | None,
+    primary_rel_path: str | None,
+    error: str,
+) -> str:
+    label = (_TASK_TYPE_LABELS.get(task_type)) or (task_type.value.replace("_", " ").capitalize())
+    location_parts = []
+    if project_key:
+        location_parts.append(project_key)
+    if version_key:
+        location_parts.append(version_key)
+    if revision_number:
+        location_parts.append(f"r{revision_number}")
+    path_text = _truncate_single_line(primary_rel_path, 180)
+    parts = [f"{label} failed"]
+    if location_parts:
+        parts.append(f"for {' '.join(location_parts)}")
+    if path_text:
+        parts.append(f"({path_text})")
+    return f"{' '.join(parts)}: {_truncate_single_line(error, 500)}"
 
 
 async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str] | None:
@@ -281,6 +339,7 @@ async def _task_result_process(
     task_id: int, task_results: results.Results | None, status: sql.TaskStatus, error: str | None = None
 ) -> None:
     """Process and store task results in the database."""
+    notify_args: tuple[str | None, sql.TaskType, str | None, str | None, str | None, str | None, str] | None = None
     async with db.session() as data:
         async with data.begin():
             # Find the task by ID
@@ -291,8 +350,31 @@ async def _task_result_process(
                 task_obj.completed = datetime.datetime.now(datetime.UTC)
                 task_obj.result = task_results
 
-                if (status == task.FAILED) and error:
-                    task_obj.error = error
+                if status == task.FAILED:
+                    normalised_error = ((error or "").strip()) or "unknown error"
+                    task_obj.error = normalised_error
+                    notify_args = (
+                        task_obj.asf_uid,
+                        task_obj.task_type,
+                        task_obj.project_key,
+                        task_obj.version_key,
+                        task_obj.revision_number,
+                        task_obj.primary_rel_path,
+                        normalised_error,
+                    )
+
+    if notify_args is not None:
+        await _notify_task_failure(*notify_args)
+
+
+def _truncate_single_line(text: str | None, max_length: int) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    text = text.splitlines()[0]
+    if len(text) > max_length:
+        return text[: max_length - 3] + "..."
+    return text
 
 
 async def _worker_loop_run() -> None:

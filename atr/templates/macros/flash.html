@@ -1,4 +1,5 @@
 {% macro render_flash_messages() %}
+  {{ render_notifications() }}
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
@@ -9,4 +10,24 @@
       {% endfor %}
     {% endif %}
   {% endwith %}
+{% endmacro %}
+
+{% macro render_notifications() %}
+  {% if user_notifications %}
+    <div id="atr-notifications" data-dismiss-url="{{ as_url(post.notifications.dismiss) }}">
+      {{ csrf_input_fn()|safe }}
+      {% for notification in user_notifications %}
+        {% set level = notification.level.value %}
+        {% set alert_kind = 'danger' if level == 'error' else level %}
+        <div class="alert alert-{{ alert_kind }} alert-dismissible atr-notification"
+             role="alert"
+             data-notification-id="{{ notification.id }}">
+          {{ notification.message }}
+          <button type="button"
+                  class="btn-close atr-notification-dismiss"
+                  aria-label="Dismiss"></button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 {% endmacro %}
