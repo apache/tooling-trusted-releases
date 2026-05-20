@@ -39,7 +39,6 @@ type ADD_CATEGORY = Literal["add_category"]
 type REMOVE_CATEGORY = Literal["remove_category"]
 type ADD_LANGUAGE = Literal["add_language"]
 type REMOVE_LANGUAGE = Literal["remove_language"]
-type DELETE_PROJECT = Literal["delete_project"]
 
 
 class AddProjectForm(form.Form):
@@ -368,11 +367,6 @@ class ArchiveSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
-class DeleteProjectForm(form.Form):
-    variant: DELETE_PROJECT = form.value(DELETE_PROJECT)
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-
-
 class DeleteSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
@@ -388,7 +382,6 @@ type ProjectViewForm = Annotated[
     | AddCategoryForm
     | RemoveCategoryForm
     | AddLanguageForm
-    | RemoveLanguageForm
-    | DeleteProjectForm,
+    | RemoveLanguageForm,
     form.DISCRIMINATOR,
 ]

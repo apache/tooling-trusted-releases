@@ -259,21 +259,6 @@ async def _process_compose_form(
     )
 
 
-async def _process_delete_project(
-    session: web.Committer, delete_form: shared.projects.DeleteProjectForm
-) -> web.WerkzeugResponse:
-    project_key = delete_form.project_key
-
-    async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
-        try:
-            await wacm.project.delete(project_key)
-        except storage.AccessError as e:
-            return await session.redirect(get.projects.projects, error=f"Error deleting project: {e}")
-
-    return await session.redirect(get.projects.projects, success=f"Project '{project_key}' deleted successfully.")
-
-
 async def _process_edit_cycle_dates_form(
     session: web.Committer, edit_form: shared.projects.EditCycleDatesForm
 ) -> web.WerkzeugResponse:
@@ -477,7 +462,6 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.AddCategoryForm: _process_add_category,
     shared.projects.AddLanguageForm: _process_add_language,
     shared.projects.ComposePolicyForm: _process_compose_form,
-    shared.projects.DeleteProjectForm: _process_delete_project,
     shared.projects.EditCycleDatesForm: _process_edit_cycle_dates_form,
     shared.projects.EditMetadataForm: _process_edit_metadata_form,
     shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,

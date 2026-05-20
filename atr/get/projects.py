@@ -196,6 +196,15 @@ async def view(
             _releases=True,
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
         cycles = list(await data.project_cycle(project_key=str(project_key)).all())
+        active_committee_projects = 0
+        if project.committee is not None:
+            active_committee_projects = len(
+                await data.project(
+                    committee_key=project.committee.key,
+                    status=sql.ProjectStatus.ACTIVE,
+                    _committee=False,
+                ).all()
+            )
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     is_privileged = session.is_admin
@@ -237,28 +246,56 @@ async def view(
     page.append(_render_project_label_card(project))
     page.append(_render_pmc_card(project))
 
-    tab_items: list[htm.Tab] = []
+    tabs = await _generate_tabs(can_edit, project, cycles)
+    page.append(tabs)
 
-    if can_edit:
-        tab_items.append(
-            htm.Tab(
-                key="releases",
-                label="Releases",
-                render=lambda: _render_releases_tab(
-                    project,
-                    cycles,
-                    can_edit=can_edit,
-                ),
-            )
-        )
+    # Below the tabs: admin-only project actions.
+    if is_committee_member or is_privileged:
+        section = htm.Block(htm.div)
+        section.h2["Actions"]
 
-    tab_items.append(
+        is_sole_active_project = project.committee is not None and active_committee_projects <= 1
+        if project.status == sql.ProjectStatus.ACTIVE and not is_sole_active_project:
+            await _delete_section(section, project)
+
+        if project.committee:
+            if (project.committee.key in session.committees) or is_privileged:
+                section.p[
+                    htm.a(
+                        ".btn.btn-sm.btn-outline-primary",
+                        href=util.as_url(add_project, committee_key=project.committee.key),
+                    )["Create a sibling project"]
+                ]
+        page.append(section.collect())
+
+    content = page.collect()
+
+    javascripts = ["copy-variable"] if can_edit else []
+    return await template.blank(
+        title=f"{project.display_name}",
+        description=f"Information regarding {project.display_name}.",
+        content=content,
+        javascripts=javascripts,
+    )
+
+
+async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.ProjectCycle]) -> htpy.Element:
+    tab_items: list[htm.Tab] = [
+        htm.Tab(
+            key="releases",
+            label="Releases",
+            render=lambda: _render_releases_tab(
+                project,
+                cycles,
+                can_edit=can_edit,
+            ),
+        ),
         htm.Tab(
             key="metadata",
             label="Metadata",
             render=lambda: _render_metadata_tab(project, can_edit=can_edit),
-        )
-    )
+        ),
+    ]
 
     if can_edit:
         tab_items.append(
@@ -288,34 +325,8 @@ async def view(
 
     active_tab = quart.request.args.get("tab", tab_items[0].key)
     base_url = util.as_url(view, project_key=str(project.key))
-    page.append(await htm.tabs(tab_items, active_key=active_tab, base_url=base_url))
 
-    # Below the tabs: admin-only project actions.
-    if is_committee_member or is_privileged:
-        section = htm.Block(htm.div)
-        section.h2["Actions"]
-
-        await _delete_section(section, project)
-
-        if project.committee:
-            if (project.committee.key in session.committees) or is_privileged:
-                section.p[
-                    htm.a(
-                        ".btn.btn-sm.btn-outline-primary",
-                        href=util.as_url(add_project, committee_key=project.committee.key),
-                    )["Create a sibling project"]
-                ]
-        page.append(section.collect())
-
-    content = page.collect()
-
-    javascripts = ["copy-variable"] if can_edit else []
-    return await template.blank(
-        title=f"{project.display_name}",
-        description=f"Information regarding {project.display_name}.",
-        content=content,
-        javascripts=javascripts,
-    )
+    return await htm.tabs(tab_items, active_key=active_tab, base_url=base_url)
 
 
 def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
@@ -529,8 +540,8 @@ async def _delete_section(section: htm.Block, project: sql.Project):
     delete_form = None
     if not project.releases:
         delete_form = await form.render(
-            shared.projects.DeleteProjectForm,
-            action=util.as_url(post.projects.view, name=str(project.key)),
+            shared.projects.DeleteSelectedProject,
+            action=util.as_url(post.projects.delete),
             form_classes="",
             submit_classes="btn-sm btn-outline-danger",
             submit_label="Delete project",
