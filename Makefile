@@ -1,8 +1,8 @@
 .PHONY: build build-alpine build-bootstrap build-docs build-playwright \
   build-ts bump-bootstrap certs check check-clean check-extra check-heavy \
   check-light commit docs e2e e2e-clean generate-version ipython manual \
-  run-alpine run-playwright run-playwright-slow serve serve-local sync \
-  sync-all unit update-deps
+  run-alpine run-playwright run-playwright-slow serve serve-local \
+  svn-dev-repo sync sync-all unit update-deps
 
 BIND ?= 127.0.0.1:8080
 IMAGE ?= tooling-trusted-release
@@ -126,6 +126,16 @@ serve-local:
 	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
 	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
+
+svn-dev-repo:
+	@if test ! -d $(STATE_DIR)/dev-svn-repo/db; \
+	then svnadmin create $(STATE_DIR)/dev-svn-repo && echo "Created local SVN repo at $(STATE_DIR)/dev-svn-repo"; \
+	else echo "Local SVN repo already exists at $(STATE_DIR)/dev-svn-repo"; \
+	fi
+	@echo
+	@echo "Export these before running make serve-local to publish into it:"
+	@echo "  export SVN_PUBLISH_URL=\"file://$(abspath $(STATE_DIR)/dev-svn-repo)\""
+	@echo "  export SVN_TOKEN=\"dummy\""
 
 sync:
 	uv sync --frozen --no-dev
