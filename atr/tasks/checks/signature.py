@@ -138,6 +138,22 @@ def _check_core_logic_verify_signature(
         public_keys.append(public_key)
     if not public_keys:
         log.warning("No fingerprints found after parsing keys")
+        return {
+            "verified": False,
+            "error": "No public keys found to verify signature",
+            "error_kind": "missing_keys",
+            "hint": "If your signing key is expected then you can rectify this by",
+            "hint_link_text": "uploading your key",
+            "hint_link": "/keys",
+            "debug_info": _debug_info(
+                key=None,
+                signature_info=None,
+                status="No public keys found to verify signature",
+                valid=False,
+                num_committee_keys=len(ascii_armored_keys),
+                key_has_apache_uid=False,
+            ),
+        }
     end = time.perf_counter_ns()
     log.info(f"Parsing of {util.plural(len(ascii_armored_keys), 'key')} took {(end - start) / 1000000} ms")
 

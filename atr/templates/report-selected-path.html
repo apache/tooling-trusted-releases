@@ -121,6 +121,10 @@
                   <details class="bg-light rounded">
                     <summary class="atr-cursor-pointer user-select-none p-2">
                       {{- primary_result.message if primary_result.message else "Details" -}}
+                      {% if primary_result.data.hint %}
+                        <br/>
+                        {{ primary_result.data.hint }} <a href="{{ primary_result.data.hint_link }}">{{ primary_result.data.hint_link_text }}</a>
+                      {% endif %}
                     </summary>
                     <div class="p-2">
                       {% if primary_result.checker.endswith("rat.check_licenses") %}
@@ -143,7 +147,7 @@
                       <table class="table table-bordered table-sm mb-0">
                         <tbody>
                           {% for key, value in primary_result.data.items() %}
-                            {% if key != "debug_info" %}
+                            {% if key != "debug_info" and "hint" not in key %}
                               <tr>
                                 <th class="bg-light fw-bold align-top text-nowrap">{{ key|replace('_', ' ') |title }}</th>
                                 <td>
