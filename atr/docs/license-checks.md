@@ -83,4 +83,15 @@ When editing a project, look for the **License Check Exclusions** fields:
 * **RAT Exclusions**: newline-separated patterns to exclude from RAT checks.
 * **Lightweight Exclusions**: newline-separated patterns to exclude from lightweight checks.
 
-These settings follow the project, not the artifact.
+These settings are stored on the project, but individual patterns may be scoped to one archive.
+
+### Scoping lightweight excludes to one archive
+
+Lightweight source excludes use `.gitignore` syntax and match `/<archive-filename>/<path inside the archive>`. Use an unrooted pattern (no leading `/`) to apply to all source archives, or prefix with `/` and an archive filename glob to target one archive:
+
+```text
+**/vendor/**
+/maven-mvnd-*-src*/**/build/publish-on-homebrew.sh
+```
+
+RAT excludes and check-result ignores are configured separately.

@@ -120,7 +120,8 @@ class ComposePolicyForm(form.Form):
     source_excludes_lightweight: str = form.label(
         "Lightweight source excludes",
         "Patterns using .gitignore syntax for files to exclude"
-        " from lightweight license header checks on source artifacts.",
+        " from lightweight license header checks on source artifacts."
+        " Prefix with /archive-pattern/ to scope a pattern to one archive (globs allowed).",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )

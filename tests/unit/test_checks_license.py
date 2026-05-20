@@ -203,6 +203,22 @@ def test_files_valid_license_and_notice(tmp_path):
     assert all(r.status == sql.CheckResultStatus.NOTE for r in artifact_results)
 
 
+def test_headers_check_archive_qualified_pattern_matches_only_matching_archive(tmp_path):
+    cache_dir = _extract_test_archive(tmp_path)
+    matching = f"/{TEST_ARCHIVE_BASENAME}/**/*.py"
+    nonmatching = "/some-other-archive.tar.gz/**/*.py"
+    baseline = _files_checked(list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none")))
+    with_match = _files_checked(
+        list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [matching], "policy"))
+    )
+    with_nonmatch = _files_checked(
+        list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [nonmatching], "policy"))
+    )
+    assert baseline > 0
+    assert with_match < baseline
+    assert with_nonmatch == baseline
+
+
 def test_headers_check_data_fields_match_model(tmp_path):
     cache_dir = _extract_test_archive(tmp_path)
     results = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
@@ -220,14 +236,8 @@ def test_headers_check_excludes_matching_files(tmp_path):
         license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, ["*.py"], "policy")
     )
 
-    def get_files_checked(results: list) -> int:
-        for r in results:
-            if isinstance(r, license.ArtifactResult) and r.data and ("files_checked" in r.data):
-                return r.data["files_checked"]
-        return 0
-
-    without_excludes = get_files_checked(results_without_excludes)
-    with_excludes = get_files_checked(results_with_excludes)
+    without_excludes = _files_checked(results_without_excludes)
+    with_excludes = _files_checked(results_with_excludes)
     assert with_excludes < without_excludes
 
 
@@ -264,3 +274,10 @@ def _extract_test_archive(tmp_path: pathlib.Path) -> safe.StatePath:
     with tarfile.open(TEST_ARCHIVE) as tf:
         tf.extractall(cache_dir, filter="data")
     return cache_dir
+
+
+def _files_checked(results: list[object]) -> int:
+    for r in results:
+        if isinstance(r, license.ArtifactResult) and (r.data is not None) and ("files_checked" in r.data):
+            return r.data["files_checked"]
+    return 0
