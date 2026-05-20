@@ -41,7 +41,7 @@ jobs:
           key: venv-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
       - name: Install dependencies
         #if: steps.cache.outputs.cache-hit != 'true'
-        run: uv sync --no-dev --group test
+        run: uv sync --frozen --no-dev --group test
 
       - name: Run unit tests
         run: |
