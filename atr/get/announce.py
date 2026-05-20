@@ -203,7 +203,7 @@ async def _render_page(
     page.append(_render_release_card(release))
     page.h2["Publish and announce this release"]
 
-    if banner := render.archived_project_banner(release.project):
+    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)
 
     announce_msg = ""

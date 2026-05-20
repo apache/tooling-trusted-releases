@@ -119,6 +119,7 @@ async def test_no_quarantine_returns_revision_when_no_archives(tmp_path: pathlib
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.project.key = "proj"
+    release.project_key = "proj"
     release.version = "1.0"
     release.release_policy = None
     release.key = sql.release_key(release.project.key, release.version)
@@ -176,6 +177,7 @@ async def test_phase_gate_allows_matching_phase(tmp_path: pathlib.Path):
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.project.key = "proj"
+    release.project_key = "proj"
     release.version = "1.0"
     release.release_policy = None
     release.key = sql.release_key("proj", "1.0")
@@ -253,6 +255,7 @@ async def test_quarantine_branch_returns_quarantined_when_archives_detected(tmp_
     release.project = mock.MagicMock()
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
+    release.project_key = "proj"
     release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
     release.latest_revision_number = "00001"
@@ -332,6 +335,7 @@ async def test_quarantine_dedup_applied_to_task_args(tmp_path: pathlib.Path):
     release.project = mock.MagicMock()
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
+    release.project_key = "proj"
     release.version = "1.0"
     release.key = sql.release_key("proj", "1.0")
     release.latest_revision_number = "00001"

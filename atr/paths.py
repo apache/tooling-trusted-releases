@@ -110,7 +110,7 @@ def release_directory(release: sql.Release) -> safe.StatePath:
 def release_directory_base(release: sql.Release) -> safe.StatePath:
     """Determine the filesystem directory for a given release based on its phase."""
     phase = release.phase
-    project_key = release.project.key
+    project_key = release.project_key
     version_key = release.version
 
     base_dir: safe.StatePath | None = None
@@ -129,7 +129,7 @@ def release_directory_base(release: sql.Release) -> safe.StatePath:
 
 def release_directory_revision(release: sql.Release) -> safe.StatePath | None:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.key
+    path_project = release.project_key
     path_version = release.version
     match release.phase:
         case (
@@ -148,7 +148,7 @@ def release_directory_revision(release: sql.Release) -> safe.StatePath | None:
 
 def release_directory_version(release: sql.Release) -> safe.StatePath:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project.key
+    path_project = release.project_key
     path_version = release.version
     match release.phase:
         case (

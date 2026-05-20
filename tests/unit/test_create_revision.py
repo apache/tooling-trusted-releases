@@ -405,6 +405,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.key = "proj"
+    release.project_key = "proj"
     release.version = "1.0"
     release.latest_revision_number = "00001"
     mock_session = _mock_db_session(release)

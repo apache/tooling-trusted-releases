@@ -310,7 +310,7 @@ async def _render_page(
         htm.em[release.version],
     ]
 
-    if banner := render.archived_project_banner(release.project):
+    if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)
 
     # Release info card

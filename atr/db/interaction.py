@@ -408,11 +408,6 @@ async def effective_trusted_ballots(
     return current_ballots + carried
 
 
-async def full_releases(project: sql.Project) -> list[sql.Release]:
-    """Get the full releases for the project."""
-    return await releases_by_phase(project, sql.ReleasePhase.RELEASE)
-
-
 async def has_blocker_checks(
     release: sql.Release, revision_number: safe.RevisionNumber, caller_data: db.Session | None = None
 ) -> bool:

@@ -29,7 +29,6 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.construct as construct
 import atr.db as db
-import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.committees as committees
 import atr.get.compose as compose
@@ -42,6 +41,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
 import atr.registry as registry
+import atr.render as render
 import atr.shared as shared
 import atr.template as template
 import atr.user as user
@@ -189,18 +189,17 @@ async def view(
     """
     async with db.session() as data:
         project = await data.project(
-            key=str(project_key), _committee=True, _committee_public_signing_keys=True, _release_policy=True
+            key=str(project_key),
+            _committee=True,
+            _committee_public_signing_keys=True,
+            _release_policy=True,
+            _releases=True,
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
         cycles = list(await data.project_cycle(project_key=str(project_key)).all())
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     is_privileged = session.is_admin
-    can_edit = is_committee_member or is_privileged
-
-    candidate_drafts = await interaction.candidate_drafts(project)
-    candidates = await interaction.candidates(project)
-    previews = await interaction.previews(project)
-    full_releases = await interaction.full_releases(project)
+    can_edit = (is_committee_member or is_privileged) and project.status != sql.ProjectStatus.RETIRED
 
     page = htm.Block()
 
@@ -220,6 +219,11 @@ async def view(
         else "",
     ]
     page.append(title_row)
+
+    archived_banner = render.archived_project_banner(project, "Actions are disabled.")
+    if archived_banner:
+        page.append(archived_banner)
+
     if project.updated:
         page.append(
             htm.div(".row.mb-2")[
@@ -243,10 +247,6 @@ async def view(
                 render=lambda: _render_releases_tab(
                     project,
                     cycles,
-                    candidate_drafts,
-                    candidates,
-                    previews,
-                    full_releases,
                     can_edit=can_edit,
                 ),
             )
@@ -292,17 +292,20 @@ async def view(
 
     # Below the tabs: admin-only project actions.
     if is_committee_member or is_privileged:
-        if project.created_by == session.uid:
-            page.append(await _render_delete_section(project))
+        section = htm.Block(htm.div)
+        section.h2["Actions"]
+
+        await _delete_section(section, project)
 
         if project.committee:
             if (project.committee.key in session.committees) or is_privileged:
-                page.p[
+                section.p[
                     htm.a(
                         ".btn.btn-sm.btn-outline-primary",
                         href=util.as_url(add_project, committee_key=project.committee.key),
                     )["Create a sibling project"]
                 ]
+        page.append(section.collect())
 
     content = page.collect()
 
@@ -522,23 +525,36 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
     return card.collect()
 
 
-async def _render_delete_section(project: sql.Project) -> htm.Element:
-    section = htm.Block(htm.div)
-    section.h2["Actions"]
-
-    delete_form = await form.render(
-        shared.projects.DeleteProjectForm,
-        action=util.as_url(post.projects.view, name=str(project.key)),
-        form_classes="",
-        submit_classes="btn-sm btn-outline-danger",
-        submit_label="Delete project",
-        defaults={"project_key": str(project.key)},
-        confirm="Are you sure you want to delete this project? This cannot be undone.",
-        empty=True,
-    )
-
-    section.div(".my-3")[delete_form]
-    return section.collect()
+async def _delete_section(section: htm.Block, project: sql.Project):
+    delete_form = None
+    if not project.releases:
+        delete_form = await form.render(
+            shared.projects.DeleteProjectForm,
+            action=util.as_url(post.projects.view, name=str(project.key)),
+            form_classes="",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label="Delete project",
+            defaults={"project_key": str(project.key)},
+            confirm="Are you sure you want to delete this project? This cannot be undone.",
+            empty=True,
+        )
+    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
+        delete_form = await form.render(
+            model_cls=shared.projects.ArchiveSelectedProject,
+            action=util.as_url(post.projects.archive),
+            form_classes=".d-inline-block.m-0",
+            submit_classes="btn-sm btn-outline-secondary",
+            submit_label="Archive project",
+            empty=True,
+            defaults={"project_key": str(project.key)},
+            confirm=(
+                f"This project has {util.plural(len(project.releases), 'draft release')}."
+                " Archiving will delete those drafts and mark the project as retired."
+                " Continue?"
+            ),
+        )
+    if delete_form:
+        section.div(".my-3")[delete_form]
 
 
 async def _render_finish_form(project: sql.Project) -> htm.Element:
@@ -869,22 +885,19 @@ async def _render_releases_sections(
 async def _render_releases_tab(
     project: sql.Project,
     cycles: list[sql.ProjectCycle],
-    candidate_drafts: list[sql.Release],
-    candidates: list[sql.Release],
-    previews: list[sql.Release],
-    full_releases: list[sql.Release],
     *,
     can_edit: bool,
 ) -> htm.Element:
     block = htm.Block()
-    block.p(".mb-4")[
-        htm.a(
-            ".btn.btn-sm.btn-outline-primary",
-            href=util.as_url(start.selected, project_key=str(project.key)),
-        )["Start a new release"]
-    ]
+    if can_edit:
+        block.p(".mb-4")[
+            htm.a(
+                ".btn.btn-sm.btn-outline-primary",
+                href=util.as_url(start.selected, project_key=str(project.key)),
+            )["Start a new release"]
+        ]
 
-    if not (candidate_drafts or candidates or previews or full_releases):
+    if not project.releases:
         block.p(".text-muted.mb-4")["No releases found."]
 
     # Stay flat for projects with only the implicit "default" cycle and no
@@ -893,11 +906,22 @@ async def _render_releases_tab(
     # PMC of a simple-default project can still set eod/eos/eol/lts.
     show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
 
+    # Newest first, as the old per-phase queries returned them.
+    releases = sorted(project.releases, key=lambda r: r.created, reverse=True)
+
     for cycle in cycles:
-        cycle_drafts = [r for r in candidate_drafts if r.cycle_key == cycle.cycle_key]
-        cycle_candidates = [r for r in candidates if r.cycle_key == cycle.cycle_key]
-        cycle_previews = [r for r in previews if r.cycle_key == cycle.cycle_key]
-        cycle_full = [r for r in full_releases if r.cycle_key == cycle.cycle_key]
+        cycle_drafts = [
+            r
+            for r in releases
+            if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+        ]
+        cycle_candidates = [
+            r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE
+        ]
+        cycle_previews = [
+            r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_PREVIEW
+        ]
+        cycle_full = [r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE]
 
         cycle_has_dates = _cycle_has_dates(cycle)
         cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)

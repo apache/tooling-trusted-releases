@@ -97,7 +97,7 @@ async def select(
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
-        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).demand(
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)
