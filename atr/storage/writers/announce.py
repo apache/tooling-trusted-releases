@@ -32,6 +32,7 @@ import atr.analysis as analysis
 import atr.config as config
 import atr.construct as construct
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.basic as basic
@@ -284,6 +285,9 @@ class CommitteeMember(CommitteeParticipant):
             )
             self.__data.add(task)
 
+            # Record the artifacts before promoting, since promotion deletes the
+            # revisions and cascade-deletes the file state we read classifications from
+            await self.__write_artifact_rows(release, finished_path, preview_revision_number, published_revision)
             await self.__promote_in_database(release, preview_revision_number, release_date)
             self.__data.add(
                 sql.LifecycleEvent(
@@ -295,9 +299,6 @@ class CommitteeMember(CommitteeParticipant):
                     published=release_date,
                     reference_urls=[f"https://lists.apache.org/list.html?{email_to}"],
                 )
-            )
-            await self.__write_artifact_rows(
-                release, finished_path, int(str(preview_revision_number)), published_revision
             )
             await self.__data.commit()
         except storage.AccessError:
@@ -372,33 +373,54 @@ class CommitteeMember(CommitteeParticipant):
         )
         await self.__data.execute_query(delete_revisions_stmt)
 
-    async def __signature_fingerprint(self, release_key: str, signature_path: str) -> str | None:
-        via = sql.validate_instrumented_attribute
-        results = list(
-            await self.__data.check_result(
-                release_key=release_key,
-                checker=_SIGNATURE_CHECKER_KEY,
-                primary_rel_path=signature_path,
-                status=sql.CheckResultStatus.NOTE,
-            )
-            .order_by(via(sql.CheckResult.created).desc())
-            .all()
+    async def __parent_revision_number(
+        self, release_key: str, revision_number: safe.RevisionNumber
+    ) -> safe.RevisionNumber:
+        revision = await self.__data.revision(
+            release_key=release_key,
+            number=str(revision_number),
+            _parent=True,
+        ).get()
+        if (revision is not None) and (revision.parent is not None):
+            return revision.parent.safe_number
+        # Fall back to the revision itself when there's no parent (a single-revision release)
+        return revision_number
+
+    async def __signature_fingerprint(
+        self,
+        release: sql.Release,
+        revision_number: safe.RevisionNumber,
+        signature_path: str,
+    ) -> str | None:
+        results = await interaction.check_results_for_revision(
+            release.safe_project_key,
+            release.safe_version_key,
+            revision_number,
+            checker=_SIGNATURE_CHECKER_KEY,
+            rel_path=signature_path,
+            include_legacy_revision_results=True,
+            caller_data=self.__data,
         )
-        if not results:
-            return None
-        payload = results[0].data if isinstance(results[0].data, dict) else {}
-        candidate = payload.get("fingerprint")
-        if isinstance(candidate, str) and (stripped := candidate.strip()):
-            return stripped.lower()
+        for result in results:
+            if result.status != sql.CheckResultStatus.NOTE:
+                continue
+            payload = result.data if isinstance(result.data, dict) else {}
+            candidate = payload.get("fingerprint")
+            if isinstance(candidate, str) and (stripped := candidate.strip()):
+                return stripped.lower()
         return None
 
     async def __write_artifact_rows(
         self,
         release: sql.Release,
         finished_path: safe.StatePath,
-        revision_seq: int,
+        revision_number: safe.RevisionNumber,
         svn_revision: int | None,
     ) -> None:
+        revision_seq = int(str(revision_number))
+        # The preview revision created when a vote passes has no checks of its own, so the
+        # signature check sits on the parent draft it was promoted from
+        parent_revision_number = await self.__parent_revision_number(release.key, revision_number)
         rel_paths = {str(p) async for p in util.paths_recursive(finished_path)}
         classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
 
@@ -413,7 +435,9 @@ class CommitteeMember(CommitteeParticipant):
                     checksum_path = candidate
                     break
             fingerprint = (
-                await self.__signature_fingerprint(release.key, signature_path) if signature_path is not None else None
+                await self.__signature_fingerprint(release, parent_revision_number, signature_path)
+                if signature_path is not None
+                else None
             )
             self.__data.add(
                 sql.Artifact(
