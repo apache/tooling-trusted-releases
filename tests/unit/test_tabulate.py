@@ -155,9 +155,10 @@ def test_vote_resolution_body_votes_uses_formal_label() -> None:
 @pytest.mark.asyncio
 async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _thread_messages(
-        _thread_id: str, *, strict: bool = False
+        _thread_id: str, *, strict: bool = False, source: bool = False
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
         del strict
+        assert source is True
         yield (
             "archive-doc-receipt",
             _vote_message(

@@ -17,7 +17,7 @@
 import re
 import time
 from collections.abc import Generator
-from typing import Protocol
+from typing import Final, Protocol
 
 import atr.cache as cache
 import atr.config as config
@@ -28,6 +28,11 @@ import atr.models.sql as sql
 import atr.util as util
 
 MAX_THREAD_MESSAGES = 10000
+
+SPF_ENVELOPE_FROM_RE: Final = re.compile(
+    r"(?:^|[;\s])envelope-from\s*=\s*(\"[^\"]*\"|<[^>]*>|[^;\s]+)",
+    re.IGNORECASE,
+)
 
 
 class TrustedVoteSummaryData(Protocol):
@@ -221,7 +226,7 @@ async def votes(  # noqa: C901
     start_unixtime = None
     message_count = 0
     _validate_thread_id(thread_id)
-    async for _archive_doc_id, msg in util.thread_messages(thread_id, strict=True):
+    async for _archive_doc_id, msg in util.thread_messages(thread_id, strict=True, source=True):
         message_count += 1
         if message_count > MAX_THREAD_MESSAGES:
             raise ValueError(f"Thread exceeds maximum of {MAX_THREAD_MESSAGES} messages")
@@ -231,7 +236,10 @@ async def votes(  # noqa: C901
         from_raw = msg.get("from_raw", "")
         list_raw = msg.get("list_raw", "")
         cc = msg.get("cc", "").split(",\n")
-        ok, name, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid, list_raw, cc)
+        received_spf = msg.get("received_spf", [])
+        if not isinstance(received_spf, list):
+            received_spf = []
+        ok, name, from_email_lower, asf_uid = _vote_identity(from_raw, email_to_uid, list_raw, cc, received_spf)
         if not ok:
             continue
 
@@ -316,6 +324,31 @@ def _name_from_raw(from_raw: str) -> str:
     if via_index >= 0:
         name = name[:via_index]
     return name.strip()
+
+
+def _received_spf_envelope_from(received_spf: list[object]) -> str | None:
+    for value in received_spf:
+        if not isinstance(value, str):
+            continue
+        match = SPF_ENVELOPE_FROM_RE.search(value)
+        if match is None:
+            continue
+        candidate = match.group(1).strip()
+        if (len(candidate) >= 2) and (candidate[0] == '"') and (candidate[-1] == '"'):
+            candidate = candidate[1:-1]
+        if (len(candidate) >= 2) and (candidate[0] == "<") and (candidate[-1] == ">"):
+            candidate = candidate[1:-1]
+        candidate = candidate.rstrip(";").strip().lower()
+        if not candidate:
+            continue
+        if candidate == "<>":
+            continue
+        if "@" not in candidate:
+            continue
+        if any(ch.isspace() for ch in candidate):
+            continue
+        return candidate
+    return None
 
 
 def _trusted_vote_resolution_body(
@@ -432,7 +465,11 @@ def _vote_continue(line: str) -> bool:
 
 
 def _vote_identity(
-    from_raw: str, email_to_uid: cache.EmailUidLookup, list_email: str, cc: list[str]
+    from_raw: str,
+    email_to_uid: cache.EmailUidLookup,
+    list_email: str,
+    cc: list[str],
+    received_spf: list[object],
 ) -> tuple[bool, str, str, str | None]:
     from_email_lower = util.email_from_uid(from_raw)
     if not from_email_lower:
@@ -444,8 +481,11 @@ def _vote_identity(
         asf_uid = from_email_lower.split("@")[0]
     else:
         if ("via" in from_raw) and (from_email_lower.replace("@", ".") in list_email):
-            # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
-            if cc:
+            envelope_from = _received_spf_envelope_from(received_spf)
+            if envelope_from is not None:
+                from_email_lower = envelope_from
+            elif cc:
+                # Take the last CC, appended by ezmlm, and use that as the email. Otherwise, use their name
                 from_email_lower = util.email_from_uid(cc[-1]) or from_email_lower
         if from_email_lower in email_to_uid:
             asf_uid = email_to_uid[from_email_lower]

@@ -21,6 +21,9 @@ import collections
 import contextlib
 import dataclasses
 import datetime
+import email.parser
+import email.policy
+import email.utils
 import fcntl
 import hashlib
 import json
@@ -1040,6 +1043,7 @@ async def thread_messages(  # noqa: C901
     thread_id: str,
     *,
     strict: bool = False,
+    source: bool = False,
 ) -> AsyncGenerator[tuple[str, dict[str, Any]]]:
     """Iterate over mailing list thread messages in chronological order."""
 
@@ -1064,23 +1068,44 @@ async def thread_messages(  # noqa: C901
     if not message_ids:
         return
 
-    email_urls = [f"https://lists.apache.org/api/email.json?id={urllib.parse.quote(mid)}" for mid in message_ids]
+    url_to_mid: dict[str, str] = {}
+    if source:
+        for mid in message_ids:
+            source_url = f"https://lists.apache.org/api/source.lua?id={urllib.parse.quote(mid)}"
+            url_to_mid[source_url] = mid
+        email_urls = list(url_to_mid.keys())
+    else:
+        email_urls = [f"https://lists.apache.org/api/email.json?id={urllib.parse.quote(mid)}" for mid in message_ids]
 
     messages: list[dict[str, Any]] = []
 
     async for url, status, content in get_urls_as_completed(email_urls):
         if (status != 200) or (not content):
             if strict:
+                if source:
+                    raise FetchError(f"Failed to fetch email source from {url}: {status}", url=url)
                 raise FetchError(f"Failed to fetch email data from {url}: {status}", url=url)
-            log.warning(f"Failed to fetch email data from {url}: {status}")
+            if source:
+                log.warning(f"Failed to fetch email source from {url}: {status}")
+            else:
+                log.warning(f"Failed to fetch email data from {url}: {status}")
             continue
-        try:
-            msg_json = json.loads(content.decode())
-            messages.append(msg_json)
-        except Exception as exc:
-            if strict:
-                raise FetchError(f"Failed to parse email JSON from {url}: {exc}", url=url) from exc
-            log.warning(f"Failed to parse email JSON from {url}: {exc}")
+        if source:
+            try:
+                msg_dict = _thread_message_from_source(url_to_mid[url], content)
+                messages.append(msg_dict)
+            except Exception as exc:
+                if strict:
+                    raise FetchError(f"Failed to parse email source from {url}: {exc}", url=url) from exc
+                log.warning(f"Failed to parse email source from {url}: {exc}")
+        else:
+            try:
+                msg_json = json.loads(content.decode())
+                messages.append(msg_json)
+            except Exception as exc:
+                if strict:
+                    raise FetchError(f"Failed to parse email JSON from {url}: {exc}", url=url) from exc
+                log.warning(f"Failed to parse email JSON from {url}: {exc}")
 
     messages.sort(key=lambda m: m.get("epoch", 0))
 
@@ -1422,6 +1447,52 @@ def _npm_pack_parse_package_json(raw: bytes) -> tuple[dict[str, Any] | None, str
         return None, "package/package.json is not a JSON object"
 
     return parsed, None
+
+
+def _thread_message_from_source(mid: str, content: bytes) -> dict[str, Any]:
+    parser = email.parser.BytesParser(policy=email.policy.default)
+    message = parser.parsebytes(content)
+
+    cc_pairs = email.utils.getaddresses(message.get_all("Cc", []))
+    cc_combined = ",\n".join(
+        (email.utils.formataddr((name, addr)) if name else f"<{addr}>") for name, addr in cc_pairs if (name or addr)
+    )
+
+    epoch: int = 0
+    date_raw = message.get("Date")
+    if date_raw:
+        try:
+            parsed_dt = email.utils.parsedate_to_datetime(str(date_raw))
+        except (TypeError, ValueError):
+            parsed_dt = None
+        if parsed_dt is not None:
+            try:
+                epoch = int(parsed_dt.timestamp())
+            except (OverflowError, OSError, ValueError):
+                epoch = 0
+
+    body_text = ""
+    body_part = message.get_body(preferencelist=("plain",))
+    if (body_part is None) and (not message.is_multipart()):
+        body_part = message
+    if body_part is not None:
+        content_value = body_part.get_content()
+        if isinstance(content_value, str):
+            body_text = content_value
+
+    return {
+        "id": mid,
+        "mid": mid,
+        "from_raw": str(message.get("From", "")),
+        "list_raw": str(message.get("List-Id", "")).strip().strip("<>"),
+        "cc": cc_combined,
+        "epoch": epoch,
+        "subject": str(message.get("Subject", "")),
+        "body": body_text,
+        "message-id": str(message.get("Message-ID", "")),
+        "date": str(message.get("Date", "")),
+        "received_spf": [str(value) for value in message.get_all("Received-SPF", [])],
+    }
 
 
 def _thread_messages_walk(node: dict[str, Any] | None, message_ids: set[str]) -> None:
