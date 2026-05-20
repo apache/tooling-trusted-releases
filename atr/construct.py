@@ -18,6 +18,7 @@
 import dataclasses
 import datetime
 import hashlib
+import re
 from collections.abc import Mapping
 from typing import Final, Literal, TypedDict, overload
 
@@ -413,6 +414,8 @@ def _substitute(text: str, values: _VoteSubjectValues, context: Literal["vote_su
 def _substitute(text: str, values: _VoteValues, context: Literal["vote"]) -> str: ...
 def _substitute(text: str, values: Mapping[str, object], context: Context) -> str:
     _ = context  # marks as unused for pyright - we're using the value to pick the right overload
-    for name, value in values.items():
-        text = text.replace(f"{{{{{name}}}}}", str(value))
-    return text
+    if not values:
+        return text
+    names = "|".join(re.escape(name) for name in values)
+    pattern = re.compile(r"\{\{(" + names + r")\}\}")
+    return pattern.sub(lambda match: str(values[match.group(1)]), text)
