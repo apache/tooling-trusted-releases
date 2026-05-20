@@ -43,16 +43,17 @@ type DELETE_PROJECT = Literal["delete_project"]
 
 
 class AddProjectForm(form.Form):
-    committee_key: safe.CommitteeKey = form.label("Committee name", widget=form.Widget.HIDDEN)
+    committee_key: safe.CommitteeKey = form.label("Committee key", widget=form.Widget.HIDDEN)
+    committee_key_display: str = form.label(description="Commitee key", widget=form.Widget.STATIC, default="")
     display_name: str = form.label(
-        "Display name",
+        "Project name",
         'For example, "Apache Example" or "Apache Example Components". '
         'You must start with "Apache " and you must use title case.',
     )
     label: str = form.label(
-        "Label",
+        "Project key",
         'For example, "example" or "example-components". '
-        "You must start with your committee label, and you must use lower case.",
+        "You must start with your committee key (above), and you must use lower case.",
     )
 
     @pydantic.model_validator(mode="after")
@@ -70,11 +71,11 @@ class AddProjectForm(form.Form):
         # Validate display name starts with "Apache"
         display_name_words = display_name.split(" ")
         if display_name_words[0] != "Apache":
-            raise ValueError("The first display name word must be 'Apache'.")
+            raise ValueError("The first word in the name must be 'Apache'.")
 
         # Validate display name has at least two words
         if not display_name_words[1:]:
-            raise ValueError("The display name must have at least two words.")
+            raise ValueError("Name must have at least two words.")
 
         # Validate display name uses correct case
         allowed_irregular_words = {".NET", "C++", "Empire-db", "Lucene.NET", "for", "jclouds"}
@@ -88,23 +89,23 @@ class AddProjectForm(form.Form):
             is_camel_case = r_camel_case.match(display_name_word)
             is_mod_case = r_mod_case.match(display_name_word)
             if not (is_pascal_case or is_camel_case or is_mod_case):
-                raise ValueError("Display name words must be in PascalCase, camelCase, or mod_ case.")
+                raise ValueError("Name words must be in PascalCase, camelCase, or mod_ case.")
 
         # Validate display name is alphanumeric with spaces, dots, and plus signs
         if not display_name.replace(" ", "").replace(".", "").replace("+", "").isalnum():
-            raise ValueError("Display name must be alphanumeric and may include spaces or dots or plus signs.")
+            raise ValueError("Name must be alphanumeric and may include spaces or dots or plus signs.")
 
         # Validate label starts with committee name
         if not (label.startswith(committee_key + "-") or (label == committee_key)):
-            raise ValueError(f"Label must be '{committee_key}' or start with '{committee_key}-'.")
+            raise ValueError(f"Key must be '{committee_key}' or start with '{committee_key}-'.")
 
         # Validate label is lowercase
         if not label.islower():
-            raise ValueError("Label must be all lower case.")
+            raise ValueError("Key must be all lower case.")
 
         # Validate label is alphanumeric with hyphens
         if not label.replace("-", "").isalnum():
-            raise ValueError("Label must be alphanumeric and may include hyphens.")
+            raise ValueError("Key must be alphanumeric and may include hyphens.")
 
         return self
 
@@ -205,7 +206,9 @@ class EditCycleDatesForm(form.Form):
 
 class EditMetadataForm(form.Form):
     variant: EDIT_METADATA = form.value(EDIT_METADATA)
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    project_key: safe.ProjectKey = form.label("Project key", widget=form.Widget.HIDDEN)
+    description: str = form.label(description="Project description", widget=form.Widget.TEXTAREA)
+    short_description: str = form.label(description="Short description", widget=form.Widget.TEXT)
     homepage: form.OptionalURL = form.label(
         "Homepage",
         "Project website URL.",

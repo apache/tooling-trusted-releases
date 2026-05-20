@@ -101,7 +101,7 @@ class _VoteValues(TypedDict):
 TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "BUG_DATABASE": "Bug database URL",
     "CHECKLIST_URL": "URL to the release checklist",
-    "COMMITTEE": "Committee display name",
+    "COMMITTEE": "Committee name",
     "DISCLAIMER": "Podling incubation disclaimer",
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
@@ -110,7 +110,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "KEYS_FILE": "URL to the KEYS file",
     "LIFECYCLE_PAGE": "Lifecycle page URL",
     "MAILING_LISTS": "Mailing lists page URL",
-    "PROJECT_NAME": "Project display name",
+    "PROJECT_NAME": "Project name",
     "PROJECT_KEY": "ATR key for the project",
     "RELEASE_CHECKLIST": "Release checklist content",
     "REPOSITORY": "Source repository URLs",

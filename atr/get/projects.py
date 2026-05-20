@@ -78,6 +78,7 @@ async def add_project(
         cancel_url=util.as_url(committees.view, name=committee.key),
         defaults={
             "committee_key": committee.key,
+            "committee_key_display": committee.key,
         },
     )
 
@@ -231,7 +232,6 @@ async def view(
         )
     page.append(_render_project_label_card(project))
     page.append(_render_pmc_card(project))
-    page.append(_render_description_card(project))
 
     tab_items: list[htm.Tab] = []
 
@@ -541,31 +541,6 @@ async def _render_delete_section(project: sql.Project) -> htm.Element:
     return section.collect()
 
 
-def _render_description_card(project: sql.Project) -> htm.Element:
-    card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Description"]]
-    rows: list[htm.Element] = []
-    if project.short_description:
-        rows.append(
-            htm.tr[
-                htm.th(".border-0.w-25")["Short description"],
-                htm.td(".text-break.border-0")[project.short_description],
-            ]
-        )
-    if project.description:
-        rows.append(
-            htm.tr[
-                htm.th(".border-0.w-25")["Description"],
-                htm.td(".text-break.border-0")[project.description],
-            ]
-        )
-    if rows:
-        card.div(".card-body")[htm.table(".table.mb-0")[htm.tbody[*rows]]]
-    else:
-        card.div(".card-body")[htm.div(".text-muted.fst-italic")["No description set."]]
-    return card.collect()
-
-
 async def _render_finish_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
@@ -717,6 +692,8 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
+                "description": project.description or "",
+                "short_description": project.short_description or "",
                 "homepage": project.homepage or "",
                 "lifecycle_page": project.lifecycle_page or "",
                 "download_page": project.download_page or "",
@@ -784,7 +761,7 @@ def _render_policy_readonly(project: sql.Project) -> htm.Element:
 
 def _render_project_label_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
-    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Project label"]]
+    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Project key"]]
     card.div(".card-body")[htm.code(".fs-6")[str(project.key)]]
     return card.collect()
 
