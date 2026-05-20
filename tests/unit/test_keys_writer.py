@@ -63,6 +63,9 @@ class Query:
     async def get(self):
         return self._value
 
+    async def all(self):
+        return [self._value]
+
     async def demand(self, error: Exception):
         if self._value is None:
             raise error
@@ -84,6 +87,9 @@ class MockData:
 
     def committee(self, *, key: str, _public_signing_keys: bool = False):
         return Query(self._committees_after_commit[key])
+
+    def release(self, *_args, **_kwargs):
+        return Query(SimpleNamespace(project=mock.AsyncMock()))
 
 
 @pytest.mark.asyncio

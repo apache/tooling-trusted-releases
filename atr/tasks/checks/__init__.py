@@ -472,6 +472,20 @@ async def _resolve_committee_key(release: sql.Release, rel_path: str | None = No
     return release.committee.key
 
 
+async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | None = None) -> list[str]:
+    if release.committee is None:
+        raise ValueError("Release has no committee")
+    via = sql.validate_instrumented_attribute
+    committee_key = release.committee.key
+    async with db.session() as data:
+        statement = sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
+            via(sql.KeyLink.committee_key) == committee_key
+        )
+        result = await data.execute(statement)
+        fingerprints = result.scalars().all()
+    return sorted(fp for fp in fingerprints if fp)
+
+
 async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
     if not release.latest_revision_number:
         return ""
@@ -503,6 +517,7 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
 _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]] = {
     "all_files": _resolve_all_files,
     "committee_key": _resolve_committee_key,
+    "committee_signing_keys": _resolve_committee_signing_keys,
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,

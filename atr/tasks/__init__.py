@@ -145,6 +145,7 @@ async def draft_checks(
     release_version: safe.VersionKey,
     revision_number: safe.RevisionNumber,
     caller_data: db.Session | None = None,
+    suffix_filter: list[str] | None = None,
 ) -> int:
     """Core logic to analyse a draft revision and queue checks."""
     # Construct path to the specific revision
@@ -172,6 +173,8 @@ async def draft_checks(
             (v for v in release_versions if util.version_sort_key(str(v.version)) < release_version_sortable), None
         )
         for path in relative_paths:
+            if suffix_filter and not str(path).endswith(tuple(suffix_filter)):
+                continue
             await _draft_file_checks(
                 asf_uid,
                 caller_data,

@@ -31,7 +31,7 @@ import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "unsuffixed_file_hash"]
+INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
 CHECK_VERSION: Final[str] = "3"
 
 
