@@ -48,19 +48,6 @@ import atr.tasks.task as task
 # Resource limits, 5 minutes and 3GB
 _CPU_LIMIT_SECONDS: Final = 300
 _MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
-_TASK_TYPE_LABELS: Final[dict[sql.TaskType, str]] = {
-    sql.TaskType.KEYS_IMPORT_FILE: "Key import",
-    sql.TaskType.MESSAGE_SEND: "Email send",
-    sql.TaskType.QUARANTINE_VALIDATE: "Quarantine validation",
-    sql.TaskType.SBOM_AUGMENT: "SBOM augmentation",
-    sql.TaskType.SBOM_CONVERT: "SBOM conversion",
-    sql.TaskType.SBOM_GENERATE_CYCLONEDX: "SBOM generation",
-    sql.TaskType.SBOM_OSV_SCAN: "SBOM vulnerability scan",
-    sql.TaskType.SVN_IMPORT_FILES: "SVN import",
-    sql.TaskType.VOTE_AUTO_RESOLVE: "Vote auto-resolution",
-    sql.TaskType.VOTE_END_NOTIFY: "Vote end notification",
-    sql.TaskType.VOTE_INITIATE: "Vote initiation",
-}
 
 # # Create tables if they don't exist
 # SQLModel.metadata.create_all(engine)
@@ -215,7 +202,6 @@ def _task_failure_message(
     primary_rel_path: str | None,
     error: str,
 ) -> str:
-    label = (_TASK_TYPE_LABELS.get(task_type)) or (task_type.value.replace("_", " ").capitalize())
     location_parts = []
     if project_key:
         location_parts.append(project_key)
@@ -224,7 +210,7 @@ def _task_failure_message(
     if revision_number:
         location_parts.append(f"r{revision_number}")
     path_text = _truncate_single_line(primary_rel_path, 180)
-    parts = [f"{label} failed"]
+    parts = [f"{task_type.label} failed"]
     if location_parts:
         parts.append(f"for {' '.join(location_parts)}")
     if path_text:

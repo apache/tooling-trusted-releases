@@ -24,7 +24,7 @@
 import dataclasses
 import datetime
 import enum
-from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, assert_never, overload
 
 import pydantic
 import sqlalchemy
@@ -236,6 +236,70 @@ class TaskType(enum.StrEnum):
     WORKFLOW_STATUS = "workflow_status"
     ZIPFORMAT_INTEGRITY = "zipformat_integrity"
     ZIPFORMAT_STRUCTURE = "zipformat_structure"
+
+    @property
+    def label(self) -> str:  # noqa: C901
+        match self:
+            case TaskType.COMPARE_SOURCE_TREES:
+                return "Compare source trees"
+            case TaskType.DISTRIBUTION_STATUS:
+                return "Distribution status"
+            case TaskType.DISTRIBUTION_WORKFLOW:
+                return "Distribution workflow"
+            case TaskType.HASHING_CHECK:
+                return "Hashing check"
+            case TaskType.KEYS_IMPORT_FILE:
+                return "Key import"
+            case TaskType.LICENSE_FILES:
+                return "License files"
+            case TaskType.LICENSE_HEADERS:
+                return "License headers"
+            case TaskType.MAINTENANCE:
+                return "Maintenance"
+            case TaskType.MESSAGE_SEND:
+                return "Email send"
+            case TaskType.METADATA_UPDATE:
+                return "Metadata update"
+            case TaskType.PATHS_CHECK:
+                return "Paths check"
+            case TaskType.QUARANTINE_VALIDATE:
+                return "Quarantine validation"
+            case TaskType.RAT_CHECK:
+                return "Rat check"
+            case TaskType.SBOM_AUGMENT:
+                return "SBOM augmentation"
+            case TaskType.SBOM_CONVERT:
+                return "SBOM conversion"
+            case TaskType.SBOM_GENERATE_CYCLONEDX:
+                return "SBOM generation"
+            case TaskType.SBOM_OSV_SCAN:
+                return "SBOM vulnerability scan"
+            case TaskType.SBOM_QS_SCORE:
+                return "SBOM QS score"
+            case TaskType.SBOM_TOOL_SCORE:
+                return "SBOM tool score"
+            case TaskType.SIGNATURE_CHECK:
+                return "Signature check"
+            case TaskType.SVN_IMPORT_FILES:
+                return "SVN import"
+            case TaskType.TARGZ_INTEGRITY:
+                return "Targz integrity"
+            case TaskType.TARGZ_STRUCTURE:
+                return "Targz structure"
+            case TaskType.VOTE_AUTO_RESOLVE:
+                return "Vote auto-resolution"
+            case TaskType.VOTE_END_NOTIFY:
+                return "Vote end notification"
+            case TaskType.VOTE_INITIATE:
+                return "Vote initiation"
+            case TaskType.WORKFLOW_STATUS:
+                return "Workflow status"
+            case TaskType.ZIPFORMAT_INTEGRITY:
+                return "Zipformat integrity"
+            case TaskType.ZIPFORMAT_STRUCTURE:
+                return "Zipformat structure"
+            case _:
+                assert_never(self)
 
 
 class UserRole(enum.StrEnum):
