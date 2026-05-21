@@ -910,7 +910,7 @@ This is a stable release available for production use.
 
 Downloads are available from the following URL:
 
-{{DOWNLOAD_PAGE}}
+{{DOWNLOAD_URL}}
 {{DISCLAIMER}}
 On behalf of the Apache {{COMMITTEE}} project team,
 

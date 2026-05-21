@@ -218,6 +218,15 @@ def _app_setup_api_docs(app: base.QuartApp) -> None:
 
     app.config["QUART_SCHEMA_SWAGGER_JS_URL"] = "/static/js/min/swagger-ui-bundle.min.js"
     app.config["QUART_SCHEMA_SWAGGER_CSS_URL"] = "/static/css/swagger-ui.min.css"
+    # quart_schemas response pipeline (convert_response_return_value) calls
+    # model.model_dump() on returned Pydantic models with the default
+    # mode="python". That leaves custom types such as safe.ProjectKey as
+    # raw Python objects in the response dict, which Quarts JSON encoder
+    # then cannot serialise. Force mode="json" globally so model_dump
+    # produces JSON-friendly primitives. This matches what every endpoint
+    # actually needs on the wire, including endpoints that use SafeType
+    # subclasses (ProjectKey, ReleaseKey, etc.) and StrEnum fields.
+    app.config["QUART_SCHEMA_PYDANTIC_DUMP_OPTIONS"] = {"mode": "json"}
 
     quart_schema.QuartSchema(
         app,

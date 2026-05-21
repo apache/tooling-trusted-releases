@@ -230,17 +230,16 @@ class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
 
 class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
     def __init__(self, write: Write, data: db.Session):
+        # __asf_uid and the asf_uid property are inherited from
+        # WriteAsFoundationCommitter. Defining our own here previously caused
+        # an AttributeError during construction: super().__init__() creates
+        # writers (notably notifications) that read write_as.asf_uid, which
+        # via MRO resolves to this class's property override, which reads
+        # _WriteAsFoundationAdmin__asf_uid, which had not yet been assigned.
         super().__init__(write, data)
-        self.__asf_uid = write.authorisation.asf_uid
         self.release = writers.release.FoundationAdmin(write, self, data)
         self.tokens = writers.tokens.FoundationAdmin(write, self, data)
         self.ssh = writers.ssh.FoundationAdmin(write, self, data)
-
-    @property
-    def asf_uid(self) -> str:
-        if self.__asf_uid is None:
-            raise AccessError("Not authorized", status=403)
-        return self.__asf_uid
 
 
 class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
