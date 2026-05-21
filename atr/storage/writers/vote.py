@@ -473,6 +473,7 @@ class CommitteeMember(CommitteeParticipant):
         expected_vote_mode: sql.VoteMode | None = None,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
+        bcc_private_list: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
             key=sql.release_key(str(project_key), str(version_key)),
@@ -514,6 +515,7 @@ class CommitteeMember(CommitteeParticipant):
                 podling_round_one_thread_id,
                 automatic_resolve_when_finished=automatic_resolve_when_finished,
                 notify_when_finished=notify_when_finished,
+                bcc_private_list=bcc_private_list,
             )
         if (
             (expected_vote_seq is not None)
@@ -557,6 +559,7 @@ class CommitteeMember(CommitteeParticipant):
             resolution_body,
             automatic_resolve_when_finished=automatic_resolve_when_finished,
             notify_when_finished=notify_when_finished,
+            bcc_private_list=bcc_private_list,
         )
 
     async def resolve_manually(
@@ -641,6 +644,7 @@ class CommitteeMember(CommitteeParticipant):
         resolution_body: str,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
+        bcc_private_list: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         if (voting_round == 1) and (vote_result == "passed"):
             await self.__data.commit()
@@ -774,6 +778,7 @@ class CommitteeMember(CommitteeParticipant):
             asf_fullname,
             latest_vote_task,
             extra_destination=extra_destination,
+            bcc_private_list=bcc_private_list,
         )
         # TODO: Could move this up before send_resolution
         if (second_round_vote_seq is not None) and (second_round_vote_mode is not None):
@@ -807,6 +812,7 @@ class CommitteeMember(CommitteeParticipant):
         asf_fullname: str,
         latest_vote_task: sql.Task,
         extra_destination: tuple[str, str] | None = None,
+        bcc_private_list: bool = False,
     ) -> str | None:
         storage.ensure_project_active(release.project)
         # Get the email thread
@@ -821,8 +827,14 @@ class CommitteeMember(CommitteeParticipant):
         email_to: str = latest_vote_task.task_args["email_to"]
         email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
         email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
+        # The send task rejects duplicate recipients case-insensitively, so guard before adding
+        if bcc_private_list and (release.committee is not None):
+            private_list_address = f"private@{release.committee.key}.apache.org"
+            existing = {addr.lower() for addr in [email_to, *email_cc, *email_bcc]}
+            if private_list_address.lower() not in existing:
+                email_bcc = [*email_bcc, private_list_address]
         email_sender = f"{self.__asf_uid}@apache.org"
-        subject = f"[VOTE] [RESULT] Release {release.project.display_name} {release.version} {resolution.upper()}"
+        subject = tabulate.vote_result_subject(release, resolution)
         # TODO: This duplicates atr/tabulate.py code
         # There are arguments for using this code instead:
         # - It enforces a consistent style
@@ -890,6 +902,7 @@ class CommitteeMember(CommitteeParticipant):
         *,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
+        bcc_private_list: bool = False,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
@@ -1061,6 +1074,7 @@ class CommitteeMember(CommitteeParticipant):
                 asf_fullname,
                 latest_vote_task,
                 extra_destination=extra_destination,
+                bcc_private_list=bcc_private_list,
             )
 
         self.__write_as.append_to_audit_log(

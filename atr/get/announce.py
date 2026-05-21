@@ -99,7 +99,7 @@ async def selected(
         revision_number=release.unwrap_revision_number,
     )
 
-    permitted_recipients = util.permitted_announce_recipients(session.uid)
+    permitted_recipients = util.permitted_announce_recipients(session.uid, committee_key=util.unwrap(committee.key))
 
     content = await _render_page(
         release=release,
@@ -133,6 +133,94 @@ async def _get_page_data(
         with_project_release_policy=True,
     )
     return release
+
+
+def _missing_distributions_message(release: sql.Release) -> str:
+    policy = release.release_policy or release.project.release_policy
+    if not (policy and policy.file_tag_mappings):
+        return ""
+    published = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
+    missing = [tag for tag in policy.file_tag_mappings if tag not in published]
+    if not missing:
+        return ""
+    return (
+        f"This release cannot be announced until the following distributions have been recorded: {', '.join(missing)}"
+    )
+
+
+def _recipients_documentation() -> str | None:
+    if config.get().ATR_STATUS != "ALPHA":
+        return None
+    return (
+        "Note: The options to send to the user-tests mailing list and yourself are provided for"
+        " testing purposes only, and will not be available in the finished version of ATR."
+    )
+
+
+async def _render_announce_form(
+    page: htm.Block,
+    release: sql.Release,
+    *,
+    permitted_recipients: list[str],
+    subject_template_hash: str,
+    default_subject: str,
+    default_body: str,
+    default_download_path_value: str,
+    download_path_description: str,
+    preview_url: str,
+) -> None:
+    custom_subject_widget = _render_subject_field(default_subject, release.project.key)
+    custom_body_widget = _render_body_field(default_body, release.project.key)
+    download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
+    default_to = permitted_recipients[0] if permitted_recipients else None
+    to_radios = htm.div[
+        render.html_recipients_to_radios(
+            permitted_recipients,
+            default_to=default_to,
+            documentation=_recipients_documentation(),
+        ),
+        htpy.details(".mt-2")[
+            htpy.summary["Select CC and BCC recipients"],
+            render.html_recipients_cc_bcc_table(permitted_recipients),
+        ],
+    ]
+
+    prior_release_version = ""
+    if release.archive_prior_release and release.project.policy_auto_archive_prior_release:
+        prior = await interaction.prior_release_for_archive(release.project, release.version)
+        if prior is not None:
+            prior_release_version = prior.version
+
+    defaults_dict = {
+        "revision_number": release.unwrap_revision_number,
+        "subject_template_hash": subject_template_hash,
+        "body": default_body,
+        "auto_archive": bool(release.archive_prior_release),
+        "auto_archive_release": prior_release_version or "",
+    }
+
+    skip = ["email_cc", "email_bcc"]
+    if not prior_release_version:
+        # Prior release version will only be set if the options for archival are True *and* we found a release
+        skip.extend(["auto_archive", "auto_archive_release"])
+    await form.render_block(
+        page,
+        model_cls=shared.announce.AnnounceForm,
+        action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
+        submit_label="Publish & announce",
+        defaults=defaults_dict,
+        custom={
+            "email_to": to_radios,
+            "subject": custom_subject_widget,
+            "body": custom_body_widget,
+            "download_path_suffix": download_path_widget,
+        },
+        skip=skip,
+        form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
+        border=True,
+        wider_widgets=True,
+    )
+    page.append(htpy.div("#announce-body-config.d-none", data_preview_url=preview_url))
 
 
 def _render_body_field(default_body: str, project_key: str) -> htm.Element:
@@ -206,85 +294,23 @@ async def _render_page(
     if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)
 
-    announce_msg = ""
-    policy = release.release_policy or release.project.release_policy
-    if policy and policy.file_tag_mappings:
-        missing = []
-        tags = policy.file_tag_mappings.keys()
-        distributions = [d.platform.value.gh_slug for d in release.distributions if (not d.staging) and (not d.pending)]
-        for tag in tags:
-            if tag not in distributions:
-                missing.append(tag)
-        if missing:
-            announce_msg = f"This release cannot be announced until the following distributions have been recorded: {
-                ', '.join(missing)
-            }"
-
-    if not announce_msg:
-        page.p["This form will send an announcement to the selected recipients."]
-
-        custom_subject_widget = _render_subject_field(default_subject, release.project.key)
-        custom_body_widget = _render_body_field(default_body, release.project.key)
-        default_to = permitted_recipients[0] if permitted_recipients else None
-        to_radios = htm.div[
-            render.html_recipients_to_radios(
-                permitted_recipients,
-                default_to=default_to,
-                documentation=(
-                    "Note: The options to send to the user-tests "
-                    "mailing list and yourself are provided for "
-                    "testing purposes only, and will not be "
-                    "available in the finished version of ATR."
-                ),
-            ),
-            htpy.details(".mt-2")[
-                htpy.summary["Select CC and BCC recipients"],
-                render.html_recipients_cc_bcc_table(permitted_recipients),
-            ],
-        ]
-
-        # Custom widget for download_path_suffix with custom documentation
-        download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
-
-        prior_release_version = ""
-        if release.archive_prior_release and release.project.policy_auto_archive_prior_release:
-            prior = await interaction.prior_release_for_archive(release.project, release.version)
-            if prior is not None:
-                prior_release_version = prior.version
-
-        defaults_dict = {
-            "revision_number": release.unwrap_revision_number,
-            "subject_template_hash": subject_template_hash,
-            "body": default_body,
-            "auto_archive": bool(release.archive_prior_release),
-            "auto_archive_release": prior_release_version or "",
-        }
-
-        skip = ["email_cc", "email_bcc"]
-        if not prior_release_version:
-            # Prior release version will only be set if the options for archival are True *and* we found a release
-            skip.extend(["auto_archive", "auto_archive_release"])
-        await form.render_block(
-            page,
-            model_cls=shared.announce.AnnounceForm,
-            action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
-            submit_label="Publish & announce",
-            defaults=defaults_dict,
-            custom={
-                "email_to": to_radios,
-                "subject": custom_subject_widget,
-                "body": custom_body_widget,
-                "download_path_suffix": download_path_widget,
-            },
-            skip=skip,
-            form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
-            border=True,
-            wider_widgets=True,
-        )
-        page.append(htpy.div("#announce-body-config.d-none", data_preview_url=preview_url))
-    else:
+    announce_msg = _missing_distributions_message(release)
+    if announce_msg:
         page.p[htm.strong[announce_msg]]
+        return page.collect()
 
+    page.p["This form will send an announcement to the selected recipients."]
+    await _render_announce_form(
+        page,
+        release,
+        permitted_recipients=permitted_recipients,
+        subject_template_hash=subject_template_hash,
+        default_subject=default_subject,
+        default_body=default_body,
+        default_download_path_value=default_download_path_value,
+        download_path_description=download_path_description,
+        preview_url=preview_url,
+    )
     return page.collect()
 
 

@@ -168,6 +168,10 @@ def vote_resolution(
     )
 
 
+def vote_result_subject(release: sql.Release, resolution: str) -> str:
+    return f"[VOTE] [RESULT] Release {release.project.display_name} {release.version} {resolution.upper()}"
+
+
 def vote_summary(tabulated_votes: dict[str, models.tabulate.VoteEmail]) -> dict[str, int]:
     result = {
         "binding_votes": 0,

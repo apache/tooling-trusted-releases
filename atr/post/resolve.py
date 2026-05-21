@@ -51,6 +51,7 @@ async def selected(
 
     automatic_resolve_when_finished = _read_auto_resolve_flag(submit_form)
     notify_when_finished = _read_notify_flag(submit_form)
+    bcc_private_list = _read_bcc_private_flag(submit_form)
 
     try:
         async with storage.write_as_project_committee_member(project_key) as wacm:
@@ -64,6 +65,7 @@ async def selected(
                 expected_vote_mode=submit_form.vote_mode,
                 automatic_resolve_when_finished=automatic_resolve_when_finished,
                 notify_when_finished=notify_when_finished,
+                bcc_private_list=bcc_private_list,
             )
     except storage.AccessError as e:
         return await session.redirect(
@@ -94,6 +96,12 @@ async def selected(
 def _read_auto_resolve_flag(submit_form: shared.resolve.ResolveForm) -> bool:
     if isinstance(submit_form, shared.resolve.SubmitForm):
         return bool(submit_form.automatic_resolve_when_finished)
+    return False
+
+
+def _read_bcc_private_flag(submit_form: shared.resolve.ResolveForm) -> bool:
+    if isinstance(submit_form, shared.resolve.SubmitForm):
+        return bool(submit_form.bcc_private_list)
     return False
 
 

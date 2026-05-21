@@ -123,7 +123,7 @@ class CommitteeMember(CommitteeParticipant):
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
     ) -> None:
-        permitted = util.permitted_announce_recipients(self.__asf_uid)
+        permitted = util.permitted_announce_recipients(self.__asf_uid, committee_key=self.__committee_key)
         all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
         for addr in all_addrs:
             if addr not in permitted:

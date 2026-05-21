@@ -69,7 +69,7 @@ async def test_announce_release_blocks_retired(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         announce.util,
         "permitted_announce_recipients",
-        lambda _uid: {"dev@project.apache.org"},
+        lambda _uid, committee_key: {"dev@project.apache.org"},
     )
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))

@@ -47,7 +47,14 @@ class CancelSubmitForm(form.Form):
 
 class SubmitForm(form.Form):
     variant: SUBMIT = form.value(SUBMIT)
-    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
+    result_email_to: str = form.label("To", widget=form.Widget.STATIC, default="")
+    bcc_private_list: form.Bool = form.label(
+        "BCC private@",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
+    result_subject: str = form.label("Subject", widget=form.Widget.STATIC, default="")
+    email_body: str = form.label("Body", widget=form.Widget.TEXTAREA, max_length=100_000)
     vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",

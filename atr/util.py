@@ -865,16 +865,19 @@ def paths_to_inodes(directory: os.PathLike) -> dict[str, int]:
     return result
 
 
-def permitted_announce_recipients(asf_uid: str) -> list[str]:
-    recipients = [
-        # f"dev@{committee.name}.apache.org",
-        # f"private@{committee.name}.apache.org",
-    ]
+def permitted_announce_recipients(asf_uid: str, committee_key: str | None = None) -> list[str]:
     if config.get().ATR_STATUS == "ALPHA":
-        recipients.append(USER_TESTS_ADDRESS)
-        recipients.append(f"{asf_uid}@apache.org")
-    else:
-        recipients.append("announce@apache.org")
+        return [USER_TESTS_ADDRESS, f"{asf_uid}@apache.org"]
+    recipients = ["announce@apache.org"]
+    if committee_key is not None:
+        recipients.extend(
+            [
+                f"announce@{committee_key}.apache.org",
+                f"dev@{committee_key}.apache.org",
+                f"user@{committee_key}.apache.org",
+                f"private@{committee_key}.apache.org",
+            ]
+        )
     return recipients
 
 

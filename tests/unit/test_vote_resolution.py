@@ -558,7 +558,12 @@ async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails
         "Please review the vote manually and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
+    assert form_render.call_args.kwargs["defaults"] == {
+        "result_email_to": "dev@project.apache.org",
+        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "vote_mode": sql.VoteMode.EMAIL,
+        "vote_seq": None,
+    }
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_not_awaited()
@@ -579,7 +584,12 @@ async def test_resolve_page_allows_manual_continuation_when_tabulation_is_invali
         "Please review the vote manually and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
+    assert form_render.call_args.kwargs["defaults"] == {
+        "result_email_to": "dev@project.apache.org",
+        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "vote_mode": sql.VoteMode.EMAIL,
+        "vote_seq": None,
+    }
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_awaited_once()
@@ -606,7 +616,12 @@ async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
         "and continue below."
     )
     assert context["resolve_form"] == "FORM"
-    assert form_render.call_args.kwargs["defaults"] == {"vote_mode": sql.VoteMode.EMAIL, "vote_seq": None}
+    assert form_render.call_args.kwargs["defaults"] == {
+        "result_email_to": "dev@project.apache.org",
+        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "vote_mode": sql.VoteMode.EMAIL,
+        "vote_seq": None,
+    }
     assert form_render.call_args.kwargs["pre_submit"] is not None
     assert archive_lookup.await_args.kwargs["strict"] is True
     vote_committee.assert_awaited_once()

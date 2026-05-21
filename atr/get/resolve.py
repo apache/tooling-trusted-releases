@@ -269,6 +269,27 @@ async def selected(  # noqa: C901
         skip.append("automatic_resolve_when_finished")
         skip.append("notify_when_finished")
 
+    if form_cls is shared.resolve.SubmitForm:
+        # The result reuses whatever list the vote ran on; show it for reference
+        defaults["result_email_to"] = vote_recipient or "the original vote thread recipients"
+        defaults["result_subject"] = tabulate.vote_result_subject(release, "<resolution>")
+        if release.committee is not None:
+            private_list_address = f"private@{release.committee.key}.apache.org"
+            custom["bcc_private_list"] = htm.div[
+                htpy.input(
+                    type="checkbox",
+                    name="bcc_private_list",
+                    id="bcc_private_list",
+                    value="on",
+                    class_="form-check-input",
+                ),
+                htm.div(".form-text.text-muted.mt-1")[
+                    f"If set, ATR will also send a blind copy of the result to {private_list_address}.",
+                ],
+            ]
+        else:
+            skip.append("bcc_private_list")
+
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
         icon = htpy.i(class_="bi bi-exclamation-triangle me-1")

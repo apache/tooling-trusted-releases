@@ -73,9 +73,6 @@ async def selected(
     URL: /announce/<project_key>/<version_key>
     Handle the announcement form submission and promote the preview to release.
     """
-    if response := await _validate_recipients(session, announce_form):
-        return response
-
     release = await session.release(
         project_key,
         version_key,
@@ -86,6 +83,11 @@ async def selected(
         with_project_release_policy=True,
     )
     preview_revision_number = release.safe_latest_revision_number
+
+    if (committee := release.project.committee) is None:
+        raise ValueError("Release has no committee")
+    if response := await _validate_recipients(session, announce_form, util.unwrap(committee.key)):
+        return response
 
     if announce_form.revision_number != preview_revision_number:
         return await session.redirect(
@@ -166,9 +168,9 @@ async def _validate_distributions(
 
 
 async def _validate_recipients(
-    session: web.Committer, announce_form: shared.announce.AnnounceForm
+    session: web.Committer, announce_form: shared.announce.AnnounceForm, committee_key: str
 ) -> web.WerkzeugResponse | None:
-    permitted = util.permitted_announce_recipients(session.uid)
+    permitted = util.permitted_announce_recipients(session.uid, committee_key=committee_key)
     addresses = [announce_form.email_to, *announce_form.email_cc, *announce_form.email_bcc]
     for addr in addresses:
         if addr not in permitted:
