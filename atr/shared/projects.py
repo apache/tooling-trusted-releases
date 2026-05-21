@@ -45,13 +45,73 @@ def _strip_whitespace(value: object) -> object:
     return value.strip() if isinstance(value, str) else value
 
 
+def _validate_display_name(val: str) -> str:
+    """Apply the Apache project display name rules. Returns the normalised value.
+
+    The form's "Apache" prefix is added automatically, so callers may submit
+    either "Example Components" or "Apache Example Components" — both yield
+    "Apache Example Components". The leading "Apache" is stripped
+    case-insensitively, so "apache example" and "APACHE Example" also work.
+    Raises ValueError on failure. Shared between AddProjectForm and
+    EditMetadataForm so the two stay in lockstep.
+    """
+    display_name = val.strip()
+    # Normalise spaces in the display name
+    display_name = re.sub(r"  +", " ", display_name)
+
+    if not display_name:
+        raise ValueError("Name is required.")
+
+    # Strip a leading "Apache" (any case) so users who type the prefix out of
+    # habit aren't punished. The canonical "Apache " is reapplied below.
+    leading_apache = re.match(r"^[Aa][Pp][Aa][Cc][Hh][Ee](?:\s+|$)", display_name)
+    if leading_apache:
+        display_name = display_name[leading_apache.end() :]
+
+    if not display_name:
+        raise ValueError("Name must have at least two words.")
+
+    display_name = f"Apache {display_name}"
+
+    display_name_words = display_name.split(" ")
+
+    # Validate display name uses correct case. Each non-Apache word must either
+    # be on the irregular-word allow-list or match one of the structural regexes.
+    # This check is sufficient: every regex restricts to alphanumerics, so any
+    # string that passes here is already character-safe by construction.
+    allowed_irregular_words = {
+        ".NET",
+        "(APR)",
+        "C++",
+        "Empire-db",
+        "Lucene.NET",
+        "Lucene.Net",
+        "Lucene.net",
+        "for",
+        "jclouds",
+    }
+    r_pascal_case = re.compile(r"^([A-Z][0-9a-z]*)+$")
+    r_camel_case = re.compile(r"^[a-z]*([A-Z][0-9a-z]*)+$")
+    r_mod_case = re.compile(r"^mod(_[0-9a-z]+)+$")
+    for display_name_word in display_name_words[1:]:
+        if display_name_word in allowed_irregular_words:
+            continue
+        is_pascal_case = r_pascal_case.match(display_name_word)
+        is_camel_case = r_camel_case.match(display_name_word)
+        is_mod_case = r_mod_case.match(display_name_word)
+        if not (is_pascal_case or is_camel_case or is_mod_case):
+            raise ValueError(f"Name word {display_name_word!r} must be in PascalCase, camelCase, or mod_ case.")
+
+    return display_name
+
+
 class AddProjectForm(form.Form):
     committee_key: safe.CommitteeKey = form.label("Committee key", widget=form.Widget.HIDDEN)
     committee_key_display: str = form.label(description="Committee key", widget=form.Widget.STATIC, default="")
     display_name: str = form.label(
         "Project name",
-        'For example, "Apache Example" or "Apache Example Components". '
-        'You must start with "Apache " and you must use title case.',
+        'For example, "Example" or "Example Components". Use title case; the "Apache" prefix is added for you.',
+        prefix="Apache",
     )
     key: Annotated[safe.ProjectKey, pydantic.BeforeValidator(_strip_whitespace)] = form.label(
         "Project key",
@@ -62,38 +122,7 @@ class AddProjectForm(form.Form):
     @pydantic.field_validator("display_name", mode="before")
     @classmethod
     def validate_display_name(cls, val: str) -> str:
-        display_name = val.strip()
-        # Normalise spaces in the display name
-        display_name = re.sub(r"  +", " ", display_name)
-
-        display_name_words = display_name.split(" ")
-
-        # Validate display name starts with "Apache"
-        if display_name_words[0] != "Apache":
-            raise ValueError("The first word in the name must be 'Apache'.")
-        # Validate display name has at least two words
-        if not display_name_words[1:]:
-            raise ValueError("Name must have at least two words.")
-
-        # Validate display name uses correct case
-        allowed_irregular_words = {".NET", "C++", "Empire-db", "Lucene.NET", "for", "jclouds"}
-        r_pascal_case = re.compile(r"^([A-Z][0-9a-z]*)+$")
-        r_camel_case = re.compile(r"^[a-z]*([A-Z][0-9a-z]*)+$")
-        r_mod_case = re.compile(r"^mod(_[0-9a-z]+)+$")
-        for display_name_word in display_name_words[1:]:
-            if display_name_word in allowed_irregular_words:
-                continue
-            is_pascal_case = r_pascal_case.match(display_name_word)
-            is_camel_case = r_camel_case.match(display_name_word)
-            is_mod_case = r_mod_case.match(display_name_word)
-            if not (is_pascal_case or is_camel_case or is_mod_case):
-                raise ValueError("Name words must be in PascalCase, camelCase, or mod_ case.")
-
-        # Validate display name is alphanumeric with spaces, dots, and plus signs
-        if not display_name.replace(" ", "").replace(".", "").replace("+", "").isalnum():
-            raise ValueError("Name must be alphanumeric and may include spaces or dots or plus signs.")
-
-        return display_name
+        return _validate_display_name(val)
 
     @pydantic.field_validator("key", mode="after")
     @classmethod
@@ -205,6 +234,11 @@ class EditCycleDatesForm(form.Form):
 class EditMetadataForm(form.Form):
     variant: EDIT_METADATA = form.value(EDIT_METADATA)
     project_key: safe.ProjectKey = form.label("Project key", widget=form.Widget.HIDDEN)
+    display_name: str = form.label(
+        "Project name",
+        'For example, "Example" or "Example Components". Use title case; the "Apache" prefix is added for you.',
+        prefix="Apache",
+    )
     description: str = form.label(description="Project description", widget=form.Widget.TEXTAREA)
     short_description: str = form.label(description="Short description", widget=form.Widget.TEXT)
     homepage: form.OptionalURL = form.label(
@@ -239,6 +273,11 @@ class EditMetadataForm(form.Form):
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
+
+    @pydantic.field_validator("display_name", mode="before")
+    @classmethod
+    def validate_display_name(cls, val: str) -> str:
+        return _validate_display_name(val)
 
 
 class EditVersionSchemeForm(form.Form):

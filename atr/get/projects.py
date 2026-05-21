@@ -719,6 +719,7 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
             submit_label="Save",
             defaults={
                 "project_key": str(project.key),
+                "display_name": (project.name or "").removeprefix("Apache "),
                 "description": project.description or "",
                 "short_description": project.short_description or "",
                 "homepage": project.homepage or "",

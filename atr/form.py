@@ -1125,7 +1125,16 @@ def _render_widget(  # noqa: C901
             attrs = {**base_attrs, "type": "text"}
             if field_value:
                 attrs["value"] = str(field_value)
-            widget = htpy.input(**attrs)
+            text_input = htpy.input(**attrs)
+            json_schema_extra = field_info.json_schema_extra or {}
+            field_prefix = json_schema_extra.get("prefix") if isinstance(json_schema_extra, dict) else None
+            if field_prefix:
+                widget = htm.div(".input-group")[
+                    htm.span(".input-group-text")[str(field_prefix)],
+                    text_input,
+                ]
+            else:
+                widget = text_input
 
         case Widget.TEXTAREA:
             json_schema_extra = field_info.json_schema_extra or {}
