@@ -1,4 +1,4 @@
-# 3.10 Code policies
+# 3.10. Code policies
 
 **Up**: `3.` [Developer guide](developer-guide)
 
