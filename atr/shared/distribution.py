@@ -443,17 +443,14 @@ def _template_url(
     if staging is False:
         return dd.platform.value.template_url
 
-    supported = {
-        sql.DistributionPlatform.ARTIFACT_HUB,
-        sql.DistributionPlatform.PYPI,
-        sql.DistributionPlatform.MAVEN,
-    }
-    if dd.platform not in supported:
-        raise RuntimeError("Staging is currently supported only for ArtifactHub, PyPI and Maven Central.")
-
+    # The enum is the single source of truth for which platforms support
+    # staging: a platform supports it iff its DistributionPlatformValue
+    # declares a template_staging_url. Maintaining a parallel whitelist
+    # here meant that adding a new staging URL silently failed unless
+    # someone also remembered to update the set. See issue #751.
     template_url = dd.platform.value.template_staging_url
     if template_url is None:
-        raise RuntimeError("This platform does not provide a staging API endpoint.")
+        raise RuntimeError(f"Platform {dd.platform.value.name} does not provide a staging API endpoint.")
 
     return template_url
 

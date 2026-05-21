@@ -1556,6 +1556,12 @@ class Distribution(sqlmodel.SQLModel, table=True):
     api_url: str | None = sqlmodel.Field(default=None)
     web_url: str | None = sqlmodel.Field(default=None)
     created_by: str | None = sqlmodel.Field(default=None)
+    # Records which Revision was the source of the staged artifacts.
+    # Set when staging=True so that the finish-phase code can verify the
+    # artifacts being promoted match those that were voted on, addressing
+    # the caveat in https://github.com/apache/tooling-trusted-releases/issues/751
+    # The column is nullable so that pre-existing rows are unaffected.
+    staging_revision_key: str | None = sqlmodel.Field(default=None, foreign_key="revision.key")
     # The API response can be huge, e.g. from npm
     # So we do not store it in the database
     # api_response: Any = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))

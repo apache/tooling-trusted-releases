@@ -156,6 +156,7 @@ class CommitteeMember(CommitteeParticipant):
         upload_date: datetime.datetime | None,
         api_url: str | None = None,
         web_url: str | None = None,
+        staging_revision_key: str | None = None,
     ) -> tuple[models.sql.Distribution, bool]:
         release = await self.__data.release(key=str(release_key), _project=True).demand(
             storage.AccessError(f"Release '{release_key}' not found.")
@@ -178,6 +179,9 @@ class CommitteeMember(CommitteeParticipant):
             api_url=api_url,
             web_url=web_url,
             created_by=self.__asf_uid,
+            # Only meaningful for staging rows; ignore the value otherwise
+            # so we don't accidentally pin a production row to a revision.
+            staging_revision_key=staging_revision_key if staging else None,
         )
         if existing is None:
             self.__data.add(dist)
@@ -227,6 +231,7 @@ class CommitteeMember(CommitteeParticipant):
         staging: bool,
         dd: models.distribution.Data,
         allow_retries: bool = False,
+        staging_revision_key: str | None = None,
     ) -> tuple[models.sql.Distribution, bool, models.distribution.Metadata | None]:
         release = await self.__data.release(key=str(release_key), _project=True).demand(
             storage.AccessError(f"Release '{release_key}' not found.")
@@ -254,6 +259,7 @@ class CommitteeMember(CommitteeParticipant):
                         upload_date=None,
                         api_url=None,
                         web_url=None,
+                        staging_revision_key=staging_revision_key,
                     )
                     return dist, added, None
                 raise storage.AccessError(f"Failed to get API response from distribution platform: {error}", status=502)
@@ -278,6 +284,7 @@ class CommitteeMember(CommitteeParticipant):
             upload_date=upload_date,
             api_url=api_url,
             web_url=web_url,
+            staging_revision_key=staging_revision_key,
         )
         return dist, added, metadata
 
@@ -302,6 +309,12 @@ class CommitteeMember(CommitteeParticipant):
             version=version,
         ).demand(RuntimeError(f"Distribution {tag} not found"))
         if existing.staging:
+            # TODO(#751): When remote promotion of artifacts to third party
+            # platforms is implemented, assert here that existing.staging_revision_key
+            # equals the current Revision.key for the release before flipping
+            # staging to False, so that the artifacts being promoted are
+            # guaranteed to match those that were voted on. The column was
+            # added in #751 for exactly this purpose.
             existing.staging = False
             existing.pending = pending
             existing.upload_date = upload_date
