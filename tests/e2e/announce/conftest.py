@@ -80,6 +80,10 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.wait_for_load_state()
 
     page.locator("input#vote_duration").fill("0")
+    # Acknowledge every concern group raised by the checks (e.g. Rat Check)
+    # so the vote-start form accepts the submission.
+    for _box in page.locator('input[name="concerns_noted"]').all():
+        _box.check()
     page.get_by_role("button", name="Send vote email").click()
     page.wait_for_url(f"**/vote/{PROJECT_KEY}/{VERSION_KEY}")
 
@@ -219,6 +223,10 @@ def _run_release_to_finish(context: BrowserContext, page: Page, version: str, op
     page.wait_for_load_state()
 
     page.locator("input#vote_duration").fill("0")
+    # Acknowledge every concern group raised by the checks (e.g. Rat Check)
+    # so the vote-start form accepts the submission.
+    for _box in page.locator('input[name="concerns_noted"]').all():
+        _box.check()
     page.get_by_role("button", name="Send vote email").click()
     page.wait_for_url(f"**/vote/{PROJECT_KEY}/{version}")
 

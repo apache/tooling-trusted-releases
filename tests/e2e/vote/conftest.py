@@ -78,6 +78,13 @@ def vote_context(browser: Browser) -> Generator[BrowserContext]:
     page.locator('a[title="Start a vote on this draft"]').click()
     page.wait_for_load_state()
 
+    # Acknowledge every concern group raised by the checks (e.g. Rat Check)
+    # so the vote-start form accepts the submission. Without this, the
+    # handler returns to the form with an "acknowledge every current concern
+    # group" error and the redirect to /vote/... never happens.
+    for _box in page.locator('input[name="concerns_noted"]').all():
+        _box.check()
+
     page.get_by_role("button", name="Send vote email").click()
     page.wait_for_url(f"**/vote/{PROJECT_KEY}/{VERSION_KEY}")
 

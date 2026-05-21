@@ -294,6 +294,18 @@ class ProjectGetResults(schema.Strict):
 
 
 class PolicyGetResults(schema.Strict):
+    # quart_schema.validate_response runs the response dict (produced by
+    # model_dump(mode="json")) back through this model. mode="json" serialises
+    # StrEnum values to plain strings, but schema.Strict has strict=True, which
+    # rejects strings where a LicenseCheckMode or VoteMode instance is
+    # expected. Override to allow string -> enum coercion on revalidation. We
+    # keep extra="forbid".
+    model_config = pydantic.ConfigDict(
+        extra="forbid",
+        strict=False,
+        validate_assignment=True,
+    )
+
     endpoint: Literal["/policy/get"] = schema.alias("endpoint")
     project_key: safe.ProjectKey
     policy_announce_release_subject: str
