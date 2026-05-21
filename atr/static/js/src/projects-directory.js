@@ -52,33 +52,46 @@ document
 
 // Participant filter logic
 const participantButton = document.getElementById("filter-participant-button");
-participantButton.addEventListener("click", function () {
-	const showing = this.dataset.showing;
+
+// Apply the participant view and sync the button text and count to match
+function applyParticipantView(showParticipantOnly) {
 	const cards = document.querySelectorAll(".page-project-card");
 	let visibleCount = 0;
-
-	if (showing === "all") {
-		// Switch to showing only participant projects
-		cards.forEach((card) => {
-			const isParticipant = card.dataset.isParticipant === "true";
-			card.parentElement.hidden = !isParticipant;
-			if (!card.parentElement.hidden) {
-				visibleCount++;
-			}
-		});
-		this.textContent = "Show all projects";
-		this.dataset.showing = "participant";
-	} else {
-		// Switch to showing all projects
-		cards.forEach((card) => {
-			card.parentElement.hidden = false;
+	for (const card of cards) {
+		const isParticipant = card.dataset.isParticipant === "true";
+		card.parentElement.hidden = showParticipantOnly && !isParticipant;
+		if (!card.parentElement.hidden) {
 			visibleCount++;
-		});
-		this.textContent = "Show my projects";
-		this.dataset.showing = "all";
+		}
 	}
+	participantButton.textContent = showParticipantOnly
+		? "Show all projects"
+		: "Show my projects";
+	participantButton.dataset.showing = showParticipantOnly
+		? "participant"
+		: "all";
 	// Reset text filter when toggling participant view
 	document.getElementById("project-filter").value = "";
-	// Update count
 	document.getElementById("project-count").textContent = visibleCount;
+}
+
+participantButton.addEventListener("click", function () {
+	const showParticipantOnly = this.dataset.showing === "all";
+	applyParticipantView(showParticipantOnly);
+	const url = new URL(window.location);
+	if (showParticipantOnly) {
+		url.searchParams.set("show", "mine");
+	} else {
+		url.searchParams.delete("show");
+	}
+	window.history.replaceState({}, "", url);
 });
+
+if (new URLSearchParams(window.location.search).get("show") === "mine") {
+	const anyParticipant = [
+		...document.querySelectorAll(".page-project-card"),
+	].some((card) => card.dataset.isParticipant === "true");
+	if (anyParticipant) {
+		applyParticipantView(true);
+	}
+}
