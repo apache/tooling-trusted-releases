@@ -19,6 +19,7 @@ import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
 
+import pydantic
 import pytest
 
 import atr.models.safe as safe
@@ -259,9 +260,9 @@ async def test_edit_version_scheme_rejects_invalid_cycle_match_regex():
     project = _project()
     data = _MockData(project=project)
     writer = _make_committee_member(data)
-    form = _version_scheme_form(cycle_match="(unclosed")
 
-    with pytest.raises(ValueError, match="Invalid cycle_match regex"):
+    with pytest.raises(pydantic.ValidationError, match="Cycle match is not a valid regex"):
+        form = _version_scheme_form(cycle_match="(unclosed")
         await writer.edit_version_scheme(form)
 
 
@@ -269,9 +270,9 @@ async def test_edit_version_scheme_rejects_cycle_match_without_capture_group():
     project = _project()
     data = _MockData(project=project)
     writer = _make_committee_member(data)
-    form = _version_scheme_form(cycle_match=r"^\d+\.\d+\.\d+$")
 
-    with pytest.raises(ValueError, match="at least one capture group"):
+    with pytest.raises(pydantic.ValidationError, match="at least one capture group"):
+        form = _version_scheme_form(cycle_match=r"^\d+\.\d+\.\d+$")
         await writer.edit_version_scheme(form)
 
 
@@ -279,9 +280,9 @@ async def test_edit_version_scheme_rejects_invalid_version_pattern_regex():
     project = _project()
     data = _MockData(project=project)
     writer = _make_committee_member(data)
-    form = _version_scheme_form(version_pattern="(unclosed")
 
-    with pytest.raises(ValueError, match="Invalid version_pattern regex"):
+    with pytest.raises(pydantic.ValidationError, match="Version pattern is not a valid regex"):
+        form = _version_scheme_form(version_pattern="(unclosed")
         await writer.edit_version_scheme(form)
 
 

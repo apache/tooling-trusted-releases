@@ -47,7 +47,7 @@ async def add_project(
     URL: /project/add/<committee_key>
     """
     display_name = project_form.display_name
-    label = project_form.label
+    project_key = project_form.key
 
     if committee_key != project_form.committee_key:
         raise ValueError(f"Invalid committee key: {committee_key}")
@@ -55,14 +55,14 @@ async def add_project(
     async with storage.write(session) as write:
         wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_key)))
         try:
-            await wacm.project.create(committee_key, display_name, label)
+            await wacm.project.create(committee_key, display_name, project_key)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.add_project, committee_key=str(committee_key), error=f"Error adding project: {e}"
             )
 
     return await session.redirect(
-        get.projects.view, project_key=label, success=f"Project '{display_name}' added successfully."
+        get.projects.view, project_key=str(project_key), success=f"Project '{display_name}' added successfully."
     )
 
 

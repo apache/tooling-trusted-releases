@@ -150,9 +150,9 @@ class CommitteeMember(CommitteeParticipant):
             return True
         return False
 
-    async def create(self, committee_key: safe.CommitteeKey, display_name: str, label: str) -> None:
+    async def create(self, committee_key: safe.CommitteeKey, display_name: str, project_key: safe.ProjectKey) -> None:
         try:
-            await self._build_and_add_project_no_commit(committee_key, display_name, label)
+            await self._build_and_add_project_no_commit(committee_key, display_name, project_key)
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             if (
@@ -160,22 +160,22 @@ class CommitteeMember(CommitteeParticipant):
                 and (e.orig.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY)
                 and ("project.key" in str(e.orig))
             ):
-                raise storage.AccessError(f"Project {label} already exists", status=409)
+                raise storage.AccessError(f"Project {project_key} already exists", status=409)
             raise
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             committee_key=str(committee_key),
-            project_key=label,
+            project_key=str(project_key),
         )
 
     async def _build_and_add_project_no_commit(
         self,
         committee_key: safe.CommitteeKey,
         display_name: str,
-        label: str,
+        project_key: safe.ProjectKey,
     ) -> sql.Project:
         super_project = None
-        # TODO: Do we need to do any additional validation on the string value?
+        key = str(project_key)
         # Get the base project to derive from
         # We're allowing derivation from a retired project here
         # TODO: Should we disallow this instead?
@@ -183,17 +183,17 @@ class CommitteeMember(CommitteeParticipant):
             committee_key=str(committee_key), _committee=True, _release_policy=True
         ).all()
         for committee_project in committee_projects:
-            if label.startswith(str(committee_project.key) + "-"):
+            if key.startswith(str(committee_project.key) + "-"):
                 if (super_project is None) or (len(str(super_project.key)) < len(str(committee_project.key))):
                     super_project = committee_project
 
         # Check whether the project already exists
-        if await self.__data.project(key=label).get():
-            raise storage.AccessError(f"Project {label} already exists", status=409)
+        if await self.__data.project(key=key).get():
+            raise storage.AccessError(f"Project {key} already exists", status=409)
 
         now = datetime.datetime.now(datetime.UTC)
         project = sql.Project(
-            key=label,
+            key=key,
             name=display_name,
             status=sql.ProjectStatus.ACTIVE,
             super_project_key=super_project.key if super_project else None,
@@ -404,7 +404,7 @@ class CommitteeMember(CommitteeParticipant):
         if (args.project is None) or (args.project.name is None) or (not args.project.name.strip()):
             raise ValueError(f"Project '{args.project_key}' does not exist; project.name is required to create it")
         project = await self._build_and_add_project_no_commit(
-            args.committee_key, display_name=args.project.name, label=str(args.project_key)
+            args.committee_key, display_name=args.project.name, project_key=args.project_key
         )
         return project, True
 

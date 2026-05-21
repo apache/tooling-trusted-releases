@@ -17,8 +17,9 @@
 
 import asyncio
 import datetime
+import re
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Sequence
-from typing import NamedTuple, TypeVar
+from typing import Final, NamedTuple, TypeVar
 
 import atr.db as db
 import atr.models.safe as safe
@@ -49,6 +50,9 @@ type ReleaseDivergences = Callable[[sql.Release], Divergences]
 type ReleaseAnnotatedDivergences = Callable[[sql.Release], AnnotatedDivergences]
 
 T = TypeVar("T")
+
+# Same ASF UID character set as principal.py
+_ASF_UID_PATTERN: Final = re.compile(r"^[-_a-z0-9]+$")
 
 if True:
 
@@ -93,7 +97,11 @@ def committee(c: sql.Committee) -> AnnotatedDivergences:
     """Check that a committee is valid."""
 
     yield from committee_child_committees(c)
+    yield from committee_committers(c)
     yield from committee_full_name(c)
+    yield from committee_key(c)
+    yield from committee_members(c)
+    yield from committee_release_managers(c)
 
 
 @committee_components("Committee.child_committees")
@@ -103,6 +111,15 @@ def committee_child_committees(c: sql.Committee) -> Divergences:
     expected: list[object] = []
     actual = c.child_committees
     yield from divergences(expected, actual)
+
+
+@committee_components("Committee.committers")
+def committee_committers(c: sql.Committee) -> Divergences:
+    def okay(uid: str) -> bool:
+        return bool(_ASF_UID_PATTERN.match(uid))
+
+    for uid in c.committers:
+        yield from divergences_predicate(okay, "value to be an ASF UID", uid)
 
 
 @committee_components("Committee.name")
@@ -137,6 +154,40 @@ def committee_full_name(c: sql.Committee) -> Divergences:
         "value not to start with 'Apache '",
         full_name,
     )
+
+
+@committee_components("Committee.key")
+def committee_key(c: sql.Committee) -> Divergences:
+    def okay(key: str) -> bool:
+        try:
+            safe.CommitteeKey(key)
+        except ValueError:
+            return False
+        return True
+
+    yield from divergences_predicate(okay, "value to be a valid committee key", c.key)
+
+
+@committee_components("Committee.committee_members")
+def committee_members(c: sql.Committee) -> Divergences:
+    """Check that every committee_members entry looks like an ASF UID."""
+
+    def okay(uid: str) -> bool:
+        return bool(_ASF_UID_PATTERN.match(uid))
+
+    for uid in c.committee_members:
+        yield from divergences_predicate(okay, "value to be an ASF UID", uid)
+
+
+@committee_components("Committee.release_managers")
+def committee_release_managers(c: sql.Committee) -> Divergences:
+    """Check that every release_managers entry looks like an ASF UID."""
+
+    def okay(uid: str) -> bool:
+        return bool(_ASF_UID_PATTERN.match(uid))
+
+    for uid in c.release_managers:
+        yield from divergences_predicate(okay, "value to be an ASF UID", uid)
 
 
 def committees(cs: Iterable[sql.Committee]) -> AnnotatedDivergences:
@@ -190,9 +241,13 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_category(p)
     yield from project_committee(p)
     yield from project_created(p)
+    yield from project_created_by(p)
+    yield from project_cycle_match(p)
     yield from project_full_name(p)
+    yield from project_key(p)
     yield from project_programming_languages(p)
     yield from project_release_policy(p)
+    yield from project_version_pattern(p)
 
 
 @project_components("Project.category")
@@ -234,6 +289,35 @@ def project_created(p: sql.Project) -> Divergences:
     yield from divergences_predicate(predicate, expected, p.created)
 
 
+@project_components("Project.created_by")
+def project_created_by(p: sql.Project) -> Divergences:
+    """Check that created_by, if set, looks like an ASF UID."""
+
+    def okay(uid: str | None) -> bool:
+        if not uid:
+            return True
+        return bool(_ASF_UID_PATTERN.match(uid))
+
+    yield from divergences_predicate(okay, "value to be an ASF UID or unset", p.created_by)
+
+
+@project_components("Project.cycle_match")
+def project_cycle_match(p: sql.Project) -> Divergences:
+    """Check that cycle_match, if set, is a regex with at least one capture group."""
+
+    def okay(pattern: str | None) -> bool:
+        if not pattern:
+            return True
+        try:
+            compiled = re.compile(pattern)
+        except re.error:
+            return False
+        # Capture group 1 carries the cycle name, so we need at least one
+        return compiled.groups >= 1
+
+    yield from divergences_predicate(okay, "value to be a regex with a capture group, or unset", p.cycle_match)
+
+
 @project_components("Project.name")
 def project_full_name(p: sql.Project) -> Divergences:
     """Check that the project full_name is present and starts with 'Apache '."""
@@ -243,6 +327,20 @@ def project_full_name(p: sql.Project) -> Divergences:
 
     expected = "full_name to be set and start with 'Apache '"
     yield from divergences_predicate(okay, expected, p.name)
+
+
+@project_components("Project.key")
+def project_key(p: sql.Project) -> Divergences:
+    """Check that the project key is well-formed."""
+
+    def okay(key: str) -> bool:
+        try:
+            safe.ProjectKey(key)
+        except ValueError:
+            return False
+        return True
+
+    yield from divergences_predicate(okay, "value to be a valid project key", p.key)
 
 
 @project_components("Project.programming_languages")
@@ -268,6 +366,22 @@ def project_release_policy(p: sql.Project) -> Divergences:
     expected = None
     actual = p.release_policy_id
     yield from divergences(expected, actual)
+
+
+@project_components("Project.version_pattern")
+def project_version_pattern(p: sql.Project) -> Divergences:
+    """Check that version_pattern, if set, is a compilable regex."""
+
+    def okay(pattern: str | None) -> bool:
+        if not pattern:
+            return True
+        try:
+            re.compile(pattern)
+        except re.error:
+            return False
+        return True
+
+    yield from divergences_predicate(okay, "value to be a valid regex or unset", p.version_pattern)
 
 
 def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:

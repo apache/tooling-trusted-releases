@@ -215,6 +215,10 @@ class ProjectKey(SafeType):
     def _valid_chars(cls) -> frozenset[str]:
         return _PROJECT_CHARS
 
+    def _additional_validations(self, value: str) -> None:
+        if value != value.lower():
+            raise ValueError("Project key must be lowercase")
+
 
 class ReleaseKey(Alphanumeric):
     """A release name composed from a validated ProjectKey and VersionKey."""

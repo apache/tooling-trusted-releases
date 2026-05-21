@@ -41,37 +41,36 @@ type ADD_LANGUAGE = Literal["add_language"]
 type REMOVE_LANGUAGE = Literal["remove_language"]
 
 
+def _strip_whitespace(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
 class AddProjectForm(form.Form):
     committee_key: safe.CommitteeKey = form.label("Committee key", widget=form.Widget.HIDDEN)
-    committee_key_display: str = form.label(description="Commitee key", widget=form.Widget.STATIC, default="")
+    committee_key_display: str = form.label(description="Committee key", widget=form.Widget.STATIC, default="")
     display_name: str = form.label(
         "Project name",
         'For example, "Apache Example" or "Apache Example Components". '
         'You must start with "Apache " and you must use title case.',
     )
-    label: str = form.label(
+    key: Annotated[safe.ProjectKey, pydantic.BeforeValidator(_strip_whitespace)] = form.label(
         "Project key",
         'For example, "example" or "example-components". '
         "You must start with your committee key (above), and you must use lower case.",
     )
 
-    @pydantic.model_validator(mode="after")
-    def validate_fields(self) -> AddProjectForm:
-        committee_key = str(self.committee_key)
-        display_name = self.display_name.strip()
-        label = self.label.strip()
-
+    @pydantic.field_validator("display_name", mode="before")
+    @classmethod
+    def validate_display_name(cls, val: str) -> str:
+        display_name = val.strip()
         # Normalise spaces in the display name
         display_name = re.sub(r"  +", " ", display_name)
 
-        # We must use object.__setattr__ to avoid calling the model validator again
-        object.__setattr__(self, "display_name", display_name)
+        display_name_words = display_name.split(" ")
 
         # Validate display name starts with "Apache"
-        display_name_words = display_name.split(" ")
         if display_name_words[0] != "Apache":
             raise ValueError("The first word in the name must be 'Apache'.")
-
         # Validate display name has at least two words
         if not display_name_words[1:]:
             raise ValueError("Name must have at least two words.")
@@ -94,19 +93,18 @@ class AddProjectForm(form.Form):
         if not display_name.replace(" ", "").replace(".", "").replace("+", "").isalnum():
             raise ValueError("Name must be alphanumeric and may include spaces or dots or plus signs.")
 
-        # Validate label starts with committee name
-        if not (label.startswith(committee_key + "-") or (label == committee_key)):
+        return display_name
+
+    @pydantic.field_validator("key", mode="after")
+    @classmethod
+    def validate_fields(cls, val: safe.ProjectKey, info: pydantic.ValidationInfo) -> safe.ProjectKey:
+        committee_key = str(info.data.get("committee_key"))
+        key = str(val)
+
+        if not (key.startswith(committee_key + "-") or (key == committee_key)):
             raise ValueError(f"Key must be '{committee_key}' or start with '{committee_key}-'.")
 
-        # Validate label is lowercase
-        if not label.islower():
-            raise ValueError("Key must be all lower case.")
-
-        # Validate label is alphanumeric with hyphens
-        if not label.replace("-", "").isalnum():
-            raise ValueError("Key must be alphanumeric and may include hyphens.")
-
-        return self
+        return val
 
 
 class ComposePolicyForm(form.Form):
@@ -265,6 +263,32 @@ class EditVersionSchemeForm(form.Form):
         "Branch template",
         "Optional naming hint for source branches per cycle. Not currently enforced.",
     )
+
+    @pydantic.field_validator("version_pattern", mode="before")
+    @classmethod
+    def validate_version_scheme(cls, val: str) -> str:
+        version_pattern = val.strip()
+        if version_pattern:
+            try:
+                re.compile(version_pattern)
+            except re.error as e:
+                raise ValueError(f"Version pattern is not a valid regex: {e}")
+        return val
+
+    @pydantic.field_validator("cycle_match", mode="before")
+    @classmethod
+    def validate_cycle_match(cls, val: str) -> str:
+        cycle_match = val.strip()
+        if cycle_match:
+            try:
+                compiled = re.compile(cycle_match)
+            except re.error as e:
+                raise ValueError(f"Cycle match is not a valid regex: {e}")
+            # capture group 1 is the cycle name
+            if compiled.groups < 1:
+                raise ValueError("Cycle match must contain at least one capture group for the cycle name.")
+
+        return val
 
 
 class FinishPolicyForm(form.Form):

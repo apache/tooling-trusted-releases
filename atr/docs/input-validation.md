@@ -166,21 +166,62 @@ Beyond input validation, ATR performs data integrity validation on database reco
 
 ### Committee validation
 
+Committee records are not created through a form. They are synced from LDAP and Whimsy by [`_update_committees`](/ref/atr/datasources/apache.py:_update_committees), so their fields have no Pydantic input layer, and the data integrity validators are the main place each field is confirmed.
+
 The [`committee`](/ref/atr/validate.py:committee) function checks:
 
+* `key` must be a valid committee key (the [`safe.CommitteeKey`](/ref/atr/models/safe.py:CommitteeKey) character set)
+* `name` must be set, trimmed, and not prefixed with "Apache "
+* `committee_members`, `committers`, and `release_managers` entries must each look like an ASF UID
 * `child_committees` must be empty (not used)
-* `full_name` must be set, trimmed, and not prefixed with "Apache "
+
+Per-field coverage:
+
+| Field | Input layer | Data integrity |
+| --- | --- | --- |
+| `key` | none (LDAP project name) | valid committee key |
+| `name` | none (Whimsy) | set, trimmed, no "Apache " prefix |
+| `is_podling` | set during sync | type-enforced (bool) |
+| `parent_committee_key` | none | foreign key |
+| `committee_members` | none (LDAP) | ASF UID format |
+| `committers` | none (LDAP) | ASF UID format |
+| `release_managers` | none | ASF UID format |
+| `child_committees` | none | must be empty |
 
 ### Project validation
 
+Projects do have an input layer. [`AddProjectForm`](/ref/atr/shared/projects.py:AddProjectForm) validates the key and display name at creation, and [`EditVersionSchemeForm`](/ref/atr/shared/projects.py:EditVersionSchemeForm) rejects a `version_pattern` or `cycle_match` that is not a valid regex (and a `cycle_match` with no capture group). The data integrity validators mirror these and cover fields that have no form.
+
 The [`project`](/ref/atr/validate.py:project) function checks:
 
+* `key` must be a valid project key (the [`safe.ProjectKey`](/ref/atr/models/safe.py:ProjectKey) character set)
 * `category` must use comma-separated labels without colons
 * `committee_key` must be set (project must be linked to a committee)
 * `created` timestamp must be in the past
+* `created_by`, if set, must look like an ASF UID
+* `cycle_match`, if set, must be a regex with at least one capture group
 * `full_name` must be set and start with "Apache "
 * `programming_languages` must use comma-separated labels without colons
 * `release_policy_id` must be None (not used)
+* `version_pattern`, if set, must be a compilable regex
+
+Per-field coverage:
+
+| Field | Input layer | Data integrity |
+| --- | --- | --- |
+| `key` | `safe.ProjectKey` (charset, lowercase) + `AddProjectForm` (committee-prefixed) | valid project key |
+| `name` | `AddProjectForm` (Apache prefix, case rules) | set, "Apache " prefix |
+| `status` | none (enum) | type-enforced (enum) |
+| `description` | `EditMetadataForm` (free text) | none |
+| `category` | `AddCategoryForm` (free text) | comma-separated, no colons |
+| `programming_languages` | `AddLanguageForm` (free text) | comma-separated, no colons |
+| `version_method` | `EditVersionSchemeForm` (enum) | type-enforced (enum) |
+| `version_pattern` | `EditVersionSchemeForm` (regex validity) | compilable regex |
+| `cycle_match` | `EditVersionSchemeForm` (regex and capture group) | regex with capture group |
+| `branch_template` | `EditVersionSchemeForm` (free text) | none, not currently enforced |
+| `committee_key` | `safe.CommitteeKey` | must be set |
+| `created` | set at creation | in the past |
+| `created_by` | none | ASF UID format |
 
 ### Release validation
 
