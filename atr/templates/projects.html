@@ -45,7 +45,7 @@
               <h3 class="card-title fs-4 mb-3">
                 <a href="{{ as_url(get.projects.view, project_key=project.key) }}" class="text-decoration-none text-body stretched-link">{{ project.display_name }}</a>
                 {# Raised above the stretched card link so the key stays selectable #}
-                <code class="ms-2 fs-6 fw-normal text-body-secondary user-select-all position-relative z-1">{{ project.key }}</code>
+                <br/><code class="ms-2 fs-6 fw-normal text-body-secondary user-select-all position-relative z-1">{{ project.key }}</code>
               </h3>
             </div>
             {% if project.status.value.lower() != 'active' %}
