@@ -30,6 +30,18 @@ import atr.storage.outcome as outcome
 import atr.util as util
 
 
+def _distribution_api_error(dd: models.distribution.Data, error: Exception) -> storage.AccessError:
+    if dd.platform == models.sql.DistributionPlatform.MAVEN:
+        return storage.AccessError(
+            "Failed to find the Maven artifact. Check that Owner or Namespace is the Maven groupId "
+            "(for example, org.apache.maven), and that the package artifactId and version are correct. "
+            f"You can verify Maven coordinates on https://search.maven.org. Original error: {error}",
+            status=502,
+        )
+
+    return storage.AccessError(f"Failed to get API response from distribution platform: {error}", status=502)
+
+
 class GeneralPublic:
     def __init__(
         self,
@@ -256,7 +268,7 @@ class CommitteeMember(CommitteeParticipant):
                         web_url=None,
                     )
                     return dist, added, None
-                raise storage.AccessError(f"Failed to get API response from distribution platform: {error}", status=502)
+                raise _distribution_api_error(dd, error)
         upload_date = distribution.distribution_upload_date(dd.platform, result, dd.version)
         if upload_date is None:
             raise storage.AccessError("Failed to get upload date from distribution platform", status=502)
