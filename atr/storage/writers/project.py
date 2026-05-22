@@ -285,6 +285,8 @@ class CommitteeMember(CommitteeParticipant):
         if not project:
             raise storage.AccessError(f"Project '{form.project_key}' not found.", status=404)
 
+        project.description = form.description.strip() or None
+        project.short_description = form.short_description.strip() or None
         project.homepage = str(form.homepage) if form.homepage else None
         project.lifecycle_page = str(form.lifecycle_page) if form.lifecycle_page else None
         project.download_page = str(form.download_page) if form.download_page else None
