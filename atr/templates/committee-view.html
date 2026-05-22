@@ -38,6 +38,7 @@
                     <p class="mb-1 me-2 fs-6">
                       <a href="{{ as_url(get.projects.view, project_key=project.key) }}"
                          class="text-decoration-none stretched-link">{{ project.display_name }}</a>
+                      <br/><code class="ms-2 fs-6 fw-normal text-body-secondary user-select-all position-relative z-1">{{ project.key }}</code>
                     </p>
                     <div>
                       {% if project.status.value.lower() != "active" %}
