@@ -10,6 +10,7 @@
 
 * [Overview](#overview)
 * [How to set up Trusted Publishing](#how-to-set-up-trusted-publishing)
+* [Configuring repository and workflow paths](#configuring-repository-and-workflow-paths)
 * [How ATR detects automated release keys](#how-atr-detects-automated-release-keys)
 
 ## Overview
@@ -49,6 +50,37 @@ In your GitHub Actions workflow, sign your release artifacts using the private k
 ### Step 6: Confirm reproducibility during the vote
 
 When the project starts a release vote, PMC members should independently rebuild the artifacts and confirm that they match the ones uploaded to ATR. This is the trust model behind Trusted Publishing: the automated signature proves that the artifacts came from a specific GitHub workflow, and the reproducibility check by voters proves that the build output is genuine, matching what was built on the GitHub runners.
+
+## Configuring repository and workflow paths
+
+For ATR to accept release operations that a GitHub Actions workflow performs on the project's behalf, it has to know which repository the workflow runs in, and which workflows are permitted to perform the operations of each phase of a release. You configure this in the project's release policy, under the Trusted Publishing tab of the project settings.
+
+There are three groups of settings.
+
+### Repository name
+
+The name of the project's GitHub repository, without the `apache/` prefix. For example, if the repository is `apache/example`, enter `example`. The name must not contain a slash. You have to set this before any workflow path will be accepted, because ATR matches the repository named in the GitHub token against this value.
+
+### Repository branch
+
+The branch that release builds run from, for example `main` or `2.5.x`. This is optional, but if you do set a branch you must also set a repository name.
+
+### Workflow paths
+
+There is a separate field for each phase of a release: compose, vote, and finish. Each field lists the workflows that ATR will accept as performing that phase's operations. List one workflow path per line, and start each path with `.github/workflows/`. For example, the compose field might contain:
+
+```text
+.github/workflows/release-compose.yml
+.github/workflows/release-compose-rc.yml
+```
+
+A field can hold more than one path, so you can list several workflows for a single phase. Any path that does not begin with `.github/workflows/` is rejected when you save the form.
+
+The three fields are kept separate so that a workflow is only trusted for the phase it is registered against. A workflow listed under compose can compose a candidate, but it cannot, for instance, finish a release unless it is also listed under finish.
+
+### How ATR matches a workflow
+
+When a workflow calls one of the Trusted Publishing endpoints, GitHub sends ATR an OIDC token that names the repository, such as `apache/example`, and the workflow reference, such as `apache/example/.github/workflows/release-compose.yml@refs/heads/main`. ATR strips the `apache/` prefix and the trailing `@` git ref, then looks for a project whose release policy has a matching repository name and lists that workflow path under the phase being requested. If there is no match, the request is refused. The committee must also be eligible for Trusted Publishing, as described below.
 
 ## How ATR detects automated release keys
 
