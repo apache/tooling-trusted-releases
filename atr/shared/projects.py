@@ -368,19 +368,22 @@ class TrustedPublishingPolicyForm(form.Form):
     # But note that they contain .github, so that will be awkward
     github_compose_workflow_path: str = form.label(
         "Compose workflow paths",
-        "GitHub workflow paths for the compose phase, including the .github/workflows/ prefix.",
+        "Workflows permitted to perform compose-phase operations for this project. One path per line,"
+        " each starting with .github/workflows/ (for example, .github/workflows/release-compose.yml).",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
     github_vote_workflow_path: str = form.label(
         "Vote workflow paths",
-        "GitHub workflow paths for the vote phase, including the .github/workflows/ prefix.",
+        "Workflows permitted to perform vote-phase operations for this project. One path per line,"
+        " each starting with .github/workflows/.",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )
     github_finish_workflow_path: str = form.label(
         "Finish workflow paths",
-        "GitHub workflow paths for the finish phase, including the .github/workflows/ prefix.",
+        "Workflows permitted to perform finish-phase operations for this project. One path per line,"
+        " each starting with .github/workflows/.",
         widget=form.Widget.TEXTAREA,
         rows=3,
     )

@@ -32,6 +32,7 @@ import atr.db as db
 import atr.form as form
 import atr.get.committees as committees
 import atr.get.compose as compose
+import atr.get.docs as docs
 import atr.get.file as file
 import atr.get.finish as finish
 import atr.get.start as start
@@ -969,6 +970,11 @@ async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
     ]
 
     with card.block(htm.div, classes=".card-body") as card_body:
+        card_body.p(".text-muted.mb-3")[
+            "See the ",
+            htm.a(href=util.as_url(docs.page, path="trusted-publishing"))["Trusted Publishing guide"],
+            " for an explanation of these settings.",
+        ]
         await form.render_block(
             card_body,
             model_cls=shared.projects.TrustedPublishingPolicyForm,
