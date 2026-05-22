@@ -52,7 +52,9 @@ class AddOpenPGPKeyForm(form.Form):
     )
     selected_committees: form.StrList = form.label(
         "Associate key with committees",
-        "Select the committees with which to associate your key.",
+        "Select the committees for which you sign releases. Associating your key with a committee"
+        " adds it to that committee's public KEYS file, which downstream users rely on to verify"
+        " the authenticity of release artifacts. Only associate with committees where you are a release manager.",
     )
 
     @pydantic.model_validator(mode="after")

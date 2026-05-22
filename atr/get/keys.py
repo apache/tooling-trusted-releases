@@ -54,6 +54,11 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
     page.div(".my-4")[
         htm.h1(".mb-4")["Add your OpenPGP key"],
         htm.p["Add your public key to use for signing release artifacts."],
+        htm.p(".text-muted")[
+            "When you associate your key with a committee below, it will be included in that committee's ",
+            "public KEYS file. This allows anyone downloading a release to verify its signature. ",
+            "You should associate your key with each committee for which you are a release manager.",
+        ],
     ]
     await form.render_block(
         page,
@@ -154,6 +159,10 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         #     defaults={"selected_committees": committee_choices},
         #     custom={"selected_committees": _render_committee_checkboxes(committee_choices, current_committee_keys)},
         # )
+        pmc_div.p(".text-muted.small.mb-2")[
+            "Associating your key with a committee adds it to that committee's public KEYS file, "
+            "used by downstream users to verify release signatures. Associate with committees where you sign releases.",
+        ]
         checkboxes = _render_committee_checkboxes(committee_choices, current_committee_keys)
         pmc_div.form(
             method="post",
