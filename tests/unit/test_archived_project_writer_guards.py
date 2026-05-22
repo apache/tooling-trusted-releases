@@ -268,13 +268,13 @@ async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
     merged = _retired_release()
     data.merge = mock.AsyncMock(return_value=merged)
     writer = object.__new__(vote.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "tester"
-    writer._CommitteeMember__committee_key = "project"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     stub_release = SimpleNamespace(project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, key="project"))
     with pytest.raises(storage.AccessError, match="archived"):
-        await writer.resolve_release(
+        await writer._ReleaseManager__resolve_release(
             safe.ProjectKey("project"),
             stub_release,
             None,
@@ -289,13 +289,13 @@ async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
 @pytest.mark.asyncio
 async def test_vote_send_resolution_blocks_retired() -> None:
     writer = object.__new__(vote.CommitteeMember)
-    writer._CommitteeMember__data = mock.MagicMock()
-    writer._CommitteeMember__asf_uid = "tester"
-    writer._CommitteeMember__committee_key = "project"
+    writer._ReleaseManager__data = mock.MagicMock()
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     rel = _retired_release()
     with pytest.raises(storage.AccessError, match="archived"):
-        await writer.send_resolution(
+        await writer._ReleaseManager__send_resolution(
             rel,
             "passed",
             "body",

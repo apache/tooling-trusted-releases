@@ -82,7 +82,7 @@ async def test_cancel_pending_vote_followups_marks_queued_tasks_failed(sqlite_se
         await data.commit()
 
         writer = object.__new__(vote_writer.CommitteeMember)
-        writer._CommitteeMember__data = data
+        writer._ReleaseManager__data = data
         await writer._cancel_pending_vote_followups(seeded)
         await data.commit()
 

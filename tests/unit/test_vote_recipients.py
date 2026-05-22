@@ -121,7 +121,7 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
         version="1.0.0",
     )
 
-    error = await writer.send_resolution(
+    error = await writer._ReleaseManager__send_resolution(
         release,
         "passed",
         "Resolution body",
@@ -359,6 +359,6 @@ def _patch_storage_write(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _writer_with_data(data: mock.MagicMock) -> vote.CommitteeMember:
     writer = object.__new__(vote.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "chair"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "chair"
     return writer

@@ -359,10 +359,18 @@ class CommitteeParticipant(FoundationCommitter):
                     "Automatic vote resolution is not available for the first round of podling votes",
                     status=403,
                 )
-            if automatic_resolve_when_finished and (self.__asf_uid not in committee.committee_members):
-                # TODO: Maybe we should modularise all of this?
-                # Then we could use the relevant permissions class
-                raise storage.AccessError("Automatic vote resolution requires a committee member initiator", status=403)
+            if automatic_resolve_when_finished:
+                is_pmc_member = self.__asf_uid in committee.committee_members
+                is_designated_release_manager = (self.__asf_uid in committee.release_managers) and (
+                    self.__asf_uid in committee.committers
+                )
+                if (not is_pmc_member) and (not is_designated_release_manager):
+                    # TODO: Maybe we should modularise all of this?
+                    # Then we could use the relevant permissions class
+                    raise storage.AccessError(
+                        "Automatic vote resolution requires a committee member or release manager initiator",
+                        status=403,
+                    )
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
@@ -444,11 +452,11 @@ class CommitteeParticipant(FoundationCommitter):
         return project.committee
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsCommitteeMember,
+        write_as: storage.WriteAsReleaseManager,
         data: db.Session,
         committee_key: str,
     ):
@@ -549,7 +557,7 @@ class CommitteeMember(CommitteeParticipant):
         if release.committee is None:
             raise storage.AccessError("Project has no committee - Invalid state", status=500)
 
-        return await self.resolve_release(
+        return await self.__resolve_release(
             project_key,
             release,
             voting_round,
@@ -633,7 +641,7 @@ class CommitteeMember(CommitteeParticipant):
         )
         return success_message
 
-    async def resolve_release(  # noqa: C901
+    async def __resolve_release(  # noqa: C901
         self,
         project_key: safe.ProjectKey,
         release: sql.Release,
@@ -771,7 +779,7 @@ class CommitteeMember(CommitteeParticipant):
             await self.__data.refresh(release)
             success_message = f"Vote marked as {vote_result}"
 
-        error_message = await self.send_resolution(
+        error_message = await self.__send_resolution(
             release,
             vote_result,
             resolution_body,
@@ -780,7 +788,7 @@ class CommitteeMember(CommitteeParticipant):
             extra_destination=extra_destination,
             bcc_private_list=bcc_private_list,
         )
-        # TODO: Could move this up before send_resolution
+        # TODO: Could move this up before __send_resolution
         if (second_round_vote_seq is not None) and (second_round_vote_mode is not None):
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -804,7 +812,7 @@ class CommitteeMember(CommitteeParticipant):
             )
         return release, voting_round, success_message, error_message
 
-    async def send_resolution(
+    async def __send_resolution(
         self,
         release: sql.Release,
         resolution: str,
@@ -1067,7 +1075,7 @@ class CommitteeMember(CommitteeParticipant):
         if latest_vote_task is None:
             error_message = "No vote task found, unable to send resolution message."
         else:
-            error_message = await self.send_resolution(
+            error_message = await self.__send_resolution(
                 release,
                 vote_result,
                 resolution_body,
@@ -1171,6 +1179,25 @@ class CommitteeMember(CommitteeParticipant):
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):
     #         raise storage.AccessError("You do not have permission to perform this action")
+
+
+class CommitteeMember(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeMember,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
 
 
 def format_vote_email_body(

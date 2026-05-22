@@ -73,8 +73,8 @@ async def resolve_selected(
             destination = get.compose.selected
 
     try:
-        async with storage.write_as_project_committee_member(project_key) as wacm:
-            success_message = await wacm.vote.resolve_manually(project_key, version_key, vote_result)
+        async with storage.write_as_project_release_manager(project_key) as warm:
+            success_message = await warm.vote.resolve_manually(project_key, version_key, vote_result)
     except storage.AccessError as e:
         return await session.redirect(
             get.manual.resolve_selected,

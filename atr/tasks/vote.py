@@ -132,8 +132,8 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
     )
 
     try:
-        async with storage.write_as_project_committee_member(project_key, task_args.resolver_id) as wacm:
-            _release, _voting_round, success_message, error_message = await wacm.vote.resolve(
+        async with storage.write_as_project_release_manager(project_key, task_args.resolver_id) as warm:
+            _release, _voting_round, success_message, error_message = await warm.vote.resolve(
                 project_key,
                 version_key,
                 vote_result,

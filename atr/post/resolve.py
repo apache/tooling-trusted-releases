@@ -54,8 +54,8 @@ async def selected(
     bcc_private_list = _read_bcc_private_flag(submit_form)
 
     try:
-        async with storage.write_as_project_committee_member(project_key) as wacm:
-            _release, voting_round, success_message, error_message = await wacm.vote.resolve(
+        async with storage.write_as_project_release_manager(project_key) as warm:
+            _release, voting_round, success_message, error_message = await warm.vote.resolve(
                 project_key,
                 version_key,
                 writer_result,

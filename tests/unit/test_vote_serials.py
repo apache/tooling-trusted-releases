@@ -570,10 +570,10 @@ def _member_writer_with_data(data: db.Session, write_as: SimpleNamespace) -> vot
     writer._CommitteeParticipant__write_as = write_as
     writer._CommitteeParticipant__asf_uid = "chair"
     writer._CommitteeParticipant__committee_key = "project"
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__write_as = write_as
-    writer._CommitteeMember__asf_uid = "chair"
-    writer._CommitteeMember__committee_key = "project"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "chair"
+    writer._ReleaseManager__committee_key = "project"
     return writer
 
 

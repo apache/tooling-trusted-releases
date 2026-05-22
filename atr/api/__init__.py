@@ -1117,10 +1117,10 @@ async def publisher_vote_resolve(
         interaction.TrustedProjectPhase.VOTE,
     )
     try:
-        async with storage.write_as_project_committee_member(project.safe_key, asf_uid) as wacm:
+        async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
             # TODO: Get fullname and use instead of asf_uid
             # TODO: Add resolution templating to atr.construct
-            _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
+            _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
                 project.safe_key,
                 data.version,
                 data.resolution,
@@ -1723,10 +1723,10 @@ async def vote_resolve(
     asf_uid = _jwt_asf_uid()
     # try:
     try:
-        async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
+        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
             # TODO: Get fullname and use instead of asf_uid
             # TODO: Add resolution templating to atr.construct
-            _release, _voting_round, _success_message, _error_message = await wacm.vote.resolve(
+            _release, _voting_round, _success_message, _error_message = await warm.vote.resolve(
                 data.project,
                 data.version,
                 data.resolution,

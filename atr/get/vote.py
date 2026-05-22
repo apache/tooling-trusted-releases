@@ -85,7 +85,12 @@ async def category_and_release(
         return UserCategory.UNAUTHENTICATED, release, latest_vote_task
 
     is_pmc_member = user.is_committee_member(release.committee, session.uid)
-    is_release_manager = (vote_initiator_uid is not None) and (session.uid == vote_initiator_uid)
+    is_designated_release_manager = (session.uid in release.committee.release_managers) and (
+        session.uid in release.committee.committers
+    )
+    is_release_manager = is_designated_release_manager or (
+        (vote_initiator_uid is not None) and (session.uid == vote_initiator_uid)
+    )
 
     if is_pmc_member and is_release_manager:
         user_category = UserCategory.PMC_MEMBER_RM
@@ -111,6 +116,7 @@ async def render_options_page(
     show_resolve_section = user_category in (
         UserCategory.UNAUTHENTICATED,
         UserCategory.COMMITTER_RM,
+        UserCategory.PMC_MEMBER,
         UserCategory.PMC_MEMBER_RM,
     )
 

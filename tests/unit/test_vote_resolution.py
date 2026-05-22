@@ -93,7 +93,7 @@ async def test_cancelled_resolve_release_clears_podling_thread_id() -> None:
         podling_thread_id=None,
     )
 
-    await writer.resolve_release(
+    await writer._ReleaseManager__resolve_release(
         _project_key(),
         release,
         None,
@@ -122,7 +122,7 @@ async def test_cancelled_resolve_release_produces_correct_message() -> None:
         podling_thread_id=None,
     )
 
-    _release, _round, success, _error = await writer.resolve_release(
+    _release, _round, success, _error = await writer._ReleaseManager__resolve_release(
         _project_key(),
         release,
         None,
@@ -151,7 +151,7 @@ async def test_cancelled_resolve_release_returns_to_draft() -> None:
         podling_thread_id=None,
     )
 
-    _release, _round, success, _error = await writer.resolve_release(
+    _release, _round, success, _error = await writer._ReleaseManager__resolve_release(
         _project_key(),
         release,
         None,
@@ -198,7 +198,7 @@ async def test_failed_resolve_release_clears_podling_thread_id() -> None:
         podling_thread_id=None,
     )
 
-    await writer.resolve_release(
+    await writer._ReleaseManager__resolve_release(
         _project_key(),
         release,
         None,
@@ -411,7 +411,7 @@ async def test_podling_double_pass_raises_error() -> None:
     write_as.cache.get_message_archive_url = mock.AsyncMock(return_value="https://lists.apache.org/thread/abc123")
 
     with pytest.raises(storage.AccessError, match="release state has changed"):
-        await writer.resolve_release(
+        await writer._ReleaseManager__resolve_release(
             _project_key(),
             release,
             1,
@@ -436,7 +436,7 @@ async def test_podling_stale_round_one_cancel_after_pass() -> None:
     data.execute = mock.AsyncMock(return_value=_mock_cursor_result(rowcount=0))
 
     with pytest.raises(storage.AccessError, match="release state has changed"):
-        await writer.resolve_release(
+        await writer._ReleaseManager__resolve_release(
             _project_key(),
             release,
             1,
@@ -466,7 +466,9 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
-    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as cancelled", None))
+    writer._ReleaseManager__resolve_release = mock.AsyncMock(
+        return_value=(release, None, "Vote marked as cancelled", None)
+    )
 
     _release, _round, success, _error = await writer.resolve(
         _project_key(),
@@ -496,7 +498,9 @@ async def test_resolve_allows_early_passed_with_bypass(monkeypatch: pytest.Monke
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
 
-    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
+    writer._ReleaseManager__resolve_release = mock.AsyncMock(
+        return_value=(release, None, "Vote marked as passed", None)
+    )
 
     _release, _round, success, _error = await writer.resolve(
         _project_key(),
@@ -526,7 +530,9 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
     monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
 
-    writer.resolve_release = mock.AsyncMock(return_value=(release, None, "Vote marked as passed", None))
+    writer._ReleaseManager__resolve_release = mock.AsyncMock(
+        return_value=(release, None, "Vote marked as passed", None)
+    )
 
     _release, _round, success, _error = await writer.resolve(
         _project_key(),
@@ -750,7 +756,7 @@ async def test_resolve_rejects_stale_email_vote_serial(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
-    """send_resolution accepts cancelled and builds a CANCELLED subject."""
+    """__send_resolution accepts cancelled and builds a CANCELLED subject."""
     data = _mock_data()
     writer = _writer_with_data(data)
     latest_vote_task = _latest_vote_task()
@@ -763,7 +769,7 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
         version="1.0.0",
     )
 
-    error = await writer.send_resolution(
+    error = await writer._ReleaseManager__send_resolution(
         release,
         "cancelled",
         "The vote has been cancelled.",
@@ -907,7 +913,7 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     data = _mock_data()
     write_as = _mock_write_as()
     writer = _writer_with_mocks(data, write_as)
-    writer.send_resolution = mock.AsyncMock(return_value=None)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
 
     release = _candidate_release()
     release.vote_mode = sql.VoteMode.TRUSTED
@@ -1061,7 +1067,7 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
     data = _mock_data()
     write_as = _mock_write_as()
     writer = _writer_with_mocks(data, write_as)
-    writer.send_resolution = mock.AsyncMock(return_value=None)
+    writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
 
     release = _candidate_release(podling_thread_id="thread-abc")
     release.vote_mode = sql.VoteMode.TRUSTED
@@ -1478,15 +1484,15 @@ def _version_key() -> safe.VersionKey:
 
 def _writer_with_data(data: mock.MagicMock) -> vote.CommitteeMember:
     writer = object.__new__(vote.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "chair"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "chair"
     return writer
 
 
 def _writer_with_mocks(data: mock.MagicMock, write_as: mock.MagicMock) -> vote.CommitteeMember:
     writer = object.__new__(vote.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__write_as = write_as
-    writer._CommitteeMember__asf_uid = "chair"
-    writer._CommitteeMember__committee_key = "project"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "chair"
+    writer._ReleaseManager__committee_key = "project"
     return writer

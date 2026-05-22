@@ -197,10 +197,17 @@ class WriteAsCommitteeParticipant(WriteAsFoundationCommitter):
         return self.__committee_key
 
 
-class WriteAsCommitteeMember(WriteAsCommitteeParticipant):
+class WriteAsReleaseManager(WriteAsCommitteeParticipant):
+    def __init__(self, write: Write, data: db.Session, committee_key: str):
+        super().__init__(write, data, committee_key)
+        self.vote = writers.vote.ReleaseManager(write, self, data, committee_key)
+
+
+class WriteAsCommitteeMember(WriteAsReleaseManager):
     def __init__(self, write: Write, data: db.Session, committee_key: str):
         self.__asf_uid = write.authorisation.asf_uid
         self.__committee_key = committee_key
+        super().__init__(write, data, committee_key)
         self.announce = writers.announce.CommitteeMember(write, self, data, committee_key)
         self.cache = writers.cache.CommitteeMember(write, self, data, committee_key)
         self.checks = writers.checks.CommitteeMember(write, self, data, committee_key)
@@ -423,6 +430,33 @@ class Write:
             return outcome.Error(e)
         return outcome.Result(wacp)
 
+    async def as_project_release_manager(self, project_key: safe.ProjectKey) -> WriteAsReleaseManager:
+        write_as_outcome = await self.as_project_release_manager_outcome(project_key)
+        return write_as_outcome.result_or_raise()
+
+    async def as_project_release_manager_outcome(
+        self, project_key: safe.ProjectKey
+    ) -> outcome.Outcome[WriteAsReleaseManager]:
+        project = await self.__data.project(str(project_key), _committee=True).demand(
+            AccessError(f"Project not found: {project_key}", status=404)
+        )
+        if project.committee is None:
+            return outcome.Error(AccessError("No committee found for project - Invalid state", status=500))
+        asf_uid = self.__authorisation.asf_uid
+        if asf_uid is None:
+            return outcome.Error(AccessError("Not authorized", status=403))
+        is_pmc_member = self.__authorisation.is_member_of(project.committee.key)
+        is_designated_release_manager = (asf_uid in project.committee.release_managers) and (
+            asf_uid in project.committee.committers
+        )
+        if (not is_pmc_member) and (not is_designated_release_manager):
+            return outcome.Error(AccessError(f"Not a release manager for {project.committee.key}", status=403))
+        try:
+            warm = WriteAsReleaseManager(self, self.__data, project.committee.key)
+        except Exception as e:
+            return outcome.Error(e)
+        return outcome.Result(warm)
+
     @property
     def member_of(self) -> frozenset[str]:
         return self.__authorisation.member_of()
@@ -549,6 +583,15 @@ async def write_as_project_committee_member(
 ) -> AsyncGenerator[WriteAsCommitteeMember]:
     async with write(asf_uid) as w:
         yield await w.as_project_committee_member(project_key)
+
+
+@contextlib.asynccontextmanager
+async def write_as_project_release_manager(
+    project_key: safe.ProjectKey,
+    asf_uid: principal.UID = principal.ArgumentNone,
+) -> AsyncGenerator[WriteAsReleaseManager]:
+    async with write(asf_uid) as w:
+        yield await w.as_project_release_manager(project_key)
 
 
 @contextlib.asynccontextmanager
