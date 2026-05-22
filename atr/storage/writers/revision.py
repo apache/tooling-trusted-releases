@@ -155,17 +155,24 @@ async def _commit_new_revision(
         # That makes models.populate_revision_sequence_and_name safe against races
         # Because that event is called when data.add is called below
         # And we have a write lock at that point through the use of data.begin_immediate
+        now = datetime.datetime.now(datetime.UTC)
         new_revision = sql.Revision(
             release_key=release_key,
             release=release,
             asfuid=asf_uid,
-            created=datetime.datetime.now(datetime.UTC),
+            created=now,
             phase=release.phase,
             description=description,
             merge_base_revision_key=merge_base_revision_key,
             was_quarantined=was_quarantined,
         )
         data.add(new_revision)
+        prior_activity_at = release.activity_at
+        if isinstance(prior_activity_at, datetime.datetime) and (prior_activity_at > now):
+            pass
+        else:
+            release.activity_at = now
+            release.inactivity_notice_key = sql.inactivity_notice_legacy_key(release.inactivity_notice_key)
 
         # Flush but do not commit the new revision row to get its name and number
         # The row will still be invisible to other sessions after flushing

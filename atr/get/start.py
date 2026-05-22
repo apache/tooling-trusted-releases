@@ -108,6 +108,23 @@ def _get_phase_symbol(phase: sql.ReleasePhase) -> str:
             return "Ⓡ"
 
 
+def _inactivity_policy_notice() -> htm.Element:
+    return htm.div(".alert.alert-light.mt-2.small")[
+        htm.strong["Inactivity policy: "],
+        "Release candidate drafts inactive for 90 days are cleaned up automatically. "
+        "A warning email is sent at 80 days.",
+    ]
+
+
+def _pre_submit(project: sql.Project) -> htm.Element:
+    children: list[htm.Element] = []
+    cycle = _cycle_preview(project)
+    if cycle is not None:
+        children.append(cycle)
+    children.append(_inactivity_policy_notice())
+    return htm.div[*children]
+
+
 async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm.Element:
     page = htm.Block()
 
@@ -125,7 +142,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
         defaults={"project_key": project.key},
-        pre_submit=_cycle_preview(project),
+        pre_submit=_pre_submit(project),
         skip=["auto_archive_prior"] if not project.policy_auto_archive_prior_release else [],
     )
     if releases:

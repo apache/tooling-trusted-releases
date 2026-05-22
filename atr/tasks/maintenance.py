@@ -28,6 +28,7 @@ import atr.models.results as results
 import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
+import atr.tasks.inactivity as inactivity
 
 _EXPIRED_TOKEN_RETENTION_DAYS: Final[int] = 30
 _FORM_ERROR_TTL_SECONDS: Final[int] = 24 * 60 * 60
@@ -51,6 +52,7 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         await _session_data_maintenance()
         await _storage_maintenance()
         await _workflow_ssh_keys_maintenance()
+        await _inactivity_maintenance()
 
         log.info(
             "Storage maintenance completed successfully",
@@ -75,6 +77,21 @@ async def _expired_pats_maintenance() -> None:
         deleted = getattr(result, "rowcount", 0) or 0
         if deleted > 0:
             log.info(f"Purged {deleted} expired personal access tokens")
+
+
+async def _inactivity_maintenance() -> None:
+    try:
+        plans = await inactivity.run_scan()
+    except Exception:
+        log.exception("Inactivity scan failed")
+        return
+    for plan in plans:
+        if plan.decision == inactivity.Decision.SKIP:
+            continue
+        try:
+            await inactivity.apply_plan(plan)
+        except Exception:
+            log.exception(f"Inactivity action failed for release {plan.release_key!r}")
 
 
 async def _session_data_maintenance() -> None:

@@ -51,6 +51,9 @@ sqlmodel.SQLModel.metadata = sqlalchemy.MetaData(
     }
 )
 
+INACTIVITY_NOTICE_KEY_SEPARATOR: Final[str] = "|"
+INACTIVITY_NOTICE_LEGACY_PREFIX: Final[str] = "legacy_warning:"
+
 # Data classes
 
 
@@ -1223,6 +1226,12 @@ class Release(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
     )
+    activity_at: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    inactivity_notice_key: str | None = sqlmodel.Field(default=None)
     # Set at start time when the user opts in to archiving the prior release
     # in this cycle when this release is announced.
     archive_prior_release: bool = sqlmodel.Field(default=False)
@@ -2030,6 +2039,31 @@ def check_release_key(_mapper: orm.Mapper, _connection: sqlalchemy.Connection, r
         if (project_key is None) or (version is None):
             raise ValueError("Cannot generate release key without project_key and version")
         release.key = release_key(project_key, version)
+
+
+def inactivity_notice_legacy_key(notice_key: str | None) -> str | None:
+    if notice_key is None:
+        return None
+    legacy_key = notice_key.partition(INACTIVITY_NOTICE_KEY_SEPARATOR)[0]
+    if legacy_key.startswith(INACTIVITY_NOTICE_LEGACY_PREFIX):
+        return legacy_key
+    return None
+
+
+def inactivity_notice_legacy_key_expression(notice_key: Any) -> Any:
+    separator_position = sqlalchemy.func.instr(notice_key, INACTIVITY_NOTICE_KEY_SEPARATOR)
+    legacy_key = sqlalchemy.case(
+        (separator_position > 0, sqlalchemy.func.substr(notice_key, 1, separator_position - 1)),
+        else_=notice_key,
+    )
+    return sqlalchemy.case(
+        (
+            sqlalchemy.func.substr(notice_key, 1, len(INACTIVITY_NOTICE_LEGACY_PREFIX))
+            == INACTIVITY_NOTICE_LEGACY_PREFIX,
+            legacy_key,
+        ),
+        else_=None,
+    )
 
 
 def latest_revision_number_query(release_key: str | None = None) -> expression.ScalarSelect[str]:

@@ -32,38 +32,6 @@ import atr.storage.writers.sbom as sbom
 import atr.storage.writers.vote as vote
 
 
-def _retired_project(key: str = "project") -> SimpleNamespace:
-    return SimpleNamespace(
-        key=key,
-        status=sql.ProjectStatus.RETIRED,
-        committee_key=key,
-        display_name=key.capitalize(),
-        short_display_name=key.capitalize(),
-    )
-
-
-def _retired_release(project_key: str = "project", version: str = "1.0.0") -> SimpleNamespace:
-    return SimpleNamespace(
-        key=sql.release_key(project_key, version),
-        project=_retired_project(project_key),
-        version=version,
-    )
-
-
-def _query_returning(obj: object) -> mock.MagicMock:
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=obj)
-    query.get = mock.AsyncMock(return_value=obj)
-    return query
-
-
-def _async_context_manager(value: object) -> mock.MagicMock:
-    ctx = mock.MagicMock()
-    ctx.__aenter__ = mock.AsyncMock(return_value=value)
-    ctx.__aexit__ = mock.AsyncMock(return_value=None)
-    return ctx
-
-
 @pytest.mark.asyncio
 async def test_announce_release_blocks_retired(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -151,6 +119,151 @@ async def test_distributions_record_blocks_retired_via_release_lookup() -> None:
             False,
             None,
         )
+
+
+@pytest.mark.asyncio
+async def test_foundation_admin_delete_inactive_acquires_lock_and_rechecks_before_delete() -> None:
+    import datetime as _dt
+
+    active_project = SimpleNamespace(
+        key="project",
+        status=sql.ProjectStatus.ACTIVE,
+        committee_key="project",
+        display_name="Project",
+        short_display_name="Project",
+    )
+    eligible_release = SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=active_project,
+        project_key="project",
+        version="1.0.0",
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        activity_at=_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=120),
+    )
+    data = mock.MagicMock()
+    data.release = mock.MagicMock(return_value=_query_returning(eligible_release))
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.expire_all = mock.MagicMock()
+    data.execute = mock.AsyncMock(return_value=mock.MagicMock(scalar_one=mock.MagicMock(return_value=0)))
+
+    writer = object.__new__(release.FoundationAdmin)
+    writer._FoundationAdmin__data = data
+    writer._FoundationAdmin__write_as = mock.MagicMock()
+    delete = mock.AsyncMock(return_value=None)
+    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+
+    result = await writer.delete_inactive(
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        dry_run=False,
+    )
+    assert result is None
+    data.begin_immediate.assert_awaited_once()
+    data.expire_all.assert_called_once()
+    delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_foundation_admin_delete_inactive_refresh_catches_concurrent_phase_change() -> None:
+    import datetime as _dt
+
+    active_project = SimpleNamespace(
+        key="project",
+        status=sql.ProjectStatus.ACTIVE,
+        committee_key="project",
+        display_name="Project",
+        short_display_name="Project",
+    )
+    stale_release = SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=active_project,
+        project_key="project",
+        version="1.0.0",
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        activity_at=_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=120),
+    )
+    fresh_release = SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=active_project,
+        project_key="project",
+        version="1.0.0",
+        phase=sql.ReleasePhase.RELEASE_PREVIEW,
+        activity_at=_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=120),
+    )
+
+    data = mock.MagicMock()
+    expired = {"called": False}
+
+    def _on_expire_all() -> None:
+        expired["called"] = True
+
+    def _release_query(**kwargs: object) -> mock.MagicMock:
+        if expired["called"]:
+            return _query_returning(fresh_release)
+        return _query_returning(stale_release)
+
+    data.release = mock.MagicMock(side_effect=_release_query)
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    data.expire_all = mock.MagicMock(side_effect=_on_expire_all)
+    data.execute = mock.AsyncMock(return_value=mock.MagicMock(scalar_one=mock.MagicMock(return_value=0)))
+
+    writer = object.__new__(release.FoundationAdmin)
+    writer._FoundationAdmin__data = data
+    writer._FoundationAdmin__write_as = mock.MagicMock()
+    delete = mock.AsyncMock(return_value=None)
+    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+
+    result = await writer.delete_inactive(
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        dry_run=False,
+    )
+    assert result is not None and "not eligible" in result
+    data.begin_immediate.assert_awaited_once()
+    data.expire_all.assert_called_once()
+    data.rollback.assert_awaited_once()
+    delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_foundation_admin_delete_inactive_rejects_non_active_project() -> None:
+    import datetime as _dt
+
+    retired_release = SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=_retired_project(),
+        project_key="project",
+        version="1.0.0",
+        phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        activity_at=_dt.datetime(2025, 1, 1, tzinfo=_dt.UTC),
+    )
+    data = mock.MagicMock()
+    data.release = mock.MagicMock(return_value=_query_returning(retired_release))
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+
+    writer = object.__new__(release.FoundationAdmin)
+    writer._FoundationAdmin__data = data
+    writer._FoundationAdmin__write_as = mock.MagicMock()
+    delete = mock.AsyncMock(return_value=None)
+    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+
+    error = await writer.delete_inactive(
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        dry_run=True,
+    )
+    assert error is not None and "not active" in error
+    delete.assert_not_awaited()
+
+
+def test_foundation_admin_release_writer_exposes_inactive_delete_only() -> None:
+    assert hasattr(release.FoundationAdmin, "delete_inactive")
+    assert not hasattr(release.FoundationAdmin, "delete")
+    assert not hasattr(release, "System")
+    assert not hasattr(release, "ReleaseDeleter")
 
 
 @pytest.mark.asyncio
@@ -303,3 +416,35 @@ async def test_vote_send_resolution_blocks_retired() -> None:
             "Chair",
             SimpleNamespace(),
         )
+
+
+def _async_context_manager(value: object) -> mock.MagicMock:
+    ctx = mock.MagicMock()
+    ctx.__aenter__ = mock.AsyncMock(return_value=value)
+    ctx.__aexit__ = mock.AsyncMock(return_value=None)
+    return ctx
+
+
+def _query_returning(obj: object) -> mock.MagicMock:
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=obj)
+    query.get = mock.AsyncMock(return_value=obj)
+    return query
+
+
+def _retired_project(key: str = "project") -> SimpleNamespace:
+    return SimpleNamespace(
+        key=key,
+        status=sql.ProjectStatus.RETIRED,
+        committee_key=key,
+        display_name=key.capitalize(),
+        short_display_name=key.capitalize(),
+    )
+
+
+def _retired_release(project_key: str = "project", version: str = "1.0.0") -> SimpleNamespace:
+    return SimpleNamespace(
+        key=sql.release_key(project_key, version),
+        project=_retired_project(project_key),
+        version=version,
+    )
