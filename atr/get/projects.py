@@ -311,14 +311,14 @@ async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.
         if can_edit:
             tab_items.extend(
                 [
+                    htm.Tab(
+                        "trusted-publishing",
+                        "Trusted Publishing",
+                        lambda: _render_trusted_publishing_form(project),
+                    ),
                     htm.Tab("compose", "Compose", lambda: _render_compose_form(project)),
                     htm.Tab("vote", "Vote", lambda: _render_vote_form(project)),
                     htm.Tab("finish", "Finish", lambda: _render_finish_form(project)),
-                    htm.Tab(
-                        "trusted-publishing",
-                        "Trusted publishing",
-                        lambda: _render_trusted_publishing_form(project),
-                    ),
                 ]
             )
         else:
