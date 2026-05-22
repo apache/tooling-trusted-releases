@@ -70,6 +70,13 @@ import atr.util as util
 
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 _TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
+MAVEN_OWNER_NAMESPACE_HELP: Final = (
+    "For Maven Central, this is the groupId, for example org.apache.maven. "
+    "For most Apache projects it starts with org.apache.<project-name>. "
+    "You can verify the groupId by searching for the artifact on search.maven.org. "
+    "For other platforms, use the npm @scope, Docker namespace, GitHub owner, or ArtifactHub repo. "
+    "Leave blank if not used."
+)
 
 
 class DistributionError(RuntimeError): ...
@@ -133,8 +140,7 @@ class DistributionAutomateForm(form.Form):
     )
     owner_namespace: safe.OptionalOwnerNamespace = form.label(
         "Owner or Namespace",
-        "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
-        "GitHub owner, ArtifactHub repo). Leave blank if not used.",
+        MAVEN_OWNER_NAMESPACE_HELP,
     )
     package: safe.Alphanumeric = form.label("Package")
     version: safe.VersionKey = form.label("Version")
@@ -160,8 +166,7 @@ class DistributionRecordForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
     owner_namespace: safe.OptionalOwnerNamespace = form.label(
         "Owner or Namespace",
-        "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
-        "GitHub owner, ArtifactHub repo). Leave blank if not used.",
+        MAVEN_OWNER_NAMESPACE_HELP,
     )
     package: safe.Alphanumeric = form.label("Package")
     version: safe.VersionKey = form.label("Version")
