@@ -75,7 +75,7 @@ Core implementation:
 
 ## CycloneDX validation
 
-ATR validates CycloneDX SBOM files using both the CycloneDX CLI and Python validation tooling.
+ATR validates CycloneDX SBOM files using the CycloneDX CLI.
 
 Validation workflows detect:
 
@@ -98,13 +98,11 @@ These include:
 * NTIA 2021 conformance checks
 * license analysis
 * vulnerability analysis
-* SBOM QS scoring
 * tool version analysis
 
 The scoring workflow is implemented through:
 
 * `score_tool`
-* `score_qs`
 
 Related modules include:
 
