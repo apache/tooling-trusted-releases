@@ -13,6 +13,7 @@
 * `2.3.` [Checks](checks)
 * `2.4.` [License checks](license-checks)
 * `2.5.` [Trusted Publishing](trusted-publishing)
+* `2.6.` [SBOM workflows](sbom-workflows)
 
 **Sections**:
 

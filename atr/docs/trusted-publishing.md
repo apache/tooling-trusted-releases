@@ -4,7 +4,7 @@
 
 **Prev**: `2.4.` [License checks](license-checks)
 
-**Next**: `3.1.` [Running the server](running-the-server)
+**Next**: `2.6.` [SBOM workflows](sbom-workflows)
 
 **Sections**:
 
