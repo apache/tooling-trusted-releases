@@ -93,7 +93,7 @@ class PyPIResponse(schema.Subset):
 # Including all of the enum properties
 class Data(schema.Subset):
     platform: sql.DistributionPlatform
-    owner_namespace: safe.Alphanumeric | None = None
+    owner_namespace: safe.OwnerNamespace | None = None
     package: safe.Alphanumeric
     version: safe.VersionKey
     details: bool

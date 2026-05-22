@@ -1566,7 +1566,7 @@ class Distribution(sqlmodel.SQLModel, table=True):
 
         return distribution.Data(
             platform=self.platform,
-            owner_namespace=safe.Alphanumeric(self.owner_namespace),
+            owner_namespace=safe.OwnerNamespace(self.owner_namespace),
             package=safe.Alphanumeric(self.package),
             version=safe.VersionKey(self.version),
             details=details,
