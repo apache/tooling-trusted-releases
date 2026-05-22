@@ -29,6 +29,7 @@ _PROJECT_CHARS: Final = _ALPHANUM | frozenset("+")
 _ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
 _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")
+_OWNER_NAMESPACE_CHARS: Final = _ALPHANUM | frozenset(".")
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
 
 
@@ -183,6 +184,12 @@ class Alphanumeric(SafeType):
         return _ALPHANUM
 
 
+class OwnerNamespace(SafeType):
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _OWNER_NAMESPACE_CHARS
+
+
 class AsfUid(SafeType):
     """An ASF user ID validated to contain only lowercase letters, digits, hyphens, and underscores."""
 
@@ -324,6 +331,11 @@ def _strip_slashes_or_none(v: object) -> object:
 
 type OptionalAlphanumeric = Annotated[
     Alphanumeric | None,
+    pydantic.BeforeValidator(_strip_slashes_or_none),
+]
+
+type OptionalOwnerNamespace = Annotated[
+    OwnerNamespace | None,
     pydantic.BeforeValidator(_strip_slashes_or_none),
 ]
 

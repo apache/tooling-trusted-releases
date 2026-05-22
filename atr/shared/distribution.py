@@ -131,7 +131,7 @@ class DistributionAutomateForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label(
         "Platform", widget=form.Widget.SELECT, enum_filter_include=[DistributionPlatform.MAVEN.value]
     )
-    owner_namespace: safe.OptionalAlphanumeric = form.label(
+    owner_namespace: safe.OptionalOwnerNamespace = form.label(
         "Owner or Namespace",
         "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
@@ -158,7 +158,7 @@ class DistributionAutomateForm(form.Form):
 
 class DistributionRecordForm(form.Form):
     platform: form.Enum[DistributionPlatform] = form.label("Platform", widget=form.Widget.SELECT)
-    owner_namespace: safe.OptionalAlphanumeric = form.label(
+    owner_namespace: safe.OptionalOwnerNamespace = form.label(
         "Owner or Namespace",
         "Who owns or names the package (Maven groupId, npm @scope, Docker namespace, "
         "GitHub owner, ArtifactHub repo). Leave blank if not used.",
