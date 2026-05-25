@@ -228,6 +228,7 @@ class TaskType(enum.StrEnum):
     SBOM_TOOL_SCORE = "sbom_tool_score"
     SIGNATURE_CHECK = "signature_check"
     SVN_IMPORT_FILES = "svn_import_files"
+    SVN_PUBLISH = "svn_publish"
     TARGZ_INTEGRITY = "targz_integrity"
     TARGZ_STRUCTURE = "targz_structure"
     VOTE_AUTO_RESOLVE = "vote_auto_resolve"
@@ -282,6 +283,8 @@ class TaskType(enum.StrEnum):
                 return "Signature check"
             case TaskType.SVN_IMPORT_FILES:
                 return "SVN import"
+            case TaskType.SVN_PUBLISH:
+                return "SVN publish"
             case TaskType.TARGZ_INTEGRITY:
                 return "Targz integrity"
             case TaskType.TARGZ_STRUCTURE:

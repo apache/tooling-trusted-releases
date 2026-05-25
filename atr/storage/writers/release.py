@@ -746,9 +746,9 @@ class CommitteeParticipant(FoundationCommitter):
                 status=400,
             )
 
-    async def upload_file(self, args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
-        file_bytes = base64.b64decode(args.content, validate=True)
-        validated_path = args.relpath.as_path()
+    async def upload_file(self, upload_args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
+        file_bytes = base64.b64decode(upload_args.content, validate=True)
+        validated_path = upload_args.relpath.as_path()
         description = f"Upload via API: {validated_path}"
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
@@ -758,8 +758,8 @@ class CommitteeParticipant(FoundationCommitter):
                 await f.write(file_bytes)
 
         result = await self.__write_as.revision.create_revision_with_quarantine(
-            args.project,
-            args.version,
+            upload_args.project,
+            upload_args.version,
             self.__asf_uid,
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
@@ -768,7 +768,7 @@ class CommitteeParticipant(FoundationCommitter):
         if isinstance(result, sql.Quarantined):
             return result
         async with db.session() as data:
-            release_key = sql.release_key(args.project, args.version)
+            release_key = sql.release_key(upload_args.project, upload_args.version)
             return await data.revision(
                 release_key=str(release_key),
                 number=result.number,

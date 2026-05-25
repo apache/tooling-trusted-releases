@@ -183,6 +183,20 @@ class SvnImport(schema.Strict):
     asf_uid: str
 
 
+class SvnPublish(schema.Strict):
+    """Arguments for the task to publish a release preview to SVN."""
+
+    asf_uid: str = schema.description("ASF UID of the user initiating publication")
+    project_key: safe.ProjectKey = schema.description("Project key in ATR")
+    version_key: safe.VersionKey = schema.description("Version key in ATR")
+    revision_number: safe.RevisionNumber = schema.description("Preview revision number to publish")
+    download_path_suffix: safe.OptionalRelPath = pydantic.Field(
+        default=None,
+        description="Optional path suffix appended under the committee downloads directory",
+    )
+    target_url: str = schema.description("Fully constructed SVN target URL the task will import to")
+
+
 class Update(schema.Strict):
     """Arguments for the task to update metadata from remote data sources."""
 

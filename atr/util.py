@@ -96,6 +96,8 @@ PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
 )
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
+SVN_PUBLISH_PATH_PRODUCTION: Final[str] = "/repos/dist/release"
+SVN_PUBLISH_PATH_TEST: Final[str] = "/repos/dist/atr"
 EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
 EXPECTED_DEFAULT_TLS_MINIMUM_VERSION: Final[ssl.TLSVersion] = ssl.TLSVersion.TLSv1_2
 EXPECTED_DEFAULT_TLS_VERIFY_MODE: Final[ssl.VerifyMode] = ssl.CERT_REQUIRED
@@ -1007,6 +1009,35 @@ def submitted_concerns_from_flash(flash_data: dict[str, Any]) -> list[str]:
     if isinstance(original, str):
         return [original]
     return []
+
+
+def svn_production_target_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"SVN_PUBLISH_URL must use http or https, got {parsed.scheme!r}")
+    if not parsed.netloc:
+        raise ValueError("SVN_PUBLISH_URL must have a host")
+    path = parsed.path.rstrip("/")
+    if (path == SVN_PUBLISH_PATH_PRODUCTION) or path.startswith(SVN_PUBLISH_PATH_PRODUCTION + "/"):
+        return True
+    if (path == SVN_PUBLISH_PATH_TEST) or path.startswith(SVN_PUBLISH_PATH_TEST + "/"):
+        return False
+    raise ValueError(
+        f"SVN_PUBLISH_URL path must be under {SVN_PUBLISH_PATH_PRODUCTION} or {SVN_PUBLISH_PATH_TEST}, got {path!r}"
+    )
+
+
+def svn_publish_target_url(
+    committee: sql.Committee,
+    download_path_suffix: safe.RelPath | None,
+) -> str:
+    publish_url = config.get().SVN_PUBLISH_URL
+    if not publish_url:
+        raise ValueError("SVN_PUBLISH_URL is not configured")
+    relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
+    if download_path_suffix is not None:
+        relpath = relpath / download_path_suffix.as_path()
+    return f"{publish_url.rstrip('/')}/{relpath}"
 
 
 async def task_archive_url(task_mid: str, recipient: str | None = None) -> str | None:

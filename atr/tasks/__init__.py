@@ -352,6 +352,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return signature.check
         case sql.TaskType.SVN_IMPORT_FILES:
             return svn.import_files
+        case sql.TaskType.SVN_PUBLISH:
+            raise NotImplementedError("The SVN_PUBLISH task handler is not yet implemented")
         case sql.TaskType.TARGZ_INTEGRITY:
             raise ValueError("TARGZ_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.TARGZ_STRUCTURE:

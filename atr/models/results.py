@@ -223,6 +223,15 @@ class SvnImportFiles(schema.Strict):
     msg: str = schema.description("The message from the SVN import")
 
 
+class SvnPublish(schema.Strict):
+    """Result of the task to publish a release preview to SVN."""
+
+    kind: Literal["svn_publish"] = schema.Field(alias="kind")
+    svn_revision: int = schema.description("The SVN revision number that the publish landed in")
+    target_url: str = schema.description("The SVN target URL the publish was sent to")
+    message: str = schema.description("A short status message describing the publish outcome")
+
+
 class VoteAutoResolve(schema.Strict):
     """Result of the task to automatically resolve a vote."""
 
@@ -285,6 +294,7 @@ Results = Annotated[
     | SBOMQsScore
     | SBOMToolScore
     | SvnImportFiles
+    | SvnPublish
     | VoteAutoResolve
     | VoteEndNotify
     | VoteInitiate,

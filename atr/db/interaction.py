@@ -23,6 +23,7 @@ from typing import Final
 
 import asfquart.base as base
 import packaging.version as version
+import pydantic
 import sqlalchemy
 import sqlalchemy.orm as orm
 import sqlmodel
@@ -542,6 +543,30 @@ async def prior_release_for_archive(project: sql.Project, version: str) -> sql.R
     return cycles.prior_release_in_cycle(project, version, candidates)
 
 
+async def release_completed_svn_publish_task_for_revision(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    caller_data: db.Session | None = None,
+) -> sql.Task | None:
+    """Return the most recently completed usable SVN_PUBLISH task for the revision."""
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == str(project_key))
+            .where(sql.Task.version_key == str(version_key))
+            .where(sql.Task.revision_number == str(revision_number))
+            .where(sql.Task.task_type == sql.TaskType.SVN_PUBLISH)
+            .where(sql.Task.status == sql.TaskStatus.COMPLETED)
+            .order_by(via(sql.Task.added).desc())
+        )
+        for task in (await data.execute(query)).scalars().all():
+            if _svn_publish_result(task) is not None:
+                return task
+        return None
+
+
 async def release_current_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
     current_vote_seq = getattr(release, "current_vote_seq", None)
     if current_vote_seq is None:
@@ -559,6 +584,56 @@ async def release_current_vote_task(release: sql.Release, caller_data: db.Sessio
         )
         task = (await data.execute(query)).scalar_one_or_none()
         return task
+
+
+async def release_in_flight_svn_publish_task(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    target_url: str | None = None,
+    caller_data: db.Session | None = None,
+) -> sql.Task | None:
+    """Return the most recent queued or active SVN_PUBLISH task."""
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == str(project_key))
+            .where(sql.Task.version_key == str(version_key))
+            .where(sql.Task.revision_number == str(revision_number))
+            .where(sql.Task.task_type == sql.TaskType.SVN_PUBLISH)
+            .where(via(sql.Task.status).in_([sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE]))
+            .order_by(via(sql.Task.added).desc())
+            .limit(1)
+        )
+        if target_url is not None:
+            query = query.where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.target_url") == target_url)
+        return (await data.execute(query)).scalar_one_or_none()
+
+
+async def release_latest_failed_svn_publish_task(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision_number: safe.RevisionNumber,
+    target_url: str | None = None,
+    caller_data: db.Session | None = None,
+) -> sql.Task | None:
+    """Return the most recently failed SVN_PUBLISH task."""
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == str(project_key))
+            .where(sql.Task.version_key == str(version_key))
+            .where(sql.Task.revision_number == str(revision_number))
+            .where(sql.Task.task_type == sql.TaskType.SVN_PUBLISH)
+            .where(sql.Task.status == sql.TaskStatus.FAILED)
+            .order_by(via(sql.Task.added).desc())
+            .limit(1)
+        )
+        if target_url is not None:
+            query = query.where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.target_url") == target_url)
+        return (await data.execute(query)).scalar_one_or_none()
 
 
 async def release_latest_vote_task(release: sql.Release, caller_data: db.Session | None = None) -> sql.Task | None:
@@ -954,6 +1029,20 @@ async def wait_for_task(
             # Wait 100ms before checking again
             await asyncio.sleep(0.1)
     return False
+
+
+def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
+    result = task.result
+    if isinstance(result, results.SvnPublish):
+        return result
+    if isinstance(result, dict):
+        try:
+            parsed = results.ResultsAdapter.validate_python(result)
+        except pydantic.ValidationError:
+            return None
+        if isinstance(parsed, results.SvnPublish):
+            return parsed
+    return None
 
 
 async def _trusted_ballot_details_from_ballots(
