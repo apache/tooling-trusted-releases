@@ -210,6 +210,7 @@ async def view(
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
     is_privileged = session.is_admin
     can_edit = (is_committee_member or is_privileged) and project.status != sql.ProjectStatus.RETIRED
+    is_sole_active_project = project.committee is not None and active_committee_projects <= 1
 
     page = htm.Block()
 
@@ -244,30 +245,10 @@ async def view(
                 ]
             ]
         )
-    page.append(_render_project_label_card(project))
-    page.append(_render_pmc_card(project))
+    page.append(await _render_header_cards(project, can_edit, session, is_sole_active_project, is_privileged))
 
     tabs = await _generate_tabs(can_edit, project, cycles)
     page.append(tabs)
-
-    # Below the tabs: admin-only project actions.
-    if is_committee_member or is_privileged:
-        section = htm.Block(htm.div)
-        section.h2["Actions"]
-
-        is_sole_active_project = project.committee is not None and active_committee_projects <= 1
-        if project.status == sql.ProjectStatus.ACTIVE and not is_sole_active_project:
-            await _delete_section(section, project)
-
-        if project.committee:
-            if (project.committee.key in session.committees) or is_privileged:
-                section.p[
-                    htm.a(
-                        ".btn.btn-sm.btn-outline-primary",
-                        href=util.as_url(add_project, committee_key=project.committee.key),
-                    )["Create a sibling project"]
-                ]
-        page.append(section.collect())
 
     content = page.collect()
 
@@ -278,6 +259,46 @@ async def view(
         content=content,
         javascripts=javascripts,
     )
+
+
+def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
+    # The "default" cycle is what every project gets when it has no cycle_match
+    return "No lifecycle information" if cycle.cycle == "default" else f"Version {cycle.cycle}"
+
+
+def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
+    return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
+
+
+async def _delete_form(project: sql.Project) -> htm.Element | None:
+    delete_form = None
+    if not project.releases:
+        delete_form = await form.render(
+            shared.projects.DeleteSelectedProject,
+            action=util.as_url(post.projects.delete),
+            form_classes="",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label="Delete project",
+            defaults={"project_key": str(project.key)},
+            confirm="Are you sure you want to delete this project? This cannot be undone.",
+            empty=True,
+        )
+    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
+        delete_form = await form.render(
+            model_cls=shared.projects.ArchiveSelectedProject,
+            action=util.as_url(post.projects.archive),
+            form_classes=".d-inline-block.m-0",
+            submit_classes="btn-sm btn-outline-secondary",
+            submit_label="Archive project",
+            empty=True,
+            defaults={"project_key": str(project.key)},
+            confirm=(
+                f"This project has {util.plural(len(project.releases), 'draft release')}."
+                " Archiving will delete those drafts and mark the project as retired."
+                " Continue?"
+            ),
+        )
+    return delete_form
 
 
 async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.ProjectCycle]) -> htpy.Element:
@@ -328,10 +349,6 @@ async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.
     base_url = util.as_url(view, project_key=str(project.key))
 
     return await htm.tabs(tab_items, active_key=active_tab, base_url=base_url)
-
-
-def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
-    return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
 
 
 def _input_with_variables(
@@ -385,6 +402,44 @@ def _input_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+def _release_url(project: sql.Project, release: sql.Release) -> str:
+    project_key = str(project.key)
+    version_key = str(release.version)
+    match release.phase:
+        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            return util.as_url(compose.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE_CANDIDATE:
+            return util.as_url(vote.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE_PREVIEW:
+            return util.as_url(finish.selected, project_key=project_key, version_key=version_key)
+        case sql.ReleasePhase.RELEASE:
+            return util.as_url(file.selected, project_key=project_key, version_key=version_key)
+
+
+async def _render_actions_card(
+    project: sql.Project, session: web.Committer, is_sole_active_project: bool, is_privileged: bool
+) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Actions"]]
+    with card.block(htm.div, classes=".card-body") as body:
+        if project.status == sql.ProjectStatus.ACTIVE and not is_sole_active_project:
+            action_form = await _delete_form(project)
+            if action_form:
+                body.append(action_form)
+
+        if project.committee:
+            if (project.committee.key in session.committees) or is_privileged:
+                body.append(
+                    htm.p[
+                        htm.a(
+                            ".btn.btn-sm.btn-outline-primary",
+                            href=util.as_url(add_project, committee_key=project.committee.key),
+                        )["Create a sibling project"]
+                    ]
+                )
+    return card.collect()
 
 
 def _render_categories_section(project: sql.Project) -> htm.Element:
@@ -473,11 +528,6 @@ async def _render_compose_form(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
-    # The "default" cycle is what every project gets when it has no cycle_match
-    return "No lifecycle information" if cycle.cycle == "default" else f"Version {cycle.cycle}"
-
-
 def _render_cycle_dates_card(cycle: sql.ProjectCycle) -> htm.Element:
     card = htm.Block(htm.details, classes=".card.mb-4")
     card.summary(".card-header.bg-light")[htm.h3(".mb-0.d-inline-block")["Cycle dates"]]
@@ -537,38 +587,6 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
     return card.collect()
 
 
-async def _delete_section(section: htm.Block, project: sql.Project):
-    delete_form = None
-    if not project.releases:
-        delete_form = await form.render(
-            shared.projects.DeleteSelectedProject,
-            action=util.as_url(post.projects.delete),
-            form_classes="",
-            submit_classes="btn-sm btn-outline-danger",
-            submit_label="Delete project",
-            defaults={"project_key": str(project.key)},
-            confirm="Are you sure you want to delete this project? This cannot be undone.",
-            empty=True,
-        )
-    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
-        delete_form = await form.render(
-            model_cls=shared.projects.ArchiveSelectedProject,
-            action=util.as_url(post.projects.archive),
-            form_classes=".d-inline-block.m-0",
-            submit_classes="btn-sm btn-outline-secondary",
-            submit_label="Archive project",
-            empty=True,
-            defaults={"project_key": str(project.key)},
-            confirm=(
-                f"This project has {util.plural(len(project.releases), 'draft release')}."
-                " Archiving will delete those drafts and mark the project as retired."
-                " Continue?"
-            ),
-        )
-    if delete_form:
-        section.div(".my-3")[delete_form]
-
-
 async def _render_finish_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
@@ -614,6 +632,19 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
             skip=["archive_prior_release"] if not project.cycle_match else [],
         )
     return card.collect()
+
+
+async def _render_header_cards(
+    project: sql.Project, can_edit: bool, session: web.Committer, is_sole_active_project: bool, is_privileged: bool
+) -> htm.Element:
+    block = htm.Block(htm.div, classes=".row.row-cols-1.row-cols-md-2.row-cols-lg-3.row-cols-xl-3.g-4")
+    block.div(".col")[_render_project_label_card(project)]
+    block.div(".col")[_render_pmc_card(project)]
+    if can_edit:
+        block.div(".col.col-sm-12.col-md-12.col-lg-4")[
+            await _render_actions_card(project, session, is_sole_active_project, is_privileged)
+        ]
+    return block.collect()
 
 
 def _render_languages_section(project: sql.Project) -> htm.Element:
@@ -795,20 +826,6 @@ def _render_project_label_card(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-def _release_url(project: sql.Project, release: sql.Release) -> str:
-    project_key = str(project.key)
-    version_key = str(release.version)
-    match release.phase:
-        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            return util.as_url(compose.selected, project_key=project_key, version_key=version_key)
-        case sql.ReleasePhase.RELEASE_CANDIDATE:
-            return util.as_url(vote.selected, project_key=project_key, version_key=version_key)
-        case sql.ReleasePhase.RELEASE_PREVIEW:
-            return util.as_url(finish.selected, project_key=project_key, version_key=version_key)
-        case sql.ReleasePhase.RELEASE:
-            return util.as_url(file.selected, project_key=project_key, version_key=version_key)
-
-
 async def _render_releases_sections(
     project: sql.Project,
     candidate_drafts: list[sql.Release],
@@ -901,64 +918,66 @@ async def _render_releases_tab(
     *,
     can_edit: bool,
 ) -> htm.Element:
-    block = htm.Block()
-    if can_edit:
-        block.p(".mb-4")[
-            htm.a(
-                ".btn.btn-sm.btn-outline-primary",
-                href=util.as_url(start.selected, project_key=str(project.key)),
-            )["Start a new release"]
-        ]
+    block = htm.Block(htm.div, classes=".card.mb-4")
+    block.div(".card-header.bg-light")[htm.h3(".mb-0")["Project releases"]]
+    with block.block(htm.div, classes=".card-body") as body:
+        if can_edit:
+            body.p(".mb-4")[
+                htm.a(
+                    ".btn.btn-sm.btn-outline-primary",
+                    href=util.as_url(start.selected, project_key=str(project.key)),
+                )["Start a new release"]
+            ]
 
-    if not project.releases:
-        block.p(".text-muted.mb-4")["No releases found."]
+        if not project.releases:
+            body.p(".text-muted.mb-4")["No releases found."]
 
-    # Stay flat for projects with only the implicit "default" cycle and no
-    # cycle dates set. Once cycles get used or dates get filled in, headings
-    # surface automatically. The card / form surfaces whenever can_edit, so a
-    # PMC of a simple-default project can still set eod/eos/eol/lts.
-    show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
+        # Stay flat for projects with only the implicit "default" cycle and no
+        # cycle dates set. Once cycles get used or dates get filled in, headings
+        # surface automatically. The card / form surfaces whenever can_edit, so a
+        # PMC of a simple-default project can still set eod/eos/eol/lts.
+        show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
 
-    # Newest first, as the old per-phase queries returned them.
-    releases = sorted(project.releases, key=lambda r: r.created, reverse=True)
+        # Newest first, as the old per-phase queries returned them.
+        releases = sorted(project.releases, key=lambda r: r.created, reverse=True)
 
-    for cycle in cycles:
-        cycle_drafts = [
-            r
-            for r in releases
-            if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-        ]
-        cycle_candidates = [
-            r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE
-        ]
-        cycle_previews = [
-            r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_PREVIEW
-        ]
-        cycle_full = [r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE]
+        for cycle in cycles:
+            cycle_drafts = [
+                r
+                for r in releases
+                if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+            ]
+            cycle_candidates = [
+                r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_CANDIDATE
+            ]
+            cycle_previews = [
+                r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_PREVIEW
+            ]
+            cycle_full = [r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE]
 
-        cycle_has_dates = _cycle_has_dates(cycle)
-        cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)
-        if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit):
-            continue
+            cycle_has_dates = _cycle_has_dates(cycle)
+            cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)
+            if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit):
+                continue
 
-        if show_cycle_heading:
-            block.h2(".mt-4.mb-3")[_cycle_display_name(cycle)]
+            if show_cycle_heading:
+                body.h2(".mt-4.mb-3")[_cycle_display_name(cycle)]
 
-        # Skip cycle dates UI for the default cycle - it's the catch-all for
-        # projects without cycle_match and shouldn't carry lifecycle dates.
-        if cycle.cycle != "default":
-            if can_edit:
-                block.append(await _render_cycle_dates_form(project, cycle))
-            elif cycle_has_dates:
-                block.append(_render_cycle_dates_card(cycle))
+            # Skip cycle dates UI for the default cycle - it's the catch-all for
+            # projects without cycle_match and shouldn't carry lifecycle dates.
+            if cycle.cycle != "default":
+                if can_edit:
+                    body.append(await _render_cycle_dates_form(project, cycle))
+                elif cycle_has_dates:
+                    body.append(_render_cycle_dates_card(cycle))
 
-        block.append(
-            await _render_releases_sections(
-                project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
+            body.append(
+                await _render_releases_sections(
+                    project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
+                )
             )
-        )
-        if not cycle_has_releases and show_cycle_heading:
-            block.p(".text-muted.mb-4")["No releases."]
+            if not cycle_has_releases and show_cycle_heading:
+                body.p(".text-muted.mb-4")["No releases."]
 
     return block.collect()
 
