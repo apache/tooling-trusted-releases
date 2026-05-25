@@ -26,6 +26,7 @@ import sqlalchemy.engine as engine
 
 import atr.api
 import atr.db.interaction as interaction
+import atr.form as form
 import atr.get.manual as manual
 import atr.get.resolve as resolve
 import atr.get.vote
@@ -75,6 +76,39 @@ def test_automatic_vote_resolve_section_links_to_standard_resolve(monkeypatch: p
     html = str(page.collect())
     assert 'href="/resolve/project/1.0.0"' in html
     assert 'href="/manual/resolve/project/1.0.0"' not in html
+
+
+@pytest.mark.asyncio
+async def test_cancel_form_keeps_hidden_result_with_partial_defaults(
+    render_app: quart.Quart,
+) -> None:
+    async with render_app.test_request_context("/resolve/project/1.0.0"):
+        rendered = await form.render(
+            model_cls=shared.resolve.CancelSubmitForm,
+            defaults={
+                "vote_mode": sql.VoteMode.EMAIL,
+                "vote_seq": None,
+            },
+            use_error_data=False,
+        )
+
+    html = str(rendered)
+    assert 'name="vote_result"' in html
+    assert 'value="Cancelled"' in html
+
+
+@pytest.mark.asyncio
+async def test_cancel_form_overrides_tabulated_result_before_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        pass_fail_allowed=False,
+        vote_end=datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC),
+    )
+
+    defaults = form_render.call_args.kwargs["defaults"]
+    assert defaults["vote_result"] == "Cancelled"
 
 
 @pytest.mark.asyncio

@@ -865,8 +865,8 @@ def _render_field_value(
         # rather than falling back to the default - otherwise the checkbox
         # appears ticked even though the user submitted it unticked.
         field_value = False
-    elif defaults:
-        field_value = defaults.get(field_name)
+    elif (defaults is not None) and (field_name in defaults):
+        field_value = defaults[field_name]
     elif not field_info.is_required():
         field_value = field_info.get_default(call_default_factory=True)
     else:

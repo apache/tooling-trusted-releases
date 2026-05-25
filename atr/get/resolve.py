@@ -217,6 +217,7 @@ async def selected(  # noqa: C901
     duration_blocks_result = (not pass_fail_allowed) and (not bypass_active)
     if duration_blocks_result:
         cancel_only = True
+        defaults["vote_result"] = "Cancelled"
         form_cls = shared.resolve.CancelSubmitForm
         submit_classes = "btn-danger"
         submit_label = "Cancel vote"
