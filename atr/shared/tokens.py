@@ -15,11 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 import pydantic
 
 import atr.form as form
+
+PAT_EXPIRY_DAYS: Final[int] = 180
+PAT_NOISY_SECRET_DOMAIN: Final[bytes] = b"tooling.apache.org"
 
 type ADD_TOKEN = Literal["add_token"]
 type DELETE_TOKEN = Literal["delete_token"]

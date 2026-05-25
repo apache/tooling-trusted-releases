@@ -417,9 +417,26 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         if commit is True:
             await self.commit()
 
-    def personal_access_token(self, token_hash: str) -> Query[sql.PersonalAccessToken]:
+    def personal_access_token(
+        self,
+        token_hash: Opt[str] = NOT_SET,
+        id: Opt[int] = NOT_SET,
+        asfuid: Opt[str] = NOT_SET,
+        created_by: Opt[str] = NOT_SET,
+        is_system: Opt[bool] = False,
+    ) -> Query[sql.PersonalAccessToken]:
+        # is_system defaults to False; pass NOT_SET to span both kinds.
         query = sqlmodel.select(sql.PersonalAccessToken)
-        query = query.where(sql.PersonalAccessToken.token_hash == token_hash)
+        if is_defined(token_hash):
+            query = query.where(sql.PersonalAccessToken.token_hash == token_hash)
+        if is_defined(id):
+            query = query.where(sql.PersonalAccessToken.id == id)
+        if is_defined(asfuid):
+            query = query.where(sql.PersonalAccessToken.asfuid == asfuid)
+        if is_defined(created_by):
+            query = query.where(sql.PersonalAccessToken.created_by == created_by)
+        if is_defined(is_system):
+            query = query.where(sql.PersonalAccessToken.is_system == is_system)
         return Query(self, query)
 
     def project(

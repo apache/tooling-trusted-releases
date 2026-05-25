@@ -25,6 +25,7 @@ import copy
 import dataclasses
 import datetime
 import enum
+import ipaddress
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeVar, assert_never, overload
 
 import pydantic
@@ -564,7 +565,11 @@ class Notification(sqlmodel.SQLModel, table=True):
 # PersonalAccessToken:
 class PersonalAccessToken(sqlmodel.SQLModel, table=True):
     id: int | None = sqlmodel.Field(default=None, primary_key=True)
-    asfuid: str = sqlmodel.Field(index=True)
+    # asfuid is the authentication subject (null for a system PAT, which has no
+    # owning user). created_by is always set, so we can still revoke all
+    # tokens a given admin minted even when asfuid is null.
+    asfuid: str | None = sqlmodel.Field(default=None, index=True)
+    created_by: str = sqlmodel.Field(index=True)
     token_hash: str = sqlmodel.Field(unique=True)
     created: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
@@ -573,6 +578,27 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
     expires: datetime.datetime = sqlmodel.Field(sa_column=sqlalchemy.Column(UTCDateTime, nullable=False))
     last_used: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     label: str | None = None
+    # System tokens are admin-minted for service callers (e.g. the .asf.yaml
+    # processor). The JWTs they mint carry the fixed system identity, skip
+    # the LDAP check, and gain system privileges.
+    is_system: bool = sqlmodel.Field(default=False)
+    # Optional single IP or CIDR the token may be exchanged from. Null means no
+    # restriction.
+    allowed_ip: str | None = None
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires < datetime.datetime.now(datetime.UTC)
+
+    def allows_ip(self, client_ip: str | None) -> bool:
+        if self.allowed_ip is None:
+            return True
+        if client_ip is None:
+            return False
+        try:
+            return ipaddress.ip_address(client_ip) in ipaddress.ip_network(self.allowed_ip, strict=False)
+        except ValueError:
+            return False
 
 
 # RevisionCounter:

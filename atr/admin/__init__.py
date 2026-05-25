@@ -18,6 +18,8 @@
 import asyncio
 import collections
 import datetime
+import hashlib
+import ipaddress
 import json
 import os
 import pathlib
@@ -55,8 +57,10 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.models.validation as validation
+import atr.noisy as noisy
 import atr.paths as paths
 import atr.principal as principal
+import atr.shared as shared
 import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.tasks as tasks
@@ -130,6 +134,41 @@ class ValidateJwtForm(form.Form):
         if token == "":
             raise ValueError("JWT is required")
         return token
+
+
+class CreateSystemTokenForm(form.Form):
+    label: str = form.label("Label", "A name to identify this system token.")
+    allowed_ip: str = form.label(
+        "Allowed IP",
+        "Optional single IP or CIDR the token may be exchanged from. Leave blank for no restriction.",
+        default="",
+    )
+
+    @pydantic.field_validator("label", mode="after")
+    @classmethod
+    def validate_label(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Label is required")
+        if len(value) > 100:
+            raise ValueError("Label must be 100 characters or less")
+        return value
+
+    @pydantic.field_validator("allowed_ip", mode="after")
+    @classmethod
+    def validate_allowed_ip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        try:
+            ipaddress.ip_network(value, strict=False)
+        except ValueError as e:
+            raise ValueError("Allowed IP must be a valid IP address or CIDR") from e
+        return value
+
+
+class RevokeSystemTokenForm(form.Form):
+    token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
 
 
 class SessionDataCommon(NamedTuple):
@@ -934,18 +973,31 @@ async def revoke_user_tokens_get(_session: web.Committer, _revoke_user_tokens: L
 
     Revoke all Personal Access Tokens for a specified user.
     """
-    token_counts: list[tuple[str, int]] = []
+    # (uid, owned_count, minted_count). owned counts user PATs the uid holds;
+    # minted counts system PATs the uid created. Both are revoked by the form
+    # below, so they need to appear in the same view.
+    token_counts: list[tuple[str, int, int]] = []
     async with db.session() as data:
-        stmt = (
-            sqlmodel.select(
-                sql.PersonalAccessToken.asfuid,
-                sqlmodel.func.count(),
-            )
+        via = sql.validate_instrumented_attribute
+        owned_stmt = (
+            sqlmodel.select(sql.PersonalAccessToken.asfuid, sqlmodel.func.count())
+            .where(via(sql.PersonalAccessToken.asfuid).is_not(None))
             .group_by(sql.PersonalAccessToken.asfuid)
-            .order_by(sql.PersonalAccessToken.asfuid)
         )
-        rows = await data.execute_query(stmt)
-        token_counts = [(row[0], row[1]) for row in rows]
+        minted_stmt = (
+            sqlmodel.select(sql.PersonalAccessToken.created_by, sqlmodel.func.count())
+            .where(via(sql.PersonalAccessToken.is_system).is_(True))
+            .group_by(sql.PersonalAccessToken.created_by)
+        )
+        owned_rows = await data.execute_query(owned_stmt)
+        minted_rows = await data.execute_query(minted_stmt)
+
+        owned = {row[0]: row[1] for row in owned_rows}
+        minted = {row[0]: row[1] for row in minted_rows}
+        token_counts = sorted(
+            ((uid, owned.get(uid, 0), minted.get(uid, 0)) for uid in (owned.keys() | minted.keys())),
+            key=lambda row: row[0],
+        )
 
     rendered_form = await form.render(
         model_cls=RevokeUserTokensForm,
@@ -981,6 +1033,99 @@ async def revoke_user_tokens_post(
         await quart.flash(f"No tokens found for {target_uid}.", "info")
 
     return await session.redirect(revoke_user_tokens_get)
+
+
+@admin.typed
+async def system_tokens_get(session: web.Committer, _system_tokens: Literal["system-tokens"]) -> str:
+    """
+    URL: GET /system-tokens
+
+    Mint and manage system tokens.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        tokens = await wafa.tokens.list_system_tokens()
+
+    create_form = await form.render(
+        model_cls=CreateSystemTokenForm,
+        action=util.as_url(system_tokens_create_post),
+        submit_label="Create system token",
+    )
+    rows = []
+    for token in tokens:
+        revoke_form = await form.render(
+            model_cls=RevokeSystemTokenForm,
+            action=util.as_url(system_tokens_revoke_post),
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-danger",
+            submit_label="Revoke",
+            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
+            defaults={"token_id": token.id},
+            empty=True,
+        )
+        rows.append((token, revoke_form))
+    return await template.render(
+        "system-tokens.html",
+        create_form=create_form,
+        rows=rows,
+        format_datetime=util.format_datetime,
+    )
+
+
+@admin.typed
+async def system_tokens_create_post(
+    session: web.Committer,
+    _system_tokens_create: Literal["system-tokens/create"],
+    create_form: CreateSystemTokenForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /system-tokens/create
+
+    Mint a system token and show its secret once.
+    """
+    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
+    created = datetime.datetime.now(datetime.UTC)
+    expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)
+    allowed_ip = create_form.allowed_ip.strip() or None
+
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.tokens.add_system_token(token_hash, created, expires, create_form.label, allowed_ip)
+
+    await web.flash_success(
+        htm.p[
+            htm.strong["New system token"],
+            " (",
+            htm.code[create_form.label],
+            "): ",
+            htm.code(".bg-light.border.rounded.px-1.text-break")[plaintext],
+        ],
+        htm.p(".mb-0")["Copy it now - it will not be shown again."],
+    )
+    return await session.redirect(system_tokens_get)
+
+
+@admin.typed
+async def system_tokens_revoke_post(
+    session: web.Committer,
+    _system_tokens_revoke: Literal["system-tokens/revoke"],
+    revoke_form: RevokeSystemTokenForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /system-tokens/revoke
+
+    Revoke a single system token.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        revoked = await wafa.tokens.revoke_system_token(revoke_form.token_id)
+
+    if revoked:
+        await quart.flash("System token revoked.", "success")
+    else:
+        await quart.flash("System token not found.", "info")
+    return await session.redirect(system_tokens_get)
 
 
 @admin.typed

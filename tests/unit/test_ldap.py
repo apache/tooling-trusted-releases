@@ -282,11 +282,14 @@ def _mock_db_session(token_items: list | None = None, ssh_key_items: list | None
 
     # execute() is called twice: first for tokens, then for SSH keys
     # Each result needs .scalars().all() to return the items
-    token_result = mock.MagicMock()
-    token_result.scalars.return_value.all.return_value = token_items or []
+    pat_query = mock.MagicMock()
+    pat_query.all = mock.AsyncMock(return_value=token_items or [])
+    mock_data.personal_access_token = mock.MagicMock(return_value=pat_query)
+
+    # execute() is now called only for SSH keys.
     ssh_result = mock.MagicMock()
     ssh_result.scalars.return_value.all.return_value = ssh_key_items or []
-    mock_data.execute = mock.AsyncMock(side_effect=[token_result, ssh_result])
+    mock_data.execute = mock.AsyncMock(return_value=ssh_result)
 
     mock_session_ctx = mock.AsyncMock()
     mock_session_ctx.__aenter__ = mock.AsyncMock(return_value=mock_data)

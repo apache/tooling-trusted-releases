@@ -107,6 +107,7 @@ Committers can obtain PATs from the `/tokens` page on the ATR website. PATs have
 * **Format**: New PATs are Noisy Secrets using the `tooling.apache.org` namespace
 * **Storage**: ATR stores only SHA3-256 hashes, never the plaintext PAT
 * **Revocation**: Users can revoke their own PATs at any time; admins can revoke all PATs for any user via the admin "Revoke user tokens" page
+* **IP restriction**: A PAT may optionally be bound to a single IP or CIDR. When set, JWT issuance is refused from any other address
 * **Purpose**: PATs are used solely to obtain JWTs; they cannot be used directly for API access
 
 Only authenticated committers (signed in via ASF OAuth) can create PATs. Each user can have multiple active PATs.
@@ -146,6 +147,14 @@ Authorization: Bearer jwt_token_value
 ### Token handling
 
 The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints use the `@jwtoken.require` decorator, which extracts the JWT from the `Authorization` header, verifies its signature and required claims, and makes the user's ASF UID available to the handler. Verification applies a deliberate two minute leeway to the time based JWT checks to tolerate small clock skew between ATR and API clients.
+
+### System tokens
+
+Most PATs belong to a committer and are tied to their LDAP account. ATR also supports *system tokens*: PATs minted for a trusted service caller rather than a person, flagged with `is_system` in the database. A system PAT has no owning user, so its `asfuid` is null; the administrator who minted it is recorded in `created_by`, which is always set on every PAT. The JWT a system PAT mints carries a fixed service identity, `system`, which has no LDAP account. System tokens are restricted to foundation administrators; committers cannot create them from the `/tokens` page.
+
+A system token is exchanged for a JWT at `/api/jwt`, requesting the `system` identity. The resulting JWT carries an additional `atr_sys` claim and `system` as its subject. Because that identity has no LDAP account, verification skips the LDAP active check for these JWTs. It still re-validates the backing PAT on every request, so revoking the PAT immediately invalidates every JWT issued from it. Two further checks apply: a system JWT must be backed by a system PAT, and its subject must be `system`. The creating administrator and the PAT name are recorded in the audit log when the JWT is issued.
+
+Endpoints that should accept only system tokens are decorated with `@api.auth.system_bearer`, which rejects ordinary user JWTs. The committee membership check that gates committer-driven writes does not apply, so any committee authorisation for these endpoints must be established by the calling service before it reaches ATR. The only such endpoint at present is `/project/config`, which the `.asf.yaml` processor uses to create and update projects.
 
 ## GitHub Actions OIDC (Trusted Publishing)
 
@@ -302,6 +311,7 @@ Tokens must be protected by the user at all times:
 * [`blueprints/api.py`](/ref/atr/blueprints/api.py) - API wide rate limiting
 * [`api/__init__.py`](/ref/atr/api/__init__.py) - Tighter API limits for JWT creation
 * [`jwtoken.py`](/ref/atr/jwtoken.py) - JWT creation, verification, and decorators; `verify_github_oidc` implements the OIDC validation chain
+* [`blueprints/api_auth.py`](/ref/atr/blueprints/api_auth.py) - per-endpoint auth level decorators, including `system_bearer`
 * [`db/interaction.py`](/ref/atr/db/interaction.py) - `validate_trusted_jwt` implements the service account authorisation, `trusted_jwt_for_dist` implements gating based on the service account
 * [`ldap.py`](/ref/atr/ldap.py) - Account deactivation handling and credential revocation
 * [`storage/writers/tokens.py`](/ref/atr/storage/writers/tokens.py) - Token creation, deletion, and admin revocation

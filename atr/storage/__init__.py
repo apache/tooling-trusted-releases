@@ -271,6 +271,25 @@ class WriteAsUserService(WriteAs):
         return self.__asf_uid
 
 
+class WriteAsSystemService(WriteAs):
+    # Built directly from the service identity rather than via Authorisation,
+    # which would reject an identity with no LDAP account.
+    def __init__(self, data: db.Session, asf_uid: str):
+        asf_uid = asf_uid.strip()
+        # Only the fixed service identity is valid here; anything else means
+        # a caller has wired this up wrongly.
+        if asf_uid != constants.SYSTEM_SERVICE_UID:
+            raise AccessError("System service writes require the system service identity", status=401)
+        self.__asf_uid = asf_uid
+        self.policy = writers.policy.SystemService(self, data)
+        self.project = writers.project.SystemService(self, data)
+        self.tokens = writers.tokens.SystemService(self, data)
+
+    @property
+    def asf_uid(self) -> str:
+        return self.__asf_uid
+
+
 # TODO: Could name this WriteDispatcher
 class Write:
     # Read and Write have authenticator methods which return access outcomes
@@ -509,6 +528,13 @@ def ensure_project_active(project: sql.Project) -> None:
     raise AccessError(f"Project '{project.key}' is archived; release actions are disabled.")
 
 
+async def pat_is_system(pat_text: str) -> bool:
+    token_hash = writers.tokens.hash_pat(pat_text)
+    async with db.session() as data:
+        pat = await data.personal_access_token(token_hash, is_system=db.NOT_SET).get()
+    return bool(pat and pat.is_system)
+
+
 @contextlib.asynccontextmanager
 async def read(asf_uid: principal.UID = principal.ArgumentNone) -> AsyncGenerator[Read]:
     if asf_uid is principal.ArgumentNone:
@@ -603,6 +629,13 @@ async def write_as_system() -> AsyncGenerator[writers.release.FoundationAdmin]:
         system_write: Any = types.SimpleNamespace(authorisation=system_authorisation)
         system_write_as: Any = WriteAs()
         yield writers.release.FoundationAdmin(system_write, system_write_as, data)
+
+
+@contextlib.asynccontextmanager
+async def write_as_system_service(asf_uid: str) -> AsyncGenerator[WriteAsSystemService]:
+    async with db.session() as data:
+        wss = WriteAsSystemService(data, asf_uid)
+        yield wss
 
 
 @contextlib.asynccontextmanager

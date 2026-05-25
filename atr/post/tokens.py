@@ -17,8 +17,9 @@
 
 import datetime
 import hashlib
-from typing import Final, Literal
+from typing import Literal
 
+import quart
 import quart_rate_limiter as rate_limiter
 
 import atr.blueprints.post as post
@@ -29,9 +30,6 @@ import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.web as web
-
-_EXPIRY_DAYS: Final[int] = 180
-_PAT_NOISY_SECRET_DOMAIN: Final[bytes] = b"tooling.apache.org"
 
 
 @post.typed
@@ -44,7 +42,7 @@ async def jwt_post(
     """
     async with storage.write(session) as write:
         wafc = write.as_foundation_committer()
-        jwt_token = await wafc.tokens.issue_jwt(form.pat)
+        jwt_token = await wafc.tokens.issue_jwt(form.pat, quart.request.remote_addr)
     response = web.TextResponse(jwt_token)
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -67,10 +65,10 @@ async def tokens(
 
 
 async def _add_token(session: web.Committer, add_form: shared.tokens.AddTokenForm) -> web.WerkzeugResponse:
-    plaintext = noisy.create(_PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
     token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
     created = datetime.datetime.now(datetime.UTC)
-    expires = created + datetime.timedelta(days=_EXPIRY_DAYS)
+    expires = created + datetime.timedelta(days=shared.tokens.PAT_EXPIRY_DAYS)
 
     async with storage.write() as write:
         wafc = write.as_foundation_committer()

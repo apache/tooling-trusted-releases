@@ -46,12 +46,9 @@ class FoundationCommitter(GeneralPublic):
         if asf_uid is None:
             raise ValueError("Not authorized")
         via = sql.validate_instrumented_attribute
-        stmt = (
-            sqlmodel.select(sql.PersonalAccessToken)
-            .where(sql.PersonalAccessToken.asfuid == asf_uid)
-            .order_by(via(sql.PersonalAccessToken.created))
+        tokens = await (
+            self.__data.personal_access_token(asfuid=asf_uid).order_by(via(sql.PersonalAccessToken.created)).all()
         )
-        tokens = await self.__data.query_all(stmt)
         return [types.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
 
     async def most_recent_jwt_pat(self) -> types.PersonalAccessTokenSafe | None:
@@ -64,6 +61,7 @@ class FoundationCommitter(GeneralPublic):
         stmt = (
             sqlmodel.select(sql.PersonalAccessToken)
             .where(sql.PersonalAccessToken.asfuid == asf_uid)
+            .where(via(sql.PersonalAccessToken.is_system).is_(False))
             .where(via(sql.PersonalAccessToken.last_used).is_not(None))
             .order_by(via(sql.PersonalAccessToken.last_used).desc())
             .limit(1)

@@ -146,6 +146,11 @@ Token operations apply to the authenticated user:
 * Allowed for: Anyone with a valid PAT
 * Note: This is an unauthenticated endpoint; the PAT serves as the credential
 
+**System tokens**:
+
+* Allowed for: Foundation administrators only (not committer self-service)
+* Note: System tokens are PATs for a service identity rather than a person. Endpoints that accept them (via `@api.auth.system_bearer`) apply no committee membership check, so the calling service must establish any committee authorisation upstream. See [System tokens](authentication-security#system-tokens) in the authentication guide for the mechanism.
+
 ## Implementation patterns
 
 Authorization checks in ATR follow consistent patterns.

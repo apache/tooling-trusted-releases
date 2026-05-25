@@ -38,11 +38,11 @@ if TYPE_CHECKING:
     import atr.models.github as github
 
 
-AuthLevel = Literal["public", "bearer", "body_oidc", "pat"]
+AuthLevel = Literal["public", "bearer", "system_bearer", "body_oidc", "pat"]
 
 AUTH_LEVEL_ATTR: Final[str] = "_api_auth_level"
 
-VALID_LEVELS: Final[frozenset[AuthLevel]] = frozenset({"public", "bearer", "body_oidc", "pat"})
+VALID_LEVELS: Final[frozenset[AuthLevel]] = frozenset({"public", "bearer", "system_bearer", "body_oidc", "pat"})
 
 _TP_CONTEXT_ATTR: Final[str] = "tp_context"
 
@@ -123,6 +123,28 @@ def pat[F: Callable[..., Awaitable[Any]]](func: F) -> F:
 def public[F: Callable[..., Awaitable[Any]]](func: F) -> F:
     """Marker for routes that require no authentication."""
     return _mark("public", func)
+
+
+def system_bearer[**P, R](
+    func: Callable[P, Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
+    """Require an ATR-issued Bearer JWT with system privileges (from a system PAT).
+
+    Ordinary user JWTs are rejected.
+    """
+
+    @functools.wraps(func)
+    async def checked(*args: P.args, **kwargs: P.kwargs) -> R:
+        claims = getattr(quart.g, "jwt_claims", None)
+        if not (isinstance(claims, dict) and claims.get("atr_sys")):
+            raise base.ASFQuartException("System privileges required", errorcode=403)
+        return await func(*args, **kwargs)
+
+    # require() verifies the JWT and sets quart.g.jwt_claims before checked runs.
+    wrapped = jwtoken.require(checked)
+    wrapped = quart_schema.security_scheme([{"BearerAuth": []}])(wrapped)
+    _mark("system_bearer", wrapped)
+    return wrapped
 
 
 def trusted_publisher_context() -> TrustedPublisherContext:

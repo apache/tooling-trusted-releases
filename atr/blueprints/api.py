@@ -228,7 +228,7 @@ def _require_auth_level(func: Callable[..., Any], original: Callable[..., Any]) 
         raise TypeError(
             f"API route {original.__name__!r} in {original.__module__} is missing "
             "an auth decorator. Apply exactly one of @api.auth.public, "
-            "@api.auth.bearer, @api.auth.body_oidc, or @api.auth.pat. "
+            "@api.auth.bearer, @api.auth.system_bearer, @api.auth.body_oidc, or @api.auth.pat. "
             "See atr/blueprints/api_auth.py for details."
         )
     if level not in auth.VALID_LEVELS:

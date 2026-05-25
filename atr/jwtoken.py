@@ -32,6 +32,7 @@ import jwt
 import quart
 
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
@@ -68,7 +69,7 @@ def activate_signing_key(key: str) -> None:
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
-def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None) -> str:
+def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, system: bool = False) -> str:
     # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
     # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
     # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
@@ -85,6 +86,8 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None) -> 
     }
     if pat_hash:
         payload["atr_th"] = pat_hash
+    if system:
+        payload["atr_sys"] = True
     log.auth_event("jwt_issuance", uid, pat_hash=pat_hash if pat_hash else None)
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
@@ -143,25 +146,15 @@ async def verify(token: str) -> dict[str, Any]:
     if not isinstance(asf_uid, str):
         log.auth_failure("jwt_token", "jwt_subject_invalid")
         raise jwt.InvalidTokenError("Invalid Bearer JWT subject")
-    if not await ldap.is_active(asf_uid):
+    # System tokens have no LDAP account to check; the PAT recheck below still
+    # gates them, so revocation stays immediate.
+    is_system = bool(claims.get("atr_sys"))
+    if (not is_system) and (not await ldap.is_active(asf_uid)):
         log.auth_failure("jwt_token", "account_deleted_or_banned")
         raise base.ASFQuartException("Account is disabled", errorcode=401)
 
     # audit_guidance Revalidating PAT on each request ensures PAT deletion immediately revokes all JWTs issued therefrom
-    pat_hash = claims.get("atr_th")
-    # Not all JWTs come from PATs, so don't fail on missing atr_th
-    if pat_hash:
-        async with db.session() as data:
-            pat = await data.personal_access_token(pat_hash).get()
-            if not pat:
-                log.auth_failure("jwt_token", "pat_hash_invalid")
-                raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
-            if pat.asfuid != claims.get("sub"):
-                log.auth_failure("jwt_token", "pat_user_mismatch")
-                raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
-            if pat.expires < datetime.datetime.now(datetime.UTC):
-                log.auth_failure("jwt_token", "pat_expired")
-                raise base.ASFQuartException("Personal Access Token expired", errorcode=401)
+    await _revalidate_pat(claims, is_system)
     return claims
 
 
@@ -258,6 +251,45 @@ def _read_signing_key() -> str | None:
     if len(key) != _JWT_KEY_HEX_LENGTH:
         raise RuntimeError("JWT signing key is not 256 bits")
     return key
+
+
+async def _revalidate_pat(claims: dict[str, Any], is_system: bool) -> None:
+    pat_hash = claims.get("atr_th")
+    # A system claim with no PAT hash skipped the LDAP check and has nothing left
+    # to validate it, so reject it.
+    if is_system and (not pat_hash):
+        log.auth_failure("jwt_token", "system_without_pat")
+        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+    # Not all JWTs come from PATs, so don't fail on missing atr_th
+    if not pat_hash:
+        return
+    async with db.session() as data:
+        # Span both kinds so the branch below can reject a mismatch.
+        pat = await data.personal_access_token(pat_hash, is_system=db.NOT_SET).get()
+    if not pat:
+        log.auth_failure("jwt_token", "pat_hash_invalid")
+        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+    # A system JWT must come from a system PAT, and vice versa.
+    if pat.is_system != is_system:
+        log.auth_failure("jwt_token", "pat_system_mismatch")
+        raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+    # Only divert to the system path when claim and row agree. Otherwise fall
+    # through to the asfuid path, which rejects a null asfuid, so a stray
+    # system PAT can't slip past silently.
+    if is_system and pat.is_system:
+        if claims.get("sub") != constants.SYSTEM_SERVICE_UID:
+            log.auth_failure("jwt_token", "system_subject_invalid")
+            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+    else:
+        if pat.asfuid is None:
+            log.auth_failure("jwt_token", "pat_user_missing")
+            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+        if pat.asfuid != claims.get("sub"):
+            log.auth_failure("jwt_token", "pat_user_mismatch")
+            raise base.ASFQuartException("Personal Access Token invalid", errorcode=401)
+    if pat.is_expired:
+        log.auth_failure("jwt_token", "pat_expired")
+        raise base.ASFQuartException("Personal Access Token expired", errorcode=401)
 
 
 def _signing_key() -> str:

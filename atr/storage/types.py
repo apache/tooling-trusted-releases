@@ -81,10 +81,13 @@ class PathInfo(schema.Strict):
 
 
 class PersonalAccessTokenSafe(schema.Strict):
-    asfuid: str
+    allowed_ip: str | None
+    asfuid: str | None
+    created_by: str
     created: datetime.datetime
     expires: datetime.datetime
     id: int
+    is_system: bool
     label: str | None
     last_used: datetime.datetime | None
 
@@ -94,9 +97,12 @@ class PersonalAccessTokenSafe(schema.Strict):
             raise ValueError("PAT must have an ID before being returned")
         return cls(
             id=token.id,
+            allowed_ip=token.allowed_ip,
             asfuid=token.asfuid,
+            created_by=token.created_by,
             created=token.created,
             expires=token.expires,
+            is_system=token.is_system,
             label=token.label,
             last_used=token.last_used,
         )

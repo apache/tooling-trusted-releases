@@ -309,7 +309,7 @@ async def is_active(asf_uid: str) -> bool:
             return True
         if asf_uid == "test-banned":
             return False
-    if get_bind_credentials() is None:
+    if get_bind_credentials() is None and not config.is_production_mode():
         return True
     account = await account_lookup(asf_uid)
     if account is None:
@@ -384,10 +384,15 @@ async def _revoke_all_credentials(uid: str, log) -> None:
         log.auth_event("sessions_revoked", uid)
 
     async with db.session() as data:
-        token_result = await data.execute(
-            sqlmodel.select(sql.PersonalAccessToken).where(sql.PersonalAccessToken.asfuid == uid)
+        # OR on created_by so a banned admin's system PATs go too.
+        via = sql.validate_instrumented_attribute
+        stmt = sqlmodel.select(sql.PersonalAccessToken).where(
+            sqlmodel.or_(
+                via(sql.PersonalAccessToken.asfuid) == uid,
+                via(sql.PersonalAccessToken.created_by) == uid,
+            )
         )
-        tokens = list(token_result.scalars().all())
+        tokens = list((await data.execute(stmt)).scalars().all())
         for token in tokens:
             await data.delete(token)
 

@@ -1,0 +1,66 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}System tokens ~ ATR{%- endblock title -%}
+
+{%- block description -%}Mint and manage system tokens for trusted service callers.{%- endblock description -%}
+
+{% block content %}
+  <h1>System tokens</h1>
+  <p>System tokens are admin-issued Personal Access Tokens for trusted service callers, such as the
+    <code>.asf.yaml</code> processor.</p>
+
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="mb-0">Create system token</h5>
+    </div>
+    <div class="card-body">
+      {{ create_form }}
+    </div>
+  </div>
+
+  {% if rows %}
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">Active system tokens</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-striped table-bordered align-middle">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Created by</th>
+              <th>Allowed IP</th>
+              <th>Created</th>
+              <th>Expires</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for token, revoke_form in rows %}
+              <tr>
+                <td>{{ token.label or "" }}</td>
+                <td><code>{{ token.created_by }}</code></td>
+                <td>
+                  {% if token.allowed_ip %}
+                    <code>{{ token.allowed_ip }}</code>
+                  {% else %}
+                    <span class="text-muted">Any</span>
+                  {% endif %}
+                </td>
+                <td>{{ format_datetime(token.created) }}</td>
+                <td>{{ format_datetime(token.expires) }}</td>
+                <td>
+                  {% if token.last_used %}{{ format_datetime(token.last_used) }}{% else %}Never{% endif %}
+                </td>
+                <td>{{ revoke_form }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-info" role="alert">No system tokens have been created.</div>
+  {% endif %}
+{% endblock content %}

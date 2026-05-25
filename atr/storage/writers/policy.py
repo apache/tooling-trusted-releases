@@ -234,45 +234,7 @@ class CommitteeMember(CommitteeParticipant):
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
     ) -> None:
-        # TODO: Ideally we would centralise the validation in this method
-        project, release_policy = await self.__get_or_create_policy(project_key)
-        excluded_fields = {"manual_vote", "project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
-        fields_to_update = update.model_fields_set - excluded_fields
-        normalised_values: dict[str, Any] = {}
-
-        self.__set_policy_vote_mode_from_api(project, release_policy, update)
-
-        for field, action in _RECIPIENT_API_FIELDS.items():
-            if field in update.model_fields_set:
-                recipients = getattr(update, field)
-                if recipients is None:
-                    _set_recipient_defaults(release_policy, action, "", [], [])
-                else:
-                    _set_recipient_defaults(
-                        release_policy,
-                        action,
-                        str(recipients.to) if recipients.to else "",
-                        [str(address) for address in recipients.cc],
-                        [str(address) for address in recipients.bcc],
-                    )
-
-        for field in fields_to_update:
-            value = getattr(update, field)
-            if (value is None) and (field not in _NULLABLE_POLICY_FIELDS):
-                raise ValueError(f"Field '{field}' does not accept null")
-            normalised_values[field] = value
-
-        if ("file_tag_mappings" in fields_to_update) and (update.file_tag_mappings is not None):
-            _validate_file_tag_mappings(update.file_tag_mappings)
-
-        if ("min_hours" in fields_to_update) and (update.min_hours is not None):
-            models.validation.validate_policy_min_hours(update.min_hours)
-
-        if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
-            normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
-
-        for field in fields_to_update:
-            setattr(release_policy, field, normalised_values[field])
+        await _apply_policy_update_no_commit(self.__data, project_key, update)
 
     async def edit_finish(self, form: shared.projects.FinishPolicyForm) -> None:
         project_key = form.project_key
@@ -374,17 +336,7 @@ class CommitteeMember(CommitteeParticipant):
     async def __get_or_create_policy(
         self, project_key: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
-        project = await self.__data.project(
-            key=str(project_key), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
-        ).demand(storage.AccessError(f"Project {project_key} not found", status=404))
-
-        release_policy = project.release_policy
-        if release_policy is None:
-            release_policy = models.sql.ReleasePolicy(project=project)
-            project.release_policy = release_policy
-            self.__data.add(release_policy)
-
-        return project, release_policy
+        return await _get_or_create_policy(self.__data, project_key)
 
     def __set_announce_release_subject(
         self,
@@ -430,30 +382,6 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.min_hours = None
         else:
             release_policy.min_hours = submitted_min_hours
-
-    def __set_policy_vote_mode_from_api(
-        self,
-        project: models.sql.Project,
-        release_policy: models.sql.ReleasePolicy,
-        update: models.api.PolicyUpdateArgs,
-    ) -> None:
-        if "vote_mode" in update.model_fields_set:
-            if update.vote_mode is None:
-                raise ValueError("Field 'vote_mode' does not accept null")
-            if (update.vote_mode == models.sql.VoteMode.MANUAL) and project.committee and project.committee.is_podling:
-                raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
-            release_policy.vote_mode = update.vote_mode
-            return
-        if "manual_vote" not in update.model_fields_set:
-            return
-        if update.manual_vote is None:
-            raise ValueError("Field 'manual_vote' does not accept null")
-        if update.manual_vote:
-            if project.committee and project.committee.is_podling:
-                raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
-            release_policy.vote_mode = models.sql.VoteMode.MANUAL
-        else:
-            release_policy.vote_mode = models.sql.VoteMode.EMAIL
 
     def __set_start_vote_subject(
         self,
@@ -504,6 +432,81 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.finish_vote_template = submitted_template
 
 
+class SystemService:
+    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
+        self.__data = data
+
+    async def _edit_policy_no_commit(
+        self,
+        project_key: models.safe.ProjectKey,
+        update: models.api.PolicyUpdateArgs,
+    ) -> None:
+        await _apply_policy_update_no_commit(self.__data, project_key, update)
+
+
+async def _apply_policy_update_no_commit(
+    data: db.Session,
+    project_key: models.safe.ProjectKey,
+    update: models.api.PolicyUpdateArgs,
+) -> None:
+    # TODO: Ideally we would centralise the validation in this function
+    project, release_policy = await _get_or_create_policy(data, project_key)
+    excluded_fields = {"manual_vote", "project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
+    fields_to_update = update.model_fields_set - excluded_fields
+    normalised_values: dict[str, Any] = {}
+
+    _set_policy_vote_mode_from_api(project, release_policy, update)
+
+    for field, action in _RECIPIENT_API_FIELDS.items():
+        if field in update.model_fields_set:
+            recipients = getattr(update, field)
+            if recipients is None:
+                _set_recipient_defaults(release_policy, action, "", [], [])
+            else:
+                _set_recipient_defaults(
+                    release_policy,
+                    action,
+                    str(recipients.to) if recipients.to else "",
+                    [str(address) for address in recipients.cc],
+                    [str(address) for address in recipients.bcc],
+                )
+
+    for field in fields_to_update:
+        value = getattr(update, field)
+        if (value is None) and (field not in _NULLABLE_POLICY_FIELDS):
+            raise ValueError(f"Field '{field}' does not accept null")
+        normalised_values[field] = value
+
+    if ("file_tag_mappings" in fields_to_update) and (update.file_tag_mappings is not None):
+        _validate_file_tag_mappings(update.file_tag_mappings)
+
+    if ("min_hours" in fields_to_update) and (update.min_hours is not None):
+        models.validation.validate_policy_min_hours(update.min_hours)
+
+    if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
+        normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
+
+    for field in fields_to_update:
+        setattr(release_policy, field, normalised_values[field])
+
+
+async def _get_or_create_policy(
+    data: db.Session,
+    project_key: models.safe.ProjectKey,
+) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
+    project = await data.project(
+        key=str(project_key), status=models.sql.ProjectStatus.ACTIVE, _release_policy=True, _committee=True
+    ).demand(storage.AccessError(f"Project {project_key} not found", status=404))
+
+    release_policy = project.release_policy
+    if release_policy is None:
+        release_policy = models.sql.ReleasePolicy(project=project)
+        project.release_policy = release_policy
+        data.add(release_policy)
+
+    return project, release_policy
+
+
 def _normalise_text_list(values: list[str]) -> list[str]:
     return [value.strip() for value in values if value.strip()]
 
@@ -539,6 +542,30 @@ def _normalise_trusted_publishing_update(
     util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
 
     return normalised_values
+
+
+def _set_policy_vote_mode_from_api(
+    project: models.sql.Project,
+    release_policy: models.sql.ReleasePolicy,
+    update: models.api.PolicyUpdateArgs,
+) -> None:
+    if "vote_mode" in update.model_fields_set:
+        if update.vote_mode is None:
+            raise ValueError("Field 'vote_mode' does not accept null")
+        if (update.vote_mode == models.sql.VoteMode.MANUAL) and project.committee and project.committee.is_podling:
+            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
+        release_policy.vote_mode = update.vote_mode
+        return
+    if "manual_vote" not in update.model_fields_set:
+        return
+    if update.manual_vote is None:
+        raise ValueError("Field 'manual_vote' does not accept null")
+    if update.manual_vote:
+        if project.committee and project.committee.is_podling:
+            raise storage.AccessError("Manual voting is not allowed for podlings.", status=400)
+        release_policy.vote_mode = models.sql.VoteMode.MANUAL
+    else:
+        release_policy.vote_mode = models.sql.VoteMode.EMAIL
 
 
 def _set_recipient_defaults(

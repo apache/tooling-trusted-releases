@@ -28,14 +28,18 @@
           <thead>
             <tr>
               <th>ASF UID</th>
-              <th>Token count</th>
+              <th>User PATs owned</th>
+              <th>System PATs owned</th>
+              <th>Total</th>
             </tr>
           </thead>
           <tbody>
-            {% for uid, count in token_counts %}
+            {% for uid, owned, minted in token_counts %}
               <tr>
                 <td><code>{{ uid }}</code></td>
-                <td>{{ count }}</td>
+                <td>{{ owned }}</td>
+                <td>{{ minted }}</td>
+                <td>{{ owned + minted }}</td>
               </tr>
             {% endfor %}
           </tbody>

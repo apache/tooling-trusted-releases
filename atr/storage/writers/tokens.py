@@ -24,7 +24,7 @@ import hashlib
 
 import sqlmodel
 
-import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -66,6 +66,7 @@ class FoundationCommitter(GeneralPublic):
             raise ValueError("Label is required")
         pat = sql.PersonalAccessToken(
             asfuid=self.__asf_uid,
+            created_by=self.__asf_uid,
             token_hash=token_hash,
             created=created,
             expires=expires,
@@ -87,12 +88,7 @@ class FoundationCommitter(GeneralPublic):
     # audit_guidance PAT deletion revokes associated JWTs
     # audit_guidance JWT verification rechecks PAT existence on every API request
     async def delete_token(self, token_id: int) -> None:
-        pat: sql.PersonalAccessToken | None = await self.__data.query_one_or_none(
-            sqlmodel.select(sql.PersonalAccessToken).where(
-                sql.PersonalAccessToken.id == token_id,
-                sql.PersonalAccessToken.asfuid == self.__asf_uid,
-            )
-        )
+        pat = await self.__data.personal_access_token(id=token_id, asfuid=self.__asf_uid).get()
         if pat is not None:
             await self.__data.delete(pat)
             await self.__data.commit()
@@ -111,15 +107,10 @@ class FoundationCommitter(GeneralPublic):
             )
             await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
 
-    async def issue_jwt(self, pat_text: str) -> str:
-        pat_hash = hashlib.sha3_256(pat_text.encode()).hexdigest()
-        pat = await self.__data.query_one_or_none(
-            sqlmodel.select(sql.PersonalAccessToken).where(
-                sql.PersonalAccessToken.asfuid == self.__asf_uid,
-                sql.PersonalAccessToken.token_hash == pat_hash,
-            )
-        )
-        if (pat is None) or (pat.expires < datetime.datetime.now(datetime.UTC)):
+    async def issue_jwt(self, pat_text: str, client_ip: str | None) -> str:
+        pat_hash = hash_pat(pat_text)
+        pat = await self.__data.personal_access_token(pat_hash, asfuid=self.__asf_uid).get()
+        if (pat is None) or pat.is_expired or (not pat.allows_ip(client_ip)):
             log.warning(
                 "Authentication failed",
                 extra={
@@ -128,12 +119,11 @@ class FoundationCommitter(GeneralPublic):
             )
             raise storage.AccessError("Authentication failed", status=401)
 
-        # Verify account still exists in LDAP. Test mode doesn't have LDAP wired up so we skip it
-        if not config.is_test_mode():
-            account_details = await ldap.account_lookup(self.__asf_uid)
-            if (account_details is None) or ldap.is_banned(account_details):
-                log.auth_failure("jwt_issuance", "account_deleted_or_banned", self.__asf_uid)
-                raise storage.AccessError("Authentication failed", status=401)
+        # Verify account still exists in LDAP and is not banned. is_active handles test mode internally,
+        # so the explicit test-mode bypass we used to carry here is no longer needed
+        if not await ldap.is_active(self.__asf_uid):
+            log.auth_failure("jwt_issuance", "account_deleted_or_banned", self.__asf_uid)
+            raise storage.AccessError("Authentication failed", status=401)
 
         issued_jwt = jwtoken.issue(self.__asf_uid, pat_hash=pat_hash)
         log.auth_event("jwt_issued", self.__asf_uid, pat_hash=pat_hash)
@@ -200,11 +190,58 @@ class FoundationAdmin(FoundationCommitter):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
-    async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
-        """Revoke all PATs for a specified user. Returns count of revoked tokens."""
-        tokens = await self.__data.query_all(
-            sqlmodel.select(sql.PersonalAccessToken).where(sql.PersonalAccessToken.asfuid == target_asf_uid)
+    async def add_system_token(
+        self,
+        token_hash: str,
+        created: datetime.datetime,
+        expires: datetime.datetime,
+        label: str,
+        allowed_ip: str | None,
+    ) -> types.PersonalAccessTokenSafe:
+        if not label:
+            raise ValueError("Label is required")
+        # asfuid stays null so a system PAT has no owning user; created_by
+        # records the minting admin so a leaver's tokens can still be revoked.
+        pat = sql.PersonalAccessToken(
+            asfuid=None,
+            created_by=self.__asf_uid,
+            token_hash=token_hash,
+            created=created,
+            expires=expires,
+            label=label,
+            is_system=True,
+            allowed_ip=allowed_ip,
         )
+        self.__data.add(pat)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            pat_hash=token_hash,
+            is_system=True,
+            allowed_ip=allowed_ip,
+        )
+        log.auth_event("system_pat_issuance", self.__asf_uid, pat_hash=token_hash, name=label)
+        return types.PersonalAccessTokenSafe.from_sql(pat)
+
+    async def list_system_tokens(self) -> list[types.PersonalAccessTokenSafe]:
+        tokens = await (
+            self.__data.personal_access_token(is_system=True)
+            .order_by(sql.validate_instrumented_attribute(sql.PersonalAccessToken.created))
+            .all()
+        )
+        return [types.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
+
+    async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
+        """Revoke all PATs that a specified user owns or created. Returns count of revoked tokens."""
+        # OR on created_by so a user's system PATs go too.
+        via = sql.validate_instrumented_attribute
+        stmt = sqlmodel.select(sql.PersonalAccessToken).where(
+            sqlmodel.or_(
+                via(sql.PersonalAccessToken.asfuid) == target_asf_uid,
+                via(sql.PersonalAccessToken.created_by) == target_asf_uid,
+            )
+        )
+        tokens = await self.__data.query_all(stmt)
         count = len(tokens)
         for token in tokens:
             await self.__data.delete(token)
@@ -226,6 +263,21 @@ class FoundationAdmin(FoundationCommitter):
             await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
         return count
 
+    async def revoke_system_token(self, token_id: int) -> bool:
+        pat = await self.__data.personal_access_token(id=token_id, is_system=True).get()
+        if pat is None:
+            return False
+        await self.__data.delete(pat)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            pat_hash=pat.token_hash,
+            token_id=token_id,
+            is_system=True,
+        )
+        log.auth_event("system_pat_revoke", self.__asf_uid, pat_hash=pat.token_hash, name=pat.label)
+        return True
+
     async def rotate_jwt_signing_key(self) -> None:
         key = await asyncio.to_thread(jwtoken.write_new_signing_key)
         log.auth_event("jwt_key_rotation", self.__asf_uid)
@@ -234,3 +286,47 @@ class FoundationAdmin(FoundationCommitter):
             asf_uid=self.__asf_uid,
             action="rotate_jwt_signing_key",
         )
+
+
+class SystemService:
+    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
+        self.__write_as = write_as
+        self.__data = data
+        self.__asf_uid = write_as.asf_uid
+
+    async def issue_jwt(self, pat_text: str, client_ip: str | None) -> str:
+        # No asfuid filter; a system PAT has no owning user.
+        pat_hash = hash_pat(pat_text)
+        pat = await self.__data.personal_access_token(pat_hash, is_system=True).get()
+        # No LDAP check; the is_system match and fixed service identity are the gate.
+        if (
+            (pat is None)
+            or (self.__asf_uid != constants.SYSTEM_SERVICE_UID)
+            or pat.is_expired
+            or (not pat.allows_ip(client_ip))
+        ):
+            log.warning(
+                "Authentication failed",
+                extra={
+                    "reason": "invalid_or_expired_system_pat",
+                },
+            )
+            raise storage.AccessError("Authentication failed", status=401)
+
+        issued_jwt = jwtoken.issue(constants.SYSTEM_SERVICE_UID, pat_hash=pat_hash, system=True)
+        log.auth_event(
+            "jwt_issued", constants.SYSTEM_SERVICE_UID, pat_hash=pat_hash, pat_owner=pat.created_by, name=pat.label
+        )
+        pat.last_used = datetime.datetime.now(datetime.UTC)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=constants.SYSTEM_SERVICE_UID,
+            pat_hash=pat_hash,
+            pat_owner=pat.created_by,
+            name=pat.label,
+        )
+        return issued_jwt
+
+
+def hash_pat(pat_text: str) -> str:
+    return hashlib.sha3_256(pat_text.encode()).hexdigest()

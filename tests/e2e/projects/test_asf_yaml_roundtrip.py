@@ -36,6 +36,11 @@ _BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache
 PROJECT_KEY: Final[str] = "test-asfyaml"
 EXPORT_URL: Final[str] = f"/project/yaml/{PROJECT_KEY}"
 
+# The asfyaml import endpoint is gated to system PATs, so we authenticate as the
+# system service. This uid must match constants.SYSTEM_SERVICE_UID server-side -
+# the system JWT issuer rejects any other identity.
+SYSTEM_SERVICE_UID: Final[str] = "system"
+
 # The .asf.yaml project block we import, then expect to get back unchanged on export.
 # It mirrors the inbound schema from infrastructure-asfyaml exactly, so a faithful
 # round-trip should reproduce it byte-for-byte once parsed.

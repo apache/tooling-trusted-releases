@@ -33,6 +33,7 @@ import werkzeug.exceptions as exceptions
 import atr.blueprints.api as api
 import atr.cle as cle
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
@@ -594,9 +595,15 @@ async def jwt_create(
     # Returns {"asfuid": "uid", "jwt": "jwt-token"}
     asf_uid = data.asfuid
     log.set_asf_uid(asf_uid)
-    async with storage.write(asf_uid) as write:
-        wafc = write.as_foundation_committer()
-        jwt = await wafc.tokens.issue_jwt(data.pat)
+    client_ip = quart.request.remote_addr
+    # System tokens take a service-identity context, not the LDAP-backed write().
+    if await storage.pat_is_system(data.pat):
+        async with storage.write_as_system_service(asf_uid) as wss:
+            jwt = await wss.tokens.issue_jwt(data.pat, client_ip)
+    else:
+        async with storage.write(asf_uid) as write:
+            wafc = write.as_foundation_committer()
+            jwt = await wafc.tokens.issue_jwt(data.pat, client_ip)
 
     return models.api.JwtCreateResults(
         endpoint="/jwt/create",
@@ -879,7 +886,7 @@ async def policy_update(
 
 
 @api.typed
-@api.auth.bearer
+@api.auth.system_bearer
 @quart_schema.validate_response(models.api.ProjectConfigResults, 200)
 async def project_config_upsert(
     _project_config: Literal["project/config"],
@@ -890,16 +897,17 @@ async def project_config_upsert(
 
     Upsert a project's full configuration.
 
-    Creates a project if it on by the specified key does not yet exist.
+    Creates a project under the specified key if it does not yet exist.
     Otherwise, updates all specified fields for an existing project.
 
-    The caller must be a committee member of the specified committee,
-    and for an existing project committee_key must match the current value.
+    Requires a system token. This endpoint backs the .asf.yaml processor, which
+    establishes upstream that the caller may act for the named committee. For an
+    existing project, committee_key must match the current value.
     """
     asf_uid = _jwt_asf_uid()
     try:
-        async with storage.write_as_committee_member(str(data.committee_key), asf_uid) as wacm:
-            created = await wacm.project.upsert_config(data)
+        async with storage.write_as_system_service(asf_uid) as wss:
+            created = await wss.project.upsert_config(data)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     except ValueError as e:
@@ -1648,6 +1656,7 @@ async def users_list(
     # It is not even a list of users who have logged in to ATR
     # Only those who has stored certain kinds of data:
     # PersonalAccessToken.asfuid
+    # PersonalAccessToken.created_by
     # SSHKey.asf_uid
     # PublicSigningKey.apache_uid
     # Revision.asfuid
@@ -1656,6 +1665,9 @@ async def users_list(
         via = sql.validate_instrumented_attribute
         result = await data.execute(sqlalchemy.select(via(sql.PersonalAccessToken.asfuid)).distinct())
         pat_uids = set(result.scalars().all())
+
+        result = await data.execute(sqlalchemy.select(via(sql.PersonalAccessToken.created_by)).distinct())
+        pat_creator_uids = set(result.scalars().all())
 
         result = await data.execute(sqlalchemy.select(via(sql.SSHKey.asf_uid)).distinct())
         ssh_uids = set(result.scalars().all())
@@ -1666,8 +1678,10 @@ async def users_list(
         result = await data.execute(sqlalchemy.select(via(sql.Revision.asfuid)).distinct())
         revision_uids = set(result.scalars().all())
 
-        users = pat_uids | ssh_uids | public_signing_uids | revision_uids
+        users = pat_uids | pat_creator_uids | ssh_uids | public_signing_uids | revision_uids
         users -= {None}
+        # Don't expose the system service identity as a "user".
+        users -= {constants.SYSTEM_SERVICE_UID}
     return models.api.UsersListResults(
         endpoint="/users/list",
         users=sorted(users),

@@ -152,7 +152,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def create(self, committee_key: safe.CommitteeKey, display_name: str, project_key: safe.ProjectKey) -> None:
         try:
-            await self._build_and_add_project_no_commit(committee_key, display_name, project_key)
+            await _build_and_add_project(self.__data, self.__asf_uid, committee_key, display_name, project_key)
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             if (
@@ -167,53 +167,6 @@ class CommitteeMember(CommitteeParticipant):
             committee_key=str(committee_key),
             project_key=str(project_key),
         )
-
-    async def _build_and_add_project_no_commit(
-        self,
-        committee_key: safe.CommitteeKey,
-        display_name: str,
-        project_key: safe.ProjectKey,
-    ) -> sql.Project:
-        super_project = None
-        key = str(project_key)
-        # Get the base project to derive from
-        # We're allowing derivation from a retired project here
-        # TODO: Should we disallow this instead?
-        committee_projects = await self.__data.project(
-            committee_key=str(committee_key), _committee=True, _release_policy=True
-        ).all()
-        for committee_project in committee_projects:
-            if key.startswith(str(committee_project.key) + "-"):
-                if (super_project is None) or (len(str(super_project.key)) < len(str(committee_project.key))):
-                    super_project = committee_project
-
-        # Check whether the project already exists
-        if await self.__data.project(key=key).get():
-            raise storage.AccessError(f"Project {key} already exists", status=409)
-
-        now = datetime.datetime.now(datetime.UTC)
-        project = sql.Project(
-            key=key,
-            name=display_name,
-            status=sql.ProjectStatus.ACTIVE,
-            super_project_key=super_project.key if super_project else None,
-            description=super_project.description if super_project else None,
-            categories=super_project.categories if super_project else None,
-            programming_languages=super_project.programming_languages if super_project else None,
-            version_method=super_project.version_method if super_project else sql.VersionMethod.SIMPLE,
-            version_pattern=super_project.version_pattern if super_project else None,
-            cycle_match=super_project.cycle_match if super_project else None,
-            branch_template=super_project.branch_template if super_project else None,
-            committee_key=str(committee_key),
-            created=now,
-            created_by=self.__asf_uid,
-            updated=now,
-            updated_by=self.__asf_uid,
-        )
-        if super_project and super_project.release_policy:
-            project.release_policy = super_project.release_policy.duplicate()
-        self.__data.add(project)
-        return project
 
     async def archive(self, project_key: safe.ProjectKey) -> None:
         project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).get()
@@ -350,6 +303,29 @@ class CommitteeMember(CommitteeParticipant):
             return True
         return False
 
+    def __current_categories(self, project: sql.Project) -> list[str]:
+        return (
+            [category.strip() for category in (project.categories or "").split(",") if category.strip()]
+            if project.categories
+            else []
+        )
+
+    def __current_languages(self, project: sql.Project) -> list[str]:
+        return (
+            [language.strip() for language in (project.programming_languages or "").split(",") if language.strip()]
+            if project.programming_languages
+            else []
+        )
+
+
+# No committee gate - the caller's right to act for the committee must be
+# established upstream, in the .asf.yaml feature.
+class SystemService:
+    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
+        self.__write_as = write_as
+        self.__data = data
+        self.__asf_uid = write_as.asf_uid
+
     async def upsert_config(
         self,
         args: api.ProjectConfigArgs,
@@ -368,7 +344,7 @@ class CommitteeMember(CommitteeParticipant):
                 )
                 await self.__write_as.policy._edit_policy_no_commit(args.project_key, policy_update)
             project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = "API"
+            project.updated_by = self.__asf_uid
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             await self.__data.rollback()
@@ -406,8 +382,12 @@ class CommitteeMember(CommitteeParticipant):
             return existing, False
         if (args.project is None) or (args.project.name is None) or (not args.project.name.strip()):
             raise ValueError(f"Project '{args.project_key}' does not exist; project.name is required to create it")
-        project = await self._build_and_add_project_no_commit(
-            args.committee_key, display_name=args.project.name, project_key=args.project_key
+        project = await _build_and_add_project(
+            self.__data,
+            self.__asf_uid,
+            args.committee_key,
+            display_name=args.project.name,
+            project_key=args.project_key,
         )
         return project, True
 
@@ -451,16 +431,51 @@ class CommitteeMember(CommitteeParticipant):
         if version_scheme_fields & provided:
             await cycles.reassign_release_cycles(self.__data, project)
 
-    def __current_categories(self, project: sql.Project) -> list[str]:
-        return (
-            [category.strip() for category in (project.categories or "").split(",") if category.strip()]
-            if project.categories
-            else []
-        )
 
-    def __current_languages(self, project: sql.Project) -> list[str]:
-        return (
-            [language.strip() for language in (project.programming_languages or "").split(",") if language.strip()]
-            if project.programming_languages
-            else []
-        )
+async def _build_and_add_project(
+    data: db.Session,
+    asf_uid: str,
+    committee_key: safe.CommitteeKey,
+    display_name: str,
+    project_key: safe.ProjectKey,
+) -> sql.Project:
+    super_project = None
+    key = str(project_key)
+    # Get the base project to derive from
+    # We're allowing derivation from a retired project here
+    # TODO: Should we disallow this instead?
+    committee_projects = await data.project(
+        committee_key=str(committee_key), _committee=True, _release_policy=True
+    ).all()
+    for committee_project in committee_projects:
+        if key.startswith(str(committee_project.key) + "-"):
+            if (super_project is None) or (len(str(super_project.key)) < len(str(committee_project.key))):
+                super_project = committee_project
+
+    # Check whether the project already exists
+    if await data.project(key=key).get():
+        raise storage.AccessError(f"Project {key} already exists", status=409)
+
+    now = datetime.datetime.now(datetime.UTC)
+    project = sql.Project(
+        key=key,
+        name=display_name,
+        status=sql.ProjectStatus.ACTIVE,
+        super_project_key=super_project.key if super_project else None,
+        description=super_project.description if super_project else None,
+        categories=super_project.categories if super_project else None,
+        programming_languages=super_project.programming_languages if super_project else None,
+        version_method=super_project.version_method if super_project else sql.VersionMethod.SIMPLE,
+        version_pattern=super_project.version_pattern if super_project else None,
+        cycle_match=super_project.cycle_match if super_project else None,
+        branch_template=super_project.branch_template if super_project else None,
+        committee_key=str(committee_key),
+        created=now,
+        created_by=asf_uid,
+        updated=now,
+        updated_by=asf_uid,
+    )
+    if super_project and super_project.release_policy:
+        project.release_policy = super_project.release_policy.duplicate()
+    data.add(project)
+    return project
