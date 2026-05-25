@@ -760,14 +760,14 @@ class CommitteeParticipant(FoundationCommitter):
         via = sql.validate_instrumented_attribute
         vote_seq = await self.__vote_seq_allocate(release_for_pre_checks.key)
         now = datetime.datetime.now(datetime.UTC)
+        release_activity_at = via(sql.Release.activity_at)
         activity_at_value = sqlalchemy.case(
-            (via(sql.Release.activity_at) > now, via(sql.Release.activity_at)),
+            (release_activity_at > now, release_activity_at),
             else_=now,
         )
-        legacy_notice_key_value = sql.inactivity_notice_legacy_key_expression(via(sql.Release.inactivity_notice_key))
         notice_key_value = sqlalchemy.case(
-            (via(sql.Release.activity_at) > now, via(sql.Release.inactivity_notice_key)),
-            else_=legacy_notice_key_value,
+            (release_activity_at > now, via(sql.Release.inactivity_notice_key)),
+            else_=None,
         )
         values: dict[str, object] = {
             "vote_started": now,

@@ -39,6 +39,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     backfill = datetime.datetime.now(datetime.UTC)
+    initial_warning = backfill - datetime.timedelta(days=80)
+    utc_datetime = sql.UTCDateTime(timezone=True)
 
     with op.batch_alter_table("release", schema=None) as batch_op:
         batch_op.add_column(
@@ -51,7 +53,38 @@ def upgrade() -> None:
         )
         batch_op.add_column(sa.Column("inactivity_notice_key", sa.String(), nullable=True))
 
-    op.execute(sa.text("UPDATE release SET activity_at = :ts").bindparams(ts=backfill))
+    op.execute(
+        sa.text("UPDATE release SET activity_at = :ts").bindparams(
+            sa.bindparam("ts", value=backfill, type_=utc_datetime)
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            UPDATE release
+            SET activity_at = :initial_warning
+            WHERE phase IN ('release_candidate_draft', 'release_candidate', 'release_preview')
+            AND (
+                SELECT max(activity_at)
+                FROM (
+                    SELECT release.created AS activity_at
+                    UNION ALL
+                    SELECT max(revision.created) AS activity_at
+                    FROM revision
+                    WHERE revision.release_key = release.key
+                    UNION ALL
+                    SELECT release.vote_started AS activity_at
+                    WHERE release.vote_started IS NOT NULL
+                    UNION ALL
+                    SELECT release.vote_resolved AS activity_at
+                    WHERE release.vote_resolved IS NOT NULL
+                )
+            ) <= :initial_warning
+            """
+        ).bindparams(
+            sa.bindparam("initial_warning", value=initial_warning, type_=utc_datetime),
+        )
+    )
 
     with op.batch_alter_table("release", schema=None) as batch_op:
         batch_op.alter_column("activity_at", server_default=None)

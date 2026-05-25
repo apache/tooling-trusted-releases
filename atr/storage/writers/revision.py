@@ -167,12 +167,9 @@ async def _commit_new_revision(
             was_quarantined=was_quarantined,
         )
         data.add(new_revision)
-        prior_activity_at = release.activity_at
-        if isinstance(prior_activity_at, datetime.datetime) and (prior_activity_at > now):
-            pass
-        else:
+        if release.activity_at <= now:
             release.activity_at = now
-            release.inactivity_notice_key = sql.inactivity_notice_legacy_key(release.inactivity_notice_key)
+            release.inactivity_notice_key = None
 
         # Flush but do not commit the new revision row to get its name and number
         # The row will still be invisible to other sessions after flushing

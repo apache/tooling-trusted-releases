@@ -35,17 +35,10 @@ import atr.storage as storage
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-NOTICE_KIND_LEGACY_WARNING: Final[str] = "legacy_warning"
 NOTICE_KIND_PREVIEW_ESCALATION: Final[str] = "preview_escalation"
 NOTICE_KIND_WARNING: Final[str] = "warning"
 
 _DELETION_ENABLED: Final[bool] = False
-_DELETION_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
-    {
-        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-        sql.ReleasePhase.RELEASE_CANDIDATE,
-    }
-)
 _INACTIVITY_DELETE_DAYS: Final[int] = 90
 _INACTIVITY_WARNING_DAYS: Final[int] = 80
 _SYSTEM_ACTOR: Final[str] = "system"
@@ -60,7 +53,6 @@ _UNFINISHED_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
 
 class Decision(enum.StrEnum):
     DELETE_CANDIDATE = "delete_candidate"
-    LEGACY_WARN = "legacy_warn"
     PREVIEW_ESCALATE = "preview_escalate"
     SKIP = "skip"
     WARN = "warn"
@@ -81,9 +73,7 @@ async def apply_plan(plan: Plan) -> None:
         case Decision.SKIP:
             return
         case Decision.WARN:
-            await _send_warning(plan, kind=NOTICE_KIND_WARNING)
-        case Decision.LEGACY_WARN:
-            await _send_warning(plan, kind=NOTICE_KIND_LEGACY_WARNING)
+            await _send_warning(plan)
         case Decision.PREVIEW_ESCALATE:
             await _send_preview_escalation(plan)
         case Decision.DELETE_CANDIDATE:
@@ -94,7 +84,6 @@ def classify(
     release: sql.Release,
     *,
     now: datetime.datetime,
-    legacy_historical_activity: datetime.datetime | None,
 ) -> Plan:
     activity_at = release.activity_at
     age_days = (now - activity_at).days
@@ -103,10 +92,6 @@ def classify(
         return _plan(release, activity_at, Decision.SKIP)
 
     if age_days < _INACTIVITY_WARNING_DAYS:
-        if legacy_historical_activity is not None:
-            historical_age = (now - legacy_historical_activity).days
-            if historical_age >= _INACTIVITY_DELETE_DAYS:
-                return _plan(release, legacy_historical_activity, Decision.LEGACY_WARN)
         return _plan(release, activity_at, Decision.SKIP)
 
     if age_days < _INACTIVITY_DELETE_DAYS:
@@ -119,17 +104,6 @@ def classify(
 
 def deletion_enabled() -> bool:
     return _DELETION_ENABLED
-
-
-def historical_activity_at(release: sql.Release) -> datetime.datetime:
-    candidates: list[datetime.datetime] = [release.created]
-    if release.revisions:
-        candidates.append(release.revisions[-1].created)
-    if release.vote_started is not None:
-        candidates.append(release.vote_started)
-    if release.vote_resolved is not None:
-        candidates.append(release.vote_resolved)
-    return max(candidates)
 
 
 def private_committee_list(committee_key: str) -> str:
@@ -147,7 +121,6 @@ async def run_scan() -> Sequence[Plan]:
             .join(sql.Project, via(sql.Release.project_key) == via(sql.Project.key))
             .where(via(sql.Release.phase).in_(list(_UNFINISHED_PHASES)))
             .where(via(sql.Project.status) == sql.ProjectStatus.ACTIVE)
-            .options(db.select_in_load(sql.Release.revisions))
             .options(db.joined_load_nested(sql.Release.project, sql.Project.committee))
         )
         result = await data.execute(query)
@@ -155,8 +128,7 @@ async def run_scan() -> Sequence[Plan]:
 
         for release in releases:
             try:
-                legacy = historical_activity_at(release)
-                plan = classify(release, now=now, legacy_historical_activity=legacy)
+                plan = classify(release, now=now)
             except Exception:
                 log.exception(f"Inactivity classification failed for release {release.key!r}")
                 continue
@@ -224,70 +196,19 @@ async def _delete_or_dry_run(plan: Plan) -> None:
         )
 
 
-def _legacy_warning_body(plan: Plan) -> str:
-    if plan.phase == sql.ReleasePhase.RELEASE_PREVIEW:
-        return (
-            f"This release preview has been inactive since {plan.activity_at.date().isoformat()}.\n\n"
-            f"Project: {plan.project_key}\n"
-            f"Version: {plan.version}\n"
-            f"Phase: {plan.phase.value}\n\n"
-            f"Under the new inactive-release policy (issue #871), release previews\n"
-            f"are not automatically deleted. This is the initial warning following\n"
-            f"deployment of the new policy. If this preview remains inactive for 90\n"
-            f"days from the new activity timestamp recorded today, it will be\n"
-            f"escalated to the PMC."
-        )
-    return (
-        f"This release candidate has been inactive since {plan.activity_at.date().isoformat()}.\n\n"
-        f"Project: {plan.project_key}\n"
-        f"Version: {plan.version}\n"
-        f"Phase: {plan.phase.value}\n\n"
-        f"Under the new inactive-release policy (issue #871), releases without activity\n"
-        f"for 90 days or more will be cleaned up automatically. This is the initial\n"
-        f"warning following deployment of the new policy. The next cleanup decision\n"
-        f"will be made from the new activity timestamp recorded today."
-    )
-
-
 async def _load_release(data: db.Session, release_key: str) -> sql.Release | None:
     return await data.release(
         key=release_key,
         _committee=True,
-        _revisions=True,
     ).get()
 
 
-def _notice_already_recorded(stored: str | None, kind: str, expected: str) -> bool:
-    entries = _notice_key_entries(stored)
-    if kind == NOTICE_KIND_LEGACY_WARNING:
-        return any(entry.startswith(sql.INACTIVITY_NOTICE_LEGACY_PREFIX) for entry in entries)
-    return expected in entries
+def _notice_already_recorded(stored: str | None, expected: str) -> bool:
+    return stored == expected
 
 
 def _notice_key(kind: str, activity_at: datetime.datetime) -> str:
     return f"{kind}:{activity_at.isoformat()}"
-
-
-def _notice_key_entries(stored: str | None) -> list[str]:
-    if stored is None:
-        return []
-    return [entry for entry in stored.split(sql.INACTIVITY_NOTICE_KEY_SEPARATOR) if entry]
-
-
-def _notice_key_merge(stored: str | None, notice_key: str) -> str:
-    existing_legacy_key = sql.inactivity_notice_legacy_key(stored)
-    if notice_key.startswith(sql.INACTIVITY_NOTICE_LEGACY_PREFIX):
-        entries = [existing_legacy_key or notice_key]
-        entries.extend(
-            entry for entry in _notice_key_entries(stored) if not entry.startswith(sql.INACTIVITY_NOTICE_LEGACY_PREFIX)
-        )
-        return sql.INACTIVITY_NOTICE_KEY_SEPARATOR.join(entries)
-
-    entries = []
-    if existing_legacy_key is not None:
-        entries.append(existing_legacy_key)
-    entries.append(notice_key)
-    return sql.INACTIVITY_NOTICE_KEY_SEPARATOR.join(entries)
 
 
 def _plan(release: sql.Release, activity_at: datetime.datetime, decision: Decision) -> Plan:
@@ -309,10 +230,7 @@ def _plan_still_current(plan: Plan, release: sql.Release, *, expected_kind: str)
             f" project {release.project_key!r} status changed to {project_status.value}"
         )
         return False
-    if expected_kind == NOTICE_KIND_LEGACY_WARNING:
-        expected_phase_ok = release.phase in _UNFINISHED_PHASES
-        activity_ok = True
-    elif expected_kind == NOTICE_KIND_PREVIEW_ESCALATION:
+    if expected_kind == NOTICE_KIND_PREVIEW_ESCALATION:
         expected_phase_ok = release.phase == sql.ReleasePhase.RELEASE_PREVIEW
         activity_ok = release.activity_at == plan.activity_at
     else:
@@ -331,8 +249,9 @@ def _plan_still_current(plan: Plan, release: sql.Release, *, expected_kind: str)
 
 
 def _preview_escalation_body(plan: Plan) -> str:
+    _warning_days, delete_days = thresholds()
     return (
-        f"This release preview has been inactive since {plan.activity_at.date().isoformat()}.\n\n"
+        f"This release preview has been inactive for at least {delete_days} days.\n\n"
         f"Project: {plan.project_key}\n"
         f"Version: {plan.version}\n"
         f"Phase: {plan.phase.value}\n\n"
@@ -342,32 +261,14 @@ def _preview_escalation_body(plan: Plan) -> str:
     )
 
 
-async def _record_legacy_notice_sent(release_key: str, historical_activity_at: datetime.datetime) -> None:
-    notice_key = _notice_key(NOTICE_KIND_LEGACY_WARNING, historical_activity_at)
-    async with db.session() as data:
-        release = await data.release(key=release_key).get()
-        if release is None:
-            return
-        if _notice_already_recorded(release.inactivity_notice_key, NOTICE_KIND_LEGACY_WARNING, notice_key):
-            return
-        release.inactivity_notice_key = _notice_key_merge(release.inactivity_notice_key, notice_key)
-        await data.commit()
-
-
 async def _record_notice_sent(release_key: str, kind: str, activity_at: datetime.datetime) -> None:
-    if kind == NOTICE_KIND_LEGACY_WARNING:
-        await _record_legacy_notice_sent(release_key, activity_at)
-        return
     async with db.session() as data:
         release = await data.release(key=release_key).get()
         if release is None:
             return
         if release.activity_at != activity_at:
             return
-        release.inactivity_notice_key = _notice_key_merge(
-            release.inactivity_notice_key,
-            _notice_key(kind, activity_at),
-        )
+        release.inactivity_notice_key = _notice_key(kind, activity_at)
         await data.commit()
 
 
@@ -414,11 +315,7 @@ async def _send_preview_escalation(plan: Plan) -> None:
             return
         if not _plan_still_current(plan, release, expected_kind=NOTICE_KIND_PREVIEW_ESCALATION):
             return
-        if _notice_already_recorded(
-            release.inactivity_notice_key,
-            NOTICE_KIND_PREVIEW_ESCALATION,
-            expected,
-        ):
+        if _notice_already_recorded(release.inactivity_notice_key, expected):
             log.info(
                 f"Inactivity preview escalation already sent for {plan.release_key!r} at {plan.activity_at.isoformat()}"
             )
@@ -435,31 +332,31 @@ async def _send_preview_escalation(plan: Plan) -> None:
         await _record_notice_sent(plan.release_key, NOTICE_KIND_PREVIEW_ESCALATION, plan.activity_at)
 
 
-async def _send_warning(plan: Plan, *, kind: str) -> None:
-    expected = _notice_key(kind, plan.activity_at)
+async def _send_warning(plan: Plan) -> None:
+    expected = _notice_key(NOTICE_KIND_WARNING, plan.activity_at)
     async with db.session() as data:
         release = await _load_release(data, plan.release_key)
         if release is None:
             log.warning(f"Inactivity warning: release {plan.release_key!r} no longer exists")
             return
-        if not _plan_still_current(plan, release, expected_kind=kind):
+        if not _plan_still_current(plan, release, expected_kind=NOTICE_KIND_WARNING):
             return
-        if _notice_already_recorded(release.inactivity_notice_key, kind, expected):
-            log.info(f"Inactivity {kind} already sent for {plan.release_key!r} at {plan.activity_at.isoformat()}")
+        if _notice_already_recorded(release.inactivity_notice_key, expected):
+            log.info(f"Inactivity warning already sent for {plan.release_key!r} at {plan.activity_at.isoformat()}")
             return
         recipients = await warning_recipients_for(release, data)
 
-    body = _legacy_warning_body(plan) if (kind == NOTICE_KIND_LEGACY_WARNING) else _warning_body(plan)
+    body = _warning_body(plan)
     subject = f"[WARNING] Release inactive: {plan.project_key} {plan.version}"
     all_sent = True
     for recipient in recipients:
         if not await _send_email(recipient=recipient, subject=subject, body=body):
             all_sent = False
     if all_sent and recipients:
-        await _record_notice_sent(plan.release_key, kind, plan.activity_at)
+        await _record_notice_sent(plan.release_key, NOTICE_KIND_WARNING, plan.activity_at)
     elif recipients:
         log.warning(
-            f"Inactivity {kind} for {plan.release_key!r} had at least one recipient failure;"
+            f"Inactivity warning for {plan.release_key!r} had at least one recipient failure;"
             f" notice not recorded so the next maintenance run retries the full set"
         )
 
@@ -468,7 +365,7 @@ def _warning_body(plan: Plan) -> str:
     warn_days, delete_days = thresholds()
     if plan.phase == sql.ReleasePhase.RELEASE_PREVIEW:
         return (
-            f"This release preview has been inactive since {plan.activity_at.date().isoformat()}.\n\n"
+            f"This release preview has been inactive for at least {warn_days} days.\n\n"
             f"Project: {plan.project_key}\n"
             f"Version: {plan.version}\n"
             f"Phase: {plan.phase.value}\n\n"
@@ -478,7 +375,7 @@ def _warning_body(plan: Plan) -> str:
             f"complete the finish step or cancel the release."
         )
     return (
-        f"This release candidate has been inactive since {plan.activity_at.date().isoformat()}.\n\n"
+        f"This release candidate has been inactive for at least {warn_days} days.\n\n"
         f"Project: {plan.project_key}\n"
         f"Version: {plan.version}\n"
         f"Phase: {plan.phase.value}\n\n"

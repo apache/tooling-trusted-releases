@@ -51,9 +51,6 @@ sqlmodel.SQLModel.metadata = sqlalchemy.MetaData(
     }
 )
 
-INACTIVITY_NOTICE_KEY_SEPARATOR: Final[str] = "|"
-INACTIVITY_NOTICE_LEGACY_PREFIX: Final[str] = "legacy_warning:"
-
 # Data classes
 
 
@@ -2039,31 +2036,6 @@ def check_release_key(_mapper: orm.Mapper, _connection: sqlalchemy.Connection, r
         if (project_key is None) or (version is None):
             raise ValueError("Cannot generate release key without project_key and version")
         release.key = release_key(project_key, version)
-
-
-def inactivity_notice_legacy_key(notice_key: str | None) -> str | None:
-    if notice_key is None:
-        return None
-    legacy_key = notice_key.partition(INACTIVITY_NOTICE_KEY_SEPARATOR)[0]
-    if legacy_key.startswith(INACTIVITY_NOTICE_LEGACY_PREFIX):
-        return legacy_key
-    return None
-
-
-def inactivity_notice_legacy_key_expression(notice_key: Any) -> Any:
-    separator_position = sqlalchemy.func.instr(notice_key, INACTIVITY_NOTICE_KEY_SEPARATOR)
-    legacy_key = sqlalchemy.case(
-        (separator_position > 0, sqlalchemy.func.substr(notice_key, 1, separator_position - 1)),
-        else_=notice_key,
-    )
-    return sqlalchemy.case(
-        (
-            sqlalchemy.func.substr(notice_key, 1, len(INACTIVITY_NOTICE_LEGACY_PREFIX))
-            == INACTIVITY_NOTICE_LEGACY_PREFIX,
-            legacy_key,
-        ),
-        else_=None,
-    )
 
 
 def latest_revision_number_query(release_key: str | None = None) -> expression.ScalarSelect[str]:

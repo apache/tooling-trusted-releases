@@ -1204,14 +1204,14 @@ class ReleaseManager(CommitteeParticipant):
         else:
             stmt = stmt.where(via(sql.Release.podling_thread_id) == expected_podling_thread_id)
         now = datetime.datetime.now(datetime.UTC)
+        release_activity_at = via(sql.Release.activity_at)
         activity_at_value = sqlalchemy.case(
-            (via(sql.Release.activity_at) > now, via(sql.Release.activity_at)),
+            (release_activity_at > now, release_activity_at),
             else_=now,
         )
-        legacy_notice_key_value = sql.inactivity_notice_legacy_key_expression(via(sql.Release.inactivity_notice_key))
         notice_key_value = sqlalchemy.case(
-            (via(sql.Release.activity_at) > now, via(sql.Release.inactivity_notice_key)),
-            else_=legacy_notice_key_value,
+            (release_activity_at > now, via(sql.Release.inactivity_notice_key)),
+            else_=None,
         )
         result = await self.__data.execute(
             stmt.values(

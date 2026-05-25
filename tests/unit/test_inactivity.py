@@ -23,8 +23,6 @@ import unittest.mock as mock
 from typing import Any
 
 import pytest
-import sqlalchemy
-import sqlmodel
 
 import atr.models.sql as sql
 import atr.tasks.inactivity as inactivity
@@ -44,68 +42,58 @@ class FakeRelease:
     version: str
     phase: sql.ReleasePhase
     activity_at: datetime.datetime
-    created: datetime.datetime
     vote_started: datetime.datetime | None = None
     vote_resolved: datetime.datetime | None = None
     revisions: list[Any] = dataclasses.field(default_factory=list)
     project: FakeProject = dataclasses.field(default_factory=FakeProject)
 
 
-def test_classify_legacy_only_when_historical_overdue() -> None:
-    release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=1)
-    historical = _now() - datetime.timedelta(days=70)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=historical)
-    assert plan.decision == inactivity.Decision.SKIP
-
-
-def test_classify_legacy_warns_when_fresh_activity_but_old_history() -> None:
-    release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=1, created_age_days=200)
-    historical = _now() - datetime.timedelta(days=200)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=historical)
-    assert plan.decision == inactivity.Decision.LEGACY_WARN
-    assert plan.activity_at == historical
-
-
 def test_classify_overdue_candidate_is_delete_candidate() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE, activity_age_days=120)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.DELETE_CANDIDATE
 
 
 def test_classify_overdue_draft_is_delete_candidate() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=100)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.DELETE_CANDIDATE
 
 
 def test_classify_overdue_preview_escalates() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_PREVIEW, activity_age_days=200)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.PREVIEW_ESCALATE
 
 
 def test_classify_preview_warning_window_warns() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_PREVIEW, activity_age_days=85)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.WARN
     assert plan.phase == sql.ReleasePhase.RELEASE_PREVIEW
 
 
 def test_classify_release_phase_skips() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE, activity_age_days=500)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.SKIP
 
 
 def test_classify_under_warning_skips() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=10)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.SKIP
+
+
+def test_classify_warning_boundary_warns() -> None:
+    release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=80)
+    plan = inactivity.classify(release, now=_now())
+    assert plan.decision == inactivity.Decision.WARN
 
 
 def test_classify_warning_zone_warns() -> None:
     release = _release(phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, activity_age_days=85)
-    plan = inactivity.classify(release, now=_now(), legacy_historical_activity=None)
+    plan = inactivity.classify(release, now=_now())
     assert plan.decision == inactivity.Decision.WARN
 
 
@@ -113,67 +101,21 @@ def test_deletion_disabled_by_default() -> None:
     assert inactivity.deletion_enabled() is False
 
 
-def test_legacy_warning_body_for_candidate_keeps_cleanup_copy() -> None:
-    body = inactivity._legacy_warning_body(_legacy_warning_plan(sql.ReleasePhase.RELEASE_CANDIDATE))
-    lowered = body.lower()
-    assert "cleaned up automatically" in lowered
-    assert "escalated to the pmc" not in lowered
-
-
-def test_legacy_warning_body_for_preview_does_not_say_deleted() -> None:
-    body = inactivity._legacy_warning_body(_legacy_warning_plan(sql.ReleasePhase.RELEASE_PREVIEW))
-    lowered = body.lower()
-    assert "cleaned up automatically" not in lowered
-    assert "not automatically deleted" in lowered
-    assert "escalated to the pmc" in lowered
-
-
 def test_notice_already_recorded_none_returns_false() -> None:
-    assert inactivity._notice_already_recorded(None, inactivity.NOTICE_KIND_LEGACY_WARNING, "legacy_warning:x") is False
-    assert inactivity._notice_already_recorded(None, inactivity.NOTICE_KIND_WARNING, "warning:x") is False
-
-
-def test_notice_already_recorded_recognises_any_legacy_marker() -> None:
-    stored = "legacy_warning:2025-12-01T00:00:00+00:00"
-    fresh = "legacy_warning:2025-12-02T00:00:00+00:00"
-    assert inactivity._notice_already_recorded(stored, inactivity.NOTICE_KIND_LEGACY_WARNING, fresh) is True
-
-
-def test_notice_already_recorded_recognises_combined_markers() -> None:
-    legacy = "legacy_warning:2025-12-01T00:00:00+00:00"
-    warning = "warning:2026-03-01T00:00:00+00:00"
-    stored = f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{warning}"
-    assert inactivity._notice_already_recorded(stored, inactivity.NOTICE_KIND_LEGACY_WARNING, legacy) is True
-    assert inactivity._notice_already_recorded(stored, inactivity.NOTICE_KIND_WARNING, warning) is True
+    assert inactivity._notice_already_recorded(None, "warning:x") is False
 
 
 def test_notice_already_recorded_requires_exact_match_for_normal_warning() -> None:
     stored = "warning:2026-02-01T00:00:00+00:00"
     fresh = "warning:2026-03-01T00:00:00+00:00"
-    assert inactivity._notice_already_recorded(stored, inactivity.NOTICE_KIND_WARNING, fresh) is False
-    assert inactivity._notice_already_recorded(stored, inactivity.NOTICE_KIND_WARNING, stored) is True
+    assert inactivity._notice_already_recorded(stored, fresh) is False
+    assert inactivity._notice_already_recorded(stored, stored) is True
 
 
 def test_notice_key_format_round_trips_activity_at() -> None:
     activity_at = datetime.datetime(2026, 5, 21, 0, 0, tzinfo=datetime.UTC)
     key = inactivity._notice_key(inactivity.NOTICE_KIND_WARNING, activity_at)
     assert key == f"{inactivity.NOTICE_KIND_WARNING}:{activity_at.isoformat()}"
-
-
-def test_notice_key_merge_adds_legacy_without_losing_current_window() -> None:
-    legacy = "legacy_warning:2025-12-01T00:00:00+00:00"
-    warning = "warning:2026-03-01T00:00:00+00:00"
-    merged = inactivity._notice_key_merge(warning, legacy)
-    assert merged == f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{warning}"
-
-
-def test_notice_key_merge_preserves_legacy_and_replaces_current_window() -> None:
-    legacy = "legacy_warning:2025-12-01T00:00:00+00:00"
-    old_warning = "warning:2026-03-01T00:00:00+00:00"
-    new_warning = "warning:2026-04-01T00:00:00+00:00"
-    stored = f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{old_warning}"
-    merged = inactivity._notice_key_merge(stored, new_warning)
-    assert merged == f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{new_warning}"
 
 
 def test_plan_still_current_allows_preview_warning() -> None:
@@ -331,7 +273,7 @@ async def test_send_warning_does_not_record_on_partial_recipient_failure(
     record_mock = mock.AsyncMock()
     monkeypatch.setattr(inactivity, "_record_notice_sent", record_mock)
 
-    await inactivity._send_warning(plan, kind=inactivity.NOTICE_KIND_WARNING)
+    await inactivity._send_warning(plan)
 
     assert send_mock.await_count == 2
     record_mock.assert_not_awaited()
@@ -373,7 +315,7 @@ async def test_send_warning_does_not_record_when_mail_send_returns_smtp_errors(
     record_mock = mock.AsyncMock()
     monkeypatch.setattr(inactivity, "_record_notice_sent", record_mock)
 
-    await inactivity._send_warning(plan, kind=inactivity.NOTICE_KIND_WARNING)
+    await inactivity._send_warning(plan)
 
     mail_send.assert_awaited_once()
     audit_mock.assert_called_once()
@@ -412,31 +354,10 @@ async def test_send_warning_records_when_all_recipients_succeed(
     record_mock = mock.AsyncMock()
     monkeypatch.setattr(inactivity, "_record_notice_sent", record_mock)
 
-    await inactivity._send_warning(plan, kind=inactivity.NOTICE_KIND_WARNING)
+    await inactivity._send_warning(plan)
 
     assert send_mock.await_count == 2
     record_mock.assert_awaited_once_with(plan.release_key, inactivity.NOTICE_KIND_WARNING, activity_at)
-
-
-def test_sql_legacy_notice_key_expression_extracts_only_durable_marker() -> None:
-    legacy = "legacy_warning:2025-12-01T00:00:00+00:00"
-    warning = "warning:2026-03-01T00:00:00+00:00"
-    stored = f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{warning}"
-    engine = sqlmodel.create_engine("sqlite://")
-    with engine.connect() as connection:
-        result = connection.execute(
-            sqlalchemy.select(sql.inactivity_notice_legacy_key_expression(sqlalchemy.literal(stored)))
-        )
-        assert result.scalar_one() == legacy
-
-
-def test_sql_legacy_notice_key_extracts_only_durable_marker() -> None:
-    legacy = "legacy_warning:2025-12-01T00:00:00+00:00"
-    warning = "warning:2026-03-01T00:00:00+00:00"
-    stored = f"{legacy}{sql.INACTIVITY_NOTICE_KEY_SEPARATOR}{warning}"
-    assert sql.inactivity_notice_legacy_key(stored) == legacy
-    assert sql.inactivity_notice_legacy_key(warning) is None
-    assert sql.inactivity_notice_legacy_key(None) is None
 
 
 def test_thresholds_are_80_and_90() -> None:
@@ -448,23 +369,37 @@ def test_thresholds_are_80_and_90() -> None:
 def test_warning_body_for_candidate_keeps_cleanup_copy() -> None:
     body = inactivity._warning_body(_warning_plan(sql.ReleasePhase.RELEASE_CANDIDATE))
     lowered = body.lower()
+    assert "inactive for at least 80 days" in lowered
     assert "cleaned up automatically" in lowered
     assert "escalated to the pmc" not in lowered
+    assert "2026-02-25" not in lowered
 
 
 def test_warning_body_for_draft_keeps_cleanup_copy() -> None:
     body = inactivity._warning_body(_warning_plan(sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT))
     lowered = body.lower()
+    assert "inactive for at least 80 days" in lowered
     assert "cleaned up automatically" in lowered
     assert "escalated to the pmc" not in lowered
+    assert "2026-02-25" not in lowered
 
 
 def test_warning_body_for_preview_does_not_say_deleted() -> None:
     body = inactivity._warning_body(_warning_plan(sql.ReleasePhase.RELEASE_PREVIEW))
     lowered = body.lower()
+    assert "inactive for at least 80 days" in lowered
     assert "cleaned up automatically" not in lowered
     assert "escalated to the pmc" in lowered
     assert "not\nautomatically deleted" in lowered
+    assert "2026-02-25" not in lowered
+
+
+def test_preview_escalation_body_uses_threshold_not_synthetic_date() -> None:
+    body = inactivity._preview_escalation_body(_warning_plan(sql.ReleasePhase.RELEASE_PREVIEW))
+    lowered = body.lower()
+    assert "inactive for at least 90 days" in lowered
+    assert "pmc is being notified" in lowered
+    assert "2026-02-25" not in lowered
 
 
 def _async_context_manager(value: object) -> mock.MagicMock:
@@ -472,18 +407,6 @@ def _async_context_manager(value: object) -> mock.MagicMock:
     ctx.__aenter__ = mock.AsyncMock(return_value=value)
     ctx.__aexit__ = mock.AsyncMock(return_value=None)
     return ctx
-
-
-def _legacy_warning_plan(phase: sql.ReleasePhase) -> inactivity.Plan:
-    activity_at = _now() - datetime.timedelta(days=120)
-    return inactivity.Plan(
-        release_key="example-0.0.1",
-        project_key="example",
-        version="0.0.1",
-        phase=phase,
-        activity_at=activity_at,
-        decision=inactivity.Decision.LEGACY_WARN,
-    )
 
 
 def _now() -> datetime.datetime:
@@ -494,19 +417,16 @@ def _release(
     *,
     phase: sql.ReleasePhase,
     activity_age_days: int,
-    created_age_days: int | None = None,
     project_status: sql.ProjectStatus = sql.ProjectStatus.ACTIVE,
 ) -> FakeRelease:
     now = _now()
     activity_at = now - datetime.timedelta(days=activity_age_days)
-    created = now - datetime.timedelta(days=created_age_days if (created_age_days is not None) else activity_age_days)
     return FakeRelease(
         key="example-0.0.1",
         project_key="example",
         version="0.0.1",
         phase=phase,
         activity_at=activity_at,
-        created=created,
         project=FakeProject(key="example", status=project_status, committee_key="example"),
     )
 
