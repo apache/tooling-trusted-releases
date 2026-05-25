@@ -152,6 +152,12 @@ def test_vote_resolution_body_votes_uses_formal_label() -> None:
     assert body_lines[2] == "Of these formal votes, 3 were +1, 0 were -1, and 0 were 0."
 
 
+def test_vote_result_subject_formats_result_before_vote() -> None:
+    release = SimpleNamespace(project=SimpleNamespace(display_name="Project"), version="1.0.0")
+
+    assert tabulate.vote_result_subject(release, "passed") == "[RESULT] [VOTE] Release Project 1.0.0 PASSED"
+
+
 @pytest.mark.asyncio
 async def test_votes_excludes_receipts_by_rfc_message_id_only(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _thread_messages(

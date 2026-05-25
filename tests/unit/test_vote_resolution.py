@@ -600,7 +600,7 @@ async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
         "result_email_to": "dev@project.apache.org",
-        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
         "vote_seq": None,
     }
@@ -626,7 +626,7 @@ async def test_resolve_page_allows_manual_continuation_when_tabulation_is_invali
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
         "result_email_to": "dev@project.apache.org",
-        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
         "vote_seq": None,
     }
@@ -658,7 +658,7 @@ async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
         "result_email_to": "dev@project.apache.org",
-        "result_subject": "[VOTE] [RESULT] Release Project 1.0.0 <RESOLUTION>",
+        "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
         "vote_seq": None,
     }
