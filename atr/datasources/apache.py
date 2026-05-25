@@ -85,13 +85,13 @@ class User(schema.Strict):
 
 class Committee(schema.Strict):
     chair: str
-    charter: str
+    charter: str | None = None
     established: str
     group: str
     homepage: str
     id: str
     name: str
-    rdf: str
+    rdf: str | None = None
     reporting: int | None = None
     roster: Annotated[list[User], helpers.DictToList(key="id")]
     shortdesc: str
