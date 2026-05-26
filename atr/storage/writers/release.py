@@ -60,6 +60,13 @@ if TYPE_CHECKING:
 
 SPECIAL_SUFFIXES: Final[frozenset[str]] = frozenset({".asc", ".sha256", ".sha512"})
 
+_ACTIVITY_BUMP_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
+    {
+        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        sql.ReleasePhase.RELEASE_CANDIDATE,
+        sql.ReleasePhase.RELEASE_PREVIEW,
+    }
+)
 _SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
 
 
@@ -168,6 +175,46 @@ class CommitteeParticipant(FoundationCommitter):
         self.__data = data
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def bump_activity(self, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> sql.Release:
+        release = await self.__data.release(
+            project_key=str(project_key), version=str(version_key), _committee=True
+        ).demand(storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404))
+        storage.ensure_project_active(release.project)
+        ineligible_phase = release.phase not in _ACTIVITY_BUMP_PHASES
+        if ineligible_phase:
+            raise storage.AccessError(
+                f"Release phase {release.phase.value} is not eligible for activity reset", status=409
+            )
+        now = datetime.datetime.now(datetime.UTC)
+        previous_activity_at = release.activity_at
+        via = sql.validate_instrumented_attribute
+        release_activity_at = via(sql.Release.activity_at)
+        activity_at_value = sqlalchemy.case(
+            (release_activity_at > now, release_activity_at),
+            else_=now,
+        )
+        result = await self.__data.execute(
+            sqlmodel.update(sql.Release)
+            .where(
+                via(sql.Release.key) == release.key,
+                via(sql.Release.phase).in_(_ACTIVITY_BUMP_PHASES),
+            )
+            .values(activity_at=activity_at_value, inactivity_notice_key=None)
+        )
+        if getattr(result, "rowcount", 0) != 1:
+            await self.__data.rollback()
+            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
+        await self.__data.refresh(release)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            previous_activity_at=previous_activity_at.isoformat(),
+            activity_at=release.activity_at.isoformat(),
+        )
+        return release
 
     async def delete(
         self,

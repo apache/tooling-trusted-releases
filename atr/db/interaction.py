@@ -39,6 +39,7 @@ import atr.models.github as github
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.principal as principal
 import atr.user as user
 import atr.util as util
 import atr.web as web
@@ -679,7 +680,8 @@ async def release_ready_to_start_vote(
     if await pending_quarantine_count(release.key, caller_data=data) > 0:
         return PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE
 
-    if not (user.is_committee_member(committee, session.uid) or session.is_admin):
+    authorisation = await principal.Authorisation(session)
+    if not (authorisation.is_member_of(committee.key) or session.is_admin):
         return "You must be on the PMC of this project to start a vote"
 
     has_files = await util.has_files(release)

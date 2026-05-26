@@ -17,9 +17,9 @@
 
 """Release inactivity tracking
 
-Revision ID: 0086_2026.05.21_a13b8c92
-Revises: 0085_2025.05.19_9d086f7e
-Create Date: 2026-05-21 00:00:00.000000+00:00
+Revision ID: 0087_2026.05.26_a13b8c92
+Revises: 0086_2026.05.26_a69c86b6
+Create Date: 2026-05-26 19:38:10.816792+00:00
 """
 
 import datetime
@@ -31,8 +31,8 @@ from alembic import op
 import atr.models.sql as sql
 
 # Revision identifiers, used by Alembic
-revision: str = "0086_2026.05.21_a13b8c92"
-down_revision: str | None = "0085_2025.05.19_9d086f7e"
+revision: str = "0087_2026.05.26_a13b8c92"
+down_revision: str | None = "0086_2026.05.26_a69c86b6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

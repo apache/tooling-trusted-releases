@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -267,6 +268,138 @@ def test_foundation_admin_release_writer_exposes_inactive_delete_only() -> None:
 
 
 @pytest.mark.asyncio
+async def test_release_bump_activity_blocks_ineligible_phase() -> None:
+    data = mock.MagicMock()
+    candidate = _active_release(phase=sql.ReleasePhase.RELEASE)
+    data.release = mock.MagicMock(return_value=_query_returning(candidate))
+    data.commit = mock.AsyncMock()
+    data.execute = mock.AsyncMock()
+    writer = object.__new__(release.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+
+    with pytest.raises(storage.AccessError, match="not eligible"):
+        await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+    data.execute.assert_not_awaited()
+    data.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_release_bump_activity_blocks_retired() -> None:
+    data = mock.MagicMock()
+    retired = _retired_release()
+    retired.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    retired.inactivity_notice_key = "warning:old"
+    retired.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    data.release = mock.MagicMock(return_value=_query_returning(retired))
+    data.commit = mock.AsyncMock()
+    data.execute = mock.AsyncMock()
+    writer = object.__new__(release.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+
+    with pytest.raises(storage.AccessError, match="archived"):
+        await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+    data.execute.assert_not_awaited()
+    data.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_release_bump_activity_clears_future_notice() -> None:
+    data = mock.MagicMock()
+    future_activity = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
+    candidate = _active_release(activity_at=future_activity)
+    data.release = mock.MagicMock(return_value=_query_returning(candidate))
+    execute_result = mock.MagicMock()
+    execute_result.rowcount = 1
+    data.execute = mock.AsyncMock(return_value=execute_result)
+    data.refresh = mock.AsyncMock(side_effect=lambda obj: _refresh_release_after_bump(obj, future_activity))
+    data.commit = mock.AsyncMock()
+    write_as = mock.MagicMock()
+    writer = object.__new__(release.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__write_as = write_as
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+
+    result = await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+    assert result is candidate
+    assert candidate.activity_at is future_activity
+    assert candidate.inactivity_notice_key is None
+    data.execute.assert_awaited_once()
+    data.refresh.assert_awaited_once_with(candidate)
+    data.commit.assert_awaited_once()
+    write_as.append_to_audit_log.assert_called_once_with(
+        asf_uid="tester",
+        project_key="project",
+        version="1.0.0",
+        previous_activity_at=future_activity.isoformat(),
+        activity_at=future_activity.isoformat(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_release_bump_activity_rejects_concurrent_state_change() -> None:
+    data = mock.MagicMock()
+    candidate = _active_release()
+    data.release = mock.MagicMock(return_value=_query_returning(candidate))
+    execute_result = mock.MagicMock()
+    execute_result.rowcount = 0
+    data.execute = mock.AsyncMock(return_value=execute_result)
+    data.rollback = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    write_as = mock.MagicMock()
+    writer = object.__new__(release.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__write_as = write_as
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+
+    with pytest.raises(storage.AccessError, match="state has changed"):
+        await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+    data.rollback.assert_awaited_once()
+    data.commit.assert_not_awaited()
+    write_as.append_to_audit_log.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_release_bump_activity_updates_activity() -> None:
+    old_activity = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=85)
+    new_activity = old_activity + datetime.timedelta(days=85)
+    candidate = _active_release(activity_at=old_activity)
+    data = mock.MagicMock()
+    data.release = mock.MagicMock(return_value=_query_returning(candidate))
+    execute_result = mock.MagicMock()
+    execute_result.rowcount = 1
+    data.execute = mock.AsyncMock(return_value=execute_result)
+    data.refresh = mock.AsyncMock(side_effect=lambda obj: _refresh_release_after_bump(obj, new_activity))
+    data.commit = mock.AsyncMock()
+    write_as = mock.MagicMock()
+    writer = object.__new__(release.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__write_as = write_as
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+
+    result = await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+    assert result is candidate
+    assert candidate.activity_at == new_activity
+    assert candidate.inactivity_notice_key is None
+    data.execute.assert_awaited_once()
+    data.refresh.assert_awaited_once_with(candidate)
+    data.commit.assert_awaited_once()
+    write_as.append_to_audit_log.assert_called_once_with(
+        asf_uid="tester",
+        project_key="project",
+        version="1.0.0",
+        previous_activity_at=old_activity.isoformat(),
+        activity_at=new_activity.isoformat(),
+    )
+
+
+@pytest.mark.asyncio
 async def test_release_delete_blocks_retired() -> None:
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
@@ -418,6 +551,34 @@ async def test_vote_send_resolution_blocks_retired() -> None:
         )
 
 
+def _active_project(key: str = "project") -> SimpleNamespace:
+    return SimpleNamespace(
+        key=key,
+        status=sql.ProjectStatus.ACTIVE,
+        committee_key=key,
+        display_name=key.capitalize(),
+        short_display_name=key.capitalize(),
+    )
+
+
+def _active_release(
+    phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+    activity_at: datetime.datetime | None = None,
+) -> SimpleNamespace:
+    activity_at_missing = activity_at is None
+    if activity_at_missing:
+        activity_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=85)
+    return SimpleNamespace(
+        key=sql.release_key("project", "1.0.0"),
+        project=_active_project(),
+        project_key="project",
+        version="1.0.0",
+        phase=phase,
+        activity_at=activity_at,
+        inactivity_notice_key="warning:old",
+    )
+
+
 def _async_context_manager(value: object) -> mock.MagicMock:
     ctx = mock.MagicMock()
     ctx.__aenter__ = mock.AsyncMock(return_value=value)
@@ -430,6 +591,11 @@ def _query_returning(obj: object) -> mock.MagicMock:
     query.demand = mock.AsyncMock(return_value=obj)
     query.get = mock.AsyncMock(return_value=obj)
     return query
+
+
+def _refresh_release_after_bump(release_obj: SimpleNamespace, activity_at: datetime.datetime) -> None:
+    release_obj.activity_at = activity_at
+    release_obj.inactivity_notice_key = None
 
 
 def _retired_project(key: str = "project") -> SimpleNamespace:

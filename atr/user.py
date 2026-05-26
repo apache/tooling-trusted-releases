@@ -20,12 +20,16 @@
 from __future__ import annotations
 
 import functools
+from typing import TYPE_CHECKING
 
 import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.models.sql as sql
 import atr.util as util
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def binding_terminology(vote_round: int | None) -> tuple[str, str]:
@@ -104,6 +108,14 @@ def is_committer(committee: sql.Committee | None, uid: str) -> bool:
     if committee is None:
         return False
     return any((committer_uid == uid) for committer_uid in committee.committers)
+
+
+def is_participant_for_committee(committee: sql.Committee | None, project_keys: Iterable[str]) -> bool:
+    if committee is None:
+        return False
+    if config.is_test_mode() and (committee.key == "test"):
+        return True
+    return committee.key in project_keys
 
 
 async def projects(uid: str, committee_only: bool = False, super_project: bool = False) -> list[sql.Project]:

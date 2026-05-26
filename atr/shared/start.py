@@ -27,7 +27,9 @@ class StartReleaseForm(form.Form):
         "Enter the version string for this new release."
         " This cannot be changed later, and must be the version of the finished release."
         " ATR generates a unique revision serial number for each voting round,"
-        " and you can also set your own tag before a vote starts.",
+        " and you can also set your own tag before a vote starts."
+        " Release candidate drafts inactive for 90 days are cleaned up automatically,"
+        " with a warning email sent at 80 days.",
     )
     auto_archive_prior: form.Bool = form.label(
         "Auto archive prior release",

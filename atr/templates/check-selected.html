@@ -144,6 +144,9 @@
       {% endif %}
     </div>
     <h2 id="more-actions">More actions</h2>
+    {% if activity_form %}
+      <div class="mb-2">{{ activity_form|safe }}</div>
+    {% endif %}
     {% if is_viewing_as_admin_fn(current_user.uid) %}
       <h3 id="cache-control" class="mt-4">Check cache control</h3>
       <p>Each button creates a new revision and restarts all checks.</p>
