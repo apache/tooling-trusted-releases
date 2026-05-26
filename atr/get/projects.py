@@ -446,7 +446,7 @@ def _render_categories_section(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Categories"]]
 
-    current_categories = project.category.split(", ") if project.category else []
+    current_categories = project.categories.split(", ") if project.categories else []
     category_badges = []
     for cat in current_categories:
         remove_button = (
@@ -722,7 +722,7 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
                 ]
             )
 
-    for label, urls in [("Repositories", project.repository), ("Standards", project.standards)]:
+    for label, urls in [("Repositories", project.repositories), ("Standards", project.standards)]:
         if urls:
             rows.append(
                 htm.tr[
@@ -759,7 +759,7 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
                 "download_page": project.download_page or "",
                 "bug_database": project.bug_database or "",
                 "mailing_lists": project.mailing_lists or "",
-                "repository": "\n".join(project.repository),
+                "repositories": "\n".join(project.repositories),
                 "standards": "\n".join(project.standards),
             },
         )

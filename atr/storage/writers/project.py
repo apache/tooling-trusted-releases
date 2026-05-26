@@ -112,9 +112,9 @@ class CommitteeMember(CommitteeParticipant):
                 raise ValueError(f"Category '{new_category}' may not be added or removed")
             current_categories.append(new_category)
             current_categories.sort()
-            project.category = ", ".join(current_categories)
-            if project.category == "":
-                project.category = None
+            project.categories = ", ".join(current_categories)
+            if project.categories == "":
+                project.categories = None
             project.updated = datetime.datetime.now(datetime.UTC)
             project.updated_by = self.__asf_uid
             await self.__data.commit()
@@ -136,9 +136,9 @@ class CommitteeMember(CommitteeParticipant):
             if action_value in registry.FORBIDDEN_PROJECT_CATEGORIES:
                 raise ValueError(f"Category '{action_value}' may not be added or removed")
             current_categories.remove(action_value)
-            project.category = ", ".join(current_categories)
-            if project.category == "":
-                project.category = None
+            project.categories = ", ".join(current_categories)
+            if project.categories == "":
+                project.categories = None
             project.updated = datetime.datetime.now(datetime.UTC)
             project.updated_by = self.__asf_uid
             await self.__data.commit()
@@ -198,7 +198,7 @@ class CommitteeMember(CommitteeParticipant):
             status=sql.ProjectStatus.ACTIVE,
             super_project_key=super_project.key if super_project else None,
             description=super_project.description if super_project else None,
-            category=super_project.category if super_project else None,
+            categories=super_project.categories if super_project else None,
             programming_languages=super_project.programming_languages if super_project else None,
             version_method=super_project.version_method if super_project else sql.VersionMethod.SIMPLE,
             version_pattern=super_project.version_pattern if super_project else None,
@@ -293,7 +293,7 @@ class CommitteeMember(CommitteeParticipant):
         project.download_page = str(form.download_page) if form.download_page else None
         project.bug_database = str(form.bug_database) if form.bug_database else None
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
-        project.repository = list(form.repository)
+        project.repositories = list(form.repositories)
         project.standards = list(form.standards)
         project.updated = datetime.datetime.now(datetime.UTC)
         project.updated_by = self.__asf_uid
@@ -429,7 +429,8 @@ class CommitteeMember(CommitteeParticipant):
             "cycle_match",
             "branch_template",
         }
-        list_fields = {"repository", "standards"}
+        list_fields = {"repositories", "standards"}
+        csv_fields = {"categories", "programming_languages"}
         version_scheme_fields = {"version_method", "version_pattern", "cycle_match", "branch_template"}
         provided = args.model_fields_set
 
@@ -440,6 +441,10 @@ class CommitteeMember(CommitteeParticipant):
             setattr(project, field, value)
         for field in list_fields & provided:
             setattr(project, field, [str(item) for item in getattr(args, field) or []])
+        for field in csv_fields & provided:
+            items = [str(item).strip() for item in getattr(args, field) or []]
+            joined = ", ".join(item for item in items if item)
+            setattr(project, field, joined or None)
         if "version_method" in provided:
             project.version_method = args.version_method or sql.VersionMethod.SIMPLE
 
@@ -448,8 +453,8 @@ class CommitteeMember(CommitteeParticipant):
 
     def __current_categories(self, project: sql.Project) -> list[str]:
         return (
-            [category.strip() for category in (project.category or "").split(",") if category.strip()]
-            if project.category
+            [category.strip() for category in (project.categories or "").split(",") if category.strip()]
+            if project.categories
             else []
         )
 

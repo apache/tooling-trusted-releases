@@ -61,7 +61,7 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
         homepage="homepage",
         lifecycle_page="lifecycle_page",
         mailing_lists="mailing_lists",
-        repository="repository",
+        repositories="repository",
     )
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag="{{YOUR_FULL_NAME}}")
@@ -102,7 +102,7 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
         homepage="homepage",
         lifecycle_page="lifecycle_page",
         mailing_lists="mailing_lists",
-        repository="repository",
+        repositories="repository",
     )
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
@@ -143,7 +143,7 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
         homepage="homepage",
         lifecycle_page="lifecycle_page",
         mailing_lists="mailing_lists",
-        repository="repository",
+        repositories="repository",
     )
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)

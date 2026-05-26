@@ -411,8 +411,10 @@ class ProjectConfigProjectArgs(schema.Strict):
     download_page: pydantic.HttpUrl | None = None
     bug_database: pydantic.HttpUrl | None = None
     mailing_lists: pydantic.HttpUrl | None = None
-    repository: list[pydantic.AnyUrl] | None = None
+    repositories: list[pydantic.AnyUrl] | None = None
     standards: list[str] | None = None
+    categories: list[str] | None = None
+    programming_languages: list[str] | None = None
     # Changing any of these four reassigns existing releases to the cycle
     # their version string now maps to.
     version_method: sql.VersionMethod | None = None

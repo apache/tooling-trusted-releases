@@ -1,6 +1,6 @@
 atr:
-  whoami: main
   metadata:
+    committee: tooling
     name: Apache Trusted Releases
     description: ATR is a platform through which committees of Apache Software Foundation (ASF) projects can make official ASF software releases. Official ASF releases are endorsed as an "act of the Foundation". It is therefore important that the foundation - its board, members, committees, and contributors - and the general public can have confidence in the releases.
     short_description: A platform for making official ASF software releases.

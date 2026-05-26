@@ -818,7 +818,7 @@ class Project(sqlmodel.SQLModel, table=True):
     super_project: Optional["Project"] = sqlmodel.Relationship()
 
     description: str | None = sqlmodel.Field(default=None, **example("Example is a simple example project"))
-    category: str | None = sqlmodel.Field(default=None, **example("data,storage"))
+    categories: str | None = sqlmodel.Field(default=None, **example("data,storage"))
     programming_languages: str | None = sqlmodel.Field(default=None, **example("c,python"))
 
     short_description: str | None = sqlmodel.Field(default=None, **example("A simple example project"))
@@ -829,7 +829,7 @@ class Project(sqlmodel.SQLModel, table=True):
     mailing_lists: str | None = sqlmodel.Field(
         default=None, **example("https://example.apache.org/community/mailing-lists")
     )
-    repository: list[str] = sqlmodel.Field(
+    repositories: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     standards: list[str] = sqlmodel.Field(

@@ -238,7 +238,7 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
 def project(p: sql.Project) -> AnnotatedDivergences:
     """Check that a project is valid."""
 
-    yield from project_category(p)
+    yield from project_categories(p)
     yield from project_committee(p)
     yield from project_created(p)
     yield from project_created_by(p)
@@ -250,9 +250,9 @@ def project(p: sql.Project) -> AnnotatedDivergences:
     yield from project_version_pattern(p)
 
 
-@project_components("Project.category")
-def project_category(p: sql.Project) -> Divergences:
-    """Check that the category string uses 'label, label' syntax without colons."""
+@project_components("Project.categories")
+def project_categories(p: sql.Project) -> Divergences:
+    """Check that the categories string uses 'label, label' syntax without colons."""
 
     def okay(cat: str | None) -> bool:
         if not cat:
@@ -263,7 +263,7 @@ def project_category(p: sql.Project) -> Divergences:
         return True
 
     expected = "comma separated labels without colon"
-    yield from divergences_predicate(okay, expected, p.category)
+    yield from divergences_predicate(okay, expected, p.categories)
 
 
 @project_components("Project.committee_key")

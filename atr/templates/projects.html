@@ -54,9 +54,9 @@
               </div>
             {% endif %}
           </div>
-          {% if project.category %}
+          {% if project.categories %}
             <div class="row g-1">
-              {% set categories = project.category.split(', ') %}
+              {% set categories = project.categories.split(', ') %}
               {% for category in categories if category != "retired" %}
                 <div class="col-sm-auto">
                   <span class="badge text-bg-primary">{{ category }}</span>

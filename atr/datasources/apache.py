@@ -599,7 +599,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         # Pass the project name through the validator
         safe.ProjectKey(project_model.key)
         project_model.name = str(project_status.name)
-        project_model.category = ", ".join(project_status.category) or None
+        project_model.categories = ", ".join(project_status.category) or None
         project_model.description = project_status.description
         project_model.programming_languages = ", ".join(project_status.programming_language) or None
 
@@ -608,7 +608,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.download_page = _coerce_https(project_status.download_page)
         project_model.bug_database = _coerce_https(project_status.bug_database)
         project_model.mailing_lists = _coerce_https(project_status.mailing_list)
-        project_model.repository = _doap_repository_urls(project_status.repository)
+        project_model.repositories = _doap_repository_urls(project_status.repository)
         # Not coercing standards URLs as these are outside ASF control
         project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
         project_model.updated = datetime.datetime.now(datetime.UTC)

@@ -261,7 +261,7 @@ class EditMetadataForm(form.Form):
         "Mailing lists page",
         "URL of the page on the project website that lists its mailing lists.",
     )
-    repository: form.URLList = form.label(
+    repositories: form.URLList = form.label(
         "Repositories",
         "Repository URLs, one per line.",
         widget=form.Widget.TEXTAREA,

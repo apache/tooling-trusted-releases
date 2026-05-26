@@ -133,7 +133,7 @@
                                             </div>
                                         </div>
                                         <div class="mb-1 page-project-subcard-categories">
-                                            {% set categories = project.category.split(', ') if project.category else [] %}
+                                            {% set categories = project.categories.split(', ') if project.categories else [] %}
                                             {% for category in categories %}
                                                 {% if category != "retired" %}<span class="badge text-bg-primary me-1">{{ category }}</span>{% endif %}
                                             {% endfor %}
