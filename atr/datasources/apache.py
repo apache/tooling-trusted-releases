@@ -386,15 +386,23 @@ async def update_metadata() -> tuple[int, int]:
     return added_count, updated_count
 
 
+def _coerce_https(url: str | None) -> str | None:
+    if type(url) is str:
+        if "http://" in url:
+            return url.replace("http", "https")
+        return url
+    return None
+
+
 def _doap_repository_urls(items: list[str | dict]) -> list[str]:
     urls: list[str] = []
     for item in items:
         if isinstance(item, str):
-            urls.append(item)
+            urls.append(str(_coerce_https(item)))
         elif isinstance(item, dict):
             location = item.get("location")
             if isinstance(location, str):
-                urls.append(location)
+                urls.append(str(_coerce_https(location)))
     return urls
 
 
@@ -596,11 +604,12 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.programming_languages = ", ".join(project_status.programming_language) or None
 
         project_model.short_description = project_status.shortdesc
-        project_model.homepage = project_status.homepage
-        project_model.download_page = project_status.download_page
-        project_model.bug_database = project_status.bug_database
-        project_model.mailing_lists = project_status.mailing_list
+        project_model.homepage = _coerce_https(project_status.homepage)
+        project_model.download_page = _coerce_https(project_status.download_page)
+        project_model.bug_database = _coerce_https(project_status.bug_database)
+        project_model.mailing_lists = _coerce_https(project_status.mailing_list)
         project_model.repository = _doap_repository_urls(project_status.repository)
+        # Not coercing standards URLs as these are outside ASF control
         project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
         project_model.updated = datetime.datetime.now(datetime.UTC)
         project_model.updated_by = "bootstrap"
