@@ -23,6 +23,7 @@ import htpy
 import quart
 
 import atr.blueprints.get as get
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -40,6 +41,7 @@ import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -111,6 +113,8 @@ async def selected(
         flash_data = await sessions.form_error_pop(quart.request.path)
         submitted_concerns = util.submitted_concerns_from_flash(flash_data)
 
+        publish_eligible = bool(config.get().SVN_PUBLISH_URL) and user.is_committee_member(committee, session.uid)
+        default_download_path_suffix = _default_download_path_suffix(release, committee)
         content = await _render_page(
             release=release,
             revision_number=str(release.safe_latest_revision_number),
@@ -127,6 +131,8 @@ async def selected(
             concern_groups=concern_groups,
             submitted_concerns=submitted_concerns,
             flash_data=flash_data,
+            publish_eligible=publish_eligible,
+            default_download_path_suffix=default_download_path_suffix,
         )
 
         return await template.blank(
@@ -136,15 +142,59 @@ async def selected(
         )
 
 
+def _add_automatic_publish_fields(
+    custom: dict[str, htm.Element | htm.VoidElement],
+    skip: list[str],
+    publish_eligible: bool,
+    vote_mode: sql.VoteMode,
+    podling_vote_round: int | None,
+) -> None:
+    if not publish_eligible:
+        skip.append("automatic_publish_when_resolved")
+        skip.append("download_path_suffix")
+        return
+    vote_label = _publish_vote_label(vote_mode, podling_vote_round)
+    custom["automatic_publish_when_resolved"] = htm.div[
+        htpy.input(
+            type="checkbox",
+            name="automatic_publish_when_resolved",
+            id="automatic_publish_when_resolved",
+            value="on",
+            checked=True,
+            class_="form-check-input",
+        ),
+        htm.div(".form-text.text-muted.mt-1")[
+            "If enabled, ATR will publish the preview revision to SVN automatically",
+            f" when the final approving {vote_label} resolves.",
+        ],
+    ]
+
+
 async def _check_keys_warning(committee: sql.Committee) -> bool:
     keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
     return not await aiofiles.os.path.isfile(keys_file_path)
+
+
+def _default_download_path_suffix(release: sql.Release, committee: sql.Committee) -> safe.RelPath | None:
+    if release.project.key == util.unwrap(committee.key):
+        return None
+    return safe.RelPath(f"{release.project.key}-{release.version}")
 
 
 def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int | None:
     if not committee.is_podling:
         return None
     return 2 if (release.podling_thread_id is not None) else 1
+
+
+def _publish_vote_label(vote_mode: sql.VoteMode, podling_vote_round: int | None) -> str:
+    if vote_mode != sql.VoteMode.TRUSTED:
+        return "vote"
+    if podling_vote_round == 1:
+        return "first round vote"
+    if podling_vote_round == 2:
+        return "second round vote"
+    return "vote"
 
 
 def _render_body_field(default_body: str, project_key: str) -> htm.Element:
@@ -181,6 +231,8 @@ async def _render_page(
     concern_groups: list[util.ConcernGroup],
     submitted_concerns: list[str],
     flash_data: dict,
+    publish_eligible: bool,
+    default_download_path_suffix: safe.RelPath | None,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -314,6 +366,9 @@ async def _render_page(
         skip.append("notify_when_finished")
         skip.append("automatic_resolve_when_finished")
 
+    _add_automatic_publish_fields(custom, skip, publish_eligible, vote_mode, podling_vote_round)
+
+    download_suffix_default = str(default_download_path_suffix) if (default_download_path_suffix is not None) else ""
     vote_form = await form.render(
         model_cls=shared.voting.StartVotingForm,
         submit_label="Send vote email",
@@ -324,6 +379,7 @@ async def _render_page(
             "subject_template_hash": subject_template_hash,
             "body": default_body,
             "rendered_revision": revision_number,
+            "download_path_suffix": download_suffix_default,
         },
         custom=custom,
         skip=skip,

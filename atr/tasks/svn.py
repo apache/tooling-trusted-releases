@@ -16,11 +16,12 @@
 # under the License.
 
 import asyncio
-from typing import Any, Final
+from typing import Any
 
 import aiofiles.os
 import aioshutil
 
+import atr.constants as constants
 import atr.log as log
 import atr.models.args as args
 import atr.models.results as results
@@ -28,8 +29,6 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks.checks as checks
-
-_SVN_BASE_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
 
 class SvnImportError(Exception):
@@ -95,7 +94,7 @@ async def _import_files_core(args: args.SvnImport) -> str:
                 "-r",
                 args.revision,
                 "--",
-                f"{_SVN_BASE_URL}/{args.svn_url!s}",
+                f"{constants.SVN_DIST_ROOT_URL}/{args.svn_url!s}",
                 str(temp_export_path),
             ]
 

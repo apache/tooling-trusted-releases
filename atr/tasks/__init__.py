@@ -51,6 +51,7 @@ import atr.tasks.metadata as metadata
 import atr.tasks.quarantine as quarantine
 import atr.tasks.sbom as sbom
 import atr.tasks.svn as svn
+import atr.tasks.svnpub as svnpub
 import atr.tasks.vote as vote
 import atr.util as util
 
@@ -353,7 +354,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         case sql.TaskType.SVN_IMPORT_FILES:
             return svn.import_files
         case sql.TaskType.SVN_PUBLISH:
-            raise NotImplementedError("The SVN_PUBLISH task handler is not yet implemented")
+            return svnpub.publish
         case sql.TaskType.TARGZ_INTEGRITY:
             raise ValueError("TARGZ_INTEGRITY check has been removed; quarantine extraction validates integrity")
         case sql.TaskType.TARGZ_STRUCTURE:

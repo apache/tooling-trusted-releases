@@ -228,7 +228,6 @@ class SvnPublish(schema.Strict):
 
     kind: Literal["svn_publish"] = schema.Field(alias="kind")
     svn_revision: int = schema.description("The SVN revision number that the publish landed in")
-    target_url: str = schema.description("The SVN target URL the publish was sent to")
     message: str = schema.description("A short status message describing the publish outcome")
 
 

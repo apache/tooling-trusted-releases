@@ -18,6 +18,7 @@
 import pytest
 
 import atr.config as config
+import atr.constants as constants
 import atr.models.args as args
 import atr.models.results as results
 import atr.models.safe as safe
@@ -25,19 +26,76 @@ import atr.models.sql as sql
 import atr.util as util
 
 
-def test_svn_production_target_url() -> None:
-    assert util.svn_production_target_url("https://dist.apache.org/repos/dist/release/") is True
-    assert util.svn_production_target_url("https://dist.apache.org/repos/dist/atr/") is False
+class FakeResponse:
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+    async def __aenter__(self) -> "FakeResponse":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
 
 
-def test_svn_production_target_url_rejects_unsupported_urls() -> None:
-    for url in (
-        "svn://dist.apache.org/repos/dist/atr",
-        "https://dist.apache.org/repos/dist/dev/",
-        "https://example.invalid/somewhere",
-    ):
-        with pytest.raises(ValueError):
-            util.svn_production_target_url(url)
+class FakeSession:
+    def __init__(self, head_status: int) -> None:
+        self.head_status = head_status
+        self.head_urls: list[str] = []
+
+    async def __aenter__(self) -> "FakeSession":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
+
+    def head(self, url: str, **kwargs: object) -> FakeResponse:
+        self.head_urls.append(url)
+        return FakeResponse(self.head_status)
+
+
+async def test_check_propagation_production_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FakeSession(200)
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+
+    summary = await util.check_propagation(
+        util.SvnPublishTarget.RELEASE,
+        f"{constants.DOWNLOADS_APACHE_URL}/project",
+        ["artifact.tar.gz"],
+    )
+
+    assert summary.reachable == 1
+    assert summary.outcomes[0].public_url == f"{constants.DOWNLOADS_APACHE_URL}/project/artifact.tar.gz"
+
+
+async def test_check_propagation_test_target_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FakeSession(200)
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+
+    summary = await util.check_propagation(
+        util.SvnPublishTarget.ATR,
+        f"{constants.SVN_DIST_PUBLIC_URL}/project",
+        ["artifact.tar.gz"],
+    )
+
+    assert summary.reachable == 1
+    assert summary.outcomes[0].public_url == f"{constants.SVN_DIST_PUBLIC_URL}/project/artifact.tar.gz"
+
+
+def test_svn_publish_internal_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr")
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    target_url = util.svn_publish_internal_url(committee, safe.RelPath("apple-1.0"))
+
+    assert target_url == "https://internal.example.invalid/repos/dist/atr/apple/apple-1.0"
+
+
+def test_svn_publish_internal_url_rejects_missing_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    with pytest.raises(ValueError):
+        util.svn_publish_internal_url(committee, None)
 
 
 def test_svn_publish_models_round_trip() -> None:
@@ -46,12 +104,10 @@ def test_svn_publish_models_round_trip() -> None:
         project_key="apple",
         version_key="1.0",
         revision_number="00001",
-        target_url="https://dist.apache.org/repos/dist/atr/apple",
     )
     result = results.SvnPublish(
         kind="svn_publish",
         svn_revision=12345,
-        target_url=task_args.target_url,
         message="ok",
     )
     restored = results.ResultsAdapter.validate_python(result.model_dump())
@@ -63,18 +119,22 @@ def test_svn_publish_models_round_trip() -> None:
     assert sql.TaskType.SVN_PUBLISH.label == "SVN publish"
 
 
-def test_svn_publish_target_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr")
+def test_svn_publish_public_url() -> None:
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    target_url = util.svn_publish_target_url(committee, safe.RelPath("apple-1.0"))
+    target_url = util.svn_publish_public_url(util.SvnPublishTarget.ATR, committee, safe.RelPath("apple-1.0"))
 
-    assert target_url == "https://dist.apache.org/repos/dist/atr/apple/apple-1.0"
+    assert target_url == f"{constants.SVN_DIST_PUBLIC_URL}/apple/apple-1.0"
 
 
-def test_svn_publish_target_url_rejects_missing_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
-    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+def test_svn_publish_target_from_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+
+    assert util.svn_publish_target() == util.SvnPublishTarget.RELEASE
+
+
+def test_svn_publish_target_rejects_unknown_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/dev")
 
     with pytest.raises(ValueError):
-        util.svn_publish_target_url(committee, None)
+        util.svn_publish_target()

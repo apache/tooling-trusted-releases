@@ -17,6 +17,10 @@
 
 from typing import Final
 
+DOWNLOADS_APACHE_URL: Final[str] = "https://downloads.apache.org"
+SVN_DIST_PUBLIC_URL: Final[str] = "https://dist.apache.org/repos/dist/atr"
+SVN_DIST_ROOT_URL: Final[str] = "https://dist.apache.org/repos/dist"
+
 APACHE_LICENSE_2_0: Final[str] = """\
 
                                  Apache License

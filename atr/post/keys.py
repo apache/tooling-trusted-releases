@@ -26,6 +26,7 @@ import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
+import atr.constants as constants
 import atr.db as db
 import atr.form as form
 import atr.get as get
@@ -41,8 +42,6 @@ import atr.storage.outcome as outcome
 import atr.storage.types as types
 import atr.util as util
 import atr.web as web
-
-_KEYS_BASE_URL: Final[str] = "https://downloads.apache.org"
 
 # The Apache Subversion KEYS file is largest at 3732091 bytes
 _MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
@@ -270,8 +269,8 @@ async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.Ad
 
 def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
     if is_podling:
-        return f"{_KEYS_BASE_URL}/incubator/{committee_key}/KEYS"
-    return f"{_KEYS_BASE_URL}/{committee_key}/KEYS"
+        return f"{constants.DOWNLOADS_APACHE_URL}/incubator/{committee_key}/KEYS"
+    return f"{constants.DOWNLOADS_APACHE_URL}/{committee_key}/KEYS"
 
 
 async def _delete_openpgp_key(

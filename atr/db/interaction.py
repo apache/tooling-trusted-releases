@@ -590,7 +590,6 @@ async def release_in_flight_svn_publish_task(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
-    target_url: str | None = None,
     caller_data: db.Session | None = None,
 ) -> sql.Task | None:
     """Return the most recent queued or active SVN_PUBLISH task."""
@@ -606,8 +605,6 @@ async def release_in_flight_svn_publish_task(
             .order_by(via(sql.Task.added).desc())
             .limit(1)
         )
-        if target_url is not None:
-            query = query.where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.target_url") == target_url)
         return (await data.execute(query)).scalar_one_or_none()
 
 
@@ -615,7 +612,6 @@ async def release_latest_failed_svn_publish_task(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     revision_number: safe.RevisionNumber,
-    target_url: str | None = None,
     caller_data: db.Session | None = None,
 ) -> sql.Task | None:
     """Return the most recently failed SVN_PUBLISH task."""
@@ -631,8 +627,6 @@ async def release_latest_failed_svn_publish_task(
             .order_by(via(sql.Task.added).desc())
             .limit(1)
         )
-        if target_url is not None:
-            query = query.where(sqlalchemy.func.json_extract(sql.Task.task_args, "$.target_url") == target_url)
         return (await data.execute(query)).scalar_one_or_none()
 
 
@@ -1036,8 +1030,10 @@ def _svn_publish_result(task: sql.Task) -> results.SvnPublish | None:
     if isinstance(result, results.SvnPublish):
         return result
     if isinstance(result, dict):
+        candidate = dict(result)
+        candidate.pop("target_url", None)
         try:
-            parsed = results.ResultsAdapter.validate_python(result)
+            parsed = results.ResultsAdapter.validate_python(candidate)
         except pydantic.ValidationError:
             return None
         if isinstance(parsed, results.SvnPublish):

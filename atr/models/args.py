@@ -110,6 +110,18 @@ class Initiate(schema.Strict):
         default=False,
         description="Automatically resolve a Trusted Vote when the voting period ends",
     )
+    automatic_publish_when_resolved: bool = pydantic.Field(
+        default=False,
+        description="Publish the preview revision to SVN automatically when the final approving vote resolves",
+    )
+    automatic_publish_asf_uid: str | None = pydantic.Field(
+        default=None,
+        description="ASF UID to attribute automatic SVN publication to",
+    )
+    download_path_suffix: safe.OptionalRelPath = pydantic.Field(
+        default=None,
+        description="Optional download path suffix carried to publish when automatic publish is selected",
+    )
 
 
 class MaintenanceArgs(schema.Strict):
@@ -194,7 +206,6 @@ class SvnPublish(schema.Strict):
         default=None,
         description="Optional path suffix appended under the committee downloads directory",
     )
-    target_url: str = schema.description("Fully constructed SVN target URL the task will import to")
 
 
 class Update(schema.Strict):

@@ -29,8 +29,6 @@ import atr.db.interaction as interaction
 import atr.models.safe as safe
 import atr.models.sql as sql
 
-TARGET_URL: Final[str] = "https://dist.apache.org/repos/dist/atr/project"
-OTHER_URL: Final[str] = "https://dist.apache.org/repos/dist/atr/other"
 PROJECT: Final[safe.ProjectKey] = safe.ProjectKey("project")
 VERSION: Final[safe.VersionKey] = safe.VersionKey("1.0.0")
 REVISION: Final[safe.RevisionNumber] = safe.RevisionNumber("00001")
@@ -54,19 +52,16 @@ async def test_completed_publish_for_revision_returns_latest_valid_result(sqlite
     async with sqlite_sessionmaker() as data:
         data.add(
             _publish_task(
-                target_url=TARGET_URL,
                 status=sql.TaskStatus.COMPLETED,
                 added=datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
             )
         )
         malformed = _publish_task(
-            target_url=OTHER_URL,
             status=sql.TaskStatus.COMPLETED,
             added=datetime.datetime(2026, 5, 2, tzinfo=datetime.UTC),
         )
         malformed.result = {
             "kind": "svn_publish",
-            "target_url": OTHER_URL,
             "message": "missing revision",
         }
         data.add(malformed)
@@ -77,28 +72,25 @@ async def test_completed_publish_for_revision_returns_latest_valid_result(sqlite
         )
 
         assert result is not None
-        assert result.task_args["target_url"] == TARGET_URL
+        assert "target_url" not in result.task_args
 
 
 async def test_in_flight_publish_returns_newest_queued_or_active_task(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         data.add(
             _publish_task(
-                target_url=OTHER_URL,
                 status=sql.TaskStatus.ACTIVE,
                 added=datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
             )
         )
         data.add(
             _publish_task(
-                target_url=TARGET_URL,
                 status=sql.TaskStatus.QUEUED,
                 added=datetime.datetime(2026, 5, 2, tzinfo=datetime.UTC),
             )
         )
         data.add(
             _publish_task(
-                target_url=TARGET_URL,
                 status=sql.TaskStatus.FAILED,
                 added=datetime.datetime(2026, 5, 3, tzinfo=datetime.UTC),
             )
@@ -106,37 +98,28 @@ async def test_in_flight_publish_returns_newest_queued_or_active_task(sqlite_ses
         await data.commit()
 
         latest = await interaction.release_in_flight_svn_publish_task(PROJECT, VERSION, REVISION, caller_data=data)
-        other_target = await interaction.release_in_flight_svn_publish_task(
-            PROJECT, VERSION, REVISION, OTHER_URL, caller_data=data
-        )
 
         assert latest is not None
-        assert latest.task_args["target_url"] == TARGET_URL
-        assert other_target is not None
-        assert other_target.status == sql.TaskStatus.ACTIVE
+        assert latest.status == sql.TaskStatus.QUEUED
 
 
 async def test_latest_failed_publish_returns_failed_task(sqlite_sessionmaker) -> None:
     async with sqlite_sessionmaker() as data:
         data.add(
             _publish_task(
-                target_url=TARGET_URL,
                 status=sql.TaskStatus.QUEUED,
                 added=datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
             )
         )
         data.add(
             _publish_task(
-                target_url=TARGET_URL,
                 status=sql.TaskStatus.FAILED,
                 added=datetime.datetime(2026, 5, 2, tzinfo=datetime.UTC),
             )
         )
         await data.commit()
 
-        result = await interaction.release_latest_failed_svn_publish_task(
-            PROJECT, VERSION, REVISION, TARGET_URL, caller_data=data
-        )
+        result = await interaction.release_latest_failed_svn_publish_task(PROJECT, VERSION, REVISION, caller_data=data)
 
         assert result is not None
         assert result.status == sql.TaskStatus.FAILED
@@ -144,7 +127,6 @@ async def test_latest_failed_publish_returns_failed_task(sqlite_sessionmaker) ->
 
 def _publish_task(
     *,
-    target_url: str,
     status: sql.TaskStatus,
     added: datetime.datetime,
     revision_number: str = "00001",
@@ -164,7 +146,6 @@ def _publish_task(
         result = {
             "kind": "svn_publish",
             "svn_revision": 42,
-            "target_url": target_url,
             "message": "ok",
         }
     elif status == sql.TaskStatus.FAILED:
@@ -179,7 +160,6 @@ def _publish_task(
             "version_key": version_key,
             "revision_number": revision_number,
             "download_path_suffix": None,
-            "target_url": target_url,
         },
         asf_uid="alice",
         project_key=project_key,

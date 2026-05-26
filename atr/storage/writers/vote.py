@@ -23,6 +23,7 @@ from typing import Literal
 
 import sqlmodel
 
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -309,6 +310,9 @@ class CommitteeParticipant(FoundationCommitter):
         expected_revision: safe.RevisionNumber | None = None,
         notify_when_finished: bool = False,
         automatic_resolve_when_finished: bool = False,
+        automatic_publish_when_resolved: bool = False,
+        automatic_publish_asf_uid: str | None = None,
+        download_path_suffix: safe.RelPath | None = None,
         acknowledged_concerns: frozenset[str] = frozenset(),
     ) -> sql.Task:
         if release is None:
@@ -371,6 +375,17 @@ class CommitteeParticipant(FoundationCommitter):
                         "Automatic vote resolution requires a committee member or release manager initiator",
                         status=403,
                     )
+            if automatic_publish_when_resolved:
+                if not config.get().SVN_PUBLISH_URL:
+                    raise storage.AccessError("Automatic SVN publish is not available on this server", status=403)
+                if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
+                    raise storage.AccessError(
+                        "Automatic SVN publish is only available in email and Trusted Vote modes", status=403
+                    )
+                if self.__asf_uid not in committee.committee_members:
+                    raise storage.AccessError("Automatic SVN publish requires a committee member initiator", status=403)
+                if automatic_publish_asf_uid is None:
+                    automatic_publish_asf_uid = self.__asf_uid
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,
@@ -418,6 +433,9 @@ class CommitteeParticipant(FoundationCommitter):
                     second_round_email_to=second_round_email_to,
                     notify_when_finished=notify_when_finished,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
+                    automatic_publish_when_resolved=automatic_publish_when_resolved,
+                    automatic_publish_asf_uid=automatic_publish_asf_uid,
+                    download_path_suffix=download_path_suffix,
                 ).model_dump(),
                 asf_uid=self.__asf_uid,
                 project_key=str(project_key),
@@ -664,6 +682,7 @@ class ReleaseManager(CommitteeParticipant):
         extra_destination = None
         second_round_vote_seq = None
         second_round_vote_mode = None
+        publish_enqueue_error: str | None = None
         if (voting_round == 1) and (vote_result == "passed"):
             try:
                 # This is the first podling vote, by the PPMC and not the Incubator PMC
@@ -709,6 +728,20 @@ class ReleaseManager(CommitteeParticipant):
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options
                 )
+                carried_publish_when_resolved = bool(
+                    latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
+                )
+                carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
+                if not isinstance(carried_publish_asf_uid, str):
+                    carried_publish_asf_uid = latest_vote_task.task_args.get("initiator_id")
+                if not isinstance(carried_publish_asf_uid, str):
+                    carried_publish_asf_uid = self.__asf_uid
+                carried_download_path_suffix_raw = latest_vote_task.task_args.get("download_path_suffix")
+                carried_download_path_suffix = (
+                    safe.RelPath(carried_download_path_suffix_raw)
+                    if isinstance(carried_download_path_suffix_raw, str)
+                    else None
+                )
                 second_round_task = await self.start(
                     email_to=incubator_vote_address,
                     permitted_recipients=[incubator_vote_address],
@@ -723,6 +756,9 @@ class ReleaseManager(CommitteeParticipant):
                     expected_revision=release.safe_latest_revision_number,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
                     notify_when_finished=notify_when_finished,
+                    automatic_publish_when_resolved=carried_publish_when_resolved,
+                    automatic_publish_asf_uid=carried_publish_asf_uid,
+                    download_path_suffix=carried_download_path_suffix,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -752,12 +788,18 @@ class ReleaseManager(CommitteeParticipant):
             success_message = "Vote marked as passed"
 
             description = "Create a preview revision from the last candidate draft"
-            await self.__write_as.revision.create_revision_with_quarantine(
+            preview_revision = await self.__write_as.revision.create_revision_with_quarantine(
                 project_key,
                 release.safe_version_key,
                 self.__asf_uid,
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
                 description=description,
+            )
+            publish_enqueue_error = await self.__enqueue_automatic_svn_publish(
+                project_key,
+                release.safe_version_key,
+                preview_revision,
+                latest_vote_task,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -788,6 +830,11 @@ class ReleaseManager(CommitteeParticipant):
             extra_destination=extra_destination,
             bcc_private_list=bcc_private_list,
         )
+        if publish_enqueue_error is not None:
+            if error_message is None:
+                error_message = publish_enqueue_error
+            else:
+                error_message = f"{error_message}; {publish_enqueue_error}"
         # TODO: Could move this up before __send_resolution
         if (second_round_vote_seq is not None) and (second_round_vote_mode is not None):
             self.__write_as.append_to_audit_log(
@@ -915,6 +962,7 @@ class ReleaseManager(CommitteeParticipant):
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
         second_round_vote_seq: int | None = None
+        publish_enqueue_error: str | None = None
         await self.__data.begin_immediate()
         try:
             release = await self.__data.release(
@@ -1001,6 +1049,20 @@ class ReleaseManager(CommitteeParticipant):
                 subject_data, body_data = await construct.start_vote_subject_and_body(
                     subject_template, body_template, options
                 )
+                carried_publish_when_resolved = bool(
+                    latest_vote_task.task_args.get("automatic_publish_when_resolved", False)
+                )
+                carried_publish_asf_uid = latest_vote_task.task_args.get("automatic_publish_asf_uid")
+                if not isinstance(carried_publish_asf_uid, str):
+                    carried_publish_asf_uid = latest_vote_task.task_args.get("initiator_id")
+                if not isinstance(carried_publish_asf_uid, str):
+                    carried_publish_asf_uid = self.__asf_uid
+                carried_download_path_suffix_raw = latest_vote_task.task_args.get("download_path_suffix")
+                carried_download_path_suffix = (
+                    safe.RelPath(carried_download_path_suffix_raw)
+                    if isinstance(carried_download_path_suffix_raw, str)
+                    else None
+                )
                 second_round_task = await self.start(
                     email_to=incubator_vote_address,
                     permitted_recipients=[incubator_vote_address],
@@ -1015,6 +1077,9 @@ class ReleaseManager(CommitteeParticipant):
                     expected_revision=release.safe_latest_revision_number,
                     automatic_resolve_when_finished=automatic_resolve_when_finished,
                     notify_when_finished=notify_when_finished,
+                    automatic_publish_when_resolved=carried_publish_when_resolved,
+                    automatic_publish_asf_uid=carried_publish_asf_uid,
+                    download_path_suffix=carried_download_path_suffix,
                 )
                 second_round_vote_seq = second_round_task.task_args["vote_seq"]
                 if not isinstance(second_round_vote_seq, int):
@@ -1059,12 +1124,18 @@ class ReleaseManager(CommitteeParticipant):
         extra_destination = None
         if (vote_result == "passed") and (voting_round != 1):
             description = "Create a preview revision from the last candidate draft"
-            await self.__write_as.revision.create_revision_with_quarantine(
+            preview_revision = await self.__write_as.revision.create_revision_with_quarantine(
                 project_key,
                 release.safe_version_key,
                 self.__asf_uid,
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
                 description=description,
+            )
+            publish_enqueue_error = await self.__enqueue_automatic_svn_publish(
+                project_key,
+                release.safe_version_key,
+                preview_revision,
+                latest_vote_task,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -1084,6 +1155,11 @@ class ReleaseManager(CommitteeParticipant):
                 extra_destination=extra_destination,
                 bcc_private_list=bcc_private_list,
             )
+        if publish_enqueue_error is not None:
+            if error_message is None:
+                error_message = publish_enqueue_error
+            else:
+                error_message = f"{error_message}; {publish_enqueue_error}"
 
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
@@ -1175,6 +1251,43 @@ class ReleaseManager(CommitteeParticipant):
             )
         )
         await self.__data.execute(auto_resolve_stmt)
+
+    async def __enqueue_automatic_svn_publish(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        preview_result: sql.Revision | sql.Quarantined,
+        vote_task_with_publish_options: sql.Task | None,
+    ) -> str | None:
+        if not isinstance(preview_result, sql.Revision):
+            return None
+        if vote_task_with_publish_options is None:
+            return None
+        if not config.get().SVN_PUBLISH_URL:
+            return None
+        if not bool(vote_task_with_publish_options.task_args.get("automatic_publish_when_resolved", False)):
+            return None
+        try:
+            download_path_suffix_raw = vote_task_with_publish_options.task_args.get("download_path_suffix")
+            download_path_suffix = (
+                safe.RelPath(download_path_suffix_raw) if isinstance(download_path_suffix_raw, str) else None
+            )
+            publisher_asf_uid = vote_task_with_publish_options.task_args.get("automatic_publish_asf_uid")
+            if not isinstance(publisher_asf_uid, str):
+                publisher_asf_uid = vote_task_with_publish_options.task_args.get("initiator_id")
+            if not isinstance(publisher_asf_uid, str):
+                publisher_asf_uid = self.__asf_uid
+            await self.__write_as.release.publish_to_svn(
+                project_key,
+                version_key,
+                preview_result.safe_number,
+                download_path_suffix,
+                publisher_asf_uid=publisher_asf_uid,
+            )
+        except Exception as exc:
+            log.warning(f"Automatic SVN publish enqueue skipped for {project_key!s} {version_key!s}: {exc}")
+            return f"Automatic SVN publish was not queued: {exc}"
+        return None
 
     # def __committee_member_or_admin(self, committee: sql.Committee, asf_uid: str) -> None:
     #     if not (user.is_committee_member(committee, asf_uid) or user.is_admin(asf_uid)):

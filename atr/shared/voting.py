@@ -54,6 +54,16 @@ class StartVotingForm(form.Form):
         widget=form.Widget.CUSTOM,
         default=False,
     )
+    automatic_publish_when_resolved: form.Bool = form.label(
+        "Automatically publish to SVN when this vote resolves",
+        widget=form.Widget.CUSTOM,
+        default=False,
+    )
+    download_path_suffix: safe.OptionalRelPath = form.label(
+        "Download path suffix",
+        "Optional path under the committee downloads area.",
+        default=None,
+    )
     concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)
     rendered_revision: safe.RevisionNumber = form.label("Rendered revision", widget=form.Widget.HIDDEN)

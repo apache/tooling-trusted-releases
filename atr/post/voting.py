@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Literal
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -30,6 +31,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -136,6 +138,15 @@ async def selected(  # noqa: C901
         if notify_error is not None:
             return notify_error
 
+        publish_error = await _publish_opt_in_error(
+            session,
+            start_voting_form,
+            vote_mode,
+            committee,
+        )
+        if publish_error is not None:
+            return publish_error
+
         permitted_recipients = util.permitted_podling_first_round_recipients(
             session.uid,
             committee.key,
@@ -207,6 +218,12 @@ async def selected(  # noqa: C901
                     expected_revision=start_voting_form.rendered_revision,
                     notify_when_finished=start_voting_form.notify_when_finished,
                     automatic_resolve_when_finished=start_voting_form.automatic_resolve_when_finished,
+                    automatic_publish_when_resolved=start_voting_form.automatic_publish_when_resolved,
+                    download_path_suffix=(
+                        start_voting_form.download_path_suffix
+                        if start_voting_form.automatic_publish_when_resolved
+                        else None
+                    ),
                     acknowledged_concerns=frozenset(start_voting_form.concerns_noted),
                 )
         except storage.AccessError as e:
@@ -248,5 +265,31 @@ async def _notify_opt_in_error(
         return await session.form_error(
             "automatic_resolve_when_finished",
             "Automatic vote resolution is not available for the first round of podling votes.",
+        )
+    return None
+
+
+async def _publish_opt_in_error(
+    session: web.Committer,
+    start_voting_form: shared.voting.StartVotingForm,
+    vote_mode: sql.VoteMode,
+    committee: sql.Committee,
+) -> web.WerkzeugResponse | None:
+    if not start_voting_form.automatic_publish_when_resolved:
+        return None
+    if not config.get().SVN_PUBLISH_URL:
+        return await session.form_error(
+            "automatic_publish_when_resolved",
+            "Automatic SVN publish is not available on this server.",
+        )
+    if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
+        return await session.form_error(
+            "automatic_publish_when_resolved",
+            "Automatic SVN publish is only available in email and Trusted Vote modes.",
+        )
+    if not user.is_committee_member(committee, session.uid):
+        return await session.form_error(
+            "automatic_publish_when_resolved",
+            "Automatic SVN publish requires a committee member initiator.",
         )
     return None

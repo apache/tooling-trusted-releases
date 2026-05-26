@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
-import re
 from typing import Final
 
 import aiofiles.os
@@ -33,14 +32,15 @@ import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
 import atr.models.basic as basic
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
 import atr.util as util
@@ -198,36 +198,41 @@ class CommitteeMember(CommitteeParticipant):
             raise storage.AccessError("Release already exists", status=409)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
+        published_revision: int | None = None
+        effective_download_path_suffix = download_path_suffix
+        if config.get().SVN_PUBLISH_URL:
+            completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
+                project_key,
+                release.safe_version_key,
+                preview_revision_number,
+                caller_data=self.__data,
+            )
+            if completed_publish is None:
+                log.warning(
+                    f"SVN publication has not completed for {project_key!s} {version_key!s} "
+                    f"{preview_revision_number!s}; checking configured target"
+                )
+            else:
+                effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
+                published_revision = self.__publish_revision_from_task(completed_publish)
+                if published_revision is None:
+                    log.warning(
+                        f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
+                        "is recorded but has no revision number"
+                    )
+            try:
+                target = util.svn_publish_target()
+                public_url = util.svn_publish_public_url(target, committee, effective_download_path_suffix)
+            except ValueError as exc:
+                log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
+            else:
+                await self.__warn_publication_artifacts(unfinished_path, target, public_url)
         preserve = release.project.policy_preserve_download_files
         if preserve is True:
-            await self.__hard_link_downloads(committee, unfinished_path, download_path_suffix, dry_run=True)
+            await self.__hard_link_downloads(committee, unfinished_path, effective_download_path_suffix, dry_run=True)
 
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
-
-        published_revision: int | None = None
-        if svn_publish_url := config.get().SVN_PUBLISH_URL:
-            svn_relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
-            if download_path_suffix is not None:
-                svn_relpath = svn_relpath / download_path_suffix.as_path()
-            target_url = f"{svn_publish_url.rstrip('/')}/{svn_relpath}"
-            log_message = (
-                f"Publish {project_key!s}-{version_key!s}\n\n"
-                f"Committee: {committee.key}\n"
-                f"Project: {project_key!s}\n"
-                f"Version: {version_key!s}\n"
-                "Tool: ATR"
-            )
-            try:
-                published_revision = await svn.publish_release(
-                    unfinished_path.path, target_url, self.__asf_uid, log_message
-                )
-            except svn.CommandExecutionError as e:
-                if "E160020" in e.output:
-                    match = re.search(r"path '([^']+)'", e.output)
-                    detail = f": {match.group(1)}" if match else ""
-                    raise storage.AccessError(f"Release file already exists in SVN{detail}", status=409) from e
-                raise storage.AccessError("SVN publish failed; release was not announced", status=500) from e
 
         try:
             # Move the release files from somewhere in unfinished to somewhere in finished
@@ -261,7 +266,7 @@ class CommitteeMember(CommitteeParticipant):
         await self.__hard_link_downloads(
             committee,
             finished_path,
-            download_path_suffix,
+            effective_download_path_suffix,
             preserve=preserve,
         )
 
@@ -309,6 +314,39 @@ class CommitteeMember(CommitteeParticipant):
                 status=500,
             )
 
+    async def __warn_publication_artifacts(
+        self,
+        unfinished_path: safe.StatePath,
+        target: util.SvnPublishTarget,
+        public_url: str,
+    ) -> None:
+        rel_paths = await self.__artifact_rel_paths(unfinished_path)
+        if not rel_paths:
+            return
+        summary = await util.check_propagation(target, public_url, rel_paths)
+        if summary.reachable != summary.total:
+            first = summary.first_failure
+            detail = first.rel_path if (first is not None) else "unknown"
+            url = first.public_url if (first is not None) else public_url
+            log.warning(
+                f"SVN publication artifact check incomplete for {public_url}; first failing path: {detail}; URL: {url}"
+            )
+
+    async def __artifact_rel_paths(self, preview_path: safe.StatePath) -> list[str]:
+        rel_paths: list[str] = []
+        async for rel in util.paths_recursive(preview_path):
+            rel_str = str(rel)
+            if analysis.is_artifact(rel_str):
+                rel_paths.append(rel_str)
+        rel_paths.sort()
+        return rel_paths[: util.MAX_PROPAGATION_ARTIFACTS]
+
+    def __download_path_suffix_from_task(self, task: sql.Task) -> safe.RelPath | None:
+        candidate = task.task_args.get("download_path_suffix")
+        if isinstance(candidate, str) and candidate:
+            return safe.RelPath(candidate)
+        return None
+
     async def __hard_link_downloads(
         self,
         committee: sql.Committee,
@@ -331,6 +369,16 @@ class CommitteeMember(CommitteeParticipant):
             exist_ok=not preserve,
             dry_run=dry_run,
         )
+
+    def __publish_revision_from_task(self, task: sql.Task) -> int | None:
+        result = task.result
+        if isinstance(result, results.SvnPublish):
+            return result.svn_revision
+        if isinstance(result, dict):
+            candidate = result.get("svn_revision")
+            if isinstance(candidate, int):
+                return candidate
+        return None
 
     def __predicted_finished_release(self, release: sql.Release, release_date: datetime.datetime) -> sql.Release:
         # Taking a deep copy stops this from being a SQLAlchemy proxy object

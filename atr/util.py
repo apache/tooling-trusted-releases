@@ -24,6 +24,7 @@ import datetime
 import email.parser
 import email.policy
 import email.utils
+import enum
 import fcntl
 import hashlib
 import json
@@ -51,6 +52,7 @@ import quart
 # NOTE: The atr.db module imports this module
 # Therefore, this module must not import atr.db
 import atr.config as config
+import atr.constants as constants
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.safe as safe
@@ -96,8 +98,7 @@ PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
 )
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
-SVN_PUBLISH_PATH_PRODUCTION: Final[str] = "/repos/dist/release"
-SVN_PUBLISH_PATH_TEST: Final[str] = "/repos/dist/atr"
+MAX_PROPAGATION_ARTIFACTS: Final[int] = 24
 EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
 EXPECTED_DEFAULT_TLS_MINIMUM_VERSION: Final[ssl.TLSVersion] = ssl.TLSVersion.TLSv1_2
 EXPECTED_DEFAULT_TLS_VERIFY_MODE: Final[ssl.VerifyMode] = ssl.CERT_REQUIRED
@@ -140,6 +141,35 @@ class ConcernGroup:
     checker: str
     label: str
     count: int
+
+
+@dataclasses.dataclass(frozen=True)
+class PropagationOutcome:
+    rel_path: str
+    public_url: str
+    ok: bool
+    status: int | None
+    error: str | None
+
+
+@dataclasses.dataclass(frozen=True)
+class PropagationSummary:
+    target: "SvnPublishTarget"
+    total: int
+    reachable: int
+    outcomes: list[PropagationOutcome]
+
+    @property
+    def first_failure(self) -> PropagationOutcome | None:
+        for outcome in self.outcomes:
+            if not outcome.ok:
+                return outcome
+        return None
+
+
+class SvnPublishTarget(enum.Enum):
+    ATR = "atr"
+    RELEASE = "release"
 
 
 class EmailRecipients(Protocol):
@@ -264,6 +294,25 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
         with contextlib.suppress(FileNotFoundError):
             await aiofiles.os.remove(temp_path)
         raise
+
+
+async def check_propagation(
+    target: SvnPublishTarget,
+    public_base_url: str,
+    rel_paths: Sequence[str],
+) -> PropagationSummary:
+    capped = list(rel_paths[:MAX_PROPAGATION_ARTIFACTS])
+    if not capped:
+        return PropagationSummary(target=target, total=0, reachable=0, outcomes=[])
+    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as http_session:
+        outcomes = await asyncio.gather(
+            *[
+                _propagation_probe(http_session, rel_path, _propagation_public_url(public_base_url, rel_path))
+                for rel_path in capped
+            ]
+        )
+    reachable = sum(1 for outcome in outcomes if outcome.ok)
+    return PropagationSummary(target=target, total=len(outcomes), reachable=reachable, outcomes=outcomes)
 
 
 def checker_display_name(checker: str) -> str:
@@ -1011,23 +1060,7 @@ def submitted_concerns_from_flash(flash_data: dict[str, Any]) -> list[str]:
     return []
 
 
-def svn_production_target_url(url: str) -> bool:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError(f"SVN_PUBLISH_URL must use http or https, got {parsed.scheme!r}")
-    if not parsed.netloc:
-        raise ValueError("SVN_PUBLISH_URL must have a host")
-    path = parsed.path.rstrip("/")
-    if (path == SVN_PUBLISH_PATH_PRODUCTION) or path.startswith(SVN_PUBLISH_PATH_PRODUCTION + "/"):
-        return True
-    if (path == SVN_PUBLISH_PATH_TEST) or path.startswith(SVN_PUBLISH_PATH_TEST + "/"):
-        return False
-    raise ValueError(
-        f"SVN_PUBLISH_URL path must be under {SVN_PUBLISH_PATH_PRODUCTION} or {SVN_PUBLISH_PATH_TEST}, got {path!r}"
-    )
-
-
-def svn_publish_target_url(
+def svn_publish_internal_url(
     committee: sql.Committee,
     download_path_suffix: safe.RelPath | None,
 ) -> str:
@@ -1038,6 +1071,31 @@ def svn_publish_target_url(
     if download_path_suffix is not None:
         relpath = relpath / download_path_suffix.as_path()
     return f"{publish_url.rstrip('/')}/{relpath}"
+
+
+def svn_publish_public_url(
+    target: SvnPublishTarget,
+    committee: sql.Committee,
+    download_path_suffix: safe.RelPath | None,
+) -> str:
+    relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
+    if download_path_suffix is not None:
+        relpath = relpath / download_path_suffix.as_path()
+    match target:
+        case SvnPublishTarget.RELEASE:
+            base_url = constants.DOWNLOADS_APACHE_URL
+        case SvnPublishTarget.ATR:
+            base_url = constants.SVN_DIST_PUBLIC_URL
+    return f"{base_url.rstrip('/')}/{relpath}"
+
+
+def svn_publish_target() -> SvnPublishTarget:
+    public_path = urllib.parse.urlparse(constants.SVN_DIST_PUBLIC_URL).path.rstrip("/")
+    if public_path.endswith("/atr"):
+        return SvnPublishTarget.ATR
+    if public_path.endswith("/release"):
+        return SvnPublishTarget.RELEASE
+    raise ValueError("SVN_DIST_PUBLIC_URL must be an atr or release dist URL")
 
 
 async def task_archive_url(task_mid: str, recipient: str | None = None) -> str | None:
@@ -1481,6 +1539,36 @@ def _npm_pack_parse_package_json(raw: bytes) -> tuple[dict[str, Any] | None, str
         return None, "package/package.json is not a JSON object"
 
     return parsed, None
+
+
+async def _propagation_probe(
+    http_session: aiohttp.ClientSession,
+    rel_path: str,
+    public_url: str,
+) -> PropagationOutcome:
+    try:
+        async with http_session.head(public_url, allow_redirects=True) as resp:
+            status = resp.status
+            ok = 200 <= status < 300
+            return PropagationOutcome(
+                rel_path=rel_path,
+                public_url=public_url,
+                ok=ok,
+                status=status,
+                error=None if ok else f"HTTP {status}",
+            )
+    except aiohttp.ClientError as exc:
+        return PropagationOutcome(rel_path=rel_path, public_url=public_url, ok=False, status=None, error=str(exc))
+    except TimeoutError as exc:
+        return PropagationOutcome(
+            rel_path=rel_path, public_url=public_url, ok=False, status=None, error=f"timeout: {exc}"
+        )
+
+
+def _propagation_public_url(public_base_url: str, rel_path: str) -> str:
+    base = public_base_url.rstrip("/")
+    quoted = urllib.parse.quote(rel_path)
+    return f"{base}/{quoted}"
 
 
 def _thread_message_from_source(mid: str, content: bytes) -> dict[str, Any]:
