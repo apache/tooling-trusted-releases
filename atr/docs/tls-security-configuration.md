@@ -4,7 +4,7 @@
 
 **Prev**: `3.14.` [Input validation](input-validation)
 
-**Next**: `3.16.` [ASFQuart usage](asfquart-usage)
+**Next**: `3.16.` [API documentation policy](api-documentation-policy)
 
 **Sections**:
 

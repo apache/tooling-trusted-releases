@@ -1,8 +1,8 @@
-# 3.16. ASFQuart usage
+# 3.17. ASFQuart usage
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.15.` [TLS security configuration](tls-security-configuration)
+**Prev**: `3.16.` [API documentation policy](api-documentation-policy)
 
 **Next**: (none)
 

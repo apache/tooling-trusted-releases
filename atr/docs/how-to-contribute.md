@@ -2,7 +2,7 @@
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `3.10` [Code policies](code-policies)
+**Prev**: `3.10.` [Code policies](code-policies)
 
 **Next**: `3.12.` [Authentication security](authentication-security)
 
