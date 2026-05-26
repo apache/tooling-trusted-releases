@@ -48,3 +48,10 @@ class FoundationCommitter(GeneralPublic):
             raise ValueError("Not authorized")
         user = await self.__data.user(asf_uid=asf_uid).get()
         return user
+
+    async def user_sessions(self) -> list[sql.UserSession]:
+        asf_uid = self.__asf_uid
+        if asf_uid is None:
+            raise ValueError("Not authorized")
+        user = await self.__data.usersession(uid=asf_uid).all()
+        return list(user)

@@ -209,6 +209,7 @@ async def browse_as_post(
             projects=sorted(set(committer.projects)),
             mfa=session.session.mfa,
             admin_uid=admin_id,
+            ip_address=quart.request.remote_addr,
         )
     )
     log.auth_event("impersonate", admin_id, as_user=committer.uid)

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 from typing import Literal
 
 import quart
@@ -23,6 +24,7 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.form as form
 import atr.htm as htm
+import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
 import atr.template as template
@@ -120,6 +122,53 @@ async def preferences(session: web.Committer, _user_preferences: Literal["user/p
     )
     block.append(prefs_form)
     return await template.blank("User preferences", content=block.collect())
+
+
+@get.typed
+async def sessions(_session: web.Committer, _user_sessions: Literal["user/sessions"]) -> str:
+    """
+    URL: /user/sessions
+    """
+
+    sessions: list[sql.UserSession] = []
+    async with storage.read_as_foundation_committer() as rafc:
+        sessions = sorted(await rafc.user.user_sessions(), key=lambda s: s.last_account_check or s.cts, reverse=True)
+
+    block = htm.Block()
+    block.h1["User sessions"]
+    block.p["Below is a list of your recent sessions"]
+
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.d-flex.justify-content-between.align-items-center")[htm.h3(".mb-0")["Sessions"]]
+
+    tbody = htm.Block(htm.tbody)
+    for session in sessions:
+        tbody.tr[
+            htm.td[session.uid],
+            htm.td[datetime.datetime.fromtimestamp(session.cts).strftime("%Y-%m-%d %H:%M:%S")],
+            htm.td[datetime.datetime.fromtimestamp(session.last_account_check).strftime("%Y-%m-%d %H:%M:%S")]
+            if session.last_account_check
+            else "",
+            htm.td[session.ip_address or "unknown"],
+        ]
+
+    card.div(".card-body")[
+        htm.div(".table-responsive")[
+            htm.table(".table.table-striped")[
+                htm.thead[
+                    htm.tr[
+                        htm.th["User ID"],
+                        htm.th["Created"],
+                        htm.th["Last verified"],
+                        htm.th["IP Address"],
+                    ]
+                ],
+                tbody.collect(),
+            ]
+        ]
+    ]
+    block.append(card)
+    return await template.blank("User sessions", content=block.collect())
 
 
 @get.typed

@@ -43,6 +43,10 @@ async def store(monkeypatch):
 
     monkeypatch.setattr(sessions.config, "get", lambda: _MOCK_CONFIG)
 
+    mock_request = mock.MagicMock()
+    mock_request.remote_addr = "127.0.0.1"
+    monkeypatch.setattr("quart.request", mock_request)
+
     global _COUNTER
     _COUNTER = 0
 

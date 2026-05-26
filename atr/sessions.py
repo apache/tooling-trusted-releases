@@ -140,8 +140,9 @@ def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:
 class Store:
     async def create(self, hsid: str, session_data: dict[str, Any]) -> None:
         prepared = _prepare_session_data(session_data)
+        ip_address = quart.request.remote_addr
         now = time.time()
-        user_session = sql.UserSession(sid_hash=hsid, cts=now, uts=now, **prepared)
+        user_session = sql.UserSession(sid_hash=hsid, cts=now, uts=now, ip_address=ip_address, **prepared)
         async with db.session() as data:
             data.add(user_session)
             await data.commit()

@@ -703,6 +703,7 @@ class UserSession(sqlmodel.SQLModel, table=True):
     )
     mfa: bool = sqlmodel.Field(default=False)
     is_role: bool = sqlmodel.Field(default=False)
+    ip_address: str | None = sqlmodel.Field(default=None, nullable=True)
     admin_uid: str | None = sqlmodel.Field(default=None, index=True)
     last_account_check: float | None = sqlmodel.Field(default=None)
     downgrade_admin_to_user: bool = sqlmodel.Field(default=False)
