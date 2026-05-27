@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Final
 import sqlmodel
 
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.mail as mail
@@ -39,9 +40,6 @@ NOTICE_KIND_PREVIEW_ESCALATION: Final[str] = "preview_escalation"
 NOTICE_KIND_WARNING: Final[str] = "warning"
 
 _DELETION_ENABLED: Final[bool] = False
-_INACTIVITY_DELETE_DAYS: Final[int] = 90
-_INACTIVITY_WARNING_DAYS: Final[int] = 80
-_SYSTEM_ACTOR: Final[str] = "system"
 _UNFINISHED_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
     {
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
@@ -91,10 +89,10 @@ def classify(
     if release.phase not in _UNFINISHED_PHASES:
         return _plan(release, activity_at, Decision.SKIP)
 
-    if age_days < _INACTIVITY_WARNING_DAYS:
+    if age_days < constants.INACTIVITY_WARNING_DAYS:
         return _plan(release, activity_at, Decision.SKIP)
 
-    if age_days < _INACTIVITY_DELETE_DAYS:
+    if age_days < constants.INACTIVITY_DELETE_DAYS:
         return _plan(release, activity_at, Decision.WARN)
 
     if release.phase == sql.ReleasePhase.RELEASE_PREVIEW:
@@ -150,7 +148,7 @@ async def run_scan() -> Sequence[Plan]:
 
 
 def thresholds() -> tuple[int, int]:
-    return _INACTIVITY_WARNING_DAYS, _INACTIVITY_DELETE_DAYS
+    return constants.INACTIVITY_WARNING_DAYS, constants.INACTIVITY_DELETE_DAYS
 
 
 async def warning_recipients_for(release: sql.Release, data: db.Session) -> list[str]:
@@ -158,7 +156,7 @@ async def warning_recipients_for(release: sql.Release, data: db.Session) -> list
     query = (
         sqlmodel.select(via(sql.Revision.asfuid))
         .where(sql.Revision.release_key == release.key)
-        .where(via(sql.Revision.asfuid) != _SYSTEM_ACTOR)
+        .where(via(sql.Revision.asfuid) != constants.SYSTEM_SERVICE_UID)
         .distinct()
     )
     result = await data.execute(query)
@@ -290,7 +288,7 @@ async def _send_email(*, recipient: str, subject: str, body: str) -> bool:
         log.exception(f"Inactivity mail send failed for {recipient!r} subject={subject!r}")
         return False
     storage.audit(
-        asf_uid=_SYSTEM_ACTOR,
+        asf_uid=constants.SYSTEM_SERVICE_UID,
         email_sender=message.email_sender,
         email_to=message.email_to,
         subject=message.subject,

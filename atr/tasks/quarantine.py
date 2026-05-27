@@ -33,6 +33,7 @@ import exarch
 import atr.archives as archives
 import atr.attestable as attestable
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.detection as detection
 import atr.hashes as hashes
@@ -302,7 +303,7 @@ async def _mark_failed(
         log.error(f"Quarantine {quarantined.id} failed: {message}")
     else:
         log.error(f"Quarantine {quarantined.id} failed safety checks")
-    if (not asf_uid) or (asf_uid == "system"):
+    if (not asf_uid) or (asf_uid == constants.SYSTEM_SERVICE_UID):
         return
     reason = message or "safety checks failed"
     location_parts = [part for part in (project_key, version_key) if part]

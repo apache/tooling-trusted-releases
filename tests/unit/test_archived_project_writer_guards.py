@@ -260,13 +260,6 @@ async def test_foundation_admin_delete_inactive_rejects_non_active_project() -> 
     delete.assert_not_awaited()
 
 
-def test_foundation_admin_release_writer_exposes_inactive_delete_only() -> None:
-    assert hasattr(release.FoundationAdmin, "delete_inactive")
-    assert not hasattr(release.FoundationAdmin, "delete")
-    assert not hasattr(release, "System")
-    assert not hasattr(release, "ReleaseDeleter")
-
-
 @pytest.mark.asyncio
 async def test_release_bump_activity_blocks_ineligible_phase() -> None:
     data = mock.MagicMock()

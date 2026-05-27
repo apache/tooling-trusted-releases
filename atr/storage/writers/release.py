@@ -33,6 +33,7 @@ import sqlmodel
 
 import atr.analysis as analysis
 import atr.config as config
+import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
@@ -1383,8 +1384,6 @@ class FoundationAdmin(FoundationCommitter):
 
     BLOCKING_TASK_STATUSES: Final[frozenset[sql.TaskStatus]] = frozenset({sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE})
 
-    INACTIVITY_DELETE_DAYS: Final[int] = 90
-
     def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session) -> None:
         super().__init__(write, write_as, data)
         self.__write = write
@@ -1560,10 +1559,8 @@ class FoundationAdmin(FoundationCommitter):
             return f"release phase {release.phase.value} is not eligible for system deletion"
         now = datetime.datetime.now(datetime.UTC)
         age_days = (now - release.activity_at).days
-        if age_days < FoundationAdmin.INACTIVITY_DELETE_DAYS:
-            return (
-                f"release activity is only {age_days} days old; threshold is {FoundationAdmin.INACTIVITY_DELETE_DAYS}"
-            )
+        if age_days < constants.INACTIVITY_DELETE_DAYS:
+            return f"release activity is only {age_days} days old; threshold is {constants.INACTIVITY_DELETE_DAYS}"
         if await self.__has_blocking_tasks(release):
             return "release has queued or active tasks"
         if await self.__has_blocking_quarantine(release):
