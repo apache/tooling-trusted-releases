@@ -1,4 +1,4 @@
-atr:
+project:
   metadata:
     committee: tooling
     name: Apache Trusted Releases
@@ -18,7 +18,7 @@ atr:
     programming_languages:
       - python
   features:
-    sync: true
+    atr_sync: true
 
 github:
   description: "Apache Trusted Releases"
