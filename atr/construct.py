@@ -276,7 +276,7 @@ def checklist_template_variables() -> list[tuple[str, str]]:
 
 
 def finish_vote_body(body: str, values: _FinishVoteValues) -> str:
-    return _substitute(body, values, "finish_vote")
+    return re.sub(r"\n{3,}", "\n\n", _substitute(body, values, "finish_vote"))
 
 
 def finish_vote_template_variables() -> list[tuple[str, str]]:

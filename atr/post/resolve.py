@@ -49,7 +49,8 @@ async def selected(
             writer_result = "cancelled"
 
     # GET defers {{OUTCOME}} until now because it depends on the user's selection
-    email_body = submit_form.email_body.replace("{{OUTCOME}}", writer_result)
+    outcome = "was cancelled" if (writer_result == "cancelled") else writer_result
+    email_body = submit_form.email_body.replace("{{OUTCOME}}", outcome)
 
     automatic_resolve_when_finished = _read_auto_resolve_flag(submit_form)
     notify_when_finished = _read_notify_flag(submit_form)
