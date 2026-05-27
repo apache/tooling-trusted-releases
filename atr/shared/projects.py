@@ -202,6 +202,10 @@ class VotePolicyForm(form.Form):
         "Start vote template",
         widget=form.Widget.CUSTOM,
     )
+    finish_vote_template: str = form.label(
+        "Finish vote template",
+        widget=form.Widget.CUSTOM,
+    )
 
     @pydantic.model_validator(mode="after")
     def validate_vote_fields(self) -> VotePolicyForm:

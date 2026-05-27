@@ -326,6 +326,7 @@ class PolicyGetResults(schema.Strict):
     policy_source_artifact_paths: list[str]
     policy_start_vote_subject: str
     policy_start_vote_template: str
+    policy_finish_vote_template: str
     policy_vote_comment_template: str
 
 
@@ -354,6 +355,7 @@ class PolicyArgsBase(schema.Strict):
     source_excludes_rat: list[str] | None = None
     start_vote_subject: str | None = None
     start_vote_template: str | None = None
+    finish_vote_template: str | None = None
     vote_comment_template: str | None = None
     vote_mode: sql.VoteMode | None = None
 

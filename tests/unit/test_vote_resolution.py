@@ -599,6 +599,7 @@ async def test_resolve_page_allows_manual_continuation_when_archive_lookup_fails
     )
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
+        "email_body": "",
         "result_email_to": "dev@project.apache.org",
         "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
@@ -625,6 +626,7 @@ async def test_resolve_page_allows_manual_continuation_when_tabulation_is_invali
     )
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
+        "email_body": "",
         "result_email_to": "dev@project.apache.org",
         "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
@@ -657,6 +659,7 @@ async def test_resolve_page_allows_manual_continuation_when_thread_fetch_fails(
     )
     assert context["resolve_form"] == "FORM"
     assert form_render.call_args.kwargs["defaults"] == {
+        "email_body": "",
         "result_email_to": "dev@project.apache.org",
         "result_subject": "[RESULT] [VOTE] Release Project 1.0.0 <RESOLUTION>",
         "vote_mode": sql.VoteMode.EMAIL,
@@ -1298,6 +1301,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             display_name="Project",
             short_display_name="Project",
             release_policy=None,
+            policy_finish_vote_template="{{ATR_TALLY}}",
             committee=SimpleNamespace(
                 key="project",
                 display_name="Project",

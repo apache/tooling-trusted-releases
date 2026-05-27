@@ -839,6 +839,7 @@ async def policy_get(
         policy_source_artifact_paths=project.policy_source_artifact_paths,
         policy_start_vote_subject=project.policy_start_vote_subject,
         policy_start_vote_template=project.policy_start_vote_template,
+        policy_finish_vote_template=project.policy_finish_vote_template,
         policy_vote_comment_template=project.policy_vote_comment_template,
     ).model_dump(mode="json"), 200
 

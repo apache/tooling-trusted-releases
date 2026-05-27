@@ -54,21 +54,14 @@ def binding_vote_passes(binding_plus_one: int, binding_minus_one: int) -> bool:
     return (binding_plus_one >= 3) and (binding_plus_one > binding_minus_one)
 
 
-def trusted_vote_resolution(
-    release: sql.Release,
+def trusted_tally_block(
     summary: TrustedVoteSummaryData,
-    passed: bool,
-    full_name: str,
-    asf_uid: str,
-    thread_id: str | None,
     binding_label: str = "Binding",
     non_binding_label: str = "Non-binding",
+    thread_id: str | None = None,
+    podling_thread_id: str | None = None,
 ) -> str:
-    return "\n".join(
-        _trusted_vote_resolution_body(
-            release, summary, passed, full_name, asf_uid, thread_id, binding_label, non_binding_label
-        )
-    )
+    return "\n".join(_trusted_tally_block(summary, binding_label, non_binding_label, thread_id, podling_thread_id))
 
 
 async def vote_committee(thread_id: str, release: sql.Release) -> sql.Committee | None:
@@ -137,34 +130,16 @@ def vote_outcome(
     return _vote_outcome_format(duration_hours_remaining, binding_plus_one, binding_minus_one)
 
 
-def vote_resolution(
-    committee: sql.Committee,
-    release: sql.Release,
+def email_tally_block(
     tabulated_votes: dict[str, models.tabulate.VoteEmail],
     summary: dict[str, int],
-    passed: bool,
-    outcome: str,
-    full_name: str,
-    asf_uid: str,
     thread_id: str,
     binding_label: str = "Binding",
     non_binding_label: str = "Non-binding",
+    podling_thread_id: str | None = None,
 ) -> str:
-    """Generate a resolution email body."""
     return "\n".join(
-        _vote_resolution_body(
-            committee,
-            release,
-            tabulated_votes,
-            summary,
-            passed,
-            outcome,
-            full_name,
-            asf_uid,
-            thread_id,
-            binding_label,
-            non_binding_label,
-        )
+        _email_tally_block(tabulated_votes, summary, thread_id, binding_label, non_binding_label, podling_thread_id)
     )
 
 
@@ -355,29 +330,17 @@ def _received_spf_envelope_from(received_spf: list[object]) -> str | None:
     return None
 
 
-def _trusted_vote_resolution_body(
-    release: sql.Release,
+def _trusted_tally_block(
     summary: TrustedVoteSummaryData,
-    passed: bool,
-    full_name: str,
-    asf_uid: str,
-    thread_id: str | None,
     binding_label: str,
     non_binding_label: str,
+    thread_id: str | None,
+    podling_thread_id: str | None,
 ) -> Generator[str]:
-    committee_key = release.project.key
-    if release.podling_thread_id:
-        committee_key = "Incubator"
-    yield f"Dear {committee_key} participants,"
-    yield ""
-    outcome = "passed" if passed else "failed"
-    yield f"The vote on {release.project.key} {release.version} {outcome}."
-    yield ""
-
-    if release.podling_thread_id:
+    if podling_thread_id:
         yield "The previous round of voting is archived at the following URL:"
         yield ""
-        yield f"https://lists.apache.org/thread/{release.podling_thread_id}"
+        yield f"https://lists.apache.org/thread/{podling_thread_id}"
         yield ""
 
     if thread_id is not None:
@@ -395,11 +358,6 @@ def _trusted_vote_resolution_body(
         f"{non_binding_label} votes: +1: {summary.non_binding_votes_yes}, "
         f"0: {summary.non_binding_votes_abstain}, -1: {summary.non_binding_votes_no}."
     )
-    yield ""
-    yield "Thank you for your participation."
-    yield ""
-    yield "Sincerely,"
-    yield f"{full_name} ({asf_uid})"
 
 
 def _validate_thread_id(thread_id: str) -> None:
@@ -519,32 +477,18 @@ def _vote_outcome_format(
     return True, msg
 
 
-def _vote_resolution_body(
-    committee: sql.Committee,
-    release: sql.Release,
+def _email_tally_block(
     tabulated_votes: dict[str, models.tabulate.VoteEmail],
     summary: dict[str, int],
-    passed: bool,
-    outcome: str,
-    full_name: str,
-    asf_uid: str,
     thread_id: str,
     binding_label: str,
     non_binding_label: str,
+    podling_thread_id: str | None,
 ) -> Generator[str]:
-    committee_key = committee.display_name
-    if release.podling_thread_id:
-        committee_key = "Incubator"
-    yield f"Dear {committee_key} participants,"
-    yield ""
-    outcome = "passed" if passed else "failed"
-    yield f"The vote on {release.project.key} {release.version} {outcome}."
-    yield ""
-
-    if release.podling_thread_id:
+    if podling_thread_id:
         yield "The previous round of voting is archived at the following URL:"
         yield ""
-        yield f"https://lists.apache.org/thread/{release.podling_thread_id}"
+        yield f"https://lists.apache.org/thread/{podling_thread_id}"
         yield ""
         yield "The current vote thread is archived at the following URL:"
     else:
@@ -554,10 +498,6 @@ def _vote_resolution_body(
     yield ""
 
     yield from _vote_resolution_body_votes(tabulated_votes, summary, binding_label, non_binding_label)
-    yield "Thank you for your participation."
-    yield ""
-    yield "Sincerely,"
-    yield f"{full_name} ({asf_uid})"
 
 
 def _vote_resolution_body_votes(

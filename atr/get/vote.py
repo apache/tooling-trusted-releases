@@ -634,7 +634,7 @@ async def _render_trusted_vote_authenticated(
             session.uid,
         )
 
-    vote_round = _vote_round(release)
+    vote_round = interaction.trusted_vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
     binding_word, non_binding_word = user.binding_terminology(vote_round)
     potency = binding_word if is_binding else non_binding_word
@@ -696,7 +696,7 @@ async def _render_vote_authenticated(
         await _render_trusted_vote_authenticated(page, release, session, archive_url, vote_recipient, latest_vote_task)
         return
 
-    vote_round = _vote_round(release)
+    vote_round = interaction.trusted_vote_round(release)
     is_binding, binding_committee = await user.is_binding_for_release(release.committee, session.uid, vote_round)
     binding_word, non_binding_word = user.binding_terminology(vote_round)
 
@@ -915,12 +915,6 @@ def _vote_recipient(release: sql.Release, latest_vote_task: sql.Task | None) -> 
     if _is_podling_round_two(release):
         return util.INCUBATOR_GENERAL_ADDRESS
     return f"dev@{release.committee.key}.apache.org"
-
-
-def _vote_round(release: sql.Release) -> int | None:
-    if (release.committee is not None) and release.committee.is_podling:
-        return 2 if (release.podling_thread_id is not None) else 1
-    return None
 
 
 def _voting_committee_membership(binding_committee: str, vote_round: int | None) -> str:

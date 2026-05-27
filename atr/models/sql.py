@@ -962,6 +962,20 @@ Thanks,
         return "[VOTE] Release {{PROJECT_NAME}} {{VERSION}}"
 
     @property
+    def policy_finish_vote_default(self) -> str:
+        return """Dear {{COMMITTEE}} participants,
+
+The vote on {{PROJECT_NAME}} {{VERSION}} {{OUTCOME}}.
+
+{{ATR_TALLY}}
+
+Thank you for your participation.
+
+Sincerely,
+{{YOUR_FULL_NAME}} ({{YOUR_ASF_ID}})
+"""
+
+    @property
     def policy_default_min_hours(self) -> int:
         return 72
 
@@ -1027,6 +1041,12 @@ Thanks,
         if ((policy := self.release_policy) is None) or (policy.start_vote_template == ""):
             return self.policy_start_vote_default
         return policy.start_vote_template
+
+    @property
+    def policy_finish_vote_template(self) -> str:
+        if ((policy := self.release_policy) is None) or (policy.finish_vote_template == ""):
+            return self.policy_finish_vote_default
+        return policy.finish_vote_template
 
     @property
     def policy_binary_artifact_paths(self) -> list[str]:
@@ -1786,6 +1806,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     vote_comment_template: str = sqlmodel.Field(default="")
     start_vote_subject: str = sqlmodel.Field(default="")
     start_vote_template: str = sqlmodel.Field(default="")
+    finish_vote_template: str = sqlmodel.Field(default="")
     announce_release_subject: str = sqlmodel.Field(default="")
     announce_release_template: str = sqlmodel.Field(default="")
     binary_artifact_paths: list[str] = sqlmodel.Field(
@@ -1832,6 +1853,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             vote_comment_template=self.vote_comment_template,
             start_vote_subject=self.start_vote_subject,
             start_vote_template=self.start_vote_template,
+            finish_vote_template=self.finish_vote_template,
             announce_release_subject=self.announce_release_subject,
             announce_release_template=self.announce_release_template,
             binary_artifact_paths=list(self.binary_artifact_paths),

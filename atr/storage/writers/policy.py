@@ -330,6 +330,7 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.vote_comment_template = form.vote_comment_template or ""
             self.__set_start_vote_subject(form.start_vote_subject or "", project, release_policy)
             self.__set_start_vote_template(form.start_vote_template or "", project, release_policy)
+            self.__set_finish_vote_template(form.finish_vote_template or "", project, release_policy)
         elif release_policy.vote_mode != models.sql.VoteMode.MANUAL:
             raise ValueError(f"Unsupported vote mode: {release_policy.vote_mode}")
 
@@ -461,6 +462,22 @@ class CommitteeMember(CommitteeParticipant):
             release_policy.start_vote_template = ""
         else:
             release_policy.start_vote_template = submitted_template
+
+    def __set_finish_vote_template(
+        self,
+        submitted_template: str,
+        project: models.sql.Project,
+        release_policy: models.sql.ReleasePolicy,
+    ) -> None:
+        submitted_template = submitted_template.replace("\r\n", "\n")
+        current_default_text = project.policy_finish_vote_default
+        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
+        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
+
+        if submitted_hash == current_default_hash:
+            release_policy.finish_vote_template = ""
+        else:
+            release_policy.finish_vote_template = submitted_template
 
 
 def _normalise_text_list(values: list[str]) -> list[str]:

@@ -32,7 +32,7 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
 
-type Context = Literal["announce", "announce_subject", "checklist", "vote", "vote_subject"]
+type Context = Literal["announce", "announce_subject", "checklist", "finish_vote", "vote", "vote_subject"]
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -71,6 +71,16 @@ class _ChecklistValues(TypedDict):
     VERSION: str
 
 
+class _FinishVoteValues(TypedDict):
+    ATR_TALLY: str
+    COMMITTEE: str
+    OUTCOME: str
+    PROJECT_NAME: str
+    VERSION: str
+    YOUR_ASF_ID: str
+    YOUR_FULL_NAME: str
+
+
 class _VoteSubjectValues(TypedDict):
     COMMITTEE: str
     PROJECT_NAME: str
@@ -100,6 +110,7 @@ class _VoteValues(TypedDict):
 
 
 TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
+    "ATR_TALLY": "Vote tally block - URL, ballots, counts",
     "BUG_DATABASE": "Bug database URL",
     "CHECKLIST_URL": "URL to the release checklist",
     "COMMITTEE": "Committee name",
@@ -111,6 +122,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "KEYS_FILE": "URL to the KEYS file",
     "LIFECYCLE_PAGE": "Lifecycle page URL",
     "MAILING_LISTS": "Mailing lists page URL",
+    "OUTCOME": "Vote outcome - 'passed' or 'failed'",
     "PROJECT_NAME": "Project name",
     "PROJECT_KEY": "ATR key for the project",
     "RELEASE_CHECKLIST": "Release checklist content",
@@ -263,6 +275,14 @@ def checklist_template_variables() -> list[tuple[str, str]]:
     return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_ChecklistValues.__required_keys__)]
 
 
+def finish_vote_body(body: str, values: _FinishVoteValues) -> str:
+    return _substitute(body, values, "finish_vote")
+
+
+def finish_vote_template_variables() -> list[tuple[str, str]]:
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_FinishVoteValues.__required_keys__)]
+
+
 async def start_vote_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
@@ -408,6 +428,8 @@ def _substitute(text: str, values: _AnnounceSubjectValues, context: Literal["ann
 def _substitute(text: str, values: _AnnounceValues, context: Literal["announce"]) -> str: ...
 @overload
 def _substitute(text: str, values: _ChecklistValues, context: Literal["checklist"]) -> str: ...
+@overload
+def _substitute(text: str, values: _FinishVoteValues, context: Literal["finish_vote"]) -> str: ...
 @overload
 def _substitute(text: str, values: _VoteSubjectValues, context: Literal["vote_subject"]) -> str: ...
 @overload

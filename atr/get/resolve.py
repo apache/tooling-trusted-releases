@@ -22,6 +22,7 @@ from typing import Literal
 import htpy
 
 import atr.blueprints.get as get
+import atr.construct as construct
 import atr.db.interaction as interaction
 import atr.form
 import atr.htm as htm
@@ -174,32 +175,52 @@ async def selected(  # noqa: C901
         "vote_mode": release.effective_vote_mode,
         "vote_seq": vote_seq,
     }
+    if release.podling_thread_id:
+        committee_name = "Incubator"
+    elif release.committee is not None:
+        committee_name = release.committee.display_name
+    elif committee is not None:
+        committee_name = committee.display_name
+    else:
+        committee_name = release.project.key
+
+    # ATR_TALLY is final here - tabulation has been attempted. OUTCOME stays as
+    # the variable since the user picks via the form; POST substitutes it
+    atr_tally = ""
+    outcome = "{{OUTCOME}}"
     if trusted_summary is not None:
-        defaults["email_body"] = tabulate.trusted_vote_resolution(
-            release,
+        atr_tally = tabulate.trusted_tally_block(
             trusted_summary,
-            trusted_passed,
-            full_name,
-            asf_uid,
-            thread_id,
             binding_label,
             non_binding_label,
+            thread_id=thread_id,
+            podling_thread_id=release.podling_thread_id,
         )
-    elif (not is_trusted_mode) and (committee is not None) and (details is not None) and (thread_id is not None):
-        defaults["email_body"] = tabulate.vote_resolution(
-            committee,
-            release,
+        outcome = "passed" if trusted_passed else "failed"
+    elif (not is_trusted_mode) and (details is not None) and (thread_id is not None):
+        atr_tally = tabulate.email_tally_block(
             details.votes,
             details.summary,
-            details.passed,
-            details.outcome,
-            full_name,
-            asf_uid,
             thread_id,
             binding_label,
             non_binding_label,
+            podling_thread_id=release.podling_thread_id,
         )
+        outcome = "passed" if details.passed else "failed"
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
+
+    defaults["email_body"] = construct.finish_vote_body(
+        release.project.policy_finish_vote_template,
+        {
+            "ATR_TALLY": atr_tally,
+            "COMMITTEE": committee_name,
+            "OUTCOME": outcome,
+            "PROJECT_NAME": release.project.short_display_name,
+            "VERSION": release.version,
+            "YOUR_ASF_ID": asf_uid,
+            "YOUR_FULL_NAME": full_name,
+        },
+    )
 
     if is_trusted_mode:
         binding_sufficient = trusted_passed

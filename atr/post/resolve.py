@@ -38,7 +38,6 @@ async def selected(
     """
     URL: /resolve/<project_key>/<version_key>
     """
-    email_body = submit_form.email_body
     vote_result = submit_form.vote_result
 
     match vote_result:
@@ -48,6 +47,9 @@ async def selected(
             writer_result = "failed"
         case "Cancelled":
             writer_result = "cancelled"
+
+    # GET defers {{OUTCOME}} until now because it depends on the user's selection
+    email_body = submit_form.email_body.replace("{{OUTCOME}}", writer_result)
 
     automatic_resolve_when_finished = _read_auto_resolve_flag(submit_form)
     notify_when_finished = _read_notify_flag(submit_form)

@@ -19,6 +19,7 @@ import datetime
 from typing import Final, Literal
 
 import atr.config as config
+import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.log as log
@@ -120,15 +121,25 @@ async def auto_resolve(task_args: args.VoteAutoResolve) -> results.Results | Non
         )
 
     thread_id = await _thread_id_for_vote_task(task_mid, task_recipient, task_args.resolver_id)
-    resolution_body = tabulate.trusted_vote_resolution(
-        release,
+    committee_name = "Incubator" if release.podling_thread_id else release.committee.display_name
+    atr_tally = tabulate.trusted_tally_block(
         summary,
-        passed,
-        task_args.resolver_fullname,
-        task_args.resolver_id,
-        thread_id,
         binding_label,
         non_binding_label,
+        thread_id=thread_id,
+        podling_thread_id=release.podling_thread_id,
+    )
+    resolution_body = construct.finish_vote_body(
+        release.project.policy_finish_vote_template,
+        {
+            "ATR_TALLY": atr_tally,
+            "COMMITTEE": committee_name,
+            "OUTCOME": "passed" if passed else "failed",
+            "PROJECT_NAME": release.project.short_display_name,
+            "VERSION": release.version,
+            "YOUR_ASF_ID": task_args.resolver_id,
+            "YOUR_FULL_NAME": task_args.resolver_fullname,
+        },
     )
 
     try:

@@ -1051,6 +1051,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         "vote_comment_template": project.policy_vote_comment_template or "",
         "start_vote_subject": project.policy_start_vote_subject or "",
         "start_vote_template": project.policy_start_vote_template or "",
+        "finish_vote_template": project.policy_finish_vote_template or "",
     }
 
     release_checklist_widget = _textarea_with_variables(
@@ -1075,6 +1076,13 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         rows=18,
         documentation="Email template for messages to start a vote on a release.",
     )
+    finish_vote_template_widget = _textarea_with_variables(
+        field_name="finish_vote_template",
+        default_value=project.policy_finish_vote_template or "",
+        template_variables=construct.finish_vote_template_variables(),
+        rows=18,
+        documentation="Email template for vote resolution messages.",
+    )
     vote_mode_widget = _vote_mode_radios(project)
 
     with card.block(htm.div, classes=".card-body") as card_body:
@@ -1092,6 +1100,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
+                "finish_vote_template": finish_vote_template_widget,
                 "vote_mode": vote_mode_widget,
             },
         )
