@@ -29,7 +29,9 @@ import quart
 
 import atr.analysis as analysis
 import atr.blueprints.get as get
+import atr.config as config
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.announce as announce
 import atr.get.distribution as distribution
@@ -327,6 +329,26 @@ async def _render_page(
 
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release))
+
+    if config.get().SVN_PUBLISH_URL:
+        proj, ver, rev = release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+        in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
+        completed = await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)
+        if (in_flight is None) and (completed is None):
+            download_path_suffix = ""
+            committee = release.project.committee
+            if (committee is not None) and (release.project.key != util.unwrap(committee.key)):
+                download_path_suffix = f"{release.project.key}-{release.version}"
+            page.h2["Publish to SVN"]
+            await form.render_block(
+                page,
+                shared.finish.PublishToSvnForm,
+                defaults={
+                    "download_path_suffix": download_path_suffix,
+                    "revision_number": release.latest_revision_number,
+                },
+                submit_label="Publish to SVN",
+            )
 
     page.h2["Tidy up the release"]
     # Delete directory form

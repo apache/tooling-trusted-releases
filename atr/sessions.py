@@ -139,6 +139,7 @@ def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:
 
 class Store:
     async def create(self, hsid: str, session_data: dict[str, Any]) -> None:
+        log.info("OAuth session data received from ASFQuart", oauth_session_data=session_data)
         prepared = _prepare_session_data(session_data)
         ip_address = quart.request.remote_addr
         now = time.time()

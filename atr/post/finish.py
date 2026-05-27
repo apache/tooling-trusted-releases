@@ -45,6 +45,8 @@ async def selected(
     match finish_form:
         case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
             return await _delete_empty_directory(delete_form, session, project_key, version_key, respond)
+        case shared.finish.PublishToSvnForm() as publish_form:
+            return await _publish_to_svn(publish_form, session, project_key, version_key, respond)
         case shared.finish.RemoveRCTagsForm():
             return await _remove_rc_tags(session, project_key, version_key, respond)
 
@@ -70,6 +72,24 @@ async def _delete_empty_directory(
     if creation_error is not None:
         return await respond(400, creation_error)
     return await respond(200, f"Deleted empty directory '{dir_to_delete_rel}'.")
+
+
+async def _publish_to_svn(
+    publish_form: shared.finish.PublishToSvnForm,
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    respond: shared.finish.Respond,
+) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            await wacp.release.publish_to_svn(
+                project_key, version_key, publish_form.revision_number, publish_form.download_path_suffix
+            )
+    except storage.AccessError as e:
+        return await respond(e.status or 409, str(e))
+    return await respond(200, "SVN publish task queued.")
 
 
 async def _remove_rc_tags(

@@ -25,6 +25,7 @@ import atr.web as web
 type Respond = Callable[[int, str], Awaitable[tuple[web.QuartResponse, int] | web.WerkzeugResponse]]
 
 type DELETE_DIR = Literal["DELETE_DIR"]
+type PUBLISH_TO_SVN = Literal["PUBLISH_TO_SVN"]
 type REMOVE_RC_TAGS = Literal["REMOVE_RC_TAGS"]
 
 
@@ -33,11 +34,17 @@ class DeleteEmptyDirectoryForm(form.Form):
     directory_to_delete: safe.RelPath = form.label("Directory to delete", widget=form.Widget.SELECT)
 
 
+class PublishToSvnForm(form.Form):
+    variant: PUBLISH_TO_SVN = form.value(PUBLISH_TO_SVN)
+    download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", default=None)
+    revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)
+
+
 class RemoveRCTagsForm(form.Empty):
     variant: REMOVE_RC_TAGS = form.value(REMOVE_RC_TAGS)
 
 
 type FinishForm = Annotated[
-    DeleteEmptyDirectoryForm | RemoveRCTagsForm,
+    DeleteEmptyDirectoryForm | PublishToSvnForm | RemoveRCTagsForm,
     form.DISCRIMINATOR,
 ]
