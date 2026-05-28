@@ -14,6 +14,7 @@
 * `2.4.` [License checks](license-checks)
 * `2.5.` [Trusted Publishing](trusted-publishing)
 * `2.6.` [SBOM workflows](sbom-workflows)
+* `2.7.` [Promoting to release](promoting-to-release)
 
 **Sections**:
 
