@@ -17,6 +17,8 @@
 
 ## Overview
 
+> **This is ATR Alpha behaviour which will change in Beta.**
+
 When the ATR workflow completes, i.e. when the vote is resolved and the release announced, ATR commits the approved artifacts to its own area of the Apache distribution SVN repository:
 
 * TLP: `https://dist.apache.org/repos/dist/atr/<committee>/`
@@ -107,3 +109,5 @@ Do this as a separate commit, after promotion, once you have verified that the n
 ## The KEYS file
 
 The `KEYS` file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS` and is managed independently of any individual release. ATR does not publish it. If a new signer's key is used for this release, update `KEYS` from your local SVN checkout in a separate commit before users begin verifying artifacts.
+
+ATR imports all keys from existing `KEYS` files automatically, if it can, and allows users to associate additional new keys with committees. These `KEYS` files are then exported to ATR's own download area in Alpha, but this download area will be removed when SVN publication is out of testing. We are currently discussing the mechanisms for exporting and managing `KEYS` files in ATR going forward.
