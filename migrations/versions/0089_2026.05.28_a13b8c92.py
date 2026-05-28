@@ -17,9 +17,9 @@
 
 """Release inactivity tracking
 
-Revision ID: 0088_2026.05.27_a13b8c92
-Revises: 0087_2026.05.26_3eabb86e
-Create Date: 2026-05-27 14:30:11.161615+00:00
+Revision ID: 0089_2026.05.28_a13b8c92
+Revises: 0088_2026.05.27_449e0006
+Create Date: 2026-05-28 14:17:23.517771+00:00
 """
 
 import datetime
@@ -31,8 +31,8 @@ from alembic import op
 import atr.models.sql as sql
 
 # Revision identifiers, used by Alembic
-revision: str = "0088_2026.05.27_a13b8c92"
-down_revision: str | None = "0087_2026.05.26_3eabb86e"
+revision: str = "0089_2026.05.28_a13b8c92"
+down_revision: str | None = "0088_2026.05.27_449e0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -63,7 +63,7 @@ def upgrade() -> None:
             """
             UPDATE release
             SET activity_at = :initial_warning
-            WHERE phase IN ('release_candidate_draft', 'release_candidate', 'release_preview')
+            WHERE phase IN ('RELEASE_CANDIDATE_DRAFT', 'RELEASE_CANDIDATE', 'RELEASE_PREVIEW')
             AND (
                 SELECT max(activity_at)
                 FROM (
