@@ -68,12 +68,14 @@ def test_policy_update_args_validates_normalised_workflow_paths() -> None:
     assert args.github_vote_workflow_path == [" .github/workflows/vote.yml ", "  "]
 
 
-def test_policy_update_args_validates_mailto_addresses() -> None:
-    args = _policy_update(mailto_addresses=[" test@example.org "])
+def test_policy_update_args_validates_recipient_addresses() -> None:
+    args = _policy_update(vote_recipients={"to": " test@example.org ", "cc": ["cc@example.org"]})
 
-    assert args.mailto_addresses == ["test@example.org"]
+    assert args.vote_recipients is not None
+    assert args.vote_recipients.to == "test@example.org"
+    assert args.vote_recipients.cc == ["cc@example.org"]
 
 
-def test_policy_update_args_rejects_malformed_mailto_addresses() -> None:
+def test_policy_update_args_rejects_malformed_recipient_addresses() -> None:
     with pytest.raises(pydantic.ValidationError, match="valid email address"):
-        _policy_update(mailto_addresses=["not-an-email"])
+        _policy_update(vote_recipients={"to": "not-an-email"})

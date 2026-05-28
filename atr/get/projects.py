@@ -628,8 +628,9 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
             custom={
                 "announce_release_subject": announce_release_subject_widget,
                 "announce_release_template": announce_release_template_widget,
+                "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE),
             },
-            skip=["archive_prior_release"] if not project.cycle_match else [],
+            skip=["email_cc", "email_bcc", *(["archive_prior_release"] if not project.cycle_match else [])],
         )
     return card.collect()
 
@@ -794,16 +795,17 @@ def _render_policy_readonly(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Release policy"]]
 
-    email_content = (
-        htm.a(href=f"mailto:{project.policy_mailto_addresses[0]}")[project.policy_mailto_addresses[0]]
-        if project.policy_mailto_addresses
-        else "Not set"
-    )
+    vote_to, vote_cc, vote_bcc = project.policy_recipients(sql.RecipientAction.VOTE)
+    announce_to, announce_cc, announce_bcc = project.policy_recipients(sql.RecipientAction.ANNOUNCE)
 
     tbody = htm.tbody[
         htm.tr[
-            htm.th(".border-0.w-25")["Email"],
-            htm.td(".text-break.border-0")[email_content],
+            htm.th(".border-0.w-25")["Vote email"],
+            htm.td(".text-break.border-0")[_recipient_summary(vote_to, vote_cc, vote_bcc)],
+        ],
+        htm.tr[
+            htm.th(".border-0")["Announce email"],
+            htm.td(".text-break.border-0")[_recipient_summary(announce_to, announce_cc, announce_bcc)],
         ],
         htm.tr[
             htm.th(".border-0")["Vote mode"],
@@ -1042,9 +1044,6 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
 
     defaults_dict = {
         "project_key": str(project.key),
-        "mailto_addresses": project.policy_mailto_addresses[0]
-        if project.policy_mailto_addresses
-        else f"dev@{project.key}.apache.org",
         "vote_mode": project.policy_vote_mode,
         "min_hours": project.policy_min_hours,
         "release_checklist": project.policy_release_checklist or "",
@@ -1097,14 +1096,44 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             # wider_widgets=True,
             textarea_rows=10,
             custom={
+                "email_to": _recipient_grid_widget(project, sql.RecipientAction.VOTE),
                 "release_checklist": release_checklist_widget,
                 "start_vote_subject": start_vote_subject_widget,
                 "start_vote_template": start_vote_template_widget,
                 "finish_vote_template": finish_vote_template_widget,
                 "vote_mode": vote_mode_widget,
             },
+            skip=["email_cc", "email_bcc"],
         )
     return card.collect()
+
+
+def _recipient_summary(to: str, cc: list[str], bcc: list[str]) -> htm.Element | str:
+    if not to:
+        return "Not set"
+    extras = []
+    if cc:
+        extras.append(f"{len(cc)} CC")
+    if bcc:
+        extras.append(f"{len(bcc)} BCC")
+    suffix = f" (+{', '.join(extras)})" if extras else ""
+    return htm.span[htm.a(href=f"mailto:{to}")[to], suffix]
+
+
+def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) -> htm.Element:
+    committee = project.committee
+    committee_key = committee.key if (committee is not None) else str(project.key)
+    is_podling = bool(committee is not None and committee.is_podling)
+    options = util.configurable_recipients(action, committee_key, is_podling=is_podling)
+    stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
+    default_to = stored_to if (stored_to in options) else (options[0] if options else None)
+    return htm.div("#email_to")[
+        render.html_recipients_to_radios(options, default_to=default_to),
+        htpy.details(".mt-2")[
+            htpy.summary["Select CC and BCC recipients"],
+            render.html_recipients_cc_bcc_table(options, selected_cc=set(stored_cc), selected_bcc=set(stored_bcc)),
+        ],
+    ]
 
 
 def _textarea_with_variables(

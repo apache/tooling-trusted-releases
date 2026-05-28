@@ -818,6 +818,8 @@ async def policy_get(
         project = await data.project(key=str(project_key), _release_policy=True, _committee=True).demand(
             exceptions.NotFound()
         )
+    vote_to, vote_cc, vote_bcc = project.policy_recipients(models.sql.RecipientAction.VOTE)
+    announce_to, announce_cc, announce_bcc = project.policy_recipients(models.sql.RecipientAction.ANNOUNCE)
     return models.api.PolicyGetResults(
         endpoint="/policy/get",
         project_key=project.safe_key,
@@ -830,7 +832,10 @@ async def policy_get(
         policy_github_repository_name=project.policy_github_repository_name,
         policy_github_vote_workflow_path=project.policy_github_vote_workflow_path,
         policy_license_check_mode=project.policy_license_check_mode,
-        policy_mailto_addresses=project.policy_mailto_addresses,
+        policy_vote_recipients=models.api.RecipientDefaults(to=vote_to or None, cc=vote_cc, bcc=vote_bcc),
+        policy_announce_recipients=models.api.RecipientDefaults(
+            to=announce_to or None, cc=announce_cc, bcc=announce_bcc
+        ),
         policy_manual_vote=project.policy_manual_vote,
         policy_min_hours=project.policy_min_hours,
         policy_vote_mode=project.policy_vote_mode,

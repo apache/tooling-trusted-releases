@@ -293,6 +293,14 @@ class ProjectGetResults(schema.Strict):
     project: sql.Project
 
 
+class RecipientDefaults(schema.Strict):
+    # Default email recipients for one action. A whole block replaces the
+    # stored defaults for that action, so an absent cc/bcc clears them.
+    to: pydantic.EmailStr | None = None
+    cc: list[pydantic.EmailStr] = schema.factory(list)
+    bcc: list[pydantic.EmailStr] = schema.factory(list)
+
+
 class PolicyGetResults(schema.Strict):
     # quart_schema.validate_response runs the response dict (produced by
     # model_dump(mode="json")) back through this model. mode="json" serialises
@@ -317,7 +325,8 @@ class PolicyGetResults(schema.Strict):
     policy_github_repository_name: str
     policy_github_vote_workflow_path: list[str]
     policy_license_check_mode: sql.LicenseCheckMode
-    policy_mailto_addresses: list[str]
+    policy_vote_recipients: RecipientDefaults
+    policy_announce_recipients: RecipientDefaults
     policy_manual_vote: bool
     policy_min_hours: int
     policy_vote_mode: sql.VoteMode = schema.example(sql.VoteMode.EMAIL)
@@ -345,7 +354,8 @@ class PolicyArgsBase(schema.Strict):
     github_repository_name: str | None = None
     github_vote_workflow_path: list[str] | None = None
     license_check_mode: sql.LicenseCheckMode | None = None
-    mailto_addresses: list[pydantic.EmailStr] | None = None
+    vote_recipients: RecipientDefaults | None = None
+    announce_recipients: RecipientDefaults | None = None
     manual_vote: bool | None = None
     min_hours: int | None = None
     preserve_download_files: bool | None = None

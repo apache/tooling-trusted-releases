@@ -169,11 +169,14 @@ class ComposePolicyForm(form.Form):
 class VotePolicyForm(form.Form):
     variant: VOTE = form.value(VOTE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    mailto_addresses: form.Email = form.label(
-        "Email",
-        f"The mailing list where vote emails are sent. This is usually your dev list. "
-        f"ATR will currently only send test announcement emails to {util.USER_TESTS_ADDRESS}.",
+    email_to: str = form.label(
+        "Default vote recipient",
+        "The mailing list vote emails default to. Release managers can still override this when starting a vote.",
+        widget=form.Widget.CUSTOM,
+        default="",
     )
+    email_cc: form.StrList = form.label("Default CC")
+    email_bcc: form.StrList = form.label("Default BCC")
     vote_mode: sql.VoteMode = form.label(
         "Vote mode",
         widget=form.Widget.CUSTOM,
@@ -351,6 +354,14 @@ class FinishPolicyForm(form.Form):
         "Announce release template",
         widget=form.Widget.CUSTOM,
     )
+    email_to: str = form.label(
+        "Default announce recipient",
+        "The mailing list announcements default to. Release managers can still override this when announcing.",
+        widget=form.Widget.CUSTOM,
+        default="",
+    )
+    email_cc: form.StrList = form.label("Default CC")
+    email_bcc: form.StrList = form.label("Default BCC")
     preserve_download_files: form.Bool = form.label(
         "Preserve download files",
         "If enabled, existing download files will not be overwritten.",

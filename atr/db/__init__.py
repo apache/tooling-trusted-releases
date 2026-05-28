@@ -771,7 +771,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     def release_policy(
         self,
         id: Opt[int] = NOT_SET,
-        mailto_addresses: Opt[list[str]] = NOT_SET,
         vote_mode: Opt[sql.VoteMode] = NOT_SET,
         min_hours: Opt[int] = NOT_SET,
         release_checklist: Opt[str] = NOT_SET,
@@ -789,8 +788,6 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         if is_defined(id):
             query = query.where(sql.ReleasePolicy.id == id)
-        if is_defined(mailto_addresses):
-            query = query.where(sql.ReleasePolicy.mailto_addresses == mailto_addresses)
         if is_defined(vote_mode):
             query = query.where(sql.ReleasePolicy.vote_mode == vote_mode)
         if is_defined(min_hours):

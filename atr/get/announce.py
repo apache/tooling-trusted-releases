@@ -172,8 +172,12 @@ async def _render_announce_form(
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
     custom_body_widget = _render_body_field(default_body, release.project.key)
     download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
-    default_to = permitted_recipients[0] if permitted_recipients else None
-    to_radios = htm.div[
+    policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.ANNOUNCE)
+    permitted_set = set(permitted_recipients)
+    fallback_to = permitted_recipients[0] if permitted_recipients else None
+    default_to = policy_to if (policy_to in permitted_set) else fallback_to
+    settings_url = util.as_url(projects.view, project_key=release.project.key) + "?tab=finish#email_to"
+    recipient_radios = htm.div[
         render.html_recipients_to_radios(
             permitted_recipients,
             default_to=default_to,
@@ -181,8 +185,13 @@ async def _render_announce_form(
         ),
         htpy.details(".mt-2")[
             htpy.summary["Select CC and BCC recipients"],
-            render.html_recipients_cc_bcc_table(permitted_recipients),
+            render.html_recipients_cc_bcc_table(
+                permitted_recipients,
+                selected_cc={address for address in policy_cc if (address in permitted_set)},
+                selected_bcc={address for address in policy_bcc if (address in permitted_set)},
+            ),
         ],
+        render.html_recipients_defaults_note(settings_url),
     ]
 
     prior_release_version = ""
@@ -210,7 +219,7 @@ async def _render_announce_form(
         submit_label="Publish & announce",
         defaults=defaults_dict,
         custom={
-            "email_to": to_radios,
+            "email_to": recipient_radios,
             "subject": custom_subject_widget,
             "body": custom_body_widget,
             "download_path_suffix": download_path_widget,

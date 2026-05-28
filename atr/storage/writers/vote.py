@@ -499,7 +499,8 @@ class ReleaseManager(CommitteeParticipant):
         expected_vote_mode: sql.VoteMode | None = None,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
-        bcc_private_list: bool = False,
+        additional_cc: list[str] | None = None,
+        additional_bcc: list[str] | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
             key=sql.release_key(str(project_key), str(version_key)),
@@ -510,6 +511,12 @@ class ReleaseManager(CommitteeParticipant):
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
+        additions = (additional_cc or []) + (additional_bcc or [])
+        if (release.committee is not None) and additions:
+            permitted = set(util.permitted_voting_recipients(self.__asf_uid, release.committee.key))
+            for address in additions:
+                if address not in permitted:
+                    raise storage.AccessError(f"Invalid recipient selection: {address}", status=400)
         if (expected_vote_mode is not None) and (release.effective_vote_mode != expected_vote_mode):
             raise storage.AccessError("The resolve form is stale, please refresh and try again", status=409)
         if release.effective_vote_mode == sql.VoteMode.MANUAL:
@@ -541,7 +548,8 @@ class ReleaseManager(CommitteeParticipant):
                 podling_round_one_thread_id,
                 automatic_resolve_when_finished=automatic_resolve_when_finished,
                 notify_when_finished=notify_when_finished,
-                bcc_private_list=bcc_private_list,
+                additional_cc=additional_cc,
+                additional_bcc=additional_bcc,
             )
         if (
             (expected_vote_seq is not None)
@@ -585,7 +593,8 @@ class ReleaseManager(CommitteeParticipant):
             resolution_body,
             automatic_resolve_when_finished=automatic_resolve_when_finished,
             notify_when_finished=notify_when_finished,
-            bcc_private_list=bcc_private_list,
+            additional_cc=additional_cc,
+            additional_bcc=additional_bcc,
         )
 
     async def resolve_manually(
@@ -670,7 +679,8 @@ class ReleaseManager(CommitteeParticipant):
         resolution_body: str,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
-        bcc_private_list: bool = False,
+        additional_cc: list[str] | None = None,
+        additional_bcc: list[str] | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         if (voting_round == 1) and (vote_result == "passed"):
             await self.__data.commit()
@@ -825,10 +835,10 @@ class ReleaseManager(CommitteeParticipant):
             release,
             vote_result,
             resolution_body,
-            asf_fullname,
             latest_vote_task,
             extra_destination=extra_destination,
-            bcc_private_list=bcc_private_list,
+            additional_cc=additional_cc,
+            additional_bcc=additional_bcc,
         )
         if publish_enqueue_error is not None:
             if error_message is None:
@@ -859,86 +869,83 @@ class ReleaseManager(CommitteeParticipant):
             )
         return release, voting_round, success_message, error_message
 
-    async def __send_resolution(
+    def __queue_send(
         self,
         release: sql.Release,
-        resolution: str,
+        *,
+        email_to: str,
+        subject: str,
         body: str,
-        asf_fullname: str,
-        latest_vote_task: sql.Task,
-        extra_destination: tuple[str, str] | None = None,
-        bcc_private_list: bool = False,
-    ) -> str | None:
-        storage.ensure_project_active(release.project)
-        # Get the email thread
-        vote_thread_mid = interaction.task_mid_get(latest_vote_task)
-        if vote_thread_mid is None:
-            return "No vote thread found, unable to send resolution message."
-
-        # Construct the reply email
-        # original_subject = latest_vote_task.task_args["subject"]
-
-        # Arguments for the task to cast a vote
-        email_to: str = latest_vote_task.task_args["email_to"]
-        email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
-        email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
-        # The send task rejects duplicate recipients case-insensitively, so guard before adding
-        if bcc_private_list and (release.committee is not None):
-            private_list_address = f"private@{release.committee.key}.apache.org"
-            existing = {addr.lower() for addr in [email_to, *email_cc, *email_bcc]}
-            if private_list_address.lower() not in existing:
-                email_bcc = [*email_bcc, private_list_address]
-        email_sender = f"{self.__asf_uid}@apache.org"
-        subject = tabulate.vote_result_subject(release, resolution)
-        # TODO: This duplicates atr/tabulate.py code
-        # There are arguments for using this code instead:
-        # - It enforces a consistent style
-        # - It can't be edited by the user
-        # - It could be made conditional based on user input
-        # But users might not know whether to use a signature or not
-        # And they may not use a standard format that can be detected
-        # Therefore we don't add a signature here
-        # signature = f"-- \n{asf_fullname} ({asf_uid})"
-        # if asf_fullname == asf_uid:
-        #     signature = f"-- \n{asf_fullname}"
-        # body = f"{body}\n\n{signature}"
-        in_reply_to = vote_thread_mid
-
-        task = sql.Task(
+        in_reply_to: str,
+        email_cc: list[str] | None = None,
+        email_bcc: list[str] | None = None,
+    ) -> sql.Task:
+        return sql.Task(
             status=sql.TaskStatus.QUEUED,
             task_type=sql.TaskType.MESSAGE_SEND,
             task_args=args.Send(
-                email_sender=email_sender,
+                email_sender=f"{self.__asf_uid}@apache.org",
                 email_to=email_to,
                 subject=subject,
                 body=body,
                 in_reply_to=in_reply_to,
-                email_cc=email_cc,
-                email_bcc=email_bcc,
+                email_cc=email_cc or [],
+                email_bcc=email_bcc or [],
                 footer_category=mail.MailFooterCategory.USER,
             ).as_task_args(),
             asf_uid=self.__asf_uid,
             project_key=release.project.key,
             version_key=release.version,
         )
-        tasks = [task]
+
+    async def __send_resolution(
+        self,
+        release: sql.Release,
+        resolution: str,
+        body: str,
+        latest_vote_task: sql.Task,
+        extra_destination: tuple[str, str] | None = None,
+        additional_cc: list[str] | None = None,
+        additional_bcc: list[str] | None = None,
+    ) -> str | None:
+        storage.ensure_project_active(release.project)
+        vote_thread_mid = interaction.task_mid_get(latest_vote_task)
+        if vote_thread_mid is None:
+            return "No vote thread found, unable to send resolution message."
+
+        # Reply into the original vote thread, reusing the recipients it went to
+        # and merging in the resolver's additions (deduped case-insensitively).
+        email_to: str = latest_vote_task.task_args["email_to"]
+        email_cc: list[str] = latest_vote_task.task_args.get("email_cc", [])
+        email_bcc: list[str] = latest_vote_task.task_args.get("email_bcc", [])
+        seen = {addr.lower() for addr in [email_to, *email_cc, *email_bcc]}
+        email_cc = _extend_unique(email_cc, additional_cc, seen)
+        email_bcc = _extend_unique(email_bcc, additional_bcc, seen)
+
+        subject = tabulate.vote_result_subject(release, resolution)
+        tasks = [
+            self.__queue_send(
+                release,
+                email_to=email_to,
+                subject=subject,
+                body=body,
+                in_reply_to=vote_thread_mid,
+                email_cc=email_cc,
+                email_bcc=email_bcc,
+            )
+        ]
+        # A passed podling second round is also replied into the round-one thread,
+        # to its list only - we don't re-copy the second round's cc/bcc there.
         if extra_destination is not None:
-            task = sql.Task(
-                status=sql.TaskStatus.QUEUED,
-                task_type=sql.TaskType.MESSAGE_SEND,
-                task_args=args.Send(
-                    email_sender=email_sender,
+            tasks.append(
+                self.__queue_send(
+                    release,
                     email_to=extra_destination[0],
                     subject=subject,
                     body=body,
                     in_reply_to=extra_destination[1],
-                    footer_category=mail.MailFooterCategory.USER,
-                ).as_task_args(),
-                asf_uid=self.__asf_uid,
-                project_key=release.project.key,
-                version_key=release.version,
+                )
             )
-            tasks.append(task)
         self.__data.add_all(tasks)
         await self.__data.flush()
         await self.__data.commit()
@@ -957,7 +964,8 @@ class ReleaseManager(CommitteeParticipant):
         *,
         automatic_resolve_when_finished: bool = False,
         notify_when_finished: bool = False,
-        bcc_private_list: bool = False,
+        additional_cc: list[str] | None = None,
+        additional_bcc: list[str] | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         latest_vote_task: sql.Task | None = None
         second_round_vote_mode: sql.VoteMode | None = None
@@ -1150,10 +1158,10 @@ class ReleaseManager(CommitteeParticipant):
                 release,
                 vote_result,
                 resolution_body,
-                asf_fullname,
                 latest_vote_task,
                 extra_destination=extra_destination,
-                bcc_private_list=bcc_private_list,
+                additional_cc=additional_cc,
+                additional_bcc=additional_bcc,
             )
         if publish_enqueue_error is not None:
             if error_message is None:
@@ -1345,6 +1353,15 @@ def format_vote_email_body(
         # Only include the signature if there is a comment
         body.append(f"-- \n{fullname} ({asf_uid})")
     return "\n\n".join(body)
+
+
+def _extend_unique(addresses: list[str], additions: list[str] | None, seen: set[str]) -> list[str]:
+    result = list(addresses)
+    for address in additions or []:
+        if address.lower() not in seen:
+            result.append(address)
+            seen.add(address.lower())
+    return result
 
 
 def _vote_potency_label(release: sql.Release, is_binding: bool) -> str | None:

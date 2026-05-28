@@ -21,6 +21,7 @@
 # https://github.com/fastapi/sqlmodel/issues/196
 # https://github.com/fastapi/sqlmodel/pull/778/files
 
+import copy
 import dataclasses
 import datetime
 import enum
@@ -330,6 +331,12 @@ class VoteChoice(enum.StrEnum):
     YES = "+1"
     ABSTAIN = "0"
     NO = "-1"
+
+
+class RecipientAction(enum.StrEnum):
+    # Keys under ReleasePolicy.recipient_defaults
+    VOTE = "vote"
+    ANNOUNCE = "announce"
 
 
 class LifecycleEventType(enum.StrEnum):
@@ -991,15 +998,16 @@ Sincerely,
             return self.policy_announce_release_default
         return policy.announce_release_template
 
-    @property
-    def policy_mailto_addresses(self) -> list[str]:
-        if ((policy := self.release_policy) is None) or (not policy.mailto_addresses):
-            if self.committee is not None:
-                return [f"dev@{self.committee.key}.apache.org", f"private@{self.committee.key}.apache.org"]
-            else:
-                # TODO: Or raise an error?
-                return [f"dev@{self.key}.apache.org", f"private@{self.key}.apache.org"]
-        return policy.mailto_addresses
+    def policy_recipients(self, action: RecipientAction) -> tuple[str, list[str], list[str]]:
+        # Raw stored defaults for an action; empty when nothing has been set.
+        policy = self.release_policy
+        entry: dict[str, Any] = {}
+        if policy is not None:
+            entry = policy.recipient_defaults.get(action.value) or {}
+        to = entry.get("to") or ""
+        cc = [str(address) for address in (entry.get("cc") or [])]
+        bcc = [str(address) for address in (entry.get("bcc") or [])]
+        return to, cc, bcc
 
     @property
     def policy_manual_vote(self) -> bool:
@@ -1797,8 +1805,11 @@ class Artifact(sqlmodel.SQLModel, table=True):
 # ReleasePolicy: Project
 class ReleasePolicy(sqlmodel.SQLModel, table=True):
     id: int = sqlmodel.Field(default=None, primary_key=True)
-    mailto_addresses: list[str] = sqlmodel.Field(
-        default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    # Default email recipients per action, keyed by action ("vote", "announce").
+    # Each entry is {"to": str, "cc": list[str], "bcc": list[str]}. Stored values
+    # are advisory: any address that isn't permitted at send time is dropped.
+    recipient_defaults: dict[str, Any] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     vote_mode: VoteMode = sqlmodel.Field(default=VoteMode.EMAIL)
     min_hours: int | None = sqlmodel.Field(default=None)
@@ -1846,7 +1857,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     def duplicate(self) -> "ReleasePolicy":
         # Cannot call this .copy because that's an existing BaseModel method
         return ReleasePolicy(
-            mailto_addresses=list(self.mailto_addresses),
+            recipient_defaults=copy.deepcopy(self.recipient_defaults),
             vote_mode=self.vote_mode,
             min_hours=self.min_hours,
             release_checklist=self.release_checklist,

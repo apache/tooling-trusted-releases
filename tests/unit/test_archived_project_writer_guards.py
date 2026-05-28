@@ -299,7 +299,5 @@ async def test_vote_send_resolution_blocks_retired() -> None:
             rel,
             "passed",
             "body",
-            "tester",
-            "Chair",
             SimpleNamespace(),
         )

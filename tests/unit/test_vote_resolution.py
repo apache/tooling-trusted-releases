@@ -810,7 +810,6 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
         release,
         "cancelled",
         "The vote has been cancelled.",
-        "Project Chair",
         latest_vote_task,
     )
 

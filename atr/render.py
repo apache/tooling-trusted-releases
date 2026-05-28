@@ -196,7 +196,19 @@ def html_nav_phase(block: htm.Block, project: str, version: str, staging: bool) 
     )
 
 
-def html_recipients_cc_bcc_table(recipients: list[str]) -> htm.Element:
+def html_recipients_cc_bcc_table(
+    recipients: list[str],
+    selected_cc: set[str] | None = None,
+    selected_bcc: set[str] | None = None,
+    locked_cc: set[str] | None = None,
+    locked_bcc: set[str] | None = None,
+) -> htm.Element:
+    # Locked entries render checked and disabled; disabled checkboxes don't
+    # submit, so callers reconstruct those recipients server-side.
+    selected_cc = selected_cc or set()
+    selected_bcc = selected_bcc or set()
+    locked_cc = locked_cc or set()
+    locked_bcc = locked_bcc or set()
     header = htpy.thead[
         htpy.tr[
             htpy.th(".text-center.atr-checkbox-col")["CC"],
@@ -206,18 +218,42 @@ def html_recipients_cc_bcc_table(recipients: list[str]) -> htm.Element:
     ]
     rows = []
     for recipient in recipients:
+        cc_attrs: dict[str, str] = {
+            "type": "checkbox",
+            "name": "email_cc",
+            "value": recipient,
+            "class_": "form-check-input",
+        }
+        if (recipient in selected_cc) or (recipient in locked_cc):
+            cc_attrs["checked"] = ""
+        if recipient in locked_cc:
+            cc_attrs["disabled"] = ""
+        bcc_attrs: dict[str, str] = {
+            "type": "checkbox",
+            "name": "email_bcc",
+            "value": recipient,
+            "class_": "form-check-input",
+        }
+        if (recipient in selected_bcc) or (recipient in locked_bcc):
+            bcc_attrs["checked"] = ""
+        if recipient in locked_bcc:
+            bcc_attrs["disabled"] = ""
         rows.append(
             htpy.tr[
-                htpy.td(".text-center.atr-checkbox-col")[
-                    htpy.input(type="checkbox", name="email_cc", value=recipient, class_="form-check-input")
-                ],
-                htpy.td(".text-center.atr-checkbox-col")[
-                    htpy.input(type="checkbox", name="email_bcc", value=recipient, class_="form-check-input")
-                ],
+                htpy.td(".text-center.atr-checkbox-col")[htpy.input(**cc_attrs)],
+                htpy.td(".text-center.atr-checkbox-col")[htpy.input(**bcc_attrs)],
                 htpy.td[recipient],
             ]
         )
     return htpy.table(".table.table-bordered.mb-0")[header, htpy.tbody[rows]]
+
+
+def html_recipients_defaults_note(settings_url: str) -> htm.Element:
+    return htm.div(".form-text.text-muted.mt-2")[
+        "To edit the default recipients, go to the ",
+        htm.a(href=settings_url)["project settings"],
+        ".",
+    ]
 
 
 def html_recipients_to_radios(

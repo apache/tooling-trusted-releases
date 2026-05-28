@@ -31,6 +31,7 @@ import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
+import atr.render as render
 import atr.shared as shared
 import atr.storage as storage
 import atr.tabulate as tabulate
@@ -291,26 +292,34 @@ async def selected(  # noqa: C901
         skip.append("automatic_resolve_when_finished")
         skip.append("notify_when_finished")
 
+    # Show the To for reference and offer a grid
+    # to add further cc/bcc with inherited recipients locked.
+    defaults["result_email_to"] = vote_recipient or "the original vote thread recipients"
+    permitted_recipients = (
+        util.permitted_voting_recipients(session.uid, release.committee.key) if (release.committee is not None) else []
+    )
+    original_cc = list(latest_vote_task.task_args.get("email_cc", [])) if (latest_vote_task is not None) else []
+    original_bcc = list(latest_vote_task.task_args.get("email_bcc", [])) if (latest_vote_task is not None) else []
+    # The To is shown separately and always included, so don't offer it as an
+    # addable cc/bcc - that keeps the grid free of duplicate choices.
+    grid_options = [address for address in permitted_recipients if (address != vote_recipient)]
+    for address in [*original_cc, *original_bcc]:
+        if address not in grid_options:
+            grid_options.append(address)
+    custom["email_cc"] = htm.div[
+        render.html_recipients_cc_bcc_table(
+            grid_options,
+            locked_cc=set(original_cc),
+            locked_bcc=set(original_bcc),
+        ),
+        htm.div(".form-text.text-muted.mt-1")[
+            "The original recipients are included and cannot be removed. Tick others to add them.",
+        ],
+    ]
+    skip.append("email_bcc")
+
     if form_cls is shared.resolve.SubmitForm:
-        # The result reuses whatever list the vote ran on; show it for reference
-        defaults["result_email_to"] = vote_recipient or "the original vote thread recipients"
         defaults["result_subject"] = tabulate.vote_result_subject(release, "<resolution>")
-        if release.committee is not None:
-            private_list_address = f"private@{release.committee.key}.apache.org"
-            custom["bcc_private_list"] = htm.div[
-                htpy.input(
-                    type="checkbox",
-                    name="bcc_private_list",
-                    id="bcc_private_list",
-                    value="on",
-                    class_="form-check-input",
-                ),
-                htm.div(".form-text.text-muted.mt-1")[
-                    f"If set, ATR will also send a blind copy of the result to {private_list_address}.",
-                ],
-            ]
-        else:
-            skip.append("bcc_private_list")
 
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):

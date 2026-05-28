@@ -125,7 +125,6 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
         release,
         "passed",
         "Resolution body",
-        "Project Chair",
         latest_vote_task,
     )
 

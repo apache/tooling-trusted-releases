@@ -37,6 +37,10 @@ if TYPE_CHECKING:
     import atr.shared as shared
 
 _NULLABLE_POLICY_FIELDS: Final = frozenset({"min_hours"})
+_RECIPIENT_API_FIELDS: Final[dict[str, models.sql.RecipientAction]] = {
+    "vote_recipients": models.sql.RecipientAction.VOTE,
+    "announce_recipients": models.sql.RecipientAction.ANNOUNCE,
+}
 _TRUSTED_PUBLISHING_PATH_FIELDS: Final = frozenset(
     {
         "github_compose_workflow_path",
@@ -232,10 +236,25 @@ class CommitteeMember(CommitteeParticipant):
     ) -> None:
         # TODO: Ideally we would centralise the validation in this method
         project, release_policy = await self.__get_or_create_policy(project_key)
-        fields_to_update = update.model_fields_set - {"manual_vote", "project", "vote_mode"}
+        excluded_fields = {"manual_vote", "project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
+        fields_to_update = update.model_fields_set - excluded_fields
         normalised_values: dict[str, Any] = {}
 
         self.__set_policy_vote_mode_from_api(project, release_policy, update)
+
+        for field, action in _RECIPIENT_API_FIELDS.items():
+            if field in update.model_fields_set:
+                recipients = getattr(update, field)
+                if recipients is None:
+                    _set_recipient_defaults(release_policy, action, "", [], [])
+                else:
+                    _set_recipient_defaults(
+                        release_policy,
+                        action,
+                        str(recipients.to) if recipients.to else "",
+                        [str(address) for address in recipients.cc],
+                        [str(address) for address in recipients.bcc],
+                    )
 
         for field in fields_to_update:
             value = getattr(update, field)
@@ -261,6 +280,9 @@ class CommitteeMember(CommitteeParticipant):
 
         self.__set_announce_release_subject(form.announce_release_subject or "", project, release_policy)
         self.__set_announce_release_template(form.announce_release_template or "", project, release_policy)
+        _set_recipient_defaults(
+            release_policy, models.sql.RecipientAction.ANNOUNCE, form.email_to, form.email_cc, form.email_bcc
+        )
         release_policy.preserve_download_files = form.preserve_download_files
         release_policy.auto_archive_prior_release = form.archive_prior_release
 
@@ -324,7 +346,9 @@ class CommitteeMember(CommitteeParticipant):
         release_policy.vote_mode = vote_mode
 
         if release_policy.vote_mode in {models.sql.VoteMode.EMAIL, models.sql.VoteMode.TRUSTED}:
-            release_policy.mailto_addresses = [form.mailto_addresses]
+            _set_recipient_defaults(
+                release_policy, models.sql.RecipientAction.VOTE, form.email_to, form.email_cc, form.email_bcc
+            )
             self.__set_min_hours(form.min_hours, project, release_policy)
             release_policy.release_checklist = form.release_checklist or ""
             release_policy.vote_comment_template = form.vote_comment_template or ""
@@ -515,6 +539,21 @@ def _normalise_trusted_publishing_update(
     util.validate_trusted_publishing_constraints(github_repository_name, github_repository_branch, all_paths)
 
     return normalised_values
+
+
+def _set_recipient_defaults(
+    release_policy: models.sql.ReleasePolicy,
+    action: models.sql.RecipientAction,
+    to: str,
+    cc: list[str],
+    bcc: list[str],
+) -> None:
+    defaults = dict(release_policy.recipient_defaults)
+    if (not to) and (not cc) and (not bcc):
+        defaults.pop(action.value, None)
+    else:
+        defaults[action.value] = {"to": to, "cc": list(cc), "bcc": list(bcc)}
+    release_policy.recipient_defaults = defaults
 
 
 def _split_lines(text: str) -> list[str]:

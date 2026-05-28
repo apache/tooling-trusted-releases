@@ -361,6 +361,23 @@ def concern_groups(info: "types.PathInfo | None") -> list[ConcernGroup]:
     ]
 
 
+def configurable_recipients(action: sql.RecipientAction, committee_key: str, *, is_podling: bool) -> list[str]:
+    # Stable, committee-derived recipients a project can persist as defaults.
+    # These don't depend on the sender or on ALPHA test addresses, so a stored
+    # default stays valid for whoever later sends the email.
+    if action == sql.RecipientAction.ANNOUNCE:
+        return [
+            "announce@apache.org",
+            f"announce@{committee_key}.apache.org",
+            f"dev@{committee_key}.apache.org",
+            f"user@{committee_key}.apache.org",
+            f"private@{committee_key}.apache.org",
+        ]
+    if is_podling:
+        return [f"dev@{committee_key}.apache.org"]
+    return [f"dev@{committee_key}.apache.org", f"private@{committee_key}.apache.org"]
+
+
 def conjunction(items: Sequence[str], empty: str | None = None) -> str:
     match len(items):
         case 0:
@@ -1294,16 +1311,20 @@ def validate_distribution_owner_namespace(platform: sql.DistributionPlatform, na
 def validate_email_recipients(recipients: EmailRecipients) -> None:
     if not recipients.email_to:
         raise ValueError("At least one To recipient is required")
-    seen: set[str] = set()
-    for addr in [recipients.email_to, *recipients.email_cc, *recipients.email_bcc]:
-        lower = addr.lower()
-        if lower in seen:
-            raise ValueError(f"Duplicate recipient: {addr}")
-        seen.add(lower)
+    validate_no_duplicate_recipients([recipients.email_to, *recipients.email_cc, *recipients.email_bcc])
 
 
 def validate_filename(filename: str) -> str:
     return validate_path_segment(filename, "Filename")
+
+
+def validate_no_duplicate_recipients(addresses: list[str]) -> None:
+    seen: set[str] = set()
+    for address in addresses:
+        lower = address.lower()
+        if lower in seen:
+            raise ValueError(f"Duplicate recipient: {address}")
+        seen.add(lower)
 
 
 def validate_path(path: pathlib.Path) -> pathlib.Path:
