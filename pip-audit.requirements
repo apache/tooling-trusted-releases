@@ -3,7 +3,7 @@ aiofiles==25.1.0
     #   quart
     #   quart-uploads
     #   tooling-trusted-releases
-aiohappyeyeballs==2.6.1
+aiohappyeyeballs==2.6.2
     # via aiohttp
 aiohttp==3.13.5
     # via
@@ -49,7 +49,7 @@ blockbuster==1.5.26
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
-certifi==2026.4.22
+certifi==2026.5.20
     # via requests
 cffi==2.0.0
     # via
@@ -60,7 +60,7 @@ cfgv==3.5.0
     # via pre-commit
 charset-normalizer==3.4.7
     # via requests
-click==8.4.0
+click==8.4.1
     # via
     #   djlint
     #   flask
@@ -93,7 +93,7 @@ dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.1
+dulwich==1.2.4
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -129,7 +129,7 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
-greenlet==3.5.0
+greenlet==3.5.1
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -153,7 +153,7 @@ hyperscan==0.8.2
     # via tooling-trusted-releases
 identify==2.6.19
     # via pre-commit
-idna==3.15
+idna==3.17
     # via
     #   anyio
     #   email-validator
@@ -219,7 +219,7 @@ packaging==26.2
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-platformdirs==4.9.6
+platformdirs==4.10.0
     # via
     #   python-discovery
     #   virtualenv
@@ -257,7 +257,7 @@ pygments==2.20.0
     # via rich
 pyhumps==3.8.0
     # via quart-schema
-pyjwt==2.12.1
+pyjwt==2.13.0
     # via tooling-trusted-releases
 pyright==1.1.409
 python-dateutil==2.9.0.post0
@@ -266,7 +266,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.3.1
+python-discovery==1.4.0
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -308,13 +308,13 @@ rfc3987-syntax==1.1.0
     # via jsonschema
 rich==15.0.0
     # via tooling-trusted-releases
-rpds-py==0.30.0
+rpds-py==2026.5.1
     # via
     #   jsonschema
     #   referencing
 rpgp-py==0.19.7
     # via tooling-trusted-releases
-ruff==0.15.13
+ruff==0.15.15
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -325,7 +325,7 @@ six==1.17.0
     #   rfc3339-validator
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
-sqlalchemy==2.0.49
+sqlalchemy==2.0.50
     # via
     #   alembic
     #   sqlmodel
@@ -365,7 +365,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.3.3
+virtualenv==21.4.1
     # via pre-commit
 watchfiles==1.2.0
     # via
