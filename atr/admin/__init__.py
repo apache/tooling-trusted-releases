@@ -571,7 +571,8 @@ async def keys_regenerate_all_post(
     async with storage.write() as write:
         for committee_key in committee_keys:
             waca = write.as_committee_admin(committee_key)
-            outcomes.append(await waca.keys.autogenerate_keys_file())
+            keys_file_outcome, _ = await waca.keys.autogenerate_keys_file()
+            outcomes.append(keys_file_outcome)
 
     response_lines = []
     for ocr in outcomes.results():

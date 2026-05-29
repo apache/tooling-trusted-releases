@@ -448,6 +448,26 @@ def test_public_key_model_stores_latest_self_signature_separately_from_expiry() 
 
 
 @pytest.mark.asyncio
+async def test_publish_keys_to_svn_puts_keys_url() -> None:
+    writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
+    committee = _committee("alpha", [])
+    with (
+        mock.patch.object(
+            keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
+        ),
+        mock.patch.object(
+            keys_writer.util, "svn_publish_internal_url", return_value="https://svn.example/dist/dev/atr/alpha"
+        ),
+        mock.patch.object(keys_writer.svn, "publish_file", new_callable=mock.AsyncMock) as publish_file,
+    ):
+        result = await writer._publish_keys_to_svn(committee, pathlib.Path("/dev/null"))
+
+    publish_file.assert_awaited_once()
+    assert publish_file.call_args.args[1] == "https://svn.example/dist/dev/atr/alpha/KEYS"
+    assert result.ok
+
+
+@pytest.mark.asyncio
 async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp_path):
     owned_key = SimpleNamespace(fingerprint="fp1", committees=[SimpleNamespace(key="alpha")])
     data = MockData(

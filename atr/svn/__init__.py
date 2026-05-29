@@ -149,6 +149,27 @@ def parse_committed_revision(output: str) -> int | None:
     return int(match.group(1))
 
 
+async def publish_file(local_path: pathlib.Path, target_url: str, username: str, message: str) -> None:
+    log.debug(f"running svnmucc put for user '{username}'")
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    await _run_svnmucc_command(
+        "put",
+        str(local_path),
+        target_url,
+        "--username",
+        username,
+        "--password",
+        svn_token,
+        "--non-interactive",
+        "--with-revprop",
+        f"asf:tool={_ASF_TOOL}",
+        "-m",
+        message,
+    )
+
+
 async def publish_release(source_dir: pathlib.Path, target_url: str, username: str, message: str) -> int | None:
     log.debug(f"running svn import for user '{username}'")
     svn_token = config.get().SVN_TOKEN

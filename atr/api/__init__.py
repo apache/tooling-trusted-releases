@@ -678,7 +678,8 @@ async def key_delete(
             wacm = write.as_committee_member_outcome(committee.key).result_or_none()
             if wacm is None:
                 continue
-            outcomes.append(await wacm.keys.autogenerate_keys_file())
+            keys_file_outcome, _ = await wacm.keys.autogenerate_keys_file()
+            outcomes.append(keys_file_outcome)
     # TODO: Add error outcomes as warnings to the response
 
     return models.api.KeyDeleteResults(

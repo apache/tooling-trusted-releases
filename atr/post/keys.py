@@ -26,6 +26,7 @@ import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.constants as constants
 import atr.db as db
 import atr.form as form
@@ -393,11 +394,17 @@ async def _update_committee_keys(
 
     async with storage.write() as write:
         wacm = write.as_committee_member(committee_key)
-        match await wacm.keys.autogenerate_keys_file():
+        keys_outcome, svn_outcome = await wacm.keys.autogenerate_keys_file()
+        match keys_outcome:
             case outcome.Result():
-                await quart.flash(
-                    f'Successfully regenerated the KEYS file for the "{committee_key}" committee.', "success"
-                )
+                svn_error = svn_outcome.error_or_none()
+                base = f'Regenerated the KEYS file for the "{committee_key}" committee'
+                if not config.get().SVN_PUBLISH_URL:
+                    await quart.flash(f"{base}.", "success")
+                elif svn_error is None:
+                    await quart.flash(f"{base} and published it to SVN.", "success")
+                else:
+                    await quart.flash(f"{base}, but publishing to SVN failed: {svn_error}", "warning")
             case outcome.Error():
                 await quart.flash(f"Error regenerating the KEYS file for the {committee_key} committee.", "error")
 
