@@ -24,6 +24,7 @@ import hashlib
 
 import sqlmodel
 
+import atr.config as config
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.ldap as ldap
@@ -127,11 +128,12 @@ class FoundationCommitter(GeneralPublic):
             )
             raise storage.AccessError("Authentication failed", status=401)
 
-        # Verify account still exists in LDAP
-        account_details = await ldap.account_lookup(self.__asf_uid)
-        if (account_details is None) or ldap.is_banned(account_details):
-            log.auth_failure("jwt_issuance", "account_deleted_or_banned", self.__asf_uid)
-            raise storage.AccessError("Authentication failed", status=401)
+        # Verify account still exists in LDAP. Test mode doesn't have LDAP wired up so we skip it
+        if not config.is_test_mode():
+            account_details = await ldap.account_lookup(self.__asf_uid)
+            if (account_details is None) or ldap.is_banned(account_details):
+                log.auth_failure("jwt_issuance", "account_deleted_or_banned", self.__asf_uid)
+                raise storage.AccessError("Authentication failed", status=401)
 
         issued_jwt = jwtoken.issue(self.__asf_uid, pat_hash=pat_hash)
         log.auth_event("jwt_issued", self.__asf_uid, pat_hash=pat_hash)

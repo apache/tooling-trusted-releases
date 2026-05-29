@@ -101,6 +101,59 @@ async def add_project(
 
 
 @get.typed
+async def project_yaml(
+    session: web.Committer, _project_yaml: Literal["project/yaml"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /project/yaml/<project_key>
+    """
+    async with db.session() as data:
+        project = await data.project(
+            key=str(project_key),
+            _committee=True,
+            _release_policy=True,
+        ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+
+    is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
+    if not (is_committee_member or session.is_admin):
+        raise base.ASFQuartException("You are not a member of this project's committee", errorcode=403)
+
+    yaml_text = _asf_yaml_export(project)
+
+    page = htm.Block()
+    page.p[htm.a(".atr-back-link", href=util.as_url(view, project_key=project.key))["← Back to project"]]
+    page.h1["Export .asf.yaml"]
+    page.p[
+        "This is the ",
+        htm.code[".asf.yaml"],
+        " project block describing what ATR currently holds for ",
+        project.display_name,
+        ". Add it to your repository's ",
+        htm.code[".asf.yaml"],
+        " to keep this metadata in sync from the repository side.",
+    ]
+
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+        htm.h3(".mb-0")[".asf.yaml"],
+        htm.button(
+            ".btn.btn-sm.btn-outline-secondary.atr-copy-btn",
+            type="button",
+            data_clipboard_target="#asf-yaml-output",
+        )[htm.i(".bi.bi-clipboard"), " Copy"],
+    ]
+    card.div(".card-body")[htm.pre("#asf-yaml-output.mb-0")[yaml_text]]
+    page.append(card.collect())
+
+    return await template.blank(
+        title="Export .asf.yaml",
+        description=f"The .asf.yaml project block for {project.display_name}.",
+        content=page.collect(),
+        javascripts=["clipboard-copy"],
+    )
+
+
+@get.typed
 async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
     """
     URL: /projects
@@ -261,6 +314,65 @@ async def view(
     )
 
 
+def _asf_yaml_export(project: sql.Project) -> str:
+    block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
+    policy = _asf_yaml_recipient_blocks(project)
+    if policy:
+        block["policy"] = policy
+    # atr_sync defaults to on, so we emit it as a visible reminder the sync exists
+    block["features"] = {"atr_sync": "true"}
+    return strictyaml.as_document({"project": block}).as_yaml()
+
+
+def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if project.committee_key:
+        metadata["committee"] = project.committee_key
+    if project.name:
+        metadata["name"] = project.name
+    for field in (
+        "description",
+        "short_description",
+        "homepage",
+        "lifecycle_page",
+        "download_page",
+        "bug_database",
+        "mailing_lists",
+    ):
+        value = getattr(project, field)
+        if value:
+            metadata[field] = value
+    if project.repositories:
+        metadata["repositories"] = list(project.repositories)
+    if project.standards:
+        metadata["standards"] = list(project.standards)
+    # categories and programming_languages are stored comma-joined, so split them back out
+    for field, raw in (("categories", project.categories), ("programming_languages", project.programming_languages)):
+        items = [item.strip() for item in (raw or "").split(",") if item.strip()]
+        if items:
+            metadata[field] = items
+    return metadata
+
+
+def _asf_yaml_recipient_blocks(project: sql.Project) -> dict[str, object]:
+    policy: dict[str, object] = {}
+    for key, action in (
+        ("vote_recipients", sql.RecipientAction.VOTE),
+        ("announce_recipients", sql.RecipientAction.ANNOUNCE),
+    ):
+        to, cc, bcc = project.policy_recipients(action)
+        recipients: dict[str, object] = {}
+        if to:
+            recipients["to"] = to
+        if cc:
+            recipients["cc"] = list(cc)
+        if bcc:
+            recipients["bcc"] = list(bcc)
+        if recipients:
+            policy[key] = recipients
+    return policy
+
+
 def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
     # The "default" cycle is what every project gets when it has no cycle_match
     return "No lifecycle information" if cycle.cycle == "default" else f"Version {cycle.cycle}"
@@ -404,6 +516,34 @@ def _input_with_variables(
     return htm.div[elements]
 
 
+def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) -> htm.Element:
+    committee = project.committee
+    committee_key = committee.key if (committee is not None) else str(project.key)
+    is_podling = bool(committee is not None and committee.is_podling)
+    options = util.configurable_recipients(action, committee_key, is_podling=is_podling)
+    stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
+    default_to = stored_to if (stored_to in options) else (options[0] if options else None)
+    return htm.div("#email_to")[
+        render.html_recipients_to_radios(options, default_to=default_to),
+        htpy.details(".mt-2")[
+            htpy.summary["Select CC and BCC recipients"],
+            render.html_recipients_cc_bcc_table(options, selected_cc=set(stored_cc), selected_bcc=set(stored_bcc)),
+        ],
+    ]
+
+
+def _recipient_summary(to: str, cc: list[str], bcc: list[str]) -> htm.Element | str:
+    if not to:
+        return "Not set"
+    extras = []
+    if cc:
+        extras.append(f"{len(cc)} CC")
+    if bcc:
+        extras.append(f"{len(bcc)} BCC")
+    suffix = f" (+{', '.join(extras)})" if extras else ""
+    return htm.span[htm.a(href=f"mailto:{to}")[to], suffix]
+
+
 def _release_url(project: sql.Project, release: sql.Release) -> str:
     project_key = str(project.key)
     version_key = str(release.version)
@@ -437,6 +577,14 @@ async def _render_actions_card(
                             ".btn.btn-sm.btn-outline-primary",
                             href=util.as_url(add_project, committee_key=project.committee.key),
                         )["Create a sibling project"]
+                    ]
+                )
+                body.append(
+                    htm.p[
+                        htm.a(
+                            ".btn.btn-sm.btn-outline-secondary",
+                            href=util.as_url(project_yaml, project_key=project.key),
+                        )["Export .asf.yaml"]
                     ]
                 )
     return card.collect()
@@ -1106,34 +1254,6 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             skip=["email_cc", "email_bcc"],
         )
     return card.collect()
-
-
-def _recipient_summary(to: str, cc: list[str], bcc: list[str]) -> htm.Element | str:
-    if not to:
-        return "Not set"
-    extras = []
-    if cc:
-        extras.append(f"{len(cc)} CC")
-    if bcc:
-        extras.append(f"{len(bcc)} BCC")
-    suffix = f" (+{', '.join(extras)})" if extras else ""
-    return htm.span[htm.a(href=f"mailto:{to}")[to], suffix]
-
-
-def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) -> htm.Element:
-    committee = project.committee
-    committee_key = committee.key if (committee is not None) else str(project.key)
-    is_podling = bool(committee is not None and committee.is_podling)
-    options = util.configurable_recipients(action, committee_key, is_podling=is_podling)
-    stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
-    default_to = stored_to if (stored_to in options) else (options[0] if options else None)
-    return htm.div("#email_to")[
-        render.html_recipients_to_radios(options, default_to=default_to),
-        htpy.details(".mt-2")[
-            htpy.summary["Select CC and BCC recipients"],
-            render.html_recipients_cc_bcc_table(options, selected_cc=set(stored_cc), selected_bcc=set(stored_bcc)),
-        ],
-    ]
 
 
 def _textarea_with_variables(

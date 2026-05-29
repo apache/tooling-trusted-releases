@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
 
-RUN pip3 install --no-cache-dir --break-system-packages pytest pytest-playwright
+RUN pip3 install --no-cache-dir --break-system-packages pytest pytest-playwright playwright==1.58.0 strictyaml
 
 COPY . /run/tests/e2e
 WORKDIR /run/tests
