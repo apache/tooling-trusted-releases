@@ -46,5 +46,5 @@ github:
 
 notifications:
   commits:      commits@tooling.apache.org
-  issues:       dev@tooling.apache.org
-  pullrequests: dev@tooling.apache.org
+  issues:       issues@tooling.apache.org
+  pullrequests: issues@tooling.apache.org
