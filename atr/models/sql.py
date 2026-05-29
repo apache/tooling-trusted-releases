@@ -899,6 +899,11 @@ class Project(sqlmodel.SQLModel, table=True):
         return base
 
     @property
+    def is_active(self) -> bool:
+        """Whether the project's status is active."""
+        return self.status == ProjectStatus.ACTIVE
+
+    @property
     def safe_key(self) -> safe.ProjectKey:
         """Get the typesafe validated name for the Project"""
         return safe.ProjectKey(self.key)
@@ -1330,6 +1335,21 @@ class Release(sqlmodel.SQLModel, table=True):
         # if project is None:
         #     return None
         return project.committee
+
+    @property
+    def days_since_active(self) -> int:
+        """Get the number of whole days since the release was last active."""
+        activity = [self.created]
+        if self.revisions:
+            activity.append(self.revisions[-1].created)
+        if self.vote_started is not None:
+            activity.append(self.vote_started)
+        if self.vote_resolved is not None:
+            activity.append(self.vote_resolved)
+        if self.released is not None:
+            activity.append(self.released)
+        now = datetime.datetime.now(datetime.UTC)
+        return (now - max(activity)).days
 
     @property
     def effective_vote_mode(self) -> VoteMode:

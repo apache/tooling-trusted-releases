@@ -32,38 +32,6 @@ import atr.storage.writers.sbom as sbom
 import atr.storage.writers.vote as vote
 
 
-def _retired_project(key: str = "project") -> SimpleNamespace:
-    return SimpleNamespace(
-        key=key,
-        status=sql.ProjectStatus.RETIRED,
-        committee_key=key,
-        display_name=key.capitalize(),
-        short_display_name=key.capitalize(),
-    )
-
-
-def _retired_release(project_key: str = "project", version: str = "1.0.0") -> SimpleNamespace:
-    return SimpleNamespace(
-        key=sql.release_key(project_key, version),
-        project=_retired_project(project_key),
-        version=version,
-    )
-
-
-def _query_returning(obj: object) -> mock.MagicMock:
-    query = mock.MagicMock()
-    query.demand = mock.AsyncMock(return_value=obj)
-    query.get = mock.AsyncMock(return_value=obj)
-    return query
-
-
-def _async_context_manager(value: object) -> mock.MagicMock:
-    ctx = mock.MagicMock()
-    ctx.__aenter__ = mock.AsyncMock(return_value=value)
-    ctx.__aexit__ = mock.AsyncMock(return_value=None)
-    return ctx
-
-
 @pytest.mark.asyncio
 async def test_announce_release_blocks_retired(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -272,7 +240,9 @@ async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
 
-    stub_release = SimpleNamespace(project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, key="project"))
+    stub_release = SimpleNamespace(
+        project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True, key="project")
+    )
     with pytest.raises(storage.AccessError, match="archived"):
         await writer._ReleaseManager__resolve_release(
             safe.ProjectKey("project"),
@@ -301,3 +271,36 @@ async def test_vote_send_resolution_blocks_retired() -> None:
             "body",
             SimpleNamespace(),
         )
+
+
+def _async_context_manager(value: object) -> mock.MagicMock:
+    ctx = mock.MagicMock()
+    ctx.__aenter__ = mock.AsyncMock(return_value=value)
+    ctx.__aexit__ = mock.AsyncMock(return_value=None)
+    return ctx
+
+
+def _query_returning(obj: object) -> mock.MagicMock:
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=obj)
+    query.get = mock.AsyncMock(return_value=obj)
+    return query
+
+
+def _retired_project(key: str = "project") -> SimpleNamespace:
+    return SimpleNamespace(
+        key=key,
+        status=sql.ProjectStatus.RETIRED,
+        is_active=False,
+        committee_key=key,
+        display_name=key.capitalize(),
+        short_display_name=key.capitalize(),
+    )
+
+
+def _retired_release(project_key: str = "project", version: str = "1.0.0") -> SimpleNamespace:
+    return SimpleNamespace(
+        key=sql.release_key(project_key, version),
+        project=_retired_project(project_key),
+        version=version,
+    )

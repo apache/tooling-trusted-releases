@@ -426,7 +426,7 @@ async def release_validated(
         ).demand(RuntimeError(f"Release {project!s} {version!s} not found"))
         if release.phase not in phase:
             raise RuntimeError(f"Release {project!s} {version!s} is not in {phase}")
-        # if release.project.status != sql.ProjectStatus.ACTIVE:
+        # if not release.project.is_active:
         #     raise RuntimeError(f"Project {project} is not active")
     return release
 

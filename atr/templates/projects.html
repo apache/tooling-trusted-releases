@@ -36,7 +36,7 @@
       {% endif %}
     {% endif %}
     <div class="col">
-      <div class="card h-100 shadow-sm position-relative page-project-card {{ '' if project.status.value.lower() == 'active' else 'bg-body-secondary' }}"
+      <div class="card h-100 shadow-sm position-relative page-project-card {{ '' if project.is_active else 'bg-body-secondary' }}"
            data-project-url="{{ as_url(get.projects.view, project_key=project.key) }}"
            data-is-participant="{{ 'true' if is_part else 'false' }}">
         <div class="card-body">
@@ -48,7 +48,7 @@
                 <br/><code class="ms-2 fs-6 fw-normal text-body-secondary user-select-all position-relative z-1">{{ project.key }}</code>
               </h3>
             </div>
-            {% if project.status.value.lower() != 'active' %}
+            {% if not project.is_active %}
               <div class="col-sm-2">
                 <span class="badge text-bg-secondary">{{ project.status.value.lower() }}</span>
               </div>

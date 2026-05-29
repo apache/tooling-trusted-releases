@@ -116,6 +116,7 @@ async def test_send_resolution_reuses_original_vote_recipients() -> None:
         project=SimpleNamespace(
             key="project",
             status=sql.ProjectStatus.ACTIVE,
+            is_active=True,
             display_name="Project",
         ),
         version="1.0.0",
@@ -145,7 +146,9 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
     data.rollback = mock.AsyncMock()
 
     release = SimpleNamespace(
-        key="project-1.0.0", project_key="project", project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
+        key="project-1.0.0",
+        project_key="project",
+        project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True),
     )
     data.release = mock.MagicMock(
         return_value=SimpleNamespace(

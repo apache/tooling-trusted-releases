@@ -502,7 +502,7 @@ def audit(**kwargs: basic.JSON) -> None:
 
 
 def ensure_project_active(project: sql.Project) -> None:
-    if project.status == sql.ProjectStatus.ACTIVE:
+    if project.is_active:
         return
     raise AccessError(f"Project '{project.key}' is archived; release actions are disabled.")
 

@@ -163,13 +163,13 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
         projects = await data.project(_committee=True, _releases=True).order_by(sql.Project.name).all()
 
     committee_project_counts: Counter[str] = Counter(
-        str(p.committee.key) for p in projects if p.committee and p.status == sql.ProjectStatus.ACTIVE
+        str(p.committee.key) for p in projects if p.committee and p.is_active
     )
 
     action_forms: dict[str, htm.Element] = {}
     if session is not None:
         for project in projects:
-            if project.status != sql.ProjectStatus.ACTIVE:
+            if not project.is_active:
                 continue
             if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
                 continue
@@ -279,7 +279,7 @@ async def view(
     title_row = htm.div(".row")[
         htm.div(".col-md")[htm.h1[project.display_name]],
         htm.div(".col-sm-auto")[htm.span(".badge.text-bg-secondary")[project.status.value.lower()]]
-        if (project.status.value.lower() != "active")
+        if (not project.is_active)
         else "",
     ]
     page.append(title_row)
@@ -440,7 +440,7 @@ async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.
             )
         )
 
-    if project.status == sql.ProjectStatus.ACTIVE:
+    if project.is_active:
         if can_edit:
             tab_items.extend(
                 [
@@ -564,7 +564,7 @@ async def _render_actions_card(
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Actions"]]
     with card.block(htm.div, classes=".card-body") as body:
-        if project.status == sql.ProjectStatus.ACTIVE and not is_sole_active_project:
+        if project.is_active and not is_sole_active_project:
             action_form = await _delete_form(project)
             if action_form:
                 body.append(action_form)

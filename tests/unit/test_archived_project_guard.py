@@ -25,23 +25,6 @@ import atr.render as render
 import atr.storage as storage
 
 
-def test_ensure_project_active_returns_none_for_active() -> None:
-    project = SimpleNamespace(key="p", status=sql.ProjectStatus.ACTIVE)
-    assert storage.ensure_project_active(project) is None
-
-
-def test_ensure_project_active_raises_for_retired() -> None:
-    project = SimpleNamespace(key="p", status=sql.ProjectStatus.RETIRED)
-    with pytest.raises(storage.AccessError, match="archived") as excinfo:
-        storage.ensure_project_active(project)
-    assert "'p'" in str(excinfo.value)
-
-
-def test_archived_project_banner_returns_none_for_active() -> None:
-    project = SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
-    assert render.archived_project_banner(project) is None
-
-
 def test_archived_project_banner_returns_element_for_retired() -> None:
     project = SimpleNamespace(status=sql.ProjectStatus.RETIRED)
     banner = render.archived_project_banner(project)
@@ -49,3 +32,20 @@ def test_archived_project_banner_returns_element_for_retired() -> None:
     html = str(banner)
     assert "alert-warning" in html
     assert "archived" in html
+
+
+def test_archived_project_banner_returns_none_for_active() -> None:
+    project = SimpleNamespace(status=sql.ProjectStatus.ACTIVE)
+    assert render.archived_project_banner(project) is None
+
+
+def test_ensure_project_active_raises_for_retired() -> None:
+    project = sql.Project(key="p", status=sql.ProjectStatus.RETIRED)
+    with pytest.raises(storage.AccessError, match="archived") as excinfo:
+        storage.ensure_project_active(project)
+    assert "'p'" in str(excinfo.value)
+
+
+def test_ensure_project_active_returns_none_for_active() -> None:
+    project = sql.Project(key="p", status=sql.ProjectStatus.ACTIVE)
+    assert storage.ensure_project_active(project) is None

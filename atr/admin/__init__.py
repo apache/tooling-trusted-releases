@@ -1462,29 +1462,15 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                         filesystem_dirs.append(version_dir_path)
 
 
-def _last_activity_at(release: sql.Release) -> datetime.datetime:
-    candidates: list[datetime.datetime] = [release.created]
-    if release.revisions:
-        candidates.append(release.revisions[-1].created)
-    if release.vote_started is not None:
-        candidates.append(release.vote_started)
-    if release.vote_resolved is not None:
-        candidates.append(release.vote_resolved)
-    if release.released is not None:
-        candidates.append(release.released)
-    return max(candidates)
-
-
 def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:
     age = now - release.created
-    last_activity = _last_activity_at(release)
-    inactive_for = now - last_activity
+    inactive_days = release.days_since_active
     return ReleaseAgeRow(
         release=release,
         age_label=util.plural(age.days, "day"),
         age_bold=age > _MAXIMUM_PERMITTED_AGE_DAYS,
-        inactive_label=util.plural(inactive_for.days, "day"),
-        inactive_bold=inactive_for > _MAXIMUM_PERMITTED_AGE_DAYS,
+        inactive_label=util.plural(inactive_days, "day"),
+        inactive_bold=inactive_days > _MAXIMUM_PERMITTED_AGE_DAYS.days,
     )
 
 
