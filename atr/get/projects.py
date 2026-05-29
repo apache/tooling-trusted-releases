@@ -325,7 +325,7 @@ def _asf_yaml_export(project: sql.Project) -> str:
 
 
 def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
-    metadata: dict[str, object] = {}
+    metadata: dict[str, object] = {"key": str(project.key)}
     if project.committee_key:
         metadata["committee"] = project.committee_key
     if project.name:

@@ -24,6 +24,7 @@ import atr.models.sql as sql
 class _FakeProject:
     def __init__(self, recipients=None, **fields):
         defaults = {
+            "key": None,
             "committee_key": None,
             "name": None,
             "description": None,
@@ -50,6 +51,7 @@ class _FakeProject:
 
 def test_export_includes_only_recipient_keys_that_are_set() -> None:
     project = _FakeProject(
+        key="example",
         committee_key="tooling",
         name="Apache Example",
         recipients={sql.RecipientAction.VOTE: {"to": "private@example.apache.org"}},
@@ -61,13 +63,13 @@ def test_export_includes_only_recipient_keys_that_are_set() -> None:
 
 
 def test_export_minimal_project_omits_empty_blocks() -> None:
-    project = _FakeProject(committee_key="tooling", name="Apache Trusted Releases")
+    project = _FakeProject(key="trusted-releases", committee_key="tooling", name="Apache Trusted Releases")
 
     loaded = strictyaml.load(projects._asf_yaml_export(project)).data
 
     assert loaded == {
         "project": {
-            "metadata": {"committee": "tooling", "name": "Apache Trusted Releases"},
+            "metadata": {"key": "trusted-releases", "committee": "tooling", "name": "Apache Trusted Releases"},
             "features": {"atr_sync": "true"},
         }
     }
@@ -75,6 +77,7 @@ def test_export_minimal_project_omits_empty_blocks() -> None:
 
 def test_export_reproduces_every_field() -> None:
     project = _FakeProject(
+        key="trusted-releases",
         committee_key="tooling",
         name="Apache Trusted Releases",
         short_description="A platform for making official ASF software releases.",
@@ -98,6 +101,7 @@ def test_export_reproduces_every_field() -> None:
     assert loaded == {
         "project": {
             "metadata": {
+                "key": "trusted-releases",
                 "committee": "tooling",
                 "name": "Apache Trusted Releases",
                 "short_description": "A platform for making official ASF software releases.",
@@ -122,6 +126,7 @@ def test_export_reproduces_every_field() -> None:
 
 def test_export_splits_comma_joined_columns_into_sequences() -> None:
     project = _FakeProject(
+        key="example",
         committee_key="tooling",
         name="Apache Example",
         categories="data, storage",

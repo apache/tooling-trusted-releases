@@ -42,6 +42,7 @@ EXPORT_URL: Final[str] = f"/project/yaml/{PROJECT_KEY}"
 SOURCE_YAML: Final[str] = """\
 project:
   metadata:
+    key: test-asfyaml
     committee: test
     name: Apache Test Asfyaml
     short_description: A round-trip fixture project.
@@ -112,13 +113,14 @@ def _delete_project(page: Page) -> None:
 
 
 def _import_payload() -> dict[str, Any]:
-    # Replays what infrastructure-asfyaml does: committee is authored inside the
-    # metadata block but the API expects it at the top level, so pop it out.
+    # Replays what infrastructure-asfyaml does: key and committee are authored inside
+    # the metadata block but the API expects them at the top level, so pop them out.
     block = strictyaml.load(SOURCE_YAML).data["project"]
     metadata = dict(block["metadata"])
+    project_key = metadata.pop("key")
     committee_key = metadata.pop("committee")
     payload: dict[str, Any] = {
-        "project_key": PROJECT_KEY,
+        "project_key": project_key,
         "committee_key": committee_key,
         "project": metadata,
     }
