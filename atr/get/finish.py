@@ -45,9 +45,12 @@ import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.post as post
 import atr.render as render
 import atr.shared as shared
+import atr.shared.activity as activity
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -103,6 +106,7 @@ async def selected(
             }"
 
     return await _render_page(
+        session=session,
         release=release,
         deletable_dirs=deletable_dirs,
         rc_analysis=rc_analysis,
@@ -288,6 +292,7 @@ def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) 
 
 
 async def _render_page(
+    session: web.Committer,
     release: sql.Release,
     deletable_dirs: list[tuple[str, str]],
     rc_analysis: RCTagAnalysisResult,
@@ -357,6 +362,17 @@ async def _render_page(
 
     # Remove RC tags section
     page.append(await _render_rc_tags_section(rc_analysis))
+
+    if user.is_participant_for_committee(release.committee, session.projects):
+        page.h2["Inactivity"]
+        activity_form = await form.render(
+            model_cls=form.Empty,
+            action=util.as_url(post.release.activity, project_key=release.project.key, version_key=release.version),
+            submit_label="Reset inactivity clock",
+            submit_classes="btn-outline-primary",
+            pre_submit=activity.inactivity_form_intro(release, action="flagged"),
+        )
+        page.div(".mb-4")[activity_form]
 
     # Custom styles
     page_styles = """

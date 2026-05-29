@@ -51,6 +51,7 @@ import atr
 import atr.blueprints as blueprints
 import atr.cache as cache
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.errors as errors
@@ -992,19 +993,19 @@ async def _register_recurrent_tasks() -> None:
     """Schedule recurring tasks"""
     await tasks.clear_scheduled()
     # Run maintenance task immediately on server startup
-    maintenance = await tasks.run_maintenance(asf_uid="system", schedule_next=True)
+    maintenance = await tasks.run_maintenance(asf_uid=constants.SYSTEM_SERVICE_UID, schedule_next=True)
     log.info(f"Scheduled maintenance with ID {maintenance.id}")
     # Start other tasks 5 min after server start
     await asyncio.sleep(300)
     try:
         await asyncio.sleep(60)
-        metadata = await tasks.metadata_update(asf_uid="system", schedule_next=True)
+        metadata = await tasks.metadata_update(asf_uid=constants.SYSTEM_SERVICE_UID, schedule_next=True)
         log.info(f"Scheduled remote metadata update with ID {metadata.id}")
         await asyncio.sleep(60)
-        workflow = await tasks.workflow_update(asf_uid="system", schedule_next=True)
+        workflow = await tasks.workflow_update(asf_uid=constants.SYSTEM_SERVICE_UID, schedule_next=True)
         log.info(f"Scheduled workflow status update with ID {workflow.id}")
         await asyncio.sleep(60)
-        dist_check = await tasks.distribution_status_check(asf_uid="system", schedule_next=True)
+        dist_check = await tasks.distribution_status_check(asf_uid=constants.SYSTEM_SERVICE_UID, schedule_next=True)
         log.info(f"Scheduled distribution status update with ID {dist_check.id}")
 
     except Exception as e:

@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import os
 import pathlib
 import unittest.mock as mock
@@ -114,6 +115,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
 
     latest_revision = mock.MagicMock()
@@ -208,6 +210,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
@@ -284,6 +287,7 @@ async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_pa
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()
@@ -439,6 +443,7 @@ async def test_modify_path_provenance_flows_into_write_files_data(tmp_path: path
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
     import contextlib
 
@@ -588,6 +593,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     release.project.status = sql.ProjectStatus.ACTIVE
     release.project.release_policy = None
     release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
 
     old_revision = mock.MagicMock()

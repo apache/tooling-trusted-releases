@@ -33,6 +33,7 @@ import sqlmodel
 
 import atr.analysis as analysis
 import atr.config as config
+import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
@@ -60,6 +61,13 @@ if TYPE_CHECKING:
 
 SPECIAL_SUFFIXES: Final[frozenset[str]] = frozenset({".asc", ".sha256", ".sha512"})
 
+_ACTIVITY_BUMP_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
+    {
+        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        sql.ReleasePhase.RELEASE_CANDIDATE,
+        sql.ReleasePhase.RELEASE_PREVIEW,
+    }
+)
 _SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
 
 
@@ -160,14 +168,54 @@ class CommitteeParticipant(FoundationCommitter):
         committee_key: str,
     ) -> None:
         super().__init__(write, write_as, data)
-        self.__write = write
-        self.__write_as = write_as
-        self.__data = data
         asf_uid = write.authorisation.asf_uid
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def bump_activity(self, project_key: safe.ProjectKey, version_key: safe.VersionKey) -> sql.Release:
+        release = await self.__data.release(
+            project_key=str(project_key), version=str(version_key), _committee=True
+        ).demand(storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404))
+        storage.ensure_project_active(release.project)
+        ineligible_phase = release.phase not in _ACTIVITY_BUMP_PHASES
+        if ineligible_phase:
+            raise storage.AccessError(
+                f"Release phase {release.phase.value} is not eligible for activity reset", status=409
+            )
+        now = datetime.datetime.now(datetime.UTC)
+        previous_activity_at = release.activity_at
+        via = sql.validate_instrumented_attribute
+        release_activity_at = via(sql.Release.activity_at)
+        activity_at_value = sqlalchemy.case(
+            (release_activity_at > now, release_activity_at),
+            else_=now,
+        )
+        result = await self.__data.execute(
+            sqlmodel.update(sql.Release)
+            .where(
+                via(sql.Release.key) == release.key,
+                via(sql.Release.phase).in_(_ACTIVITY_BUMP_PHASES),
+            )
+            .values(activity_at=activity_at_value, inactivity_notice_key=None)
+        )
+        if getattr(result, "rowcount", 0) != 1:
+            await self.__data.rollback()
+            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
+        await self.__data.refresh(release)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            previous_activity_at=previous_activity_at.isoformat(),
+            activity_at=release.activity_at.isoformat(),
+        )
+        return release
 
     async def delete(
         self,
@@ -181,6 +229,15 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key), version=str(version), phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
         storage.ensure_project_active(release.project)
+        return await self.__delete_body(release, project_key, version, include_downloads)
+
+    async def __delete_body(
+        self,
+        release: sql.Release,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        include_downloads: bool,
+    ) -> str | None:
         release_dirs = [
             paths.release_directory_base(release),
             paths.get_attestable_dir() / str(project_key) / str(version),
@@ -246,6 +303,53 @@ class CommitteeParticipant(FoundationCommitter):
             error=error,
         )
         return error
+
+    async def __delete_release_data_downloads(self, release: sql.Release) -> None:
+        finished_dir = paths.release_directory(release)
+        if await aiofiles.os.path.isdir(finished_dir):
+            release_inodes = set()
+            async for file_path in util.paths_recursive(finished_dir):
+                try:
+                    stat_result = await aiofiles.os.stat(finished_dir / file_path)
+                    release_inodes.add(stat_result.st_ino)
+                except FileNotFoundError:
+                    continue
+
+            if release_inodes:
+                downloads_dir = paths.get_downloads_dir()
+                async for link_path in util.paths_recursive(downloads_dir):
+                    full_link_path = downloads_dir / link_path
+                    try:
+                        link_stat = await aiofiles.os.stat(full_link_path)
+                        if link_stat.st_ino in release_inodes:
+                            await aiofiles.os.remove(full_link_path)
+                            log.info(f"Deleted hard link: {full_link_path}")
+                    except FileNotFoundError:
+                        continue
+
+    async def __delete_release_data_filesystem(
+        self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
+    ) -> str | None:
+        delete_errors: list[str] = []
+        for release_dir in release_dirs:
+            if await aiofiles.os.path.isdir(release_dir):
+                try:
+                    log.info(f"Deleting filesystem directory: {release_dir}")
+                    await util.delete_immutable_directory(
+                        release_dir, reason=f"user {self.__asf_uid} is deleting release {project_key!s} {version!s}"
+                    )
+                    log.info(f"Successfully deleted directory: {release_dir}")
+                except Exception as e:
+                    log.exception(f"Error deleting filesystem directory {release_dir}:")
+                    delete_errors.append(f"{release_dir}: {e!s}")
+            else:
+                log.warning(f"Filesystem directory not found, skipping deletion: {release_dir}")
+        if delete_errors:
+            return (
+                f"Database records for '{project_key!s} {version!s}' deleted,"
+                f" but failed to delete filesystem directories: {', '.join(delete_errors)}"
+            )
+        return None
 
     async def delete_empty_directory(
         self, project_key: safe.ProjectKey, version_key: safe.VersionKey, dir_to_delete_rel: pathlib.Path
@@ -703,10 +807,22 @@ class CommitteeParticipant(FoundationCommitter):
         # Promote it to RELEASE_CANDIDATE
         via = sql.validate_instrumented_attribute
         vote_seq = await self.__vote_seq_allocate(release_for_pre_checks.key)
+        now = datetime.datetime.now(datetime.UTC)
+        release_activity_at = via(sql.Release.activity_at)
+        activity_at_value = sqlalchemy.case(
+            (release_activity_at > now, release_activity_at),
+            else_=now,
+        )
+        notice_key_value = sqlalchemy.case(
+            (release_activity_at > now, via(sql.Release.inactivity_notice_key)),
+            else_=None,
+        )
         values: dict[str, object] = {
-            "vote_started": datetime.datetime.now(datetime.UTC),
+            "vote_started": now,
             "vote_resolved": None,
             "current_vote_seq": vote_seq,
+            "activity_at": activity_at_value,
+            "inactivity_notice_key": notice_key_value,
         }
         if promote:
             values["phase"] = sql.ReleasePhase.RELEASE_CANDIDATE
@@ -794,6 +910,7 @@ class CommitteeParticipant(FoundationCommitter):
         self.__validate_version(project, version)
         cycle_key = await self.__ensure_project_cycle(project, version)
 
+        now = datetime.datetime.now(datetime.UTC)
         release = sql.Release(
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
             project_key=project.key,
@@ -801,7 +918,8 @@ class CommitteeParticipant(FoundationCommitter):
             version=str(version),
             cycle_key=cycle_key,
             archive_prior_release=auto_archive,
-            created=datetime.datetime.now(datetime.UTC),
+            created=now,
+            activity_at=now,
         )
         self.__data.add(release)
         await self.__data.commit()
@@ -954,54 +1072,6 @@ class CommitteeParticipant(FoundationCommitter):
         # This manner of sorting is necessary to ensure that directories are removed after their contents
         all_current_paths_interim.sort(key=lambda p: (-len(p.parts), str(p)))
         return all_current_paths_interim
-
-    async def __delete_release_data_downloads(self, release: sql.Release) -> None:
-        # Delete hard links from the downloads directory
-        finished_dir = paths.release_directory(release)
-        if await aiofiles.os.path.isdir(finished_dir):
-            release_inodes = set()
-            async for file_path in util.paths_recursive(finished_dir):
-                try:
-                    stat_result = await aiofiles.os.stat(finished_dir / file_path)
-                    release_inodes.add(stat_result.st_ino)
-                except FileNotFoundError:
-                    continue
-
-            if release_inodes:
-                downloads_dir = paths.get_downloads_dir()
-                async for link_path in util.paths_recursive(downloads_dir):
-                    full_link_path = downloads_dir / link_path
-                    try:
-                        link_stat = await aiofiles.os.stat(full_link_path)
-                        if link_stat.st_ino in release_inodes:
-                            await aiofiles.os.remove(full_link_path)
-                            log.info(f"Deleted hard link: {full_link_path}")
-                    except FileNotFoundError:
-                        continue
-
-    async def __delete_release_data_filesystem(
-        self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
-    ) -> str | None:
-        delete_errors: list[str] = []
-        for release_dir in release_dirs:
-            if await aiofiles.os.path.isdir(release_dir):
-                try:
-                    log.info(f"Deleting filesystem directory: {release_dir}")
-                    await util.delete_immutable_directory(
-                        release_dir, reason=f"user {self.__asf_uid} is deleting release {project_key!s} {version!s}"
-                    )
-                    log.info(f"Successfully deleted directory: {release_dir}")
-                except Exception as e:
-                    log.exception(f"Error deleting filesystem directory {release_dir}:")
-                    delete_errors.append(f"{release_dir}: {e!s}")
-            else:
-                log.warning(f"Filesystem directory not found, skipping deletion: {release_dir}")
-        if delete_errors:
-            return (
-                f"Database records for '{project_key!s} {version!s}' deleted,"
-                f" but failed to delete filesystem directories: {', '.join(delete_errors)}"
-            )
-        return None
 
     @contextlib.asynccontextmanager
     async def __open_for_replace(self, target_path: pathlib.Path) -> AsyncIterator[Any]:
@@ -1301,6 +1371,19 @@ class CommitteeMember(CommitteeParticipant):
 
 
 class FoundationAdmin(FoundationCommitter):
+    BLOCKING_QUARANTINE_STATUSES: Final[frozenset[sql.QuarantineStatus]] = frozenset(
+        {sql.QuarantineStatus.STAGING, sql.QuarantineStatus.PENDING}
+    )
+
+    ELIGIBLE_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
+        {
+            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            sql.ReleasePhase.RELEASE_CANDIDATE,
+        }
+    )
+
+    BLOCKING_TASK_STATUSES: Final[frozenset[sql.TaskStatus]] = frozenset({sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE})
+
     def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session) -> None:
         super().__init__(write, write_as, data)
         self.__write = write
@@ -1310,3 +1393,203 @@ class FoundationAdmin(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
+
+    async def delete_inactive(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        dry_run: bool = False,
+    ) -> str | None:
+        error = await self.__check_eligibility(project_key, version)
+        if error is not None:
+            return error
+        if dry_run:
+            return None
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        final_error = await self.__check_eligibility(project_key, version)
+        if final_error is not None:
+            await self.__data.rollback()
+            return final_error
+        return await self.__delete(project_key, version)
+
+    async def __delete(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        include_downloads: bool = True,
+    ) -> str | None:
+        release = await self.__data.release(project_key=str(project_key), version=str(version), _committee=True).demand(
+            storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404)
+        )
+        storage.ensure_project_active(release.project)
+        return await self.__delete_body(release, project_key, version, include_downloads)
+
+    async def __delete_body(
+        self,
+        release: sql.Release,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        include_downloads: bool,
+    ) -> str | None:
+        release_dirs = [
+            paths.release_directory_base(release),
+            paths.get_attestable_dir() / str(project_key) / str(version),
+            paths.get_archives_dir() / str(project_key) / str(version),
+            paths.get_quarantined_dir() / str(project_key) / str(version),
+        ]
+
+        # Delete from the database using bulk SQL DELETE for efficiency
+        log.info(f"Deleting database records for release: {project_key!s} {version!s}")
+
+        # Bulk delete tasks
+        # These is no cascade, so we must delete explicitly
+        via = sql.validate_instrumented_attribute
+        task_delete_stmt = sqlmodel.delete(sql.Task).where(
+            via(sql.Task.project_key) == release.project.key,
+            via(sql.Task.version_key) == release.version,
+        )
+        task_result = await self.__data.execute(task_delete_stmt)
+        task_count = task_result.rowcount if isinstance(task_result, engine.CursorResult) else 0
+        log.debug(f"Deleted {util.plural(task_count, 'task')} for {project_key!s} {version!s}")
+
+        release_key = release.key
+
+        # These deletes would also be performed by database cascade
+        # We do them here before the commit instead to be explicit
+        rfs_delete_stmt = sqlmodel.delete(sql.ReleaseFileState).where(
+            via(sql.ReleaseFileState.release_key) == release_key,
+        )
+        rfs_result = await self.__data.execute(rfs_delete_stmt)
+        rfs_count = rfs_result.rowcount if isinstance(rfs_result, engine.CursorResult) else 0
+        log.debug(f"Deleted {util.plural(rfs_count, 'file state row')} for {project_key!s} {version!s}")
+
+        await self.__data.delete(release)
+        log.info(f"Deleted release record: {project_key!s} {version!s}")
+
+        # In test mode, delete the counter for test committee releases
+        # This allows revision numbers to be reused in testing
+        committee = release.project.committee
+        is_test_release = config.is_test_mode() and (committee is not None) and (committee.key == "test")
+        if is_test_release:
+            counter_delete_stmt = sqlmodel.delete(sql.RevisionCounter).where(
+                via(sql.RevisionCounter.release_key) == release_key
+            )
+            await self.__data.execute(counter_delete_stmt)
+            vote_counter_delete_stmt = sqlmodel.delete(sql.VoteCounter).where(
+                via(sql.VoteCounter.release_key) == release_key
+            )
+            await self.__data.execute(vote_counter_delete_stmt)
+            log.info(f"Deleted revision and vote counters for test release: {release_key}")
+
+        # Filesystem deletions are more likely to have permission errors than database deletions
+        # Therefore we do filesystem deletions first
+        if include_downloads:
+            await self.__delete_release_data_downloads(release)
+        error = await self.__delete_release_data_filesystem(release_dirs, project_key, version)
+
+        await self.__data.commit()
+
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version),
+            error=error,
+        )
+        return error
+
+    async def __delete_release_data_downloads(self, release: sql.Release) -> None:
+        finished_dir = paths.release_directory(release)
+        if await aiofiles.os.path.isdir(finished_dir):
+            release_inodes = set()
+            async for file_path in util.paths_recursive(finished_dir):
+                try:
+                    stat_result = await aiofiles.os.stat(finished_dir / file_path)
+                    release_inodes.add(stat_result.st_ino)
+                except FileNotFoundError:
+                    continue
+
+            if release_inodes:
+                downloads_dir = paths.get_downloads_dir()
+                async for link_path in util.paths_recursive(downloads_dir):
+                    full_link_path = downloads_dir / link_path
+                    try:
+                        link_stat = await aiofiles.os.stat(full_link_path)
+                        if link_stat.st_ino in release_inodes:
+                            await aiofiles.os.remove(full_link_path)
+                            log.info(f"Deleted hard link: {full_link_path}")
+                    except FileNotFoundError:
+                        continue
+
+    async def __delete_release_data_filesystem(
+        self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
+    ) -> str | None:
+        delete_errors: list[str] = []
+        for release_dir in release_dirs:
+            if await aiofiles.os.path.isdir(release_dir):
+                try:
+                    log.info(f"Deleting filesystem directory: {release_dir}")
+                    await util.delete_immutable_directory(
+                        release_dir, reason=f"user {self.__asf_uid} is deleting release {project_key!s} {version!s}"
+                    )
+                    log.info(f"Successfully deleted directory: {release_dir}")
+                except Exception as e:
+                    log.exception(f"Error deleting filesystem directory {release_dir}:")
+                    delete_errors.append(f"{release_dir}: {e!s}")
+            else:
+                log.warning(f"Filesystem directory not found, skipping deletion: {release_dir}")
+        if delete_errors:
+            return (
+                f"Database records for '{project_key!s} {version!s}' deleted,"
+                f" but failed to delete filesystem directories: {', '.join(delete_errors)}"
+            )
+        return None
+
+    async def __check_eligibility(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+    ) -> str | None:
+        release = await self.__data.release(project_key=str(project_key), version=str(version), _committee=True).get()
+        if release is None:
+            return "release no longer exists"
+        if release.project.status != sql.ProjectStatus.ACTIVE:
+            return f"release project '{release.project_key}' is not active"
+        if release.phase not in FoundationAdmin.ELIGIBLE_PHASES:
+            return f"release phase {release.phase.value} is not eligible for system deletion"
+        now = datetime.datetime.now(datetime.UTC)
+        age_days = (now - release.activity_at).days
+        if age_days < constants.INACTIVITY_DELETE_DAYS:
+            return f"release activity is only {age_days} days old; threshold is {constants.INACTIVITY_DELETE_DAYS}"
+        if await self.__has_blocking_tasks(release):
+            return "release has queued or active tasks"
+        if await self.__has_blocking_quarantine(release):
+            return "release has staging or pending quarantine rows"
+        return None
+
+    async def __has_blocking_quarantine(self, release: sql.Release) -> bool:
+        via = sql.validate_instrumented_attribute
+        stmt = (
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.Quarantined)
+            .where(
+                via(sql.Quarantined.release_key) == release.key,
+                via(sql.Quarantined.status).in_(list(FoundationAdmin.BLOCKING_QUARANTINE_STATUSES)),
+            )
+        )
+        result = await self.__data.execute(stmt)
+        return int(result.scalar_one()) > 0
+
+    async def __has_blocking_tasks(self, release: sql.Release) -> bool:
+        via = sql.validate_instrumented_attribute
+        stmt = (
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.Task)
+            .where(
+                via(sql.Task.project_key) == release.project_key,
+                via(sql.Task.version_key) == release.version,
+                via(sql.Task.status).in_(list(FoundationAdmin.BLOCKING_TASK_STATUSES)),
+            )
+        )
+        result = await self.__data.execute(stmt)
+        return int(result.scalar_one()) > 0

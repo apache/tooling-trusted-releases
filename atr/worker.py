@@ -34,6 +34,7 @@ from typing import Any, Final
 
 import sqlmodel
 
+import atr.constants as constants
 import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
@@ -157,7 +158,7 @@ async def _notify_task_failure(
     primary_rel_path: str | None,
     error: str,
 ) -> None:
-    if (not asf_uid) or (asf_uid == "system"):
+    if (not asf_uid) or (asf_uid == constants.SYSTEM_SERVICE_UID):
         return
     message = _task_failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
     try:
@@ -284,7 +285,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
     task_results: results.Results | None
     try:
         if (
-            asf_uid != "system"
+            asf_uid != constants.SYSTEM_SERVICE_UID
             and not (config.is_test_mode() and asf_uid == "test")
             and (config.is_production_mode() or config.is_ldap_configured())
         ):

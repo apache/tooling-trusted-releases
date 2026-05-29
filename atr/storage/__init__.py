@@ -21,11 +21,13 @@ import contextlib
 import datetime
 import json
 import logging
-from typing import TYPE_CHECKING, Final
+import types
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.basic as basic
@@ -592,6 +594,15 @@ async def write_as_project_release_manager(
 ) -> AsyncGenerator[WriteAsReleaseManager]:
     async with write(asf_uid) as w:
         yield await w.as_project_release_manager(project_key)
+
+
+@contextlib.asynccontextmanager
+async def write_as_system() -> AsyncGenerator[writers.release.FoundationAdmin]:
+    async with db.session() as data:
+        system_authorisation = types.SimpleNamespace(asf_uid=constants.SYSTEM_SERVICE_UID)
+        system_write: Any = types.SimpleNamespace(authorisation=system_authorisation)
+        system_write_as: Any = WriteAs()
+        yield writers.release.FoundationAdmin(system_write, system_write_as, data)
 
 
 @contextlib.asynccontextmanager

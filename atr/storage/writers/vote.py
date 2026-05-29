@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime
 from typing import Literal
 
+import sqlalchemy
 import sqlmodel
 
 import atr.config as config
@@ -1210,12 +1211,24 @@ class ReleaseManager(CommitteeParticipant):
             stmt = stmt.where(via(sql.Release.podling_thread_id).is_(None))
         else:
             stmt = stmt.where(via(sql.Release.podling_thread_id) == expected_podling_thread_id)
+        now = datetime.datetime.now(datetime.UTC)
+        release_activity_at = via(sql.Release.activity_at)
+        activity_at_value = sqlalchemy.case(
+            (release_activity_at > now, release_activity_at),
+            else_=now,
+        )
+        notice_key_value = sqlalchemy.case(
+            (release_activity_at > now, via(sql.Release.inactivity_notice_key)),
+            else_=None,
+        )
         result = await self.__data.execute(
             stmt.values(
                 phase=new_phase,
                 vote_mode=new_vote_mode,
                 vote_resolved=new_vote_resolved,
                 podling_thread_id=new_podling_thread_id,
+                activity_at=activity_at_value,
+                inactivity_notice_key=notice_key_value,
             )
         )
         if getattr(result, "rowcount", 0) != 1:

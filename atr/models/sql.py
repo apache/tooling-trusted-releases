@@ -1236,6 +1236,12 @@ class Release(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
     )
+    activity_at: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    inactivity_notice_key: str | None = sqlmodel.Field(default=None)
     # Set at start time when the user opts in to archiving the prior release
     # in this cycle when this release is announced.
     archive_prior_release: bool = sqlmodel.Field(default=False)

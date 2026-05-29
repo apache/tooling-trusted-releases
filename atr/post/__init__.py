@@ -26,6 +26,7 @@ import atr.post.keys as keys
 import atr.post.manual as manual
 import atr.post.notifications as notifications
 import atr.post.projects as projects
+import atr.post.release as release
 import atr.post.resolve as resolve
 import atr.post.revisions as revisions
 import atr.post.sbom as sbom
@@ -49,6 +50,7 @@ __all__ = [
     "manual",
     "notifications",
     "projects",
+    "release",
     "resolve",
     "revisions",
     "sbom",

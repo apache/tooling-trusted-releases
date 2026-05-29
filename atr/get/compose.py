@@ -39,9 +39,11 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
+import atr.shared.activity as activity
 import atr.shared.draft as draft
 import atr.storage as storage
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -157,6 +159,7 @@ async def selected(
         submit_classes="btn btn-primary",
         submit_disabled=release.check_cache_key is None,
     )
+    activity_form_html = await _activity_form_html(release, session)
 
     has_files = await util.has_files(release)
 
@@ -234,6 +237,7 @@ async def selected(
         models=sql,
         recheck_form=recheck_form,
         cache_reset_form=cache_reset_form,
+        activity_form=activity_form_html,
         csrf_input=str(form.csrf_input()),
         has_files=has_files,
         blocker_errors=blocker_errors,
@@ -260,6 +264,19 @@ async def status_selected(
     except Exception:
         log.exception(f"status_selected failed for {project_key}/{version_key}")
         return _status_error_response(None, default_status=500, expose_message=False)
+
+
+async def _activity_form_html(release: sql.Release, session: web.Committer) -> str:
+    if not user.is_participant_for_committee(release.committee, session.projects):
+        return ""
+    activity_form = await form.render(
+        model_cls=form.Empty,
+        action=util.as_url(post.release.activity, project_key=release.project.key, version_key=release.version),
+        submit_label="Reset inactivity clock",
+        submit_classes="btn-outline-primary",
+        pre_submit=activity.inactivity_form_intro(release),
+    )
+    return str(activity_form)
 
 
 def _banner_html(quarantine_pending: int, ongoing: int) -> str:
