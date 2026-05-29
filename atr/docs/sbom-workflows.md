@@ -4,7 +4,7 @@
 
 **Prev**: `2.5.` [Trusted Publishing](trusted-publishing)
 
-**Next**: `3.1.` [Running the server](running-the-server)
+**Next**: `2.7.` [Promoting to release](promoting-to-release)
 
 **Sections**:
 
