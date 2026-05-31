@@ -50,7 +50,7 @@
           <main class="main-content">
             {% if (not current_user) or (current_user.uid != "sbp") %}
               <div class="warning-banner">
-                This is <strong>Alpha 2 Software</strong>. You can test the process and download  content, but releases must still be committed by hand to <a href="https://dist.apache.org/repos/dist/release/">svn:dist/release</a> (see <a href="https://tooling.apache.org/svn-dist.html">svn-dist Transition Plan 1B</a>).
+                This is <strong>Alpha 3 Software</strong>. Finished releases must be moved to <a href="https://dist.apache.org/repos/dist/release/">svn:dist/release</a> following these <a href="/docs/promoting-to-release">promoting to release instructions.</a>
               </div>
             {% endif %}
             {% if current_user and current_user.admin_uid %}
