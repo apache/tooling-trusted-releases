@@ -912,7 +912,7 @@ def test_trusted_email_context_labels_avoid_authoritative_terms() -> None:
                 name="Unknown",
                 asf_uid_or_email="unknown@example.org",
                 from_email="unknown@example.org",
-                status=models_tabulate.VoteStatus.UNKNOWN,
+                status=models_tabulate.VoteStatus.CONTRIBUTOR,
                 asf_eid="unknown-eid",
                 iso_datetime="2026-01-01T00:00:00Z",
                 vote=models_tabulate.Vote.UNKNOWN,
@@ -932,14 +932,13 @@ def test_trusted_email_context_labels_avoid_authoritative_terms() -> None:
         "Email from PMC member",
         "Email from committer",
         "Email from contributor",
-        "Unknown email",
+        "Email from contributor",
     ]
     assert [row.vote for row in rows] == ["+1", "-1", "0", "?"]
     assert [row.label for row in summary_rows] == [
         "Email from PMC member",
         "Email from committer",
         "Email from contributor",
-        "Unknown email",
     ]
     assert "Binding" not in {row.status_label for row in rows}
     assert "Formal" not in {row.status_label for row in rows}

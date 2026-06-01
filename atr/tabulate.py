@@ -227,7 +227,7 @@ async def votes(  # noqa: C901
             status = await _vote_status(asf_uid, list_raw, committee)
         else:
             asf_uid_or_email = from_email_lower
-            status = models.tabulate.VoteStatus.UNKNOWN
+            status = models.tabulate.VoteStatus.CONTRIBUTOR
 
         if start_unixtime is None:
             epoch = msg.get("epoch", "")
