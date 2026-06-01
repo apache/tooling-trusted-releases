@@ -843,6 +843,33 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
             data.add(test_project)
             await data.commit()
 
+        # A podling equivalent, so we can exercise incubator/podling behaviours in tests
+        test_podling_committee = await data.committee(key="test-podling").get()
+        if not test_podling_committee:
+            test_podling_committee = sql.Committee(
+                key="test-podling",
+                name="Test Podling",
+                is_podling=True,
+                committee_members=["test"],
+                committers=["test"],
+                release_managers=["test"],
+            )
+            data.add(test_podling_committee)
+            await data.commit()
+
+        test_podling_project = await data.project(key="test-podling").get()
+        if not test_podling_project:
+            test_podling_project = sql.Project(
+                key="test-podling",
+                name="Apache Test Podling",
+                status=sql.ProjectStatus.ACTIVE,
+                committee_key="test-podling",
+                created=datetime.datetime.now(datetime.UTC),
+                created_by="test",
+            )
+            data.add(test_podling_project)
+            await data.commit()
+
 
 def _is_hot_reload() -> bool:
     proc = multiprocessing.current_process()
