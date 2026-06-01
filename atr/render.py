@@ -159,21 +159,41 @@ def html_nav(container: htm.Block, back_url: str, back_anchor: str, phase: Phase
         match expected:
             case "COMPOSE":
                 symbol = "①"
+                phase_number = "one"
             case "VOTE":
                 symbol = "②"
+                phase_number = "two"
             case "FINISH":
                 symbol = "③"
+                phase_number = "three"
         if actual == expected:
-            span.strong(f".atr-phase-{actual}.atr-phase-symbol")[symbol]
-            span.span(f".atr-phase-{actual}.atr-phase-label")[actual]
+            span.strong(f".atr-phase-{phase_number}.atr-phase-symbol")[symbol]
         else:
             span.span(".atr-phase-symbol-other")[symbol]
+
+    def _phase_title(actual: Phase) -> None:
+        match actual:
+            case "COMPOSE":
+                title = "Compose"
+                phase_number = "one"
+            case "VOTE":
+                title = "Vote"
+                phase_number = "two"
+            case "FINISH":
+                title = "Finich"
+                phase_number = "three"
+        span.span(f".atr-phase-{phase_number}.atr-phase-label")[title]
 
     _phase(phase, "COMPOSE")
     span.span(".atr-phase-arrow")["→"]
     _phase(phase, "VOTE")
     span.span(".atr-phase-arrow")["→"]
     _phase(phase, "FINISH")
+
+    block.append(span.collect(separator=" "))
+
+    span = htm.Block(htm.span, classes=".atr-phase-nav")
+    _phase_title(phase)
 
     block.append(span.collect(separator=" "))
     container.append(block)
