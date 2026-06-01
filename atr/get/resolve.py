@@ -319,7 +319,7 @@ async def selected(  # noqa: C901
     skip.append("email_bcc")
 
     if form_cls is shared.resolve.SubmitForm:
-        defaults["result_subject"] = tabulate.vote_result_subject(release, "<resolution>")
+        defaults["result_subject"] = tabulate.vote_result_subject(release, "{{OUTCOME}}")
 
     pre_submit: htm.Element | None = None
     if (not binding_sufficient) and (pass_fail_allowed or bypass_active):
