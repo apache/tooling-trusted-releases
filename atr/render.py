@@ -153,7 +153,9 @@ def html_nav(container: htm.Block, back_url: str, back_anchor: str, phase: Phase
     classes = ".d-flex.justify-content-between.align-items-center"
     block = htm.Block(htm.p, classes=classes)
     block.a(".atr-back-link", href=back_url)[f"← Back to {back_anchor}"]
-    span = htm.Block(htm.span, classes=".atr-phase-nav")
+    container.append(block)
+    card = htm.Block(htm.div, classes=".card-body.text-center.d-flex.flex-column.justify-content-center.float-end")
+    span = htm.Block(htm.div, classes=".atr-phase-themed.mb-2")
 
     def _phase(actual: Phase, expected: Phase) -> None:
         match expected:
@@ -180,7 +182,7 @@ def html_nav(container: htm.Block, back_url: str, back_anchor: str, phase: Phase
                 title = "Vote"
                 phase_number = "two"
             case "FINISH":
-                title = "Finich"
+                title = "Finish"
                 phase_number = "three"
         span.span(f".atr-phase-{phase_number}.atr-phase-label")[title]
 
@@ -190,13 +192,13 @@ def html_nav(container: htm.Block, back_url: str, back_anchor: str, phase: Phase
     span.span(".atr-phase-arrow")["→"]
     _phase(phase, "FINISH")
 
-    block.append(span.collect(separator=" "))
+    card.append(span.collect(separator=" "))
 
-    span = htm.Block(htm.span, classes=".atr-phase-nav")
+    span = htm.Block(htm.div, classes=".atr-phase-themed")
     _phase_title(phase)
 
-    block.append(span.collect(separator=" "))
-    container.append(block)
+    card.append(span.collect(separator=" "))
+    container.append(card.collect(separator=" "))
 
 
 def html_nav_phase(block: htm.Block, project: str, version: str, staging: bool) -> None:
