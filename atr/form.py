@@ -285,6 +285,7 @@ async def render(  # noqa: C901
     submit_disabled: bool = False,
     pre_submit: htm.Element | None = None,
     flash_error_data: dict[str, Any] | None = None,
+    enum_filter_include: dict[str, list[Any]] | None = None,
 ) -> htm.Element:
     if action is None:
         action = quart.request.path
@@ -321,6 +322,7 @@ async def render(  # noqa: C901
             custom,
             border,
             wider_widgets,
+            enum_filter_include=enum_filter_include,
         )
         if hidden_field:
             hidden_fields.append(hidden_field)
@@ -663,10 +665,25 @@ def widget(widget_type: Widget) -> Any:
     return pydantic.Field(..., json_schema_extra={"widget": widget_type.value})
 
 
-def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]:  # noqa: C901
+def _get_choices(  # noqa: C901
+    field_info: pydantic.fields.FieldInfo,
+    filter_keys: list[Any] | None = None,
+) -> list[tuple[str, str]]:
     annotation = field_info.annotation
     origin = get_origin(annotation)
     json_schema_extra = field_info.json_schema_extra or {}
+    # A render-time filter wins; otherwise fall back to the field's static one
+    if (filter_keys is None) and isinstance(json_schema_extra, dict):
+        static_filter = json_schema_extra.get("enum_filter_include")
+        if isinstance(static_filter, list):
+            filter_keys = static_filter
+
+    def enum_choices(enum_class: type[enum.Enum]) -> list[tuple[str, str]]:
+        return [
+            (member.value, member.value)
+            for member in enum_class
+            if (filter_keys is None) or (member.value in filter_keys)
+        ]
 
     if origin is Literal:
         return [(v, v) for v in get_args(annotation)]
@@ -678,20 +695,14 @@ def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]
             inner_type = args[0]
             if isinstance(inner_type, type) and issubclass(inner_type, enum.Enum):
                 # This is an enum type wrapped in Annotated, from Enum[T] or Set[T]
-                if isinstance(json_schema_extra, dict):
-                    if filter_keys := json_schema_extra.get("enum_filter_include", None):
-                        return [(member.value, member.value) for member in inner_type if member.value in filter_keys]
-                return [(member.value, member.value) for member in inner_type]
+                return enum_choices(inner_type)
 
     if origin is set:
         args = get_args(annotation)
         if args:
             enum_class = args[0]
             if isinstance(enum_class, type) and issubclass(enum_class, enum.Enum):
-                if isinstance(json_schema_extra, dict):
-                    if filter_keys := json_schema_extra.get("enum_filter_include", None):
-                        return [(member.value, member.value) for member in enum_class if member.value in filter_keys]
-                return [(member.value, member.value) for member in enum_class]
+                return enum_choices(enum_class)
 
     if origin is list:
         args = get_args(annotation)
@@ -700,10 +711,7 @@ def _get_choices(field_info: pydantic.fields.FieldInfo) -> list[tuple[str, str]]
 
     # Check for plain enum types, e.g. when Pydantic unwraps form.Enum[T]
     if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
-        if isinstance(json_schema_extra, dict):
-            if filter_keys := json_schema_extra.get("enum_filter_include", None):
-                return [(member.value, member.value) for member in annotation if member.value in filter_keys]
-        return [(member.value, member.value) for member in annotation]
+        return enum_choices(annotation)
 
     return []
 
@@ -884,6 +892,7 @@ def _render_row(  # noqa: C901
     custom: dict[str, htm.Element | htm.VoidElement] | None,
     border: bool,
     wider_widgets: bool,
+    enum_filter_include: dict[str, list[Any]] | None = None,
 ) -> tuple[htm.VoidElement | None, htm.Element | None]:
     widget_type = _get_widget_type(field_info)
     has_flash_error = field_name in flash_error_data
@@ -933,6 +942,7 @@ def _render_row(  # noqa: C901
         textarea_rows=textarea_rows,
         custom=custom,
         defaults=defaults,
+        enum_filter_include=enum_filter_include,
     )
 
     row_div = htm.div(f".mb-3.pb-3.row{'.border-bottom' if border else ''}")
@@ -966,9 +976,11 @@ def _render_widget(  # noqa: C901
     textarea_rows: int,
     custom: dict[str, htm.Element | htm.VoidElement] | None,
     defaults: dict[str, Any] | None,
+    enum_filter_include: dict[str, list[Any]] | None = None,
 ) -> htm.Element | htm.VoidElement:
     widget_type = _get_widget_type(field_info)
     widget_classes = _get_widget_classes(widget_type, field_errors)
+    field_filter = enum_filter_include.get(field_name) if enum_filter_include else None
 
     extra = field_info.json_schema_extra
     is_readonly = bool(extra.get("readonly", False)) if isinstance(extra, dict) else False
@@ -991,7 +1003,7 @@ def _render_widget(  # noqa: C901
             widget = htpy.input(**attrs)
 
         case Widget.CHECKBOXES:
-            choices = _get_choices(field_info)
+            choices = _get_choices(field_info, filter_keys=field_filter)
 
             if (not choices) and isinstance(field_value, list) and field_value:
                 # Render list[str] as checkboxes
@@ -1069,7 +1081,7 @@ def _render_widget(  # noqa: C901
             if dynamic_choices:
                 choices = dynamic_choices
             else:
-                choices = _get_choices(field_info)
+                choices = _get_choices(field_info, filter_keys=field_filter)
                 selected_value = field_value
 
             radios = []
@@ -1099,7 +1111,7 @@ def _render_widget(  # noqa: C901
             if dynamic_choices:
                 choices = dynamic_choices
             else:
-                choices = _get_choices(field_info)
+                choices = _get_choices(field_info, filter_keys=field_filter)
                 # If field_value is an enum, extract its value for comparison
                 if isinstance(field_value, enum.Enum):
                     selected_value = field_value.value

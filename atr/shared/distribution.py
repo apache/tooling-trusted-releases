@@ -82,6 +82,21 @@ MAVEN_OWNER_NAMESPACE_HELP: Final = (
 class DistributionError(RuntimeError): ...
 
 
+class PlatformNotStageableError(DistributionError):
+    """The chosen platform can't be staged - it's a user-input problem, not a server fault."""
+
+
+# The platforms we currently know how to stage. Single source of truth for both the
+# _template_url guard and the staging form's platform filter, so the two can't drift.
+STAGEABLE_PLATFORMS: Final[frozenset[sql.DistributionPlatform]] = frozenset(
+    {
+        sql.DistributionPlatform.ARTIFACT_HUB,
+        sql.DistributionPlatform.PYPI,
+        sql.DistributionPlatform.MAVEN,
+    }
+)
+
+
 class DistributionPlatform(enum.Enum):
     """Wrapper enum for distribution platforms."""
 
@@ -448,17 +463,12 @@ def _template_url(
     if staging is False:
         return dd.platform.value.template_url
 
-    supported = {
-        sql.DistributionPlatform.ARTIFACT_HUB,
-        sql.DistributionPlatform.PYPI,
-        sql.DistributionPlatform.MAVEN,
-    }
-    if dd.platform not in supported:
-        raise RuntimeError("Staging is currently supported only for ArtifactHub, PyPI and Maven Central.")
+    if dd.platform not in STAGEABLE_PLATFORMS:
+        raise PlatformNotStageableError("Staging is currently supported only for ArtifactHub, PyPI and Maven Central.")
 
     template_url = dd.platform.value.template_staging_url
     if template_url is None:
-        raise RuntimeError("This platform does not provide a staging API endpoint.")
+        raise PlatformNotStageableError("This platform does not provide a staging API endpoint.")
 
     return template_url
 

@@ -294,12 +294,22 @@ async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, 
         else util.as_url(post.distribution.record_selected, project_key=str(project), version_key=str(version))
     )
 
+    # Staging only works for some platforms, so don't offer the others on a stage form (#1263)
+    enum_filter_include = None
+    if staging:
+        stageable = [
+            shared.distribution.DistributionPlatform.from_sql(platform).value
+            for platform in shared.distribution.STAGEABLE_PLATFORMS
+        ]
+        enum_filter_include = {"platform": stageable}
+
     # Render the distribution form
     form_html = await form.render(
         model_cls=shared.distribution.DistributionRecordForm,
         submit_label="Record distribution",
         action=action,
         defaults={"package": str(project), "version": str(version)},
+        enum_filter_include=enum_filter_include,
     )
     block.append(form_html)
 

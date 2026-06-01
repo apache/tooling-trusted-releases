@@ -195,8 +195,8 @@ async def record_form_process_page(
                 dd=dd,
                 allow_retries=False,
             )
-        except storage.AccessError as e:
-            # Instead of calling record_form_page_new, redirect with error message
+        except (storage.AccessError, shared.distribution.PlatformNotStageableError) as e:
+            # Both are user-input problems, so redirect back to the form with the message
             return await session.redirect(
                 get.distribution.stage_record if staging else get.distribution.record,
                 project_key=str(project),
