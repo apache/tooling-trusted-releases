@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Final
 import e2e.helpers as helpers
 import pytest
 import strictyaml
-from playwright.sync_api import expect
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -90,7 +89,7 @@ def roundtrip_context(browser: Browser) -> Generator[BrowserContext]:
     context = browser.new_context(ignore_https_errors=True)
     page = context.new_page()
     helpers.log_in(page)
-    _import_project(page.request, _mint_pat_and_jwt(page))
+    _import_project(page.request, _mint_system_jwt(page))
     page.close()
     yield context
     cleanup = context.new_page()
@@ -144,14 +143,22 @@ def _import_project(request: APIRequestContext, jwt: str) -> None:
         raise RuntimeError(f"Import via /api/project/config failed ({response.status}): {response.text()}")
 
 
-def _mint_pat_and_jwt(page: Page) -> str:
-    helpers.visit(page, "/tokens")
+def _mint_system_jwt(page: Page) -> str:
+    # The asfyaml import is a system operation, so we mint a system PAT from the admin
+    # page and exchange it at jwt/create. That endpoint spots the system PAT and hands
+    # back a JWT carrying the atr_sys claim - the /tokens UI flow only issues user JWTs.
+    helpers.visit(page, "/admin/system-tokens")
     page.locator('input[name="label"]').fill("e2e-asfyaml-roundtrip")
-    page.get_by_role("button", name="Generate token").click()
+    page.get_by_role("button", name="Create system token").click()
     page.wait_for_load_state()
-    pat = page.locator(".flash-success code").first.inner_text().strip()
+    # The label and the secret both render as <code>; the secret is the one with text-break.
+    system_pat = page.locator(".flash-success code.text-break").inner_text().strip()
 
-    page.locator('#issue-jwt-form input[name="pat"]').fill(pat)
-    page.get_by_role("button", name="Generate JWT").click()
-    expect(page.locator("#jwt-container")).to_be_visible()
-    return page.locator("#jwt-output").inner_text().strip()
+    response = page.request.post(
+        f"{_BASE_URL}/api/jwt/create",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({"asfuid": SYSTEM_SERVICE_UID, "pat": system_pat}),
+    )
+    if not response.ok:
+        raise RuntimeError(f"System JWT creation via /api/jwt/create failed ({response.status}): {response.text()}")
+    return response.json()["jwt"]
