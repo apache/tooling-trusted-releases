@@ -316,7 +316,7 @@ async def view(
 
 def _asf_yaml_export(project: sql.Project) -> str:
     block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
-    policy = _asf_yaml_recipient_blocks(project)
+    policy = _asf_yaml_policy(project)
     if policy:
         block["policy"] = policy
     # atr_sync defaults to on, so we emit it as a visible reminder the sync exists
@@ -352,6 +352,66 @@ def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
         if items:
             metadata[field] = items
     return metadata
+
+
+def _asf_yaml_policy(project: sql.Project) -> dict[str, object]:
+    release_policy = project.release_policy
+    if release_policy is None:
+        return {}
+    policy = _asf_yaml_policy_fields(release_policy)
+    policy.update(_asf_yaml_policy_extras(release_policy))
+    policy.update(_asf_yaml_recipient_blocks(project))
+    return policy
+
+
+def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, object]:
+    # Fields that need converting rather than passing straight through. strictyaml serialises
+    # only strings, so the int and bool go out as text.
+    extras: dict[str, object] = {}
+    if release_policy.file_tag_mappings:
+        extras["file_tag_mappings"] = {tag: list(paths) for tag, paths in release_policy.file_tag_mappings.items()}
+    if release_policy.license_check_mode != sql.LicenseCheckMode.BOTH:
+        extras["license_check_mode"] = release_policy.license_check_mode.value
+    if release_policy.vote_mode != sql.VoteMode.EMAIL:
+        extras["vote_mode"] = release_policy.vote_mode.value
+    if release_policy.min_hours is not None:
+        extras["min_hours"] = str(release_policy.min_hours)
+    if release_policy.preserve_download_files:
+        extras["preserve_download_files"] = "true"
+    return extras
+
+
+def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, object]:
+    # Read release_policy directly, not the policy_* properties - those fall back to the
+    # default templates, and we only want fields that have actually been set.
+    fields: dict[str, object] = {}
+    for field in (
+        "announce_release_subject",
+        "announce_release_template",
+        "start_vote_subject",
+        "start_vote_template",
+        "finish_vote_template",
+        "vote_comment_template",
+        "release_checklist",
+        "github_repository_name",
+        "github_repository_branch",
+    ):
+        value = getattr(release_policy, field)
+        if value:
+            fields[field] = value
+    for field in (
+        "binary_artifact_paths",
+        "source_artifact_paths",
+        "source_excludes_lightweight",
+        "source_excludes_rat",
+        "github_compose_workflow_path",
+        "github_vote_workflow_path",
+        "github_finish_workflow_path",
+    ):
+        value = getattr(release_policy, field)
+        if value:
+            fields[field] = list(value)
+    return fields
 
 
 def _asf_yaml_recipient_blocks(project: sql.Project) -> dict[str, object]:
