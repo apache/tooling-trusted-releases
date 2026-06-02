@@ -39,6 +39,7 @@ class _FakeProject:
             "categories": None,
             "programming_languages": None,
             "release_policy": None,
+            "update_type": sql.UpdateType.MANUAL,
         }
         defaults.update(fields)
         for key, value in defaults.items():

@@ -35,7 +35,7 @@ async def update(task_args: args.Update) -> results.Results | None:
     log.info(f"Starting metadata update for user {task_args.asf_uid}")
 
     try:
-        added_count, updated_count = await apache.update_metadata()
+        added_count, updated_count = await apache.update_metadata(include_projects=task_args.include_projects)
 
         log.info(
             f"Metadata update completed successfully: added {added_count}, updated {updated_count}",

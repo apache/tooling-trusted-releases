@@ -325,8 +325,7 @@ class CommitteeMember(CommitteeParticipant):
     async def __commit_and_log(self, project_key: str) -> None:
         project = await self.__data.project(key=project_key).get()
         if project:
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=models.sql.UpdateType.MANUAL)
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,

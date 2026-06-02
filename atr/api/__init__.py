@@ -907,7 +907,7 @@ async def project_config_upsert(
     asf_uid = _jwt_asf_uid()
     try:
         async with storage.write_as_system_service(asf_uid) as wss:
-            created = await wss.project.upsert_config(data)
+            created = await wss.project.upsert_config(data, update_type=sql.UpdateType.ASFYAML)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     except ValueError as e:

@@ -115,8 +115,7 @@ class CommitteeMember(CommitteeParticipant):
             project.categories = ", ".join(current_categories)
             if project.categories == "":
                 project.categories = None
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -139,8 +138,7 @@ class CommitteeMember(CommitteeParticipant):
             project.categories = ", ".join(current_categories)
             if project.categories == "":
                 project.categories = None
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -248,8 +246,7 @@ class CommitteeMember(CommitteeParticipant):
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
         project.repositories = list(form.repositories)
         project.standards = list(form.standards)
-        project.updated = datetime.datetime.now(datetime.UTC)
-        project.updated_by = self.__asf_uid
+        project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
 
         await self.__data.commit()
         self.__write_as.append_to_audit_log(
@@ -271,8 +268,7 @@ class CommitteeMember(CommitteeParticipant):
             project.programming_languages = ", ".join(current_languages)
             if project.programming_languages == "":
                 project.programming_languages = None
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -292,8 +288,7 @@ class CommitteeMember(CommitteeParticipant):
             project.programming_languages = ", ".join(current_languages)
             if project.programming_languages == "":
                 project.programming_languages = None
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 asf_uid=self.__asf_uid,
@@ -329,6 +324,7 @@ class SystemService:
     async def upsert_config(
         self,
         args: api.ProjectConfigArgs,
+        update_type: sql.UpdateType,
     ) -> bool:
         try:
             await self.__data.begin_immediate()
@@ -343,8 +339,7 @@ class SystemService:
                     **policy_args.model_dump(exclude_unset=True),
                 )
                 await self.__write_as.policy._edit_policy_no_commit(args.project_key, policy_update)
-            project.updated = datetime.datetime.now(datetime.UTC)
-            project.updated_by = self.__asf_uid
+            project.mark_updated(by=self.__asf_uid, update_type=update_type)
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
             await self.__data.rollback()

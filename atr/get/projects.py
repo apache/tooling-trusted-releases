@@ -293,7 +293,7 @@ async def view(
             htm.div(".row.mb-2")[
                 htm.div(".col")[
                     htm.p(".text-muted.small.mb-0")[
-                        f"Last updated {project.updated.strftime('%Y-%m-%d')} by {project.updated_by or 'unknown'}"
+                        f"Last updated {project.updated.strftime('%Y-%m-%d')} by {project.updated_by_display}"
                     ]
                 ]
             ]

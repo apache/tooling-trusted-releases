@@ -213,6 +213,9 @@ class Update(schema.Strict):
 
     asf_uid: str = schema.description("The ASF UID of the user triggering the update")
     next_schedule_seconds: int = pydantic.Field(default=0, description="The next scheduled time")
+    include_projects: bool = pydantic.Field(
+        default=False, description="Whether to also refresh the project catalogue from projects.a.o (admin-triggered)"
+    )
 
 
 class VoteAutoResolve(schema.Strict):

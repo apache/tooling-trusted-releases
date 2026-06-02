@@ -107,6 +107,7 @@ def _project(
         version_pattern=version_pattern,
         cycle_match=cycle_match,
         branch_template=branch_template,
+        mark_updated=lambda **_kwargs: None,
     )
 
 

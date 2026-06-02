@@ -175,6 +175,12 @@ class ProjectStatus(enum.StrEnum):
     STANDING = "standing"
 
 
+class UpdateType(enum.StrEnum):
+    MANUAL = "manual"
+    BOOTSTRAP = "bootstrap"
+    ASFYAML = "asfyaml"
+
+
 class QuarantineStatus(enum.Enum):
     STAGING = "STAGING"
     PENDING = "PENDING"
@@ -823,12 +829,18 @@ class Committee(sqlmodel.SQLModel, table=True):
 
     updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     updated_by: str | None = sqlmodel.Field(default=None)
+    update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
 
     @property
     def display_name(self) -> str:
         """Get the display name for the committee."""
         name = self.name or self.key.title()
         return f"{name} (Incubating)" if self.is_podling else name
+
+    def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
+        self.updated = datetime.datetime.now(datetime.UTC)
+        self.updated_by = by
+        self.update_type = update_type
 
 
 def see_also(arg: Any) -> None:
@@ -915,6 +927,7 @@ class Project(sqlmodel.SQLModel, table=True):
 
     updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     updated_by: str | None = sqlmodel.Field(default=None)
+    update_type: UpdateType = sqlmodel.Field(default=UpdateType.MANUAL, **example(UpdateType.MANUAL))
 
     @property
     def display_name(self) -> str:
@@ -923,6 +936,22 @@ class Project(sqlmodel.SQLModel, table=True):
         if self.committee and self.committee.is_podling:
             return f"{base} (Incubating)"
         return base
+
+    @property
+    def updated_by_display(self) -> str:
+        """Who or what last updated the project, for display."""
+        match self.update_type:
+            case UpdateType.BOOTSTRAP:
+                return "bootstrap"
+            case UpdateType.ASFYAML:
+                return ".asf.yaml"
+            case UpdateType.MANUAL:
+                return self.updated_by or "unknown"
+
+    def mark_updated(self, *, by: str, update_type: UpdateType) -> None:
+        self.updated = datetime.datetime.now(datetime.UTC)
+        self.updated_by = by
+        self.update_type = update_type
 
     @property
     def is_active(self) -> bool:

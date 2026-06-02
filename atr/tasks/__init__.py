@@ -249,9 +249,10 @@ async def metadata_update(
     caller_data: db.Session | None = None,
     schedule: datetime.datetime | None = None,
     schedule_next: bool = False,
+    include_projects: bool = False,
 ) -> sql.Task:
     """Queue a metadata update task."""
-    task_args = args.Update(asf_uid=asf_uid, next_schedule_seconds=0)
+    task_args = args.Update(asf_uid=asf_uid, next_schedule_seconds=0, include_projects=include_projects)
     if schedule_next:
         task_args.next_schedule_seconds = _DAILY
     async with db.ensure_session(caller_data) as data:

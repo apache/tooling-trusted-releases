@@ -863,7 +863,7 @@ async def projects_update_post(
 ) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update projects from remote data."""
     try:
-        task = await tasks.metadata_update(session.asf_uid)
+        task = await tasks.metadata_update(session.asf_uid, include_projects=True)
         return {
             "message": f"Metadata update task has been queued with ID {task.id}.",
             "category": "success",

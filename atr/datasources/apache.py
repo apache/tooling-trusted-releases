@@ -30,6 +30,7 @@ import sqlalchemy.dialects.sqlite as sqlite
 import sqlmodel
 
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
@@ -343,15 +344,19 @@ async def get_retired_committee_data() -> RetiredCommitteeData:
     return RetiredCommitteeData.model_validate(data)
 
 
-async def update_metadata() -> tuple[int, int]:
-    """Update metadata from remote data sources."""
+async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
+    """Update metadata from remote data sources.
+
+    Committees and podlings update automatically. The top-level project catalogue only
+    refreshes when include_projects is set, which is the admin-triggered path - see #468.
+    """
 
     ldap_projects = await get_ldap_projects_data()
     people = await get_people_data()
-    projects = await get_projects_data()
     podlings_data = await get_current_podlings_data()
     whimsy_committees = await get_whimsy_committee_data()
     committees = await get_committee_data()
+    projects = await get_projects_data() if include_projects else None
 
     ldap_projects_by_name: Mapping[str, LDAPProject] = {p.name: p for p in ldap_projects.projects}
     whimsy_committees_by_name: Mapping[str, WhimsyCommittee] = {c.name: c for c in whimsy_committees.committees}
@@ -371,17 +376,20 @@ async def update_metadata() -> tuple[int, int]:
             added_count += added
             updated_count += updated
 
-            added, updated = await _update_projects(data, projects)
-            added_count += added
-            updated_count += updated
-
             added, updated = await _update_tooling(data)
             added_count += added
             updated_count += updated
 
-            added, updated = await _process_undiscovered(data)
-            added_count += added
-            updated_count += updated
+            # Project catalogue and the undiscovered-committee sweep depend on projects.a.o,
+            # so they only run on the admin-triggered update (#468)
+            if projects is not None:
+                added, updated = await _update_projects(data, projects)
+                added_count += added
+                updated_count += updated
+
+                added, updated = await _process_undiscovered(data)
+                added_count += added
+                updated_count += updated
 
     return added_count, updated_count
 
@@ -479,8 +487,7 @@ async def _update_committees(
         if committee_info:
             committee.charter = committee_info.charter
 
-        committee.updated = datetime.datetime.now(datetime.UTC)
-        committee.updated_by = "bootstrap"
+        committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
         updated_count += 1
 
     return added_count, updated_count
@@ -529,24 +536,18 @@ async def _update_podlings(
         else:
             log.warning(f"could not find ldap data for podling {podling_name}")
 
-        ppmc.updated = datetime.datetime.now(datetime.UTC)
-        ppmc.updated_by = "bootstrap"
+        ppmc.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
+        # Create the associated podling project, but leave an existing one untouched -
+        # same as _update_projects, so manual or .asf.yaml edits aren't reverted
         podling = await data.project(key=podling_name).get()
         if not podling:
-            # Create the associated podling project
-            podling = sql.Project(key=podling_name, name=podling_data.name, committee=ppmc)
+            podling = sql.Project(
+                key=podling_name, name=podling_data.name.removesuffix(" (Incubating)"), committee=ppmc
+            )
             data.add(podling)
+            podling.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
             added_count += 1
-        else:
-            updated_count += 1
-
-        podling.name = podling_data.name.removesuffix(" (Incubating)")
-        podling.committee = ppmc
-        podling.updated = datetime.datetime.now(datetime.UTC)
-        podling.updated_by = "bootstrap"
-        # TODO: Why did the type checkers not detect this?
-        # podling.is_podling = True
 
     return added_count, updated_count
 
@@ -611,8 +612,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
         project_model.repositories = _doap_repository_urls(project_status.repository)
         # Not coercing standards URLs as these are outside ASF control
         project_model.standards = [str(impl.url) for impl in project_status.implements if impl.url]
-        project_model.updated = datetime.datetime.now(datetime.UTC)
-        project_model.updated_by = "bootstrap"
+        project_model.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
     return added_count, updated_count
 
@@ -645,7 +645,6 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
     tooling_committee.committers = tooling_users
     tooling_committee.release_managers = tooling_users
     tooling_committee.is_podling = False
-    tooling_committee.updated = datetime.datetime.now(datetime.UTC)
-    tooling_committee.updated_by = "bootstrap"
+    tooling_committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 
     return added_count, updated_count
