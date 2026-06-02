@@ -62,7 +62,7 @@ Authorization data is fetched from ASF LDAP using the [`principal`](/ref/atr/pri
 * `cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org` - Infrastructure root
 * `cn=tooling,ou=groups,ou=services,dc=apache,dc=org` - Tooling team
 
-The [`Committer`](/ref/atr/principal.py:Committer) class fetches a user's full authorization profile from LDAP, including their committee memberships (PMC membership) and project participations (committer access).
+The [`Committer`](/ref/atr/principal.py) (Committer) class fetches a user's full authorization profile from LDAP, including their committee memberships (PMC membership) and project participations (committer access).
 
 ## Access control for releases
 
@@ -189,7 +189,7 @@ projects = auth.participant_of()   # Returns frozenset of project names
 
 ### Web vs API authorization
 
-For web requests, the [`Authorisation`](/ref/atr/principal.py:Authorisation) class reads the session automatically:
+For web requests, the [`Authorisation`](/ref/atr/principal.py) (Authorisation) class reads the session automatically:
 
 ```python
 auth = await Authorisation()  # Uses ASFQuart session
@@ -205,7 +205,7 @@ Both paths use the same authorization logic and caching.
 
 ## Caching behavior
 
-LDAP queries are expensive, so authorization data is cached in [`principal.Cache`](/ref/atr/principal.py:Cache). The cache stores:
+LDAP queries are expensive, so authorization data is cached in [`principal.Cache`](/ref/atr/principal.py) (Cache). The cache stores:
 
 * `member_of` - Set of committees where the user is a PMC member
 * `participant_of` - Set of projects where the user is a committer

@@ -23,9 +23,9 @@ The UI is built from three main pieces: [Jinja2](https://jinja.palletsprojects.c
 
 ## Jinja2 templates
 
-Templates live in [`templates/`](/ref/atr/templates/). Each template is a Jinja2 file that defines HTML structure with placeholders for dynamic content. Route handlers render templates by calling [`template.render`](/ref/atr/template.py:render), which is an alias for [`template.render_sync`](/ref/atr/template.py:render_sync). The function is asynchronous and takes a template name plus keyword arguments for the template variables.
+Templates live in [`templates/`](/ref/atr/templates/). Each template is a Jinja2 file that defines HTML structure with placeholders for dynamic content. Route handlers render templates by calling [`template.render`](/ref/atr/template.py) (render), which is an alias for [`template.render_sync`](/ref/atr/template.py) (render_sync). The function is asynchronous and takes a template name plus keyword arguments for the template variables.
 
-Here is an example from [`get/keys.py`](/ref/atr/get/keys.py:add):
+Here is an example from [`get/keys.py`](/ref/atr/get/keys.py) (add):
 
 ```python
 return await template.render(
@@ -40,13 +40,13 @@ return await template.render(
 
 The template receives these variables and can access them directly. If you pass a variable called `form`, the template can use `{{ form }}` to render it. [Jinja2 has control structures](https://jinja.palletsprojects.com/en/stable/templates/#list-of-control-structures) like `{% for %}` and `{% if %}`, which you use when iterating over data or conditionally showing content.
 
-Templates are loaded into memory at server startup by [`preload.setup_template_preloading`](/ref/atr/preload.py:setup_template_preloading). This means that changing a template requires restarting the server in development, which can be configured to happen automatically, but it also means that rendering is fast because we never do a disk read during request handling. The preloading scans [`templates/`](/ref/atr/templates/) recursively and caches every file.
+Templates are loaded into memory at server startup by [`preload.setup_template_preloading`](/ref/atr/preload.py) (setup_template_preloading). This means that changing a template requires restarting the server in development, which can be configured to happen automatically, but it also means that rendering is fast because we never do a disk read during request handling. The preloading scans [`templates/`](/ref/atr/templates/) recursively and caches every file.
 
-Template rendering happens in a thread pool to avoid blocking the async event loop. The function [`_render_in_thread`](/ref/atr/template.py:_render_in_thread) uses `asyncio.to_thread` to execute Jinja2's synchronous `render` method.
+Template rendering happens in a thread pool to avoid blocking the async event loop. The function [`_render_in_thread`](/ref/atr/template.py) (_render_in_thread) uses `asyncio.to_thread` to execute Jinja2's synchronous `render` method.
 
 ## Forms
 
-HTML forms in ATR are handled by [Pydantic](https://docs.pydantic.dev/latest/) models accessed through our [`form`](/ref/atr/form.py) module. Each form is a class that inherits from [`form.Form`](/ref/atr/form.py:Form), which itself inherits from `pydantic.BaseModel`. Form fields are defined as class attributes using Pydantic type annotations, with the [`form.label`](/ref/atr/form.py:label) function providing field metadata like labels and documentation.
+HTML forms in ATR are handled by [Pydantic](https://docs.pydantic.dev/latest/) models accessed through our [`form`](/ref/atr/form.py) module. Each form is a class that inherits from [`form.Form`](/ref/atr/form.py) (Form), which itself inherits from `pydantic.BaseModel`. Form fields are defined as class attributes using Pydantic type annotations, with the [`form.label`](/ref/atr/form.py) (label) function providing field metadata like labels and documentation.
 
 Here is a typical form definition from [`shared/keys.py`](/ref/atr/shared/keys.py):
 
@@ -71,7 +71,7 @@ class AddOpenPGPKeyForm(form.Form):
 
 ### Field types and labels
 
-The [`form.label`](/ref/atr/form.py:label) function is used to add metadata to Pydantic fields. The first argument is the label text, the second (optional) argument is documentation text that appears below the field, and you can pass additional keyword arguments like `widget=form.Widget.TEXTAREA` to specify the HTML widget type.
+The [`form.label`](/ref/atr/form.py) (label) function is used to add metadata to Pydantic fields. The first argument is the label text, the second (optional) argument is documentation text that appears below the field, and you can pass additional keyword arguments like `widget=form.Widget.TEXTAREA` to specify the HTML widget type.
 
 Fields use Pydantic type annotations to define their data type:
 
@@ -90,32 +90,32 @@ Fields use Pydantic type annotations to define their data type:
 
 Empty values for fields are allowed by default in most cases, but URL is an exception.
 
-The `widget` parameter in [`form.label`](/ref/atr/form.py:label) lets you override the default widget for a field type. Available widgets include: `TEXTAREA`, `CHECKBOXES`, `SELECT`, `RADIO`, `HIDDEN`, and others from the `form.Widget` enum. Common reasons to override:
+The `widget` parameter in [`form.label`](/ref/atr/form.py) (label) lets you override the default widget for a field type. Available widgets include: `TEXTAREA`, `CHECKBOXES`, `SELECT`, `RADIO`, `HIDDEN`, and others from the `form.Widget` enum. Common reasons to override:
 
 * HIDDEN: for values passed from the route, not entered by the user
 * TEXTAREA: for multi-line text input
 * RADIO: for mutually exclusive choices
 * CUSTOM: for fully custom rendering
 
-From [`projects.AddProjectForm`](/ref/atr/shared/projects.py:AddProjectForm):
+From [`projects.AddProjectForm`](/ref/atr/shared/projects.py) (AddProjectForm):
 
 ```python
 committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
 ```
 
-From [`resolve.SubmitForm`](/ref/atr/shared/resolve.py:SubmitForm):
+From [`resolve.SubmitForm`](/ref/atr/shared/resolve.py) (SubmitForm):
 
 ```python
 email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA)
 ```
 
-From [`resolve.SubmitForm`](/ref/atr/shared/resolve.py:SubmitForm):
+From [`resolve.SubmitForm`](/ref/atr/shared/resolve.py) (SubmitForm):
 
 ```python
 vote_result: Literal["Passed", "Failed"] = form.label("Vote result", widget=form.Widget.RADIO)
 ```
 
-From [`vote.CastVoteForm`](/ref/atr/shared/vote.py:CastVoteForm):
+From [`vote.CastVoteForm`](/ref/atr/shared/vote.py) (CastVoteForm):
 
 ```python
 decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM)
@@ -123,7 +123,7 @@ decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.
 
 ### Using forms in routes
 
-To use a form in a route, use the [`@post.committer()`](/ref/atr/blueprints/post.py:committer) decorator to get the session and auth the user, and the [`@post.form()`](/ref/atr/blueprints/post.py:form) decorator to parse and validate input data:
+To use a form in a route, use the [`@post.committer()`](/ref/atr/blueprints/post.py) (committer) decorator to get the session and auth the user, and the [`@post.form()`](/ref/atr/blueprints/post.py) (form) decorator to parse and validate input data:
 
 ```python
 @post.committer("/keys/add")
@@ -148,13 +148,13 @@ async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenP
     return await session.redirect(get.keys.keys)
 ```
 
-The [`form.validate`](/ref/atr/form.py:validate) function should only be called manually when the request comes from JavaScript, as in [`body_preview`](/ref/atr/post/voting.py:body_preview). It takes the form class, the form data dictionary, and an optional context dictionary. If validation succeeds, it returns an instance of your form class with validated data. If validation fails, it raises a `pydantic.ValidationError`.
+The [`form.validate`](/ref/atr/form.py) (validate) function should only be called manually when the request comes from JavaScript, as in [`body_preview`](/ref/atr/post/voting.py) (body_preview). It takes the form class, the form data dictionary, and an optional context dictionary. If validation succeeds, it returns an instance of your form class with validated data. If validation fails, it raises a `pydantic.ValidationError`.
 
-The error handling uses [`form.flash_error_data`](/ref/atr/form.py:flash_error_data) to prepare error information for display, and [`form.flash_error_summary`](/ref/atr/form.py:flash_error_summary) to create a user-friendly summary of all validation errors.
+The error handling uses [`form.flash_error_data`](/ref/atr/form.py) (flash_error_data) to prepare error information for display, and [`form.flash_error_summary`](/ref/atr/form.py) (flash_error_summary) to create a user-friendly summary of all validation errors.
 
 ### Rendering forms
 
-The `form` module provides the [`form.render`](/ref/atr/form.py:render) function (or [`form.render_block`](/ref/atr/form.py:render_block) for use with [`htm.Block`](/ref/atr/htm.py:Block)) that generates Bootstrap-styled HTML. This function creates a two-column layout with labels on the left and inputs on the right:
+The `form` module provides the [`form.render`](/ref/atr/form.py) (render) function (or [`form.render_block`](/ref/atr/form.py) (render_block) for use with [`htm.Block`](/ref/atr/htm.py) (Block)) that generates Bootstrap-styled HTML. This function creates a two-column layout with labels on the left and inputs on the right:
 
 ```python
 form.render_block(
@@ -202,7 +202,7 @@ The htpy library provides type annotations for HTML elements. It does not valida
 
 ## The htm.Block class
 
-The ATR [`htm`](/ref/atr/htm.py) module extends htpy with a [`Block`](/ref/atr/htm.py:Block) class that makes it easier to build complex HTML structures incrementally. You create a block, append elements to it, and then collect them into a final element. Here is the typical usage pattern:
+The ATR [`htm`](/ref/atr/htm.py) module extends htpy with a [`Block`](/ref/atr/htm.py) (Block) class that makes it easier to build complex HTML structures incrementally. You create a block, append elements to it, and then collect them into a final element. Here is the typical usage pattern:
 
 ```python
 import atr.htm as htm
@@ -215,17 +215,17 @@ if release.released:
 return div.collect()
 ```
 
-The block class provides properties for common HTML elements like `h1`, `h2`, `p`, `div`, `ul`, and so on. When you access these properties, you get back a [`BlockElementCallable`](/ref/atr/htm.py:BlockElementCallable), which you can call to create an element with attributes or use square brackets to add grandchildren of the block. The element is automatically appended to the block's internal list of children.
+The block class provides properties for common HTML elements like `h1`, `h2`, `p`, `div`, `ul`, and so on. When you access these properties, you get back a [`BlockElementCallable`](/ref/atr/htm.py) (BlockElementCallable), which you can call to create an element with attributes or use square brackets to add grandchildren of the block. The element is automatically appended to the block's internal list of children.
 
 The `collect` method assembles all of the elements into a single htpy element. If you created the block with an outer element like `htm.Block(htpy.div(".container"))`, that element wraps all the children. If you created the block with no outer element, `collect` wraps everything in a div. You can also pass a `separator` argument to `collect`, which inserts a text separator between elements.
 
 The block class is useful when you are building HTML in a loop or when you have conditional elements. Instead of managing a list of elements manually, you can let the block class do it for you: append elements as you go, and at the end call `collect` to get the final result. This is cleaner than concatenating strings or maintaining lists yourself.
 
-The block class also adds a `data-src` attribute to elements, which records which function created the element. If you see an element in the browser inspector with `data-src="atr.get.keys:keys"`, you know that it came from the `keys` function in `get/keys.py`. The source is extracted automatically using [`log.caller_name`](/ref/atr/log.py:caller_name).
+The block class also adds a `data-src` attribute to elements, which records which function created the element. If you see an element in the browser inspector with `data-src="atr.get.keys:keys"`, you know that it came from the `keys` function in `get/keys.py`. The source is extracted automatically using [`log.caller_name`](/ref/atr/log.py) (caller_name).
 
 ## How a route renders UI
 
-A typical route that renders UI first authenticates the user, loads data from the database, builds HTML using htpy, and renders it using a template. GET and POST requests are handled by separate routes, with form validation automatically handled by the [`@post.form()`](/ref/atr/blueprints/post.py:form) decorator. Here is a simplified example from [`get/keys.py`](/ref/atr/get/keys.py:add):
+A typical route that renders UI first authenticates the user, loads data from the database, builds HTML using htpy, and renders it using a template. GET and POST requests are handled by separate routes, with form validation automatically handled by the [`@post.form()`](/ref/atr/blueprints/post.py) (form) decorator. Here is a simplified example from [`get/keys.py`](/ref/atr/get/keys.py) (add):
 
 ```python
 @get.typed
@@ -264,12 +264,12 @@ async def add(session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
     )
 ```
 
-The route is decorated with [`@get.typed`](/ref/atr/blueprints/get.py:typed), which handles authentication and provides a `session` object that is an instance of [`web.Committer`](/ref/atr/web.py:Committer) with a range of useful properties and methods.
-[`@get.typed`](/ref/atr/blueprints/get.py:typed) also validates `project_name` and `version_name` route params, and checks that the user is authorised to access the project (if a project name is required).
+The route is decorated with [`@get.typed`](/ref/atr/blueprints/get.py) (typed), which handles authentication and provides a `session` object that is an instance of [`web.Committer`](/ref/atr/web.py) (Committer) with a range of useful properties and methods.
+[`@get.typed`](/ref/atr/blueprints/get.py) (typed) also validates `project_name` and `version_name` route params, and checks that the user is authorised to access the project (if a project name is required).
 
-The function builds the UI using an [`htm.Block`](/ref/atr/htm.py:Block) object, which provides a convenient API for incrementally building HTML. The form is rendered directly into the block using [`form.render_block()`](/ref/atr/form.py:render_block), which generates all the necessary HTML with Bootstrap styling.
+The function builds the UI using an [`htm.Block`](/ref/atr/htm.py) (Block) object, which provides a convenient API for incrementally building HTML. The form is rendered directly into the block using [`form.render_block()`](/ref/atr/form.py) (render_block), which generates all the necessary HTML with Bootstrap styling.
 
-Finally, the route returns the rendered HTML using [`template.blank()`](/ref/atr/template.py:blank), which renders a minimal template with just a title and content area.
+Finally, the route returns the rendered HTML using [`template.blank()`](/ref/atr/template.py) (blank), which renders a minimal template with just a title and content area.
 
 Form submission is handled by a separate POST route:
 
@@ -291,6 +291,6 @@ async def add(session: web.Committer, add_openpgp_key_form: shared.keys.AddOpenP
     return await session.redirect(get.keys.keys)
 ```
 
-The [`@post.form()`](/ref/atr/blueprints/post.py:form) decorator handles form validation automatically. If validation fails, it flashes error messages and redirects back to the GET route. If validation succeeds, the validated form instance is injected into the route handler as a parameter.
+The [`@post.form()`](/ref/atr/blueprints/post.py) (form) decorator handles form validation automatically. If validation fails, it flashes error messages and redirects back to the GET route. If validation succeeds, the validated form instance is injected into the route handler as a parameter.
 
 Bootstrap CSS classes are applied automatically by the form rendering functions. The functions use classes like `form-control`, `form-select`, `btn-primary`, `is-invalid`, and `invalid-feedback`. We currently use Bootstrap 5. If you generate HTML manually with htpy, you can apply Bootstrap classes yourself by using the CSS selector syntax like `htpy.div(".container")` or the class attribute like `htpy.div(class_="container")`.

@@ -93,7 +93,7 @@ Session data includes the user's ASF UID and is used to authorize requests. The 
 
 ### Session caching
 
-Authorization data fetched from LDAP (committee memberships, project participation) is cached in [`principal.Cache`](/ref/atr/principal.py:Cache) for performance. The cache has a TTL of 300 seconds, defined by `cache_for_at_most_seconds`. After the TTL expires, the next request will refresh the cache from LDAP.
+Authorization data fetched from LDAP (committee memberships, project participation) is cached in [`principal.Cache`](/ref/atr/principal.py) (Cache) for performance. The cache has a TTL of 300 seconds, defined by `cache_for_at_most_seconds`. After the TTL expires, the next request will refresh the cache from LDAP.
 
 ## API authentication
 

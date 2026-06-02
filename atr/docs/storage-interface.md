@@ -44,9 +44,9 @@ async with storage.write(session) as write:
 
 The `wacp` object, short for `w`rite `a`s `c`ommittee `p`articipant, provides access to domain-specific writers: `announce`, `checks`, `distributions`, `keys`, `policy`, `project`, `release`, `sbom`, `ssh`, `tokens`, and `vote`.
 
-The write session takes an optional [`Committer`](/ref/atr/web.py:Committer) or ASF UID, typically `session.uid` from the logged-in user. If you omit the UID, the session determines it automatically from the current request context. The write object checks LDAP memberships and raises [`storage.AccessError`](/ref/atr/storage/__init__.py:AccessError) if the user is not authorized for the requested permission level.
+The write session takes an optional [`Committer`](/ref/atr/web.py) (Committer) or ASF UID, typically `session.uid` from the logged-in user. If you omit the UID, the session determines it automatically from the current request context. The write object checks LDAP memberships and raises [`storage.AccessError`](/ref/atr/storage/__init__.py) (AccessError) if the user is not authorized for the requested permission level.
 
-Because projects belong to committees, we provide [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py:as_project_committee_member) and [`write.as_project_committee_participant(project_name)`](/ref/atr/storage/__init__.py:as_project_committee_participant), which look up the project's committee and authenticate the user as a member or participant of that committee. This is convenient when, for example, the URL provides a project name.
+Because projects belong to committees, we provide [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py) (as_project_committee_member) and [`write.as_project_committee_participant(project_name)`](/ref/atr/storage/__init__.py) (as_project_committee_participant), which look up the project's committee and authenticate the user as a member or participant of that committee. This is convenient when, for example, the URL provides a project name.
 
 Some storage writers perform additional authorization validation beyond what `as_project_committee_member` provides. The check ignores writer, for example, validates that the target project belongs to the committee for which the user is authorized. Therefore even if a caller mistakenly passes an incorrect project name, the writer will reject the operation.
 
@@ -113,15 +113,15 @@ class CommitteeMember(CommitteeParticipant):
 
 This hierarchy that this creates is: `GeneralPublic` → `FoundationCommitter` → `CommitteeParticipant` → `CommitteeMember`. You can add methods at any level. A method on `CommitteeMember` is only available to committee members, while a method on `FoundationCommitter` is available to everyone who has logged in.
 
-Use `__private_methods` for helper code that is not part of the public interface. Use `public_methods` for operations that should be available to callers at the appropriate permission level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py:Outcome) types to allow callers flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for more details.
+Use `__private_methods` for helper code that is not part of the public interface. Use `public_methods` for operations that should be available to callers at the appropriate permission level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py) (Outcome) types to allow callers flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for more details.
 
-After adding a new writer module, register it in the appropriate `WriteAs*` classes in [`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions` writer, it was necessary to add `self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)` to the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py:WriteAsCommitteeMember) class.
+After adding a new writer module, register it in the appropriate `WriteAs*` classes in [`storage/__init__.py`](/ref/atr/storage/__init__.py). For example, when adding the `distributions` writer, it was necessary to add `self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)` to the [`WriteAsCommitteeMember`](/ref/atr/storage/__init__.py) (WriteAsCommitteeMember) class.
 
 ## How do we use outcomes?
 
 Consider using **outcome types** from [`storage.outcome`](/ref/atr/storage/outcome.py) when returning results from writer methods. Outcomes let you represent both success and failure without raising exceptions, which gives callers flexibility in how they handle errors.
 
-An [`Outcome[T]`](/ref/atr/storage/outcome.py:Outcome) is either a [`Result[T]`](/ref/atr/storage/outcome.py:Result) wrapping a successful value, or an [`Error[T]`](/ref/atr/storage/outcome.py:Error) wrapping an exception. You can check which it is with the `ok` property or pattern matching, extract the value with `result_or_raise()`, or extract the error with `error_or_raise()`.
+An [`Outcome[T]`](/ref/atr/storage/outcome.py) (Outcome) is either a [`Result[T]`](/ref/atr/storage/outcome.py) (Result) wrapping a successful value, or an [`Error[T]`](/ref/atr/storage/outcome.py) (Error) wrapping an exception. You can check which it is with the `ok` property or pattern matching, extract the value with `result_or_raise()`, or extract the error with `error_or_raise()`.
 
 Here is an example from [`post/keys.py`](/ref/atr/post/keys.py) that processes multiple keys and collects outcomes:
 
@@ -134,15 +134,15 @@ success_count = outcomes.result_count
 error_count = outcomes.error_count
 ```
 
-The `ensure_associated` method returns an [`outcome.List`](/ref/atr/storage/outcome.py:List), which is a collection of outcomes. Some keys might import successfully, and others might fail because they are malformed or already exist. The caller can inspect the list to see how many succeeded and how many failed, and present that information to the user.
+The `ensure_associated` method returns an [`outcome.List`](/ref/atr/storage/outcome.py) (List), which is a collection of outcomes. Some keys might import successfully, and others might fail because they are malformed or already exist. The caller can inspect the list to see how many succeeded and how many failed, and present that information to the user.
 
-The `outcome.List` class provides many useful methods: [`results()`](/ref/atr/storage/outcome.py:results) to get only the successful values, [`errors()`](/ref/atr/storage/outcome.py:errors) to get only the exceptions, [`result_count`](/ref/atr/storage/outcome.py:result_count) and [`error_count`](/ref/atr/storage/outcome.py:error_count) to count them, and [`results_or_raise()`](/ref/atr/storage/outcome.py:results_or_raise) to extract all values or raise on the first error.
+The `outcome.List` class provides many useful methods: [`results()`](/ref/atr/storage/outcome.py) (results) to get only the successful values, [`errors()`](/ref/atr/storage/outcome.py) (errors) to get only the exceptions, [`result_count`](/ref/atr/storage/outcome.py) (result_count) and [`error_count`](/ref/atr/storage/outcome.py) (error_count) to count them, and [`results_or_raise()`](/ref/atr/storage/outcome.py) (results_or_raise) to extract all values or raise on the first error.
 
 Use outcomes when an operation might fail for some items but succeed for others, or when you want to give the caller control over error handling. Do not use them when failure should always raise an exception, such as authorization failures or database connection errors. Those should be raised immediately.
 
 ## What about audit logging?
 
-Storage write operations can be logged to [`config.AppConfig.STORAGE_AUDIT_LOG_FILE`](/ref/atr/config.py:STORAGE_AUDIT_LOG_FILE), which is `state/storage-audit.log` by default. Each log entry is a JSON object containing the timestamp, the action name, and relevant parameters. When you write a storage method that should be audited, call `self.__write_as.append_to_audit_log(**kwargs)` with whatever parameters are relevant to that specific operation. The action name is extracted automatically from the call stack using [`log.caller_name()`](/ref/atr/log.py:caller_name), so if the method is called [`i_am_a_teapot`](https://datatracker.ietf.org/doc/html/rfc2324), the audit log will show `i_am_a_teapot` without you having to pass the name explicitly.
+Storage write operations can be logged to [`config.AppConfig.STORAGE_AUDIT_LOG_FILE`](/ref/atr/config.py) (STORAGE_AUDIT_LOG_FILE), which is `state/storage-audit.log` by default. Each log entry is a JSON object containing the timestamp, the action name, and relevant parameters. When you write a storage method that should be audited, call `self.__write_as.append_to_audit_log(**kwargs)` with whatever parameters are relevant to that specific operation. The action name is extracted automatically from the call stack using [`log.caller_name()`](/ref/atr/log.py) (caller_name), so if the method is called [`i_am_a_teapot`](https://datatracker.ietf.org/doc/html/rfc2324), the audit log will show `i_am_a_teapot` without you having to pass the name explicitly.
 
 Audit logging must be done manually because the values to log are often those computed during method execution, not just those passed as arguments which could be logged automatically. When deleting a release, for example, we log `asf_uid` (instance attribute), `project_name` (argument), and `version` (argument), but when issuing a JWT from a PAT, we log `asf_uid` (instance attribute) and `pat_hash` (_computed_). Each operation logs what makes sense for that operation.
 
