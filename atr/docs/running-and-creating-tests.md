@@ -60,11 +60,11 @@ The browser tests use [Playwright](https://playwright.dev/), which is a cross-br
 
 We use the official Playwright OCI container, install a few dependencies (`apt-get` is available in the container), and then run `test.py`.
 
-The `test.py` script calls [`run_tests`](/ref/playwright/test.py:run_tests) from its `main`, which sets up all the context, but the main action takes place in [`test_all`](/ref/playwright/test.py:test_all). This function removes any state accidentally left over from a previous run, then runs tests of certain components. Because ATR is stateful, the order of the tests is important. When adding a test, please be careful to ensure that you use the correct state and that you try not to modify that state in such a way that interferes with tests placed afterwards.
+The `test.py` script calls [`run_tests`](/ref/playwright/test.py) (run_tests) from its `main`, which sets up all the context, but the main action takes place in [`test_all`](/ref/playwright/test.py) (test_all). This function removes any state accidentally left over from a previous run, then runs tests of certain components. Because ATR is stateful, the order of the tests is important. When adding a test, please be careful to ensure that you use the correct state and that you try not to modify that state in such a way that interferes with tests placed afterwards.
 
 We want to make it more clear which Playwright tests depend on which, and have more isolated tests. Reusing context, however, helps to speed up the tests.
 
-The actual test cases themselves tend to use helpers such as [`go_to_path`](/ref/playwright/test.py:go_to_path) and [`wait_for_path`](/ref/playwright/test.py:wait_for_path), and then call [`logging.info`](https://docs.python.org/3/library/logging.html#logging.info) to print information to the console. Try to keep logging messages terse and informative.
+The actual test cases themselves tend to use helpers such as [`go_to_path`](/ref/playwright/test.py) (go_to_path) and [`wait_for_path`](/ref/playwright/test.py) (wait_for_path), and then call [`logging.info`](https://docs.python.org/3/library/logging.html#logging.info) to print information to the console. Try to keep logging messages terse and informative.
 
 ## Running end-to-end tests
 
