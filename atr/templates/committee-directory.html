@@ -60,14 +60,8 @@
             <button type="button"
                     class="btn btn-secondary ms-2"
                     id="filter-participant-button"
-                    aria-pressed="false"
-                    data-showing="participant">
-                {% if current_user %}
-                    Show all committees
-                {% else %}
-                    Show my committees
-                {% endif %}
-            </button>
+                    aria-pressed="true"
+                    data-showing="participant">Show all committees</button>
         {% endif %}
     </div>
 
@@ -180,5 +174,6 @@
 
 {% block javascripts %}
     {{ super() }}
+    <script src="{{ static_url('js/src/card-grid.js') }}"></script>
     <script src="{{ static_url('js/src/committee-directory.js') }}"></script>
 {% endblock javascripts %}

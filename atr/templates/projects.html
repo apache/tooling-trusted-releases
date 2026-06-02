@@ -11,12 +11,16 @@
   <div class="mb-3">
     <input type="text"
            id="project-filter"
+           aria-label="Project name filter"
            class="form-control d-inline-block w-auto" />
-    <button type="button" class="btn btn-primary" id="filter-button">Filter</button>
-    <button type="button"
-            class="btn btn-secondary ms-2"
-            id="filter-participant-button"
-            data-showing="all">Show my projects</button>
+    <button type="button" class="btn btn-primary" id="filter-button">Filter all</button>
+    {% if current_user %}
+      <button type="button"
+              class="btn btn-secondary ms-2"
+              id="filter-participant-button"
+              aria-pressed="false"
+              data-showing="all">Show my projects</button>
+    {% endif %}
   </div>
 
   <div class="mb-3">
@@ -86,5 +90,6 @@
 
 {% block javascripts %}
   {{ super() }}
+  <script src="{{ static_url('js/src/card-grid.js') }}"></script>
   <script src="{{ static_url('js/src/projects-directory.js') }}"></script>
 {% endblock javascripts %}

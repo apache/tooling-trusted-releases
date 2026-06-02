@@ -19,8 +19,8 @@
 
 document.addEventListener("DOMContentLoaded", () => {
 	initCardGrid({
-		cardSelector: ".page-project-card",
-		countId: "project-count",
-		noun: "projects",
+		cardSelector: ".page-committee-card",
+		countId: "committee-count",
+		noun: "committees",
 	});
 });

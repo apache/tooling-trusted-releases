@@ -15,7 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
+import dataclasses
 import datetime
+from collections.abc import Sequence
 from typing import Literal
 
 import asfquart.base as base
@@ -73,17 +76,9 @@ async def releases(_session: web.Public, _releases: Literal["releases"]) -> str:
             _project=True,
         ).all()
 
-    projects = {}
-    for release in releases:
-        if release.project.display_name not in projects:
-            projects[release.project.display_name] = (release.project, 1)
-        else:
-            projects[release.project.display_name] = (release.project, projects[release.project.display_name][1] + 1)
-
     return await template.render(
         "releases.html",
-        projects=projects,
-        releases=releases,
+        catalog=_committee_release_catalog(releases),
     )
 
 
@@ -104,3 +99,61 @@ async def select(
     return await template.render(
         "release-select.html", project=project, releases=releases, format_datetime=util.format_datetime
     )
+
+
+@dataclasses.dataclass
+class _ProjectReleaseEntry:
+    project: sql.Project
+    finished_count: int
+    latest_version: str | None
+    latest_date: datetime.datetime | None
+
+
+@dataclasses.dataclass
+class _CommitteeReleaseEntry:
+    committee: sql.Committee
+    projects: list[_ProjectReleaseEntry]
+
+
+def _committee_release_catalog(releases: Sequence[sql.Release]) -> list[_CommitteeReleaseEntry]:
+    committees: dict[str, sql.Committee] = {}
+    by_committee: dict[str, list[sql.Release]] = collections.defaultdict(list)
+    for release in releases:
+        committee = release.project.committee
+        if committee is None:
+            # Nothing to group it under here, so skip it. Shouldn't happen in practice.
+            continue
+        committees[committee.key] = committee
+        by_committee[committee.key].append(release)
+
+    catalog = [
+        _CommitteeReleaseEntry(committee=committees[key], projects=_project_entries(committee_releases))
+        for key, committee_releases in by_committee.items()
+    ]
+    catalog.sort(key=lambda entry: entry.committee.display_name)
+    return catalog
+
+
+def _project_entries(releases: list[sql.Release]) -> list[_ProjectReleaseEntry]:
+    by_project: dict[str, list[sql.Release]] = collections.defaultdict(list)
+    for release in releases:
+        by_project[release.project.key].append(release)
+
+    entries: list[_ProjectReleaseEntry] = []
+    for project_releases in by_project.values():
+        latest = max(project_releases, key=_release_sort_key)
+        entries.append(
+            _ProjectReleaseEntry(
+                project=latest.project,
+                finished_count=len(project_releases),
+                latest_version=latest.version or None,
+                latest_date=latest.released or None,
+            )
+        )
+    entries.sort(key=lambda entry: entry.project.display_name)
+    return entries
+
+
+def _release_sort_key(release: sql.Release) -> datetime.datetime:
+    # Same key finished() uses: prefer the released date, fall back to created
+    return release.released or release.created

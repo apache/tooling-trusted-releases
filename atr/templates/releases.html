@@ -7,14 +7,33 @@
 {% block stylesheets %}
   {{ super() }}
   <style>
-    .page-release-meta-item::after {
-      content: "•";
-      margin-left: 1rem;
-      color: #ccc;
+    .page-committee-title-link:hover {
+      cursor: pointer;
     }
 
-    .page-release-meta-item:last-child::after {
-      content: none;
+    .page-logo {
+      max-height: 100%;
+      max-width: 100%;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .page-logo-container {
+      height: 48px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .page-project-subcard {
+      min-height: 72px;
+      background-color: #f8f9fa;
+    }
+
+    .page-project-subcard:hover {
+      border-color: gray;
+      cursor: pointer;
     }
   </style>
 {% endblock stylesheets %}
@@ -22,22 +41,110 @@
 {% block content %}
   <h1>Releases</h1>
 
-  {% if releases %}
-    {% for project_display_name in projects|sort %}
-      {% set project, count = projects[project_display_name] %}
-      <div class="card mb-3 bg-light">
-        <div class="card-body">
-          <h3 class="card-title mb-3">{{ project_display_name }}</h3>
-          <p class="card-text">
-            <a href="{{ as_url(get.release.finished, project_key=project.key) }}"
-               class="btn btn-outline-primary">
-              <i class="bi bi-folder2-open me-1"></i> Finished releases (<code>{{ count }}</code>)
-            </a>
-          </p>
+  {% if catalog %}
+    <div class="mb-3">
+      <input type="text"
+             id="project-filter"
+             aria-label="Committee or project name filter"
+             class="form-control d-inline-block w-auto" />
+      <button type="button" class="btn btn-primary" id="filter-button">Filter all</button>
+      {% if current_user %}
+        <button type="button"
+                class="btn btn-secondary ms-2"
+                id="filter-participant-button"
+                aria-pressed="true"
+                data-showing="participant">
+          Show all committees
+        </button>
+      {% endif %}
+    </div>
+
+    <div class="mb-3">
+      <p>
+        Total count: <span id="committee-count">{{ catalog|length }}</span>
+      </p>
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
+      {% for entry in catalog %}
+        {% set is_part = false %}
+        {% if current_user %}
+          {% if (current_user.uid in entry.committee.committee_members) or
+          (current_user.uid in entry.committee.committers) or
+          (current_user.uid in entry.committee.release_managers) %}
+          {% set is_part = true %}
+        {% endif %}
+      {% endif %}
+      <div class="col">
+        <div class="card h-100 shadow-sm page-committee-card"
+             data-is-participant="{{ 'true' if is_part else 'false' }}">
+          <div class="card-body">
+            <div class="row mb-3 align-items-center">
+              <div class="col">
+                <h3 class="card-title fs-4 mb-0">
+                  <a href="{{ as_url(get.committees.view, name=entry.committee.key) }}"
+                     class="text-decoration-none text-dark page-committee-title-link">{{ entry.committee.display_name }}</a>
+                </h3>
+              </div>
+              <div class="col-5 col-lg-4 text-center">
+                <div class="page-logo-container">
+                  {% if (entry.committee.key == "incubator") or entry.committee.key.startswith("incubator-") %}
+                    <img src="https://www.apache.org/logos/res/incubator/default.png"
+                         data-fallback-src="{{ static_url('svg/apache_incubator.svg') }}"
+                         alt=""
+                         class="page-logo" />
+                  {% else %}
+                    <img src="https://www.apache.org/logos/res/{{ entry.committee.key }}/default.png"
+                         data-fallback-src="{{ static_url('svg/ASF_short-horizontal-color.svg') }}"
+                         alt=""
+                         class="page-logo" />
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 page-project-list-container">
+              {% set max_initial_projects = 2 %}
+              {% for project_entry in entry.projects %}
+                <div class="card mb-3 shadow-sm page-project-subcard {% if loop.index > max_initial_projects %}page-project-extra d-none{% endif %}"
+                     data-project-url="{{ as_url(get.release.finished, project_key=project_entry.project.key) }}"
+                     data-project-name="{{ project_entry.project.display_name }}">
+                  <div class="card-body p-3">
+                    <p class="mb-1 fs-6">
+                      <a href="{{ as_url(get.release.finished, project_key=project_entry.project.key) }}"
+                         class="text-decoration-none stretched-link">{{ project_entry.project.display_name }}</a>
+                    </p>
+                    <span class="badge text-bg-primary me-1">
+                      {{ project_entry.finished_count }} {{ "release" if project_entry.finished_count == 1 else "releases" }}
+                    </span>
+                    {% if project_entry.latest_version %}
+                      <span class="text-secondary small">Latest: <code>{{ project_entry.latest_version }} ({{ project_entry.latest_date.strftime("%Y-%m-%d") if project_entry.latest_date else "unknown" }})</code></span>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+              {% if entry.projects|length > max_initial_projects %}
+                {% set extra_count = entry.projects|length - max_initial_projects %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary mt-2 page-toggle-committee-projects"
+                        aria-expanded="false"
+                        data-text-show="Show {{ extra_count }} more..."
+                        data-text-hide="Show less...">
+                  Show {{ extra_count }} more...
+                </button>
+              {% endif %}
+            </div>
+          </div>
         </div>
       </div>
-    {% endfor %}
-  {% else %}
-    <p class="text-secondary fst-italic">There are no releases available.</p>
-  {% endif %}
+  {% endfor %}
+  </div>
+{% else %}
+  <p class="text-secondary fst-italic">There are no releases available.</p>
+{% endif %}
 {% endblock content %}
+
+{% block javascripts %}
+  {{ super() }}
+  <script src="{{ static_url('js/src/card-grid.js') }}"></script>
+  <script src="{{ static_url('js/src/releases-catalog.js') }}"></script>
+{% endblock javascripts %}
