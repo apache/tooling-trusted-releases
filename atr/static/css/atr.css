@@ -1276,3 +1276,8 @@ td.atr-checkbox-col {
 .atr-archived-release .card-title {
     color: #6c757d;
 }
+
+/* Faint divider between artifact rows in the project catalog */
+.atr-catalog-artifact + .atr-catalog-artifact {
+    border-top: 1px dashed var(--bs-border-color);
+}

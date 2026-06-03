@@ -1,0 +1,50 @@
+{% extends "layouts/base.html" %}
+
+{%- block title -%}{{ project.display_name }} Release Catalog ~ ATR{%- endblock title -%}
+
+{%- block description -%}Release catalogue for {{ project.display_name }}.{%- endblock description -%}
+
+{% block content %}
+  <p>
+    <a href="{{ as_url(get.release.releases) }}" class="atr-back-link">&larr; Back to Releases</a>
+  </p>
+
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h1 class="mb-0">{{ project.display_name }} Release Catalog</h1>
+    <a class="small" href="{{ as_url(api.cle_project, project_key=project.key) }}">CLE feed</a>
+  </div>
+
+  {% if not versions %}
+    <div class="alert alert-info mt-3" role="alert">
+      <i class="bi bi-info-circle me-2"></i> No catalogued releases yet for {{ project.display_name }}.
+    </div>
+  {% elif grouped %}
+    {% for cycle_entry in cycles %}
+      <div class="mb-4">
+        <h2 class="fs-4 border-bottom pb-1">
+          Version {{ cycle_entry.cycle.cycle }}
+          {% if cycle_entry.lifecycle %}<span class="badge text-bg-primary align-middle">{{ cycle_entry.lifecycle }}</span>{% endif %}
+        </h2>
+        {% for version in cycle_entry.versions %}
+          {% include "_catalog_version.html" %}
+        {% endfor %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="mb-3" id="catalog-filter">
+      <button type="button" class="btn btn-sm btn-primary active" data-status-filter="all">All</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="released">Released</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status-filter="archived">Archived</button>
+    </div>
+    {% for version in versions %}
+      {% include "_catalog_version.html" %}
+    {% endfor %}
+  {% endif %}
+{% endblock content %}
+
+{% block javascripts %}
+  {{ super() }}
+  {% if not grouped %}
+    <script src="{{ static_url('js/src/catalog.js') }}"></script>
+  {% endif %}
+{% endblock javascripts %}

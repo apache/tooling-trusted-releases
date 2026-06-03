@@ -781,7 +781,7 @@ async def _render_cycle_dates_form(project: sql.Project, cycle: sql.ProjectCycle
         await form.render_block(
             body,
             model_cls=shared.projects.EditCycleDatesForm,
-            action=_view_action(project, "lifecycle"),
+            action=_view_action(project, "releases"),
             submit_label="Save cycle dates",
             defaults={
                 "project_key": str(project.key),

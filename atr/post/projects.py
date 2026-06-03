@@ -272,16 +272,14 @@ async def _process_edit_cycle_dates_form(
             return await session.redirect(
                 get.projects.view,
                 project_key=str(project_key),
-                tab="lifecycle",
+                tab="releases",
                 error=f"Error saving cycle dates: {e}",
             )
         except ValueError as e:
-            return await session.redirect(
-                get.projects.view, project_key=str(project_key), tab="lifecycle", error=str(e)
-            )
+            return await session.redirect(get.projects.view, project_key=str(project_key), tab="releases", error=str(e))
 
     return await session.redirect(
-        get.projects.view, project_key=str(project_key), tab="lifecycle", success="Cycle dates saved."
+        get.projects.view, project_key=str(project_key), tab="releases", success="Cycle dates saved."
     )
 
 
