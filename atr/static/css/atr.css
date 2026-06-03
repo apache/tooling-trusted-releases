@@ -465,6 +465,14 @@ a.atr-link-plain:focus-visible {
     text-decoration: underline;
 }
 
+.nav-link:visited {
+    color: #0011cc;
+}
+
+.nav-pills .nav-link.active:visited {
+    color: #ffffff;
+}
+
 .atr-border-dashed {
     border-style: dashed !important;
 }
