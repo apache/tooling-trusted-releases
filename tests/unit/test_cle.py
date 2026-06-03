@@ -54,15 +54,12 @@ def _render(project, event, releases_by_key, releases_by_cycle):
 
 
 def test_identifier_renders_apache_purl():
-    """
-    Note: this may well be updated later as there's ongoing discussion of the right pURL to use.
-    """
-    project = SimpleNamespace(key="myproject")
-    assert cle._identifier(project) == "pkg:apache/myproject"
+    project = SimpleNamespace(key="myproject", committee_key="mycommittee")
+    assert cle._identifier(project) == "pkg:sid/apache.org/mycommittee/myproject"
 
 
 def test_render_event_release_emits_version_and_separate_dates():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.2.3", key="foo-1.2.3", cycle_key="foo-default")
     event = _event(
         event=sql.LifecycleEventType.RELEASE,
@@ -80,7 +77,7 @@ def test_render_event_release_emits_version_and_separate_dates():
 
 
 def test_render_event_release_raises_when_version_key_missing():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.RELEASE,
         effective=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
@@ -90,7 +87,7 @@ def test_render_event_release_raises_when_version_key_missing():
 
 
 def test_render_event_release_raises_when_release_unknown():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.RELEASE,
         effective=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
@@ -101,7 +98,7 @@ def test_render_event_release_raises_when_release_unknown():
 
 
 def test_render_event_archive_emits_versions_range():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="foo-1.0.0", cycle_key="foo-default")
     event = _event(
         event=sql.LifecycleEventType.ARCHIVE,
@@ -115,7 +112,7 @@ def test_render_event_archive_emits_versions_range():
 
 
 def test_render_event_eod_uses_cycle_releases_for_range():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rels = [
         SimpleNamespace(version="1.0.0", key="foo-1.0.0", cycle_key="foo-default"),
         SimpleNamespace(version="1.1.0", key="foo-1.1.0", cycle_key="foo-default"),
@@ -132,7 +129,7 @@ def test_render_event_eod_uses_cycle_releases_for_range():
 
 
 def test_render_event_eos_uses_wildcard_for_empty_cycle():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.EOS,
         effective=datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
@@ -145,7 +142,7 @@ def test_render_event_eos_uses_wildcard_for_empty_cycle():
 
 
 def test_render_event_eol_omits_support_id():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.EOL,
         effective=datetime.datetime(2027, 6, 1, tzinfo=datetime.UTC),
@@ -157,7 +154,7 @@ def test_render_event_eol_omits_support_id():
 
 
 def test_render_event_eol_raises_when_cycle_key_missing():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.EOL,
         effective=datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC),
@@ -167,7 +164,7 @@ def test_render_event_eol_raises_when_cycle_key_missing():
 
 
 def test_render_event_includes_references_when_set():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="foo-1.0.0", cycle_key="foo-default")
     event = _event(
         event=sql.LifecycleEventType.RELEASE,
@@ -184,7 +181,7 @@ def test_render_event_includes_references_when_set():
 
 
 def test_render_event_omits_references_when_empty():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="foo-1.0.0", cycle_key="foo-default")
     event = _event(
         event=sql.LifecycleEventType.RELEASE,
@@ -238,7 +235,7 @@ def test_semver_bounds_returns_none_for_empty_name():
 
 
 def test_render_event_eol_for_semver_uses_derived_range():
-    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SEMVER)
+    project = SimpleNamespace(key="foo", version_method=sql.VersionMethod.SEMVER, committee_key="mycommittee")
     event = _event(
         event=sql.LifecycleEventType.EOL,
         effective=datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC),
@@ -249,47 +246,47 @@ def test_render_event_eol_for_semver_uses_derived_range():
 
 
 def test_vers_scheme_picks_generic_for_simple_projects():
-    project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     assert cle._vers_scheme(project) == "generic"
 
 
 def test_vers_scheme_picks_semver_for_semver_projects():
-    project = SimpleNamespace(version_method=sql.VersionMethod.SEMVER)
+    project = SimpleNamespace(version_method=sql.VersionMethod.SEMVER, committee_key="mycommittee")
     assert cle._vers_scheme(project) == "semver"
 
 
 def test_vers_literal_emits_single_version_constraint():
-    project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     assert cle._vers_literal(project, "1.0.0") == "vers:generic/1.0.0"
 
 
 def test_project_document_emits_schema_url():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     doc = cle.project_document(project, [], [], now=datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC))
     assert doc["$schema"] == cle.CLE_SCHEMA_URL
 
 
 def test_project_document_emits_purl_identifier():
-    project = SimpleNamespace(key="myproject", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="myproject", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     doc = cle.project_document(project, [], [], now=datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC))
-    assert doc["identifier"] == "pkg:apache/myproject"
+    assert doc["identifier"] == "pkg:sid/apache.org/mycommittee/myproject"
 
 
 def test_project_document_records_updated_at_from_now_param():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     now = datetime.datetime(2026, 7, 1, 12, 0, 0, tzinfo=datetime.UTC)
     doc = cle.project_document(project, [], [], now=now)
     assert doc["updatedAt"] == "2026-07-01T12:00:00Z"
 
 
 def test_project_document_emits_no_events_when_input_empty():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     doc = cle.project_document(project, [], [], now=datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC))
     assert doc["events"] == []
 
 
 def test_project_document_emits_default_support_definition_when_eod_or_eos_present():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     eos = _event(
         event=sql.LifecycleEventType.EOS,
         effective=datetime.datetime(2026, 12, 1, tzinfo=datetime.UTC),
@@ -301,7 +298,7 @@ def test_project_document_emits_default_support_definition_when_eod_or_eos_prese
 
 
 def test_project_document_omits_definitions_when_no_eod_or_eos_events():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(
         version="1.0.0",
         key="example-1.0.0",
@@ -327,7 +324,7 @@ def test_project_document_omits_definitions_when_no_eod_or_eos_events():
 
 
 def test_project_document_renders_withdrawn_event_alongside_target():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="example-1.0.0", cycle_key="example-default")
     target = _event(
         event=sql.LifecycleEventType.RELEASE,
@@ -354,7 +351,7 @@ def test_project_document_renders_withdrawn_event_alongside_target():
 
 
 def test_project_document_orders_events_by_id_descending():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="example-1.0.0", cycle_key="example-default")
     older_published_higher_id = _event(
         event=sql.LifecycleEventType.RELEASE,
@@ -382,7 +379,7 @@ def test_project_document_orders_events_by_id_descending():
 
 
 def test_release_document_renders_each_event_passed_in():
-    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE)
+    project = SimpleNamespace(key="example", version_method=sql.VersionMethod.SIMPLE, committee_key="mycommittee")
     rel = SimpleNamespace(version="1.0.0", key="example-1.0.0", cycle_key="example-default")
     release_event = _event(
         event=sql.LifecycleEventType.RELEASE,

@@ -139,7 +139,7 @@ def _identifier(project: sql.Project) -> str:
     (`pkg:maven/...`, `pkg:pypi/...`) belong on the artifact catalog (#911),
     not on the lifecycle doc. This may change with outcome of https://github.com/package-url/purl-spec/issues/516
     """
-    return f"pkg:apache/{project.key}"
+    return f"pkg:sid/apache.org/{project.committee_key}/{project.key}"
 
 
 def _release_for(event: sql.LifecycleEvent, releases_by_key: dict[str, sql.Release]) -> sql.Release:
