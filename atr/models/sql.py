@@ -130,7 +130,8 @@ class DistributionPlatform(enum.Enum):
         template_url="https://repo1.maven.org/maven2/{owner_namespace}/{package}/maven-metadata.xml",
         # Below is the old template using the maven search API - but the index isn't updated quickly enough for us
         # template_url="https://search.maven.org/solrsearch/select?q=g:{owner_namespace}+AND+a:{package}+AND+v:{version}&core=gav&rows=20&wt=json",
-        template_staging_url="https://repository.apache.org:4443/repository/maven-staging/{owner_namespace}/{package}/maven-metadata.xml",
+        template_staging_url="https://repository.apache.org/content/groups/staging/{owner_namespace}/{package}/maven-metadata.xml",
+        # template_staging_url="https://repository.apache.org:4443/repository/maven-staging/{owner_namespace}/{package}/maven-metadata.xml",
         # https://repository.apache.org/content/repositories/orgapachePROJECT-NNNN/
         # There's no JSON, but each individual package has maven-metadata.xml
         requires_owner_namespace=True,
