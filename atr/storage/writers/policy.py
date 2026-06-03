@@ -28,7 +28,6 @@ import strictyaml.ruamel.error as error
 
 import atr.cycles as cycles
 import atr.db as db
-import atr.hashes as hashes
 import atr.models as models
 import atr.storage as storage
 import atr.util as util
@@ -343,15 +342,9 @@ class CommitteeMember(CommitteeParticipant):
         project: models.sql.Project,
         release_policy: models.sql.ReleasePolicy,
     ) -> None:
-        submitted_subject = submitted_subject.strip()
-        current_default_text = project.policy_announce_release_subject_default
-        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
-        submitted_hash = hashes.compute_sha3_256(submitted_subject.encode())
-
-        if submitted_hash == current_default_hash:
-            release_policy.announce_release_subject = ""
-        else:
-            release_policy.announce_release_subject = submitted_subject
+        release_policy.announce_release_subject = _collapse_to_default(
+            submitted_subject, project.policy_announce_release_subject_default
+        )
 
     def __set_announce_release_template(
         self,
@@ -359,15 +352,9 @@ class CommitteeMember(CommitteeParticipant):
         project: models.sql.Project,
         release_policy: models.sql.ReleasePolicy,
     ) -> None:
-        submitted_template = submitted_template.replace("\r\n", "\n")
-        current_default_text = project.policy_announce_release_default
-        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
-        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
-
-        if submitted_hash == current_default_hash:
-            release_policy.announce_release_template = ""
-        else:
-            release_policy.announce_release_template = submitted_template
+        release_policy.announce_release_template = _collapse_to_default(
+            submitted_template, project.policy_announce_release_default
+        )
 
     def __set_min_hours(
         self,
@@ -388,15 +375,9 @@ class CommitteeMember(CommitteeParticipant):
         project: models.sql.Project,
         release_policy: models.sql.ReleasePolicy,
     ) -> None:
-        submitted_subject = submitted_subject.strip()
-        current_default_text = project.policy_start_vote_subject_default
-        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
-        submitted_hash = hashes.compute_sha3_256(submitted_subject.encode())
-
-        if submitted_hash == current_default_hash:
-            release_policy.start_vote_subject = ""
-        else:
-            release_policy.start_vote_subject = submitted_subject
+        release_policy.start_vote_subject = _collapse_to_default(
+            submitted_subject, project.policy_start_vote_subject_default
+        )
 
     def __set_start_vote_template(
         self,
@@ -404,15 +385,7 @@ class CommitteeMember(CommitteeParticipant):
         project: models.sql.Project,
         release_policy: models.sql.ReleasePolicy,
     ) -> None:
-        submitted_template = submitted_template.replace("\r\n", "\n")
-        current_default_text = project.policy_start_vote_default
-        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
-        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
-
-        if submitted_hash == current_default_hash:
-            release_policy.start_vote_template = ""
-        else:
-            release_policy.start_vote_template = submitted_template
+        release_policy.start_vote_template = _collapse_to_default(submitted_template, project.policy_start_vote_default)
 
     def __set_finish_vote_template(
         self,
@@ -420,15 +393,9 @@ class CommitteeMember(CommitteeParticipant):
         project: models.sql.Project,
         release_policy: models.sql.ReleasePolicy,
     ) -> None:
-        submitted_template = submitted_template.replace("\r\n", "\n")
-        current_default_text = project.policy_finish_vote_default
-        current_default_hash = hashes.compute_sha3_256(current_default_text.encode())
-        submitted_hash = hashes.compute_sha3_256(submitted_template.encode())
-
-        if submitted_hash == current_default_hash:
-            release_policy.finish_vote_template = ""
-        else:
-            release_policy.finish_vote_template = submitted_template
+        release_policy.finish_vote_template = _collapse_to_default(
+            submitted_template, project.policy_finish_vote_default
+        )
 
 
 class SystemService:
@@ -504,6 +471,16 @@ async def _get_or_create_policy(
         data.add(release_policy)
 
     return project, release_policy
+
+
+def _collapse_to_default(submitted: str, default_text: str) -> str:
+    # Storing "" lets the project default apply. We compare ignoring line endings and
+    # surrounding whitespace, otherwise a default that has been through a textarea - which
+    # can drop the trailing newline - fails the match and gets saved as a spurious custom value.
+    submitted = submitted.replace("\r\n", "\n").strip()
+    if submitted == default_text.strip():
+        return ""
+    return submitted
 
 
 def _normalise_text_list(values: list[str]) -> list[str]:
