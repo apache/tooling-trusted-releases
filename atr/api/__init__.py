@@ -46,6 +46,7 @@ import atr.models.unsafe as unsafe
 import atr.models.validation as validation
 import atr.paths as paths
 import atr.principal as principal
+import atr.shared.catalog as catalog
 import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.storage.types as types
@@ -178,6 +179,45 @@ async def checks_ongoing(
     return models.api.ChecksOngoingResults(
         endpoint="/checks/ongoing",
         ongoing=ongoing_tasks_count,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed
+@api.auth.public
+@quart_schema.validate_response(models.api.CatalogProjectResults, 200)
+async def catalog_project(
+    _catalog_project: Literal["catalog/project"],
+    project_key: safe.ProjectKey,
+) -> DictResponse:
+    """
+    URL: GET /catalog/project/<project_key>
+
+    The release catalogue for a project as JSON: every catalogued version with
+    its artifacts, grouped into cycles for projects that use them.
+    """
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
+            exceptions.NotFound(f"Project '{project_key!s}' was not found")
+        )
+        artifacts = await data.artifact(project_key=project.key, _release=True).all()
+        project_cycles = await data.project_cycle(project_key=project.key).all()
+
+    atr_host = config.get().APP_HOST
+    assembled = catalog.assemble(
+        project.version_method,
+        artifacts,
+        project_cycles,
+        project.committee,
+        datetime.datetime.now(datetime.UTC),
+        atr_host=atr_host,
+    )
+    return models.api.CatalogProjectResults(
+        endpoint="/catalog/project",
+        project=project.key,
+        cle_url=catalog.cle_project_url(atr_host, project.key),
+        grouped=assembled.grouped,
+        versions=assembled.versions,
+        cycles=assembled.cycles,
     ).model_dump(mode="json"), 200
 
 

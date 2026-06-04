@@ -5,8 +5,10 @@
       <strong class="fs-5">{{ version.version }}</strong>
       <span>
         <span class="badge {{ status_classes[version.status] }}">{{ version.status | capitalize }}</span>
-        <a class="ms-2 small"
-           href="{{ as_url(api.cle_release, project_key=project.key, version_key=version.version) }}">CLE</a>
+        {% if version.released %}
+          <a class="ms-2 small"
+             href="{{ as_url(api.cle_release, project_key=project.key, version_key=version.version) }}">CLE</a>
+        {% endif %}
       </span>
     </div>
     <p class="text-muted small mb-2">

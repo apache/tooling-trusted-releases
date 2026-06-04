@@ -34,6 +34,57 @@ class ResultsTypeError(TypeError):
     pass
 
 
+class CatalogArtifact(schema.Strict):
+    artifact_path: str
+    classification: str | None
+    signature_path: str | None
+    checksum_path: str | None
+    key_fingerprint: str | None
+    svn_revision: int | None
+    downloadable: bool
+    # Public download URLs: the artifact via the mirror network, its signature and
+    # checksum from downloads.apache.org. None when the version is not downloadable.
+    artifact_url: str | None
+    signature_url: str | None
+    checksum_url: str | None
+
+
+class CatalogVersion(schema.Strict):
+    version: str
+    status: Literal["released", "archived"]
+    released: datetime.datetime | None
+    svn_revision: int | None
+    # The cycle's display label (e.g. "2.x"), or None for versions outside any cycle.
+    cycle: str | None
+    # The per-version CLE feed, or None when no released-phase record backs this version.
+    cle_url: str | None = None
+    artifacts: Sequence[CatalogArtifact]
+
+    @pydantic.field_validator("released", mode="before")
+    @classmethod
+    def released_from_iso(cls, v):
+        # Strict mode won't coerce on its own, so accept the ISO string a JSON
+        # round-trip leaves behind (e.g. validate_response re-reading our dump).
+        return datetime.datetime.fromisoformat(v) if isinstance(v, str) else v
+
+
+class CatalogCycle(schema.Strict):
+    cycle: str
+    lifecycle: str | None
+    versions: Sequence[CatalogVersion]
+
+
+class CatalogProjectResults(schema.Strict):
+    endpoint: Literal["/catalog/project"] = schema.alias("endpoint")
+    project: str
+    # The project-wide CLE feed covering every cycle and release.
+    cle_url: str | None = None
+    # True when the project groups versions into cycles; then read `cycles`, else `versions`.
+    grouped: bool
+    versions: Sequence[CatalogVersion]
+    cycles: Sequence[CatalogCycle]
+
+
 class ChecksListResults(schema.Strict):
     endpoint: Literal["/checks/list"] = schema.alias("endpoint")
     checks: Sequence[sql.CheckResult]
