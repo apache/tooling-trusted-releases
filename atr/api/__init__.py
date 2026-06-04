@@ -1477,7 +1477,9 @@ async def signature_provenance(
         signing_keys.append(
             models.api.SignatureProvenanceKey(
                 committee=committee.key,
-                keys_file_url=f"{paths.committee_downloads_url(host, committee)}/KEYS",
+                keys_file_url=util.public_download_url(
+                    committee, None, util.DownloadFile.METADATA, filename="KEYS", host=host
+                ),
                 keys_file_sha3_256=keys_file_sha3_256,
             )
         )

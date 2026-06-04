@@ -16,7 +16,6 @@
 # under the License.
 
 import pathlib
-import urllib.parse
 
 import atr.config as config
 import atr.constants as constants
@@ -30,21 +29,32 @@ def base_path_for_revision(
     return get_unfinished_dir() / project_key / version_key / revision
 
 
+def closer_download_url(relpath: safe.RelPath) -> str:
+    # For the artifacts themselves we go via the mirror network rather than
+    # downloads.apache.org. action=download skips the human mirror-picker page and
+    # redirects straight to a chosen mirror.
+    return f"{constants.CLOSER_LUA_URL}/{relpath}?action=download"
+
+
+def committee_dist_relpath(
+    committee: sql.Committee, suffix: safe.RelPath | None = None, filename: str | None = None
+) -> safe.RelPath:
+    # The committee's path relative to the downloads root, ie the shared prefix that
+    # the download hosts and the distribution SVN area both hang a release off.
+    # Optionally extended with the per-release download suffix and a file name.
+    relpath = safe.RelPath.from_path(committee_downloads_dir(committee).path.relative_to(get_downloads_dir().path))
+    if suffix is not None:
+        relpath = relpath.append(suffix.as_path())
+    if filename is not None:
+        relpath = relpath.append(filename)
+    return relpath
+
+
 def committee_downloads_dir(committee: sql.Committee) -> safe.StatePath:
     downloads_dir = get_downloads_dir()
     if committee.is_podling:
         return downloads_dir / "incubator" / committee.key
     return downloads_dir / committee.key
-
-
-def committee_downloads_dist_url(committee: sql.Committee, host: str) -> str:
-    if config.get().SVN_PUBLISH_URL:
-        relpath = committee_downloads_dir(committee).path.relative_to(get_downloads_dir().path)
-        public_path = urllib.parse.urlparse(constants.SVN_DIST_PUBLIC_URL).path.rstrip("/")
-        if public_path.endswith("/release"):
-            return f"{constants.DOWNLOADS_APACHE_URL}/{relpath}"
-        return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
-    return committee_downloads_url(host, committee)
 
 
 def committee_downloads_url(host: str, committee: sql.Committee) -> str:
@@ -53,6 +63,13 @@ def committee_downloads_url(host: str, committee: sql.Committee) -> str:
     if committee.is_podling:
         return f"https://{host}/downloads/incubator/{committee.key}"
     return f"https://{host}/downloads/{committee.key}"
+
+
+def downloads_url(relpath: safe.RelPath) -> str:
+    # downloads.apache.org itself, not a mirror. Signatures, checksums and KEYS
+    # must come from here rather than a mirror, otherwise a bad mirror could serve
+    # a matching artifact and signature.
+    return f"{constants.DOWNLOADS_APACHE_URL}/{relpath}"
 
 
 def get_archives_dir() -> safe.StatePath:

@@ -108,7 +108,7 @@ def test_status_reflects_release_and_archive_state() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived),
     ]
 
-    versions = {v.version: v for v in catalog._catalog_versions(artifacts, {})}
+    versions = {v.version: v for v in catalog._catalog_versions(artifacts, {}, project.committee_key)}
 
     assert versions["5.0.2"].status == "released"
     assert versions["4.1.7"].status == "archived"
@@ -123,7 +123,7 @@ def test_only_released_versions_are_downloadable() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived, svn_revision=28114),
     ]
 
-    versions = {v.version: v for v in catalog._catalog_versions(artifacts, {})}
+    versions = {v.version: v for v in catalog._catalog_versions(artifacts, {}, project.committee_key)}
 
     assert versions["5.0.2"].artifacts[0].downloadable is True
     assert versions["4.1.7"].artifacts[0].downloadable is False
@@ -143,7 +143,7 @@ def test_versions_are_newest_first() -> None:
         _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=newer),
     ]
 
-    versions = catalog._catalog_versions(artifacts, {})
+    versions = catalog._catalog_versions(artifacts, {}, project.committee_key)
 
     assert [v.version for v in versions] == ["5.0.2", "5.0.1"]
 

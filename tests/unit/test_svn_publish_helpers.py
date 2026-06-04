@@ -119,12 +119,53 @@ def test_svn_publish_models_round_trip() -> None:
     assert sql.TaskType.SVN_PUBLISH.label == "SVN publish"
 
 
-def test_svn_publish_public_url() -> None:
+def test_public_download_url_uses_svn_dist_area_for_beta_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    target_url = util.svn_publish_public_url(util.SvnPublishTarget.ATR, committee, safe.RelPath("apple-1.0"))
+    url = util.public_download_url(committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA)
 
-    assert target_url == f"{constants.SVN_DIST_PUBLIC_URL}/apple/apple-1.0"
+    assert url == "https://dist.apache.org/repos/dist/atr/apple/apple-1.0"
+
+
+def test_public_download_url_uses_mirror_for_released_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
+    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    url = util.public_download_url(
+        committee, safe.RelPath("apple-1.0"), util.DownloadFile.ARTIFACT, filename="apple-1.0.tar.gz"
+    )
+
+    assert url == f"{constants.CLOSER_LUA_URL}/apple/apple-1.0/apple-1.0.tar.gz?action=download"
+
+
+def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
+    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    url = util.public_download_url(
+        committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA, filename="apple-1.0.tar.gz.asc"
+    )
+
+    assert url == f"{constants.DOWNLOADS_APACHE_URL}/apple/apple-1.0/apple-1.0.tar.gz.asc"
+
+
+def test_public_download_url_falls_back_to_self_host_without_svn(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    url = util.public_download_url(
+        committee,
+        safe.RelPath("apple-1.0"),
+        util.DownloadFile.ARTIFACT,
+        filename="apple-1.0.tar.gz",
+        host="atr.example",
+    )
+
+    assert url == "https://atr.example/downloads/apple/apple-1.0/apple-1.0.tar.gz"
 
 
 def test_svn_publish_target_from_public_url(monkeypatch: pytest.MonkeyPatch) -> None:

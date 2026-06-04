@@ -1878,6 +1878,9 @@ class Artifact(sqlmodel.SQLModel, table=True):
     classification: str | None = sqlmodel.Field(default=None, **example("source"))
     # Per-artifact SVN revision - not all artifacts in a release are added in the same commit
     svn_revision: int | None = sqlmodel.Field(default=None, index=True, **example(12345))
+    # The release's path under the committee downloads dir, needed to build the public
+    # download URLs. NULL means the files sit directly under the committee dir.
+    download_path_suffix: str | None = sqlmodel.Field(default=None, **example("example/0.0.1"))
 
     # M-1: Artifact -> Release
     # 1-M: Release -> [Artifact]

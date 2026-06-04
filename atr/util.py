@@ -172,6 +172,13 @@ class SvnPublishTarget(enum.Enum):
     RELEASE = "release"
 
 
+class DownloadFile(enum.Enum):
+    # Ultimately decides where a published release file should be fetched from:
+    # artifacts via the mirror network, metadata from the downloads.a.o.
+    ARTIFACT = "artifact"
+    METADATA = "metadata"
+
+
 class EmailRecipients(Protocol):
     email_to: str
     email_cc: list[str]
@@ -993,6 +1000,34 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     return word
 
 
+def public_download_url(
+    committee: sql.Committee,
+    suffix: safe.RelPath | None,
+    kind: DownloadFile,
+    filename: str | None = None,
+    host: str | None = None,
+) -> str:
+    # The single place that resolves where a release file is fetched from, by
+    # lifecycle (beta vs released) and role (artifact vs metadata).
+    if not config.get().SVN_PUBLISH_URL:
+        # No SVN publishing configured (dev), so ATR serves the downloads itself.
+        url = paths.committee_downloads_url(host or config.get().APP_HOST, committee)
+        if suffix is not None:
+            url = f"{url}/{suffix}"
+        if filename is not None:
+            url = f"{url}/{filename}"
+        return url
+    relpath = paths.committee_dist_relpath(committee, suffix, filename)
+    match svn_publish_target():
+        case SvnPublishTarget.ATR:
+            # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored.
+            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
+        case SvnPublishTarget.RELEASE:
+            if kind is DownloadFile.ARTIFACT:
+                return paths.closer_download_url(relpath)
+            return paths.downloads_url(relpath)
+
+
 async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tuple[str | None, bool, bool, str | None]:
     """Read file content for viewer."""
     content: str | None = None
@@ -1084,26 +1119,8 @@ def svn_publish_internal_url(
     publish_url = config.get().SVN_PUBLISH_URL
     if not publish_url:
         raise ValueError("SVN_PUBLISH_URL is not configured")
-    relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
-    if download_path_suffix is not None:
-        relpath = relpath / download_path_suffix.as_path()
+    relpath = paths.committee_dist_relpath(committee, download_path_suffix)
     return f"{publish_url.rstrip('/')}/{relpath}"
-
-
-def svn_publish_public_url(
-    target: SvnPublishTarget,
-    committee: sql.Committee,
-    download_path_suffix: safe.RelPath | None,
-) -> str:
-    relpath = paths.committee_downloads_dir(committee).path.relative_to(paths.get_downloads_dir().path)
-    if download_path_suffix is not None:
-        relpath = relpath / download_path_suffix.as_path()
-    match target:
-        case SvnPublishTarget.RELEASE:
-            base_url = constants.DOWNLOADS_APACHE_URL
-        case SvnPublishTarget.ATR:
-            base_url = constants.SVN_DIST_PUBLIC_URL
-    return f"{base_url.rstrip('/')}/{relpath}"
 
 
 def svn_publish_target() -> SvnPublishTarget:

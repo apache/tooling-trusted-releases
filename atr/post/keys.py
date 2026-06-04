@@ -27,7 +27,6 @@ import quart
 
 import atr.blueprints.post as post
 import atr.config as config
-import atr.constants as constants
 import atr.db as db
 import atr.form as form
 import atr.get as get
@@ -36,6 +35,7 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.paths as paths
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
@@ -269,9 +269,9 @@ async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.Ad
 
 
 def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
-    if is_podling:
-        return f"{constants.DOWNLOADS_APACHE_URL}/incubator/{committee_key}/KEYS"
-    return f"{constants.DOWNLOADS_APACHE_URL}/{committee_key}/KEYS"
+    # KEYS comes from downloads.apache.org, not a mirror.
+    prefix = "incubator/" if is_podling else ""
+    return paths.downloads_url(safe.RelPath(f"{prefix}{committee_key}/KEYS"))
 
 
 async def _delete_openpgp_key(

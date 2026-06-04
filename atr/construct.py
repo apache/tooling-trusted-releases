@@ -193,7 +193,7 @@ async def announce_release_subject_and_body(
 
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
-    download_url = paths.committee_downloads_dist_url(committee, host)
+    download_url = util.public_download_url(committee, None, util.DownloadFile.METADATA, host=host)
     if options.download_path_suffix is not None:
         download_url += f"/{options.download_path_suffix!s}"
     download_url += "/"
@@ -333,7 +333,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     keys_file = None
     keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
     if await aiofiles.os.path.isfile(keys_file_path):
-        keys_file = f"{paths.committee_downloads_url(host, committee)}/KEYS"
+        keys_file = util.public_download_url(committee, None, util.DownloadFile.METADATA, filename="KEYS", host=host)
 
     checklist_content = ""
     async with db.session() as data:

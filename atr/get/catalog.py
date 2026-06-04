@@ -50,7 +50,7 @@ async def project(_session: web.Public, _catalog: Literal["catalog"], project_ke
 
     cycles_by_key = {cycle.cycle_key: cycle for cycle in project_cycles}
     now = datetime.datetime.now(datetime.UTC)
-    versions = _catalog_versions(artifacts, cycles_by_key)
+    versions = _catalog_versions(artifacts, cycles_by_key, project_obj.committee)
     grouped = _grouped_layout(project_obj.version_method)
     cycles = _catalog_cycles(versions, now) if grouped else []
 
@@ -74,6 +74,11 @@ class _CatalogArtifact:
     key_fingerprint: str | None
     svn_revision: int | None
     downloadable: bool
+    # Public download URLs: the artifact via the mirror network, its signature and
+    # checksum from downloads.apache.org. None when the version is not downloadable.
+    artifact_url: str | None
+    signature_url: str | None
+    checksum_url: str | None
 
 
 @dataclasses.dataclass
@@ -98,9 +103,41 @@ def _grouped_layout(version_method: sql.VersionMethod) -> bool:
     return version_method in _GROUPED_METHODS
 
 
+def _catalog_artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: bool) -> _CatalogArtifact:
+    suffix = safe.RelPath(row.download_path_suffix) if row.download_path_suffix else None
+    artifact_url: str | None = None
+    signature_url: str | None = None
+    checksum_url: str | None = None
+    if downloadable and (committee is not None):
+        artifact_url = util.public_download_url(
+            committee, suffix, util.DownloadFile.ARTIFACT, filename=row.artifact_path
+        )
+        if row.signature_path:
+            signature_url = util.public_download_url(
+                committee, suffix, util.DownloadFile.METADATA, filename=row.signature_path
+            )
+        if row.checksum_path:
+            checksum_url = util.public_download_url(
+                committee, suffix, util.DownloadFile.METADATA, filename=row.checksum_path
+            )
+    return _CatalogArtifact(
+        artifact_path=row.artifact_path,
+        classification=row.classification,
+        signature_path=row.signature_path,
+        checksum_path=row.checksum_path,
+        key_fingerprint=row.key_fingerprint,
+        svn_revision=row.svn_revision,
+        downloadable=downloadable,
+        artifact_url=artifact_url,
+        signature_url=signature_url,
+        checksum_url=checksum_url,
+    )
+
+
 def _catalog_versions(
     artifacts: Sequence[sql.Artifact],
     cycles_by_key: dict[str, sql.ProjectCycle],
+    committee: sql.Committee | None,
 ) -> list[_CatalogVersion]:
     by_version: dict[str, list[sql.Artifact]] = collections.defaultdict(list)
     for artifact in artifacts:
@@ -121,18 +158,7 @@ def _catalog_versions(
                 released=(release.released or release.created) if (release is not None) else None,
                 svn_revision=max(svn_revisions) if svn_revisions else None,
                 cycle=cycle,
-                artifacts=[
-                    _CatalogArtifact(
-                        artifact_path=row.artifact_path,
-                        classification=row.classification,
-                        signature_path=row.signature_path,
-                        checksum_path=row.checksum_path,
-                        key_fingerprint=row.key_fingerprint,
-                        svn_revision=row.svn_revision,
-                        downloadable=downloadable,
-                    )
-                    for row in rows
-                ],
+                artifacts=[_catalog_artifact(row, committee, downloadable) for row in rows],
             )
         )
 
