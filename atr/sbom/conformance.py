@@ -26,7 +26,7 @@ import yyjson
 
 from . import constants, models
 from .maven import cache_read, cache_write
-from .utilities import get_pointer
+from .utilities import ensure_metadata, get_pointer
 
 if TYPE_CHECKING:
     from cyclonedx.model.component import Component
@@ -76,7 +76,7 @@ async def assemble_component_supplier(
 
     add_asf_op = make_supplier_op(
         constants.conformance.THE_APACHE_SOFTWARE_FOUNDATION,
-        "https://apache.org/",
+        constants.conformance.APACHE_URL,
     )
 
     if get_pointer(doc, f"/components/{index}/publisher") == constants.conformance.THE_APACHE_SOFTWARE_FOUNDATION:
@@ -186,40 +186,12 @@ def assemble_dependencies(doc: yyjson.Document, patch_ops: models.patch.Patch) -
 
 
 def assemble_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
-    if get_pointer(doc, "/metadata") is None:
-        patch_ops.append(
-            models.patch.AddOp(
-                op="add",
-                path="/metadata",
-                value={},
-            )
-        )
+    ensure_metadata(doc, patch_ops)
 
 
 def assemble_metadata_author(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
-    assemble_metadata(doc, patch_ops)
-    tools = get_pointer(doc, "/metadata/tools")
-    tool = {
-        "name": "sbomtool",
-        "version": constants.version.VERSION,
-        "description": "By ASF Tooling",
-    }
-    if tools is None:
-        patch_ops.append(
-            models.patch.AddOp(
-                op="add",
-                path="/metadata/tools",
-                value=[tool],
-            )
-        )
-    elif isinstance(tools, list):
-        patch_ops.append(
-            models.patch.AddOp(
-                op="add",
-                path="/metadata/tools/-",
-                value=tool,
-            )
-        )
+    # We can't synthesise an author here
+    pass
 
 
 def assemble_metadata_component(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
@@ -231,16 +203,7 @@ def assemble_metadata_component(doc: yyjson.Document, patch_ops: models.patch.Pa
 def assemble_metadata_supplier(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
     assemble_metadata(doc, patch_ops)
     # NOTE: The sbomqs tool requires a URL (or email) on a supplier
-    patch_ops.append(
-        models.patch.AddOp(
-            op="add",
-            path="/metadata/supplier",
-            value={
-                "name": constants.conformance.THE_APACHE_SOFTWARE_FOUNDATION,
-                "url": ["https://apache.org/"],
-            },
-        )
-    )
+    patch_ops.append(models.patch.AddOp(op="add", path="/metadata/supplier", value=constants.conformance.ASF_ENTITY))
 
 
 def assemble_metadata_timestamp(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
@@ -323,8 +286,10 @@ def ntia_2021_issues(
         else:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_COMPONENT))
 
-        if len(bom_value.metadata.authors) < 1:
-            errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_AUTHOR))
+        if len(bom_value.metadata.authors) < 1 and bom_value.metadata.manufacturer is None:
+            errors.append(
+                models.conformance.MissingProperty(property=models.conformance.Property.METADATA_AUTHOR_OR_MANUFACTURER)
+            )
         if original_metadata.get("timestamp") is None:
             errors.append(models.conformance.MissingProperty(property=models.conformance.Property.METADATA_TIMESTAMP))
     else:
@@ -388,7 +353,6 @@ async def ntia_2021_patch(
     errors: list[models.conformance.Missing],
 ) -> models.patch.Patch:
     patch_ops: models.patch.Patch = []
-    # TODO: Add tool metadata
     for error in errors:
         match error:
             case models.conformance.MissingProperty(property=property_value):
@@ -399,7 +363,7 @@ async def ntia_2021_patch(
                         assemble_metadata(doc, patch_ops)
                     case models.conformance.Property.METADATA_COMPONENT:
                         assemble_metadata_component(doc, patch_ops)
-                    case models.conformance.Property.METADATA_AUTHOR:
+                    case models.conformance.Property.METADATA_AUTHOR_OR_MANUFACTURER:
                         assemble_metadata_author(doc, patch_ops)
                     case models.conformance.Property.METADATA_TIMESTAMP:
                         assemble_metadata_timestamp(doc, patch_ops)

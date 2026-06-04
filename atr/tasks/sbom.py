@@ -23,6 +23,7 @@ from typing import Any, Final
 
 import aiofiles
 import aiofiles.os
+import yyjson
 
 import atr.archives as archives
 import atr.config as config
@@ -450,8 +451,14 @@ async def _generate_cyclonedx_core(artifact_path: safe.StatePath, output_path: s
 
                 # Write the SBOM data to the specified output path
                 try:
+                    # Record ASF as the manufacturer and ATR as a tool before we write
+                    doc = yyjson.Document(json.dumps(sbom_data))
+                    patch_ops: sbom.models.patch.Patch = []
+                    sbom.utilities.record_manufacturer(doc, patch_ops)
+                    sbom.utilities.record_atr_tool(doc, patch_ops)
+                    merged = sbom.utilities.patch_document(doc, patch_ops)
                     async with aiofiles.open(output_path, "w", encoding="utf-8") as f:
-                        await f.write(json.dumps(sbom_data, indent=2))
+                        await f.write(json.dumps(merged.as_obj, indent=2))
                     log.info(f"Successfully wrote SBOM to {output_path}")
                 except Exception as write_err:
                     log.exception(f"Failed to write SBOM JSON to {output_path}: {write_err}")

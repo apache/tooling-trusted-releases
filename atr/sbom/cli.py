@@ -31,7 +31,7 @@ from .cyclonedx import validate_cli, validate_py
 from .licenses import check
 from .sbomqs import total_score
 from .tool import plugin_outdated_version
-from .utilities import bundle_to_ntia_patch, bundle_to_vuln_patch, patch_to_data, path_to_bundle
+from .utilities import bundle_to_ntia_patch, bundle_to_vuln_patch, patch_document, patch_to_data, path_to_bundle
 
 
 def command_license(bundle: models.bundle.Bundle) -> None:
@@ -58,10 +58,10 @@ def command_license(bundle: models.bundle.Bundle) -> None:
 
 
 def command_merge(bundle: models.bundle.Bundle) -> None:
+    # TODO: This bypasses apply_patch, so it doesn't record the ATR tool or bump the version
     patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
-        patch_data = patch_to_data(patch_ops)
-        output = bundle.doc.patch(yyjson.Document(patch_data))
+        output = patch_document(bundle.doc, patch_ops)
     else:
         output = bundle.doc
     if bundle.source_type == "json":
@@ -124,8 +124,7 @@ def command_patch_vuln(bundle: models.bundle.Bundle) -> None:
 def command_scores(bundle: models.bundle.Bundle) -> None:
     patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
-        patch_data = patch_to_data(patch_ops)
-        merged = bundle.doc.patch(yyjson.Document(patch_data))
+        merged = patch_document(bundle.doc, patch_ops)
         print(total_score(bundle.doc), "->", total_score(merged))
     else:
         print(total_score(bundle.doc))

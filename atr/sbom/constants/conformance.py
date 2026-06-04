@@ -36,3 +36,10 @@ KNOWN_PURL_SUPPLIERS: Final[dict[tuple[str, str], tuple[str, str]]] = {
 }
 
 THE_APACHE_SOFTWARE_FOUNDATION: Final[str] = "The Apache Software Foundation"
+
+APACHE_URL: Final[str] = "https://apache.org/"
+
+ASF_ENTITY: Final[dict[str, str | list[str]]] = {
+    "name": THE_APACHE_SOFTWARE_FOUNDATION,
+    "url": [APACHE_URL],
+}

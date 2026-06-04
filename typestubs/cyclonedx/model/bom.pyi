@@ -10,6 +10,7 @@ from py_serializable import _JsonSerializable, _XmlSerializable, _T
 class BomMetaData:
     component: Optional[Component]
     supplier: Optional[OrganizationalEntity]
+    manufacturer: Optional[OrganizationalEntity]
     authors: Any
     timestamp: datetime
     tools: Any

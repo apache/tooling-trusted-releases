@@ -17,12 +17,11 @@
 
 from __future__ import annotations
 
-from . import conformance, licenses, maven, spdx, version
+from . import conformance, licenses, maven, spdx
 
 __all__ = [
     "conformance",
     "licenses",
     "maven",
     "spdx",
-    "version",
 ]

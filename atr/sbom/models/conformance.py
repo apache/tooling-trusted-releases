@@ -29,7 +29,7 @@ class Property(enum.Enum):
     METADATA = enum.auto()
     METADATA_SUPPLIER = enum.auto()
     METADATA_COMPONENT = enum.auto()
-    METADATA_AUTHOR = enum.auto()
+    METADATA_AUTHOR_OR_MANUFACTURER = enum.auto()
     METADATA_TIMESTAMP = enum.auto()
     DEPENDENCIES = enum.auto()
 
