@@ -26,7 +26,7 @@ def inactivity_form_intro(release: sql.Release, action: str = "deleted") -> htm.
     days = max(0, (datetime.datetime.now(datetime.UTC) - release.activity_at).days)
     return htm.div[
         htm.div(".mb-2")[
-            f"This release has been inactive for {util.plural(days, 'day')}. "
-            f"After 90 days of inactivity this project will be {action}."
+            f"This candidate draft has been inactive for {util.plural(days, 'day')}. "
+            f"After 90 days of inactivity, this candidate draft will be {action}."
         ],
     ]
