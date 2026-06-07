@@ -98,7 +98,9 @@ async def selected(
         revision_number=release.unwrap_revision_number,
     )
 
-    permitted_recipients = util.permitted_announce_recipients(session.uid, committee_key=util.unwrap(committee.key))
+    permitted_recipients = util.permitted_announce_recipients(
+        session.uid, committee_key=util.unwrap(committee.key), project=release.project
+    )
 
     content = await _render_page(
         release=release,

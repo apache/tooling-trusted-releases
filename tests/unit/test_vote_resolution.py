@@ -67,7 +67,12 @@ def test_automatic_vote_resolve_section_links_to_standard_resolve(monkeypatch: p
         vote_mode=sql.VoteMode.EMAIL,
         effective_vote_mode=sql.VoteMode.EMAIL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
-        project=SimpleNamespace(key="project", status=sql.ProjectStatus.ACTIVE, is_active=True),
+        project=SimpleNamespace(
+            key="project",
+            status=sql.ProjectStatus.ACTIVE,
+            is_active=True,
+            policy_recipients=lambda action: ("", [], []),
+        ),
         version="1.0.0",
     )
 
@@ -365,7 +370,12 @@ async def test_manual_resolve_page_explains_cancellation_notice_url(
     monkeypatch.setattr(sessions, "form_error_pop", _no_form_errors)
 
     release = SimpleNamespace(
-        project=SimpleNamespace(key="project", status=sql.ProjectStatus.ACTIVE, is_active=True),
+        project=SimpleNamespace(
+            key="project",
+            status=sql.ProjectStatus.ACTIVE,
+            is_active=True,
+            policy_recipients=lambda action: ("", [], []),
+        ),
         version="1.0.0",
         short_display_name="Project 1.0.0",
     )
@@ -421,7 +431,12 @@ def test_manual_vote_resolve_section_links_to_manual_resolve(monkeypatch: pytest
         vote_mode=sql.VoteMode.MANUAL,
         effective_vote_mode=sql.VoteMode.MANUAL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.MANUAL),
-        project=SimpleNamespace(key="project", status=sql.ProjectStatus.ACTIVE, is_active=True),
+        project=SimpleNamespace(
+            key="project",
+            status=sql.ProjectStatus.ACTIVE,
+            is_active=True,
+            policy_recipients=lambda action: ("", [], []),
+        ),
         version="1.0.0",
     )
 
@@ -803,6 +818,7 @@ async def test_send_resolution_cancelled_builds_cancelled_subject() -> None:
             status=sql.ProjectStatus.ACTIVE,
             is_active=True,
             display_name="Project",
+            policy_recipients=lambda action: ("", [], []),
         ),
         version="1.0.0",
     )
@@ -1302,6 +1318,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
             short_display_name="Project",
             release_policy=None,
             policy_finish_vote_template="{{ATR_TALLY}}",
+            policy_recipients=lambda action: ("", [], []),
             committee=SimpleNamespace(
                 key="project",
                 display_name="Project",
@@ -1390,6 +1407,7 @@ def _manual_candidate_release(podling_thread_id: str | None = None) -> SimpleNam
             is_active=True,
             display_name="Project",
             release_policy=None,
+            policy_recipients=lambda action: ("", [], []),
             committee=SimpleNamespace(
                 key="project",
                 is_podling=False,

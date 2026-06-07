@@ -582,6 +582,12 @@ def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) ->
     is_podling = bool(committee is not None and committee.is_podling)
     options = util.configurable_recipients(action, committee_key, is_podling=is_podling)
     stored_to, stored_cc, stored_bcc = project.policy_recipients(action)
+    # Include any already-stored recipients (eg set via .asf.yaml) so a saved
+    # value remains a selectable option even when it's outside the committee
+    # defaults.
+    for address in (stored_to, *stored_cc, *stored_bcc):
+        if address and (address not in options):
+            options.append(address)
     default_to = stored_to if (stored_to in options) else (options[0] if options else None)
     return htm.div("#email_to")[
         render.html_recipients_to_radios(options, default_to=default_to),

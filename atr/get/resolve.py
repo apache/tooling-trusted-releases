@@ -296,7 +296,9 @@ async def selected(  # noqa: C901
     # to add further cc/bcc with inherited recipients locked.
     defaults["result_email_to"] = vote_recipient or "the original vote thread recipients"
     permitted_recipients = (
-        util.permitted_voting_recipients(session.uid, release.committee.key) if (release.committee is not None) else []
+        util.permitted_voting_recipients(session.uid, release.committee.key, project=release.project)
+        if (release.committee is not None)
+        else []
     )
     original_cc = list(latest_vote_task.task_args.get("email_cc", [])) if (latest_vote_task is not None) else []
     original_bcc = list(latest_vote_task.task_args.get("email_bcc", [])) if (latest_vote_task is not None) else []

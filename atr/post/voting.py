@@ -151,6 +151,7 @@ async def selected(  # noqa: C901
             session.uid,
             committee.key,
             is_podling=committee.is_podling,
+            project=release.project,
         )
         all_addrs = [start_voting_form.email_to, *start_voting_form.email_cc, *start_voting_form.email_bcc]
         for addr in all_addrs:

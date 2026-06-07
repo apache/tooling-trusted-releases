@@ -1849,6 +1849,7 @@ async def vote_start(
             asf_uid,
             committee_key,
             is_podling=is_podling,
+            project=release.project,
         )
         if data.email_to not in permitted_recipients:
             raise exceptions.Forbidden("Invalid mailing list choice")

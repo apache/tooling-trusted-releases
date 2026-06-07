@@ -123,12 +123,6 @@ class CommitteeMember(CommitteeParticipant):
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
     ) -> None:
-        permitted = util.permitted_announce_recipients(self.__asf_uid, committee_key=self.__committee_key)
-        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
-        for addr in all_addrs:
-            if addr not in permitted:
-                raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
-
         unfinished_dir: str = ""
         finished_dir: str = ""
 
@@ -148,6 +142,16 @@ class CommitteeMember(CommitteeParticipant):
             )
         )
         storage.ensure_project_active(release.project)
+
+        # Loaded the release first so a project's stored announce recipients can
+        # be folded into the permitted set before we validate the addresses.
+        permitted = util.permitted_announce_recipients(
+            self.__asf_uid, committee_key=self.__committee_key, project=release.project
+        )
+        all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
+        for addr in all_addrs:
+            if addr not in permitted:
+                raise storage.AccessError(f"You are not permitted to send announcements to {addr}", status=403)
         if (committee := release.project.committee) is None:
             raise storage.AccessError("Release has no committee - Invalid state", status=500)
 

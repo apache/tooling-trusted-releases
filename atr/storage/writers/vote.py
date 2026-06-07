@@ -392,6 +392,7 @@ class CommitteeParticipant(FoundationCommitter):
                     self.__asf_uid,
                     committee.key,
                     is_podling=committee.is_podling,
+                    project=release.project,
                 )
             all_addrs = [email_to] + (email_cc or []) + (email_bcc or [])
             for addr in all_addrs:
@@ -514,7 +515,9 @@ class ReleaseManager(CommitteeParticipant):
         storage.ensure_project_active(release.project)
         additions = (additional_cc or []) + (additional_bcc or [])
         if (release.committee is not None) and additions:
-            permitted = set(util.permitted_voting_recipients(self.__asf_uid, release.committee.key))
+            permitted = set(
+                util.permitted_voting_recipients(self.__asf_uid, release.committee.key, project=release.project)
+            )
             for address in additions:
                 if address not in permitted:
                     raise storage.AccessError(f"Invalid recipient selection: {address}", status=400)

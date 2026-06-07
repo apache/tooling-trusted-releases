@@ -289,9 +289,9 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
             raise VoteInitiationError(f"Invalid destination email address: {addr}")
 
     async with db.session() as data:
-        release = await data.release(key=task_args.release_key, _project=True, _committee=True).demand(
-            VoteInitiationError(f"Release {task_args.release_key!s} not found")
-        )
+        release = await data.release(
+            key=task_args.release_key, _project=True, _committee=True, _project_release_policy=True
+        ).demand(VoteInitiationError(f"Release {task_args.release_key!s} not found"))
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             raise VoteInitiationError(f"No revisions found for release {task_args.release_key!s}")
@@ -345,6 +345,7 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
             task_args.initiator_id,
             release.committee.key,
             is_podling=release.committee.is_podling,
+            project=release.project,
         )
         for addr in all_addrs:
             if addr not in permitted_recipients:

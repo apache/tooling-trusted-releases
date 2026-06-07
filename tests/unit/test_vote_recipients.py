@@ -260,7 +260,7 @@ async def test_worker_uses_first_round_validation_for_non_podling(
     monkeypatch.setattr("atr.config.get", lambda: SimpleNamespace(ATR_STATUS="ALPHA"))
     monkeypatch.setattr(
         "atr.util.permitted_voting_recipients",
-        lambda uid, committee_key: ["dev@project.apache.org"],
+        lambda uid, committee_key, *, project=None: ["dev@project.apache.org"],
     )
 
     task_args = _make_initiate_args(email_to="dev@project.apache.org")
@@ -319,6 +319,7 @@ def _make_release(
             is_podling=is_podling,
             key="testproject",
         ),
+        project=SimpleNamespace(policy_recipients=lambda action: ("", [], [])),
         podling_thread_id=podling_thread_id,
     )
 

@@ -594,7 +594,7 @@ def _patch_initiate_dependencies(monkeypatch, release: SimpleNamespace) -> None:
     monkeypatch.setattr(
         task_vote.util,
         "permitted_podling_first_round_recipients",
-        lambda uid, committee_key, *, is_podling: ["dev@project.apache.org"],
+        lambda uid, committee_key, *, is_podling, project=None: ["dev@project.apache.org"],
     )
 
     mock_send = mock.AsyncMock(return_value=("vote-mid@apache.org", []))

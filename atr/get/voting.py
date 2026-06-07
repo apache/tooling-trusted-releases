@@ -79,6 +79,7 @@ async def selected(
             session.uid,
             committee.key,
             is_podling=committee.is_podling,
+            project=release.project,
         )
         second_round_recipients = (
             util.permitted_podling_second_round_recipients(session.uid) if committee.is_podling else []
