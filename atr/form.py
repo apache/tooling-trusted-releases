@@ -22,6 +22,7 @@ import enum
 import pathlib
 import re
 import types
+import urllib.parse as parse
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin
 
 import htpy
@@ -499,7 +500,7 @@ def to_str_list(v: Any) -> list[str]:
     raise ValueError(f"Expected a string or list of strings, got {type(v).__name__}")
 
 
-def to_url_list(v: Any) -> list[str]:
+def to_uri_list(v: Any) -> list[str]:
     if v is None or v == "":
         return []
     if isinstance(v, list):
@@ -507,21 +508,15 @@ def to_url_list(v: Any) -> list[str]:
     elif isinstance(v, str):
         items = [line.strip() for line in v.split("\n") if line.strip()]
     else:
-        raise ValueError(f"Expected a string or list of URLs, got {type(v).__name__}")
+        raise ValueError(f"Expected a string or list of URIs, got {type(v).__name__}")
 
-    # Re-raise as ValueError so pydantic's error.input stays the full input;
-    # a leaked inner ValidationError would replace it with just the bad line.
-    adapter = pydantic.TypeAdapter(pydantic.AnyUrl)
-    urls: list[str] = []
-    invalid: list[str] = []
-    for item in items:
-        try:
-            urls.append(str(adapter.validate_python(item)))
-        except pydantic.ValidationError:
-            invalid.append(item)
+    # We accept any URI scheme here rather than leaning on pydantic's AnyUrl,
+    # which rejects VCS locators like git+ssh://git@host:path. urlsplit just needs a scheme to
+    # be present, and we keep each entry exactly as given.
+    invalid = [item for item in items if not parse.urlsplit(item).scheme]
     if invalid:
-        raise ValueError(f"Invalid URL{'s' if len(invalid) > 1 else ''}: {', '.join(invalid)}")
-    return urls
+        raise ValueError(f"Invalid URI{'s' if len(invalid) > 1 else ''}: {', '.join(invalid)}")
+    return items
 
 
 # Validator types come before other functions
@@ -619,9 +614,9 @@ StrList = Annotated[
     pydantic.Field(default_factory=list),
 ]
 
-URLList = Annotated[
+URIList = Annotated[
     list[str],
-    functional_validators.BeforeValidator(to_url_list),
+    functional_validators.BeforeValidator(to_uri_list),
     pydantic.Field(default_factory=list),
 ]
 

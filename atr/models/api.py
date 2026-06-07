@@ -420,6 +420,16 @@ class PolicyArgsBase(schema.Strict):
     vote_comment_template: str | None = None
     vote_mode: sql.VoteMode | None = None
 
+    @pydantic.field_validator("license_check_mode", mode="before")
+    @classmethod
+    def license_check_mode_to_enum(cls, v):
+        if isinstance(v, str):
+            try:
+                return sql.LicenseCheckMode(v)
+            except ValueError:
+                raise ValueError(f"'{v}' is not a valid LicenseCheckMode")
+        return v
+
     @pydantic.field_validator("vote_mode", mode="before")
     @classmethod
     def vote_mode_to_enum(cls, v):
@@ -474,7 +484,7 @@ class ProjectConfigProjectArgs(schema.Strict):
     download_page: pydantic.HttpUrl | None = None
     bug_database: pydantic.HttpUrl | None = None
     mailing_lists: pydantic.HttpUrl | None = None
-    repositories: list[pydantic.AnyUrl] | None = None
+    repositories: list[str] | None = None
     standards: list[str] | None = None
     categories: list[str] | None = None
     programming_languages: list[str] | None = None
