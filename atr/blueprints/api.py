@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 import datetime
-import inspect
+import functools
 import time
 from collections.abc import Awaitable, Callable
 from types import ModuleType
@@ -41,7 +41,7 @@ __all__ = ["auth", "register", "typed"]
 _BLUEPRINT_NAME: Final = "api_blueprint"
 _BLUEPRINT: Final = quart.Blueprint(_BLUEPRINT_NAME, __name__, url_prefix="/api")
 _routes: list[str] = []
-_route_auth_levels: dict[str, auth.AuthLevel] = {}
+_route_auth_schemes: dict[str, str] = {}
 
 
 def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
@@ -51,74 +51,73 @@ def register(app: base.QuartApp) -> tuple[ModuleType, list[str]]:
     return api, _routes
 
 
-def route_auth_levels() -> dict[str, auth.AuthLevel]:
-    """Return a snapshot of the (route function name -> auth level) map."""
-    return dict(_route_auth_levels)
+def route_auth_schemes() -> dict[str, str]:
+    """Return a snapshot of the (route function name -> auth scheme) map."""
+    return dict(_route_auth_schemes)
 
 
-def typed(func: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
-    """Decorator that derives the URL path from the function's type annotations.
+def typed(
+    *,
+    auth_scheme: auth.Auth,
+    response: tuple[type[pydantic.BaseModel], int] | None = None,
+    rate_limit: tuple[int, datetime.timedelta] | None = None,
+) -> Callable[[Callable[..., Awaitable[Any]]], web.RouteFunction[Any]]:
+    """Single decorator for an API route.
 
-    - Literal["..."] parameters become literal path segments
-    - safe.SafeType subclass parameters are validated from the URL path
-    - pydantic.BaseModel subclass parameters are parsed from the JSON request body
-    - dataclass parameters are parsed from the query string
-    - str | None parameters create optional URL segments (two routes registered)
-    - int, float use Quart's built-in type converters
-    - HTTP method is POST if a body param is present, GET otherwise
-
-    Routes must also declare an auth level via @api.auth.<level> (see
-    atr.blueprints.api_auth); a missing marker raises TypeError at import.
+    Derives the URL from the handler's typed arguments, then composes the pipeline
+    in a fixed order: rate limit, header-credential auth, body parsing,
+    body-credential auth, handler. Header auth wraps outside body validation so an
+    unauthenticated request is rejected before its body is parsed.
     """
-    original = inspect.unwrap(func)
-    _require_auth_level(func, original)
-    path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
-        original
-    )
-    method = "POST" if (body_param is not None) else "GET"
-    body_safe_params = common.safe_params_for_type(body_param[1]) if (body_param is not None) else []
-    query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
-    async def wrapper(*_args: Any, **kwargs: Any) -> Any:
-        await common.validate_params(kwargs, validated_params)
-        kwargs.update(literal_params)
+    def decorator(handler: Callable[..., Awaitable[Any]]) -> web.RouteFunction[Any]:
+        path, validated_params, literal_params, body_param, _, query_param, optional_params = common.build_api_path(
+            handler
+        )
+        method = "POST" if (body_param is not None) else "GET"
+        body_safe_params = common.safe_params_for_type(body_param[1]) if (body_param is not None) else []
+        query_safe_params = common.safe_params_for_type(query_param[1]) if (query_param is not None) else []
 
-        if body_param is not None:
-            await common.parse_body(body_param, body_safe_params, kwargs)
+        async def wrapper(*_args: Any, **kwargs: Any) -> Any:
+            await common.validate_params(kwargs, validated_params)
+            kwargs.update(literal_params)
 
-        if query_param is not None:
-            await common.parse_query(query_param, query_safe_params, kwargs)
+            if body_param is not None:
+                await common.parse_body(body_param, body_safe_params, kwargs)
+            if query_param is not None:
+                await common.parse_query(query_param, query_safe_params, kwargs)
 
-        start_time_ns = time.perf_counter_ns()
-        response = await func(**kwargs)
-        end_time_ns = time.perf_counter_ns()
-        total_ms = (end_time_ns - start_time_ns) // 1_000_000
-        log.performance(f"API {method} {path} {original.__name__} = 0 0 {total_ms}")
+            if auth_scheme in auth.BODY_SCHEMES:
+                body = kwargs.get(body_param[0]) if (body_param is not None) else None
+                await auth.authenticate_body(auth_scheme, body)
 
-        return response
+            start_time_ns = time.perf_counter_ns()
+            result = await handler(**kwargs)
+            total_ms = (time.perf_counter_ns() - start_time_ns) // 1_000_000
+            log.performance(f"API {method} {path} {handler.__name__} = 0 0 {total_ms}")
+            return result
 
-    endpoint = common.setup_wrapper(wrapper, original, _BLUEPRINT_NAME)
+        endpoint = common.setup_wrapper(wrapper, handler, _BLUEPRINT_NAME)
+        # Link the wrapper to the original handler so inspect.unwrap (and tests)
+        # can recover it; the decorators below chain __wrapped__ too. Empty
+        # assigned/updated means we only set __wrapped__, nothing else.
+        functools.update_wrapper(wrapper, handler, assigned=(), updated=())
 
-    # Replace the original quart request decorators
-    if query_param is not None:
-        wrapper = quart_schema.validate_querystring(query_param[1])(wrapper)
-    if body_param is not None:
-        wrapper = quart_schema.validate_request(body_param[1])(wrapper)
+        view = _decorate_view(
+            wrapper,
+            auth_scheme=auth_scheme,
+            response=response,
+            query_param=query_param,
+            body_param=body_param,
+            rate_limit=rate_limit,
+        )
 
-    # Examine `func` for quart attributes and re-attach to the wrapped function
-    # This makes sure the OpenAPI documentation is preserved
-    # Note: we don't update querystring or request as they're processed above using our detected types
-    _copy_quart_attributes(func, wrapper)
+        _add_url_rules(view, path, endpoint, method, optional_params)
+        common.register_route(handler, "api", _routes)
+        _route_auth_schemes[handler.__name__] = auth_scheme.value
+        return view
 
-    # If there are optional params, we need two routes, one with the optional params omitted
-    # and one with them all present.
-    # AM 26/03/03: This actually only handles the case where there's some required and a single optional, but
-    # that's the only case that existed in the original code. Theoretically we could count the optional params and
-    # generate the correct number of routes, but that's lot of effort for little gain right now
-    _add_url_rules(wrapper, path, endpoint, method, optional_params)
-
-    common.register_route(original, "api", _routes)
-    return wrapper
+    return decorator
 
 
 def _add_url_rules(
@@ -146,13 +145,6 @@ def _add_url_rules(
 async def _api_rate_limit() -> None:
     """Set API-wide rate limit"""
     pass
-
-
-def _copy_quart_attributes(src: Callable[..., Any], dst: Callable[..., Any]) -> None:
-    """Copy quart schema attributes from src to dst to preserve OpenAPI documentation."""
-    for attr in common.QUART_ATTRIBUTES:
-        if hasattr(src, attr):
-            setattr(dst, attr, getattr(src, attr))
 
 
 def _exempt_blueprint(app: base.QuartApp) -> None:
@@ -221,22 +213,42 @@ def _json_error(
     return quart.jsonify(payload), status_code
 
 
-def _require_auth_level(func: Callable[..., Any], original: Callable[..., Any]) -> auth.AuthLevel:
-    """Detect the auth level marker on a route, or raise TypeError if absent."""
-    level = getattr(func, auth.AUTH_LEVEL_ATTR, None) or getattr(original, auth.AUTH_LEVEL_ATTR, None)
-    if level is None:
-        raise TypeError(
-            f"API route {original.__name__!r} in {original.__module__} is missing "
-            "an auth decorator. Apply exactly one of @api.auth.public, "
-            "@api.auth.bearer, @api.auth.system_bearer, @api.auth.body_oidc, or @api.auth.pat. "
-            "See atr/blueprints/api_auth.py for details."
-        )
-    if level not in auth.VALID_LEVELS:
-        raise TypeError(
-            f"API route {original.__name__!r}: unknown auth level {level!r}. Valid levels: {sorted(auth.VALID_LEVELS)}"
-        )
-    _route_auth_levels[original.__name__] = level
-    return level
+def _decorate_view(
+    view: Callable[..., Any],
+    *,
+    auth_scheme: auth.Auth,
+    response: tuple[type[pydantic.BaseModel], int] | None,
+    query_param: tuple[str, type] | None,
+    body_param: tuple[str, type[pydantic.BaseModel]] | None,
+    rate_limit: tuple[int, datetime.timedelta] | None,
+) -> Callable[..., Any]:
+    # Layer the OpenAPI/validation/auth/rate-limit decorators onto the view in the
+    # order they must run: security annotation, response and request validation,
+    # then header auth (outside body validation), then rate limiting (outermost).
+    view = auth.security_scheme_for(auth_scheme)(view)
+    if response is not None:
+        view = quart_schema.validate_response(response[0], response[1])(view)
+    if query_param is not None:
+        view = quart_schema.validate_querystring(query_param[1])(view)
+    if body_param is not None:
+        view = quart_schema.validate_request(body_param[1])(view)
+    if auth_scheme in auth.HEADER_SCHEMES:
+        view = _require_header_auth(auth_scheme, view)
+    if rate_limit is not None:
+        view = rate_limiter.rate_limit(rate_limit[0], rate_limit[1])(view)
+    return view
+
+
+def _require_header_auth(scheme: auth.Auth, inner: Callable[..., Any]) -> Callable[..., Any]:
+    # Wrap a view so header-credential auth runs before anything it wraps (body
+    # validation included). functools.wraps carries the inner OpenAPI attributes
+    # and the __wrapped__ chain up to the returned view.
+    @functools.wraps(inner)
+    async def checked(*args: Any, **kwargs: Any) -> Any:
+        await auth.authenticate_header(scheme)
+        return await inner(*args, **kwargs)
+
+    return checked
 
 
 @_BLUEPRINT.record_once

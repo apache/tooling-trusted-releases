@@ -24,13 +24,12 @@ import asfquart.base as base
 import openpgp
 import pydantic
 import quart
-import quart_rate_limiter as rate_limiter
-import quart_schema
 import sqlalchemy
 import sqlmodel
 import werkzeug.exceptions as exceptions
 
 import atr.blueprints.api as api
+import atr.blueprints.api_auth as api_auth
 import atr.cle as cle
 import atr.config as config
 import atr.constants as constants
@@ -66,9 +65,10 @@ type DictResponse = tuple[dict[str, Any], int]
 ROUTES_MODULE: Final[Literal[True]] = True
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ChecksListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ChecksListResults, 200),
+)
 async def checks_list(
     _checks_list: Literal["checks/list"],
     project_key: safe.ProjectKey,
@@ -101,9 +101,10 @@ async def checks_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ChecksListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ChecksListResults, 200),
+)
 async def checks_list_revision(
     _checks_list: Literal["checks/list"],
     project_key: safe.ProjectKey,
@@ -143,9 +144,10 @@ async def checks_list_revision(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ChecksOngoingResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ChecksOngoingResults, 200),
+)
 async def checks_ongoing(
     _checks_ongoing: Literal["checks/ongoing"],
     project_key: safe.ProjectKey,
@@ -182,9 +184,10 @@ async def checks_ongoing(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.CatalogProjectResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.CatalogProjectResults, 200),
+)
 async def catalog_project(
     _catalog_project: Literal["catalog/project"],
     project_key: safe.ProjectKey,
@@ -221,8 +224,7 @@ async def catalog_project(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
+@api.typed(auth_scheme=api_auth.Auth.PUBLIC)
 async def cle_project(
     _cle_project: Literal["cle/project"],
     project_key: safe.ProjectKey,
@@ -251,8 +253,7 @@ async def cle_project(
     return cle.project_document(project, events, releases, now=datetime.datetime.now(datetime.UTC)), 200
 
 
-@api.typed
-@api.auth.public
+@api.typed(auth_scheme=api_auth.Auth.PUBLIC)
 async def cle_release(
     _cle_release: Literal["cle/release"],
     project_key: safe.ProjectKey,
@@ -295,9 +296,10 @@ async def cle_release(
     ), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.CommitteeGetResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.CommitteeGetResults, 200),
+)
 async def committee_get(
     _committee_get: Literal["committee/get"],
     name: safe.CommitteeKey,
@@ -322,9 +324,10 @@ async def committee_get(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.CommitteeKeysResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.CommitteeKeysResults, 200),
+)
 async def committee_keys(
     _committee_keys: Literal["committee/keys"],
     name: safe.CommitteeKey,
@@ -349,9 +352,10 @@ async def committee_keys(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.CommitteeProjectsResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.CommitteeProjectsResults, 200),
+)
 async def committee_projects(
     _committee_projects: Literal["committee/projects"],
     name: safe.CommitteeKey,
@@ -376,9 +380,10 @@ async def committee_projects(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.CommitteesListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.CommitteesListResults, 200),
+)
 async def committees_list(
     _committees_list: Literal["committees/list"],
 ) -> DictResponse:
@@ -397,9 +402,10 @@ async def committees_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.body_oidc
+@api.typed(
+    auth_scheme=api_auth.Auth.BODY_OIDC,
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def distribute_ssh_register(
     _distribute_ssh_register: Literal["distribute/ssh/register"],
     data: models.api.DistributeSshRegisterArgs,
@@ -444,9 +450,10 @@ async def distribute_ssh_register(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.DistributionRecordResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.DistributionRecordResults, 200),
+)
 async def distribution_record(
     _distribution_record: Literal["distribution/record"],
     data: models.api.DistributionRecordArgs,
@@ -488,8 +495,7 @@ async def distribution_record(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.body_oidc
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def distribution_record_from_workflow(
     _distribute_record_from_workflow: Literal["distribute/record_from_workflow"],
     data: models.api.DistributionRecordFromWorkflowArgs,
@@ -536,9 +542,10 @@ async def distribution_record_from_workflow(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.IgnoreAddResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.IgnoreAddResults, 200),
+)
 async def ignore_add(
     _ignore_add: Literal["ignore/add"],
     data: models.api.IgnoreAddArgs,
@@ -569,9 +576,10 @@ async def ignore_add(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.IgnoreDeleteResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.IgnoreDeleteResults, 200),
+)
 async def ignore_delete(
     _ignore_delete: Literal["ignore/delete"],
     data: models.api.IgnoreDeleteArgs,
@@ -596,9 +604,10 @@ async def ignore_delete(
 
 
 # TODO: Rename to ignores
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.IgnoreListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.IgnoreListResults, 200),
+)
 async def ignore_list(
     _ignore_list: Literal["ignore/list"],
     project_key: safe.ProjectKey,
@@ -617,9 +626,10 @@ async def ignore_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.pat
+@api.typed(
+    auth_scheme=api_auth.Auth.PAT,
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def jwt_create(
     _jwt_create: Literal["jwt/create"],
     data: models.api.JwtCreateArgs,
@@ -652,10 +662,11 @@ async def jwt_create(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.KeyAddResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.KeyAddResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def key_add(
     _key_add: Literal["key/add"],
     data: models.api.KeyAddArgs,
@@ -696,10 +707,11 @@ async def key_add(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.KeyDeleteResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.KeyDeleteResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def key_delete(
     _key_delete: Literal["key/delete"],
     data: models.api.KeyDeleteArgs,
@@ -735,10 +747,11 @@ async def key_delete(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.public
-@quart_schema.validate_response(models.api.KeyGetResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.KeyGetResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def key_get(
     _key_get: Literal["key/get"],
     fingerprint: unsafe.UnsafeStr,
@@ -760,10 +773,11 @@ async def key_get(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.KeysUploadResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.KeysUploadResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def keys_upload(
     _keys_upload: Literal["keys/upload"],
     data: models.api.KeysUploadArgs,
@@ -826,10 +840,11 @@ async def keys_upload(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.public
-@quart_schema.validate_response(models.api.KeysUserResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.KeysUserResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def keys_user(
     _keys_user: Literal["keys/user"],
     asf_uid: unsafe.UnsafeStr,
@@ -847,9 +862,10 @@ async def keys_user(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.PolicyGetResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.PolicyGetResults, 200),
+)
 async def policy_get(
     _policy_get: Literal["policy/get"],
     project_key: safe.ProjectKey,
@@ -897,9 +913,10 @@ async def policy_get(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.PolicyUpdateResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.PolicyUpdateResults, 200),
+)
 async def policy_update(
     _policy_update: Literal["policy/update"],
     data: models.api.PolicyUpdateArgs,
@@ -925,9 +942,10 @@ async def policy_update(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.system_bearer
-@quart_schema.validate_response(models.api.ProjectConfigResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.SYSTEM_BEARER,
+    response=(models.api.ProjectConfigResults, 200),
+)
 async def project_config_upsert(
     _project_config: Literal["project/config"],
     data: models.api.ProjectConfigArgs,
@@ -959,9 +977,10 @@ async def project_config_upsert(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ProjectGetResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ProjectGetResults, 200),
+)
 async def project_get(
     _project_get: Literal["project/get"],
     project_key: safe.ProjectKey,
@@ -979,9 +998,10 @@ async def project_get(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ProjectReleasesResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ProjectReleasesResults, 200),
+)
 async def project_releases(
     _project_releases: Literal["project/releases"],
     project_key: safe.ProjectKey,
@@ -1000,9 +1020,10 @@ async def project_releases(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ProjectsListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ProjectsListResults, 200),
+)
 async def projects_list(
     _projects_list: Literal["projects/list"],
 ) -> DictResponse:
@@ -1020,8 +1041,7 @@ async def projects_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.body_oidc
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def publisher_distribution_record(
     _publisher_distribution_record: Literal["publisher/distribution/record"],
     data: models.api.PublisherDistributionRecordArgs,
@@ -1074,8 +1094,7 @@ async def publisher_distribution_record(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.body_oidc
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def publisher_release_announce(
     _publisher_release_announce: Literal["publisher/release/announce"],
     data: models.api.PublisherReleaseAnnounceArgs,
@@ -1113,9 +1132,10 @@ async def publisher_release_announce(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.body_oidc
+@api.typed(
+    auth_scheme=api_auth.Auth.BODY_OIDC,
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def publisher_ssh_register(
     _publisher_ssh_register: Literal["publisher/ssh/register"],
     data: models.api.PublisherSshRegisterArgs,
@@ -1153,8 +1173,7 @@ async def publisher_ssh_register(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.body_oidc
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def publisher_vote_resolve(
     _publisher_vote_resolve: Literal["publisher/vote/resolve"],
     data: models.api.PublisherVoteResolveArgs,
@@ -1191,10 +1210,11 @@ async def publisher_vote_resolve(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.ReleaseAnnounceResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseAnnounceResults, 201),
+    rate_limit=(5, datetime.timedelta(hours=1)),
+)
 async def release_announce(
     _release_announce: Literal["release/announce"],
     data: models.api.ReleaseAnnounceArgs,
@@ -1232,10 +1252,11 @@ async def release_announce(
     ).model_dump(mode="json"), 201
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.ReleaseCreateResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseCreateResults, 201),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def release_create(
     _release_create: Literal["release/create"],
     data: models.api.ReleaseCreateArgs,
@@ -1263,9 +1284,10 @@ async def release_create(
 
 
 # TODO: Duplicates the below
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.ReleaseDeleteResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseDeleteResults, 200),
+)
 async def release_delete(
     _release_delete: Literal["release/delete"],
     data: models.api.ReleaseDeleteArgs,
@@ -1291,9 +1313,10 @@ async def release_delete(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ReleaseGetResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ReleaseGetResults, 200),
+)
 async def release_get(
     _release_get: Literal["release/get"],
     project_key: safe.ProjectKey,
@@ -1313,9 +1336,10 @@ async def release_get(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ReleasePathsResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ReleasePathsResults, 200),
+)
 async def release_paths(
     _release_paths: Literal["release/paths"],
     project_key: safe.ProjectKey,
@@ -1345,9 +1369,10 @@ async def release_paths(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ReleaseRevisionsResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ReleaseRevisionsResults, 200),
+)
 async def release_revisions(
     _release_revisions: Literal["release/revisions"],
     project_key: safe.ProjectKey,
@@ -1370,9 +1395,10 @@ async def release_revisions(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.ReleaseUploadResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseUploadResults, 201),
+)
 async def release_upload(
     _release_upload: Literal["release/upload"],
     data: models.api.ReleaseUploadArgs,
@@ -1410,9 +1436,10 @@ async def release_upload(
     ).model_dump(mode="json"), 201
 
 
-@api.typed
-@api.auth.public
-@quart_schema.validate_response(models.api.ReleasesListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.ReleasesListResults, 200),
+)
 async def releases_list(
     _releases_list: Literal["releases/list"],
     query_args: models.api.ReleasesListQuery,
@@ -1460,10 +1487,11 @@ async def releases_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.SignatureProvenanceResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.SignatureProvenanceResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def signature_provenance(
     _signature_provenance: Literal["signature/provenance"],
     data: models.api.SignatureProvenanceArgs,
@@ -1535,10 +1563,11 @@ async def signature_provenance(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.SshKeyAddResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.SshKeyAddResults, 201),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def ssh_key_add(
     _ssh_key_add: Literal["ssh-key/add"],
     data: models.api.SshKeyAddArgs,
@@ -1564,10 +1593,11 @@ async def ssh_key_add(
     ).model_dump(mode="json"), 201
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.SshKeyDeleteResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.SshKeyDeleteResults, 201),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def ssh_key_delete(
     _ssh_key_delete: Literal["ssh-key/delete"],
     data: models.api.SshKeyDeleteArgs,
@@ -1589,9 +1619,10 @@ async def ssh_key_delete(
     ).model_dump(mode="json"), 201
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.public
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def ssh_keys_list(
     _ssh_keys_list: Literal["ssh-keys/list"],
     asf_uid: unsafe.UnsafeStr,
@@ -1627,8 +1658,7 @@ async def ssh_keys_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@api.auth.body_oidc
+@api.typed(auth_scheme=api_auth.Auth.BODY_OIDC)
 async def update_distribution_task_status(
     _distribute_task_status: Literal["distribute/task/status"],
     data: models.api.DistributeStatusUpdateArgs,
@@ -1658,10 +1688,11 @@ async def update_distribution_task_status(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.UserInfoResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.UserInfoResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def user_info(
     _user_info: Literal["user/info"],
 ) -> DictResponse:
@@ -1681,10 +1712,11 @@ async def user_info(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.public
-@quart_schema.validate_response(models.api.UsersListResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.UsersListResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def users_list(
     _users_list: Literal["users/list"],
 ) -> DictResponse:
@@ -1730,10 +1762,11 @@ async def users_list(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(60, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.VoteCastResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.VoteCastResults, 200),
+    rate_limit=(60, datetime.timedelta(hours=1)),
+)
 async def vote_cast(
     _vote_cast: Literal["vote/cast"],
     data: models.api.VoteCastArgs,
@@ -1768,10 +1801,11 @@ async def vote_cast(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(10, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.VoteResolveResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.VoteResolveResults, 200),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
 async def vote_resolve(
     _vote_resolve: Literal["vote/resolve"],
     data: models.api.VoteResolveArgs,
@@ -1810,10 +1844,11 @@ async def vote_resolve(
     ).model_dump(mode="json"), 200
 
 
-@api.typed
-@rate_limiter.rate_limit(5, datetime.timedelta(hours=1))
-@api.auth.bearer
-@quart_schema.validate_response(models.api.VoteStartResults, 201)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.VoteStartResults, 201),
+    rate_limit=(5, datetime.timedelta(hours=1)),
+)
 async def vote_start(
     _vote_start: Literal["vote/start"],
     data: models.api.VoteStartArgs,
@@ -1888,9 +1923,10 @@ async def vote_start(
     ).model_dump(mode="json"), 201
 
 
-@api.typed
-@api.auth.bearer
-@quart_schema.validate_response(models.api.VoteTabulateResults, 200)
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.VoteTabulateResults, 200),
+)
 async def vote_tabulate(
     _vote_tabulate: Literal["vote/tabulate"],
     data: models.api.VoteTabulateArgs,
@@ -1954,8 +1990,7 @@ class TestProjectStatusArgs(pydantic.BaseModel):
     project_key: safe.ProjectKey
 
 
-@api.typed
-@api.auth.public
+@api.typed(auth_scheme=api_auth.Auth.PUBLIC)
 async def test_activate_project(
     _test_activate_project: Literal["test/activate-project"],
     data: TestProjectStatusArgs,
@@ -1977,8 +2012,7 @@ async def test_activate_project(
     return {"ok": True, "project_key": str(data.project_key)}, 200
 
 
-@api.typed
-@api.auth.public
+@api.typed(auth_scheme=api_auth.Auth.PUBLIC)
 async def test_archive_project(
     _test_archive_project: Literal["test/archive-project"],
     data: TestProjectStatusArgs,

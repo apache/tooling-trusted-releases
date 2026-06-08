@@ -15,15 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Tests that every API route declares an explicit authentication level.
+"""Tests for the API route auth enforcers and scheme distribution.
 
-See issue #1169. These tests are the enforcement mechanism for the
-"fail-closed" property: a new route that forgets an auth decorator
-either fails to import (the ``typed()`` enforcer) or fails this test
-(the coverage assertion).
+See issue #1169. The "fail-closed" property is now structural: @api.typed takes
+auth_scheme as a required keyword-only argument typed as the Auth enum, so a
+route can't be registered without a valid scheme - the type checker enforces it.
+The distribution test below is a heads-up against an endpoint's scheme silently
+changing.
 """
-
-from typing import Literal
 
 import pytest
 
@@ -31,98 +30,23 @@ import atr.blueprints.api as api_blueprint
 import atr.blueprints.api_auth as api_auth
 
 
-def test_every_api_route_has_an_auth_level() -> None:
-    """Every function registered via @api.typed must carry an auth level.
+def test_expected_scheme_distribution() -> None:
+    """Sanity check: the headline counts from the #1169 audit still hold.
 
-    This is the coverage test. If it fails, some route somewhere in
-    ``atr/api/__init__.py`` is missing an ``@api.auth.<level>`` decorator.
-    (The ``typed()`` decorator also catches this at import time, so a
-    failure here usually means a bug in the enforcer itself or in the
-    ordering of decorators.)
+    A heads-up, not a rigid drift check, that catches obvious regressions like
+    "the PAT endpoint accidentally became public".
     """
     # Importing atr.api triggers registration of every route.
     import atr.api  # noqa: F401
 
-    levels = api_blueprint.route_auth_levels()
-    assert levels, "no API routes were registered; did atr.api fail to import?"
+    schemes = api_blueprint.route_auth_schemes()
+    assert schemes, "no API routes were registered; did atr.api fail to import?"
 
-    invalid = {name: lvl for name, lvl in levels.items() if lvl not in api_auth.VALID_LEVELS}
-    assert not invalid, f"routes with invalid auth level: {invalid}"
+    counts = {member.value: 0 for member in api_auth.Auth}
+    for scheme in schemes.values():
+        counts[scheme] += 1
 
-
-def test_typed_rejects_route_without_auth_decorator() -> None:
-    """A route missing any ``@api.auth.*`` decorator must fail at import time.
-
-    This is the fail-closed guarantee. A developer adding a new endpoint
-    and forgetting the auth decorator gets a TypeError from ``typed()``
-    before the server can even start.
-    """
-
-    # Minimal stand-in for a real route. No auth decorator applied.
-    async def fake_route(_fake: Literal["fake"]) -> tuple[dict, int]:
-        return {}, 200
-
-    with pytest.raises(TypeError, match="missing an auth decorator"):
-        api_blueprint.typed(fake_route)
-
-
-def test_typed_accepts_route_with_each_auth_level() -> None:
-    """Each of the four auth levels must satisfy ``typed()``'s check."""
-    for level in ("public", "bearer", "body_oidc", "pat"):
-
-        async def fake_route(_fake: Literal["fake"]) -> tuple[dict, int]:
-            return {}, 200
-
-        decorator = getattr(api_auth, level)
-        marked = decorator(fake_route)
-        # typed() does more than just the auth check (URL rule registration,
-        # etc.), so we can't call it here without a full Quart app context.
-        # But we can confirm the marker attribute made it through, which is
-        # what typed() keys off.
-        assert getattr(marked, api_auth.AUTH_LEVEL_ATTR, None) == level, (
-            f"@api.auth.{level} did not set {api_auth.AUTH_LEVEL_ATTR!r}"
-        )
-
-
-def test_auth_levels_cannot_be_stacked() -> None:
-    """Applying two different auth decorators to the same route must fail."""
-
-    async def fake_route(_fake: Literal["fake"]) -> tuple[dict, int]:
-        return {}, 200
-
-    marked = api_auth.public(fake_route)
-    with pytest.raises(TypeError, match=r"cannot apply @api\.auth"):
-        api_auth.bearer(marked)
-
-
-def test_applying_same_auth_level_twice_is_idempotent() -> None:
-    """Re-applying the same level must not raise; it's a harmless no-op."""
-
-    async def fake_route(_fake: Literal["fake"]) -> tuple[dict, int]:
-        return {}, 200
-
-    first = api_auth.public(fake_route)
-    second = api_auth.public(first)
-    assert getattr(second, api_auth.AUTH_LEVEL_ATTR) == "public"
-
-
-def test_expected_level_distribution() -> None:
-    """Sanity check: the headline counts from the #1169 audit hold.
-
-    18 bearer, 7 body_oidc, 1 pat, 20 public = 46 total.
-
-    Not meant as a rigid drift check (that's the registry test below), but a
-    heads-up that catches obvious regressions like "the PAT endpoint
-    accidentally got marked public".
-    """
-    import atr.api  # noqa: F401
-
-    levels = api_blueprint.route_auth_levels()
-    counts = {lvl: 0 for lvl in api_auth.VALID_LEVELS}
-    for lvl in levels.values():
-        counts[lvl] += 1
-
-    assert counts["pat"] == 1, f"expected exactly one @api.auth.pat route, got {counts['pat']}"
+    assert counts["pat"] == 1, f"expected exactly one pat route, got {counts['pat']}"
     assert counts["bearer"] >= 15, f"bearer count dropped unexpectedly: {counts['bearer']}"
     assert counts["body_oidc"] >= 5, f"body_oidc count dropped unexpectedly: {counts['body_oidc']}"
     assert sum(counts.values()) >= 40, f"total route count dropped unexpectedly: {counts}"
@@ -132,7 +56,7 @@ def test_expected_level_distribution() -> None:
 async def test_public_endpoint_accepts_unauthenticated_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A @api.auth.public route must respond without any credentials.
+    """A public route must respond without any credentials.
 
     Uses ``/api/committees/list`` as the representative public endpoint
     because it takes no path parameters and no body.
@@ -152,7 +76,7 @@ async def test_public_endpoint_accepts_unauthenticated_request(
     # 200 on success, 500 if DB isn't reachable in the test env - either way
     # we know we passed authentication, which is what we're testing.
     assert response.status_code != 401, (
-        f"public endpoint returned 401, which means @api.auth.public is "
+        f"public endpoint returned 401, which means the public scheme is "
         f"enforcing auth it shouldn't: body={await response.get_data()!r}"
     )
 
@@ -161,7 +85,7 @@ async def test_public_endpoint_accepts_unauthenticated_request(
 async def test_bearer_endpoint_rejects_unauthenticated_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A @api.auth.bearer route must return 401 without a Bearer token.
+    """A bearer route must return 401 without a Bearer token.
 
     Uses ``/api/user/info`` as the representative bearer endpoint: simple
     GET, no path or body params to fabricate.
@@ -183,23 +107,23 @@ async def test_bearer_endpoint_rejects_unauthenticated_request(
     )
 
 
-# Note: there is no HTTP-level negative test for @api.auth.body_oidc here.
+# Note: there is no HTTP-level negative test for the body_oidc scheme here.
 # Driving a body_oidc endpoint through the test client requires the full
 # QuartSchema(app, security_schemes=...) initialization that server.py does
 # (it populates QUART_SCHEMA_CONVERT_CASING etc.), which the asfquart test
-# fixture doesn't replicate. The decorator's auth behavior is already
+# fixture doesn't replicate. The authenticate_body behaviour is already
 # covered at the unit level by:
 #   - test_body_oidc_populates_quart_g_with_context (happy path)
-#   - test_body_oidc_missing_body_raises_bad_request
+#   - test_body_oidc_missing_body_raises_unauthorized
 #   - test_body_oidc_rejects_body_without_jwt_fields
 # A proper HTTP-level test belongs in the e2e suite where the real app
 # initialization runs.
 
 
 # ---------------------------------------------------------------------------
-# TrustedPublisherContext handoff from decorator to handler.
+# TrustedPublisherContext handoff to the handler.
 #
-# The body_oidc decorator's contract has two halves: reject invalid tokens
+# authenticate_body's contract has two halves: reject invalid tokens
 # (covered above), and make the verified payload available to the handler.
 # The tests below cover the second half.
 # ---------------------------------------------------------------------------
@@ -250,10 +174,10 @@ def _fake_trusted_payload(**overrides: object) -> object:
 def test_trusted_publisher_context_raises_when_unset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """trusted_publisher_context() must raise if called outside a body_oidc handler.
+    """trusted_publisher_context() must raise if called outside a body_oidc route.
 
     Silently returning ``None`` would let a handler misattribute actions
-    to "no one" when the decorator hadn't run. Making misuse loud is the
+    to "no one" when authenticate_body hadn't run. Making misuse loud is the
     safer default.
     """
     import asfquart
@@ -264,7 +188,7 @@ def test_trusted_publisher_context_raises_when_unset(
 
     async def _assert_raises() -> None:
         async with app.test_request_context("/"):
-            with pytest.raises(RuntimeError, match=r"outside a @api\.auth\.body_oidc"):
+            with pytest.raises(RuntimeError, match=r"outside a body_oidc route"):
                 api_auth.trusted_publisher_context()
 
     import asyncio
@@ -276,13 +200,13 @@ def test_trusted_publisher_context_raises_when_unset(
 async def test_body_oidc_populates_quart_g_with_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """On successful validation, @api.auth.body_oidc stashes the verified
-    context on ``quart.g.tp_context`` and the handler reads it via
+    """On successful validation, authenticate_body stashes the verified context
+    on ``quart.g.tp_context`` and the handler reads it via
     ``trusted_publisher_context()``.
 
-    We stub ``interaction.validate_trusted_jwt`` so the test doesn't hit
-    the network or need a real OIDC token. That's the right seam: the
-    decorator's job is the handoff, not the crypto. Crypto is covered by
+    We stub ``interaction.validate_trusted_jwt`` so the test doesn't hit the
+    network or need a real OIDC token. That's the right seam: authenticate_body's
+    job is the handoff, not the crypto. Crypto is covered by
     ``jwtoken.verify_github_oidc``'s own tests.
     """
     import asfquart
@@ -305,43 +229,29 @@ async def test_body_oidc_populates_quart_g_with_context(
         publisher: str
         jwt: str
 
-    captured: dict[str, object] = {}
-
-    @api_auth.body_oidc
-    async def handler(data: FakeBody) -> tuple[dict, int]:
-        ctx = api_auth.trusted_publisher_context()
-        captured["payload"] = ctx.payload
-        captured["asf_uid"] = ctx.asf_uid
-        captured["publisher"] = ctx.publisher
-        return {}, 200
-
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
-        await handler(data=FakeBody(publisher="github", jwt="fake.jwt.token"))
-
-    assert captured["payload"] is fake_payload
-    assert captured["asf_uid"] == "alice"
-    assert captured["publisher"] == "github"
+        await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, FakeBody(publisher="github", jwt="fake.jwt.token"))
+        ctx = api_auth.trusted_publisher_context()
+        assert ctx.payload is fake_payload
+        assert ctx.asf_uid == "alice"
+        assert ctx.publisher == "github"
 
 
 @pytest.mark.asyncio
 async def test_body_oidc_missing_body_raises_unauthorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A body_oidc handler without a ``data`` kwarg must raise 401."""
+    """A body_oidc route with no request body must raise 401."""
     import asfquart
     import asfquart.base as base
 
     monkeypatch.setattr("asfquart.APP", None)
 
-    @api_auth.body_oidc
-    async def handler() -> tuple[dict, int]:
-        return {}, 200
-
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
         with pytest.raises(base.ASFQuartException) as excinfo:
-            await handler()
+            await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, None)
         assert excinfo.value.errorcode == 401
 
 
@@ -359,14 +269,10 @@ async def test_body_oidc_rejects_body_without_jwt_fields(
     class BodyWithoutJwt(pydantic.BaseModel):
         name: str
 
-    @api_auth.body_oidc
-    async def handler(data: BodyWithoutJwt) -> tuple[dict, int]:
-        return {}, 200
-
     app = asfquart.construct("test")
     async with app.test_request_context("/"):
         with pytest.raises(base.ASFQuartException) as excinfo:
-            await handler(data=BodyWithoutJwt(name="hi"))
+            await api_auth.authenticate_body(api_auth.Auth.BODY_OIDC, BodyWithoutJwt(name="hi"))
         assert excinfo.value.errorcode == 401
 
 
@@ -375,7 +281,7 @@ async def test_body_oidc_rejects_body_without_jwt_fields(
 #
 # These helpers sit on the security-relevant path for every body_oidc
 # endpoint: they take an already-verified OIDC payload and do the
-# project/release/phase lookup. The decorator-level tests above cover
+# project/release/phase lookup. The authenticate_body tests above cover
 # the auth edge; these cover the post-auth lookup edge.
 # ---------------------------------------------------------------------------
 

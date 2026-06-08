@@ -15,13 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Authentication level decorators for API endpoints. See #1169."""
+"""Authentication levels and enforcers for API routes. See #1169.
+
+The Auth enum is the auth_scheme passed to @api.typed; authenticate_header and
+authenticate_body are the enforcers the route factory calls.
+"""
 
 from __future__ import annotations
 
 import dataclasses
-import functools
-from typing import TYPE_CHECKING, Final, Literal
+import enum
+from typing import TYPE_CHECKING, Final
 
 import asfquart.base as base
 import jwt as pyjwt
@@ -32,17 +36,26 @@ import quart_schema
 import atr.jwtoken as jwtoken
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine
+    from collections.abc import Callable
     from typing import Any
 
     import atr.models.github as github
 
 
-AuthLevel = Literal["public", "bearer", "system_bearer", "body_oidc", "pat"]
+class Auth(enum.StrEnum):
+    PUBLIC = "public"
+    BEARER = "bearer"
+    SYSTEM_BEARER = "system_bearer"
+    BODY_OIDC = "body_oidc"
+    PAT = "pat"
 
-AUTH_LEVEL_ATTR: Final[str] = "_api_auth_level"
 
-VALID_LEVELS: Final[frozenset[AuthLevel]] = frozenset({"public", "bearer", "system_bearer", "body_oidc", "pat"})
+# Header-credential schemes authenticate from the Authorization header, so they
+# run before the body is parsed. Body-credential schemes carry the credential in
+# the request body, so they run after parsing. PUBLIC and PAT enforce nothing
+# here (PAT routes validate the PAT from the body themselves).
+HEADER_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BEARER, Auth.SYSTEM_BEARER})
+BODY_SCHEMES: Final[frozenset[Auth]] = frozenset({Auth.BODY_OIDC})
 
 _TP_CONTEXT_ATTR: Final[str] = "tp_context"
 
@@ -56,111 +69,49 @@ class TrustedPublisherContext:
     publisher: str
 
 
-def bearer[**P, R](
-    func: Callable[P, Coroutine[Any, Any, R]],
-) -> Callable[P, Awaitable[R]]:
-    """Require an ATR-issued Bearer JWT in the Authorization header."""
-    wrapped = jwtoken.require(func)
-    wrapped = quart_schema.security_scheme([{"BearerAuth": []}])(wrapped)
-    _mark("bearer", wrapped)
-    return wrapped
-
-
-def body_oidc[**P, R](
-    func: Callable[P, Coroutine[Any, Any, R]],
-) -> Callable[P, Awaitable[R]]:
-    """Validate a Trusted Publisher OIDC token carried in the request body."""
-
-    @functools.wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        data = kwargs.get("data")
-        if data is None:
-            raise base.ASFQuartException(
-                "Trusted Publisher auth requires a validated request body",
-                errorcode=401,
-            )
-        publisher = getattr(data, "publisher", None)
-        jwt = getattr(data, "jwt", None)
-        if (not isinstance(publisher, str)) or (not isinstance(jwt, str)):
-            raise base.ASFQuartException(
-                "Trusted Publisher auth requires 'publisher' and 'jwt' string fields",
-                errorcode=401,
-            )
-
-        # Lazy import to match the project convention: atr.db.interaction
-        # pulls in much of the project, and other blueprint modules don't
-        # import it at top level either.
-        import atr.db.interaction as interaction
-
-        try:
-            payload, asf_uid = await interaction.validate_trusted_jwt(publisher, jwt)
-        except base.ASFQuartException:
-            # Already carries an HTTP status code (401 for credential
-            # failures, 502 for upstream failures); let it propagate.
-            raise
-        except (interaction.InteractionError, pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
-            # Credential-shaped failures: unsupported publisher, malformed
-            # or expired JWT, payload that doesn't match the expected
-            # TrustedPublisherPayload schema. All map to 401.
-            raise base.ASFQuartException(f"Trusted Publisher auth failed: {exc}", errorcode=401) from exc
-
-        quart.g.tp_context = TrustedPublisherContext(
-            payload=payload,
-            asf_uid=asf_uid,
-            publisher=publisher,
+async def authenticate_body(scheme: Auth, data: Any) -> None:
+    # The validated request body carries the publisher and OIDC JWT.
+    if scheme is not Auth.BODY_OIDC:
+        return
+    if data is None:
+        raise base.ASFQuartException("Trusted Publisher auth requires a validated request body", errorcode=401)
+    publisher = getattr(data, "publisher", None)
+    jwt = getattr(data, "jwt", None)
+    if (not isinstance(publisher, str)) or (not isinstance(jwt, str)):
+        raise base.ASFQuartException(
+            "Trusted Publisher auth requires 'publisher' and 'jwt' string fields", errorcode=401
         )
-        return await func(*args, **kwargs)
+    # Lazy import: atr.db.interaction pulls in much of the project, so blueprint
+    # modules don't import it at the top level.
+    import atr.db.interaction as interaction
 
-    _mark("body_oidc", wrapper)
-    return wrapper
+    try:
+        payload, asf_uid = await interaction.validate_trusted_jwt(publisher, jwt)
+    except base.ASFQuartException:
+        raise
+    except (interaction.InteractionError, pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
+        raise base.ASFQuartException(f"Trusted Publisher auth failed: {exc}", errorcode=401) from exc
 
-
-def pat[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Marker for routes that accept a PAT in the body (jwt_create only)."""
-    return _mark("pat", func)
-
-
-def public[F: Callable[..., Awaitable[Any]]](func: F) -> F:
-    """Marker for routes that require no authentication."""
-    return _mark("public", func)
+    quart.g.tp_context = TrustedPublisherContext(payload=payload, asf_uid=asf_uid, publisher=publisher)
 
 
-def system_bearer[**P, R](
-    func: Callable[P, Coroutine[Any, Any, R]],
-) -> Callable[P, Awaitable[R]]:
-    """Require an ATR-issued Bearer JWT with system privileges (from a system PAT).
+async def authenticate_header(scheme: Auth) -> None:
+    # Header-credential auth: verify the Bearer JWT.
+    claims = await jwtoken.authenticate()
+    if (scheme is Auth.SYSTEM_BEARER) and (not claims.get("atr_sys")):
+        raise base.ASFQuartException("System privileges required", errorcode=403)
 
-    Ordinary user JWTs are rejected.
-    """
 
-    @functools.wraps(func)
-    async def checked(*args: P.args, **kwargs: P.kwargs) -> R:
-        claims = getattr(quart.g, "jwt_claims", None)
-        if not (isinstance(claims, dict) and claims.get("atr_sys")):
-            raise base.ASFQuartException("System privileges required", errorcode=403)
-        return await func(*args, **kwargs)
-
-    # require() verifies the JWT and sets quart.g.jwt_claims before checked runs.
-    wrapped = jwtoken.require(checked)
-    wrapped = quart_schema.security_scheme([{"BearerAuth": []}])(wrapped)
-    _mark("system_bearer", wrapped)
-    return wrapped
+def security_scheme_for(scheme: Auth) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    # Bearer security scheme for header-credential schemes; no-op otherwise.
+    if scheme in HEADER_SCHEMES:
+        return quart_schema.security_scheme([{"BearerAuth": []}])
+    return lambda func: func
 
 
 def trusted_publisher_context() -> TrustedPublisherContext:
-    """Return the TrustedPublisherContext placed by @body_oidc on quart.g."""
+    """Return the TrustedPublisherContext that authenticate_body placed on quart.g."""
     ctx = getattr(quart.g, _TP_CONTEXT_ATTR, None)
     if ctx is None:
-        raise RuntimeError("trusted_publisher_context() called outside a @api.auth.body_oidc handler")
+        raise RuntimeError("trusted_publisher_context() called outside a body_oidc route")
     return ctx
-
-
-def _mark[F: Callable[..., Any]](level: AuthLevel, func: F) -> F:
-    """Attach the auth-level sentinel to func; reject re-marking with a different level."""
-    existing = getattr(func, AUTH_LEVEL_ATTR, None)
-    if (existing is not None) and (existing != level):
-        raise TypeError(
-            f"{getattr(func, '__name__', func)!r}: cannot apply @api.auth.{level} on top of @api.auth.{existing}"
-        )
-    setattr(func, AUTH_LEVEL_ATTR, level)
-    return func

@@ -18,12 +18,11 @@
 from __future__ import annotations
 
 import datetime as datetime
-import functools
 import os
 import pathlib
 import secrets as secrets
 import urllib.parse as parse
-from typing import TYPE_CHECKING, Any, Final
+from typing import Any, Final
 
 import aiohttp
 import asfquart
@@ -58,9 +57,6 @@ _JWT_KEY_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_
 _JWT_KEY_TMP_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt.tmp")
 _JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine
-
 
 def activate_signing_key(key: str) -> None:
     app = asfquart.APP
@@ -92,30 +88,28 @@ def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, sys
     return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
-def require[**P, R](func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Awaitable[R]]:
-    @functools.wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        token = _extract_bearer_token(quart.request)
-        try:
-            claims = await verify(token)
-        except jwt.ExpiredSignatureError as exc:
-            log.auth_failure("jwt_token", "jwt_token_expired")
-            raise base.ASFQuartException("Token has expired", errorcode=401) from exc
-        except jwt.InvalidSignatureError as exc:
-            log.auth_failure("jwt_token", "jwt_signature_invalid")
-            raise base.ASFQuartException("Token signature verification failed", errorcode=401) from exc
-        except jwt.InvalidTokenError as exc:
-            log.auth_failure("jwt_token", "jwt_token_invalid")
-            raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
-        except jwt.PyJWTError as exc:
-            log.auth_failure("jwt_token", "jwt_token_invalid_2")
-            raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
+async def authenticate() -> dict[str, Any]:
+    # Verify the request's Bearer JWT, stash the claims on quart.g, and return
+    # them. Raises ASFQuartException(401) on any token problem.
+    token = _extract_bearer_token(quart.request)
+    try:
+        claims = await verify(token)
+    except jwt.ExpiredSignatureError as exc:
+        log.auth_failure("jwt_token", "jwt_token_expired")
+        raise base.ASFQuartException("Token has expired", errorcode=401) from exc
+    except jwt.InvalidSignatureError as exc:
+        log.auth_failure("jwt_token", "jwt_signature_invalid")
+        raise base.ASFQuartException("Token signature verification failed", errorcode=401) from exc
+    except jwt.InvalidTokenError as exc:
+        log.auth_failure("jwt_token", "jwt_token_invalid")
+        raise base.ASFQuartException("Invalid Bearer JWT format", errorcode=401) from exc
+    except jwt.PyJWTError as exc:
+        log.auth_failure("jwt_token", "jwt_token_invalid_2")
+        raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
 
-        quart.g.jwt_claims = claims
-        log.auth_success("jwt_token")
-        return await func(*args, **kwargs)
-
-    return wrapper
+    quart.g.jwt_claims = claims
+    log.auth_success("jwt_token")
+    return claims
 
 
 def setup_signing_key(app: base.QuartApp) -> None:

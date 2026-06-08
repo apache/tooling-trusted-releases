@@ -149,7 +149,7 @@ Token operations apply to the authenticated user:
 **System tokens**:
 
 * Allowed for: Foundation administrators only (not committer self-service)
-* Note: System tokens are PATs for a service identity rather than a person. Endpoints that accept them (via `@api.auth.system_bearer`) apply no committee membership check, so the calling service must establish any committee authorisation upstream. See [System tokens](authentication-security#system-tokens) in the authentication guide for the mechanism.
+* Note: System tokens are PATs for a service identity rather than a person. Endpoints that accept them (via `auth_scheme=api_auth.Auth.SYSTEM_BEARER`) apply no committee membership check, so the calling service must establish any committee authorisation upstream. See [System tokens](authentication-security#system-tokens) in the authentication guide for the mechanism.
 
 ## Implementation patterns
 

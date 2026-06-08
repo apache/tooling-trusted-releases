@@ -17,6 +17,7 @@
 
 import contextlib
 import datetime
+import inspect
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -1282,16 +1283,7 @@ async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: 
 
 
 def _api_vote_tabulate_handler():
-    wrapper = atr.api.vote_tabulate.__wrapped__
-    if wrapper.__closure__ is None:
-        raise AssertionError("Expected api.vote_tabulate wrapper closure")
-    for name, cell in zip(wrapper.__code__.co_freevars, wrapper.__closure__):
-        if name == "func":
-            handler = cell.cell_contents
-            while hasattr(handler, "__wrapped__"):
-                handler = handler.__wrapped__
-            return handler
-    raise AssertionError("Could not find wrapped API handler")
+    return inspect.unwrap(atr.api.vote_tabulate)
 
 
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:

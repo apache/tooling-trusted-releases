@@ -146,7 +146,7 @@ Authorization: Bearer jwt_token_value
 
 ### Token handling
 
-The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints use the `@jwtoken.require` decorator, which extracts the JWT from the `Authorization` header, verifies its signature and required claims, and makes the user's ASF UID available to the handler. Verification applies a deliberate two minute leeway to the time based JWT checks to tolerate small clock skew between ATR and API clients.
+The [`jwtoken`](/ref/atr/jwtoken.py) module handles JWT creation and verification. Protected API endpoints declare a header auth scheme (`auth_scheme=api_auth.Auth.BEARER` or `SYSTEM_BEARER`); the route then runs `jwtoken.authenticate()`, which extracts the JWT from the `Authorization` header, verifies its signature and required claims, and makes the user's ASF UID available to the handler. Verification applies a deliberate two minute leeway to the time based JWT checks to tolerate small clock skew between ATR and API clients.
 
 ### System tokens
 
@@ -154,7 +154,7 @@ Most PATs belong to a committer and are tied to their LDAP account. ATR also sup
 
 A system token is exchanged for a JWT at `/api/jwt`, requesting the `system` identity. The resulting JWT carries an additional `atr_sys` claim and `system` as its subject. Because that identity has no LDAP account, verification skips the LDAP active check for these JWTs. It still re-validates the backing PAT on every request, so revoking the PAT immediately invalidates every JWT issued from it. Two further checks apply: a system JWT must be backed by a system PAT, and its subject must be `system`. The creating administrator and the PAT name are recorded in the audit log when the JWT is issued.
 
-Endpoints that should accept only system tokens are decorated with `@api.auth.system_bearer`, which rejects ordinary user JWTs. The committee membership check that gates committer-driven writes does not apply, so any committee authorisation for these endpoints must be established by the calling service before it reaches ATR. The only such endpoint at present is `/project/config`, which the `.asf.yaml` processor uses to create and update projects.
+Endpoints that should accept only system tokens declare `auth_scheme=api_auth.Auth.SYSTEM_BEARER` on their `@api.typed` route, which rejects ordinary user JWTs. The committee membership check that gates committer-driven writes does not apply, so any committee authorisation for these endpoints must be established by the calling service before it reaches ATR. The only such endpoint at present is `/project/config`, which the `.asf.yaml` processor uses to create and update projects.
 
 ## GitHub Actions OIDC (Trusted Publishing)
 
