@@ -351,6 +351,9 @@ class RecipientDefaults(schema.Strict):
     cc: list[pydantic.EmailStr] = schema.factory(list)
     bcc: list[pydantic.EmailStr] = schema.factory(list)
 
+    def addresses(self) -> list[str]:
+        return [str(address) for address in (self.to, *self.cc, *self.bcc) if address]
+
 
 class PolicyGetResults(schema.Strict):
     # quart_schema.validate_response runs the response dict (produced by
@@ -531,6 +534,21 @@ class ProjectConfigArgs(schema.Strict):
     committee_key: safe.CommitteeKey = schema.example("example")
     project: ProjectConfigProjectArgs | None = None
     policy: ProjectConfigPolicyArgs | None = None
+
+    @pydantic.model_validator(mode="after")
+    def _validate_recipient_domains(self) -> Self:
+        # This is the .asf.yaml route, where recipients arrive verbatim, so we
+        # keep vote mail on the committee's own lists and announce mail on
+        # apache.org. The UI route has its own constraints and doesn't come
+        # through here.
+        if self.policy is None:
+            return self
+        committee_key = str(self.committee_key)
+        if self.policy.vote_recipients is not None:
+            validation.validate_vote_recipients(committee_key, self.policy.vote_recipients.addresses())
+        if self.policy.announce_recipients is not None:
+            validation.validate_announce_recipients(self.policy.announce_recipients.addresses())
+        return self
 
 
 class ProjectConfigResults(schema.Strict):

@@ -86,6 +86,13 @@ def pagination_args_validate(query_args: Any) -> None:
             raise ValueError("Minimum offset less than 0 is nonsense")
 
 
+def validate_announce_recipients(recipients: list[str]) -> None:
+    for recipient in recipients:
+        domain = _email_domain(recipient)
+        if (domain != "apache.org") and (not domain.endswith(".apache.org")):
+            raise ValueError(f"Announce recipient '{recipient}' must be an apache.org address.")
+
+
 def validate_github_repository_name(github_repository_name: str | None) -> None:
     if github_repository_name and ("/" in github_repository_name):
         raise ValueError("GitHub repository name must not contain a slash.")
@@ -110,3 +117,14 @@ def validate_trusted_publishing_workflow_paths(paths: list[str]) -> None:
     for path in paths:
         if not path.startswith(".github/workflows/"):
             raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+
+
+def validate_vote_recipients(committee_key: str, recipients: list[str]) -> None:
+    expected = f"{committee_key}.apache.org"
+    for recipient in recipients:
+        if _email_domain(recipient) != expected:
+            raise ValueError(f"Vote recipient '{recipient}' must be on '{expected}'.")
+
+
+def _email_domain(address: str) -> str:
+    return address.rpartition("@")[2].lower()
