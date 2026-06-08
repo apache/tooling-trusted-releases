@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 NOTICE_KIND_PREVIEW_ESCALATION: Final[str] = "preview_escalation"
 NOTICE_KIND_WARNING: Final[str] = "warning"
 
-_DELETION_ENABLED: Final[bool] = True
+_DELETION_ENABLED: Final[bool] = False
 _UNFINISHED_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
     {
         sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
