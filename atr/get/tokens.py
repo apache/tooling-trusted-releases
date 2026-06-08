@@ -23,7 +23,7 @@ import atr.htm as htm
 import atr.post as post
 import atr.shared as shared
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -103,7 +103,7 @@ async def tokens(_session: web.Committer, _tokens: Literal["tokens"]) -> str:
     )
 
 
-async def _build_tokens_table(page: htm.Block, tokens_list: list[types.PersonalAccessTokenSafe]) -> None:
+async def _build_tokens_table(page: htm.Block, tokens_list: list[datatypes.PersonalAccessTokenSafe]) -> None:
     if not tokens_list:
         page.p["No tokens found."]
         return

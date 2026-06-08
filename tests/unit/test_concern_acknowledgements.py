@@ -19,12 +19,12 @@ import collections
 from types import SimpleNamespace
 
 import atr.models.sql as sql
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.util as util
 
 
 def test_concern_groups_and_missing():
-    headers_stat = types.CheckerStats(
+    headers_stat = datatypes.CheckerStats(
         checker="atr.tasks.checks.license.headers",
         counts=collections.Counter(
             {
@@ -34,18 +34,18 @@ def test_concern_groups_and_missing():
         ),
         files={sql.CheckResultStatus.CONCERN: {"a": 6}},
     )
-    paths_stat = types.CheckerStats(
+    paths_stat = datatypes.CheckerStats(
         checker="atr.tasks.checks.paths",
         counts=collections.Counter({sql.CheckResultStatus.CONCERN: 3}),
         files={sql.CheckResultStatus.CONCERN: {"a": 3}},
     )
-    suggestions_only_stat = types.CheckerStats(
+    suggestions_only_stat = datatypes.CheckerStats(
         checker="atr.tasks.checks.targz.structure",
         counts=collections.Counter({sql.CheckResultStatus.SUGGESTION: 2}),
         files={sql.CheckResultStatus.SUGGESTION: {"a": 2}},
     )
     release_level = SimpleNamespace(checker="atr.tasks.checks.signature")
-    info = types.PathInfo.model_construct(
+    info = datatypes.PathInfo.model_construct(
         checker_stats=[headers_stat, paths_stat, suggestions_only_stat],
         release_level_concerns=[release_level],
     )

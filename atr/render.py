@@ -26,7 +26,7 @@ import atr.get as get
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.util as util
 
 type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
@@ -309,7 +309,7 @@ def html_recipients_to_radios(
 
 
 def render_checks_summary(
-    info: types.PathInfo | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
+    info: datatypes.PathInfo | None, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> htm.Element | None:
     if info is None:
         return None
@@ -346,7 +346,7 @@ def render_checks_summary(
     return card.collect()
 
 
-def render_exception_banner(info: types.PathInfo) -> htm.Element | None:
+def render_exception_banner(info: datatypes.PathInfo) -> htm.Element | None:
     path_count = sum(len(results) for results in info.exceptions.values())
     release_count = len(info.release_level_exceptions)
     total = path_count + release_count
@@ -375,7 +375,7 @@ def render_exception_banner(info: types.PathInfo) -> htm.Element | None:
 
 
 def _render_checker_entry(
-    stat: types.CheckerStats | None,
+    stat: datatypes.CheckerStats | None,
     release_problems: list[sql.CheckResult],
     index: int,
     project_key: safe.ProjectKey,
@@ -419,7 +419,7 @@ def _render_release_problem(result: sql.CheckResult) -> list[htm.Element | str]:
 
 def _render_stat_files(
     files_div: htm.Block,
-    stat: types.CheckerStats,
+    stat: datatypes.CheckerStats,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> None:

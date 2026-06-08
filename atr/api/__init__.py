@@ -47,8 +47,8 @@ import atr.paths as paths
 import atr.principal as principal
 import atr.shared.catalog as catalog
 import atr.storage as storage
+import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
-import atr.storage.types as types
 import atr.tabulate as tabulate
 import atr.user as user
 import atr.util as util
@@ -688,15 +688,15 @@ async def key_add(
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
-        ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(data.key)
+        ocr: outcome.Outcome[datatypes.Key] = await wafc.keys.ensure_stored_one(data.key)
         try:
             key = ocr.result_or_raise()
-        except types.UnknownApacheUidError as e:
+        except datatypes.UnknownApacheUidError as e:
             raise exceptions.BadRequest(str(e)) from e
 
         for selected_committee_key in selected_committee_keys:
             wacm = write.as_committee_member(selected_committee_key)
-            oc: outcome.Outcome[types.LinkedCommittee] = await wacm.keys.associate_fingerprint(
+            oc: outcome.Outcome[datatypes.LinkedCommittee] = await wacm.keys.associate_fingerprint(
                 key.key_model.fingerprint
             )
             oc.result_or_raise()
@@ -797,11 +797,11 @@ async def keys_upload(
     selected_committee_key = data.committee
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(selected_committee_key)
-        outcomes: outcome.List[types.Key] = await wacm.keys.ensure_associated(filetext)
+        outcomes: outcome.List[datatypes.Key] = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
         # Or, perhaps better yet, to have a standard datatype mapping
-        # This would be specified in models.api, then imported into storage.types
+        # This would be specified in models.api, then imported into storage.datatypes
         # Or perhaps it should go in models.storage or models.outcomes
         api_outcomes = []
         for oc in outcomes.outcomes():
@@ -815,7 +815,7 @@ async def keys_upload(
                 case outcome.Error(error):
                     # TODO: This branch means we must improve the return type
                     match error:
-                        case types.PublicKeyError() as pke:
+                        case datatypes.PublicKeyError() as pke:
                             api_outcome = models.api.KeysUploadException(
                                 status="error",
                                 key=pke.key.key_model,
@@ -1422,7 +1422,7 @@ async def release_upload(
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(data.project)
             result = await wacp.release.upload_file(data)
-    except types.PhaseMismatchError as e:
+    except datatypes.PhaseMismatchError as e:
         raise exceptions.Conflict(str(e))
     if isinstance(result, sql.Quarantined):
         return {

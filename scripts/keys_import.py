@@ -34,8 +34,8 @@ import atr.cache as cache
 import atr.config as config
 import atr.db as db
 import atr.storage as storage
+import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
-import atr.storage.types as types
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -102,11 +102,11 @@ def format_exception_location(exc: BaseException) -> str:
     return f"{type(exc).__name__} at {filename}:{lineno} in {func}: {exc}"
 
 
-def log_outcome_errors(outcomes: outcome.List[types.Key], committee_key: str) -> None:
+def log_outcome_errors(outcomes: outcome.List[datatypes.Key], committee_key: str) -> None:
     for error in outcomes.errors():
         fingerprint = "unknown"
         detail_exception: BaseException = error
-        if isinstance(error, types.PublicKeyError):
+        if isinstance(error, datatypes.PublicKeyError):
             fingerprint = error.key.key_model.fingerprint
             detail_exception = error.original_error
         elif isinstance(error, BaseException):

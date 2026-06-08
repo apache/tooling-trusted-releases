@@ -25,8 +25,8 @@ import pytest
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.render as render
+import atr.storage.datatypes as datatypes
 import atr.storage.readers.releases as releases
-import atr.storage.types as types
 import atr.tasks.checks as checks
 import atr.tasks.checks.paths as paths
 from tests.unit.recorders import RecorderStub
@@ -50,9 +50,9 @@ async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.asyncio
 async def test_blocker_with_path_goes_to_blockers():
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     result = _make_check_result(sql.CheckResultStatus.BLOCKER, "Bad path", primary_rel_path="some-file.tar.gz")
-    cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
+    cs = datatypes.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
     assert len(info.release_level_concerns) == 0
@@ -65,9 +65,9 @@ async def test_blocker_with_path_goes_to_blockers():
 
 @pytest.mark.asyncio
 async def test_blocker_without_path_goes_to_release_level_blockers():
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     result = _make_check_result(sql.CheckResultStatus.BLOCKER, "No source artifact")
-    cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
+    cs = datatypes.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__blocker(cs)  # type: ignore[attr-defined]
     assert len(info.release_level_blockers) == 1
@@ -77,9 +77,9 @@ async def test_blocker_without_path_goes_to_release_level_blockers():
 
 @pytest.mark.asyncio
 async def test_concern_without_path_goes_to_release_level_concerns():
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     result = _make_check_result(sql.CheckResultStatus.CONCERN, "Some failure")
-    cs = types.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
+    cs = datatypes.ChecksSubset(checks=[result], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     await reader._GeneralPublic__concerns(cs)  # type: ignore[attr-defined]
     assert len(info.release_level_concerns) == 1
@@ -235,8 +235,8 @@ async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_render_checks_summary_emits_new_badge_classes():
-    info = types.PathInfo()
-    stat = types.CheckerStats(
+    info = datatypes.PathInfo()
+    stat = datatypes.CheckerStats(
         checker="atr.tasks.checks.paths.check_errors",
         counts=collections.Counter(
             {
@@ -255,13 +255,13 @@ def test_render_checks_summary_emits_new_badge_classes():
 
 
 def test_render_checks_summary_returns_none_when_no_errors():
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is None
 
 
 def test_render_checks_summary_shows_release_level_errors():
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     result = _make_check_result(
         sql.CheckResultStatus.CONCERN,
         "Some path issue",

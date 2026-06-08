@@ -47,7 +47,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
@@ -89,7 +89,7 @@ async def _signature_provenance_metadata_for(
     signature_rel_path: pathlib.Path,
 ) -> dict[str, str]:
     if parent_revision is None:
-        raise types.FailedError("SHA512 generation requires a parent revision with a verified signature.")
+        raise datatypes.FailedError("SHA512 generation requires a parent revision with a verified signature.")
     release_key = sql.release_key(str(project_key), str(version_key))
     parent_revision_number = parent_revision.safe_number
     parent_number = str(parent_revision_number)
@@ -107,7 +107,7 @@ async def _signature_provenance_metadata_for(
             "SHA512 generation is waiting for signature verification"
             f" release={release_key} revision={parent_number} path={signature_rel_str}"
         )
-        raise types.FailedError(
+        raise datatypes.FailedError(
             "Signature verification has not completed yet for"
             f" {signature_rel_path.name}. Please wait for checks to finish and try again."
         )
@@ -121,8 +121,10 @@ async def _signature_provenance_metadata_for(
     )
     if latest.status != sql.CheckResultStatus.NOTE:
         if latest_message:
-            raise types.FailedError(f"Signature verification for {signature_rel_path.name} failed: {latest_message}")
-        raise types.FailedError(
+            raise datatypes.FailedError(
+                f"Signature verification for {signature_rel_path.name} failed: {latest_message}"
+            )
+        raise datatypes.FailedError(
             "Signature verification for"
             f" {signature_rel_path.name} is {latest.status.value}; cannot generate the SHA512 yet."
         )
@@ -361,9 +363,9 @@ class CommitteeParticipant(FoundationCommitter):
             resolved = await asyncio.to_thread(path_to_remove.path.resolve)
             resolved.relative_to(await asyncio.to_thread(path.path.resolve))
             if not await aiofiles.os.path.isdir(path_to_remove):
-                raise types.FailedError(f"Path '{dir_to_delete_rel}' is not a directory.")
+                raise datatypes.FailedError(f"Path '{dir_to_delete_rel}' is not a directory.")
             if await aiofiles.os.listdir(path_to_remove):
-                raise types.FailedError(f"Directory '{dir_to_delete_rel}' is not empty.")
+                raise datatypes.FailedError(f"Directory '{dir_to_delete_rel}' is not empty.")
             await aiofiles.os.rmdir(path_to_remove)
 
         try:
@@ -375,7 +377,7 @@ class CommitteeParticipant(FoundationCommitter):
                 description=description,
                 modify=modify,
             )
-        except types.FailedError as e:
+        except datatypes.FailedError as e:
             return str(e)
         return None
 
@@ -454,7 +456,7 @@ class CommitteeParticipant(FoundationCommitter):
                 raise storage.AccessError("SHA512 file already exists", status=409)
 
             if not await aiofiles.os.path.exists(signature_path_in_new_revision):
-                raise types.FailedError(
+                raise datatypes.FailedError(
                     "SHA512 generation requires a detached OpenPGP signature at"
                     f" {signature_rel_path!s}. Please upload the signature first."
                 )
@@ -556,7 +558,7 @@ class CommitteeParticipant(FoundationCommitter):
                 description=description,
                 modify=modify,
             )
-        except types.FailedError as e:
+        except datatypes.FailedError as e:
             return str(e), moved_files_names, skipped_files_names
         return None, moved_files_names, skipped_files_names
 
@@ -655,18 +657,18 @@ class CommitteeParticipant(FoundationCommitter):
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
             _project=True,
             _committee=True,
-        ).demand(types.FailedError("Release preview not found for publish"))
+        ).demand(datatypes.FailedError("Release preview not found for publish"))
         storage.ensure_project_active(release.project)
         committee = release.project.committee
         if committee is None:
-            raise types.FailedError("Release has no committee - Invalid state")
+            raise datatypes.FailedError("Release has no committee - Invalid state")
         latest_revision = release.safe_latest_revision_number
         if latest_revision != task_args.revision_number:
-            raise types.FailedError("A newer revision appeared after queuing this publish task")
+            raise datatypes.FailedError("A newer revision appeared after queuing this publish task")
         try:
             internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
         except ValueError as exc:
-            raise types.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
+            raise datatypes.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
         preview_path = paths.release_directory(release)
         log_message = (
             f"Publish {task_args.project_key!s}-{task_args.version_key!s}\n\n"
@@ -687,10 +689,10 @@ class CommitteeParticipant(FoundationCommitter):
                     message = f"{message}: {match.group(1)}"
                     if svn_publish_url := config.get().SVN_PUBLISH_URL:
                         message = message.replace(svn_publish_url, "")
-                raise types.FailedError(message) from exc
-            raise types.FailedError("SVN publish failed; see worker logs for details") from exc
+                raise datatypes.FailedError(message) from exc
+            raise datatypes.FailedError("SVN publish failed; see worker logs for details") from exc
         if revision is None:
-            raise types.FailedError("SVN publish did not return a Committed revision line")
+            raise datatypes.FailedError("SVN publish did not return a Committed revision line")
         return results.SvnPublish(
             kind="svn_publish",
             svn_revision=revision,
@@ -891,7 +893,7 @@ class CommitteeParticipant(FoundationCommitter):
                 description=description,
                 modify=modify,
             )
-        except types.FailedError as e:
+        except datatypes.FailedError as e:
             return str(e), renamed_count, error_messages
         return None, renamed_count, error_messages
 
@@ -1060,7 +1062,7 @@ class CommitteeParticipant(FoundationCommitter):
                 description=description,
                 modify=modify,
             )
-        except types.FailedError as e:
+        except datatypes.FailedError as e:
             return str(e), len(files), False
         return None, len(files), isinstance(result, sql.Quarantined)
 
@@ -1182,23 +1184,23 @@ class CommitteeParticipant(FoundationCommitter):
             resolved.relative_to(await asyncio.to_thread(interim_path.path.resolve))
         except ValueError:
             # Path traversal detected
-            raise types.FailedError("Paths must be restricted to the release directory")
+            raise datatypes.FailedError("Paths must be restricted to the release directory")
 
         if not await aiofiles.os.path.exists(target_path):
             for part in target_path.path.parts:
                 # TODO: This .prefix check could include some existing directory segment
                 # TODO: The second check probably isn't needed now since this came from a safe RelPath type.
                 if util.is_disallowed_dotfile(part):
-                    raise types.FailedError("This segment is a disallowed dotfile")
+                    raise datatypes.FailedError("This segment is a disallowed dotfile")
                 if ".." in part:
-                    raise types.FailedError("Segments must not contain '..'")
+                    raise datatypes.FailedError("Segments must not contain '..'")
 
             try:
                 await aiofiles.os.makedirs(target_path)
             except OSError:
-                raise types.FailedError("Failed to create target directory")
+                raise datatypes.FailedError("Failed to create target directory")
         elif not await aiofiles.os.path.isdir(target_path):
-            raise types.FailedError("Target path is not a directory")
+            raise datatypes.FailedError("Target path is not a directory")
 
         for source_file_rel in source_files_rel:
             await self.__setup_revision_item(
@@ -1226,11 +1228,11 @@ class CommitteeParticipant(FoundationCommitter):
             if (target_dir_rel == source_file_rel) or (interim_path / target_dir_path).path.resolve().is_relative_to(
                 full_source_item_path.path.resolve()
             ):
-                raise types.FailedError("Cannot move a directory into itself or a subdirectory of itself")
+                raise datatypes.FailedError("Cannot move a directory into itself or a subdirectory of itself")
 
             final_target_for_item = target_path / source_path.name
             if await aiofiles.os.path.exists(final_target_for_item):
-                raise types.FailedError("Target name already exists")
+                raise datatypes.FailedError("Target name already exists")
 
             await aiofiles.os.rename(full_source_item_path, final_target_for_item)
             moved_files_names.append(source_path.name)
@@ -1239,11 +1241,11 @@ class CommitteeParticipant(FoundationCommitter):
             bundle = [f for f in related_files if await aiofiles.os.path.exists(interim_path / f)]
             for f_check in bundle:
                 if await aiofiles.os.path.isdir(interim_path / f_check):
-                    raise types.FailedError("A related 'file' is actually a directory")
+                    raise datatypes.FailedError("A related 'file' is actually a directory")
 
             collisions = [f.name for f in bundle if await aiofiles.os.path.exists(target_path / f.name)]
             if collisions:
-                raise types.FailedError("A related file already exists in the target directory")
+                raise datatypes.FailedError("A related file already exists in the target directory")
 
             for f in bundle:
                 await aiofiles.os.rename(interim_path / f, target_path / f.name)

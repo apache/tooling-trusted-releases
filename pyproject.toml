@@ -140,6 +140,7 @@ ignore = [
   "S704", # markupsafe
 ]
 select = [
+  "A005",  # stdlib-module-shadowing
   "ASYNC", # flake8-async
   "C90",   # cyclomatic-complexity
   "E",     # pycodestyle
@@ -153,6 +154,9 @@ select = [
   "UP",    # pyupgrade
   "W"
 ]
+
+[tool.ruff.lint.flake8-builtins]
+strict-checking = true
 
 [tool.ruff.lint.per-file-ignores]
 "atr/analysis.py" = ["RUF001"]

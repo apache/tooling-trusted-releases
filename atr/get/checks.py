@@ -40,7 +40,7 @@ import atr.post as post
 import atr.render as render
 import atr.shared.draft as draft
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -202,7 +202,7 @@ async def selected_revision(
 
 
 def _classification_badge_cell(
-    info: types.PathInfo | None, path: safe.RelPath, severity: sql.CheckResultStatus | None
+    info: datatypes.PathInfo | None, path: safe.RelPath, severity: sql.CheckResultStatus | None
 ) -> htm.Element:
     file_type = info.file_types.get(path) if (info is not None) else None
     match file_type:
@@ -313,7 +313,7 @@ def _render_checks_table(
     release: sql.Release,
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
-    info: types.PathInfo | None,
+    info: datatypes.PathInfo | None,
 ) -> None:
     if not paths:
         page.div(".alert.alert-info")["This release candidate does not have any files."]
@@ -346,7 +346,7 @@ def _render_file_row(
     release: sql.Release,
     path: safe.RelPath,
     stats: FileStats,
-    info: types.PathInfo | None,
+    info: datatypes.PathInfo | None,
 ) -> None:
     path_str = str(path)
     num_style = "font-size: 1.1rem;"

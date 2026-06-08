@@ -43,7 +43,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.tasks as tasks
 import atr.util as util
 
@@ -185,7 +185,7 @@ async def _commit_new_revision(
         # Raise an error if the destination directory already exists
         # This can happen for example if there was a previous failed cleanup
         if await aiofiles.os.path.exists(new_revision_dir):
-            raise types.FailedError(f"Revision directory {new_revision_dir} already exists")
+            raise datatypes.FailedError(f"Revision directory {new_revision_dir} already exists")
 
         # Rename the temporary interim directory to the new revision number
         await aiofiles.os.rename(temp_dir, new_revision_dir)
@@ -344,7 +344,7 @@ async def _verify_provenance_sources_unchanged(
             except FileNotFoundError:
                 post_merge_inode = None
             if (pre_merge_inode is None) or (post_merge_inode != pre_merge_inode):
-                raise types.FailedError(
+                raise datatypes.FailedError(
                     f"A concurrent revision replaced {dependency_rel}; please regenerate {generated_rel}."
                 )
 
@@ -442,7 +442,7 @@ class CommitteeParticipant(FoundationCommitter):
             )
             storage.ensure_project_active(release.project)
             if release.phase not in allowed_phases:
-                raise types.PhaseMismatchError(
+                raise datatypes.PhaseMismatchError(
                     f"Cannot create revision: release phase is {release.phase.value}, "
                     f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
                 )
@@ -475,7 +475,7 @@ class CommitteeParticipant(FoundationCommitter):
             # The directory is either empty or its files are hard linked to the previous revision
             if modify is not None:
                 path_provenance = await modify(temp_dir_path, old_revision)
-        except types.FailedError:
+        except datatypes.FailedError:
             await aioshutil.rmtree(temp_dir)
             raise
         except Exception:
@@ -485,7 +485,7 @@ class CommitteeParticipant(FoundationCommitter):
         validation_errors = await asyncio.to_thread(detection.validate_directory, temp_dir_path.path)
         if validation_errors:
             await aioshutil.rmtree(temp_dir)
-            raise types.FailedError("File validation failed:\n" + "\n".join(validation_errors))
+            raise datatypes.FailedError("File validation failed:\n" + "\n".join(validation_errors))
 
         # Ensure that the permissions of every directory are 755
         try:
@@ -547,7 +547,7 @@ class CommitteeParticipant(FoundationCommitter):
 
             if merged_release.phase not in allowed_phases:
                 await aioshutil.rmtree(temp_dir)
-                raise types.PhaseMismatchError(
+                raise datatypes.PhaseMismatchError(
                     f"Cannot create revision: release phase is {merged_release.phase.value}, "
                     f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
                 )

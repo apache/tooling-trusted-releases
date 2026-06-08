@@ -25,7 +25,7 @@ import pytest
 import atr.models.attestable as attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.storage.writers.release as release
 
 
@@ -155,7 +155,7 @@ async def test_generate_hash_file_requires_signature_file(tmp_path: pathlib.Path
         "_signature_provenance_metadata_for",
         new=mock.AsyncMock(),
     ) as signature_metadata_mock:
-        with pytest.raises(types.FailedError, match=r"requires a detached OpenPGP signature"):
+        with pytest.raises(datatypes.FailedError, match=r"requires a detached OpenPGP signature"):
             await participant.generate_hash_file(
                 safe.ProjectKey("proj"),
                 safe.VersionKey("1.0"),
@@ -211,7 +211,7 @@ async def test_signature_provenance_metadata_for_requires_completed_check():
         mock.patch.object(release.db, "session", return_value=session),
         mock.patch.object(release.log, "info") as log_info_mock,
     ):
-        with pytest.raises(types.FailedError, match=r"has not completed yet"):
+        with pytest.raises(datatypes.FailedError, match=r"has not completed yet"):
             await release._signature_provenance_metadata_for(
                 project_key=safe.ProjectKey("proj"),
                 version_key=safe.VersionKey("1.0"),
@@ -224,7 +224,7 @@ async def test_signature_provenance_metadata_for_requires_completed_check():
 
 @pytest.mark.asyncio
 async def test_signature_provenance_metadata_for_requires_parent_revision():
-    with pytest.raises(types.FailedError, match=r"requires a parent revision"):
+    with pytest.raises(datatypes.FailedError, match=r"requires a parent revision"):
         await release._signature_provenance_metadata_for(
             project_key=safe.ProjectKey("proj"),
             version_key=safe.VersionKey("1.0"),
@@ -248,7 +248,7 @@ async def test_signature_provenance_metadata_for_requires_successful_check():
         mock.patch.object(release.db, "session", return_value=session),
         mock.patch.object(release.log, "info") as log_info_mock,
     ):
-        with pytest.raises(types.FailedError, match=r"failed: No valid signature found"):
+        with pytest.raises(datatypes.FailedError, match=r"failed: No valid signature found"):
             await release._signature_provenance_metadata_for(
                 project_key=safe.ProjectKey("proj"),
                 version_key=safe.VersionKey("1.0"),

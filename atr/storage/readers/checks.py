@@ -25,7 +25,7 @@ import atr.db.interaction as interaction
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def by_release_path(self, release: sql.Release, rel_path: pathlib.Path) -> types.CheckResults:
+    async def by_release_path(self, release: sql.Release, rel_path: pathlib.Path) -> datatypes.CheckResults:
         if release.latest_revision_number is None:
             raise ValueError("Release has no revision - Invalid state")
 
@@ -77,7 +77,7 @@ class GeneralPublic:
         # Order member results by relative path and then by checker name
         for member_rel_path in sorted(member_results_list.keys()):
             member_results_list[member_rel_path].sort(key=lambda r: r.checker)
-        return types.CheckResults(primary_results_list, member_results_list, ignored_checks)
+        return datatypes.CheckResults(primary_results_list, member_results_list, ignored_checks)
 
     async def ignores(self, project_key: safe.ProjectKey) -> list[sql.CheckResultIgnore]:
         results = await self.__data.check_result_ignore(

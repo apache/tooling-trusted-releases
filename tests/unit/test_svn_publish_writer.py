@@ -33,7 +33,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.storage.types as storage_types
+import atr.storage.datatypes as datatypes
 import atr.storage.writers.release as release_writer
 
 INTERNAL_PUBLISH_URL: Final[str] = "https://internal.example.invalid/repos/dist/atr"
@@ -129,7 +129,7 @@ async def test_publish_to_svn_execute_maps_existing_svn_path(
         await _seed_preview_release(data)
         writer = _release_writer(data)
 
-        with pytest.raises(storage_types.FailedError, match="Release file already exists in SVN"):
+        with pytest.raises(datatypes.FailedError, match="Release file already exists in SVN"):
             await writer.publish_to_svn_execute(
                 args.SvnPublish(
                     asf_uid="alice",

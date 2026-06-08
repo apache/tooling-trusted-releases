@@ -26,7 +26,7 @@ import atr.form as form
 import atr.htm as htm
 import atr.shared as shared
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.template as template
 import atr.util as util
 
@@ -293,7 +293,7 @@ def _render_results_table(
             fingerprint = key_obj.key_model.fingerprint if key_obj else "UNKNOWN"
             email_addr = key_obj.key_model.primary_declared_uid if key_obj else ""
             # Check whether the LINKED flag is set
-            added_flag = bool(key_obj.status & types.KeyStatus.LINKED) if key_obj else False
+            added_flag = bool(key_obj.status & datatypes.KeyStatus.LINKED) if key_obj else False
             error_flag = False
         else:
             err = outcome.error_or_none()

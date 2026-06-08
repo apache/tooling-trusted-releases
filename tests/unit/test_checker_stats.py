@@ -22,8 +22,8 @@ import unittest.mock as mock
 
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage.datatypes as datatypes
 import atr.storage.readers.releases as releases
-import atr.storage.types as types
 
 
 def test_checker_stats_counts_and_files_by_status():
@@ -32,7 +32,7 @@ def test_checker_stats_counts_and_files_by_status():
     warning = _make_check_result(sql.CheckResultStatus.SUGGESTION, "Warning", primary_rel_path=str(path))
     failure = _make_check_result(sql.CheckResultStatus.CONCERN, "Failure", primary_rel_path=str(path))
     blocker = _make_check_result(sql.CheckResultStatus.BLOCKER, "Blocker", primary_rel_path=str(path))
-    info = types.PathInfo(
+    info = datatypes.PathInfo(
         notes={path: [success]},
         suggestions={path: [warning]},
         concerns={path: [failure]},
@@ -65,8 +65,8 @@ def test_exceptions_bucketed_into_path_info():
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
     exception = _make_check_result(sql.CheckResultStatus.EXCEPTION, "Error", primary_rel_path=str(path))
     release_level = _make_check_result(sql.CheckResultStatus.EXCEPTION, "Tooling failure", primary_rel_path=None)
-    info = types.PathInfo()
-    subset = types.ChecksSubset(checks=[exception, release_level], info=info, match_ignore=lambda _: False)
+    info = datatypes.PathInfo()
+    subset = datatypes.ChecksSubset(checks=[exception, release_level], info=info, match_ignore=lambda _: False)
     reader = _make_reader()
     bucket_exceptions = getattr(reader, "_GeneralPublic__exceptions")
 

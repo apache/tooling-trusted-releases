@@ -28,7 +28,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 
 
 @dataclasses.dataclass
@@ -50,8 +50,8 @@ class GeneralPublic:
         self.__data = data
         self.__asf_uid = read.authorisation.asf_uid
 
-    async def path_info(self, release: sql.Release, all_paths: list[safe.RelPath]) -> types.PathInfo | None:
-        info = types.PathInfo()
+    async def path_info(self, release: sql.Release, all_paths: list[safe.RelPath]) -> datatypes.PathInfo | None:
+        info = datatypes.PathInfo()
         latest_revision_number = release.latest_revision_number
         if latest_revision_number is None:
             return None
@@ -95,7 +95,7 @@ class GeneralPublic:
                     files_for_status = acc.files.setdefault(status, {})
                     files_for_status[path_str] = files_for_status.get(path_str, 0) + 1
 
-    def __compute_checker_stats(self, info: types.PathInfo, paths: list[safe.RelPath]) -> None:
+    def __compute_checker_stats(self, info: datatypes.PathInfo, paths: list[safe.RelPath]) -> None:
         paths_set = set(paths)
         checker_data: dict[str, CheckerAccumulator] = {}
 
@@ -112,7 +112,7 @@ class GeneralPublic:
             if non_note_total == 0:
                 continue
             info.checker_stats.append(
-                types.CheckerStats(
+                datatypes.CheckerStats(
                     checker=checker,
                     counts=acc.counts,
                     files=acc.files,
@@ -120,14 +120,14 @@ class GeneralPublic:
             )
 
     async def __notes_suggestions_concerns(
-        self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: types.PathInfo
+        self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: datatypes.PathInfo
     ) -> None:
         match_ignore = await self.__read_as.checks.ignores_matcher(release.safe_project_key)
         attestable_checks = await interaction.checks_for(
             release, revision=latest_revision_number, caller_data=self.__data
         )
 
-        cs = types.ChecksSubset(
+        cs = datatypes.ChecksSubset(
             checks=attestable_checks,
             info=info,
             match_ignore=match_ignore,
@@ -140,7 +140,7 @@ class GeneralPublic:
         await self.__exceptions(cs)
         await self.__blocker(cs)
 
-    async def __blocker(self, cs: types.ChecksSubset) -> None:
+    async def __blocker(self, cs: datatypes.ChecksSubset) -> None:
         blocker = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.BLOCKER]
         for result in blocker:
             if path := result.safe_primary_rel_path:
@@ -148,7 +148,7 @@ class GeneralPublic:
             else:
                 cs.info.release_level_blockers.append(result)
 
-    async def __concerns(self, cs: types.ChecksSubset) -> None:
+    async def __concerns(self, cs: datatypes.ChecksSubset) -> None:
         concerns = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.CONCERN]
         for concern in concerns:
             if cs.match_ignore(concern):
@@ -159,7 +159,7 @@ class GeneralPublic:
             else:
                 cs.info.release_level_concerns.append(concern)
 
-    async def __exceptions(self, cs: types.ChecksSubset) -> None:
+    async def __exceptions(self, cs: datatypes.ChecksSubset) -> None:
         exceptions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.EXCEPTION]
         for exception in exceptions:
             if cs.match_ignore(exception):
@@ -170,14 +170,14 @@ class GeneralPublic:
             else:
                 cs.info.release_level_exceptions.append(exception)
 
-    async def __notes(self, cs: types.ChecksSubset) -> None:
+    async def __notes(self, cs: datatypes.ChecksSubset) -> None:
         notes = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.NOTE]
         for note in notes:
             # Notes cannot be ignored
             if path := note.safe_primary_rel_path:
                 cs.info.notes.setdefault(path, []).append(note)
 
-    async def __suggestions(self, cs: types.ChecksSubset) -> None:
+    async def __suggestions(self, cs: datatypes.ChecksSubset) -> None:
         suggestions = [cr for cr in cs.checks if cr.status == sql.CheckResultStatus.SUGGESTION]
         for suggestion in suggestions:
             if cs.match_ignore(suggestion):

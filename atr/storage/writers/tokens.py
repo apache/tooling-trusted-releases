@@ -32,7 +32,7 @@ import atr.log as log
 import atr.mail as mail
 import atr.models.sql as sql
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 
 
 class GeneralPublic:
@@ -61,7 +61,7 @@ class FoundationCommitter(GeneralPublic):
 
     async def add_token(
         self, token_hash: str, created: datetime.datetime, expires: datetime.datetime, label: str | None
-    ) -> types.PersonalAccessTokenSafe:
+    ) -> datatypes.PersonalAccessTokenSafe:
         if not label:
             raise ValueError("Label is required")
         pat = sql.PersonalAccessToken(
@@ -83,7 +83,7 @@ class FoundationCommitter(GeneralPublic):
             "If you did not create this token, please revoke it immediately.",
         )
         await self.__write_as.mail.send(message, mail.MailFooterCategory.AUTO)
-        return types.PersonalAccessTokenSafe.from_sql(pat)
+        return datatypes.PersonalAccessTokenSafe.from_sql(pat)
 
     # audit_guidance PAT deletion revokes associated JWTs
     # audit_guidance JWT verification rechecks PAT existence on every API request
@@ -197,7 +197,7 @@ class FoundationAdmin(FoundationCommitter):
         expires: datetime.datetime,
         label: str,
         allowed_ip: str | None,
-    ) -> types.PersonalAccessTokenSafe:
+    ) -> datatypes.PersonalAccessTokenSafe:
         if not label:
             raise ValueError("Label is required")
         # asfuid stays null so a system PAT has no owning user; created_by
@@ -221,15 +221,15 @@ class FoundationAdmin(FoundationCommitter):
             allowed_ip=allowed_ip,
         )
         log.auth_event("system_pat_issuance", self.__asf_uid, pat_hash=token_hash, name=label)
-        return types.PersonalAccessTokenSafe.from_sql(pat)
+        return datatypes.PersonalAccessTokenSafe.from_sql(pat)
 
-    async def list_system_tokens(self) -> list[types.PersonalAccessTokenSafe]:
+    async def list_system_tokens(self) -> list[datatypes.PersonalAccessTokenSafe]:
         tokens = await (
             self.__data.personal_access_token(is_system=True)
             .order_by(sql.validate_instrumented_attribute(sql.PersonalAccessToken.created))
             .all()
         )
-        return [types.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
+        return [datatypes.PersonalAccessTokenSafe.from_sql(token) for token in tokens]
 
     async def revoke_all_user_tokens(self, target_asf_uid: str) -> int:
         """Revoke all PATs that a specified user owns or created. Returns count of revoked tokens."""

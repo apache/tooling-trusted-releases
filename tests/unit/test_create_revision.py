@@ -24,7 +24,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.storage.writers.release as release
 import atr.storage.writers.revision as revision
 
@@ -403,7 +403,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         received_args["path"] = path
         received_args["old_rev"] = old_rev
         (path / "file.txt").path.write_text("Should be cleaned up.")
-        raise types.FailedError("Intentional error")
+        raise datatypes.FailedError("Intentional error")
 
     release = mock.MagicMock()
     release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
@@ -420,7 +420,7 @@ async def test_modify_failed_error_propagates_and_cleans_up(tmp_path: pathlib.Pa
         mock.patch.object(revision.interaction, "latest_revision", new_callable=mock.AsyncMock, return_value=None),
         mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
     ):
-        with pytest.raises(types.FailedError, match="Intentional error"):
+        with pytest.raises(datatypes.FailedError, match="Intentional error"):
             await participant.create_revision_with_quarantine(
                 safe.ProjectKey("proj"),
                 safe.VersionKey("1.0"),
@@ -760,7 +760,7 @@ async def test_verify_provenance_sources_unchanged_rejects_missing_signature(tmp
             "source_paths": ["artifact.tar.gz"],
         },
     )
-    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
+    with pytest.raises(datatypes.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
         await revision._verify_provenance_sources_unchanged(
             temp_dir_path=safe.StatePath(tmp_path),
             pre_merge_inodes={
@@ -783,7 +783,7 @@ async def test_verify_provenance_sources_unchanged_rejects_missing_source(tmp_pa
             "source_paths": ["artifact.tar.gz"],
         },
     )
-    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
+    with pytest.raises(datatypes.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
         await revision._verify_provenance_sources_unchanged(
             temp_dir_path=safe.StatePath(tmp_path),
             pre_merge_inodes={"artifact.tar.gz": 123},
@@ -809,7 +809,7 @@ async def test_verify_provenance_sources_unchanged_rejects_replaced_signature(tm
             "source_paths": ["artifact.tar.gz"],
         },
     )
-    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
+    with pytest.raises(datatypes.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz\.asc"):
         await revision._verify_provenance_sources_unchanged(
             temp_dir_path=safe.StatePath(tmp_path),
             pre_merge_inodes={
@@ -836,7 +836,7 @@ async def test_verify_provenance_sources_unchanged_rejects_replaced_source(tmp_p
             "source_paths": ["artifact.tar.gz"],
         },
     )
-    with pytest.raises(types.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
+    with pytest.raises(datatypes.FailedError, match=r"concurrent revision replaced artifact\.tar\.gz"):
         await revision._verify_provenance_sources_unchanged(
             temp_dir_path=safe.StatePath(tmp_path),
             pre_merge_inodes={"artifact.tar.gz": stale_inode},

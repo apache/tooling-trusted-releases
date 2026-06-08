@@ -26,8 +26,8 @@ import atr.constants as constants
 import atr.db as db
 import atr.jwtoken as jwtoken
 import atr.models.sql as sql
+import atr.storage.datatypes as datatypes
 import atr.storage.readers.tokens
-import atr.storage.types as types
 import atr.storage.writers.tokens
 
 
@@ -161,7 +161,7 @@ def test_personal_access_token_safe_excludes_token_hash() -> None:
         last_used=None,
     )
 
-    safe = types.PersonalAccessTokenSafe.from_sql(token)
+    safe = datatypes.PersonalAccessTokenSafe.from_sql(token)
 
     assert safe.id == 5
     assert safe.asfuid == "test"
@@ -192,9 +192,9 @@ async def test_reader_pat_methods_return_safe_tokens() -> None:
     most_recent = await reader.most_recent_jwt_pat()
 
     assert len(tokens_list) == 1
-    assert isinstance(tokens_list[0], types.PersonalAccessTokenSafe)
+    assert isinstance(tokens_list[0], datatypes.PersonalAccessTokenSafe)
     assert "token_hash" not in tokens_list[0].model_dump()
-    assert isinstance(most_recent, types.PersonalAccessTokenSafe)
+    assert isinstance(most_recent, datatypes.PersonalAccessTokenSafe)
     assert most_recent is not None
     assert "token_hash" not in most_recent.model_dump()
 
@@ -253,7 +253,7 @@ async def test_writer_add_token_returns_safe_token() -> None:
         label="writer-test",
     )
 
-    assert isinstance(safe, types.PersonalAccessTokenSafe)
+    assert isinstance(safe, datatypes.PersonalAccessTokenSafe)
     assert safe.id == 101
     assert "token_hash" not in safe.model_dump()
 
@@ -296,7 +296,7 @@ async def test_writer_add_system_token() -> None:
         allowed_ip="10.0.0.0/8",
     )
 
-    assert isinstance(safe, types.PersonalAccessTokenSafe)
+    assert isinstance(safe, datatypes.PersonalAccessTokenSafe)
     assert safe.id == 101
     # System PATs have no owning user; created_by records the minting admin.
     assert safe.asfuid is None

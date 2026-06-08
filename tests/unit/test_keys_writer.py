@@ -236,8 +236,8 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
 async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
     data = MockData(None, committees_after_commit={})
     writer, _write_as = _make_foundation_admin(data, "alpha")
-    key = keys_writer.types.Key(
-        status=keys_writer.types.KeyStatus.PARSED,
+    key = keys_writer.datatypes.Key(
+        status=keys_writer.datatypes.KeyStatus.PARSED,
         key_model=_public_signing_key("fp1", apache_uid=None),
     )
     database_outcomes = outcome.List(outcome.Result(key))
@@ -269,8 +269,8 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
 async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
     data = MockData(None, committees_after_commit={})
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
-    key = keys_writer.types.Key(
-        status=keys_writer.types.KeyStatus.PARSED,
+    key = keys_writer.datatypes.Key(
+        status=keys_writer.datatypes.KeyStatus.PARSED,
         key_model=_public_signing_key("fp1", apache_uid="alice"),
     )
     database_outcome = outcome.Result(key)
@@ -329,8 +329,8 @@ async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
 async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
     data = MockData(None, committees_after_commit={})
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
-    key = keys_writer.types.Key(
-        status=keys_writer.types.KeyStatus.PARSED,
+    key = keys_writer.datatypes.Key(
+        status=keys_writer.datatypes.KeyStatus.PARSED,
         key_model=_public_signing_key("fp1", apache_uid=None),
     )
     lookup = keys_writer.cache.EmailUidLookup({})
@@ -353,7 +353,7 @@ async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
 
     assert isinstance(result, outcome.Error)
     error = result.error_or_none()
-    assert isinstance(error, keys_writer.types.UnknownApacheUidError)
+    assert isinstance(error, keys_writer.datatypes.UnknownApacheUidError)
     assert str(error) == "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
     email_uid_view.assert_awaited_once()
     assert block_model_create.call_count == 2

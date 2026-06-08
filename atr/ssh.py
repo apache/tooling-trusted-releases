@@ -46,7 +46,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.user as user
 import atr.util as util
 
@@ -459,7 +459,7 @@ async def _step_04_command_validate(
 
 
 async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, str | None]:
-    """Validate the path argument for rsync read commands, returning safe types."""
+    """Validate the path argument for rsync read commands, returning safe datatypes."""
     # READ: rsync --server --sender -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
     _validate_path_common(path)
@@ -490,7 +490,7 @@ async def _step_05a_command_path_validate_read(path: str) -> tuple[safe.ProjectK
 
 
 async def _step_05b_command_path_validate_write(path: str) -> tuple[safe.ProjectKey, safe.VersionKey, None]:
-    """Validate the path argument for rsync write commands, returning safe types."""
+    """Validate the path argument for rsync write commands, returning safe datatypes."""
     # WRITE: rsync --server -vlogDtpre.iLsfxCIvu . /proj/v1/
     # Validating path: /proj/v1/
     _validate_path_common(path)
@@ -667,7 +667,7 @@ async def _step_07b_process_validated_rsync_write(
                     f"rsync upload failed with exit status {exit_status} for {for_revision}. "
                     f"Command: {process.command} (run as {' '.join(rsync_argv)})"
                 )
-                raise types.FailedError(f"rsync upload failed with exit status {exit_status} for {for_revision}")
+                raise datatypes.FailedError(f"rsync upload failed with exit status {exit_status} for {for_revision}")
 
         try:
             result = await wacp.revision.create_revision_with_quarantine(
@@ -694,7 +694,7 @@ async def _step_07b_process_validated_rsync_write(
             if not process.stderr.is_closing():
                 process.stderr.write(message.encode())
                 await process.stderr.drain()
-        except types.FailedError:
+        except datatypes.FailedError:
             log.info(f"rsync upload unsuccessful for release {release_key}")
 
         # If we got here, there was no exception

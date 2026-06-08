@@ -24,7 +24,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.storage.writers.revision as revision
 
 _QUARANTINE_TOKEN_ALPHABET: Final[str] = "qpzry9x8gf2tvdw0s3jn54khce6mua7b"
@@ -236,7 +236,7 @@ async def test_phase_gate_rejects_mismatched_phase():
 
     with mock.patch.object(revision.db, "session", return_value=mock_session):
         with pytest.raises(
-            types.PhaseMismatchError,
+            datatypes.PhaseMismatchError,
             match="release phase is release_candidate",
         ):
             await participant.create_revision_with_quarantine(

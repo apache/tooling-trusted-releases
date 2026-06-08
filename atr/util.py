@@ -63,7 +63,7 @@ import atr.registry as registry
 import atr.user as user
 
 if TYPE_CHECKING:
-    import atr.storage.types as types
+    import atr.storage.datatypes as datatypes
 
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
     "-binary-assembly",
@@ -352,7 +352,7 @@ def concern_acknowledgement_error(missing: Sequence[ConcernGroup]) -> str:
     return f"{CONCERN_ACKNOWLEDGEMENT_MESSAGE}: {', '.join(listed)}{suffix}"
 
 
-def concern_groups(info: "types.PathInfo | None") -> list[ConcernGroup]:
+def concern_groups(info: "datatypes.PathInfo | None") -> list[ConcernGroup]:
     if info is None:
         return []
     counts_by_checker: dict[str, int] = collections.defaultdict(int)

@@ -32,7 +32,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 import atr.util as util
 import atr.web as web
 
@@ -64,7 +64,7 @@ async def cache_reset(
                 description=description,
                 reset_to_global_cache=True,
             )
-    except types.PhaseMismatchError as e:
+    except datatypes.PhaseMismatchError as e:
         return await session.redirect(
             get.compose.selected,
             project_key=str(project_key),
@@ -227,7 +227,7 @@ async def recheck(
                 description=description,
                 set_local_cache=True,
             )
-    except types.PhaseMismatchError as e:
+    except datatypes.PhaseMismatchError as e:
         return await session.redirect(
             get.compose.selected,
             project_key=str(project_key),

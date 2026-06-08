@@ -21,7 +21,7 @@ import unittest.mock as mock
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.render as render
-import atr.storage.types as types
+import atr.storage.datatypes as datatypes
 
 
 def test_highest_severity_precedence() -> None:
@@ -46,13 +46,13 @@ def test_highest_severity_precedence() -> None:
 
 
 def test_render_exception_banner_empty_returns_none() -> None:
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     assert render.render_exception_banner(info) is None
 
 
 def test_render_exception_banner_path_level() -> None:
     path = safe.RelPath("apache-test-1.0-source.tar.gz")
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     info.exceptions[path] = [_fake_check_result()]
     banner = render.render_exception_banner(info)
     assert banner is not None
@@ -63,7 +63,7 @@ def test_render_exception_banner_path_level() -> None:
 
 
 def test_render_exception_banner_release_level_only() -> None:
-    info = types.PathInfo()
+    info = datatypes.PathInfo()
     info.release_level_exceptions.append(_fake_check_result())
     banner = render.render_exception_banner(info)
     assert banner is not None

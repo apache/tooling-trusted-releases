@@ -39,8 +39,8 @@ import atr.paths as paths
 import atr.sessions as sessions
 import atr.shared as shared
 import atr.storage as storage
+import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
-import atr.storage.types as types
 import atr.util as util
 import atr.web as web
 
@@ -70,18 +70,18 @@ async def add(
 
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
-            ocr: outcome.Outcome[types.Key] = await wafc.keys.ensure_stored_one(key_text)
+            ocr: outcome.Outcome[datatypes.Key] = await wafc.keys.ensure_stored_one(key_text)
             key = ocr.result_or_raise()
 
             for selected_committee_key in selected_committee_keys:
                 wacp = write.as_committee_participant(selected_committee_key)
-                oc: outcome.Outcome[types.LinkedCommittee] = await wacp.keys.associate_fingerprint(
+                oc: outcome.Outcome[datatypes.LinkedCommittee] = await wacp.keys.associate_fingerprint(
                     key.key_model.fingerprint
                 )
                 oc.result_or_raise()
 
             fingerprint_upper = key.key_model.fingerprint.upper()
-            if key.status == types.KeyStatus.PARSED:
+            if key.status == datatypes.KeyStatus.PARSED:
                 details_url = util.as_url(get.keys.details, fingerprint=key.key_model.fingerprint)
                 p = htm.p[
                     f"OpenPGP key {fingerprint_upper} was already in the database. ",
@@ -95,7 +95,7 @@ async def add(
 
     except PrivateKeyUploadError:
         await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
-    except types.UnknownApacheUidError as e:
+    except datatypes.UnknownApacheUidError as e:
         await quart.flash(str(e), "error")
     except web.FlashError as e:
         log.warning(f"FlashError adding OpenPGP key: {e}")
@@ -152,7 +152,7 @@ async def import_selected_revision(
     await session.release(project_key, version_key, with_committee=False, with_project=False)
     async with storage.write() as write:
         wacm = await write.as_project_committee_member(project_key)
-        outcomes: outcome.List[types.Key] = await wacm.keys.import_keys_file(project_key, version_key)
+        outcomes: outcome.List[datatypes.Key] = await wacm.keys.import_keys_file(project_key, version_key)
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
