@@ -307,27 +307,34 @@ class CommitteeParticipant(FoundationCommitter):
         return error
 
     async def __delete_release_data_downloads(self, release: sql.Release) -> None:
-        finished_dir = paths.release_directory(release)
-        if await aiofiles.os.path.isdir(finished_dir):
-            release_inodes = set()
-            async for file_path in util.paths_recursive(finished_dir):
-                try:
-                    stat_result = await aiofiles.os.stat(finished_dir / file_path)
-                    release_inodes.add(stat_result.st_ino)
-                except FileNotFoundError:
-                    continue
+        try:
+            await self.__release_download_links_delete(release)
+        except Exception:
+            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with deletion")
 
-            if release_inodes:
-                downloads_dir = paths.get_downloads_dir()
-                async for link_path in util.paths_recursive(downloads_dir):
-                    full_link_path = downloads_dir / link_path
-                    try:
-                        link_stat = await aiofiles.os.stat(full_link_path)
-                        if link_stat.st_ino in release_inodes:
-                            await aiofiles.os.remove(full_link_path)
-                            log.info(f"Deleted hard link: {full_link_path}")
-                    except FileNotFoundError:
-                        continue
+    async def __release_download_links_delete(self, release: sql.Release) -> None:
+        finished_dir = paths.release_directory(release)
+        if not await aiofiles.os.path.isdir(finished_dir):
+            return
+        release_inodes: set[int] = set()
+        async for file_path in util.paths_recursive_all(finished_dir):
+            try:
+                stat_result = await aiofiles.os.stat(finished_dir / file_path)
+            except OSError:
+                continue
+            release_inodes.add(stat_result.st_ino)
+        if not release_inodes:
+            return
+        downloads_dir = paths.get_downloads_dir()
+        async for link_path in util.paths_recursive_all(downloads_dir):
+            full_link_path = downloads_dir / link_path
+            try:
+                link_stat = await aiofiles.os.stat(full_link_path)
+            except OSError:
+                continue
+            if link_stat.st_ino in release_inodes:
+                await aiofiles.os.remove(full_link_path)
+                log.info(f"Deleted hard link: {full_link_path}")
 
     async def __delete_release_data_filesystem(
         self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
@@ -1345,6 +1352,12 @@ class CommitteeMember(CommitteeParticipant):
         return None
 
     async def __remove_from_downloads(self, release: sql.Release) -> None:
+        try:
+            await self.__release_download_links_delete(release)
+        except Exception:
+            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
+
+    async def __release_download_links_delete(self, release: sql.Release) -> None:
         # Hard-linked downloads share an inode with the finished files, so we
         # find them by inode rather than path - that way an unknown
         # download_path_suffix isn't a blocker.
@@ -1352,24 +1365,24 @@ class CommitteeMember(CommitteeParticipant):
         if not await aiofiles.os.path.isdir(finished_dir):
             return
         release_inodes: set[int] = set()
-        async for file_path in util.paths_recursive(finished_dir):
+        async for file_path in util.paths_recursive_all(finished_dir):
             try:
                 stat_result = await aiofiles.os.stat(finished_dir / file_path)
-                release_inodes.add(stat_result.st_ino)
-            except FileNotFoundError:
+            except OSError:
                 continue
+            release_inodes.add(stat_result.st_ino)
         if not release_inodes:
             return
         downloads_dir = paths.get_downloads_dir()
-        async for link_path in util.paths_recursive(downloads_dir):
+        async for link_path in util.paths_recursive_all(downloads_dir):
             full_link_path = downloads_dir / link_path
             try:
                 link_stat = await aiofiles.os.stat(full_link_path)
-                if link_stat.st_ino in release_inodes:
-                    await aiofiles.os.remove(full_link_path)
-                    log.info(f"Deleted download hard link: {full_link_path}")
-            except FileNotFoundError:
+            except OSError:
                 continue
+            if link_stat.st_ino in release_inodes:
+                await aiofiles.os.remove(full_link_path)
+                log.info(f"Deleted download hard link: {full_link_path}")
 
 
 class FoundationAdmin(FoundationCommitter):
@@ -1501,27 +1514,34 @@ class FoundationAdmin(FoundationCommitter):
         return error
 
     async def __delete_release_data_downloads(self, release: sql.Release) -> None:
-        finished_dir = paths.release_directory(release)
-        if await aiofiles.os.path.isdir(finished_dir):
-            release_inodes = set()
-            async for file_path in util.paths_recursive(finished_dir):
-                try:
-                    stat_result = await aiofiles.os.stat(finished_dir / file_path)
-                    release_inodes.add(stat_result.st_ino)
-                except FileNotFoundError:
-                    continue
+        try:
+            await self.__release_download_links_delete(release)
+        except Exception:
+            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with deletion")
 
-            if release_inodes:
-                downloads_dir = paths.get_downloads_dir()
-                async for link_path in util.paths_recursive(downloads_dir):
-                    full_link_path = downloads_dir / link_path
-                    try:
-                        link_stat = await aiofiles.os.stat(full_link_path)
-                        if link_stat.st_ino in release_inodes:
-                            await aiofiles.os.remove(full_link_path)
-                            log.info(f"Deleted hard link: {full_link_path}")
-                    except FileNotFoundError:
-                        continue
+    async def __release_download_links_delete(self, release: sql.Release) -> None:
+        finished_dir = paths.release_directory(release)
+        if not await aiofiles.os.path.isdir(finished_dir):
+            return
+        release_inodes: set[int] = set()
+        async for file_path in util.paths_recursive_all(finished_dir):
+            try:
+                stat_result = await aiofiles.os.stat(finished_dir / file_path)
+            except OSError:
+                continue
+            release_inodes.add(stat_result.st_ino)
+        if not release_inodes:
+            return
+        downloads_dir = paths.get_downloads_dir()
+        async for link_path in util.paths_recursive_all(downloads_dir):
+            full_link_path = downloads_dir / link_path
+            try:
+                link_stat = await aiofiles.os.stat(full_link_path)
+            except OSError:
+                continue
+            if link_stat.st_ino in release_inodes:
+                await aiofiles.os.remove(full_link_path)
+                log.info(f"Deleted hard link: {full_link_path}")
 
     async def __delete_release_data_filesystem(
         self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey

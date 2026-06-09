@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import os
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -34,21 +35,19 @@ class _ReleaseQuery:
         return self._result
 
 
-def _make_member(release_result: object) -> release.CommitteeMember:
-    mock_data = mock.MagicMock()
-    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(release_result))
-    mock_data.execute_query = mock.AsyncMock()
-    mock_data.add = mock.MagicMock()
-    mock_data.commit = mock.AsyncMock()
-
-    mock_write = mock.MagicMock()
-    mock_write.authorisation.asf_uid = "alice"
-    mock_write_as = mock.MagicMock()
-
-    member = release.CommitteeMember(mock_write, mock_write_as, mock_data, "test")
-    # Skip the filesystem-side cleanup - covered by integration tests.
-    object.__setattr__(member, "_CommitteeMember__remove_from_downloads", mock.AsyncMock())
-    return member
+@pytest.mark.asyncio
+async def test_archive_returns_error_when_release_already_archived():
+    fake_release = SimpleNamespace(
+        key="example-1.0.0",
+        phase=sql.ReleasePhase.RELEASE,
+        archived=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        project_key="example",
+        cycle_key="example-default",
+    )
+    member = _make_member(release_result=fake_release)
+    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+    assert error is not None
+    assert "already archived" in error
 
 
 @pytest.mark.asyncio
@@ -72,21 +71,6 @@ async def test_archive_returns_error_when_release_not_in_release_phase():
     error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
     assert error is not None
     assert "not in the release phase" in error
-
-
-@pytest.mark.asyncio
-async def test_archive_returns_error_when_release_already_archived():
-    fake_release = SimpleNamespace(
-        key="example-1.0.0",
-        phase=sql.ReleasePhase.RELEASE,
-        archived=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        project_key="example",
-        cycle_key="example-default",
-    )
-    member = _make_member(release_result=fake_release)
-    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-    assert error is not None
-    assert "already archived" in error
 
 
 @pytest.mark.asyncio
@@ -121,3 +105,51 @@ async def test_archive_succeeds_and_writes_lifecycle_event():
     assert mock_data.execute_query.await_count == 1
     # Commit happened
     assert mock_data.commit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_download_links_delete_tolerates_unsafe_filenames(tmp_path, monkeypatch):
+    finished_dir = tmp_path / "finished"
+    finished_dir.mkdir()
+    bad_file = finished_dir / "ELC Admin Guide.pdf"
+    bad_file.write_text("data")
+
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir()
+    link_path = downloads_dir / "ELC Admin Guide.pdf"
+    os.link(bad_file, link_path)
+
+    monkeypatch.setattr(release.paths, "release_directory", lambda _release: finished_dir)
+    monkeypatch.setattr(release.paths, "get_downloads_dir", lambda: downloads_dir)
+
+    member = _make_member(release_result=None)
+    await member._CommitteeMember__release_download_links_delete(SimpleNamespace(key="example-1.0.0"))
+
+    assert not link_path.exists()
+    assert bad_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_remove_from_downloads_swallows_errors():
+    member = release.CommitteeMember(mock.MagicMock(), mock.MagicMock(), mock.MagicMock(), "test")
+    boom = mock.AsyncMock(side_effect=RuntimeError("boom"))
+    object.__setattr__(member, "_CommitteeMember__release_download_links_delete", boom)
+    await member._CommitteeMember__remove_from_downloads(SimpleNamespace(key="example-1.0.0"))
+    boom.assert_awaited_once()
+
+
+def _make_member(release_result: object) -> release.CommitteeMember:
+    mock_data = mock.MagicMock()
+    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(release_result))
+    mock_data.execute_query = mock.AsyncMock()
+    mock_data.add = mock.MagicMock()
+    mock_data.commit = mock.AsyncMock()
+
+    mock_write = mock.MagicMock()
+    mock_write.authorisation.asf_uid = "alice"
+    mock_write_as = mock.MagicMock()
+
+    member = release.CommitteeMember(mock_write, mock_write_as, mock_data, "test")
+    # Skip the filesystem-side cleanup - covered by integration tests.
+    object.__setattr__(member, "_CommitteeMember__remove_from_downloads", mock.AsyncMock())
+    return member
