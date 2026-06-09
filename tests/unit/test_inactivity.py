@@ -97,8 +97,8 @@ def test_classify_warning_zone_warns() -> None:
     assert plan.decision == inactivity.Decision.WARN
 
 
-def test_deletion_not_enabled_by_default() -> None:
-    assert inactivity.deletion_enabled() is False
+def test_deletion_enabled_by_default() -> None:
+    assert inactivity.deletion_enabled() is True
 
 
 def test_notice_already_recorded_none_returns_false() -> None:

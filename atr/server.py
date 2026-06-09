@@ -122,7 +122,6 @@ _SWAGGER_UI_TEMPLATE: Final[str] = """<!DOCTYPE html>
 </html>
 """
 
-# Avoid OIDC
 asfquart.generics.OAUTH_URL_INIT = "https://oauth.apache.org/auth-oidc?state=%s&redirect_uri=%s"
 asfquart.generics.OAUTH_URL_CALLBACK = "https://oauth.apache.org/token-oidc?code=%s"
 
