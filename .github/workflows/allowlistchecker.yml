@@ -27,7 +27,8 @@ permissions:
   contents: read
 jobs:
   asf-allowlist-check:
-    runs-on: ubuntu-latest
+    # Trusted sources on our own runner; fork PRs on the hosted runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
