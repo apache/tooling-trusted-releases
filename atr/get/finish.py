@@ -370,7 +370,7 @@ async def _render_page(
             action=util.as_url(post.release.activity, project_key=release.project.key, version_key=release.version),
             submit_label="Reset inactivity clock",
             submit_classes="btn-outline-primary",
-            pre_submit=activity.inactivity_form_intro(release, action="flagged"),
+            pre_submit=activity.inactivity_form_intro(release, action="flagged", noun="preview"),
         )
         page.div(".mb-4")[activity_form]
 

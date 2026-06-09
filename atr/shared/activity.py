@@ -22,11 +22,11 @@ import atr.models.sql as sql
 import atr.util as util
 
 
-def inactivity_form_intro(release: sql.Release, action: str = "deleted") -> htm.Element:
+def inactivity_form_intro(release: sql.Release, action: str = "deleted", noun: str = "draft") -> htm.Element:
     days = max(0, (datetime.datetime.now(datetime.UTC) - release.activity_at).days)
     return htm.div[
         htm.div(".mb-2")[
-            f"This release has been inactive for {util.plural(days, 'day')}. "
-            f"After 90 days of inactivity this project will be {action}."
+            f"This {noun} release has been inactive for {util.plural(days, 'day')}. "
+            f"After 90 days of inactivity, this {noun} will be {action}."
         ],
     ]
