@@ -18,6 +18,9 @@ project:
       - build-management
     programming_languages:
       - python
+  policy:
+    vote_recipients:
+      to: arbitrary@tooling.apache.org
   features:
     atr_sync: true
 github:
