@@ -96,7 +96,7 @@ async def checks_list(
     return models.api.ChecksListResults(
         endpoint="/checks/list",
         checks=check_results,
-        checks_revision=release.unwrap_revision_number,
+        checks_revision=release.safe_latest_revision_number,
         current_phase=release.phase,
     ).model_dump(mode="json"), 200
 
@@ -139,7 +139,7 @@ async def checks_list_revision(
     return models.api.ChecksListResults(
         endpoint="/checks/list",
         checks=check_results,
-        checks_revision=str(revision),
+        checks_revision=revision,
         current_phase=release_result.phase,
     ).model_dump(mode="json"), 200
 
@@ -216,9 +216,8 @@ async def catalog_project(
     )
     return models.api.CatalogProjectResults(
         endpoint="/catalog/project",
-        project=project.key,
+        project=project.safe_key,
         cle_url=catalog.cle_project_url(atr_host, project.key),
-        grouped=assembled.grouped,
         versions=assembled.versions,
         cycles=assembled.cycles,
     ).model_dump(mode="json"), 200
@@ -794,9 +793,9 @@ async def keys_upload(
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     asf_uid = _jwt_asf_uid()
-    selected_committee_key = data.committee
+    selected_committee_key = safe.CommitteeKey(data.committee)
     async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(selected_committee_key)
+        wacm = write.as_committee_member(str(selected_committee_key))
         outcomes: outcome.List[datatypes.Key] = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes

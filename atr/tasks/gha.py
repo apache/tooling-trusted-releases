@@ -27,7 +27,6 @@ import atr.db as db
 import atr.log as log
 import atr.models.args as args
 import atr.models.results as results
-import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks as tasks
@@ -118,8 +117,7 @@ async def trigger_workflow(
     task_args: args.DistributionWorkflow, *, task_id: int | None = None
 ) -> results.Results | None:
     unique_id = f"atr-dist-{task_args.name}-{uuid.uuid4()}"
-    project = safe.ProjectKey(task_args.project_key)
-    safe.VersionKey(task_args.version_key)
+    project = task_args.project_key
     try:
         sql_platform = sql.DistributionPlatform[task_args.platform]
     except KeyError:
@@ -131,12 +129,12 @@ async def trigger_workflow(
             "atr-id": unique_id,
             "asf-uid": task_args.asf_uid,
             "task_id": task_id,
-            "project": task_args.project_key,
+            "project": str(task_args.project_key),
             "phase": task_args.phase,
-            "version": task_args.version_key,
+            "version": str(task_args.version_key),
             "distribution-owner-namespace": task_args.namespace,
-            "distribution-package": task_args.package,
-            "distribution-version": task_args.version,
+            "distribution-package": str(task_args.package),
+            "distribution-version": str(task_args.version),
             # **task_args.arguments,
         },
     }

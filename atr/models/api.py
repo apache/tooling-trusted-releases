@@ -50,7 +50,7 @@ class CatalogArtifact(schema.Strict):
 
 
 class CatalogVersion(schema.Strict):
-    version: str
+    version: safe.VersionKey
     status: Literal["released", "archived"]
     released: datetime.datetime | None
     svn_revision: int | None
@@ -76,11 +76,9 @@ class CatalogCycle(schema.Strict):
 
 class CatalogProjectResults(schema.Strict):
     endpoint: Literal["/catalog/project"] = schema.alias("endpoint")
-    project: str
+    project: safe.ProjectKey
     # The project-wide CLE feed covering every cycle and release.
     cle_url: str | None = None
-    # True when the project groups versions into cycles; then read `cycles`, else `versions`.
-    grouped: bool
     versions: Sequence[CatalogVersion]
     cycles: Sequence[CatalogCycle]
 
@@ -88,7 +86,7 @@ class CatalogProjectResults(schema.Strict):
 class ChecksListResults(schema.Strict):
     endpoint: Literal["/checks/list"] = schema.alias("endpoint")
     checks: Sequence[sql.CheckResult]
-    checks_revision: str = schema.example("00005")
+    checks_revision: safe.RevisionNumber = schema.example("00005")
     current_phase: sql.ReleasePhase = schema.example(sql.ReleasePhase.RELEASE_CANDIDATE)
 
     @pydantic.field_validator("current_phase", mode="before")
@@ -331,7 +329,7 @@ class KeysUploadResults(schema.Strict):
     results: Sequence[KeysUploadResult | KeysUploadException]
     success_count: int = schema.example(1)
     error_count: int = schema.example(0)
-    submitted_committee: str = schema.example("example")
+    submitted_committee: safe.CommitteeKey = schema.example("example")
 
 
 class KeysUserResults(schema.Strict):
@@ -875,7 +873,7 @@ class TrustedBallotEntry(schema.Strict):
     is_binding: bool = schema.example(True)
     is_carried: bool = schema.default_example(False, False)
     vote_round: int | None = schema.default_example(None, 1)
-    revision_number_at_cast: str = schema.example("00005")
+    revision_number_at_cast: safe.RevisionNumber = schema.example("00005")
     receipt_message_id: str = schema.example("102ed8a-503db792-79bc789-b8ca87ce@apache.org")
     cast_at: datetime.datetime = schema.example(datetime.datetime(2025, 5, 1, 12, 0, tzinfo=datetime.UTC))
 

@@ -109,7 +109,7 @@ def test_status_reflects_release_and_archive_state() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived),
     ]
 
-    versions = {v.version: v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
 
     assert versions["5.0.2"].status == "released"
     assert versions["4.1.7"].status == "archived"
@@ -124,7 +124,7 @@ def test_only_released_versions_are_downloadable() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived, svn_revision=28114),
     ]
 
-    versions = {v.version: v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
 
     assert versions["5.0.2"].artifacts[0].downloadable is True
     assert versions["4.1.7"].artifacts[0].downloadable is False
@@ -146,7 +146,7 @@ def test_versions_are_newest_first() -> None:
 
     versions = catalog._versions(artifacts, {}, project.committee_key)
 
-    assert [v.version for v in versions] == ["5.0.2", "5.0.1"]
+    assert [str(v.version) for v in versions] == ["5.0.2", "5.0.1"]
 
 
 def test_cycles_are_ordered_by_latest_activity() -> None:
@@ -188,7 +188,7 @@ def test_cle_url_links_versions_backed_by_a_release_when_a_host_is_supplied() ->
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
     artifacts = [_artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released)]
 
-    versions = {v.version: v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
 
     assert versions["5.0.2"].cle_url == "https://atr.example.org/api/cle/release/cassandra/5.0.2"
 
@@ -197,7 +197,7 @@ def test_cle_url_is_omitted_for_versions_without_a_backing_release() -> None:
     project = _project()
     artifacts = [_artifact(project, "3.0.0", "a-3.0.0.tar.gz", svn_revision=100)]
 
-    versions = {v.version: v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
 
     assert versions["3.0.0"].cle_url is None
 
@@ -208,6 +208,6 @@ def test_cle_url_is_omitted_when_no_host_is_supplied() -> None:
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
     artifacts = [_artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released)]
 
-    versions = {v.version: v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
 
     assert versions["5.0.2"].cle_url is None

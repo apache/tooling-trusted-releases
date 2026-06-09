@@ -105,7 +105,7 @@ class TrustedBallotDetail:
     is_binding: bool
     is_carried: bool = False
     receipt_message_id: str
-    revision_number_at_cast: str
+    revision_number_at_cast: safe.RevisionNumber
     status_label: str
     voter_asf_uid: str
     voter_fullname: str
@@ -1087,7 +1087,7 @@ async def _trusted_ballot_details_from_ballots(
                 is_binding=is_binding,
                 is_carried=is_carried,
                 receipt_message_id=ballot.receipt_message_id,
-                revision_number_at_cast=ballot.revision_number_at_cast,
+                revision_number_at_cast=ballot.safe_revision_number_at_cast,
                 status_label=binding_label if is_binding else non_binding_label,
                 voter_asf_uid=ballot.voter_asf_uid,
                 voter_fullname=ballot.voter_fullname,

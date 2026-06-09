@@ -153,9 +153,9 @@ def _versions(
     committee: sql.Committee | None,
     atr_host: str | None = None,
 ) -> list[models.api.CatalogVersion]:
-    by_version: dict[str, list[sql.Artifact]] = collections.defaultdict(list)
+    by_version: dict[safe.VersionKey, list[sql.Artifact]] = collections.defaultdict(list)
     for artifact in artifacts:
-        by_version[artifact.version].append(artifact)
+        by_version[artifact.safe_version_key].append(artifact)
 
     versions: list[models.api.CatalogVersion] = []
     for version, rows in by_version.items():
@@ -175,7 +175,7 @@ def _versions(
                 released=(release.released or release.created) if (release is not None) else None,
                 svn_revision=max(svn_revisions) if svn_revisions else None,
                 cycle=cycle.cycle if (cycle is not None) else None,
-                cle_url=cle_release_url(atr_host, release.project_key, version)
+                cle_url=cle_release_url(atr_host, release.project_key, str(version))
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
                 artifacts=[_artifact(row, committee, downloadable) for row in rows],

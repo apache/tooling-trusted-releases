@@ -34,11 +34,11 @@ class DistributionWorkflow(schema.Strict):
     """Arguments for the task to start a GitHub Actions distribution workflow."""
 
     namespace: str = schema.description("Namespace to distribute to")
-    package: str = schema.description("Package to distribute")
-    version: str = schema.description("Version to distribute")
+    package: safe.Alphanumeric = schema.description("Package to distribute")
+    version: safe.VersionKey = schema.description("Version to distribute")
     staging: bool = schema.description("Whether this is a staging distribution")
-    project_key: str = schema.description("Project key in ATR")
-    version_key: str = schema.description("Version key in ATR")
+    project_key: safe.ProjectKey = schema.description("Project key in ATR")
+    version_key: safe.VersionKey = schema.description("Version key in ATR")
     phase: str = schema.description("Release phase in ATR")
     asf_uid: str = schema.description("ASF UID of the user triggering the workflow")
     committee_key: str = schema.description("Committee key in ATR")

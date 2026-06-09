@@ -1578,6 +1578,11 @@ class BallotPaper(sqlmodel.SQLModel, table=True):
         if isinstance(self.created, str):
             self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
 
+    @property
+    def safe_revision_number_at_cast(self) -> safe.RevisionNumber:
+        """Get the typesafe validated revision number recorded when the ballot was cast"""
+        return safe.RevisionNumber(self.revision_number_at_cast)
+
     __table_args__ = (
         sqlalchemy.Index(
             "ix_ballotpaper_release_vote_round_voter_id",
@@ -1885,6 +1890,11 @@ class Artifact(sqlmodel.SQLModel, table=True):
     # M-1: Artifact -> Release
     # 1-M: Release -> [Artifact]
     release: Release | None = sqlmodel.Relationship(back_populates="artifacts")
+
+    @property
+    def safe_version_key(self) -> safe.VersionKey:
+        """Get the typesafe validated version for the Artifact"""
+        return safe.VersionKey(self.version)
 
 
 # ReleasePolicy: Project
