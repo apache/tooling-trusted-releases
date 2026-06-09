@@ -1179,6 +1179,7 @@ def _register_routes(app: base.QuartApp) -> None:  # noqa: C901
 async def _reset_request_log_context():
     log.clear_context()
     log.add_context(request_id=str(uuid.uuid4()))
+    log.add_context(source_ip=quart.request.remote_addr)
     session = await sessions.read()
     if isinstance(session, sql.UserSession):
         log.add_context(user_id=session.uid)

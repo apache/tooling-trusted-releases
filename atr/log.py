@@ -224,7 +224,17 @@ def warning(msg: str, **kwargs) -> None:
 def _auth_log(**kwargs):
     now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
     now = now.replace("+00:00", "Z")
-    kwargs = {"datetime": now, **kwargs}
+    # Pull the request-scoped correlation fields from the log context, the same
+    # way the caller's user_id is sourced, so every auth entry can be tied back
+    # to a request and its origin
+    context: dict[str, Any] = {"datetime": now}
+    request_id = get_request_id()
+    if request_id is not None:
+        context["request_id"] = request_id
+    source_ip = get_context("source_ip")
+    if isinstance(source_ip, str):
+        context["source_ip"] = source_ip
+    kwargs = {**context, **kwargs}
     msg = json.dumps(kwargs, allow_nan=False)
     logger = logging.getLogger("atr.auth")
     logger.info(msg)

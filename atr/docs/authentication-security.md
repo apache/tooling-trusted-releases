@@ -256,6 +256,8 @@ ATR also does not ship with built in alert thresholds or automatic blocking rule
 An audit log, at `<STATE_DIR>/audit/auth-audit.log`, contains a log of all auth-adjacent operations. This should include authentication success/failures, token issuance/revocation,
 and anything else that would be relevant to authentication when investigating a potential security issue.
 
+Each entry is also tagged with the `request_id` and `source_ip` of the originating request, where one is in scope, so auth events can be correlated with the request summaries in `<STATE_DIR>/logs/requests.log`. Both are pulled from the request log context rather than passed at the call site.
+
 This log is logged to by calling the specialised methods on atr.log (all args passed below as kwargs for readability):
 
 ```python
