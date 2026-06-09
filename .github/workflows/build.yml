@@ -4,7 +4,7 @@ on:
   push:
     branches: [altera, arm, main, sbp, tertia]
   pull_request:
-    branches: [main]
+    branches: [arm, main]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,15 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Run on our own runner for trusted sources (push/dispatch, or a same-repo
+    # PR); fork PRs fall back to the hosted runner so they never touch it.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
+    # Skip same-repo PRs from branches push already built - no point building the
+    # same commit twice.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      !contains(fromJSON('["altera", "arm", "main", "sbp", "tertia"]'), github.event.pull_request.head.ref)
     strategy:
       fail-fast: false
       matrix:
