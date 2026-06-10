@@ -387,8 +387,8 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
     polling_url = f"{ATR_BASE_URL}/admin/ongoing-tasks/{rev_path}"
     logging.info(f"Polling URL: {polling_url}")
 
-    max_wait_seconds = 18
-    poll_interval_seconds = 0.01
+    max_wait_seconds = 60
+    poll_interval_seconds = 0.5
     start_time = time.monotonic()
 
     for attempt in range(int(max_wait_seconds / poll_interval_seconds)):
