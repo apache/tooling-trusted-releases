@@ -22,7 +22,9 @@ import pydantic
 import atr.form as form
 
 PAT_EXPIRY_DAYS: Final[int] = 180
-PAT_NOISY_SECRET_DOMAIN: Final[bytes] = b"tooling.apache.org"
+# Changing this value does not affect the validation of any existing PATs
+# This is a provisional value pending a decision being made by Infra and Security
+PAT_NOISY_SECRET_DOMAIN: Final[bytes] = b"apache.org"
 
 type ADD_TOKEN = Literal["add_token"]
 type DELETE_TOKEN = Literal["delete_token"]
