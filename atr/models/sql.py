@@ -1384,7 +1384,9 @@ class Release(sqlmodel.SQLModel, table=True):
 
     # 1-M: Release -> [Artifact]
     # M-1: Artifact -> Release
-    artifacts: list["Artifact"] = sqlmodel.Relationship(back_populates="release")
+    artifacts: list["Artifact"] = sqlmodel.Relationship(
+        back_populates="release", sa_relationship_kwargs={"cascade": "all, delete", "passive_deletes": True}
+    )
 
     # The combination of key and version must be unique
     __table_args__ = (sqlmodel.UniqueConstraint("project_key", "version", name="unique_project_version"),)
