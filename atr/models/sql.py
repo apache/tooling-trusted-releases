@@ -1466,8 +1466,10 @@ class Release(sqlmodel.SQLModel, table=True):
         return number
 
     def model_post_init(self, _context):
-        if isinstance(self.created, str):
-            self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
+        for name in ("activity_at", "archived", "created", "released", "vote_resolved", "vote_started"):
+            value = getattr(self, name)
+            if isinstance(value, str):
+                setattr(self, name, datetime.datetime.fromisoformat(value.rstrip("Z")))
 
         if isinstance(self.phase, str):
             self.phase = ReleasePhase(self.phase)
