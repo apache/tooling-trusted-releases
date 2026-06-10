@@ -1,0 +1,46 @@
+name: Dedup gate
+
+# Reusable gate - reports whether the calling workflow has already succeeded for
+# this commit (e.g. on another branch), so the caller can skip duplicate work.
+# It reads the run history rather than writing a commit status, so it adds
+# nothing to the commit's checks list.
+on:
+  workflow_call:
+    inputs:
+      workflow_file:
+        description: The caller's workflow file name, e.g. build.yml
+        required: true
+        type: string
+    outputs:
+      already_built:
+        description: true if this workflow already succeeded for this commit
+        value: ${{ jobs.check.outputs.already_built }}
+
+jobs:
+  check:
+    # Match the caller's runner pool so we don't reintroduce a hosted-queue wait.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
+    permissions:
+      actions: read
+    outputs:
+      already_built: ${{ steps.check.outputs.already_built }}
+    steps:
+      - name: Look for a prior successful run of this workflow on this commit
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_FILE: ${{ inputs.workflow_file }}
+        run: |
+          count=$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?head_sha=${GITHUB_SHA}&status=success&per_page=1" \
+            | grep -oE '"total_count"[[:space:]]*:[[:space:]]*[0-9]+' \
+            | head -n1 \
+            | grep -oE '[0-9]+')
+          if [ "${count:-0}" -gt 0 ]
+          then
+            echo "already_built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_built=false" >> "$GITHUB_OUTPUT"
+          fi

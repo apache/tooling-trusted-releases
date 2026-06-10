@@ -14,37 +14,18 @@ env:
   UV_VERSION: '0.8.8'
 
 jobs:
-  # Gate - if this exact commit already passed on another branch (recorded as a
-  # build-result status) then skip the main job below. Runs on the same runner
-  # pool as the build so we don't reintroduce a wait on the hosted queue.
+  # Skip the build if this commit already passed on another branch.
   dedup:
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
+    uses: ./.github/workflows/dedup.yml
     permissions:
-      statuses: read
-    outputs:
-      already_built: ${{ steps.check.outputs.already_built }}
-    steps:
-      - name: Look for an existing build-result status on this commit
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          body=$(curl -fsS \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status")
-          if echo "$body" | grep -Eq '"context"[[:space:]]*:[[:space:]]*"build-result"'
-          then
-            echo "already_built=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "already_built=false" >> "$GITHUB_OUTPUT"
-          fi
+      actions: read
+    with:
+      workflow_file: build.yml
 
   test:
     needs: dedup
     permissions:
       contents: read
-      statuses: write
     # Run on our own runner for trusted sources (push/dispatch, or a same-repo
     # PR); fork PRs fall back to the hosted runner so they never touch it.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
@@ -92,14 +73,3 @@ jobs:
       - name: Run Playwright end-to-end tests
         run: |
           sh tests/run-playwright.sh
-
-      - name: Record a build-result status for this commit
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-            -d "{\"state\":\"success\",\"context\":\"build-result\",\"description\":\"Build and test passed\",\"target_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"

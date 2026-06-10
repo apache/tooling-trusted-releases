@@ -15,7 +15,18 @@ env:
   BIOME_VERSION: '2.3.8'
 
 jobs:
+  # Skip the analysis if this commit already passed on another branch.
+  dedup:
+    uses: ./.github/workflows/dedup.yml
+    permissions:
+      actions: read
+    with:
+      workflow_file: analyze.yml
+
   analyze:
+    needs: dedup
+    # Manual dispatch always runs so we can force a re-analysis.
+    if: needs.dedup.outputs.already_built != 'true' || github.event_name == 'workflow_dispatch'
     # Trusted sources on our own runner; fork PRs on the hosted runner.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
     strategy:
