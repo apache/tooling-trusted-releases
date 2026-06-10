@@ -71,6 +71,7 @@ def _artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: 
     artifact_url: str | None = None
     signature_url: str | None = None
     checksum_url: str | None = None
+    sbom_url: str | None = None
     if downloadable and (committee is not None):
         artifact_url = util.public_download_url(
             committee, suffix, util.DownloadFile.ARTIFACT, filename=row.artifact_path
@@ -83,17 +84,21 @@ def _artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: 
             checksum_url = util.public_download_url(
                 committee, suffix, util.DownloadFile.METADATA, filename=row.checksum_path
             )
+        if row.sbom_path:
+            sbom_url = util.public_download_url(committee, suffix, util.DownloadFile.METADATA, filename=row.sbom_path)
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
         classification=row.classification,
         signature_path=row.signature_path,
         checksum_path=row.checksum_path,
+        sbom_path=row.sbom_path,
         key_fingerprint=row.key_fingerprint,
         svn_revision=row.svn_revision,
         downloadable=downloadable,
         artifact_url=artifact_url,
         signature_url=signature_url,
         checksum_url=checksum_url,
+        sbom_url=sbom_url,
     )
 
 

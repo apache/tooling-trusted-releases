@@ -1880,6 +1880,8 @@ class Artifact(sqlmodel.SQLModel, table=True):
     signature_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.asc"))
     # Path to the strongest available checksum file (SHA-512 preferred over SHA-256 over MD5)
     checksum_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.sha512"))
+    # Path to the paired CycloneDX SBOM, if one rides alongside the artifact (.cdx.json preferred over .cdx.xml)
+    sbom_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.cdx.json"))
     classification: str | None = sqlmodel.Field(default=None, **example("source"))
     # Per-artifact SVN revision - not all artifacts in a release are added in the same commit
     svn_revision: int | None = sqlmodel.Field(default=None, index=True, **example(12345))

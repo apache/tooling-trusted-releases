@@ -491,6 +491,12 @@ class CommitteeMember(CommitteeParticipant):
                 if candidate in rel_paths:
                     checksum_path = candidate
                     break
+            sbom_path: str | None = None
+            for suffix in (".cdx.json", ".cdx.xml"):
+                candidate = f"{rel}{suffix}"
+                if candidate in rel_paths:
+                    sbom_path = candidate
+                    break
             fingerprint = (
                 await self.__signature_fingerprint(release, parent_revision_number, signature_path)
                 if signature_path is not None
@@ -505,6 +511,7 @@ class CommitteeMember(CommitteeParticipant):
                     key_fingerprint=fingerprint,
                     signature_path=signature_path,
                     checksum_path=checksum_path,
+                    sbom_path=sbom_path,
                     classification=classifications.get(rel),
                     svn_revision=svn_revision,
                     download_path_suffix=str(download_path_suffix) if download_path_suffix is not None else None,

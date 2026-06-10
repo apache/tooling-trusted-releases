@@ -56,6 +56,7 @@ def _artifact(
     *,
     release: sql.Release | None = None,
     svn_revision: int | None = None,
+    sbom_path: str | None = None,
 ) -> sql.Artifact:
     return sql.Artifact(
         project_key=project.key,
@@ -64,6 +65,7 @@ def _artifact(
         release_key=(release.key if release is not None else None),
         release=release,
         svn_revision=svn_revision,
+        sbom_path=sbom_path,
     )
 
 
@@ -129,6 +131,18 @@ def test_only_released_versions_are_downloadable() -> None:
     assert versions["5.0.2"].artifacts[0].downloadable is True
     assert versions["4.1.7"].artifacts[0].downloadable is False
     assert versions["4.1.7"].svn_revision == 28114
+
+
+def test_paired_sbom_shown_on_catalog_artifact() -> None:
+    project = _project()
+    released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
+    artifacts = [
+        _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released, sbom_path="a-5.0.2.tar.gz.cdx.json"),
+    ]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+
+    assert versions["5.0.2"].artifacts[0].sbom_path == "a-5.0.2.tar.gz.cdx.json"
 
 
 def test_versions_are_newest_first() -> None:

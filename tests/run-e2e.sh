@@ -5,18 +5,16 @@ cd "$(dirname "$0")"
 
 echo "Running ATR e2e tests..."
 
+echo "Resetting the ATR dev container so each run starts from a clean database..."
+docker compose down atr-dev --volumes >/dev/null 2>&1 || true
+docker compose up atr-dev -d --build --wait
+
 if ! docker compose ps atr-dev --status running -q 2>/dev/null | grep -q .
 then
-  echo "Starting ATR dev container..."
-  docker compose up atr-dev -d --build --wait
-
-  if ! docker compose ps atr-dev --status running -q 2>/dev/null | grep -q .
-  then
-    echo "ERROR: the atr-dev container failed to start or crashed during startup"
-    echo "Container logs:"
-    docker compose logs atr-dev --tail 100
-    exit 1
-  fi
+  echo "ERROR: the atr-dev container failed to start or crashed during startup"
+  echo "Container logs:"
+  docker compose logs atr-dev --tail 100
+  exit 1
 fi
 
 docker compose build e2e-dev

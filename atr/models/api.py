@@ -39,14 +39,16 @@ class CatalogArtifact(schema.Strict):
     classification: str | None
     signature_path: str | None
     checksum_path: str | None
+    sbom_path: str | None
     key_fingerprint: str | None
     svn_revision: int | None
     downloadable: bool
-    # Public download URLs: the artifact via the mirror network, its signature and
-    # checksum from downloads.apache.org. None when the version is not downloadable.
+    # Public download URLs: the artifact via the mirror network, its signature,
+    # checksum and SBOM from downloads.apache.org. None when the version is not downloadable.
     artifact_url: str | None
     signature_url: str | None
     checksum_url: str | None
+    sbom_url: str | None
 
 
 class CatalogVersion(schema.Strict):
