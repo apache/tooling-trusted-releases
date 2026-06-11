@@ -19,10 +19,14 @@
 
 import datetime
 import pathlib
+import subprocess
 import sys
 from typing import Final
 
 _MAX_AGE_DAYS: Final[int] = 30
+
+# With a relative exclude-newer-span, uv records only this placeholder
+_SENTINEL_PREFIX: Final[str] = "0001-01-01"
 
 
 def main() -> None:
@@ -31,15 +35,11 @@ def main() -> None:
         print("ERROR: uv.lock not found", file=sys.stderr)
         sys.exit(1)
 
-    exclude_newer = _parse_exclude_newer(lock_path)
-    if exclude_newer is None:
-        print("ERROR: No exclude-newer timestamp in uv.lock", file=sys.stderr)
-        print("Run: make update-deps", file=sys.stderr)
-        sys.exit(1)
-
-    timestamp = _parse_timestamp(exclude_newer)
+    options = _parse_options(lock_path)
+    timestamp = _last_updated(lock_path, options)
     if timestamp is None:
-        print(f"ERROR: Could not parse timestamp: {exclude_newer}", file=sys.stderr)
+        print("ERROR: Could not determine when uv.lock was last updated", file=sys.stderr)
+        print("Run: make update-deps", file=sys.stderr)
         sys.exit(1)
 
     now = datetime.datetime.now(datetime.UTC)
@@ -47,19 +47,68 @@ def main() -> None:
 
     if age > datetime.timedelta(days=_MAX_AGE_DAYS):
         print(f"ERROR: Dependencies are {age.days} days old (the limit is {_MAX_AGE_DAYS} days)", file=sys.stderr)
-        print(f"Last updated: {exclude_newer}", file=sys.stderr)
+        print(f"Last updated: {timestamp.isoformat()}", file=sys.stderr)
         print("Run: make update-deps", file=sys.stderr)
         sys.exit(1)
 
     print(f"OK: Dependencies are {age.days} days old (the limit is {_MAX_AGE_DAYS} days)")
 
 
-def _parse_exclude_newer(lock_path: pathlib.Path) -> str | None:
+def _last_updated(lock_path: pathlib.Path, options: dict[str, str]) -> datetime.datetime | None:
+    exclude_newer = options.get("exclude-newer")
+    if exclude_newer is not None and not exclude_newer.startswith(_SENTINEL_PREFIX):
+        return _parse_timestamp(exclude_newer)
+    if "exclude-newer-span" not in options:
+        return None
+    # The lockfile carries no resolution timestamp in span mode, so we use
+    # git instead, counting uncommitted changes to uv.lock as an update now
+    if _is_modified(lock_path):
+        return datetime.datetime.now(datetime.UTC)
+    return _last_commit_time(lock_path)
+
+
+def _parse_options(lock_path: pathlib.Path) -> dict[str, str]:
+    options: dict[str, str] = {}
+    in_options = False
     for line in lock_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("exclude-newer"):
-            _, _, value = line.partition("=")
-            return value.strip().strip('"')
-    return None
+        if line.startswith("["):
+            in_options = line.strip() == "[options]"
+            continue
+        if not in_options:
+            continue
+        key, eq, value = line.partition("=")
+        if not eq:
+            continue
+        value = value.strip()
+        if value.startswith('"'):
+            value = value[1:].partition('"')[0]
+        options[key.strip()] = value
+    return options
+
+
+def _is_modified(lock_path: pathlib.Path) -> bool:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--", str(lock_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip() != ""
+
+
+def _last_commit_time(lock_path: pathlib.Path) -> datetime.datetime | None:
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%cI", "--", str(lock_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    return _parse_timestamp(text)
 
 
 def _parse_timestamp(timestamp_str: str) -> datetime.datetime | None:

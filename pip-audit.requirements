@@ -86,7 +86,7 @@ cyclonedx-python-lib==11.9.0
 decouple-types==1.0.2
 defusedxml==0.7.1
     # via py-serializable
-distlib==0.4.2
+distlib==0.4.1
     # via virtualenv
 djlint==1.39.0
 dnspython==2.8.0
