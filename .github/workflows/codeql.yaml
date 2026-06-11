@@ -37,12 +37,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
       - name: Start CodeQL
-        uses: github/codeql-action/init@267c4672a565967e4531438f2498370de5e8a98d
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           languages: ${{ matrix.language }}
           queries: ${{ matrix.query_suite }}
@@ -51,7 +51,7 @@ jobs:
 
       - name: Perform CodeQL analysis
         id: analyze
-        uses: github/codeql-action/analyze@267c4672a565967e4531438f2498370de5e8a98d
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           category: "/language:${{ matrix.language }}"
           output: sarif-results
@@ -79,7 +79,7 @@ jobs:
 
       - name: Dismiss alerts of suppressed results
         if: github.ref == 'refs/heads/main'
-        uses: advanced-security/dismiss-alerts@046d6b48d2e43cf563f96f67332c47c432eff83e
+        uses: advanced-security/dismiss-alerts@046d6b48d2e43cf563f96f67332c47c432eff83e # v2.0.2
         with:
           sarif-id: ${{ steps.analyze.outputs.sarif-id }}
           sarif-file: ${{ steps.sarif-stats.outputs.sarif-file }}
