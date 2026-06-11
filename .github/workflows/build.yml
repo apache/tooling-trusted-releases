@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  UV_VERSION: '0.8.8'
+  UV_VERSION: '0.11.20'
 
 jobs:
   # Skip the build if this commit already passed on another branch.
@@ -54,16 +54,9 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
-      # Cache packages per python version, and reuse until lockfile changes
-      - name: Cache python packages
-        id: cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: .venv
-          key: venv-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
       - name: Install dependencies
-        #if: steps.cache.outputs.cache-hit != 'true'
         run: uv sync --frozen --no-dev --group test
 
       - name: Run unit tests

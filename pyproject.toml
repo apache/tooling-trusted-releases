@@ -169,3 +169,4 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "3 days"
+required-version = ">=0.9.17"
