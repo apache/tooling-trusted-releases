@@ -1307,7 +1307,6 @@ class CommitteeMember(CommitteeParticipant):
         error string if the release can't be archived, or None on success.
         SVN-side handoff to archive.apache.org is not yet implemented.
         """
-        via = sql.validate_instrumented_attribute
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
@@ -1315,10 +1314,19 @@ class CommitteeMember(CommitteeParticipant):
         ).get()
         if release is None:
             return f"Release {project_key!s} {version_key!s} not found"
+        return await self.__archive_release(project_key, version_key, release)
+
+    async def __archive_release(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        release: sql.Release,
+    ) -> str | None:
         if release.phase != sql.ReleasePhase.RELEASE:
             return f"Release {project_key!s} {version_key!s} is not in the release phase"
 
         archive_date = datetime.datetime.now(datetime.UTC)
+        via = sql.validate_instrumented_attribute
         update_stmt = (
             sqlmodel.update(sql.Release)
             .where(via(sql.Release.key) == release.key)

@@ -47,15 +47,15 @@ async def status_check(
             log.warning(f"Distribution {name} has no committee, skipping")
             continue
         try:
-            async with storage.write_as_committee_member(dist.release.project.committee_key, dist.created_by) as w:
+            async with storage.write_as_project_release_manager(dist.release.safe_project_key, dist.created_by) as warm:
                 if dist.retries >= _RETRY_LIMIT:
-                    await w.distributions.delete_distribution(
+                    await warm.distributions.delete_distribution(
                         dist.safe_release_key, dist.platform, dist.owner_namespace, dist.package, dist.version
                     )
                     log.error(f"Distribution {name} failed {_RETRY_LIMIT} times, skipping")
                     continue
                 log.warning(f"Retrying distribution {name}")
-                await w.distributions.record_from_data(
+                await warm.distributions.record_from_data(
                     dist.safe_release_key,
                     dist.staging,
                     dd,

@@ -79,81 +79,60 @@ class _MockData:
         return SimpleNamespace(all=all_mock)
 
 
-def _make_committee_member(data):
-    write = mock.MagicMock()
-    write.authorisation.asf_uid = "alice"
-    write_as = mock.MagicMock()
-    return policy_writer.CommitteeMember(write, write_as, data, "alpha")
+async def test_edit_cycle_dates_pairs_withdraw_when_changing_existing_date():
+    existing = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
+    cycle = _cycle(eod=existing)
+    data = _MockData(project=_project(), cycle=cycle, prior_event_id=42)
+    writer = _make_committee_member(data)
+    form = _cycle_dates_form(eod=datetime.date(2026, 7, 1))
+
+    await writer.edit_cycle_dates(form)
+
+    events = [e for e in data.added if isinstance(e, sql.LifecycleEvent)]
+    assert len(events) == 2
+    withdraw, new_event = events
+    assert withdraw.event is sql.LifecycleEventType.WITHDRAW
+    assert withdraw.target_event_id == 42
+    assert new_event.event is sql.LifecycleEventType.EOD
+    assert new_event.effective.date() == datetime.date(2026, 7, 1)
 
 
-def _cycle(project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):
-    return SimpleNamespace(
-        project_key=project_key,
-        cycle_key=cycle_key,
-        cycle=cycle_key.removeprefix(f"{project_key}-"),
-        eod=eod,
-        eos=eos,
-        eol=eol,
-        lts=lts,
-    )
+async def test_edit_cycle_dates_raises_when_cycle_missing():
+    data = _MockData(project=_project(), cycle=None)
+    writer = _make_committee_member(data)
+    form = _cycle_dates_form(eod=datetime.date(2026, 6, 1))
+
+    with pytest.raises(storage.AccessError, match="not found"):
+        await writer.edit_cycle_dates(form)
 
 
-def _project(
-    key="example", version_method=sql.VersionMethod.SIMPLE, version_pattern=None, cycle_match=None, branch_template=None
-):
-    return SimpleNamespace(
-        key=key,
-        version_method=version_method,
-        version_pattern=version_pattern,
-        cycle_match=cycle_match,
-        branch_template=branch_template,
-        mark_updated=lambda **_kwargs: None,
-    )
+async def test_edit_cycle_dates_rejects_cycle_belonging_to_other_project():
+    cycle = _cycle(project_key="otherproject")
+    data = _MockData(project=_project(), cycle=cycle)
+    writer = _make_committee_member(data)
+    form = _cycle_dates_form(project_key="example", eod=datetime.date(2026, 6, 1))
+
+    with pytest.raises(storage.AccessError, match="does not belong to project"):
+        await writer.edit_cycle_dates(form)
 
 
-def _release(version, project_key="example", cycle_key=None):
-    return SimpleNamespace(
-        version=version,
-        project_key=project_key,
-        cycle_key=cycle_key or f"{project_key}-default",
-    )
+async def test_edit_cycle_dates_skips_unchanged_date():
+    existing = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
+    cycle = _cycle(eod=existing)
+    data = _MockData(project=_project(), cycle=cycle)
+    writer = _make_committee_member(data)
+    form = _cycle_dates_form(eod=datetime.date(2026, 6, 1))
 
+    await writer.edit_cycle_dates(form)
 
-def _cycle_dates_form(*, project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):
-    return shared_projects.EditCycleDatesForm(
-        variant="edit_cycle_dates",
-        csrf_token="test",
-        project_key=safe.ProjectKey(project_key),
-        cycle_key=cycle_key,
-        eod=eod,
-        eos=eos,
-        eol=eol,
-        lts=lts,
-    )
-
-
-def _version_scheme_form(
-    *,
-    project_key="example",
-    version_method=sql.VersionMethod.SIMPLE,
-    version_pattern="",
-    cycle_match="",
-    branch_template="",
-):
-    return shared_projects.EditVersionSchemeForm(
-        variant="edit_version_scheme",
-        csrf_token="test",
-        project_key=safe.ProjectKey(project_key),
-        version_method=version_method,
-        version_pattern=version_pattern,
-        cycle_match=cycle_match,
-        branch_template=branch_template,
-    )
+    events = [e for e in data.added if isinstance(e, sql.LifecycleEvent)]
+    assert events == []
+    data.execute.assert_not_awaited()
 
 
 async def test_edit_cycle_dates_writes_event_when_setting_first_eod():
     cycle = _cycle()
-    data = _MockData(cycle=cycle)
+    data = _MockData(project=_project(), cycle=cycle)
     writer = _make_committee_member(data)
     form = _cycle_dates_form(eod=datetime.date(2026, 6, 1))
 
@@ -169,75 +148,22 @@ async def test_edit_cycle_dates_writes_event_when_setting_first_eod():
     data.commit.assert_awaited_once()
 
 
-async def test_edit_cycle_dates_pairs_withdraw_when_changing_existing_date():
-    existing = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
-    cycle = _cycle(eod=existing)
-    data = _MockData(cycle=cycle, prior_event_id=42)
-    writer = _make_committee_member(data)
-    form = _cycle_dates_form(eod=datetime.date(2026, 7, 1))
-
-    await writer.edit_cycle_dates(form)
-
-    events = [e for e in data.added if isinstance(e, sql.LifecycleEvent)]
-    assert len(events) == 2
-    withdraw, new_event = events
-    assert withdraw.event is sql.LifecycleEventType.WITHDRAW
-    assert withdraw.target_event_id == 42
-    assert new_event.event is sql.LifecycleEventType.EOD
-    assert new_event.effective.date() == datetime.date(2026, 7, 1)
-
-
-async def test_edit_cycle_dates_skips_unchanged_date():
-    existing = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
-    cycle = _cycle(eod=existing)
-    data = _MockData(cycle=cycle)
-    writer = _make_committee_member(data)
-    form = _cycle_dates_form(eod=datetime.date(2026, 6, 1))
-
-    await writer.edit_cycle_dates(form)
-
-    events = [e for e in data.added if isinstance(e, sql.LifecycleEvent)]
-    assert events == []
-    data.execute.assert_not_awaited()
-
-
-async def test_edit_cycle_dates_rejects_cycle_belonging_to_other_project():
-    cycle = _cycle(project_key="otherproject")
-    data = _MockData(cycle=cycle)
-    writer = _make_committee_member(data)
-    form = _cycle_dates_form(project_key="example", eod=datetime.date(2026, 6, 1))
-
-    with pytest.raises(storage.AccessError, match="does not belong to project"):
-        await writer.edit_cycle_dates(form)
-
-
-async def test_edit_cycle_dates_raises_when_cycle_missing():
-    data = _MockData(cycle=None)
-    writer = _make_committee_member(data)
-    form = _cycle_dates_form(eod=datetime.date(2026, 6, 1))
-
-    with pytest.raises(storage.AccessError, match="not found"):
-        await writer.edit_cycle_dates(form)
-
-
-async def test_edit_version_scheme_saves_all_fields_normalised():
+async def test_edit_version_scheme_moves_unmatched_releases_to_default():
     project = _project()
-    data = _MockData(project=project)
-    writer = _make_committee_member(data)
-    form = _version_scheme_form(
-        version_method=sql.VersionMethod.SEMVER,
-        version_pattern=r"^\d+\.\d+\.\d+$",
-        cycle_match=r"^(\d+)\.\d+\.\d+$",
-        branch_template="release-{cycle}",
+    releases = [_release("1.2.3"), _release("weird-version")]
+    default_cycle = SimpleNamespace(cycle_key="example-default")
+    data = _MockData(
+        project=project,
+        releases=releases,
+        cycles_by_key={"example-default": default_cycle},
     )
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(cycle_match=r"^(\d+)\.\d+\.\d+$")
 
     await writer.edit_version_scheme(form)
 
-    assert project.version_method is sql.VersionMethod.SEMVER
-    assert project.version_pattern == r"^\d+\.\d+\.\d+$"
-    assert project.cycle_match == r"^(\d+)\.\d+\.\d+$"
-    assert project.branch_template == "release-{cycle}"
-    data.commit.assert_awaited_once()
+    assert releases[0].cycle_key == "example-1"
+    assert releases[1].cycle_key == "example-default"
 
 
 async def test_edit_version_scheme_normalises_empty_strings_to_none():
@@ -255,36 +181,6 @@ async def test_edit_version_scheme_normalises_empty_strings_to_none():
     assert project.version_pattern is None
     assert project.cycle_match is None
     assert project.branch_template is None
-
-
-async def test_edit_version_scheme_rejects_invalid_cycle_match_regex():
-    project = _project()
-    data = _MockData(project=project)
-    writer = _make_committee_member(data)
-
-    with pytest.raises(pydantic.ValidationError, match="Cycle match is not a valid regex"):
-        form = _version_scheme_form(cycle_match="(unclosed")
-        await writer.edit_version_scheme(form)
-
-
-async def test_edit_version_scheme_rejects_cycle_match_without_capture_group():
-    project = _project()
-    data = _MockData(project=project)
-    writer = _make_committee_member(data)
-
-    with pytest.raises(pydantic.ValidationError, match="at least one capture group"):
-        form = _version_scheme_form(cycle_match=r"^\d+\.\d+\.\d+$")
-        await writer.edit_version_scheme(form)
-
-
-async def test_edit_version_scheme_rejects_invalid_version_pattern_regex():
-    project = _project()
-    data = _MockData(project=project)
-    writer = _make_committee_member(data)
-
-    with pytest.raises(pydantic.ValidationError, match="Version pattern is not a valid regex"):
-        form = _version_scheme_form(version_pattern="(unclosed")
-        await writer.edit_version_scheme(form)
 
 
 async def test_edit_version_scheme_raises_when_project_missing():
@@ -317,22 +213,54 @@ async def test_edit_version_scheme_reassigns_releases_into_new_cycles():
     assert {c.cycle_key for c in new_cycles} == {"example-0", "example-1"}
 
 
-async def test_edit_version_scheme_moves_unmatched_releases_to_default():
+async def test_edit_version_scheme_rejects_cycle_match_without_capture_group():
     project = _project()
-    releases = [_release("1.2.3"), _release("weird-version")]
-    default_cycle = SimpleNamespace(cycle_key="example-default")
-    data = _MockData(
-        project=project,
-        releases=releases,
-        cycles_by_key={"example-default": default_cycle},
-    )
+    data = _MockData(project=project)
     writer = _make_committee_member(data)
-    form = _version_scheme_form(cycle_match=r"^(\d+)\.\d+\.\d+$")
+
+    with pytest.raises(pydantic.ValidationError, match="at least one capture group"):
+        form = _version_scheme_form(cycle_match=r"^\d+\.\d+\.\d+$")
+        await writer.edit_version_scheme(form)
+
+
+async def test_edit_version_scheme_rejects_invalid_cycle_match_regex():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+
+    with pytest.raises(pydantic.ValidationError, match="Cycle match is not a valid regex"):
+        form = _version_scheme_form(cycle_match="(unclosed")
+        await writer.edit_version_scheme(form)
+
+
+async def test_edit_version_scheme_rejects_invalid_version_pattern_regex():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+
+    with pytest.raises(pydantic.ValidationError, match="Version pattern is not a valid regex"):
+        form = _version_scheme_form(version_pattern="(unclosed")
+        await writer.edit_version_scheme(form)
+
+
+async def test_edit_version_scheme_saves_all_fields_normalised():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(
+        version_method=sql.VersionMethod.SEMVER,
+        version_pattern=r"^\d+\.\d+\.\d+$",
+        cycle_match=r"^(\d+)\.\d+\.\d+$",
+        branch_template="release-{cycle}",
+    )
 
     await writer.edit_version_scheme(form)
 
-    assert releases[0].cycle_key == "example-1"
-    assert releases[1].cycle_key == "example-default"
+    assert project.version_method is sql.VersionMethod.SEMVER
+    assert project.version_pattern == r"^\d+\.\d+\.\d+$"
+    assert project.cycle_match == r"^(\d+)\.\d+\.\d+$"
+    assert project.branch_template == "release-{cycle}"
+    data.commit.assert_awaited_once()
 
 
 async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
@@ -352,3 +280,78 @@ async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
     assert releases[0].cycle_key == "example-0"
     new_cycles = [c for c in data.added if isinstance(c, sql.ProjectCycle)]
     assert new_cycles == []
+
+
+def _cycle(project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):
+    return SimpleNamespace(
+        project_key=project_key,
+        cycle_key=cycle_key,
+        cycle=cycle_key.removeprefix(f"{project_key}-"),
+        eod=eod,
+        eos=eos,
+        eol=eol,
+        lts=lts,
+    )
+
+
+def _cycle_dates_form(*, project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):
+    return shared_projects.EditCycleDatesForm(
+        variant="edit_cycle_dates",
+        csrf_token="test",
+        project_key=safe.ProjectKey(project_key),
+        cycle_key=cycle_key,
+        eod=eod,
+        eos=eos,
+        eol=eol,
+        lts=lts,
+    )
+
+
+def _make_committee_member(data):
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "alice"
+    write_as = mock.MagicMock()
+    return policy_writer.CommitteeMember(write, write_as, data, "alpha")
+
+
+def _project(
+    key="example", version_method=sql.VersionMethod.SIMPLE, version_pattern=None, cycle_match=None, branch_template=None
+):
+    return SimpleNamespace(
+        key=key,
+        status=sql.ProjectStatus.ACTIVE,
+        is_active=True,
+        committee_key="alpha",
+        version_method=version_method,
+        version_pattern=version_pattern,
+        cycle_match=cycle_match,
+        branch_template=branch_template,
+        mark_updated=lambda **_kwargs: None,
+    )
+
+
+def _release(version, project_key="example", cycle_key=None):
+    return SimpleNamespace(
+        version=version,
+        project_key=project_key,
+        cycle_key=cycle_key or f"{project_key}-default",
+    )
+
+
+def _version_scheme_form(
+    *,
+    project_key="example",
+    version_method=sql.VersionMethod.SIMPLE,
+    version_pattern="",
+    cycle_match="",
+    branch_template="",
+):
+    return shared_projects.EditVersionSchemeForm(
+        variant="edit_version_scheme",
+        csrf_token="test",
+        project_key=safe.ProjectKey(project_key),
+        version_method=version_method,
+        version_pattern=version_pattern,
+        cycle_match=cycle_match,
+        branch_template=branch_template,
+    )

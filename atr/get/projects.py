@@ -261,9 +261,18 @@ async def view(
             )
 
     is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
+    is_release_manager = bool(project.committee and user.is_release_manager(project.committee, session.uid))
     is_privileged = session.is_admin
-    can_edit = (is_committee_member or is_privileged) and project.status != sql.ProjectStatus.RETIRED
-    is_sole_active_project = project.committee is not None and active_committee_projects <= 1
+    can_edit_metadata = (is_committee_member or is_release_manager or is_privileged) and (
+        project.status != sql.ProjectStatus.RETIRED
+    )
+    can_edit_policy = (is_committee_member or is_release_manager or is_privileged) and (
+        project.status == sql.ProjectStatus.ACTIVE
+    )
+    can_manage_taxonomy = (is_committee_member or is_privileged) and (project.status != sql.ProjectStatus.RETIRED)
+    can_manage_project_actions = is_committee_member or is_privileged
+    can_start_release = (is_committee_member or is_privileged) and (project.status != sql.ProjectStatus.RETIRED)
+    is_sole_active_project = (project.committee is not None) and (active_committee_projects <= 1)
 
     page = htm.Block()
 
@@ -298,14 +307,23 @@ async def view(
                 ]
             ]
         )
-    page.append(await _render_header_cards(project, can_edit, session, is_sole_active_project, is_privileged))
+    page.append(
+        await _render_header_cards(project, can_manage_project_actions, session, is_sole_active_project, is_privileged)
+    )
 
-    tabs = await _generate_tabs(can_edit, project, cycles)
+    tabs = await _generate_tabs(
+        can_edit_metadata,
+        can_edit_policy,
+        can_manage_taxonomy,
+        can_start_release,
+        project,
+        cycles,
+    )
     page.append(tabs)
 
     content = page.collect()
 
-    javascripts = ["copy-variable"] if can_edit else []
+    javascripts = ["copy-variable"] if can_edit_policy else []
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
@@ -473,7 +491,14 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
     return delete_form
 
 
-async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.ProjectCycle]) -> htpy.Element:
+async def _generate_tabs(
+    can_edit_metadata: bool,
+    can_edit_policy: bool,
+    can_manage_taxonomy: bool,
+    can_start_release: bool,
+    project: sql.Project,
+    cycles: list[sql.ProjectCycle],
+) -> htpy.Element:
     tab_items: list[htm.Tab] = [
         htm.Tab(
             key="releases",
@@ -481,27 +506,32 @@ async def _generate_tabs(can_edit: bool, project: sql.Project, cycles: list[sql.
             render=lambda: _render_releases_tab(
                 project,
                 cycles,
-                can_edit=can_edit,
+                can_edit_policy=can_edit_policy,
+                can_start_release=can_start_release,
             ),
         ),
         htm.Tab(
             key="metadata",
             label="Metadata",
-            render=lambda: _render_metadata_tab(project, can_edit=can_edit),
+            render=lambda: _render_metadata_tab(
+                project,
+                can_edit_metadata=can_edit_metadata,
+                can_manage_taxonomy=can_manage_taxonomy,
+            ),
         ),
     ]
 
-    if can_edit:
+    if can_edit_policy:
         tab_items.append(
             htm.Tab(
                 key="lifecycle",
                 label="Lifecycle",
-                render=lambda: _render_lifecycle_tab(project, can_edit=can_edit),
+                render=lambda: _render_lifecycle_tab(project, can_edit_policy=can_edit_policy),
             )
         )
 
     if project.is_active:
-        if can_edit:
+        if can_edit_policy:
             tab_items.extend(
                 [
                     htm.Tab(
@@ -850,12 +880,16 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
 
 
 async def _render_header_cards(
-    project: sql.Project, can_edit: bool, session: web.Committer, is_sole_active_project: bool, is_privileged: bool
+    project: sql.Project,
+    can_manage_project_actions: bool,
+    session: web.Committer,
+    is_sole_active_project: bool,
+    is_privileged: bool,
 ) -> htm.Element:
     block = htm.Block(htm.div, classes=".row.row-cols-1.row-cols-md-2.row-cols-lg-3.row-cols-xl-3.g-4")
     block.div(".col")[_render_project_label_card(project)]
     block.div(".col")[_render_pmc_card(project)]
-    if can_edit:
+    if can_manage_project_actions:
         block.div(".col.col-sm-12.col-md-12.col-lg-4")[
             await _render_actions_card(project, session, is_sole_active_project, is_privileged)
         ]
@@ -910,9 +944,9 @@ def _render_languages_section(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-async def _render_lifecycle_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
+async def _render_lifecycle_tab(project: sql.Project, *, can_edit_policy: bool) -> htm.Element:
     block = htm.Block()
-    if can_edit:
+    if can_edit_policy:
         block.append(await _render_version_scheme_form(project))
     return block.collect()
 
@@ -981,14 +1015,20 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
     return card.collect()
 
 
-async def _render_metadata_tab(project: sql.Project, *, can_edit: bool) -> htm.Element:
+async def _render_metadata_tab(
+    project: sql.Project,
+    *,
+    can_edit_metadata: bool,
+    can_manage_taxonomy: bool,
+) -> htm.Element:
     block = htm.Block()
-    if can_edit:
+    if can_edit_metadata:
         block.append(await _render_metadata_form(project))
-        block.append(_render_categories_section(project))
-        block.append(_render_languages_section(project))
     else:
         block.append(_render_metadata_card(project))
+    if can_manage_taxonomy:
+        block.append(_render_categories_section(project))
+        block.append(_render_languages_section(project))
     return block.collect()
 
 
@@ -1132,12 +1172,13 @@ async def _render_releases_tab(
     project: sql.Project,
     cycles: list[sql.ProjectCycle],
     *,
-    can_edit: bool,
+    can_edit_policy: bool,
+    can_start_release: bool,
 ) -> htm.Element:
     block = htm.Block(htm.div, classes=".card.mb-4")
     block.div(".card-header.bg-light")[htm.h3(".mb-0")["Project releases"]]
     with block.block(htm.div, classes=".card-body") as body:
-        if can_edit:
+        if can_start_release:
             body.p(".mb-4")[
                 htm.a(
                     ".btn.btn-sm.btn-outline-primary",
@@ -1150,7 +1191,7 @@ async def _render_releases_tab(
 
         # Stay flat for projects with only the implicit "default" cycle and no
         # cycle dates set. Once cycles get used or dates get filled in, headings
-        # surface automatically. The card / form surfaces whenever can_edit, so a
+        # surface automatically. The card / form surfaces whenever policy can be edited, so a
         # PMC of a simple-default project can still set eod/eos/eol/lts.
         show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
 
@@ -1173,7 +1214,7 @@ async def _render_releases_tab(
 
             cycle_has_dates = _cycle_has_dates(cycle)
             cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)
-            if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit):
+            if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit_policy):
                 continue
 
             if show_cycle_heading:
@@ -1182,7 +1223,7 @@ async def _render_releases_tab(
             # Skip cycle dates UI for the default cycle - it's the catch-all for
             # projects without cycle_match and shouldn't carry lifecycle dates.
             if cycle.cycle != "default":
-                if can_edit:
+                if can_edit_policy:
                     body.append(await _render_cycle_dates_form(project, cycle))
                 elif cycle_has_dates:
                     body.append(_render_cycle_dates_card(cycle))

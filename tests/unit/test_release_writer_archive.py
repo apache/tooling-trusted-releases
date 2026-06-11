@@ -87,6 +87,7 @@ async def test_archive_succeeds_and_writes_lifecycle_event():
     update_result = mock.MagicMock()
     update_result.rowcount = 1
     mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+    object.__setattr__(member, "_CommitteeMember__remove_from_downloads", mock.AsyncMock())
 
     error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
     assert error is None
@@ -150,6 +151,4 @@ def _make_member(release_result: object) -> release.CommitteeMember:
     mock_write_as = mock.MagicMock()
 
     member = release.CommitteeMember(mock_write, mock_write_as, mock_data, "test")
-    # Skip the filesystem-side cleanup - covered by integration tests.
-    object.__setattr__(member, "_CommitteeMember__remove_from_downloads", mock.AsyncMock())
     return member

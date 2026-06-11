@@ -42,10 +42,10 @@ async def test_announce_release_blocks_retired(monkeypatch: pytest.MonkeyPatch) 
     )
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
-    writer = object.__new__(announce.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "tester"
-    writer._CommitteeMember__committee_key = "project"
+    writer = object.__new__(announce.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.release(
@@ -77,10 +77,10 @@ async def test_checks_ignore_add_propagates_chokepoint_block() -> None:
 async def test_distributions_automate_blocks_retired() -> None:
     data = mock.MagicMock()
     data.project = mock.MagicMock(return_value=_query_returning(_retired_project()))
-    writer = object.__new__(distributions.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "tester"
-    writer._CommitteeMember__committee_key = "project"
+    writer = object.__new__(distributions.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     platform = next(iter(sql.DistributionPlatform))
     with pytest.raises(storage.AccessError, match="archived"):
@@ -103,10 +103,10 @@ async def test_distributions_automate_blocks_retired() -> None:
 async def test_distributions_record_blocks_retired_via_release_lookup() -> None:
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
-    writer = object.__new__(distributions.CommitteeMember)
-    writer._CommitteeMember__data = data
-    writer._CommitteeMember__asf_uid = "tester"
-    writer._CommitteeMember__committee_key = "project"
+    writer = object.__new__(distributions.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     platform = next(iter(sql.DistributionPlatform))
     with pytest.raises(storage.AccessError, match="archived"):

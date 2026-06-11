@@ -240,9 +240,9 @@ async def _process_compose_form(
     project_key = compose_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_compose(compose_form)
+            await warm.policy.edit_compose(compose_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -265,9 +265,9 @@ async def _process_edit_cycle_dates_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_cycle_dates(edit_form)
+            await warm.policy.edit_cycle_dates(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -289,9 +289,9 @@ async def _process_edit_metadata_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.project.edit_metadata(edit_form)
+            await warm.project.edit_metadata(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -313,9 +313,9 @@ async def _process_edit_version_scheme_form(
     project_key = edit_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_version_scheme(edit_form)
+            await warm.policy.edit_version_scheme(edit_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -339,9 +339,9 @@ async def _process_finish_form(
     project_key = finish_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_finish(finish_form)
+            await warm.policy.edit_finish(finish_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -414,9 +414,9 @@ async def _process_trusted_publishing_form(
     project_key = tp_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_trusted_publishing(tp_form)
+            await warm.policy.edit_trusted_publishing(tp_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,
@@ -437,9 +437,9 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
     project_key = vote_form.project_key
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(project_key)
+        warm = await write.as_project_release_manager(project_key)
         try:
-            await wacm.policy.edit_vote(vote_form)
+            await warm.policy.edit_vote(vote_form)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.view,

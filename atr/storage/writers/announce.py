@@ -92,11 +92,11 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsCommitteeMember,
+        write_as: storage.WriteAsReleaseManager,
         data: db.Session,
         committee_key: str,
     ):
@@ -122,6 +122,8 @@ class CommitteeMember(CommitteeParticipant):
         subject_template_hash: str | None = None,
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
+        *,
+        auto_archive_prior: bool = False,
     ) -> None:
         unfinished_dir: str = ""
         finished_dir: str = ""
@@ -132,6 +134,7 @@ class CommitteeMember(CommitteeParticipant):
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
             latest_revision_number=str(preview_revision_number),
             _project_release_policy=True,
+            _committee=True,
             _revisions=True,
             _distributions=True,
             _release_policy=True,
@@ -141,6 +144,8 @@ class CommitteeMember(CommitteeParticipant):
                 status=404,
             )
         )
+        if release.project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
         storage.ensure_project_active(release.project)
 
         # Loaded the release first so a project's stored announce recipients can
@@ -321,6 +326,114 @@ class CommitteeMember(CommitteeParticipant):
                 f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed.",
                 status=500,
             )
+        await self.__archive_prior_release(release, auto_archive_prior)
+
+    async def __archive_prior_release(self, release_row: sql.Release, auto_archive_prior: bool) -> None:
+        if not auto_archive_prior:
+            return
+        if not release_row.archive_prior_release:
+            return
+        if not release_row.project.policy_auto_archive_prior_release:
+            return
+        archive_prior = await interaction.prior_release_for_archive(
+            release_row.project,
+            release_row.version,
+            caller_data=self.__data,
+        )
+        if archive_prior is None:
+            return
+        if archive_prior.project_key != release_row.project_key:
+            raise storage.AccessError("Release announced, but resolved prior release belongs to another project")
+        try:
+            archive_error = await self.__archive_release(
+                release_row.safe_project_key,
+                archive_prior.safe_version_key,
+                archive_prior,
+            )
+        except Exception as e:
+            raise storage.AccessError(
+                f"Release announced, but archiving prior release '{archive_prior.version}' failed: {e!s}",
+                status=500,
+            ) from e
+        if archive_error is not None:
+            raise storage.AccessError(
+                f"Release announced, but archiving prior release '{archive_prior.version}' failed: {archive_error}",
+                status=500,
+            )
+
+    async def __archive_release(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        release_row: sql.Release,
+    ) -> str | None:
+        if release_row.phase != sql.ReleasePhase.RELEASE:
+            return f"Release {project_key!s} {version_key!s} is not in the release phase"
+
+        archive_date = datetime.datetime.now(datetime.UTC)
+        via = sql.validate_instrumented_attribute
+        update_stmt = (
+            sqlmodel.update(sql.Release)
+            .where(via(sql.Release.key) == release_row.key)
+            .where(via(sql.Release.archived).is_(None))
+            .values(archived=archive_date)
+        )
+        update_result = await self.__data.execute_query(update_stmt)
+        if getattr(update_result, "rowcount", 0) != 1:
+            return f"Release {project_key!s} {version_key!s} is already archived"
+
+        await self.__remove_from_downloads(release_row)
+
+        self.__data.add(
+            sql.LifecycleEvent(
+                project_key=release_row.project_key,
+                cycle_key=release_row.cycle_key,
+                version_key=release_row.key,
+                event=sql.LifecycleEventType.ARCHIVE,
+                effective=archive_date,
+                published=archive_date,
+            )
+        )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            archived=archive_date.isoformat(),
+        )
+        return None
+
+    async def __remove_from_downloads(self, release_row: sql.Release) -> None:
+        try:
+            await self.__release_download_links_delete(release_row)
+        except Exception:
+            log.exception(
+                f"Error removing download hard links for release {release_row.key!r}; continuing with archive"
+            )
+
+    async def __release_download_links_delete(self, release_row: sql.Release) -> None:
+        finished_dir = paths.release_directory(release_row)
+        if not await aiofiles.os.path.isdir(finished_dir):
+            return
+        release_inodes: set[int] = set()
+        async for file_path in util.paths_recursive_all(finished_dir):
+            try:
+                stat_result = await aiofiles.os.stat(finished_dir / file_path)
+            except OSError:
+                continue
+            release_inodes.add(stat_result.st_ino)
+        if not release_inodes:
+            return
+        downloads_dir = paths.get_downloads_dir()
+        async for link_path in util.paths_recursive_all(downloads_dir):
+            full_link_path = downloads_dir / link_path
+            try:
+                link_stat = await aiofiles.os.stat(full_link_path)
+            except OSError:
+                continue
+            if link_stat.st_ino in release_inodes:
+                await aiofiles.os.remove(full_link_path)
+                log.info(f"Deleted download hard link: {full_link_path}")
 
     async def __warn_publication_artifacts(
         self,
@@ -517,3 +630,22 @@ class CommitteeMember(CommitteeParticipant):
                     download_path_suffix=str(download_path_suffix) if download_path_suffix is not None else None,
                 )
             )
+
+
+class CommitteeMember(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeMember,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key

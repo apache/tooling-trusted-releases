@@ -141,6 +141,20 @@ async def test_is_binding_for_release_uses_explicit_voter_and_vote_round(monkeyp
     assert query.get.await_count == 2
 
 
+def test_is_release_manager_requires_designation_and_committer_membership() -> None:
+    committee = sql.Committee(
+        key="example",
+        name="Example",
+        committers=["alice", "bob"],
+        release_managers=["alice", "carol"],
+    )
+
+    assert user.is_release_manager(committee, "alice") is True
+    assert user.is_release_manager(committee, "bob") is False
+    assert user.is_release_manager(committee, "carol") is False
+    assert user.is_release_manager(None, "alice") is False
+
+
 @contextlib.asynccontextmanager
 async def _mock_db_session(data: mock.MagicMock) -> AsyncIterator[mock.MagicMock]:
     yield data

@@ -469,8 +469,6 @@ async def distribution_record(
             project_key=str(data.project),
             version=str(data.version),
         ).demand(exceptions.NotFound(f"Release {data.project!s} {data.version!s} not found"))
-    if release.committee is None:
-        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -478,9 +476,8 @@ async def distribution_record(
         version=data.distribution_version,
         details=data.details,
     )
-    async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(release.committee.key)
-        _dist, _added, metadata = await wacm.distributions.record_from_data(
+    async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
+        _dist, _added, metadata = await warm.distributions.record_from_data(
             release.safe_key,
             data.staging,
             dd,
@@ -519,8 +516,6 @@ async def distribution_record_from_workflow(
         await _data.task(id=int(data.task_id), asf_uid=data.asf_uid).demand(exceptions.NotFound("Task not found"))
     util.validate_distribution_owner_namespace(data.platform, data.distribution_owner_namespace)
     # TODO: Split the below code into a new function and reuse in /publisher and /distribution / record.
-    if release.committee is None:
-        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -528,8 +523,8 @@ async def distribution_record_from_workflow(
         version=data.distribution_version,
         details=data.details,
     )
-    async with storage.write_as_committee_member(release.committee.key, data.asf_uid) as wacm:
-        _dist, _added, metadata = await wacm.distributions.record_from_data(
+    async with storage.write_as_project_release_manager(release.safe_project_key, data.asf_uid) as warm:
+        _dist, _added, metadata = await warm.distributions.record_from_data(
             release.safe_key, data.staging, dd, allow_retries=True
         )
         if metadata is None:
@@ -929,8 +924,8 @@ async def policy_update(
     """
     asf_uid = _jwt_asf_uid()
     try:
-        async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
-            await wacm.policy.edit_policy(data.project, data)
+        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
+            await warm.policy.edit_policy(data.project, data)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     except ValueError as e:
@@ -1070,8 +1065,6 @@ async def publisher_distribution_record(
             project_key=project.key,
             version=str(data.version),
         ).demand(exceptions.NotFound(f"Release {project.key} {data.version!s} not found"))
-    if release.committee is None:
-        raise exceptions.InternalServerError(f"Release {release.key} has no committee")
     dd = models.distribution.Data(
         platform=data.platform,
         owner_namespace=data.distribution_owner_namespace,
@@ -1079,9 +1072,8 @@ async def publisher_distribution_record(
         version=data.distribution_version,
         details=data.details,
     )
-    async with storage.write(asf_uid) as write:
-        wacm = write.as_committee_member(release.committee.key)
-        await wacm.distributions.record_from_data(
+    async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+        await warm.distributions.record_from_data(
             release.safe_key,
             data.staging,
             dd,
@@ -1111,9 +1103,8 @@ async def publisher_release_announce(
     )
     try:
         # TODO: Add defaults
-        committee = util.unwrap(project.committee)
-        async with storage.write_as_committee_member(committee.key, asf_uid) as wacm:
-            await wacm.announce.release(
+        async with storage.write_as_project_release_manager(project.safe_key, asf_uid) as warm:
+            await warm.announce.release(
                 project_key=project.safe_key,
                 version_key=data.version,
                 preview_revision_number=data.revision,
@@ -1231,9 +1222,9 @@ async def release_announce(
     asf_uid = _jwt_asf_uid()
 
     try:
-        async with storage.write_as_project_committee_member(data.project, asf_uid) as wacm:
+        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
             # TODO: Get fullname and use it instead of asf_uid
-            await wacm.announce.release(
+            await warm.announce.release(
                 project_key=data.project,
                 version_key=data.version,
                 preview_revision_number=data.revision,

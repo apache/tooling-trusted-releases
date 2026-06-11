@@ -99,11 +99,11 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsCommitteeMember,
+        write_as: storage.WriteAsReleaseManager,
         data: db.Session,
         committee_key: str,
     ):
@@ -148,6 +148,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def edit_cycle_dates(self, form: shared.projects.EditCycleDatesForm) -> None:
         project_key = form.project_key
+        await self.__validate_project_in_committee(project_key)
         cycle = await self.__data.project_cycle(cycle_key=form.cycle_key).demand(
             storage.AccessError(f"Cycle {form.cycle_key} not found")
         )
@@ -263,9 +264,7 @@ class CommitteeMember(CommitteeParticipant):
 
     async def edit_version_scheme(self, form: shared.projects.EditVersionSchemeForm) -> None:
         project_key = form.project_key
-        project = await self.__data.project(key=str(project_key), status=models.sql.ProjectStatus.ACTIVE).demand(
-            storage.AccessError(f"Project {project_key} not found")
-        )
+        project = await self.__validate_project_in_committee(project_key)
 
         # Validate cycle_match by trying to compile it. Empty becomes None
         # so we don't store empty strings in nullable columns.
@@ -334,7 +333,20 @@ class CommitteeMember(CommitteeParticipant):
     async def __get_or_create_policy(
         self, project_key: models.safe.ProjectKey
     ) -> tuple[models.sql.Project, models.sql.ReleasePolicy]:
-        return await _get_or_create_policy(self.__data, project_key)
+        project, release_policy = await _get_or_create_policy(self.__data, project_key)
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
+        return project, release_policy
+
+    async def __validate_project_in_committee(self, project_key: models.safe.ProjectKey) -> models.sql.Project:
+        project = await self.__data.project(
+            key=str(project_key), status=models.sql.ProjectStatus.ACTIVE, _committee=True
+        ).demand(storage.AccessError(f"Project {project_key} not found", status=404))
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
+        return project
 
     def __set_announce_release_subject(
         self,
@@ -398,6 +410,25 @@ class CommitteeMember(CommitteeParticipant):
         )
 
 
+class CommitteeMember(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeMember,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
+
+
 class SystemService:
     def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
         self.__data = data
@@ -456,6 +487,16 @@ async def _apply_policy_update_no_commit(
         setattr(release_policy, field, normalised_values[field])
 
 
+def _collapse_to_default(submitted: str, default_text: str) -> str:
+    # Storing "" lets the project default apply. We compare ignoring line endings and
+    # surrounding whitespace, otherwise a default that has been through a textarea - which
+    # can drop the trailing newline - fails the match and gets saved as a spurious custom value.
+    submitted = submitted.replace("\r\n", "\n").strip()
+    if submitted == default_text.strip():
+        return ""
+    return submitted
+
+
 async def _get_or_create_policy(
     data: db.Session,
     project_key: models.safe.ProjectKey,
@@ -471,16 +512,6 @@ async def _get_or_create_policy(
         data.add(release_policy)
 
     return project, release_policy
-
-
-def _collapse_to_default(submitted: str, default_text: str) -> str:
-    # Storing "" lets the project default apply. We compare ignoring line endings and
-    # surrounding whitespace, otherwise a default that has been through a textarea - which
-    # can drop the trailing newline - fails the match and gets saved as a spurious custom value.
-    submitted = submitted.replace("\r\n", "\n").strip()
-    if submitted == default_text.strip():
-        return ""
-    return submitted
 
 
 def _normalise_text_list(values: list[str]) -> list[str]:

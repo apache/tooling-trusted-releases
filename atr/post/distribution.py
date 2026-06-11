@@ -20,7 +20,6 @@ from __future__ import annotations
 from typing import Final, Literal
 
 import atr.blueprints.post as post
-import atr.db as db
 import atr.db.interaction as interaction
 import atr.get as get
 import atr.models.distribution as distribution
@@ -74,9 +73,9 @@ async def automate_form_process_page(
             phase = interaction.TrustedProjectPhase.VOTE
         case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
             phase = interaction.TrustedProjectPhase.COMPOSE
-    async with storage.write_as_committee_member(committee_key=committee.key) as w:
+    async with storage.write_as_project_release_manager(project, session) as warm:
         try:
-            await w.distributions.automate(
+            await warm.distributions.automate(
                 release.safe_key,
                 dd.platform,
                 committee.key,
@@ -139,18 +138,9 @@ async def delete(
     if url_release != delete_form.release_key:
         raise RuntimeError("Release name mismatch")
 
-    # Validate the submitted data, and obtain the committee for its name
-    async with db.session() as data:
-        release = await data.release(key=str(delete_form.release_key)).demand(
-            RuntimeError(f"Release {delete_form.release_key} not found")
-        )
-        committee = release.committee
-        if committee is None:
-            raise RuntimeError(f"Release {delete_form.release_key} has no committee")
-
     # Delete the distribution
-    async with storage.write_as_committee_member(committee_key=committee.key) as wacm:
-        await wacm.distributions.delete_distribution(
+    async with storage.write_as_project_release_manager(project_key, session) as warm:
+        await warm.distributions.delete_distribution(
             release_key=delete_form.release_key,
             platform=sql_platform,
             owner_namespace=delete_form.owner_namespace,
@@ -181,15 +171,15 @@ async def record_form_process_page(
         version=form_data.version,
         details=form_data.details,
     )
-    release, committee = await shared.distribution.release_validated_and_committee(
+    release, _committee = await shared.distribution.release_validated_and_committee(
         project,
         version,
         staging=staging,
     )
 
-    async with storage.write_as_committee_member(committee_key=committee.key) as w:
+    async with storage.write_as_project_release_manager(project, session) as warm:
         try:
-            _dist, added, _metadata = await w.distributions.record_from_data(
+            _dist, added, _metadata = await warm.distributions.record_from_data(
                 release_key=release.safe_key,
                 staging=staging,
                 dd=dd,

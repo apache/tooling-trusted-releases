@@ -22,7 +22,7 @@
 
 All database writes, and some reads, in ATR go through the [`storage`](/ref/atr/storage/__init__.py) interface. This interface **enforces permissions**, **centralizes audit logging**, and **provides type-safe access** to the database. In other words, avoid calling [`db`](/ref/atr/db/__init__.py) directly in route handlers if possible.
 
-The storage interface recognizes several permission levels: general public (unauthenticated visitors), foundation committer (any ASF account), committee participant (committers and PMC members), committee member (PMC members only), and foundation admin (infrastructure administrators). Each level inherits from the previous one, so for example committee members can do everything committee participants can do, plus additional operations.
+The storage interface recognizes several permission levels: general public (unauthenticated visitors), foundation committer (any ASF account), committee participant (committers and PMC members), release manager (PMC members and designated committer release managers for a project), committee member (PMC members only), and foundation admin (infrastructure administrators). Each level inherits from the previous one, so for example committee members can do everything release managers can do, plus additional operations.
 
 The storage interface does not make it impossible to bypass authorization, because you can always import `db` directly and write to the database. But it makes bypassing authorization an explicit choice that requires deliberate action, and it makes the safer path the easier path. This is a pragmatic approach to security: we cannot prevent all mistakes, but we can make it harder to make them accidentally.
 
@@ -107,11 +107,21 @@ class CommitteeParticipant(FoundationCommitter):
         super().__init__(write, write_as, data)
         self.__committee_key = committee_key
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ) -> None:
+        super().__init__(write, write_as, data, committee_key)
+
+class CommitteeMember(ReleaseManager):
     ...
 ```
 
-This hierarchy that this creates is: `GeneralPublic` → `FoundationCommitter` → `CommitteeParticipant` → `CommitteeMember`. You can add methods at any level. A method on `CommitteeMember` is only available to committee members, while a method on `FoundationCommitter` is available to everyone who has logged in.
+This hierarchy that this creates is: `GeneralPublic` → `FoundationCommitter` → `CommitteeParticipant` → `ReleaseManager` → `CommitteeMember`. You can add methods at any level. A method on `CommitteeMember` is only available to committee members, while a method on `ReleaseManager` is available to committee members and designated release managers.
 
 Use `__private_methods` for helper code that is not part of the public interface. Use `public_methods` for operations that should be available to callers at the appropriate permission level. Consider returning [`Outcome`](/ref/atr/storage/outcome.py) (Outcome) types to allow callers flexibility in error handling. Refer to the [section on using outcomes](#how-do-we-use-outcomes) for more details.
 

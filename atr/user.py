@@ -118,6 +118,12 @@ def is_participant_for_committee(committee: sql.Committee | None, project_keys: 
     return committee.key in project_keys
 
 
+def is_release_manager(committee: sql.Committee | None, uid: str) -> bool:
+    if committee is None:
+        return False
+    return (uid in committee.release_managers) and (uid in committee.committers)
+
+
 async def projects(uid: str, committee_only: bool = False, super_project: bool = False) -> list[sql.Project]:
     user_projects: list[sql.Project] = []
     async with db.session() as data:

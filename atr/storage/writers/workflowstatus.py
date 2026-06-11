@@ -82,11 +82,11 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsCommitteeMember,
+        write_as: storage.WriteAsReleaseManager,
         data: db.Session,
         committee_key: str,
     ):
@@ -109,6 +109,7 @@ class CommitteeMember(CommitteeParticipant):
         status: str | None = None,
         message: str | None = None,
     ) -> sql.WorkflowStatus:
+        await self.__validate_project_in_committee(project_key)
         # now = int(time.time())
         # # Twenty minutes to upload all files
         # ttl = 20 * 60
@@ -133,3 +134,31 @@ class CommitteeMember(CommitteeParticipant):
             message=message,
         )
         return ws
+
+    async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
+        project = await self.__data.project(key=str(project_key), _committee=True).demand(
+            storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        )
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
+        return project
+
+
+class CommitteeMember(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeMember,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key

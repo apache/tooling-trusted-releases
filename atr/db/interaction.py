@@ -530,15 +530,21 @@ async def previous_round_one_vote_seq(
         return (await data.execute(query)).scalar_one_or_none()
 
 
-async def prior_release_for_archive(project: sql.Project, version: str) -> sql.Release | None:
+async def prior_release_for_archive(
+    project: sql.Project, version: str, caller_data: db.Session | None = None
+) -> sql.Release | None:
     """Find the prior release in the same cycle still eligible for archival."""
     via = sql.validate_instrumented_attribute
-    query = sqlmodel.select(sql.Release).where(
-        sql.Release.project_key == project.key,
-        sql.Release.phase == sql.ReleasePhase.RELEASE,
-        via(sql.Release.archived).is_(None),
+    query = (
+        sqlmodel.select(sql.Release)
+        .where(
+            sql.Release.project_key == project.key,
+            sql.Release.phase == sql.ReleasePhase.RELEASE,
+            via(sql.Release.archived).is_(None),
+        )
+        .where(via(sql.Release.version) != version)
     )
-    async with db.session() as data:
+    async with db.ensure_session(caller_data) as data:
         result = await data.execute(query)
         candidates = list(result.scalars().all())
     return cycles.prior_release_in_cycle(project, version, candidates)

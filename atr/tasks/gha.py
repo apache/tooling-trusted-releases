@@ -160,9 +160,11 @@ async def trigger_workflow(
 
         if run.get("status") in _FAILED_STATUSES:
             _fail(f"Github workflow apache/tooling-actions/{workflow} run {run_id} failed with error")
-        async with storage.write_as_committee_member(task_args.committee_key, task_args.asf_uid) as w:
+        async with storage.write_as_project_release_manager(project, task_args.asf_uid) as warm:
             try:
-                await w.workflowstatus.add_workflow_status(workflow, run_id, project, task_id, status=run.get("status"))
+                await warm.workflowstatus.add_workflow_status(
+                    workflow, run_id, project, task_id, status=run.get("status")
+                )
             except storage.AccessError as e:
                 _fail(f"Failed to record distribution: {e}")
         return results.DistributionWorkflow(

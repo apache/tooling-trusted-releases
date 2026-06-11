@@ -80,7 +80,57 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
+
+    async def edit_metadata(self, form: shared.projects.EditMetadataForm) -> None:
+        project = await self.__validate_project_in_committee(form.project_key)
+
+        project.name = form.display_name
+        project.description = form.description.strip() or None
+        project.short_description = form.short_description.strip() or None
+        project.homepage = str(form.homepage) if form.homepage else None
+        project.lifecycle_page = str(form.lifecycle_page) if form.lifecycle_page else None
+        project.download_page = str(form.download_page) if form.download_page else None
+        project.bug_database = str(form.bug_database) if form.bug_database else None
+        project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
+        project.repositories = list(form.repositories)
+        project.standards = list(form.standards)
+        project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project.key),
+        )
+
+    async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
+        project = await self.__data.project(key=str(project_key), _committee=True).demand(
+            storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        )
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        if project.status == sql.ProjectStatus.RETIRED:
+            raise storage.AccessError(f"Project '{project.key}' is retired; metadata edits are disabled.")
+        return project
+
+
+class CommitteeMember(ReleaseManager):
     def __init__(
         self,
         write: storage.Write,
@@ -230,29 +280,6 @@ class CommitteeMember(CommitteeParticipant):
             project_key=str(project_key),
         )
         return None
-
-    async def edit_metadata(self, form: shared.projects.EditMetadataForm) -> None:
-        project = await self.__data.project(key=str(form.project_key)).get()
-        if not project:
-            raise storage.AccessError(f"Project '{form.project_key}' not found.", status=404)
-
-        project.name = form.display_name
-        project.description = form.description.strip() or None
-        project.short_description = form.short_description.strip() or None
-        project.homepage = str(form.homepage) if form.homepage else None
-        project.lifecycle_page = str(form.lifecycle_page) if form.lifecycle_page else None
-        project.download_page = str(form.download_page) if form.download_page else None
-        project.bug_database = str(form.bug_database) if form.bug_database else None
-        project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
-        project.repositories = list(form.repositories)
-        project.standards = list(form.standards)
-        project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
-
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project.key),
-        )
 
     async def language_add(self, project_key: safe.ProjectKey, new_language: str) -> bool:
         project = await self.__data.project(key=str(project_key)).get()

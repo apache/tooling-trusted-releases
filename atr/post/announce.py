@@ -21,7 +21,6 @@ from typing import Literal
 
 import atr.blueprints.post as post
 import atr.construct as construct
-import atr.db.interaction as interaction
 import atr.form as form
 import atr.get as get
 import atr.models.safe as safe
@@ -103,15 +102,9 @@ async def selected(
     if response := await _validate_subject_template_hash(session, project_key, announce_form):
         return response
 
-    # Re-resolve the prior release server-side rather than trusting any value
-    # the form might submit. The form's auto_archive field is the opt-in only.
-    archive_prior: sql.Release | None = None
-    if announce_form.auto_archive and release.project.policy_auto_archive_prior_release:
-        archive_prior = await interaction.prior_release_for_archive(release.project, release.version)
-
     try:
-        async with storage.write_as_project_committee_member(project_key, session) as wacm:
-            await wacm.announce.release(
+        async with storage.write_as_project_release_manager(project_key, session) as warm:
+            await warm.announce.release(
                 project_key=project_key,
                 version_key=version_key,
                 preview_revision_number=preview_revision_number,
@@ -122,15 +115,8 @@ async def selected(
                 subject_template_hash=announce_form.subject_template_hash,
                 email_cc=announce_form.email_cc,
                 email_bcc=announce_form.email_bcc,
+                auto_archive_prior=announce_form.auto_archive,
             )
-            if archive_prior is not None:
-                archive_error = await wacm.release.archive(project_key, archive_prior.safe_version_key)
-                if archive_error is not None:
-                    raise storage.AccessError(
-                        f"Release announced, but archiving prior release"
-                        f" '{archive_prior.version}' failed: {archive_error}",
-                        status=500,
-                    )
     except storage.AccessError as e:
         return await session.redirect(
             get.announce.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)

@@ -202,7 +202,12 @@ class WriteAsCommitteeParticipant(WriteAsFoundationCommitter):
 class WriteAsReleaseManager(WriteAsCommitteeParticipant):
     def __init__(self, write: Write, data: db.Session, committee_key: str):
         super().__init__(write, data, committee_key)
+        self.announce = writers.announce.ReleaseManager(write, self, data, committee_key)
+        self.distributions = writers.distributions.ReleaseManager(write, self, data, committee_key)
+        self.policy = writers.policy.ReleaseManager(write, self, data, committee_key)
+        self.project = writers.project.ReleaseManager(write, self, data, committee_key)
         self.vote = writers.vote.ReleaseManager(write, self, data, committee_key)
+        self.workflowstatus = writers.workflowstatus.ReleaseManager(write, self, data, committee_key)
 
 
 class WriteAsCommitteeMember(WriteAsReleaseManager):

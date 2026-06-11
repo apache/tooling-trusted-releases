@@ -56,8 +56,8 @@ async def test_announce_publication_artifact_check_warns_for_unreachable_artifac
     monkeypatch.setattr(announce_writer.util, "check_propagation", fake_check_propagation)
     warnings: list[str] = []
     monkeypatch.setattr(announce_writer.log, "warning", warnings.append)
-    writer = object.__new__(announce_writer.CommitteeMember)
-    check = getattr(writer, "_CommitteeMember__warn_publication_artifacts")
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__warn_publication_artifacts")
 
     await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, f"{constants.DOWNLOADS_APACHE_URL}/project")
 

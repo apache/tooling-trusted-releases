@@ -86,11 +86,11 @@ class CommitteeParticipant(FoundationCommitter):
         self.__committee_key = committee_key
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
     def __init__(
         self,
         write: storage.Write,
-        write_as: storage.WriteAsCommitteeMember,
+        write_as: storage.WriteAsReleaseManager,
         data: db.Session,
         committee_key: str,
     ):
@@ -118,10 +118,7 @@ class CommitteeMember(CommitteeParticipant):
         version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
-        )
-        storage.ensure_project_active(project)
+        await self.__validate_project_in_committee(project_key)
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=args.DistributionWorkflow(
@@ -169,10 +166,7 @@ class CommitteeMember(CommitteeParticipant):
         api_url: str | None = None,
         web_url: str | None = None,
     ) -> tuple[models.sql.Distribution, bool]:
-        release = await self.__data.release(key=str(release_key), _project=True).demand(
-            storage.AccessError(f"Release '{release_key}' not found.")
-        )
-        storage.ensure_project_active(release.project)
+        await self.__validate_release_in_committee(release_key)
         namespace = str(owner_namespace) if owner_namespace else ""
         existing = await self.__data.distribution(
             str(release_key), platform, namespace, str(package), str(version)
@@ -240,10 +234,7 @@ class CommitteeMember(CommitteeParticipant):
         dd: models.distribution.Data,
         allow_retries: bool = False,
     ) -> tuple[models.sql.Distribution, bool, models.distribution.Metadata | None]:
-        release = await self.__data.release(key=str(release_key), _project=True).demand(
-            storage.AccessError(f"Release '{release_key}' not found.")
-        )
-        storage.ensure_project_active(release.project)
+        await self.__validate_release_in_committee(release_key)
         api_url = distribution.get_api_url(dd, staging)
         if dd.platform == models.sql.DistributionPlatform.MAVEN:
             api_oc = await distribution.json_from_maven_xml(api_url, dd.version)
@@ -332,10 +323,7 @@ class CommitteeMember(CommitteeParticipant):
         package: str,
         version: str,
     ) -> None:
-        release = await self.__data.release(key=str(release_key), _project=True).demand(
-            storage.AccessError(f"Release '{release_key}' not found.")
-        )
-        storage.ensure_project_active(release.project)
+        await self.__validate_release_in_committee(release_key)
         distribution = await self.__data.distribution(
             release_key=str(release_key),
             platform=platform,
@@ -351,3 +339,43 @@ class CommitteeMember(CommitteeParticipant):
             release_key=str(release_key),
             platform=platform.name,
         )
+
+    async def __validate_project_in_committee(self, project_key: models.safe.ProjectKey) -> models.sql.Project:
+        project = await self.__data.project(key=str(project_key), _committee=True).demand(
+            storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        )
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
+        return project
+
+    async def __validate_release_in_committee(self, release_key: models.safe.ReleaseKey) -> models.sql.Release:
+        release = await self.__data.release(key=str(release_key), _project=True).demand(
+            storage.AccessError(f"Release '{release_key}' not found.", status=404)
+        )
+        if release.project.committee_key != self.__committee_key:
+            raise storage.AccessError(
+                f"Release {release_key} is not in committee {self.__committee_key}",
+                status=403,
+            )
+        storage.ensure_project_active(release.project)
+        return release
+
+
+class CommitteeMember(ReleaseManager):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsCommitteeMember,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
