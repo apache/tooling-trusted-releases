@@ -193,6 +193,14 @@ repos:
       pass_filenames: false
       always_run: true
 
+    - id: uv-audit
+      name: audit dependencies with uv
+      description: Check uv.lock for known vulnerabilities via OSV, trialled alongside pip-audit
+      entry: uv audit --frozen --preview-features audit-command
+      language: system
+      pass_filenames: false
+      always_run: true
+
     - id: check-pth-files
       name: check .pth files in the venv
       description: Refuse unknown .pth files in .venv; Python runs their import lines at interpreter startup, so they are a supply-chain attack vector
