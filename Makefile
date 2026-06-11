@@ -150,7 +150,7 @@ unit:
 
 update-deps:
 	pre-commit autoupdate || :
-	uv lock --upgrade --exclude-newer "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	uv lock --upgrade
 	uv sync --frozen --all-groups
 	python3 -S scripts/check_pth_files.py
 	uv export --frozen --format requirements-txt --no-emit-project --no-header --no-hashes > pip-audit.requirements

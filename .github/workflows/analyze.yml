@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  UV_VERSION: '0.7.12'
+  UV_VERSION: '0.11.20'
   BIOME_VERSION: '2.3.8'
 
 jobs:
