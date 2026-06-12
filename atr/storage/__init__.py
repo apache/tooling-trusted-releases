@@ -259,6 +259,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
 class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
     def __init__(self, write: Write, data: db.Session, committee_key: str):
         super().__init__(write, data, committee_key)
+        self.committee = writers.committee.FoundationAdmin(write, self, data, committee_key)
         self.keys = writers.keys.FoundationAdmin(write, self, data, committee_key)
 
 

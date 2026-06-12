@@ -20,6 +20,7 @@ from __future__ import annotations
 import atr.storage.writers.announce as announce
 import atr.storage.writers.cache as cache
 import atr.storage.writers.checks as checks
+import atr.storage.writers.committee as committee
 import atr.storage.writers.distributions as distributions
 import atr.storage.writers.keys as keys
 import atr.storage.writers.mail as mail
@@ -39,6 +40,7 @@ __all__ = [
     "announce",
     "cache",
     "checks",
+    "committee",
     "distributions",
     "keys",
     "mail",

@@ -27,7 +27,7 @@ import statistics
 import sys
 import time
 from collections.abc import Callable, Mapping
-from typing import Any, Final, Literal, NamedTuple
+from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
 import asfquart
@@ -180,6 +180,31 @@ class SessionDataCommon(NamedTuple):
     is_root: bool
     pmcs: list[str]
     projects: list[str]
+
+
+type ROSTER_SET = Literal["ROSTER_SET"]
+type ROSTER_REMOVE = Literal["ROSTER_REMOVE"]
+type ROSTER_RESET = Literal["ROSTER_RESET"]
+
+
+class TestRosterSetForm(form.Form):
+    variant: ROSTER_SET = form.value(ROSTER_SET)
+    uid: safe.AsfUid = form.label("ASF UID", "The person to add or update.")
+    fullname: str = form.label("Full name", "Leave blank to keep any existing name.", default="")
+    pmc: form.Bool = form.label("PMC member", default=False)
+
+
+class TestRosterRemoveForm(form.Form):
+    variant: ROSTER_REMOVE = form.value(ROSTER_REMOVE)
+    uid: safe.AsfUid = form.label("ASF UID", widget=form.Widget.SELECT)
+
+
+class TestRosterResetForm(form.Form):
+    variant: ROSTER_RESET = form.value(ROSTER_RESET)
+    confirm_reset: Literal["RESET"] = form.label("Confirmation", "Type RESET to confirm.")
+
+
+type TestRosterForm = Annotated[TestRosterSetForm | TestRosterRemoveForm | TestRosterResetForm, form.DISCRIMINATOR]
 
 
 @admin.typed
@@ -1036,40 +1061,29 @@ async def revoke_user_tokens_post(
 
 
 @admin.typed
-async def system_tokens_get(session: web.Committer, _system_tokens: Literal["system-tokens"]) -> str:
+async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"]) -> str:
     """
-    URL: GET /system-tokens
+    URL: GET /rotate-jwt-key
+    """
+    rendered_form = await form.render(
+        model_cls=RotateJwtKeyForm,
+        submit_label="Rotate JWT key",
+    )
+    return await _rotate_jwt_key_page(rendered_form)
 
-    Mint and manage system tokens.
+
+@admin.typed
+async def rotate_jwt_key_post(
+    session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"], _rotate_form: RotateJwtKeyForm
+) -> str | web.WerkzeugResponse:
+    """
+    URL: POST /rotate-jwt-key
     """
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
-        tokens = await wafa.tokens.list_system_tokens()
-
-    create_form = await form.render(
-        model_cls=CreateSystemTokenForm,
-        action=util.as_url(system_tokens_create_post),
-        submit_label="Create system token",
-    )
-    rows = []
-    for token in tokens:
-        revoke_form = await form.render(
-            model_cls=RevokeSystemTokenForm,
-            action=util.as_url(system_tokens_revoke_post),
-            form_classes=".mb-0",
-            submit_classes="btn-sm btn-danger",
-            submit_label="Revoke",
-            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
-            defaults={"token_id": token.id},
-            empty=True,
-        )
-        rows.append((token, revoke_form))
-    return await template.render(
-        "system-tokens.html",
-        create_form=create_form,
-        rows=rows,
-        format_datetime=util.format_datetime,
-    )
+        await wafa.tokens.rotate_jwt_signing_key()
+    await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
+    return await session.redirect(rotate_jwt_key_get)
 
 
 @admin.typed
@@ -1107,6 +1121,43 @@ async def system_tokens_create_post(
 
 
 @admin.typed
+async def system_tokens_get(session: web.Committer, _system_tokens: Literal["system-tokens"]) -> str:
+    """
+    URL: GET /system-tokens
+
+    Mint and manage system tokens.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        tokens = await wafa.tokens.list_system_tokens()
+
+    create_form = await form.render(
+        model_cls=CreateSystemTokenForm,
+        action=util.as_url(system_tokens_create_post),
+        submit_label="Create system token",
+    )
+    rows = []
+    for token in tokens:
+        revoke_form = await form.render(
+            model_cls=RevokeSystemTokenForm,
+            action=util.as_url(system_tokens_revoke_post),
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-danger",
+            submit_label="Revoke",
+            confirm="Revoke this system token? Any JWTs issued from it stop working immediately.",
+            defaults={"token_id": token.id},
+            empty=True,
+        )
+        rows.append((token, revoke_form))
+    return await template.render(
+        "system-tokens.html",
+        create_form=create_form,
+        rows=rows,
+        format_datetime=util.format_datetime,
+    )
+
+
+@admin.typed
 async def system_tokens_revoke_post(
     session: web.Committer,
     _system_tokens_revoke: Literal["system-tokens/revoke"],
@@ -1126,32 +1177,6 @@ async def system_tokens_revoke_post(
     else:
         await quart.flash("System token not found.", "info")
     return await session.redirect(system_tokens_get)
-
-
-@admin.typed
-async def rotate_jwt_key_get(_session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"]) -> str:
-    """
-    URL: GET /rotate-jwt-key
-    """
-    rendered_form = await form.render(
-        model_cls=RotateJwtKeyForm,
-        submit_label="Rotate JWT key",
-    )
-    return await _rotate_jwt_key_page(rendered_form)
-
-
-@admin.typed
-async def rotate_jwt_key_post(
-    session: web.Committer, _rotate_jwt_key: Literal["rotate-jwt-key"], _rotate_form: RotateJwtKeyForm
-) -> str | web.WerkzeugResponse:
-    """
-    URL: POST /rotate-jwt-key
-    """
-    async with storage.write(session) as write:
-        wafa = write.as_foundation_admin()
-        await wafa.tokens.rotate_jwt_signing_key()
-    await quart.flash("Rotated the JWT signing key. All existing JWTs are now invalid.", "success")
-    return await session.redirect(rotate_jwt_key_get)
 
 
 @admin.typed
@@ -1331,6 +1356,94 @@ async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/re
         page.append(table.collect())
 
     return await template.blank(f"Recent Tasks ({minutes}m)", content=page.collect())
+
+
+@admin.typed
+async def test_roster_get(_session: web.Committer, _test_roster: Literal["test-roster"]) -> str:
+    """
+    URL: GET /test-roster
+
+    Display the test committee roster, with forms to modify it.
+    This is a test-only endpoint so doesn't need any of the usual UI.
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    async with db.session() as data:
+        committee = await data.committee(key="test").demand(
+            base.ASFQuartException("Committee test not found", errorcode=404)
+        )
+        names = {user.asfuid: user.name for user in await data.user().all()}
+    roster = sorted({*committee.committee_members, *committee.committers, *committee.release_managers})
+
+    page = htm.Block()
+    page.h1["Test committee roster"]
+    table = htm.Block(htpy.table, classes=".table.table-sm")
+    table.thead[htpy.tr[htpy.th["UID"], htpy.th["Name"], htpy.th["PMC member"], htpy.th["Release manager"]]]
+    table.append(
+        htpy.tbody[
+            (
+                htpy.tr[
+                    htpy.td[uid],
+                    htpy.td[names.get(uid) or ""],
+                    htpy.td["Yes" if uid in committee.committee_members else "No"],
+                    htpy.td["Yes" if uid in committee.release_managers else "No"],
+                ]
+                for uid in roster
+            )
+        ]
+    )
+    page.append(table.collect())
+    page.h2["Add or update a person"]
+    page.append(await form.render(model_cls=TestRosterSetForm, submit_label="Add or update"))
+    page.h2["Remove a person"]
+    page.append(
+        await form.render(
+            model_cls=TestRosterRemoveForm,
+            submit_label="Remove",
+            submit_classes="btn-danger",
+            defaults={"uid": [(uid, uid) for uid in roster]},
+        )
+    )
+    page.h2["Reset the roster"]
+    page.append(
+        await form.render(
+            model_cls=TestRosterResetForm,
+            submit_label="Reset to the pristine state",
+            submit_classes="btn-danger",
+        )
+    )
+    return await template.blank("Test committee roster", content=page.collect())
+
+
+@admin.typed
+async def test_roster_post(
+    session: web.Committer, _test_roster: Literal["test-roster"], roster_form: TestRosterForm
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /test-roster
+
+    Modify the test committee roster.
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    try:
+        async with storage.write(session) as write:
+            committee = write.as_committee_admin("test").committee
+            match roster_form:
+                case TestRosterSetForm(uid=uid, fullname=fullname, pmc=pmc):
+                    await committee.roster_person_set(str(uid), fullname, pmc)
+                    message = f"Set '{uid}' as a {'PMC member' if pmc else 'committer'}."
+                case TestRosterRemoveForm(uid=uid):
+                    await committee.roster_person_remove(str(uid))
+                    message = f"Removed '{uid}' from the roster."
+                case TestRosterResetForm():
+                    await committee.roster_reset()
+                    message = "Reset the roster to its pristine state."
+    except storage.AccessError as e:
+        return await session.redirect(test_roster_get, error=str(e))
+    return await session.redirect(test_roster_get, success=message)
 
 
 @admin.typed
