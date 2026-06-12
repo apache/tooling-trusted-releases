@@ -430,10 +430,13 @@ async def test_release_promote_to_candidate_blocks_retired() -> None:
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     data.begin_immediate = mock.AsyncMock()
     data.rollback = mock.AsyncMock()
-    writer = object.__new__(release.CommitteeParticipant)
+    writer = object.__new__(release.ReleaseManager)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "tester"
+    writer._ReleaseManager__committee_key = "project"
 
     # promote_to_candidate catches AccessError internally and returns it as a string
     result = await writer.promote_to_candidate(

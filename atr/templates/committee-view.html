@@ -81,11 +81,18 @@
     </div>
   </div>
 
-  <div class="card mb-4">
+  <div class="card mb-4" id="release-managers">
     <div class="card-header bg-light">
       <h3 class="mb-0">Roster</h3>
     </div>
     <div class="card-body">
+      {% if not is_standing %}
+        <p>
+          All PMC members are release managers. The PMC can also designate committers as release
+          managers, giving them the same release permissions as PMC members for all
+          {{ committee.display_name }} projects, but not a binding vote.
+        </p>
+      {% endif %}
       {% if roster %}
         <div class="table-responsive">
           <table class="table border table-striped table-sm">
@@ -94,6 +101,12 @@
                 <th class="px-2" scope="col">ASF UID</th>
                 <th class="px-2" scope="col">Name</th>
                 <th class="px-2 text-center" scope="col">PMC member</th>
+                {% if not is_standing %}
+                  <th class="px-2 text-center" scope="col">Release manager</th>
+                  {% if is_committee_member %}
+                    <th class="px-2" scope="col">Actions</th>
+                  {% endif %}
+                {% endif %}
               </tr>
             </thead>
             <tbody>
@@ -108,6 +121,20 @@
                       <i class="bi bi-dash text-muted fs-5" aria-label="Committer only"></i>
                     {% endif %}
                   </td>
+                  {% if not is_standing %}
+                    <td class="px-2 text-center">
+                      {% if uid in committee.committee_members %}
+                        <i class="bi bi-check-lg text-success fs-5" aria-label="Release manager as a PMC member"></i>
+                      {% elif uid in release_managers %}
+                        <i class="bi bi-check-lg text-success fs-5" aria-label="Designated release manager"></i>
+                      {% else %}
+                        <i class="bi bi-dash text-muted fs-5" aria-label="Not a release manager"></i>
+                      {% endif %}
+                    </td>
+                    {% if is_committee_member %}
+                      <td class="px-2">{{ roster_action_forms.get(uid) or "" }}</td>
+                    {% endif %}
+                  {% endif %}
                 </tr>
               {% endfor %}
             </tbody>

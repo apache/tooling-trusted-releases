@@ -687,8 +687,9 @@ async def release_ready_to_start_vote(
         return PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE
 
     authorisation = await principal.Authorisation(session)
-    if not (authorisation.is_member_of(committee.key) or session.is_admin):
-        return "You must be on the PMC of this project to start a vote"
+    is_release_manager = user.is_release_manager(committee, session.uid)
+    if not (authorisation.is_member_of(committee.key) or is_release_manager or session.is_admin):
+        return "You must be a PMC member or designated release manager of this project to start a vote"
 
     has_files = await util.has_files(release)
     if not has_files:

@@ -165,7 +165,7 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
         ),
     )
     write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
-    writer = _participant_writer_with_mocks(data, write_as)
+    writer = _release_manager_writer_with_mocks(data, write_as)
 
     task = await writer.start(
         "dev@project.apache.org",
@@ -324,15 +324,6 @@ def _make_release(
     )
 
 
-def _participant_writer_with_mocks(data: mock.MagicMock, write_as: SimpleNamespace) -> vote.CommitteeParticipant:
-    writer = object.__new__(vote.CommitteeParticipant)
-    writer._CommitteeParticipant__data = data
-    writer._CommitteeParticipant__write_as = write_as
-    writer._CommitteeParticipant__asf_uid = "chair"
-    writer._CommitteeParticipant__committee_key = "project"
-    return writer
-
-
 def _patch_db_and_interaction(monkeypatch: pytest.MonkeyPatch, release: SimpleNamespace) -> None:
     query = mock.AsyncMock()
     query.demand = mock.AsyncMock(return_value=release)
@@ -358,6 +349,15 @@ def _patch_storage_write(monkeypatch: pytest.MonkeyPatch) -> None:
         yield mock_write
 
     monkeypatch.setattr("atr.storage.write", mock_storage_write)
+
+
+def _release_manager_writer_with_mocks(data: mock.MagicMock, write_as: SimpleNamespace) -> vote.ReleaseManager:
+    writer = object.__new__(vote.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "chair"
+    writer._ReleaseManager__committee_key = "project"
+    return writer
 
 
 def _writer_with_data(data: mock.MagicMock) -> vote.CommitteeMember:

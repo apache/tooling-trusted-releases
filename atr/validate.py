@@ -181,13 +181,21 @@ def committee_members(c: sql.Committee) -> Divergences:
 
 @committee_components("Committee.release_managers")
 def committee_release_managers(c: sql.Committee) -> Divergences:
-    """Check that every release_managers entry looks like an ASF UID."""
+    """Check that every release_managers entry looks like an ASF UID and is a non-member committer."""
 
     def okay(uid: str) -> bool:
         return bool(_ASF_UID_PATTERN.match(uid))
 
+    def committer(uid: str) -> bool:
+        return uid in c.committers
+
+    def non_member(uid: str) -> bool:
+        return uid not in c.committee_members
+
     for uid in c.release_managers:
         yield from divergences_predicate(okay, "value to be an ASF UID", uid)
+        yield from divergences_predicate(committer, "release manager to be a committer", uid)
+        yield from divergences_predicate(non_member, "release manager to not be a PMC member", uid)
 
 
 def committees(cs: Iterable[sql.Committee]) -> AnnotatedDivergences:

@@ -706,41 +706,6 @@ class CommitteeParticipant(FoundationCommitter):
             message=f"Published to SVN as r{revision}",
         )
 
-    async def promote_to_candidate(
-        self,
-        release_key: safe.ReleaseKey,
-        expected_revision: safe.RevisionNumber,
-        *,
-        allowed_vote_modes: frozenset[sql.VoteMode],
-        acknowledged_concerns: frozenset[str] = frozenset(),
-    ) -> str | None:
-        """Promote a release candidate draft to a new phase."""
-        try:
-            await self.__data.begin_immediate()
-            release, vote_seq, vote_mode, revision_number = await self._start_vote_no_commit(
-                release_key,
-                expected_revision,
-                allowed_vote_modes=allowed_vote_modes,
-                promote=True,
-                acknowledged_concerns=acknowledged_concerns,
-            )
-            await self.__data.commit()
-        except storage.AccessError as e:
-            await self.__data.rollback()
-            return str(e)
-        except Exception:
-            await self.__data.rollback()
-            raise
-
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            release_key=release.key,
-            revision_number=str(revision_number),
-            vote_seq=vote_seq,
-            vote_mode=vote_mode.value,
-        )
-        return None
-
     async def _start_vote_no_commit(  # noqa: C901
         self,
         release_key: safe.ReleaseKey,
@@ -1277,7 +1242,61 @@ class CommitteeParticipant(FoundationCommitter):
         return result.scalar_one()
 
 
-class CommitteeMember(CommitteeParticipant):
+class ReleaseManager(CommitteeParticipant):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ) -> None:
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
+
+    async def promote_to_candidate(
+        self,
+        release_key: safe.ReleaseKey,
+        expected_revision: safe.RevisionNumber,
+        *,
+        allowed_vote_modes: frozenset[sql.VoteMode],
+        acknowledged_concerns: frozenset[str] = frozenset(),
+    ) -> str | None:
+        """Promote a release candidate draft to a new phase."""
+        try:
+            await self.__data.begin_immediate()
+            release, vote_seq, vote_mode, revision_number = await self._start_vote_no_commit(
+                release_key,
+                expected_revision,
+                allowed_vote_modes=allowed_vote_modes,
+                promote=True,
+                acknowledged_concerns=acknowledged_concerns,
+            )
+            await self.__data.commit()
+        except storage.AccessError as e:
+            await self.__data.rollback()
+            return str(e)
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            release_key=release.key,
+            revision_number=str(revision_number),
+            vote_seq=vote_seq,
+            vote_mode=vote_mode.value,
+        )
+        return None
+
+
+class CommitteeMember(ReleaseManager):
     def __init__(
         self,
         write: storage.Write,

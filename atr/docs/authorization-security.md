@@ -41,7 +41,9 @@ ATR recognizes the following roles, derived from ASF LDAP:
 
 * **Project Participant**: A committer who is a member of a specific project. Can start releases, upload artifacts, and cast votes for that project. Determined by the `member` attribute in the project's LDAP group.
 
-* **PMC Member**: A committer who is on the PMC (Project Management Committee) for a specific committee. Has all participant permissions plus can resolve votes, finish releases, configure project settings, and manage signing keys. Determined by the `owner` attribute in the committee's LDAP group.
+* **Release Manager**: A committer designated by the PMC as a release manager, through the roster on the committee page. Has all participant permissions plus can start and resolve votes, publish and announce releases, record distributions, and edit project metadata and policy, but does not get a binding vote. All PMC members are release managers, so PMC members cannot be designated, and a designation is removed automatically when a designated release manager joins the PMC. Designations are stored in the ATR database, not in LDAP.
+
+* **PMC Member**: A committer who is on the PMC (Project Management Committee) for a specific committee. Has all release manager permissions plus can designate release managers, create and archive projects, manage categories and check ignores, and manage signing keys. Determined by the `owner` attribute in the committee's LDAP group.
 
 * **Chair**: A PMC chair. Currently has the same permissions as PMC Member in ATR. Determined by membership in `cn=pmc-chairs,ou=groups,ou=services,dc=apache,dc=org`.
 

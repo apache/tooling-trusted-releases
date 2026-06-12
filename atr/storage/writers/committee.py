@@ -104,6 +104,67 @@ class CommitteeMember(ReleaseManager):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
+    async def release_manager_add(self, asf_uid: str) -> bool:
+        asf_uid = asf_uid.strip().lower()
+        if not asf_uid:
+            raise storage.AccessError("An ASF UID is required", status=400)
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__load_committee()
+            if asf_uid in committee.committee_members:
+                raise storage.AccessError(
+                    f"{asf_uid} is a member of the {self.__committee_key} PMC,"
+                    " and is therefore already a release manager",
+                    status=400,
+                )
+            if asf_uid not in committee.committers:
+                raise storage.AccessError(
+                    f"{asf_uid} is not a committer of the {self.__committee_key} committee",
+                    status=400,
+                )
+            if asf_uid in committee.release_managers:
+                await self.__data.rollback()
+                return False
+            # JSON columns do not track in place mutation, so assign a new list
+            committee.release_managers = sorted({*committee.release_managers, asf_uid})
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            release_manager=asf_uid,
+        )
+        return True
+
+    async def release_manager_remove(self, asf_uid: str) -> bool:
+        asf_uid = asf_uid.strip().lower()
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__load_committee()
+            if asf_uid not in committee.release_managers:
+                await self.__data.rollback()
+                return False
+            committee.release_managers = [uid for uid in committee.release_managers if uid != asf_uid]
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            release_manager=asf_uid,
+        )
+        return True
+
+    async def __load_committee(self) -> sql.Committee:
+        return await self.__data.committee(key=self.__committee_key).demand(
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+        )
+
 
 class FoundationAdmin(CommitteeMember):
     def __init__(

@@ -114,7 +114,7 @@ async def start_selected(
                     project_key=str(project_key),
                     version_key=str(version_key),
                 )
-            case (release, committee):
+            case (release, _committee):
                 pass
 
         if start_vote_form.rendered_revision != release.safe_latest_revision_number:
@@ -134,8 +134,8 @@ async def start_selected(
                 util.concern_acknowledgement_error(missing),
             )
 
-        async with storage.write_as_committee_participant(committee.key, session) as wacp:
-            error = await wacp.release.promote_to_candidate(
+        async with storage.write_as_project_release_manager(project_key, session) as warm:
+            error = await warm.release.promote_to_candidate(
                 release.safe_key,
                 start_vote_form.rendered_revision,
                 allowed_vote_modes=frozenset({sql.VoteMode.MANUAL}),

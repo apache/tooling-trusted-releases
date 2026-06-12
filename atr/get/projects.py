@@ -226,7 +226,7 @@ async def select(session: web.Committer, _project_select: Literal["project/selec
                     (test_mode and (p.committee.key == "test"))
                     or (session.uid in p.committee.committee_members)
                     or (session.uid in p.committee.committers)
-                    or (session.uid in p.committee.release_managers)
+                    or user.is_release_manager(p.committee, session.uid)
                 )
             ]
             user_projects.sort(key=lambda p: p.display_name)
@@ -1039,7 +1039,14 @@ def _render_pmc_card(project: sql.Project) -> htm.Element:
         committee_link = htm.a(href=util.as_url(committees.view, name=project.committee.key))[
             project.committee.display_name
         ]
-        card.div(".card-body")[htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")[committee_link]]
+        # release_managers_link = htm.a(
+        #     ".text-muted",
+        #     href=util.as_url(committees.view, name=project.committee.key) + "#release-managers",
+        # )["Release managers"]
+        card.div(".card-body")[
+            htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")[committee_link],
+            # htm.div(".small.text-muted")[release_managers_link],
+        ]
     else:
         card.div(".card-body")[htm.div(".d-flex.flex-wrap.gap-3.small.mb-1")["No committee"]]
     return card.collect()

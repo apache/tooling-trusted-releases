@@ -25,6 +25,7 @@ import sqlmodel
 import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
+import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -93,6 +94,36 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
     for project in project_list:
         # Workaround for the usual loading problem
         project.committee = committee
+
+    is_standing = util.committee_is_standing(committee.key)
+    release_managers = sorted(committee.release_managers)
+    roster_action_forms: dict[str, htm.Element] = {}
+    if committee_member and (not is_standing):
+        action = util.as_url(post.committees.view, name=committee.key)
+        for uid in roster:
+            if uid in committee.committee_members:
+                # PMC members are release managers implicitly, so there is no action
+                continue
+            if uid in committee.release_managers:
+                model_cls: type[form.Form] = shared.committees.RemoveReleaseManagerForm
+                submit_label = "Remove"
+                submit_classes = "btn-outline-danger btn-sm"
+            elif uid in committee.committers:
+                model_cls = shared.committees.AddReleaseManagerForm
+                submit_label = "Designate"
+                submit_classes = "btn-outline-primary btn-sm"
+            else:
+                continue
+            roster_action_forms[uid] = await form.render(
+                model_cls=model_cls,
+                action=action,
+                form_classes=".d-inline-block.m-0",
+                submit_classes=submit_classes,
+                submit_label=submit_label,
+                empty=True,
+                defaults={"committee_key": committee.key, "asf_uid": uid},
+            )
+
     return await template.render(
         "committee-view.html",
         committee=committee,
@@ -105,6 +136,8 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
         is_committee_member=committee_member,
+        release_managers=release_managers,
+        roster_action_forms=roster_action_forms,
         update_committee_keys_form=await form.render(
             model_cls=shared.keys.UpdateCommitteeKeysForm,
             action=util.as_url(post.keys.keys),
@@ -112,5 +145,5 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
             defaults={"committee_key": committee.key},
             empty=True,
         ),
-        is_standing=util.committee_is_standing(committee.key),
+        is_standing=is_standing,
     )

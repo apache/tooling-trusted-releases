@@ -272,17 +272,6 @@ async def get_committee_data() -> dict[str, Committee]:
     return {c.get("id"): Committee.model_validate(c) for c in data}
 
 
-async def get_whimsy_committee_data() -> WhimsyCommitteeData:
-    """Returns the list of currently active committees."""
-
-    async with util.create_secure_session() as session:
-        async with session.get(_WHIMSY_COMMITTEE_INFO_URL) as response:
-            response.raise_for_status()
-            data = await response.json()
-
-    return WhimsyCommitteeData.model_validate(data)
-
-
 async def get_current_podlings_data() -> PodlingsData:
     """Returns the list of current podlings."""
 
@@ -342,6 +331,17 @@ async def get_retired_committee_data() -> RetiredCommitteeData:
             data = await response.json()
 
     return RetiredCommitteeData.model_validate(data)
+
+
+async def get_whimsy_committee_data() -> WhimsyCommitteeData:
+    """Returns the list of currently active committees."""
+
+    async with util.create_secure_session() as session:
+        async with session.get(_WHIMSY_COMMITTEE_INFO_URL) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+    return WhimsyCommitteeData.model_validate(data)
 
 
 async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
@@ -451,6 +451,13 @@ def _project_status(pmc: sql.Committee, project_key: str, project_status: Projec
     return sql.ProjectStatus.ACTIVE
 
 
+def _remove_member_release_managers(committee: sql.Committee) -> None:
+    # PMC members are release managers implicitly, so their designations are removed
+    removed = [uid for uid in committee.release_managers if uid not in committee.committee_members]
+    if removed != committee.release_managers:
+        committee.release_managers = removed
+
+
 async def _update_committees(
     data: db.Session,
     ldap_projects: LDAPProjectsData,
@@ -478,6 +485,7 @@ async def _update_committees(
 
         committee.committee_members = project.owners
         committee.committers = project.members
+        _remove_member_release_managers(committee)
         # We create PMCs for now
         committee.is_podling = False
         whimsy_info = whimsy_committees_by_name.get(name)
@@ -533,6 +541,7 @@ async def _update_podlings(
         if podling_project is not None:
             ppmc.committee_members = podling_project.owners
             ppmc.committers = podling_project.members
+            _remove_member_release_managers(ppmc)
         else:
             log.warning(f"could not find ldap data for podling {podling_name}")
 
@@ -643,7 +652,7 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
     tooling_users = list(await ldap.fetch_tooling_users(extra))
     tooling_committee.committee_members = tooling_users
     tooling_committee.committers = tooling_users
-    tooling_committee.release_managers = tooling_users
+    _remove_member_release_managers(tooling_committee)
     tooling_committee.is_podling = False
     tooling_committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)
 

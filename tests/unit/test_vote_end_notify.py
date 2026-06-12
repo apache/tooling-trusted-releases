@@ -536,11 +536,11 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
         ),
     )
     write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
-    writer = object.__new__(vote_writer.CommitteeParticipant)
-    writer._CommitteeParticipant__data = data
-    writer._CommitteeParticipant__write_as = write_as
-    writer._CommitteeParticipant__asf_uid = "chair"
-    writer._CommitteeParticipant__committee_key = "project"
+    writer = object.__new__(vote_writer.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "chair"
+    writer._ReleaseManager__committee_key = "project"
 
     with pytest.raises(storage.AccessError, match="Trusted Vote mode"):
         await writer.start(

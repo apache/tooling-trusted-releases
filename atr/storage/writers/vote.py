@@ -292,6 +292,25 @@ class CommitteeParticipant(FoundationCommitter):
 
         return [email_to], ""
 
+
+class ReleaseManager(CommitteeParticipant):
+    def __init__(
+        self,
+        write: storage.Write,
+        write_as: storage.WriteAsReleaseManager,
+        data: db.Session,
+        committee_key: str,
+    ):
+        super().__init__(write, write_as, data, committee_key)
+        self.__write = write
+        self.__write_as = write_as
+        self.__data = data
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
+        self.__committee_key = committee_key
+
     async def start(  # noqa: C901
         self,
         email_to: str,
@@ -365,10 +384,8 @@ class CommitteeParticipant(FoundationCommitter):
                     status=403,
                 )
             if automatic_resolve_when_finished:
-                is_pmc_member = self.__asf_uid in committee.committee_members
-                is_designated_release_manager = (self.__asf_uid in committee.release_managers) and (
-                    self.__asf_uid in committee.committers
-                )
+                is_pmc_member = user.is_committee_member(committee, self.__asf_uid)
+                is_designated_release_manager = user.is_release_manager(committee, self.__asf_uid)
                 if (not is_pmc_member) and (not is_designated_release_manager):
                     # TODO: Maybe we should modularise all of this?
                     # Then we could use the relevant permissions class
@@ -470,25 +487,6 @@ class CommitteeParticipant(FoundationCommitter):
         if project is None:
             return None
         return project.committee
-
-
-class ReleaseManager(CommitteeParticipant):
-    def __init__(
-        self,
-        write: storage.Write,
-        write_as: storage.WriteAsReleaseManager,
-        data: db.Session,
-        committee_key: str,
-    ):
-        super().__init__(write, write_as, data, committee_key)
-        self.__write = write
-        self.__write_as = write_as
-        self.__data = data
-        asf_uid = write.authorisation.asf_uid
-        if asf_uid is None:
-            raise storage.AccessError("Not authorized", status=403)
-        self.__asf_uid = asf_uid
-        self.__committee_key = committee_key
 
     async def resolve(  # noqa: C901
         self,

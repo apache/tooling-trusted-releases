@@ -1881,9 +1881,9 @@ async def vote_start(
         util.validate_email_recipients(data)
         util.validate_vote_duration(data.vote_duration)
 
-        async with storage.write_as_committee_participant(committee_key, asf_uid) as wacp:
+        async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
             # TODO: Get fullname and use instead of asf_uid
-            task = await wacp.vote.start(
+            task = await warm.vote.start(
                 data.email_to,
                 data.project,
                 data.version,

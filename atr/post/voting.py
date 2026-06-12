@@ -200,8 +200,8 @@ async def selected(  # noqa: C901
         subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
 
         try:
-            async with storage.write_as_committee_participant(committee.key) as wacp:
-                _task = await wacp.vote.start(
+            async with storage.write_as_project_release_manager(project_key) as warm:
+                _task = await warm.vote.start(
                     start_voting_form.email_to,
                     project_key,
                     version_key,

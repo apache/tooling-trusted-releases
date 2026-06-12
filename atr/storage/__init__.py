@@ -206,6 +206,7 @@ class WriteAsReleaseManager(WriteAsCommitteeParticipant):
         self.distributions = writers.distributions.ReleaseManager(write, self, data, committee_key)
         self.policy = writers.policy.ReleaseManager(write, self, data, committee_key)
         self.project = writers.project.ReleaseManager(write, self, data, committee_key)
+        self.release = writers.release.ReleaseManager(write, self, data, committee_key)
         self.vote = writers.vote.ReleaseManager(write, self, data, committee_key)
         self.workflowstatus = writers.workflowstatus.ReleaseManager(write, self, data, committee_key)
 
@@ -218,6 +219,7 @@ class WriteAsCommitteeMember(WriteAsReleaseManager):
         self.announce = writers.announce.CommitteeMember(write, self, data, committee_key)
         self.cache = writers.cache.CommitteeMember(write, self, data, committee_key)
         self.checks = writers.checks.CommitteeMember(write, self, data, committee_key)
+        self.committee = writers.committee.CommitteeMember(write, self, data, committee_key)
         self.distributions = writers.distributions.CommitteeMember(write, self, data, committee_key)
         self.keys = writers.keys.CommitteeMember(write, self, data, committee_key)
         self.mail = writers.mail.CommitteeMember(write, self, data, committee_key)
@@ -473,9 +475,7 @@ class Write:
         if asf_uid is None:
             return outcome.Error(AccessError("Not authorized", status=403))
         is_pmc_member = self.__authorisation.is_member_of(project.committee.key)
-        is_designated_release_manager = (asf_uid in project.committee.release_managers) and (
-            asf_uid in project.committee.committers
-        )
+        is_designated_release_manager = user.is_release_manager(project.committee, asf_uid)
         if (not is_pmc_member) and (not is_designated_release_manager):
             return outcome.Error(AccessError(f"Not a release manager for {project.committee.key}", status=403))
         try:
