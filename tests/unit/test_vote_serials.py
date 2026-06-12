@@ -377,7 +377,12 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
                     new_vote_resolved=None,
                     new_podling_thread_id="thread",
                 )
-                await data.refresh(release_model)
+                release_model = await data.release(
+                    key="project-1.0.0",
+                    _project=True,
+                    _committee=True,
+                    _project_release_policy=True,
+                ).demand(RuntimeError("release missing"))
                 task = await writer.start(
                     email_to=util.INCUBATOR_GENERAL_ADDRESS,
                     permitted_recipients=[util.INCUBATOR_GENERAL_ADDRESS],
