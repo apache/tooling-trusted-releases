@@ -1281,3 +1281,14 @@ td.atr-checkbox-col {
 .atr-catalog-artifact + .atr-catalog-artifact {
     border-top: 1px dashed var(--bs-border-color);
 }
+
+.atr-certified-panel {
+    padding: 0.5rem;
+    width: 6rem;
+    flex-shrink: 0;
+}
+
+.atr-certified-badge {
+    width: 100%;
+    height: auto;
+}
