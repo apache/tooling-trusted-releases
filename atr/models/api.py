@@ -859,6 +859,7 @@ class VoteStartArgs(schema.Strict):
     second_round_email_to: str | None = schema.default_example(None, "general@incubator.apache.org")
     notify_when_finished: bool = schema.default_example(False, False)
     automatic_resolve_when_finished: bool = schema.default_example(False, False)
+    automatic_publish_when_resolved: bool = schema.default_example(False, False)
     concerns_noted: list[str] = schema.default_example([], ["atr.tasks.checks.license.headers"])
 
 

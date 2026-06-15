@@ -1934,6 +1934,7 @@ async def vote_start(
                 expected_revision=scanned_revision,
                 notify_when_finished=data.notify_when_finished,
                 automatic_resolve_when_finished=data.automatic_resolve_when_finished,
+                automatic_publish_when_resolved=data.automatic_publish_when_resolved,
                 acknowledged_concerns=frozenset(data.concerns_noted),
             )
     # except Exception as e:
