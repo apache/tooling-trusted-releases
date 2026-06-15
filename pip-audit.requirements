@@ -86,7 +86,7 @@ cyclonedx-python-lib==11.9.0
 decouple-types==1.0.2
 defusedxml==0.7.1
     # via py-serializable
-distlib==0.4.1
+distlib==0.4.2
     # via virtualenv
 djlint==1.39.0
 dnspython==2.8.0
@@ -113,7 +113,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.29.1
+filelock==3.29.3
     # via
     #   python-discovery
     #   virtualenv
@@ -339,7 +339,7 @@ strictyaml==1.7.3
     # via tooling-trusted-releases
 structlog==26.1.0
     # via tooling-trusted-releases
-tqdm==4.68.1
+tqdm==4.68.2
     # via djlint
 types-aiofiles==25.1.0.20260518
     # via quart-uploads
