@@ -450,6 +450,43 @@ async def distribute_ssh_register(
 
 
 @api.typed(
+    auth_scheme=api_auth.Auth.PUBLIC,
+    response=(models.api.DistributionListResults, 200),
+)
+async def distribution_list(
+    _distribution_list: Literal["distribution/list"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> DictResponse:
+    """
+    URL: GET /distribution/list/<project_key>/<version_key>
+
+    List recorded distributions for a release.
+    """
+    async with db.session() as data:
+        release_key = sql.release_key(str(project_key), str(version_key))
+        distributions = await data.distribution(release_key=str(release_key)).all()
+    entries = [
+        models.api.DistributionListEntry(
+            platform=dist.platform.name,
+            owner_namespace=dist.owner_namespace,
+            package=dist.package,
+            version=dist.version,
+            staging=dist.staging,
+            pending=dist.pending,
+            upload_date=dist.upload_date,
+            api_url=dist.api_url,
+            web_url=dist.web_url,
+        )
+        for dist in distributions
+    ]
+    return models.api.DistributionListResults(
+        endpoint="/distribution/list",
+        distributions=entries,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
     auth_scheme=api_auth.Auth.BEARER,
     response=(models.api.DistributionRecordResults, 200),
 )

@@ -155,6 +155,28 @@ class DistributeStatusUpdateResults(schema.Strict):
     success: Literal[True] = schema.example(True)
 
 
+class DistributionListEntry(schema.Strict):
+    platform: str = schema.example("ARTIFACT_HUB")
+    owner_namespace: str = schema.default_example("", "example")
+    package: str = schema.example("example")
+    version: str = schema.example("0.0.1")
+    staging: bool = schema.example(False)
+    pending: bool = schema.example(False)
+    upload_date: datetime.datetime | None = schema.default(None)
+    api_url: str | None = schema.default(None)
+    web_url: str | None = schema.default(None)
+
+    @pydantic.field_validator("upload_date", mode="before")
+    @classmethod
+    def upload_date_from_iso(cls, v):
+        return datetime.datetime.fromisoformat(v) if isinstance(v, str) else v
+
+
+class DistributionListResults(schema.Strict):
+    endpoint: Literal["/distribution/list"] = schema.alias("endpoint")
+    distributions: Sequence[DistributionListEntry]
+
+
 class DistributionRecordArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("0.0.1")
@@ -914,6 +936,7 @@ type Results = Annotated[
     | CommitteeKeysResults
     | CommitteeProjectsResults
     | CommitteesListResults
+    | DistributionListResults
     | DistributionRecordResults
     | IgnoreAddResults
     | IgnoreDeleteResults
@@ -973,6 +996,7 @@ validate_committee_get = validator(CommitteeGetResults)
 validate_committee_keys = validator(CommitteeKeysResults)
 validate_committee_projects = validator(CommitteeProjectsResults)
 validate_committees_list = validator(CommitteesListResults)
+validate_distribution_list = validator(DistributionListResults)
 validate_distribution_record = validator(DistributionRecordResults)
 validate_distribution_ssh_register = validator(DistributeSshRegisterResults)
 validate_ignore_add = validator(IgnoreAddResults)
