@@ -86,6 +86,9 @@ class AppConfig:
     PUBSUB_URL = _config_secrets("PUBSUB_URL", STATE_DIR, default=None, cast=str)
     PUBSUB_USER = _config_secrets("PUBSUB_USER", STATE_DIR, default=None, cast=str)
     PUBSUB_PASSWORD = _config_secrets("PUBSUB_PASSWORD", STATE_DIR, default=None, cast=str)
+    # The dist pubsub watcher catalogues non-ATR releases it sees. Off by default, so
+    # it runs in report mode (logs what it would create); set true to write to the db.
+    DIST_CATALOG_WRITE = decouple.config("DIST_CATALOG_WRITE", default=False, cast=bool)
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)

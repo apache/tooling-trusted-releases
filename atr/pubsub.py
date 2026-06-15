@@ -17,8 +17,6 @@
 
 import asyncio
 import json
-import os
-import pathlib
 import urllib.parse
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -113,6 +111,18 @@ async def listen(
                 delay = min(30.0, (delay + 1.0) * 2)
 
 
+async def _handle_payload(payload: dict[str, Any]) -> None:
+    # Isolate per-payload failures: one bad commit or LDAP event must not tear the
+    # whole listener down (and with it the other topic)
+    try:
+        if is_commit_payload(payload):
+            await commits.handle(payload)
+        elif is_ldap_payload(payload):
+            await ldap.handle_update(payload)
+    except Exception as exc:
+        log.exception(f"PubSub handler failed for one payload, skipping: {exc}")
+
+
 async def _process_connection(session, pubsub_url):
     # Connect to pubsub and listen for payloads.
     async with session.get(pubsub_url) as conn:
@@ -135,8 +145,10 @@ async def _process_connection(session, pubsub_url):
                 raise aiohttp.ClientPayloadError("re-raised from ValueError in readuntil()")
 
             if not raw:
-                # We just hit EOF.
+                # EOF - end this connection so listen() reopens it, rather than
+                # falling through to json.loads(b"") and raising.
                 yield None
+                return
 
             yield json.loads(raw)
 
@@ -144,13 +156,11 @@ async def _process_connection(session, pubsub_url):
 class PubSubListener:
     def __init__(
         self,
-        svn_working_copy_root: os.PathLike | str,
         url: str,
         username: str,
         password: str,
         topics: str = "commit/svn,ldap",
     ) -> None:
-        self.svn_working_copy_root = pathlib.Path(svn_working_copy_root)
         self.url = url
         self.username = username
         self.password = password
@@ -160,41 +170,17 @@ class PubSubListener:
         """Run forever, processing PubSub payloads as they arrive."""
         # TODO: Add reconnection logic here?
         # Or does asfpy.pubsub.listen() already do this?
-        if not self.url:
-            log.error("PubSub URL is not configured")
-            log.warning("PubSubListener disabled: no URL provided")
-            return
-
-        if (not self.username) or (not self.password):
-            log.error("PubSub credentials not configured")
-            log.warning("PubSubListener disabled: missing credentials")
-            return
-
-        if not self.url.startswith("https://"):
-            log.error(
-                f"PubSub URL must use HTTPS protocol: {self.url!r}. Example: 'https://pubsub.apache.org:2069'",
-            )
-            log.warning("PubSubListener disabled due to invalid URL")
+        if not self._configured():
             return
 
         full_url = urllib.parse.urljoin(self.url, self.topics)
         log.info(f"PubSubListener starting with URL: {full_url}")
 
         try:
-            async for payload in listen(
-                full_url,
-                username=self.username,
-                password=self.password,
-            ):
+            async for payload in listen(full_url, username=self.username, password=self.password):
                 if (payload is None) or ("stillalive" in payload):
                     continue
-
-                if is_commit_payload(payload):
-                    await commits.handle(payload, self.svn_working_copy_root)
-                elif is_ldap_payload(payload):
-                    await ldap.handle_update(payload)
-                else:
-                    continue
+                await _handle_payload(payload)
         except asyncio.CancelledError:
             log.info("PubSubListener cancelled, shutting down gracefully")
             raise
@@ -202,3 +188,18 @@ class PubSubListener:
             log.exception(f"PubSubListener error: {exc}")
         finally:
             log.info("PubSubListener.start() finished")
+
+    def _configured(self) -> bool:
+        if not self.url:
+            log.error("PubSub URL is not configured")
+            log.warning("PubSubListener disabled: no URL provided")
+            return False
+        if (not self.username) or (not self.password):
+            log.error("PubSub credentials not configured")
+            log.warning("PubSubListener disabled: missing credentials")
+            return False
+        if not self.url.startswith("https://"):
+            log.error(f"PubSub URL must use HTTPS protocol: {self.url!r}. Example: 'https://pubsub.apache.org:2069'")
+            log.warning("PubSubListener disabled due to invalid URL")
+            return False
+        return True

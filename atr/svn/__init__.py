@@ -28,7 +28,7 @@ import pydantic_xml
 import atr.config as config
 import atr.log as log
 
-_ASF_TOOL: Final[str] = "atr"
+ASF_TOOL: Final[str] = "atr"
 _COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
 
 
@@ -113,7 +113,7 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
         svn_token,
         "--non-interactive",
         "--with-revprop",
-        f"asf:tool={_ASF_TOOL}",
+        f"asf:tool={ASF_TOOL}",
         "-r",
         revision,
         "-m",
@@ -128,7 +128,7 @@ async def get_diff(path: pathlib.Path, revision: int) -> str:
         raise ValueError("SVN_TOKEN must be set")
     # TODO: Or omit username entirely?
     return await _run_svn_command(
-        "diff", str(path), "-c", str(revision), "--username", _ASF_TOOL, "--password", svn_token
+        "diff", str(path), "-c", str(revision), "--username", ASF_TOOL, "--password", svn_token
     )
 
 
@@ -138,7 +138,7 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     if svn_token is None:
         raise ValueError("SVN_TOKEN must be set")
     # TODO: Or omit username entirely?
-    log_output = await _run_svn_command("log", str(path), "--xml", "--username", _ASF_TOOL, "--password", svn_token)
+    log_output = await _run_svn_command("log", str(path), "--xml", "--username", ASF_TOOL, "--password", svn_token)
     root = ElementTree.fromstring(log_output)
     return SvnLog.from_xml_tree(root)
 
@@ -164,7 +164,7 @@ async def publish_file(local_path: pathlib.Path, target_url: str, username: str,
         svn_token,
         "--non-interactive",
         "--with-revprop",
-        f"asf:tool={_ASF_TOOL}",
+        f"asf:tool={ASF_TOOL}",
         "-m",
         message,
     )
@@ -187,7 +187,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         "--non-interactive",
         "--no-auth-cache",
         "--with-revprop",
-        f"asf:tool={_ASF_TOOL}",
+        f"asf:tool={ASF_TOOL}",
         "-m",
         message,
     )

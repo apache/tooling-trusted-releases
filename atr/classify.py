@@ -140,6 +140,26 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
     return source_count, binary_count, docs_count
 
 
+def classify_path(path: pathlib.PurePath) -> FileType:
+    # The path-only half of classify(): no policy matchers and no looking inside
+    # the archive, so it works when all we have is a path (a find-ls dump, or an
+    # SVN commit payload). The marker counts and tie-breaks are the same, so a
+    # path classified here lands the same as it would through the full classify().
+    name = path.name
+    if (name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
+        return FileType.DISALLOWED
+    path_str = str(path)
+    search = re.search(analysis.extension_pattern(), path_str)
+    if search and search.group("metadata"):
+        return FileType.METADATA
+    if any(path_str.endswith(suffix) for suffix in analysis.STANDALONE_METADATA_SUFFIXES):
+        return FileType.METADATA
+    if (not search) or (not search.group("artifact")):
+        return FileType.BINARY
+    stem = path_str[: search.start()]
+    return classify_from_counts(path_str, *archive_marker_counts(stem, path))
+
+
 async def classify(
     path: safe.RelPath,
     base_path: safe.StatePath | None = None,

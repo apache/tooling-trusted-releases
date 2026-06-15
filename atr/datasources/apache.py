@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import TYPE_CHECKING, Annotated, Any, Final
 
 if TYPE_CHECKING:
@@ -440,11 +441,11 @@ async def _process_undiscovered(data: db.Session) -> tuple[int, int]:
     return added_count, updated_count
 
 
-def _project_status(pmc: sql.Committee, project_key: str, project_status: ProjectStatus) -> sql.ProjectStatus:
+def _project_status(pmc: sql.Committee, is_dormant: bool, project_status: ProjectStatus) -> sql.ProjectStatus:
     if pmc.key == "attic":
         # This must come first, because attic is also a standing committee
         return sql.ProjectStatus.RETIRED
-    elif ("_dormant_" in project_key) or str(project_status.name).endswith("(Dormant)"):
+    elif is_dormant or str(project_status.name).endswith("(Dormant)"):
         return sql.ProjectStatus.DORMANT
     elif util.committee_is_standing(pmc.key):
         return sql.ProjectStatus.STANDING
@@ -561,20 +562,41 @@ async def _update_podlings(
     return added_count, updated_count
 
 
+_XERCES_KEY_REMAP: Final[dict[str, str]] = {
+    "xerces-for-c++-xml-parser": "xerces-c",
+    "xerces-for-java-xml-parser": "xerces-j",
+    "xerces-for-perl-xml-parser": "xerces-p",
+    "xerces-xml-commons-external": "xerces-xml-commons",
+    "xerces-xml-commons-resolver": "xerces-xml-commons",
+}
+
+# projects.json appends this to a dormant project's key (commons-chain__dormant_).
+# We keep dormancy as status, not in the key.
+_DORMANT_RE: Final[re.Pattern[str]] = re.compile(r"_+dormant_*$")
+
+
+def canonical_project_key(key: str) -> str:
+    # Tidy a projects.json key into an ATR project key: the webservices PMC ships
+    # under its full name, underscores become hyphens, the dormant marker comes off
+    # (it's status), and Xerces uses shorter keys. Shared with the catalogue script
+    # so its seed keys line up with what the registry sync creates.
+    key = key.replace("webservices-", "ws-")
+    key = _DORMANT_RE.sub("", key)
+    key = key.replace("_", "-")
+    return _XERCES_KEY_REMAP.get(key, key)
+
+
 async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
 
     # Add projects and associate them with the right PMC
     for project_key, project_status in projects.items():
-        # FIXME: this is a quick workaround for inconsistent data wrt webservices PMC / projects
-        #        the PMC seems to be identified by the key ws, but the associated projects use webservices
+        # FIXME: webservices PMC is keyed "ws" but its projects use the full name.
         if project_key.startswith("webservices-"):
-            project_key = project_key.replace("webservices-", "ws-")
             project_status.pmc = "ws"
-        # Fixup data from accumulo-fluo_recipes
-        if "_" in project_key:
-            project_key = project_key.replace("_", "-")
+        is_dormant = _DORMANT_RE.search(project_key) is not None
+        project_key = canonical_project_key(project_key)
 
         # TODO: Annotator is in both projects and ldap_projects
         # The projects version is called "incubator-annotator", with "incubator" as its pmc
@@ -601,7 +623,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
             continue
 
         # Check whether the project is retired, whether temporarily or otherwise
-        status = _project_status(pmc, project_key, project_status)
+        status = _project_status(pmc, is_dormant, project_status)
         project_model = sql.Project(key=project_key, committee=pmc, status=status)
         data.add(project_model)
         added_count += 1

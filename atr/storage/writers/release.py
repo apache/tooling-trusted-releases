@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import dataclasses
 import datetime
 import re
 from typing import TYPE_CHECKING, Any, Final
@@ -69,6 +70,23 @@ _ACTIVITY_BUMP_PHASES: Final[frozenset[sql.ReleasePhase]] = frozenset(
     }
 )
 _SIGNATURE_CHECKER_KEY: Final[str] = checks.function_key(signature.check)
+
+# Fallback cycle name when a catalogued version doesn't match the project's
+# cycle_match, mirroring what cycle_name_for_version returns for simple projects
+_CATALOGUE_DEFAULT_CYCLE: Final[str] = "default"
+
+
+@dataclasses.dataclass(frozen=True)
+class ArtifactInput:
+    # One artifact row to catalogue, with its companions already paired by the
+    # caller. The decomposition and pairing stay in the dist watcher; this is
+    # just the typed handoff so catalogue_release never sees an untyped dict
+    artifact_path: str
+    classification: str
+    signature_path: str | None = None
+    checksum_path: str | None = None
+    sbom_path: str | None = None
+    download_path_suffix: str | None = None
 
 
 def _normalise_signature_field(value: object) -> str | None:
@@ -134,6 +152,90 @@ async def _signature_provenance_metadata_for(
         if (value := _normalise_signature_field(payload.get(key))) is not None:
             metadata[key] = value
     return metadata
+
+
+async def _archive_release(
+    data: db.Session,
+    write_as: storage.WriteAs,
+    asf_uid: str,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    release: sql.Release,
+) -> str | None:
+    # The archive core, shared by a committee member archiving by hand and the
+    # system archiving a dist removal. Only an announced release can be
+    # archived.
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return f"Release {project_key!s} {version_key!s} is not in the release phase"
+
+    archive_date = datetime.datetime.now(datetime.UTC)
+    via = sql.validate_instrumented_attribute
+    update_stmt = (
+        sqlmodel.update(sql.Release)
+        .where(via(sql.Release.key) == release.key)
+        .where(via(sql.Release.archived).is_(None))
+        .values(archived=archive_date)
+    )
+    update_result = await data.execute_query(update_stmt)
+    if getattr(update_result, "rowcount", 0) != 1:
+        return f"Release {project_key!s} {version_key!s} is already archived"
+
+    await _remove_from_downloads(release)
+    # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
+
+    data.add(
+        sql.LifecycleEvent(
+            project_key=release.project_key,
+            cycle_key=release.cycle_key,
+            version_key=release.key,
+            event=sql.LifecycleEventType.ARCHIVE,
+            effective=archive_date,
+            published=archive_date,
+        )
+    )
+    await data.commit()
+    write_as.append_to_audit_log(
+        asf_uid=asf_uid,
+        project_key=str(project_key),
+        version=str(version_key),
+        archived=archive_date.isoformat(),
+    )
+    return None
+
+
+async def _remove_from_downloads(release: sql.Release) -> None:
+    try:
+        await _release_download_links_delete(release)
+    except Exception:
+        log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
+
+
+async def _release_download_links_delete(release: sql.Release) -> None:
+    # Hard-linked downloads share an inode with the finished files, so we
+    # find them by inode rather than path - that way an unknown
+    # download_path_suffix isn't a blocker.
+    finished_dir = paths.release_directory(release)
+    if not await aiofiles.os.path.isdir(finished_dir):
+        return
+    release_inodes: set[int] = set()
+    async for file_path in util.paths_recursive_all(finished_dir):
+        try:
+            stat_result = await aiofiles.os.stat(finished_dir / file_path)
+        except OSError:
+            continue
+        release_inodes.add(stat_result.st_ino)
+    if not release_inodes:
+        return
+    downloads_dir = paths.get_downloads_dir()
+    async for link_path in util.paths_recursive_all(downloads_dir):
+        full_link_path = downloads_dir / link_path
+        try:
+            link_stat = await aiofiles.os.stat(full_link_path)
+        except OSError:
+            continue
+        if link_stat.st_ino in release_inodes:
+            await aiofiles.os.remove(full_link_path)
+            log.info(f"Deleted download hard link: {full_link_path}")
 
 
 class GeneralPublic:
@@ -231,6 +333,9 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key), version=str(version), phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
         storage.ensure_project_active(release.project)
+        # Once a release has been announced it can only be archived, never deleted
+        if release.phase == sql.ReleasePhase.RELEASE:
+            return f"Release '{project_key!s} {version!s}' has been announced; it can only be archived, not deleted."
         return await self.__delete_body(release, project_key, version, include_downloads)
 
     async def __delete_body(
@@ -1333,83 +1438,7 @@ class CommitteeMember(ReleaseManager):
         ).get()
         if release is None:
             return f"Release {project_key!s} {version_key!s} not found"
-        return await self.__archive_release(project_key, version_key, release)
-
-    async def __archive_release(
-        self,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-        release: sql.Release,
-    ) -> str | None:
-        if release.phase != sql.ReleasePhase.RELEASE:
-            return f"Release {project_key!s} {version_key!s} is not in the release phase"
-
-        archive_date = datetime.datetime.now(datetime.UTC)
-        via = sql.validate_instrumented_attribute
-        update_stmt = (
-            sqlmodel.update(sql.Release)
-            .where(via(sql.Release.key) == release.key)
-            .where(via(sql.Release.archived).is_(None))
-            .values(archived=archive_date)
-        )
-        update_result = await self.__data.execute_query(update_stmt)
-        if getattr(update_result, "rowcount", 0) != 1:
-            return f"Release {project_key!s} {version_key!s} is already archived"
-
-        await self.__remove_from_downloads(release)
-        # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
-
-        self.__data.add(
-            sql.LifecycleEvent(
-                project_key=release.project_key,
-                cycle_key=release.cycle_key,
-                version_key=release.key,
-                event=sql.LifecycleEventType.ARCHIVE,
-                effective=archive_date,
-                published=archive_date,
-            )
-        )
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version=str(version_key),
-            archived=archive_date.isoformat(),
-        )
-        return None
-
-    async def __remove_from_downloads(self, release: sql.Release) -> None:
-        try:
-            await self.__release_download_links_delete(release)
-        except Exception:
-            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
-
-    async def __release_download_links_delete(self, release: sql.Release) -> None:
-        # Hard-linked downloads share an inode with the finished files, so we
-        # find them by inode rather than path - that way an unknown
-        # download_path_suffix isn't a blocker.
-        finished_dir = paths.release_directory(release)
-        if not await aiofiles.os.path.isdir(finished_dir):
-            return
-        release_inodes: set[int] = set()
-        async for file_path in util.paths_recursive_all(finished_dir):
-            try:
-                stat_result = await aiofiles.os.stat(finished_dir / file_path)
-            except OSError:
-                continue
-            release_inodes.add(stat_result.st_ino)
-        if not release_inodes:
-            return
-        downloads_dir = paths.get_downloads_dir()
-        async for link_path in util.paths_recursive_all(downloads_dir):
-            full_link_path = downloads_dir / link_path
-            try:
-                link_stat = await aiofiles.os.stat(full_link_path)
-            except OSError:
-                continue
-            if link_stat.st_ino in release_inodes:
-                await aiofiles.os.remove(full_link_path)
-                log.info(f"Deleted download hard link: {full_link_path}")
+        return await _archive_release(self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release)
 
 
 class FoundationAdmin(FoundationCommitter):
@@ -1435,6 +1464,101 @@ class FoundationAdmin(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
+
+    async def archive(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> str | None:
+        """Archive an announced release as the system.
+
+        Used by the dist watcher when a release directory leaves the dist area.
+        Shares the archive core with the committee-member path, log matches.
+        """
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            _committee=True,
+        ).get()
+        if release is None:
+            return f"Release {project_key!s} {version_key!s} not found"
+        return await _archive_release(self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release)
+
+    async def catalogue_release(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        released: datetime.datetime,
+        artifacts: Sequence[ArtifactInput],
+    ) -> str | None:
+        """Catalogue a release found published in the dist area.
+
+        Records a release ATR didn't itself publish, so svn_revision and
+        key_fingerprint stay null. The
+        project must already exist; an already-catalogued release is left
+        alone.
+        """
+        project = await self.__data.project(key=str(project_key)).get()
+        if project is None:
+            return f"Project {project_key!s} not found"
+        release_key = f"{project.key}-{version!s}"
+        if await self.__data.release(key=release_key).get() is not None:
+            return None
+
+        try:
+            cycle_name = cycles.cycle_name_for_version(project, str(version))
+        except ValueError:
+            cycle_name = _CATALOGUE_DEFAULT_CYCLE
+        cycle_key = f"{project.key}-{cycle_name}"
+        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
+            self.__data.add(sql.ProjectCycle(cycle_key=cycle_key, cycle=cycle_name, project_key=project.key, lts=False))
+
+        self.__data.add(
+            sql.Release(
+                key=release_key,
+                phase=sql.ReleasePhase.RELEASE,
+                created=released,
+                released=released,
+                project_key=project.key,
+                cycle_key=cycle_key,
+                version=str(version),
+            )
+        )
+        # effective is the commit date we observed, but published stays at the
+        # default now - that's when we recorded it, not a backdated claim
+        self.__data.add(
+            sql.LifecycleEvent(
+                project_key=project.key,
+                cycle_key=cycle_key,
+                version_key=release_key,
+                event=sql.LifecycleEventType.RELEASE,
+                effective=released,
+            )
+        )
+        for artifact in artifacts:
+            self.__data.add(
+                sql.Artifact(
+                    project_key=project.key,
+                    version=str(version),
+                    release_key=release_key,
+                    artifact_path=artifact.artifact_path,
+                    classification=artifact.classification,
+                    signature_path=artifact.signature_path,
+                    checksum_path=artifact.checksum_path,
+                    sbom_path=artifact.sbom_path,
+                    download_path_suffix=artifact.download_path_suffix,
+                )
+            )
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version),
+            cycle_key=cycle_key,
+            artifacts=len(artifacts),
+        )
+        log.info(f"Catalogued dist release {release_key} with {util.plural(len(artifacts), 'artifact')}")
+        return None
 
     async def delete_inactive(
         self,

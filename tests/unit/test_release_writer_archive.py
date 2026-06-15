@@ -74,7 +74,7 @@ async def test_archive_returns_error_when_release_not_in_release_phase():
 
 
 @pytest.mark.asyncio
-async def test_archive_succeeds_and_writes_lifecycle_event():
+async def test_archive_succeeds_and_writes_lifecycle_event(monkeypatch):
     fake_release = SimpleNamespace(
         key="example-1.0.0",
         phase=sql.ReleasePhase.RELEASE,
@@ -87,7 +87,7 @@ async def test_archive_succeeds_and_writes_lifecycle_event():
     update_result = mock.MagicMock()
     update_result.rowcount = 1
     mock_data.execute_query = mock.AsyncMock(return_value=update_result)
-    object.__setattr__(member, "_CommitteeMember__remove_from_downloads", mock.AsyncMock())
+    monkeypatch.setattr(release, "_remove_from_downloads", mock.AsyncMock())
 
     error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
     assert error is None
@@ -123,20 +123,28 @@ async def test_download_links_delete_tolerates_unsafe_filenames(tmp_path, monkey
     monkeypatch.setattr(release.paths, "release_directory", lambda _release: finished_dir)
     monkeypatch.setattr(release.paths, "get_downloads_dir", lambda: downloads_dir)
 
-    member = _make_member(release_result=None)
-    await member._CommitteeMember__release_download_links_delete(SimpleNamespace(key="example-1.0.0"))
+    await release._release_download_links_delete(_fake_release())
 
     assert not link_path.exists()
     assert bad_file.exists()
 
 
 @pytest.mark.asyncio
-async def test_remove_from_downloads_swallows_errors():
-    member = release.CommitteeMember(mock.MagicMock(), mock.MagicMock(), mock.MagicMock(), "test")
+async def test_remove_from_downloads_swallows_errors(monkeypatch):
     boom = mock.AsyncMock(side_effect=RuntimeError("boom"))
-    object.__setattr__(member, "_CommitteeMember__release_download_links_delete", boom)
-    await member._CommitteeMember__remove_from_downloads(SimpleNamespace(key="example-1.0.0"))
+    monkeypatch.setattr(release, "_release_download_links_delete", boom)
+    await release._remove_from_downloads(_fake_release())
     boom.assert_awaited_once()
+
+
+def _fake_release() -> sql.Release:
+    return sql.Release(
+        key="example-1.0.0",
+        phase=sql.ReleasePhase.RELEASE,
+        created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        project_key="example",
+        version="1.0.0",
+    )
 
 
 def _make_member(release_result: object) -> release.CommitteeMember:

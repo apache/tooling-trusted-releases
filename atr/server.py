@@ -792,7 +792,6 @@ async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
     if valid_pubsub_url and pubsub_url and pubsub_user and pubsub_password:
         log.info("Starting PubSub listener")
         listener = pubsub.PubSubListener(
-            svn_working_copy_root=conf.SVN_STORAGE_DIR,
             url=pubsub_url,
             username=pubsub_user,
             password=pubsub_password,

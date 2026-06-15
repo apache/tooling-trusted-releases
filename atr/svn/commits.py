@@ -15,50 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pathlib
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 import atr.log as log
-import atr.svn as svn
+import atr.svn.catalog as catalog
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-# TODO: Check that these prefixes are correct
-_WATCHED_PREFIXES: Final[tuple[str, ...]] = (
-    "/svn/dist/dev",
-    "/svn/dist/release",
-)
+# Dist commits arrive with pubsub_path like /svn/dist/<area>/commit; the changed
+# paths inside the commit are relative to the repo root (release/httpd/...), so the
+# dev-vs-release split happens on those, not here. Trailing slash so we don't also
+# match a /svn/distribution-style repo.
+_DIST_PUBSUB_PREFIX: Final[str] = "/svn/dist/"
 
 
-async def handle(payload: dict, working_copy_root: pathlib.Path) -> None:
+async def handle(payload: dict) -> None:
     pubsub_path = str(payload.get("pubsub_path", ""))
-    # Ignore commits outside dist/dev or dist/release
-    if pubsub_path.startswith(_WATCHED_PREFIXES):
-        log.debug(f"PubSub payload: {payload}")
-        await _process_payload(payload, working_copy_root)
-
-
-async def _process_payload(payload: dict, working_copy_root: pathlib.Path) -> None:
-    """
-    Update each changed file in the local working copy.
-
-    Payload format that we listen to:
-        {
-          "commit": {
-             "changed": ["/path/inside/repo/foo.txt", ...]
-          },
-          ...
-        }
-    """
-    changed: Sequence[str] = payload.get("commit", {}).get("changed", [])
-    for repo_path in changed:
-        prefix = next((p for p in _WATCHED_PREFIXES if repo_path.startswith(p)), "")
-        if not prefix:
-            continue
-        local_path = working_copy_root / repo_path[len(prefix) :].lstrip("/")
-        try:
-            await svn.update(local_path)
-            log.info(f"svn updated {local_path}")
-        except Exception as exc:
-            log.warning(f"failed svn update {local_path}: {exc}")
+    if not pubsub_path.startswith(_DIST_PUBSUB_PREFIX):
+        return
+    commit = payload.get("commit", {})
+    if not isinstance(commit, dict):
+        return
+    # Log every dist commit we accept, so a deploy can confirm the prefix above
+    # actually matches dist commits even when a commit catalogues nothing.
+    changed = commit.get("changed", {})
+    paths = len(changed) if isinstance(changed, dict) else 0
+    log.info(f"dist commit r{commit.get('id')} by {commit.get('committer')}: {paths} changed paths")
+    await catalog.catalogue_commit(commit)
