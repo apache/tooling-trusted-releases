@@ -1273,7 +1273,6 @@ async def release_create(
     ).model_dump(mode="json"), 201
 
 
-# TODO: Duplicates the below
 @api.typed(
     auth_scheme=api_auth.Auth.BEARER,
     response=(models.api.ReleaseDeleteResults, 200),
@@ -1291,15 +1290,53 @@ async def release_delete(
     if not user.is_admin(asf_uid):
         raise exceptions.Forbidden("You do not have permission to delete a release")
 
-    async with storage.write(asf_uid) as write:
-        waca = await write.as_project_committee_admin(data.project)
-        error = await waca.release.delete(data.project, data.version)
-        # Ensure that deletion errors are reported to the user
-        if error is not None:
-            raise RuntimeError(error)
+    try:
+        async with storage.write(asf_uid) as write:
+            waca = await write.as_project_committee_admin(data.project)
+            error = await waca.release.delete(data.project, data.version)
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    # Ensure that deletion errors are reported to the user
+    if error is not None:
+        raise RuntimeError(error)
     return models.api.ReleaseDeleteResults(
         endpoint="/release/delete",
         deleted=True,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.ReleaseDraftDeleteResults, 200),
+)
+async def release_draft_delete(
+    _release_draft_delete: Literal["release/draft/delete"],
+    data: models.api.ReleaseDraftDeleteArgs,
+) -> DictResponse:
+    """
+    URL: POST /release/draft/delete
+
+    Delete a draft release.
+    """
+    asf_uid = _jwt_asf_uid()
+
+    try:
+        async with storage.write(asf_uid) as write:
+            # TODO: Should this perhaps be limited to release managers and PMC members?
+            wacp = await write.as_project_committee_participant(data.project)
+            error = await wacp.release.delete(
+                data.project,
+                data.version,
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                include_downloads=False,
+            )
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+    if error is not None:
+        raise RuntimeError(error)
+    return models.api.ReleaseDraftDeleteResults(
+        endpoint="/release/draft/delete",
+        success=True,
     ).model_dump(mode="json"), 200
 
 
