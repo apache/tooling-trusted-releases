@@ -1329,8 +1329,8 @@ async def release_delete(
 
     try:
         async with storage.write(asf_uid) as write:
-            waca = await write.as_project_committee_admin(data.project)
-            error = await waca.release.delete(data.project, data.version)
+            wafa = write.as_foundation_admin()
+            error = await wafa.release.delete(data.project, data.version)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     # Ensure that deletion errors are reported to the user

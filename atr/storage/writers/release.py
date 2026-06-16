@@ -1560,6 +1560,18 @@ class FoundationAdmin(FoundationCommitter):
         log.info(f"Catalogued dist release {release_key} with {util.plural(len(artifacts), 'artifact')}")
         return None
 
+    async def delete(
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        include_downloads: bool = True,
+    ) -> str | None:
+        release = await self.__data.release(project_key=str(project_key), version=str(version), _committee=True).demand(
+            storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404)
+        )
+        storage.ensure_project_active(release.project)
+        return await self.__delete_body(release, project_key, version, include_downloads)
+
     async def delete_inactive(
         self,
         project_key: safe.ProjectKey,
@@ -1577,19 +1589,7 @@ class FoundationAdmin(FoundationCommitter):
         if final_error is not None:
             await self.__data.rollback()
             return final_error
-        return await self.__delete(project_key, version)
-
-    async def __delete(
-        self,
-        project_key: safe.ProjectKey,
-        version: safe.VersionKey,
-        include_downloads: bool = True,
-    ) -> str | None:
-        release = await self.__data.release(project_key=str(project_key), version=str(version), _committee=True).demand(
-            storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404)
-        )
-        storage.ensure_project_active(release.project)
-        return await self.__delete_body(release, project_key, version, include_downloads)
+        return await self.delete(project_key, version)
 
     async def __delete_body(
         self,

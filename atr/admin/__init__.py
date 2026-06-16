@@ -1631,14 +1631,12 @@ async def _delete_releases(session: web.Committer, releases_to_delete: list[str]
     for release_key in releases_to_delete:
         try:
             async with db.session() as data:
-                release = await data.release(key=release_key, _committee=True, _project=True).demand(
+                release = await data.release(key=release_key, _project=True).demand(
                     RuntimeError(f"Release {release_key} not found")
                 )
-                if release.committee is None:
-                    raise RuntimeError(f"Release {release_key} has no committee")
             async with storage.write(session) as write:
-                waca = write.as_committee_admin(release.committee.key)
-                error = await waca.release.delete(release.safe_project_key, release.safe_version_key)
+                wafa = write.as_foundation_admin()
+                error = await wafa.release.delete(release.safe_project_key, release.safe_version_key)
                 # Ensure that deletion errors are reported to the user
                 if error is not None:
                     raise RuntimeError(error)

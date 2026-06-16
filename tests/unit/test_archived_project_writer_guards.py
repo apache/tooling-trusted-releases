@@ -152,7 +152,7 @@ async def test_foundation_admin_delete_inactive_acquires_lock_and_rechecks_befor
     writer._FoundationAdmin__data = data
     writer._FoundationAdmin__write_as = mock.MagicMock()
     delete = mock.AsyncMock(return_value=None)
-    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+    object.__setattr__(writer, "delete", delete)
 
     result = await writer.delete_inactive(
         safe.ProjectKey("project"),
@@ -214,7 +214,7 @@ async def test_foundation_admin_delete_inactive_refresh_catches_concurrent_phase
     writer._FoundationAdmin__data = data
     writer._FoundationAdmin__write_as = mock.MagicMock()
     delete = mock.AsyncMock(return_value=None)
-    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+    object.__setattr__(writer, "delete", delete)
 
     result = await writer.delete_inactive(
         safe.ProjectKey("project"),
@@ -249,7 +249,7 @@ async def test_foundation_admin_delete_inactive_rejects_non_active_project() -> 
     writer._FoundationAdmin__data = data
     writer._FoundationAdmin__write_as = mock.MagicMock()
     delete = mock.AsyncMock(return_value=None)
-    object.__setattr__(writer, "_FoundationAdmin__delete", delete)
+    object.__setattr__(writer, "delete", delete)
 
     error = await writer.delete_inactive(
         safe.ProjectKey("project"),
