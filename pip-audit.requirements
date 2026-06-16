@@ -72,7 +72,7 @@ colorama==0.4.6
     #   click
     #   djlint
     #   tqdm
-cryptography==46.0.7
+cryptography==49.0.0
     # via
     #   asfpy
     #   asyncssh
@@ -81,7 +81,7 @@ cssbeautifier==1.15.4
     # via djlint
 cvss==3.6
     # via tooling-trusted-releases
-cyclonedx-python-lib==11.9.0
+cyclonedx-python-lib==11.10.0
     # via tooling-trusted-releases
 decouple-types==1.0.2
 defusedxml==0.7.1

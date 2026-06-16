@@ -21,7 +21,7 @@ dependencies = [
   "blake3>=1.0.8",
   "blockbuster>=1.5.23,<2.0.0",
   "cmarkgfm>=2024.11.20",
-  "cryptography>=46.0,<47.0.0",
+  "cryptography>=49.0,<50.0.0",
   "cvss>=3.6,<4.0.0",
   "cyclonedx-python-lib[json-validation]>=11.0.0",
   # "dkimpy @ git+https://github.com/sbp/dkimpy.git@main",
@@ -169,4 +169,6 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "5 days"
+exclude-newer-package = { cryptography = "2026-06-13" }
+override-dependencies = ["cryptography>=49.0,<50.0.0"]
 required-version = ">=0.9.17"
