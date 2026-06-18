@@ -30,7 +30,7 @@ import atr.models.schema as schema
 LDAP_ROOT_BASE: Final[str] = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
 LDAP_SEARCH_BASE: Final[str] = "ou=people,dc=apache,dc=org"
 LDAP_SERVER_HOST: Final[str] = "ldap-eu.apache.org"
-LDAP_TOOLING_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
+LDAP_TOOLING_SERVICE_BASE: Final[str] = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
 
 RESULT_ATTRIBUTES: Final[list[str]] = [
     "asf-altEmail",
@@ -186,7 +186,7 @@ async def fetch_admin_users() -> frozenset[str]:
     def _query_ldap() -> frozenset[str]:
         users: set[str] = set()
         with Search(bind_dn, bind_password) as ldap_search:
-            for base in (LDAP_ROOT_BASE, LDAP_TOOLING_BASE):
+            for base in (LDAP_ROOT_BASE, LDAP_TOOLING_SERVICE_BASE):
                 try:
                     result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
                     if (not result) or (len(result) != 1):
@@ -201,37 +201,6 @@ async def fetch_admin_users() -> frozenset[str]:
         return frozenset(users)
 
     return await asyncio.to_thread(_query_ldap)
-
-
-async def fetch_tooling_users(extra: set[str]) -> set[str]:
-    import atr.log as log
-
-    credentials = get_bind_credentials()
-    if credentials is None:
-        log.warning("LDAP bind DN or password not configured, returning extra tooling users only")
-        return extra
-
-    bind_dn, bind_password = credentials
-
-    def _query_ldap() -> set[str]:
-        users: set[str] = set()
-        with Search(bind_dn, bind_password) as ldap_search:
-            for base in (LDAP_TOOLING_BASE,):
-                try:
-                    result = ldap_search.search(ldap_base=base, ldap_scope="BASE")
-                    if (not result) or (len(result) != 1):
-                        continue
-                    for member_dn in result[0].member:
-                        parsed = parse_dn(member_dn)
-                        uids = parsed.get("uid", [])
-                        if uids:
-                            users.add(uids[0])
-                except Exception as e:
-                    log.warning(f"Failed to query LDAP group {base}: {e}")
-        return users
-
-    tooling = await asyncio.to_thread(_query_ldap)
-    return tooling | extra
 
 
 def get_bind_credentials() -> tuple[str, str] | None:

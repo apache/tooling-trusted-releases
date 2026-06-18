@@ -33,7 +33,6 @@ import sqlmodel
 import atr.config as config
 import atr.constants as constants
 import atr.db as db
-import atr.ldap as ldap
 import atr.log as log
 import atr.models.helpers as helpers
 import atr.models.safe as safe
@@ -377,7 +376,7 @@ async def update_metadata(include_projects: bool = False) -> tuple[int, int]:
             added_count += added
             updated_count += updated
 
-            added, updated = await _update_tooling(data)
+            added, updated = await _update_tooling(data, ldap_projects_by_name)
             added_count += added
             updated_count += updated
 
@@ -648,7 +647,7 @@ async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[in
     return added_count, updated_count
 
 
-async def _update_tooling(data: db.Session) -> tuple[int, int]:
+async def _update_tooling(data: db.Session, ldap_projects_by_name: Mapping[str, LDAPProject]) -> tuple[int, int]:
     added_count = 0
     updated_count = 0
 
@@ -671,9 +670,14 @@ async def _update_tooling(data: db.Session) -> tuple[int, int]:
         extra = set()
 
     # Update Tooling PMC data
-    tooling_users = list(await ldap.fetch_tooling_users(extra))
-    tooling_committee.committee_members = tooling_users
-    tooling_committee.committers = tooling_users
+    tooling_ldap = ldap_projects_by_name.get("tooling")
+    if tooling_ldap is not None:
+        tooling_committee.committee_members = list(set(tooling_ldap.owners) | extra)
+        tooling_committee.committers = list(set(tooling_ldap.members) | extra)
+    else:
+        log.warning("could not find ldap data for tooling committee")
+        tooling_committee.committee_members = list(extra)
+        tooling_committee.committers = list(extra)
     _remove_member_release_managers(tooling_committee)
     tooling_committee.is_podling = False
     tooling_committee.mark_updated(by=constants.SYSTEM_SERVICE_UID, update_type=sql.UpdateType.BOOTSTRAP)

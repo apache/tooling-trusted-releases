@@ -39,7 +39,6 @@ LDAP_OWNER_FILTER = "(owner=uid=%s,ou=people,dc=apache,dc=org)"
 LDAP_PEOPLE_BASE = "ou=people,dc=apache,dc=org"
 LDAP_PMCS_BASE = "ou=project,ou=groups,dc=apache,dc=org"
 LDAP_ROOT_BASE = "cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org"
-LDAP_TOOLING_BASE = "cn=tooling,ou=groups,ou=services,dc=apache,dc=org"
 
 
 class AuthenticationError(Exception):
@@ -108,20 +107,10 @@ class Committer:
             log.info(f"Took {finish - start:,} ns to get root list")
 
             start = time.perf_counter_ns()
-            tooling_list = self._get_group_membership(ldap_search, LDAP_TOOLING_BASE, "member", 1)
-            is_tooling = self.dn in tooling_list
-            finish = time.perf_counter_ns()
-            log.info(f"Took {finish - start:,} ns to get tooling list")
-
-            start = time.perf_counter_ns()
             self.pmcs = self._get_project_memberships(ldap_search, LDAP_OWNER_FILTER)
             self.projects = self._get_project_memberships(ldap_search, LDAP_MEMBER_FILTER)
             finish = time.perf_counter_ns()
             log.info(f"Took {finish - start:,} ns to get project memberships")
-
-            if is_tooling:
-                self.pmcs.append("tooling")
-                self.projects.append("tooling")
 
     def _get_committer_details(self, ldap_search: ldap.Search) -> None:
         try:
@@ -242,10 +231,6 @@ class AuthoriserASFQuart:
 
         committees = frozenset(asfquart_session.committees)
         projects = frozenset(asfquart_session.projects)
-        if "tooling" in projects:
-            # Tooling project members are actually Tooling committee members
-            # This is a special case, and reflects a similar special case in LDAP
-            committees = committees.union({"tooling"})
         committees, projects = _augment_test_membership(committees, projects)
 
         # We do not check that the ASF UID is the same as the one in the session

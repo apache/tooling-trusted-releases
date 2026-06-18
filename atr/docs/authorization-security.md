@@ -51,7 +51,7 @@ ATR recognizes the following roles, derived from ASF LDAP:
 
 * **Infrastructure Root**: ASF Infrastructure team with root access. Has administrative capabilities. Determined by membership in `cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org`.
 
-* **Tooling Team**: Members of the ASF Tooling team. Treated as PMC members of the "tooling" committee. Determined by membership in `cn=tooling,ou=groups,ou=services,dc=apache,dc=org`.
+* **Tooling Team**: Members of the ASF Tooling service group, determined by membership in `cn=tooling,ou=groups,ou=services,dc=apache,dc=org`. This group grants ATR administrator rights only (alongside Infrastructure Root). The "tooling" committee roster is sourced separately from the Tooling PMC group `cn=tooling,ou=project,ou=groups,dc=apache,dc=org`, like any other PMC.
 
 ## LDAP integration
 
@@ -62,7 +62,7 @@ Authorization data is fetched from ASF LDAP using the [`principal`](/ref/atr/pri
 * `cn=member,ou=groups,dc=apache,dc=org` - ASF Members
 * `cn=pmc-chairs,ou=groups,ou=services,dc=apache,dc=org` - PMC Chairs
 * `cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org` - Infrastructure root
-* `cn=tooling,ou=groups,ou=services,dc=apache,dc=org` - Tooling team
+* `cn=tooling,ou=groups,ou=services,dc=apache,dc=org` - Tooling service group (grants ATR admin rights only; the "tooling" committee is sourced from `ou=project,ou=groups` like any PMC)
 
 The [`Committer`](/ref/atr/principal.py) (Committer) class fetches a user's full authorization profile from LDAP, including their committee memberships (PMC membership) and project participations (committer access).
 
