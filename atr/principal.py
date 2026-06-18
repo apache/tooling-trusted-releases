@@ -76,8 +76,8 @@ class Committer:
         self.isMember: bool = False
         self.isChair: bool = False
         # self.isRoot: bool = False
-        self.pmcs: list[str] = []
-        self.projects: list[str] = []
+        self.member_committees: list[str] = []
+        self.participant_committees: list[str] = []
 
         self.__bind_dn, self.__bind_password = get_ldap_bind_dn_and_password()
 
@@ -107,8 +107,8 @@ class Committer:
             log.info(f"Took {finish - start:,} ns to get root list")
 
             start = time.perf_counter_ns()
-            self.pmcs = self._get_project_memberships(ldap_search, LDAP_OWNER_FILTER)
-            self.projects = self._get_project_memberships(ldap_search, LDAP_MEMBER_FILTER)
+            self.member_committees = self._get_project_memberships(ldap_search, LDAP_OWNER_FILTER)
+            self.participant_committees = self._get_project_memberships(ldap_search, LDAP_MEMBER_FILTER)
             finish = time.perf_counter_ns()
             log.info(f"Took {finish - start:,} ns to get project memberships")
 
@@ -229,8 +229,8 @@ class AuthoriserASFQuart:
             # Defense in depth runtime check, already validated by the type checker
             raise AuthenticationError("Session is not a UserSession")
 
-        committees = frozenset(asfquart_session.committees)
-        projects = frozenset(asfquart_session.projects)
+        committees = frozenset(asfquart_session.member_committees)
+        projects = frozenset(asfquart_session.participant_committees)
         committees, projects = _augment_test_membership(committees, projects)
 
         # We do not check that the ASF UID is the same as the one in the session
@@ -290,8 +290,8 @@ class AuthoriserLDAP:
             c = Committer(safe.AsfUid(asf_uid))
             await asyncio.to_thread(c.verify)
 
-            committees = frozenset(c.pmcs)
-            projects = frozenset(c.projects)
+            committees = frozenset(c.member_committees)
+            projects = frozenset(c.participant_committees)
             committees, projects = _augment_test_membership(committees, projects)
 
             self.__cache.member_of[asf_uid] = committees

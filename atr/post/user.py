@@ -130,8 +130,8 @@ async def _cache_session(session: web.Committer) -> None:
         "isMember": session.is_member,
         "isChair": session.is_chair,
         # "isRoot": session.is_root,
-        "pmcs": session.committees,
-        "projects": session.projects,
+        "pmcs": session.member_committees,
+        "projects": session.participant_committees,
         "mfa": session.mfa,
         "roleaccount": session.is_role,
     }

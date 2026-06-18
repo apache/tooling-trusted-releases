@@ -100,7 +100,7 @@ class Committer:
             raise base.ASFQuartException("You do not have access to this project", errorcode=403)
 
     async def prevent_confusing_ui_display_committee(self, committee_key: safe.CommitteeKey, die: bool = True) -> bool:
-        if str(committee_key) not in self.committees:
+        if str(committee_key) not in self.member_committees:
             if self.is_admin:
                 # Admins can view all committees
                 # But we must warn them when the committee is not one of their own

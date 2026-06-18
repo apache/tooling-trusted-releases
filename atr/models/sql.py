@@ -738,10 +738,10 @@ class UserSession(sqlmodel.SQLModel, table=True):
     is_member: bool = sqlmodel.Field(default=False)
     is_chair: bool = sqlmodel.Field(default=False)
     is_root: bool = sqlmodel.Field(default=False)
-    committees: list[str] = sqlmodel.Field(
+    member_committees: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
-    projects: list[str] = sqlmodel.Field(
+    participant_committees: list[str] = sqlmodel.Field(
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     mfa: bool = sqlmodel.Field(default=False)

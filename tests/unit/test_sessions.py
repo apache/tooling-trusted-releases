@@ -56,12 +56,12 @@ async def store(monkeypatch):
     db._global_atr_sessionmaker = None
 
 
-async def test_create_maps_pmcs_to_committees(store):
+async def test_create_maps_pmcs_to_member_committees(store):
     hsid = _hsid()
     await store.create(hsid, _session_data())
     user_session = await store.validate(hsid)
     assert user_session is not None
-    assert user_session.committees == ["test"]
+    assert user_session.member_committees == ["test"]
 
 
 async def test_create_maps_roleaccount_to_is_role(store):
@@ -191,6 +191,43 @@ async def test_save_persists_mutations(store):
     assert reloaded.last_account_check == 12345.0
 
 
+@pytest.mark.asyncio
+async def test_terminate_current_users_sessions_returns_zero_when_no_sessions():
+    mock_store = mock.MagicMock()
+    mock_store.revoke_by_uid = mock.AsyncMock(return_value=0)
+    mock_app = mock.MagicMock()
+    mock_app.sessions = mock_store
+
+    with (
+        mock.patch.object(sessions.asfquart, "APP", mock_app),
+        mock.patch.object(sessions.asfquart.session, "aclear", new=mock.AsyncMock()),
+        mock.patch.object(sessions, "invalidate_cache"),
+    ):
+        count = await sessions.terminate_current_users_sessions("bob")
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_terminate_current_users_sessions_revokes_by_uid_clears_cookie_and_cache():
+    mock_store = mock.MagicMock()
+    mock_store.revoke_by_uid = mock.AsyncMock(return_value=3)
+    mock_app = mock.MagicMock()
+    mock_app.sessions = mock_store
+
+    with (
+        mock.patch.object(sessions.asfquart, "APP", mock_app),
+        mock.patch.object(sessions.asfquart.session, "aclear", new=mock.AsyncMock()) as mock_aclear,
+        mock.patch.object(sessions, "invalidate_cache") as mock_invalidate,
+    ):
+        count = await sessions.terminate_current_users_sessions("alice")
+
+    assert count == 3
+    mock_store.revoke_by_uid.assert_awaited_once_with("alice")
+    mock_aclear.assert_awaited_once_with()
+    mock_invalidate.assert_called_once_with()
+
+
 async def test_user_session_email_default():
     user_session = sql.UserSession(uid="testuser")
     assert user_session.email == "testuser@apache.org"
@@ -222,43 +259,6 @@ async def test_validate_updates_uts(store):
     second = await store.validate(hsid)
     assert second is not None
     assert second.uts >= first_uts
-
-
-@pytest.mark.asyncio
-async def test_terminate_current_users_sessions_revokes_by_uid_clears_cookie_and_cache():
-    mock_store = mock.MagicMock()
-    mock_store.revoke_by_uid = mock.AsyncMock(return_value=3)
-    mock_app = mock.MagicMock()
-    mock_app.sessions = mock_store
-
-    with (
-        mock.patch.object(sessions.asfquart, "APP", mock_app),
-        mock.patch.object(sessions.asfquart.session, "aclear", new=mock.AsyncMock()) as mock_aclear,
-        mock.patch.object(sessions, "invalidate_cache") as mock_invalidate,
-    ):
-        count = await sessions.terminate_current_users_sessions("alice")
-
-    assert count == 3
-    mock_store.revoke_by_uid.assert_awaited_once_with("alice")
-    mock_aclear.assert_awaited_once_with()
-    mock_invalidate.assert_called_once_with()
-
-
-@pytest.mark.asyncio
-async def test_terminate_current_users_sessions_returns_zero_when_no_sessions():
-    mock_store = mock.MagicMock()
-    mock_store.revoke_by_uid = mock.AsyncMock(return_value=0)
-    mock_app = mock.MagicMock()
-    mock_app.sessions = mock_store
-
-    with (
-        mock.patch.object(sessions.asfquart, "APP", mock_app),
-        mock.patch.object(sessions.asfquart.session, "aclear", new=mock.AsyncMock()),
-        mock.patch.object(sessions, "invalidate_cache"),
-    ):
-        count = await sessions.terminate_current_users_sessions("bob")
-
-    assert count == 0
 
 
 def _hsid() -> str:

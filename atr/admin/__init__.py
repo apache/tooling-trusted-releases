@@ -171,17 +171,6 @@ class RevokeSystemTokenForm(form.Form):
     token_id: form.Int = form.label("Token ID", widget=form.Widget.HIDDEN)
 
 
-class SessionDataCommon(NamedTuple):
-    uid: str
-    fullname: str
-    email: str
-    is_member: bool
-    is_chair: bool
-    is_root: bool
-    pmcs: list[str]
-    projects: list[str]
-
-
 type ROSTER_SET = Literal["ROSTER_SET"]
 type ROSTER_REMOVE = Literal["ROSTER_REMOVE"]
 type ROSTER_RESET = Literal["ROSTER_RESET"]
@@ -269,8 +258,8 @@ async def browse_as_post(
             is_member=committer.isMember,
             is_chair=committer.isChair,
             # is_root=committer.isRoot,
-            committees=sorted(set(committer.pmcs)),
-            projects=sorted(set(committer.projects)),
+            member_committees=sorted(set(committer.member_committees)),
+            participant_committees=sorted(set(committer.participant_committees)),
             mfa=session.session.mfa,
             admin_uid=admin_id,
             ip_address=quart.request.remote_addr,

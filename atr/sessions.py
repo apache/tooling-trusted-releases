@@ -115,14 +115,17 @@ async def _form_error_lookup(data: db.Session, sid_hash: str, path: str) -> sql.
 
 def _prepare_session_data(session_data: dict[str, Any]) -> dict[str, Any]:
     # Field names match the raw OAuth dict from asfquart
-    # They do not match ClientSession attribute names
-    # ClientSession remaps on construction
-    # Raw "pmcs" becomes ClientSession.committees
-    # Raw "roleaccount" becomes ClientSession.isRole
+    # They do not match UserSession attribute names
+    # We remap on construction
+    # Raw "pmcs" becomes UserSession.member_committees
+    # Raw "projects" becomes UserSession.participant_committees
+    # Raw "roleaccount" becomes UserSession.is_role
     # Since awrite() passes the raw dict, we map from the raw key names here
     data = dict(session_data)
     if "pmcs" in data:
-        data["committees"] = data.pop("pmcs")
+        data["member_committees"] = data.pop("pmcs")
+    if "projects" in data:
+        data["participant_committees"] = data.pop("projects")
     if "isMember" in data:
         data["is_member"] = data.pop("isMember")
     if "isChair" in data:

@@ -90,7 +90,7 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         key, is_owner = await _key_and_is_owner(data, session, key_fingerprint)
         user_committees = []
         if is_owner:
-            project_list = session.committees + session.projects
+            project_list = session.member_committees + session.participant_committees
             user_committees = await data.committee(name_in=project_list).all()
 
     if isinstance(key.ascii_armored_key, bytes):
@@ -213,7 +213,7 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
     URL: /keys
     View all keys associated with the user's account.
     """
-    committees_to_query = list(set(session.committees + session.projects))
+    committees_to_query = list(set(session.member_committees + session.participant_committees))
 
     async with db.session() as data:
         user_keys = await data.public_signing_key(apache_uid=session.uid.lower(), _committees=True).all()
@@ -388,7 +388,7 @@ async def _key_and_is_owner(
     if is_owner:
         authorised = True
     else:
-        user_affiliations = set(session.committees + session.projects)
+        user_affiliations = set(session.member_committees + session.participant_committees)
         key_committee_keys = {c.key for c in key.committees}
         if user_affiliations.intersection(key_committee_keys):
             authorised = True

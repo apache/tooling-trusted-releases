@@ -363,7 +363,7 @@ async def _render_page(
     # Remove RC tags section
     page.append(await _render_rc_tags_section(rc_analysis))
 
-    if user.is_participant_for_committee(release.committee, session.projects):
+    if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]
         activity_form = await form.render(
             model_cls=form.Empty,

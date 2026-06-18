@@ -267,7 +267,7 @@ async def status_selected(
 
 
 async def _activity_form_html(release: sql.Release, session: web.Committer) -> str:
-    if not user.is_participant_for_committee(release.committee, session.projects):
+    if not user.is_participant_for_committee(release.committee, session.participant_committees):
         return ""
     activity_form = await form.render(
         model_cls=form.Empty,

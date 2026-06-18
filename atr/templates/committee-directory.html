@@ -150,7 +150,7 @@
                 {# Add an else clause here if we decide to show an alternative to an empty card #}
                         {% endif %}
                     </div>
-                    {% if current_user and (committee.key in current_user.committees) and (not committee_is_standing(committee.key)) %}
+                    {% if current_user and (committee.key in current_user.member_committees) and (not committee_is_standing(committee.key)) %}
                         <a href="{{ as_url(get.projects.add_project, committee_key=committee.key) }}"
                            title="Create a project for {{ committee.display_name }}"
                            class="text-decoration-none d-block mt-4 mb-3">

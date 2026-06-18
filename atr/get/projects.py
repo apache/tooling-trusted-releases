@@ -666,7 +666,7 @@ async def _render_actions_card(
                 body.append(action_form)
 
         if project.committee:
-            if (project.committee.key in session.committees) or is_privileged:
+            if (project.committee.key in session.member_committees) or is_privileged:
                 body.append(
                     htm.p[
                         htm.a(

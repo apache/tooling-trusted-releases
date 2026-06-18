@@ -80,8 +80,8 @@ async def test_login(_session: web.Public, _test_login: Literal["test/login"]) -
         sql.UserSession(
             uid="test",
             fullname="Test User",
-            committees=["test"],
-            projects=["test"],
+            member_committees=["test"],
+            participant_committees=["test"],
         )
     )
     return await web.redirect(root.index)
@@ -101,8 +101,8 @@ async def test_login_banned(
         sql.UserSession(
             uid="test-banned",
             fullname="Banned Test User",
-            committees=[],
-            projects=[],
+            member_committees=[],
+            participant_committees=[],
         )
     )
     return await web.redirect(root.index)

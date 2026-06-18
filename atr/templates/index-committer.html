@@ -89,7 +89,7 @@
         <p class="mb-3">
           <a href="{{ as_url(get.projects.view, project_key=project.key )}}"
              class="text-decoration-none me-2">About this project</a>
-          {% if project.committee.key in current_user.committees %}
+          {% if project.committee.key in current_user.member_committees %}
             <span class="text-muted me-2">/</span>
             <a href="{{ as_url(get.projects.add_project, committee_key=project.committee.key) }}"
                class="text-decoration-none me-2">Create a sibling project</a>
