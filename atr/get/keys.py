@@ -55,9 +55,9 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
         htm.h1(".mb-4")["Add your OpenPGP key"],
         htm.p["Add your public key to use for signing release artifacts."],
         htm.p(".text-muted")[
-            "When you associate your key with a committee below, it will be included in that committee's ",
-            "public KEYS file. This allows anyone downloading a release to verify its signature. ",
-            "You should associate your key with each committee for which you are a release manager.",
+            "Associating your key with a committee below adds it to that committee's public KEYS file on the ",
+            "ASF distribution site, which ATR and downstream users rely on to verify the signatures on its ",
+            "releases. Associate a key with a committee when you sign releases for it.",
         ],
     ]
     await form.render_block(
@@ -160,8 +160,9 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         #     custom={"selected_committees": _render_committee_checkboxes(committee_choices, current_committee_keys)},
         # )
         pmc_div.p(".text-muted.small.mb-2")[
-            "Associating your key with a committee adds it to that committee's public KEYS file, "
-            "used by downstream users to verify release signatures. Associate with committees where you sign releases.",
+            "Associating your key with a committee adds it to that committee's public KEYS file on the "
+            "ASF distribution site, used to verify the signatures on its releases. Associate a key with a "
+            "committee when you sign releases for it.",
         ]
         checkboxes = _render_committee_checkboxes(committee_choices, current_committee_keys)
         pmc_div.form(
@@ -177,8 +178,8 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
             committee_keys = ", ".join([c.key for c in key.committees])
             pmc_div.text(committee_keys)
         else:
-            pmc_div.text("No PMCs associated")
-    _add_row("Associated PMCs", pmc_div.collect())
+            pmc_div.text("Not associated with any committee")
+    _add_row("Associated committees", pmc_div.collect())
 
     page.table(".mb-0.table.border.border-2.table-striped.table-sm")[tbody.collect()]
 
@@ -422,7 +423,7 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) 
                 committee_keys = ", ".join([c.key for c in key.committees])
                 row.td(".text-break.px-2.align-middle")[committee_keys]
             else:
-                row.td(".text-break.px-2.align-middle")["No PMCs associated"]
+                row.td(".text-break.px-2.align-middle")["Not associated with any committee"]
             with row.block(htm.td, classes=".px-2") as td:
                 await form.render_block(
                     td,

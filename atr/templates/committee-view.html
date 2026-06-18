@@ -153,6 +153,11 @@
         <h3 class="mb-0">Signing keys</h3>
       </div>
       <div class="card-body">
+        <p class="text-muted">
+          These are the OpenPGP keys in this committee's public KEYS file. Downloaders and ATR use them to
+          verify the signatures on the committee's releases. Members can add keys by importing a KEYS file.
+          Anyone who signs releases adds their own key from the <a href="{{ as_url(get.keys.keys) }}">Manage keys</a> page.
+        </p>
         {% if is_committee_member %}
           <div class="mb-4">
             <a href="{{ as_url(get.keys.upload) }}" class="btn btn-outline-primary">Upload a KEYS file</a>

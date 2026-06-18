@@ -52,9 +52,9 @@ class AddOpenPGPKeyForm(form.Form):
     )
     selected_committees: form.StrList = form.label(
         "Associate key with committees",
-        "Select the committees for which you sign releases. Associating your key with a committee"
-        " adds it to that committee's public KEYS file, which downstream users rely on to verify"
-        " the authenticity of release artifacts. Only associate with committees where you are a release manager.",
+        "Associating your key with a committee adds it to that committee's public KEYS file on the"
+        " ASF distribution site, which ATR and downstream users rely on to verify the signatures on its"
+        " releases. Associate a key with a committee when you sign releases for it.",
     )
 
     @pydantic.model_validator(mode="after")
@@ -106,7 +106,7 @@ type KeysForm = Annotated[
 
 class UpdateKeyCommitteesForm(form.Form):
     selected_committees: form.StrList = form.label(
-        "Associated PMCs",
+        "Associated committees",
         widget=form.Widget.CUSTOM,
     )
 
@@ -121,7 +121,8 @@ class UploadFileForm(form.Form):
     )
     selected_committee: str = form.label(
         "Associate keys with committee",
-        "Select the committee with which to associate these keys.",
+        "Choose the committee whose KEYS file these keys belong to. Every key in the uploaded file is"
+        " added to that committee's public KEYS file, which is used to verify the signatures on its releases.",
         widget=form.Widget.RADIO,
     )
 
@@ -136,7 +137,7 @@ class UploadRemoteForm(form.Form):
     variant: UPLOAD_REMOTE_KEYS = form.value(UPLOAD_REMOTE_KEYS)
     committee: str = form.label(
         "Committee",
-        "Select the committee whose KEYS file to fetch from ASF downloads.",
+        "Choose the committee whose existing KEYS file to fetch from the ASF downloads server and import.",
         widget=form.Widget.RADIO,
     )
 

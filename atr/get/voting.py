@@ -107,7 +107,7 @@ async def selected(
             default_subject_template, default_body_template, options
         )
 
-        keys_warning = await _check_keys_warning(committee)
+        keys_file_missing = await _committee_keys_file_missing(committee)
 
         async with storage.read(session) as read:
             concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
@@ -127,7 +127,7 @@ async def selected(
             default_body=default_body,
             min_hours=min_hours,
             vote_mode=vote_mode,
-            keys_warning=keys_warning,
+            keys_file_missing=keys_file_missing,
             asf_uid=session.uid,
             concern_groups=concern_groups,
             submitted_concerns=submitted_concerns,
@@ -171,7 +171,7 @@ def _add_automatic_publish_fields(
     ]
 
 
-async def _check_keys_warning(committee: sql.Committee) -> bool:
+async def _committee_keys_file_missing(committee: sql.Committee) -> bool:
     keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
     return not await aiofiles.os.path.isfile(keys_file_path)
 
@@ -227,7 +227,7 @@ async def _render_page(
     default_body: str,
     min_hours: int,
     vote_mode: sql.VoteMode,
-    keys_warning: bool,
+    keys_file_missing: bool,
     asf_uid: str,
     concern_groups: list[util.ConcernGroup],
     submitted_concerns: list[str],
@@ -266,11 +266,14 @@ async def _render_page(
         ]
     ]
 
-    if keys_warning:
+    if keys_file_missing:
         keys_url = util.as_url(keys.keys) + f"#committee-{release.committee.key}"
         page.div(".p-3.mb-4.bg-warning-subtle.border.border-warning.rounded")[
             htm.strong["Warning: "],
-            "The KEYS file is missing. Please autogenerate one on the ",
+            "The committee ",
+            htm.code["KEYS"],
+            " file is missing, so the vote email cannot link to a public KEYS file. Add or associate a key, "
+            "or regenerate the committee KEYS file on the ",
             htm.a(href=keys_url)["KEYS page"],
             ".",
         ]

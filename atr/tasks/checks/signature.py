@@ -143,7 +143,7 @@ def _check_core_logic_verify_signature(
             "error": "No public keys found to verify signature",
             "error_kind": "missing_keys",
             "hint": "If your signing key is expected then you can rectify this by",
-            "hint_link_text": "uploading your key",
+            "hint_link_text": "associating your key",
             "hint_link": "/keys",
             "debug_info": _debug_info(
                 key=None,
