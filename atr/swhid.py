@@ -102,7 +102,14 @@ async def content_id_from_file(path: Path) -> Identifier:
 
 
 async def directory_id(root: Path) -> Identifier:
-    return await asyncio.to_thread(_directory_id, root)
+    return await asyncio.to_thread(directory_id_sync, root)
+
+
+def directory_id_sync(root: Path) -> Identifier:
+    digest = _tree_digest(root)
+    if digest is None:
+        digest = _git_object_digest(_TREE, b"")
+    return Identifier(ObjectType.DIRECTORY, digest.hex())
 
 
 def parse(text: str) -> Identifier:
@@ -164,13 +171,6 @@ def _commit_id_and_tree(repo_path: Path, committish: Commit) -> tuple[str, str]:
 def _content_id_from_file(path: Path) -> Identifier:
     size = os.stat(path).st_size
     return Identifier(ObjectType.CONTENT, _blob_digest_of_file(path, size).hex())
-
-
-def _directory_id(root: Path) -> Identifier:
-    digest = _tree_digest(root)
-    if digest is None:
-        digest = _git_object_digest(_TREE, b"")
-    return Identifier(ObjectType.DIRECTORY, digest.hex())
 
 
 def _entry_sort_key(entry: tuple[bytes, bytes, bytes]) -> bytes:

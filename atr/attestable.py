@@ -166,6 +166,27 @@ def compute_file_state_rows(
     return rows
 
 
+def compute_swhid_dirs(
+    path_to_hash: dict[safe.RelPath, str],
+    previous: models.Attestable | None,
+    extracted: dict[str, str] | None = None,
+) -> dict[str, str]:
+    extracted = extracted or {}
+    carried: dict[str, str] = {}
+    if isinstance(previous, models.AttestableV2):
+        for hash_ref, entry in previous.hashes.items():
+            if entry.swhid_dir_inner is not None:
+                carried[hash_ref] = entry.swhid_dir_inner
+    result: dict[str, str] = {}
+    for content_hash in path_to_hash.values():
+        swhid_dir_inner = extracted.get(content_hash)
+        if swhid_dir_inner is None:
+            swhid_dir_inner = carried.get(content_hash)
+        if swhid_dir_inner is not None:
+            result[content_hash] = swhid_dir_inner
+    return result
+
+
 def effective_path_provenance(
     path_provenance: dict[safe.RelPath, models.ProvenanceV2] | None,
     path_to_hash: dict[safe.RelPath, str],
@@ -360,6 +381,7 @@ async def write_files_data(
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
+    swhid_dirs: dict[str, str] | None = None,
 ) -> None:
     result = await _generate_files_data(
         path_to_hash,
@@ -371,6 +393,7 @@ async def write_files_data(
         base_path,
         classifications=classifications,
         effective_path_provenance=effective_path_provenance,
+        swhid_dirs=swhid_dirs,
     )
     file_path = attestable_path(project_key, version_key, revision_number)
     await _atomic_write_readonly(file_path.path, result.model_dump_json(indent=2))
@@ -444,6 +467,7 @@ async def _generate_files_data(
     base_path: safe.StatePath,
     classifications: dict[safe.RelPath, str] | None = None,
     effective_path_provenance: dict[str, models.ProvenanceV2] | None = None,
+    swhid_dirs: dict[str, str] | None = None,
 ) -> models.AttestableV2:
     current_hash_to_paths: dict[str, set[safe.RelPath]] = {}
     for path_key, hash_ref in path_to_hash.items():
@@ -452,6 +476,9 @@ async def _generate_files_data(
     new_hashes = _compute_hashes_with_attribution(
         current_hash_to_paths, path_to_size, previous, uploader_uid, revision_number
     )
+    for hash_ref, swhid_dir_inner in (swhid_dirs or {}).items():
+        if (entry := new_hashes.get(hash_ref)) is not None:
+            entry.swhid_dir_inner = swhid_dir_inner
 
     if classifications is None:
         classifications = await compute_classifications(path_to_hash, release_policy, base_path)

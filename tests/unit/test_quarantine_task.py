@@ -99,13 +99,30 @@ def test_extract_archive_to_dir_accepts_dotenv_anywhere(tmp_path: pathlib.Path) 
 def test_extract_archive_to_dir_accepts_safe_archive(tmp_path: pathlib.Path) -> None:
     archive_path = tmp_path / "safe.tar.gz"
     _write_tar_gz(archive_path, [_tar_regular_file("dist/file.txt", b"hello")])
-    elapsed = quarantine._extract_archive_to_dir(
+    elapsed, _ = quarantine._extract_archive_to_dir(
         safe.StatePath(archive_path, tmp_path),
         safe.StatePath(tmp_path / "out", tmp_path),
         safe.StatePath(tmp_path, tmp_path),
         archives.extraction_config(),
     )
     assert isinstance(elapsed, float)
+
+
+def test_extract_archive_to_dir_computes_swhid_for_root_name_outside_relpath_charset(
+    tmp_path: pathlib.Path,
+) -> None:
+    archive_path = tmp_path / "safe.tar.gz"
+    _write_tar_gz(archive_path, [_tar_regular_file("dist root/file.txt", b"hello")])
+    _, swhid_dir_inner = quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+        compute_swhid=True,
+    )
+
+    assert swhid_dir_inner is not None
+    assert swhid_dir_inner.startswith("swh:1:dir:")
 
 
 def test_extract_archive_to_dir_rejects_absolute_path(tmp_path: pathlib.Path) -> None:
@@ -166,6 +183,29 @@ def test_extract_archive_to_dir_rejects_symlink_escaping_root(tmp_path: pathlib.
             safe.StatePath(tmp_path, tmp_path),
             archives.extraction_config(),
         )
+
+
+def test_extract_archive_to_dir_treats_swhid_failure_as_metadata_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    archive_path = tmp_path / "safe.tar.gz"
+    _write_tar_gz(archive_path, [_tar_regular_file("dist/file.txt", b"hello")])
+
+    def fail_directory_id(_path: pathlib.Path) -> quarantine.swhid.Identifier:
+        raise RuntimeError("swhid failed")
+
+    monkeypatch.setattr(quarantine.swhid, "directory_id_sync", fail_directory_id)
+    _, swhid_dir_inner = quarantine._extract_archive_to_dir(
+        safe.StatePath(archive_path, tmp_path),
+        safe.StatePath(tmp_path / "out", tmp_path),
+        safe.StatePath(tmp_path, tmp_path),
+        archives.extraction_config(),
+        compute_swhid=True,
+    )
+
+    assert swhid_dir_inner is None
+    assert (tmp_path / "out" / "dist" / "file.txt").read_bytes() == b"hello"
 
 
 @pytest.mark.asyncio
@@ -416,7 +456,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
         mock.patch.object(quarantine.revision, "finalise_revision", new_callable=mock.AsyncMock) as mock_finalise,
         mock.patch.object(quarantine.db, "session", side_effect=session_calls),
     ):
-        await quarantine._promote(quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir)
+        await quarantine._promote(quarantined_row, "proj", "1.0", "proj-1.0", quarantine_dir, {})
 
     mock_release_data.release.assert_called_once_with(
         key="proj-1.0", _release_policy=True, _project_release_policy=True
@@ -427,6 +467,7 @@ async def test_promote_finalises_revision_and_deletes_quarantined(tmp_path: path
     assert call_kwargs["project_key"] == "proj"
     assert call_kwargs["release"] is release
     assert call_kwargs["path_to_hash"] == {"file.txt": "hash1"}
+    assert call_kwargs["extracted_swhids"] == {}
     mock_delete_data.delete.assert_awaited_once_with(quarantined_row)
 
 
@@ -610,7 +651,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
             new_callable=mock.AsyncMock,
             return_value=ok_entries,
         ),
-        mock.patch.object(quarantine, "_extract_archives", new_callable=mock.AsyncMock),
+        mock.patch.object(quarantine, "_extract_archives", new_callable=mock.AsyncMock, return_value={}),
         mock.patch.object(quarantine, "_promote", new_callable=mock.AsyncMock) as mock_promote,
         mock.patch.object(quarantine, "_mark_failed", new_callable=mock.AsyncMock) as mock_mark,
     ):
@@ -620,7 +661,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
 
     assert result is None
     mock_promote.assert_awaited_once_with(
-        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.key, str(quarantine_dir)
+        row, safe.ProjectKey("proj"), safe.VersionKey("1.0"), row.release.key, str(quarantine_dir), {}
     )
     mock_mark.assert_not_awaited()
 

@@ -93,6 +93,7 @@ async def finalise_revision(
     version_key: safe.VersionKey,
     was_quarantined: bool = False,
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
+    extracted_swhids: dict[str, str] | None = None,
 ) -> sql.Revision:
     try:
         previous_attestable, merge_base_revision_key, _, merged_release = await _lock_and_merge(
@@ -130,6 +131,7 @@ async def finalise_revision(
         version_key=version_key,
         was_quarantined=was_quarantined,
         path_provenance=path_provenance,
+        extracted_swhids=extracted_swhids,
     )
 
 
@@ -149,6 +151,7 @@ async def _commit_new_revision(
     version_key: safe.VersionKey,
     was_quarantined: bool = False,
     path_provenance: dict[safe.RelPath, atr.models.attestable.ProvenanceV2] | None = None,
+    extracted_swhids: dict[str, str] | None = None,
 ) -> sql.Revision:
     try:
         # This is the only place where models.Revision is constructed
@@ -207,6 +210,7 @@ async def _commit_new_revision(
     classifications = await attestable.compute_classifications(
         path_to_hash, policy_dict, new_revision_dir, archives_base
     )
+    swhid_dirs = attestable.compute_swhid_dirs(path_to_hash, previous_attestable, extracted_swhids)
     effective_provenance = attestable.effective_path_provenance(path_provenance, path_to_hash, previous_attestable)
 
     await attestable.write_files_data(
@@ -221,6 +225,7 @@ async def _commit_new_revision(
         new_revision_dir,
         classifications=classifications,
         effective_path_provenance=effective_provenance,
+        swhid_dirs=swhid_dirs,
     )
 
     if attestable.can_write_file_state_rows(previous_attestable, new_revision.parent_key):

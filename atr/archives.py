@@ -92,6 +92,22 @@ async def list_archive(file_path: safe.StatePath) -> list[str] | None:
     return await asyncio.to_thread(_read_archive)
 
 
+def single_root_dir(directory: safe.StatePath) -> str | None:
+    subdirs: list[str] = []
+    has_other = False
+    with os.scandir(directory) as scan:
+        for entry in scan:
+            if entry.name.startswith("._"):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                subdirs.append(entry.name)
+            else:
+                has_other = True
+    if (len(subdirs) == 1) and (not has_other):
+        return subdirs[0]
+    return None
+
+
 def _build_extraction_config(max_extract_size: int) -> exarch.SecurityConfig:
     cfg = (
         exarch.SecurityConfig()

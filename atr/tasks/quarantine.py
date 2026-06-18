@@ -45,6 +45,7 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
 import atr.storage.writers.revision as revision
+import atr.swhid as swhid
 import atr.tasks.checks as checks
 import atr.util as util
 
@@ -126,7 +127,7 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
     file_entries = await _build_file_entries(task_args.archives, quarantine_dir)
 
     try:
-        await _extract_archives(task_args.archives, quarantine_dir, project_key, version_key, file_entries)
+        swhid_dirs = await _extract_archives(task_args.archives, quarantine_dir, project_key, version_key, file_entries)
     except Exception as exc:
         await _mark_failed(
             quarantined,
@@ -138,7 +139,7 @@ async def validate(task_args: args.QuarantineValidate) -> results.Results | None
         await aioshutil.rmtree(quarantine_dir)
         return None
 
-    await _promote(quarantined, project_key, version_key, release.key, str(quarantine_dir))
+    await _promote(quarantined, project_key, version_key, release.key, str(quarantine_dir), swhid_dirs)
     return None
 
 
@@ -154,7 +155,7 @@ def _backfill_extract_archive(
     results_list: list[tuple[str, safe.StatePath, float]],
 ) -> None:
     try:
-        elapsed = _extract_archive_to_dir(archive_path, archive_dir, staging_base, extraction_cfg)
+        elapsed, _ = _extract_archive_to_dir(archive_path, archive_dir, staging_base, extraction_cfg)
         results_list.append((str(archive_path), archive_dir, elapsed))
     except Exception as exc:
         log.warning(f"Backfill: failed to extract {archive_path}: {exc}")
@@ -217,14 +218,27 @@ def _extract_archive_to_dir(
     archive_dir: safe.StatePath,
     staging_base: safe.StatePath,
     extraction_cfg: exarch.SecurityConfig,
-) -> float:
+    compute_swhid: bool = False,
+) -> tuple[float, str | None]:
     archive_dir_path = archive_dir.path
     staging_dir = staging_base / f"archive-extract-{uuid.uuid4().hex}"
     staging_dir_path = staging_dir.path
+    swhid_dir_inner: str | None = None
     try:
         staging_dir_path.mkdir(parents=False, exist_ok=False)
         start = time.monotonic()
         exarch.extract_archive(str(archive_path), str(staging_dir), extraction_cfg)
+        if compute_swhid:
+            try:
+                root = archives.single_root_dir(staging_dir)
+                if root is not None:
+                    swhid_dir_inner = str(swhid.directory_id_sync(staging_dir_path / root))
+            except Exception as exc:
+                log.warning(
+                    "Failed to compute archive SWHID metadata",
+                    archive_path=str(archive_path),
+                    error=str(exc),
+                )
         archive_dir_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             os.rename(staging_dir, archive_dir)
@@ -234,7 +248,7 @@ def _extract_archive_to_dir(
             else:
                 raise
         _set_archive_permissions(archive_dir)
-        return time.monotonic() - start
+        return time.monotonic() - start, swhid_dir_inner
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
         raise
@@ -246,7 +260,7 @@ async def _extract_archives(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     file_entries: list[sql.QuarantineFileEntryV1],
-) -> None:
+) -> dict[str, str]:
     archives_base = paths.get_archives_dir() / project_key / version_key
     staging_base = paths.get_tmp_dir()
     await aiofiles.os.makedirs(archives_base, exist_ok=True)
@@ -254,18 +268,20 @@ async def _extract_archives(
 
     extraction_config = archives.extraction_config()
 
+    swhid_dirs: dict[str, str] = {}
     for archive in archive_entries:
         archive_dir = archives_base / hashes.filesystem_archives_key(archive.content_hash)
         if await aiofiles.os.path.isdir(archive_dir):
             continue
         archive_path = quarantine_dir / archive.rel_path
         try:
-            await asyncio.to_thread(
+            _, swhid_dir_inner = await asyncio.to_thread(
                 _extract_archive_to_dir,
                 archive_path,
                 archive_dir,
                 staging_base,
                 extraction_config,
+                True,
             )
         except Exception as exc:
             log.exception(f"Failed to extract archive {archive.rel_path}")
@@ -274,6 +290,9 @@ async def _extract_archives(
                     entry.errors.append(f"Extraction failed: {exc}")
                     break
             raise
+        if swhid_dir_inner is not None:
+            swhid_dirs[archive.content_hash] = swhid_dir_inner
+    return swhid_dirs
 
 
 def _is_archive_suffix(filename: str) -> bool:
@@ -324,6 +343,7 @@ async def _promote(
     version_key: safe.VersionKey,
     release_key: str,
     quarantine_dir: str,
+    swhid_dirs: dict[str, str],
 ) -> None:
     quarantine_dir_path = pathlib.Path(quarantine_dir)
 
@@ -372,6 +392,7 @@ async def _promote(
             temp_dir_path=quarantine_dir_path,
             version_key=version_key,
             was_quarantined=True,
+            extracted_swhids=swhid_dirs,
         )
 
     async with db.session() as data:
