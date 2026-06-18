@@ -21,6 +21,7 @@ from typing import Literal
 import aiofiles.os
 import asfquart.base as base
 
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -79,6 +80,11 @@ async def selected_path(
     modified = int(await aiofiles.os.path.getmtime(abs_path))
     file_size = await aiofiles.os.path.getsize(abs_path)
 
+    swhid_dir = None
+    attestable_data = await attestable.load(project_key, version_key, release.safe_latest_revision_number)
+    if attestable_data is not None:
+        swhid_dir = attestable.path_swhid_dir(attestable_data, str(rel_path))
+
     # Get all check results for this file
     async with storage.read() as read:
         ragp = read.as_general_public()
@@ -88,6 +94,7 @@ async def selected_path(
         "filename": validated_path.name,
         "bytes_size": file_size,
         "uploaded": datetime.datetime.fromtimestamp(modified, tz=datetime.UTC),
+        "swhid": swhid_dir,
     }
 
     return await template.render(

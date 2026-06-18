@@ -348,6 +348,11 @@
       <p>
         <strong>Size:</strong> {{ format_file_size(package.bytes_size) }}
       </p>
+      {% if package.swhid %}
+        <p>
+          <strong>Contained directory SWHID:</strong> <code>{{ package.swhid }}</code>
+        </p>
+      {% endif %}
       <p class="mb-0">
         <strong>Uploaded:</strong> {{ package.uploaded.strftime("%Y-%m-%d %H:%M:%S UTC") }}
       </p>
