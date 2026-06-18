@@ -216,6 +216,7 @@ class TaskStatus(enum.StrEnum):
 
 
 class TaskType(enum.StrEnum):
+    ARCHIVE_COMPARISON = "archive_comparison"
     COMPARE_SOURCE_TREES = "compare_source_trees"
     DISTRIBUTION_STATUS = "distribution_status"
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
@@ -250,6 +251,8 @@ class TaskType(enum.StrEnum):
     @property
     def label(self) -> str:  # noqa: C901
         match self:
+            case TaskType.ARCHIVE_COMPARISON:
+                return "Archive comparison"
             case TaskType.COMPARE_SOURCE_TREES:
                 return "Compare source trees"
             case TaskType.DISTRIBUTION_STATUS:

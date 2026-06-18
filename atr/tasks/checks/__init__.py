@@ -486,6 +486,18 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
     return sorted(fp for fp in fingerprints if fp)
 
 
+async def _resolve_cross_format_sibling_swhids(release: sql.Release, rel_path: str | None = None) -> list[str]:
+    if (not rel_path) or (not release.latest_revision_number):
+        return []
+    attestable_data = await attestable.load(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if attestable_data is None:
+        return []
+    siblings = attestable.cross_format_siblings(attestable_data, rel_path)
+    return sorted(f"{path}={swhid or ''}" for path, swhid in siblings.items())
+
+
 async def _resolve_github_tp_sha(release: sql.Release, rel_path: str | None = None) -> str:
     if not release.latest_revision_number:
         return ""
@@ -518,6 +530,7 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "all_files": _resolve_all_files,
     "committee_key": _resolve_committee_key,
     "committee_signing_keys": _resolve_committee_signing_keys,
+    "cross_format_sibling_swhids": _resolve_cross_format_sibling_swhids,
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,

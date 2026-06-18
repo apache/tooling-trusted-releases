@@ -65,6 +65,13 @@ import atr.user as user
 if TYPE_CHECKING:
     import atr.storage.datatypes as datatypes
 
+ARCHIVE_FORMAT_SUFFIXES: Final[tuple[str, ...]] = (
+    ".tar.bz2",
+    ".tar.gz",
+    ".tar.xz",
+    ".tgz",
+    ".zip",
+)
 ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
     "-binary-assembly",
     "-binary",
@@ -214,6 +221,13 @@ class FetchError(RuntimeError):
     def __init__(self, message: str, url: str):
         super().__init__(message)
         self.url = url
+
+
+def archive_format_stem(name: str) -> str | None:
+    for suffix in ARCHIVE_FORMAT_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return None
 
 
 def as_url(func: Callable, **kwargs: Any) -> str:

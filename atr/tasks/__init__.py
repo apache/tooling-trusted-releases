@@ -37,6 +37,7 @@ import atr.tasks.checks as checks
 import atr.tasks.checks.compare as compare
 import atr.tasks.checks.hashing as hashing
 import atr.tasks.checks.license as license
+import atr.tasks.checks.parity as parity
 import atr.tasks.checks.paths as paths
 import atr.tasks.checks.rat as rat
 import atr.tasks.checks.signature as signature
@@ -312,6 +313,8 @@ async def queued(
 
 def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results | None]]:  # noqa: C901
     match task_type:
+        case sql.TaskType.ARCHIVE_COMPARISON:
+            return parity.across_formats
         case sql.TaskType.COMPARE_SOURCE_TREES:
             return compare.source_trees
         case sql.TaskType.DISTRIBUTION_STATUS:
@@ -601,7 +604,6 @@ async def zip_checks(
         await checks.resolve_extra_args(zipformat.INPUT_EXTRA_ARGS, release),
         file=path,
     )
-
     tasks = [
         queued(asf_uid, sql.TaskType.COMPARE_SOURCE_TREES, release, revision, path, check_cache_key=compare_ck),
         queued(
@@ -680,6 +682,25 @@ async def _draft_file_checks(
             if task:
                 task.revision_number = str(revision_number)
                 await _add_task(data, task)
+    if util.archive_format_stem(path.as_path().name) is not None:
+        archive_comparison_task = await queued(
+            asf_uid,
+            sql.TaskType.ARCHIVE_COMPARISON,
+            release,
+            revision_number,
+            path_str,
+            check_cache_key=await checks.resolve_cache_key(
+                resolve(sql.TaskType.ARCHIVE_COMPARISON),
+                parity.CHECK_VERSION,
+                parity.INPUT_POLICY_KEYS,
+                release,
+                revision_number,
+                await checks.resolve_extra_args(parity.INPUT_EXTRA_ARGS, release, path_str),
+                file=path_str,
+            ),
+        )
+        if archive_comparison_task:
+            await _add_task(data, archive_comparison_task)
     # TODO: Should we check .json files for their content?
     # Ideally we would not have to do that
     if path.as_path().name.endswith(".cdx.json"):

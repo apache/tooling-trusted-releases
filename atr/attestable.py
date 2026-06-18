@@ -187,6 +187,23 @@ def compute_swhid_dirs(
     return result
 
 
+def cross_format_siblings(attestable: models.Attestable, primary_rel_path: str) -> dict[str, str | None]:
+    stem = util.archive_format_stem(os.path.basename(primary_rel_path))
+    if stem is None:
+        return {}
+    primary_dir = os.path.dirname(primary_rel_path)
+    siblings: dict[str, str | None] = {}
+    for path_key in path_hashes(attestable):
+        if path_key == primary_rel_path:
+            continue
+        if os.path.dirname(path_key) != primary_dir:
+            continue
+        if util.archive_format_stem(os.path.basename(path_key)) != stem:
+            continue
+        siblings[path_key] = path_swhid_dir(attestable, path_key)
+    return siblings
+
+
 def effective_path_provenance(
     path_provenance: dict[safe.RelPath, models.ProvenanceV2] | None,
     path_to_hash: dict[safe.RelPath, str],
@@ -330,6 +347,16 @@ def path_provenance(attestable: models.Attestable, path_key: str) -> models.Prov
         entry = attestable.paths.get(path_key)
         return entry.provenance if (entry is not None) else None
     return None
+
+
+def path_swhid_dir(attestable: models.Attestable, path_key: str) -> str | None:
+    if not isinstance(attestable, models.AttestableV2):
+        return None
+    entry = attestable.paths.get(path_key)
+    if entry is None:
+        return None
+    hash_entry = attestable.hashes.get(entry.content_hash)
+    return hash_entry.swhid_dir_inner if (hash_entry is not None) else None
 
 
 async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[safe.RelPath, str], dict[safe.RelPath, int]]:
