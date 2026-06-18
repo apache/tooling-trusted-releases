@@ -60,6 +60,24 @@ async def add(_session: web.Committer, _keys_add: Literal["keys/add"]) -> str:
             "releases. Associate a key with a committee when you sign releases for it.",
         ],
     ]
+    page.div(".alert.alert-info")[
+        htm.p(".fw-semibold.mb-2")["Which email address should your key use?"],
+        htm.p[
+            "Your key's user ID must contain an email address that ATR can link to an ASF account. ",
+            "The simplest choice is your own ",
+            htm.code["@apache.org"],
+            " address. Otherwise, use an address that you have linked to your account at ",
+            htm.a(href="https://id.apache.org/")["id.apache.org"],
+            ". Always use your own address, not someone else's.",
+        ],
+        htm.p(".mb-0")[
+            "If ATR cannot map the address to an ASF UID, this form will not accept the key. ",
+            "Fix the key's user ID or link the address at ",
+            htm.a(href="https://id.apache.org/")["id.apache.org"],
+            " before uploading it. The address is publically associated with releases that you sign through your "
+            "public key and committee KEYS files, so choose carefully.",
+        ],
+    ]
     await form.render_block(
         page,
         model_cls=shared.keys.AddOpenPGPKeyForm,

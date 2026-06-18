@@ -134,7 +134,7 @@ case "${1:-}" in
     if [ $# -ne 5 ]
     then
       echo "Usage: $0 issue NAME EMAIL PUBLIC-KEY-FILE PRIVATE-KEY-FILE" >&2
-      echo "Example: $0 issue 'Alice Bao' alice.bao@example.org pub.asc prv.asc" >&2
+      echo "Example: $0 issue 'Alice Example' example@apache.org pub.asc prv.asc" >&2
       exit 2
     fi
     _issue "$2" "$3" "$4" "$5"
@@ -159,7 +159,7 @@ case "${1:-}" in
     ;;
   *)
     echo "Usage: $0 ( issue | sign | verify ) ARGS..." >&2
-    echo "Example: $0 issue 'Alice Bao' alice.bao@example.org pub.asc prv.asc" >&2
+    echo "Example: $0 issue 'Alice Example' example@apache.org pub.asc prv.asc" >&2
     echo "Example: $0 sign prv.asc file.txt" >&2
     echo "Example: $0 verify pub.asc file.txt" >&2
     exit 2
