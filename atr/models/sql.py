@@ -1304,6 +1304,7 @@ class Release(sqlmodel.SQLModel, table=True):
     # Set at start time when the user opts in to archiving the prior release
     # in this cycle when this release is announced.
     archive_prior_release: bool = sqlmodel.Field(default=False)
+    expedited: bool = sqlmodel.Field(default=False)
 
     check_cache_key: str | None = sqlmodel.Field(default=None, **example("ef0ccb0a-3514-4b65-abcd-879850349f74"))
 
