@@ -39,26 +39,6 @@ FORBIDDEN_PROJECT_CATEGORIES: Final[set[str]] = {
 #     }
 # )
 
-# Committees where commiters are explicitly allowed to promote releases
-# For ATR this means that for these committees committers (participants)
-# are allowed to start project release.
-# Copied from https://github.com/apache/infrastructure-svnauthz/blob/master/gen.py
-# Changed roughly once a year.
-COMMITTERS_MAY_RELEASE_COMMITTEES: Final[frozenset[str]] = frozenset(
-    {
-        "bookkeeper",
-        "calcite",
-        "camel",
-        "commons",
-        "couchdb",
-        "druid",
-        "hive",
-        "lucene",
-        "solr",
-        "zookeeper",
-    }
-)
-
 # Committees which cannot make releases, by policy
 STANDING_COMMITTEES: Final[frozenset[str]] = frozenset(
     {

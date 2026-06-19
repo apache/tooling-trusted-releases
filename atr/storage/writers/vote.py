@@ -383,16 +383,6 @@ class ReleaseManager(CommitteeParticipant):
                     "Automatic vote resolution is not available for the first round of podling votes",
                     status=403,
                 )
-            if automatic_resolve_when_finished:
-                is_pmc_member = user.is_committee_member(committee, self.__asf_uid)
-                is_designated_release_manager = user.is_release_manager(committee, self.__asf_uid)
-                if (not is_pmc_member) and (not is_designated_release_manager):
-                    # TODO: Maybe we should modularise all of this?
-                    # Then we could use the relevant permissions class
-                    raise storage.AccessError(
-                        "Automatic vote resolution requires a committee member or release manager initiator",
-                        status=403,
-                    )
             if automatic_publish_when_resolved:
                 if not config.get().SVN_PUBLISH_URL:
                     raise storage.AccessError("Automatic SVN publish is not available on this server", status=403)
