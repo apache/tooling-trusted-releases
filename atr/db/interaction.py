@@ -688,7 +688,8 @@ async def release_ready_to_start_vote(
 
     authorisation = await principal.Authorisation(session)
     is_release_manager = user.is_release_manager(committee, session.uid)
-    if not (authorisation.is_member_of(committee.key) or is_release_manager or session.is_admin):
+    # This mirrors the storage release manager role so the vote pages can show or hide the start option
+    if not (authorisation.is_member_of(committee.key) or is_release_manager):
         return "You must be a PMC member or designated release manager of this project to start a vote"
 
     has_files = await util.has_files(release)

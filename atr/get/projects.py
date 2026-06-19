@@ -218,6 +218,7 @@ async def select(session: web.Committer, _project_select: Literal["project/selec
             # Test mode allows test projects to be shown
             test_mode = config.is_test_mode()
             all_projects = await data.project(status=sql.ProjectStatus.ACTIVE, _committee=True).all()
+            # This is deliberately wider than the release manager role because it only decides which projects to show
             user_projects = [
                 p
                 for p in all_projects

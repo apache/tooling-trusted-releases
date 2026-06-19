@@ -81,6 +81,7 @@ async def category_and_release(
     if session is None:
         return UserCategory.UNAUTHENTICATED, release, latest_vote_task
 
+    # This keeps the member and release manager checks separate because the categories below need both
     is_pmc_member = user.is_committee_member(release.committee, session.uid)
     is_release_manager = user.is_release_manager(release.committee, session.uid)
 
