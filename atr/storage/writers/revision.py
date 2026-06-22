@@ -403,11 +403,12 @@ class CommitteeParticipant(FoundationCommitter):
         version_key: safe.VersionKey,
         quarantined_id: int,
     ) -> None:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
-        )
-        storage.ensure_project_active(project)
         release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
+        )
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         quarantined = await self.__data.quarantined(
             id=quarantined_id, release_key=release_key, status=sql.QuarantineStatus.FAILED
         ).get()
@@ -446,6 +447,7 @@ class CommitteeParticipant(FoundationCommitter):
                 RuntimeError("Release does not exist for new revision creation")
             )
             storage.ensure_project_active(release.project)
+            self.__write.ensure_release_writable(release)
             if release.phase not in allowed_phases:
                 raise datatypes.PhaseMismatchError(
                     f"Cannot create revision: release phase is {release.phase.value}, "
@@ -626,6 +628,7 @@ class CommitteeParticipant(FoundationCommitter):
         release_key = str(sql.release_key(project_key, version_key))
         release = await self.__data.release(release_key).demand(storage.AccessError("No release found"))
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         via = sql.validate_instrumented_attribute
         stmt = (
             sqlmodel.update(sql.Revision)

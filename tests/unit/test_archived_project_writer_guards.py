@@ -46,6 +46,7 @@ async def test_announce_release_blocks_retired(monkeypatch: pytest.MonkeyPatch) 
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.release(
@@ -76,11 +77,12 @@ async def test_checks_ignore_add_propagates_chokepoint_block() -> None:
 @pytest.mark.asyncio
 async def test_distributions_automate_blocks_retired() -> None:
     data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=_query_returning(_retired_project()))
+    data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     writer = object.__new__(distributions.ReleaseManager)
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     platform = next(iter(sql.DistributionPlatform))
     with pytest.raises(storage.AccessError, match="archived"):
@@ -107,6 +109,7 @@ async def test_distributions_record_blocks_retired_via_release_lookup() -> None:
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     platform = next(iter(sql.DistributionPlatform))
     with pytest.raises(storage.AccessError, match="archived"):
@@ -271,6 +274,7 @@ async def test_release_bump_activity_blocks_ineligible_phase() -> None:
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="not eligible"):
         await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
@@ -292,6 +296,7 @@ async def test_release_bump_activity_blocks_retired() -> None:
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
@@ -316,6 +321,7 @@ async def test_release_bump_activity_clears_future_notice() -> None:
     writer._CommitteeParticipant__write_as = write_as
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     result = await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
     assert result is candidate
@@ -349,6 +355,7 @@ async def test_release_bump_activity_rejects_concurrent_state_change() -> None:
     writer._CommitteeParticipant__write_as = write_as
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="state has changed"):
         await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
@@ -375,6 +382,7 @@ async def test_release_bump_activity_updates_activity() -> None:
     writer._CommitteeParticipant__write_as = write_as
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     result = await writer.bump_activity(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
     assert result is candidate
@@ -400,6 +408,7 @@ async def test_release_delete_blocks_retired() -> None:
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.delete(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
@@ -408,11 +417,12 @@ async def test_release_delete_blocks_retired() -> None:
 @pytest.mark.asyncio
 async def test_release_import_from_svn_blocks_retired() -> None:
     data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=_query_returning(_retired_project()))
+    data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     writer = object.__new__(release.CommitteeParticipant)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.import_from_svn(
@@ -434,9 +444,11 @@ async def test_release_promote_to_candidate_blocks_retired() -> None:
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     # promote_to_candidate catches AccessError internally and returns it as a string
     result = await writer.promote_to_candidate(
@@ -450,11 +462,12 @@ async def test_release_promote_to_candidate_blocks_retired() -> None:
 @pytest.mark.asyncio
 async def test_revision_clear_quarantine_blocks_retired() -> None:
     data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=_query_returning(_retired_project()))
+    data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     writer = object.__new__(revision.CommitteeParticipant)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.clear_quarantine(
@@ -472,6 +485,7 @@ async def test_revision_create_revision_with_quarantine_blocks_retired(
     writer._CommitteeParticipant__data = mock.MagicMock()
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     inner_data = mock.MagicMock()
     inner_data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
@@ -489,11 +503,12 @@ async def test_revision_create_revision_with_quarantine_blocks_retired(
 @pytest.mark.asyncio
 async def test_sbom_augment_blocks_retired() -> None:
     data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=_query_returning(_retired_project()))
+    data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
     writer = object.__new__(sbom.CommitteeParticipant)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"
     writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
 
     with pytest.raises(storage.AccessError, match="archived"):
         await writer.augment_cyclonedx(
@@ -513,6 +528,7 @@ async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
     writer._ReleaseManager__data = data
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     stub_release = SimpleNamespace(
         project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True, key="project")
@@ -536,6 +552,7 @@ async def test_vote_send_resolution_blocks_retired() -> None:
     writer._ReleaseManager__data = mock.MagicMock()
     writer._ReleaseManager__asf_uid = "tester"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
 
     rel = _retired_release()
     with pytest.raises(storage.AccessError, match="archived"):

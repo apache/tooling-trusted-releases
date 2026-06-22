@@ -286,6 +286,7 @@ def _release_writer(data: db.Session) -> release_writer.CommitteeParticipant:
     writer._CommitteeParticipant__asf_uid = "alice"
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__write_as = SimpleNamespace(append_to_audit_log=mock.Mock())
+    writer._CommitteeParticipant__write = mock.MagicMock()
     return writer
 
 

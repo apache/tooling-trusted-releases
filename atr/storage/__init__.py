@@ -484,6 +484,13 @@ class Write:
             return outcome.Error(e)
         return outcome.Result(warm)
 
+    def ensure_release_writable(self, release: sql.Release) -> None:
+        if (not release.expedited) or (release.phase == sql.ReleasePhase.RELEASE):
+            return
+        committee_key = release.project.committee_key
+        if (committee_key is None) or (not self.__authorisation.is_member_of(committee_key)):
+            raise AccessError("Not authorized", status=403)
+
     @property
     def member_of(self) -> frozenset[str]:
         return self.__authorisation.member_of()

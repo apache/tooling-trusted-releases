@@ -286,6 +286,7 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key), version=str(version_key), _committee=True
         ).demand(storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404))
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         ineligible_phase = release.phase not in _ACTIVITY_BUMP_PHASES
         if ineligible_phase:
             raise storage.AccessError(
@@ -333,6 +334,7 @@ class CommitteeParticipant(FoundationCommitter):
             project_key=str(project_key), version=str(version), phase=phase, _committee=True
         ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         # Once a release has been announced it can only be archived, never deleted
         if release.phase == sql.ReleasePhase.RELEASE:
             return f"Release '{project_key!s} {version!s}' has been announced; it can only be archived, not deleted."
@@ -615,10 +617,12 @@ class CommitteeParticipant(FoundationCommitter):
         svn_revision: str,
         target_subdirectory: safe.RelPath | None,
     ) -> sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
-        storage.ensure_project_active(project)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         task_args = {
             "svn_url": svn_url,
             "revision": svn_revision,
@@ -696,6 +700,7 @@ class CommitteeParticipant(FoundationCommitter):
             )
         )
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         committee = release.project.committee
         if committee is None:
             raise storage.AccessError("Release has no committee - Invalid state", status=500)
@@ -825,6 +830,7 @@ class CommitteeParticipant(FoundationCommitter):
             key=str(release_key), _project=True, _committee=True, _project_release_policy=True
         ).demand(storage.AccessError("Release candidate draft not found", status=404))
         storage.ensure_project_active(release_for_pre_checks.project)
+        self.__write.ensure_release_writable(release_for_pre_checks)
         project_key = release_for_pre_checks.safe_project_key
         version_key = release_for_pre_checks.safe_version_key
         revision_number = release_for_pre_checks.safe_latest_revision_number

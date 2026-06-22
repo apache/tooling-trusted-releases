@@ -41,10 +41,7 @@ type TarEntry = tuple[str, str, bytes | str]
 @pytest.mark.asyncio
 async def test_clear_quarantine_raises_when_not_found():
     mock_data = mock.AsyncMock()
-    active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE)
-    active_project_query = mock.MagicMock()
-    active_project_query.demand = mock.AsyncMock(return_value=active_project)
-    mock_data.project = mock.MagicMock(return_value=active_project_query)
+    _attach_active_release(mock_data)
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=None)
     mock_data.quarantined = mock.MagicMock(return_value=mock_query)
@@ -63,10 +60,7 @@ async def test_clear_quarantine_transitions_failed_to_acknowledged():
     quarantined_row.status = sql.QuarantineStatus.FAILED
 
     mock_data = mock.AsyncMock()
-    active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE)
-    active_project_query = mock.MagicMock()
-    active_project_query.demand = mock.AsyncMock(return_value=active_project)
-    mock_data.project = mock.MagicMock(return_value=active_project_query)
+    _attach_active_release(mock_data)
     mock_query = mock.MagicMock()
     mock_query.get = mock.AsyncMock(return_value=quarantined_row)
     mock_data.quarantined = mock.MagicMock(return_value=mock_query)

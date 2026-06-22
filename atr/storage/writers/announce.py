@@ -147,6 +147,7 @@ class ReleaseManager(CommitteeParticipant):
         if release.project.committee_key != self.__committee_key:
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
 
         # Loaded the release first so a project's stored announce recipients can
         # be folded into the permitted set before we validate the addresses.

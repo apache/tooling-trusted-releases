@@ -50,6 +50,12 @@ Because projects belong to committees, we provide [`write.as_project_committee_m
 
 Some storage writers perform additional authorization validation beyond what `as_project_committee_member` provides. The check ignores writer, for example, validates that the target project belongs to the committee for which the user is authorized. Therefore even if a caller mistakenly passes an incorrect project name, the writer will reject the operation.
 
+Some rules cannot be expressed at the committee level at all, because they depend on the specific release rather than on its committee. Expedited releases, marked by the [`expedited`](/ref/atr/models/sql.py:Release) flag, are confidential until they reach the `RELEASE` phase, and while a release is embargoed only committee members may write to it. A participant or a designated release manager is not necessarily a committee member, so the committee scoped factories cannot enforce this on their own.
+
+Instead, each writer method that mutates a release calls [`write.ensure_release_writable(release)`](/ref/atr/storage/__init__.py) (`ensure_release_writable`) against the release it has just loaded, which raises a generic 403 [`AccessError`](/ref/atr/storage/__init__.py) (`AccessError`) when the release is expedited and the actor is not a member of its committee. The check runs against the release actually being mutated, not a value supplied earlier in the request, so it cannot be bypassed by passing a stale or unrelated release.
+
+File and revision changes are all funnelled through [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) (`create_revision_with_quarantine`), so the check there covers every file mutation, and the remaining row level mutations carry the same check where they load the release. Member-tier and higher methods do not need the check, because a non-member can never obtain a member-tier writer in the first place.
+
 Here is a more complete example from [`api/__init__.py`](/ref/atr/api/__init__.py) that shows the classic three step pattern:
 
 ```python

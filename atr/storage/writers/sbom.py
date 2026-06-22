@@ -79,10 +79,12 @@ class CommitteeParticipant(FoundationCommitter):
         revision_number: safe.RevisionNumber,
         rel_path: safe.RelPath,
     ) -> sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
-        storage.ensure_project_active(project)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_AUGMENT,
             task_args=args.FileArgs(
@@ -113,10 +115,12 @@ class CommitteeParticipant(FoundationCommitter):
         file_path: safe.StatePath,
         sbom_path: safe.StatePath,
     ) -> sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
-        storage.ensure_project_active(project)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_CONVERT,
             task_args=args.ConvertCycloneDX(
@@ -144,10 +148,12 @@ class CommitteeParticipant(FoundationCommitter):
         path_in_new_revision: safe.StatePath,
         sbom_path_in_new_revision: safe.StatePath,
     ) -> sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
-        storage.ensure_project_active(project)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         # Create and queue the task, using paths within the new revision
         # We still need release.name for the task metadata
         artifact_path = await asyncio.to_thread(_resolved_path_str, path_in_new_revision)
@@ -177,10 +183,12 @@ class CommitteeParticipant(FoundationCommitter):
         revision_number: safe.RevisionNumber,
         rel_path: safe.RelPath,
     ) -> sql.Task:
-        project = await self.__data.project(key=str(project_key)).demand(
-            storage.AccessError(f"Project '{project_key}' not found.")
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
-        storage.ensure_project_active(project)
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         sbom_task = sql.Task(
             task_type=sql.TaskType.SBOM_OSV_SCAN,
             task_args=args.FileArgs(

@@ -566,6 +566,7 @@ def _foundation_writer_with_data(data: db.Session) -> tuple[vote.FoundationCommi
     writer._FoundationCommitter__data = data
     writer._FoundationCommitter__write_as = write_as
     writer._FoundationCommitter__asf_uid = "chair"
+    writer._FoundationCommitter__write = mock.MagicMock()
     return writer, write_as
 
 
@@ -579,6 +580,8 @@ def _member_writer_with_data(data: db.Session, write_as: SimpleNamespace) -> vot
     writer._ReleaseManager__write_as = write_as
     writer._ReleaseManager__asf_uid = "chair"
     writer._ReleaseManager__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
+    writer._ReleaseManager__write = mock.MagicMock()
     return writer
 
 
@@ -596,6 +599,7 @@ def _release_writer_with_data(data: db.Session) -> release.CommitteeParticipant:
     writer = object.__new__(release.CommitteeParticipant)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "chair"
+    writer._CommitteeParticipant__write = mock.MagicMock()
     return writer
 
 
@@ -604,6 +608,7 @@ def _route_release(vote_mode: sql.VoteMode) -> SimpleNamespace:
         committee=SimpleNamespace(key="project", is_podling=False),
         current_vote_seq=1,
         effective_vote_mode=vote_mode,
+        expedited=False,
     )
 
 

@@ -1544,4 +1544,5 @@ def _writer_with_mocks(data: mock.MagicMock, write_as: mock.MagicMock) -> vote.C
     writer._ReleaseManager__write_as = write_as
     writer._ReleaseManager__asf_uid = "chair"
     writer._ReleaseManager__committee_key = "project"
+    writer._ReleaseManager__write = mock.MagicMock()
     return writer

@@ -86,6 +86,7 @@ class FoundationCommitter(GeneralPublic):
             if release is None:
                 await self.__data.rollback()
                 return [], "Vote is no longer open."
+            self.__write.ensure_release_writable(release)
             if (expected_vote_mode is not None) and (expected_vote_mode != sql.VoteMode.TRUSTED):
                 await self.__data.rollback()
                 return [], "The vote form is stale, please refresh and try again."
@@ -501,6 +502,7 @@ class ReleaseManager(CommitteeParticipant):
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         additions = (additional_cc or []) + (additional_bcc or [])
         if (release.committee is not None) and additions:
             permitted = set(
@@ -604,6 +606,7 @@ class ReleaseManager(CommitteeParticipant):
             _project_release_policy=True,
         ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
 
         if release.effective_vote_mode != sql.VoteMode.MANUAL:
             raise storage.AccessError("Release is not configured for manual voting", status=409)

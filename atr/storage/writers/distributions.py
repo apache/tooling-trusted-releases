@@ -118,7 +118,7 @@ class ReleaseManager(CommitteeParticipant):
         version: models.safe.VersionKey,
         staging: bool,
     ) -> models.sql.Task:
-        await self.__validate_project_in_committee(project_key)
+        await self.__validate_release_in_committee(release_key)
         dist_task = models.sql.Task(
             task_type=models.sql.TaskType.DISTRIBUTION_WORKFLOW,
             task_args=args.DistributionWorkflow(
@@ -340,15 +340,6 @@ class ReleaseManager(CommitteeParticipant):
             platform=platform.name,
         )
 
-    async def __validate_project_in_committee(self, project_key: models.safe.ProjectKey) -> models.sql.Project:
-        project = await self.__data.project(key=str(project_key), _committee=True).demand(
-            storage.AccessError(f"Project '{project_key}' not found.", status=404)
-        )
-        if project.committee_key != self.__committee_key:
-            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
-        storage.ensure_project_active(project)
-        return project
-
     async def __validate_release_in_committee(self, release_key: models.safe.ReleaseKey) -> models.sql.Release:
         release = await self.__data.release(key=str(release_key), _project=True).demand(
             storage.AccessError(f"Release '{release_key}' not found.", status=404)
@@ -359,6 +350,7 @@ class ReleaseManager(CommitteeParticipant):
                 status=403,
             )
         storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
         return release
 
 
