@@ -28,11 +28,13 @@ import quart
 import quart_schema
 import werkzeug.exceptions as exceptions
 
+import atr.db as db
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.sessions as sessions
+import atr.user as user
 import atr.web as web
 
 QUART_CONVERTERS: Final[dict[Any, str]] = {
@@ -178,6 +180,32 @@ def build_api_path(
 
     path = "/" + "/".join(segments)
     return path, validated_params, literal_params, unique.body, unique.form, unique.query, optional_params
+
+
+async def confidential_release_block(
+    kwargs: dict[str, Any],
+    validated_params: list[tuple[str, type]],
+    session: web.Public,
+    *,
+    allow_asf_member: bool,
+) -> None:
+    project_keys = [
+        kwargs[name] for name, hint in validated_params if (hint is safe.ProjectKey) and (kwargs.get(name) is not None)
+    ]
+    version_keys = [
+        kwargs[name] for name, hint in validated_params if (hint is safe.VersionKey) and (kwargs.get(name) is not None)
+    ]
+    if (len(project_keys) != 1) or (len(version_keys) != 1):
+        return
+    release_key = sql.release_key(str(project_keys[0]), str(version_keys[0]))
+    async with db.session() as data:
+        release = await data.release(key=str(release_key), _committee=True).get()
+    if release is None:
+        return
+    uid = session.uid if (session is not None) else None
+    is_member = bool(allow_asf_member and (session is not None) and session.is_member)
+    if user.embargo_hides_release(release, uid, is_member=is_member):
+        raise base.ASFQuartException("Release does not exist", errorcode=404)
 
 
 def setup_wrapper(wrapper: Callable[..., Any], func: Callable[..., Any], blueprint_name: str) -> str:

@@ -215,6 +215,7 @@ async def test_scoped_finds_committee_with_project_and_version(tmp_path: pathlib
         project=project,
         version="0.0.1",
         latest_revision_number=None,
+        is_embargoed=False,
     )
     release_dir = safe.StatePath(tmp_path)
     mock_data = MockDBSession(
@@ -233,7 +234,7 @@ async def test_scoped_finds_committee_with_project_and_version(tmp_path: pathlib
         mock.patch.object(atr.api.paths, "release_directory", return_value=release_dir),
         mock.patch.object(atr.api, "_match_release", new=mock.AsyncMock(return_value=True)),
     ):
-        result = await atr.api._match_committees_scoped([committee], args)
+        result = await atr.api._match_committees_scoped([committee], args, "tester")
 
     assert len(result) == 1
     assert result[0].key == "example-pmc"
@@ -248,6 +249,7 @@ async def test_scoped_finds_committee_with_project_only(tmp_path: pathlib.Path) 
         project=project,
         version="0.0.1",
         latest_revision_number=None,
+        is_embargoed=False,
     )
     release_dir = safe.StatePath(tmp_path)
     mock_data = MockDBSession(
@@ -265,7 +267,7 @@ async def test_scoped_finds_committee_with_project_only(tmp_path: pathlib.Path) 
         mock.patch.object(atr.api.paths, "release_directory", return_value=release_dir),
         mock.patch.object(atr.api, "_match_release", new=mock.AsyncMock(return_value=True)),
     ):
-        result = await atr.api._match_committees_scoped([committee], args)
+        result = await atr.api._match_committees_scoped([committee], args, "tester")
 
     assert len(result) == 1
     assert result[0].key == "example-pmc"
@@ -286,7 +288,7 @@ async def test_scoped_returns_empty_when_committee_not_linked() -> None:
     )
 
     with mock.patch.object(atr.api.db, "session", new=_mock_session_factory(mock_data)):
-        result = await atr.api._match_committees_scoped([unlinked_committee], args)
+        result = await atr.api._match_committees_scoped([unlinked_committee], args, "tester")
 
     assert result == []
 
@@ -302,7 +304,7 @@ async def test_scoped_returns_empty_when_project_not_found() -> None:
     )
 
     with mock.patch.object(atr.api.db, "session", new=_mock_session_factory(mock_data)):
-        result = await atr.api._match_committees_scoped([committee], args)
+        result = await atr.api._match_committees_scoped([committee], args, "tester")
 
     assert result == []
 
@@ -323,7 +325,7 @@ async def test_scoped_returns_empty_when_version_not_found() -> None:
     )
 
     with mock.patch.object(atr.api.db, "session", new=_mock_session_factory(mock_data)):
-        result = await atr.api._match_committees_scoped([committee], args)
+        result = await atr.api._match_committees_scoped([committee], args, "tester")
 
     assert result == []
 
@@ -337,6 +339,7 @@ async def test_unscoped_finds_matching_committee(tmp_path: pathlib.Path) -> None
         project=project,
         version="0.0.1",
         latest_revision_number=None,
+        is_embargoed=False,
     )
     release_dir = safe.StatePath(tmp_path)
     mock_data = MockDBSession(
@@ -350,7 +353,7 @@ async def test_unscoped_finds_matching_committee(tmp_path: pathlib.Path) -> None
         mock.patch.object(atr.api.paths, "release_directory", return_value=release_dir),
         mock.patch.object(atr.api, "_match_release", new=mock.AsyncMock(return_value=True)),
     ):
-        result = await atr.api._match_committees([committee], args)
+        result = await atr.api._match_committees([committee], args, "tester")
 
     assert len(result) == 1
     assert result[0].key == "example-pmc"
@@ -365,6 +368,7 @@ async def test_unscoped_returns_empty_when_no_match(tmp_path: pathlib.Path) -> N
         project=project,
         version="0.0.1",
         latest_revision_number=None,
+        is_embargoed=False,
     )
     release_dir = safe.StatePath(tmp_path)
     mock_data = MockDBSession(
@@ -378,7 +382,7 @@ async def test_unscoped_returns_empty_when_no_match(tmp_path: pathlib.Path) -> N
         mock.patch.object(atr.api.paths, "release_directory", return_value=release_dir),
         mock.patch.object(atr.api, "_match_release", new=mock.AsyncMock(return_value=False)),
     ):
-        result = await atr.api._match_committees([committee], args)
+        result = await atr.api._match_committees([committee], args, "tester")
 
     assert result == []
 

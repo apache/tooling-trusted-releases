@@ -29,6 +29,7 @@ import atr.db.interaction as interaction
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -96,6 +97,8 @@ async def select(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         releases = await interaction.releases_in_progress(project)
+    if not user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):
+        releases = [r for r in releases if (not r.is_embargoed)]
     return await template.render(
         "release-select.html", project=project, releases=releases, format_datetime=util.format_datetime
     )

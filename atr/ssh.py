@@ -535,7 +535,11 @@ async def _step_06a_validate_read_permissions(
     if release.phase not in allowed_read_phases:
         raise RsyncArgsError(f"Release '{release.key}' is not in a readable phase ({release.phase.value})")
 
-    if not user.is_committer(project.committee, ssh_uid):
+    if release.is_embargoed:
+        read_allowed = user.can_view_embargoed_release(project.committee, ssh_uid, is_member=False)
+    else:
+        read_allowed = user.is_committer(project.committee, ssh_uid)
+    if not read_allowed:
         raise RsyncArgsError(
             f"You must be a committer or committee member for project '{project.key}' to read this release"
         )

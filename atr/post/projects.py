@@ -85,7 +85,7 @@ async def archive(
         draft_versions: list[safe.VersionKey] = (
             [
                 safe.VersionKey(r.version)
-                for r in project.releases
+                for r in project.releases_including_embargoed
                 if r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
             ]
             if project is not None

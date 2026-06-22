@@ -31,6 +31,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared as shared
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
@@ -47,6 +48,8 @@ async def selected(session: web.Committer, _start: Literal["start"], project_key
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
 
     releases = await interaction.all_releases(project)
+    if not user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):
+        releases = [r for r in releases if (not r.is_embargoed)]
     content = await _render_page(project, releases)
     javascripts = ["start-cycle-preview"] if project.cycle_match else None
     return await template.blank(

@@ -901,7 +901,11 @@ class Project(sqlmodel.SQLModel, table=True):
     # 1-M: Project -> [Release]
     # M-1: Release -> Project
     # see_also(Release.project)
-    releases: list["Release"] = sqlmodel.Relationship(back_populates="project")
+    releases_including_embargoed: list["Release"] = sqlmodel.Relationship(back_populates="project")
+
+    @property
+    def releases(self) -> list["Release"]:
+        return [release for release in self.releases_including_embargoed if (not release.is_embargoed)]
 
     # 1-M: Project -C-> [ProjectCycle]
     # M-1: ProjectCycle -> Project
@@ -1311,8 +1315,8 @@ class Release(sqlmodel.SQLModel, table=True):
     # M-1: Release -> Project
     # 1-M: Project -> [Release]
     project_key: str = sqlmodel.Field(foreign_key="project.key", **example("example"))
-    project: Project = sqlmodel.Relationship(back_populates="releases")
-    see_also(Project.releases)
+    project: Project = sqlmodel.Relationship(back_populates="releases_including_embargoed")
+    see_also(Project.releases_including_embargoed)
 
     # M-1: Release -> ProjectCycle
     # 1-M: ProjectCycle -> [Release]
@@ -1403,6 +1407,10 @@ class Release(sqlmodel.SQLModel, table=True):
         # if project is None:
         #     return None
         return project.committee
+
+    @property
+    def is_embargoed(self) -> bool:
+        return self.expedited and (self.phase != ReleasePhase.RELEASE)
 
     @property
     def days_since_active(self) -> int:

@@ -81,6 +81,7 @@ def typed(
         async def wrapper(*_args: Any, **kwargs: Any) -> Any:
             await common.validate_params(kwargs, validated_params)
             kwargs.update(literal_params)
+            await common.confidential_release_block(kwargs, validated_params, None, allow_asf_member=False)
 
             if body_param is not None:
                 await common.parse_body(body_param, body_safe_params, kwargs)

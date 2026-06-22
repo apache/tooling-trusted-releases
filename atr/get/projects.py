@@ -175,7 +175,8 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                 continue
             if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
                 continue
-            if not project.releases:
+            project_releases = project.releases_including_embargoed
+            if not project_releases:
                 action_forms[str(project.key)] = await form.render(
                     model_cls=shared.projects.DeleteSelectedProject,
                     action=util.as_url(post.projects.delete),
@@ -186,7 +187,7 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                     defaults={"project_key": str(project.key)},
                     confirm="Are you sure you want to delete this project? This cannot be undone.",
                 )
-            elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
+            elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project_releases):
                 action_forms[str(project.key)] = await form.render(
                     model_cls=shared.projects.ArchiveSelectedProject,
                     action=util.as_url(post.projects.archive),
@@ -196,7 +197,7 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                     empty=True,
                     defaults={"project_key": str(project.key)},
                     confirm=(
-                        f"This project has {util.plural(len(project.releases), 'draft release')}."
+                        f"This project has {util.plural(len(project_releases), 'draft release')}."
                         " Archiving will delete those drafts and mark the project as retired."
                         " Continue?"
                     ),
@@ -275,6 +276,15 @@ async def view(
     can_start_release = (is_committee_member or is_privileged) and (project.status != sql.ProjectStatus.RETIRED)
     is_sole_active_project = (project.committee is not None) and (active_committee_projects <= 1)
 
+    if user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):
+        visible_releases = project.releases_including_embargoed
+    else:
+        visible_releases = project.releases
+
+    released_cycle_keys = {r.cycle_key for r in project.releases_including_embargoed}
+    visible_cycle_keys = {r.cycle_key for r in visible_releases}
+    cycles = [c for c in cycles if (c.cycle_key not in released_cycle_keys) or (c.cycle_key in visible_cycle_keys)]
+
     page = htm.Block()
 
     page_styles = """
@@ -319,6 +329,7 @@ async def view(
         can_start_release,
         project,
         cycles,
+        visible_releases,
     )
     page.append(tabs)
 
@@ -463,7 +474,8 @@ def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
 
 async def _delete_form(project: sql.Project) -> htm.Element | None:
     delete_form = None
-    if not project.releases:
+    releases = project.releases_including_embargoed
+    if not releases:
         delete_form = await form.render(
             shared.projects.DeleteSelectedProject,
             action=util.as_url(post.projects.delete),
@@ -474,7 +486,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             confirm="Are you sure you want to delete this project? This cannot be undone.",
             empty=True,
         )
-    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project.releases):
+    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in releases):
         delete_form = await form.render(
             model_cls=shared.projects.ArchiveSelectedProject,
             action=util.as_url(post.projects.archive),
@@ -484,7 +496,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             empty=True,
             defaults={"project_key": str(project.key)},
             confirm=(
-                f"This project has {util.plural(len(project.releases), 'draft release')}."
+                f"This project has {util.plural(len(releases), 'draft release')}."
                 " Archiving will delete those drafts and mark the project as retired."
                 " Continue?"
             ),
@@ -499,6 +511,7 @@ async def _generate_tabs(
     can_start_release: bool,
     project: sql.Project,
     cycles: list[sql.ProjectCycle],
+    releases: list[sql.Release],
 ) -> htpy.Element:
     tab_items: list[htm.Tab] = [
         htm.Tab(
@@ -507,6 +520,7 @@ async def _generate_tabs(
             render=lambda: _render_releases_tab(
                 project,
                 cycles,
+                releases,
                 can_edit_policy=can_edit_policy,
                 can_start_release=can_start_release,
             ),
@@ -1179,6 +1193,7 @@ async def _render_releases_sections(
 async def _render_releases_tab(
     project: sql.Project,
     cycles: list[sql.ProjectCycle],
+    releases: list[sql.Release],
     *,
     can_edit_policy: bool,
     can_start_release: bool,
@@ -1194,7 +1209,7 @@ async def _render_releases_tab(
                 )["Start a new release"]
             ]
 
-        if not project.releases:
+        if not releases:
             body.p(".text-muted.mb-4")["No releases found."]
 
         # Stay flat for projects with only the implicit "default" cycle and no
@@ -1204,7 +1219,7 @@ async def _render_releases_tab(
         show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
 
         # Newest first, as the old per-phase queries returned them.
-        releases = sorted(project.releases, key=lambda r: r.created, reverse=True)
+        releases = sorted(releases, key=lambda r: r.created, reverse=True)
 
         for cycle in cycles:
             cycle_drafts = [

@@ -38,6 +38,16 @@ def binding_terminology(vote_round: int | None) -> tuple[str, str]:
     return "Binding", "Non-binding"
 
 
+def can_view_embargoed_release(committee: sql.Committee | None, uid: str | None, *, is_member: bool) -> bool:
+    if uid is None:
+        return False
+    if is_admin(uid):
+        return True
+    if is_committee_member(committee, uid):
+        return True
+    return is_member
+
+
 async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = None) -> list[sql.Release]:
     # Must be imported here, to avoid a circular import
     import atr.db.interaction as interaction
@@ -49,6 +59,10 @@ async def candidate_drafts(uid: str, user_projects: list[sql.Project] | None = N
         releases = await interaction.candidate_drafts(p)
         user_candidate_drafts.extend(releases)
     return user_candidate_drafts
+
+
+def embargo_hides_release(release: sql.Release, uid: str | None, *, is_member: bool) -> bool:
+    return release.is_embargoed and (not can_view_embargoed_release(release.committee, uid, is_member=is_member))
 
 
 def is_admin(user_id: str | None) -> bool:

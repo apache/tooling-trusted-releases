@@ -477,7 +477,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.options(joined_load(sql.Project.committee))
 
         if _releases:
-            query = query.options(select_in_load(sql.Project.releases))
+            query = query.options(select_in_load(sql.Project.releases_including_embargoed))
         if _super_project:
             query = query.options(joined_load(sql.Project.super_project))
         if _release_policy:

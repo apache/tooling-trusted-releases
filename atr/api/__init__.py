@@ -1045,6 +1045,7 @@ async def project_releases(
     async with db.session() as data:
         await data.project(key=str(project_key)).demand(exceptions.NotFound())
         releases = await data.release(project_key=str(project_key)).all()
+    releases = [r for r in releases if (not r.is_embargoed)]
     return models.api.ProjectReleasesResults(
         endpoint="/project/releases",
         releases=releases,
@@ -1520,8 +1521,9 @@ async def releases_list(
     except ValueError as e:
         raise exceptions.BadRequest(str(e))
     via = sql.validate_instrumented_attribute
+    not_embargoed = (~via(sql.Release.expedited)) | (via(sql.Release.phase) == sql.ReleasePhase.RELEASE)
     async with db.session() as data:
-        statement = sqlmodel.select(sql.Release)
+        statement = sqlmodel.select(sql.Release).where(not_embargoed)
 
         if query_args.phase:
             try:
@@ -1536,7 +1538,7 @@ async def releases_list(
 
         paged_releases = (await data.execute(statement)).scalars().all()
 
-        count_stmt = sqlalchemy.select(sqlalchemy.func.count(via(sql.Release.key)))
+        count_stmt = sqlalchemy.select(sqlalchemy.func.count(via(sql.Release.key))).where(not_embargoed)
         if query_args.phase:
             phase_value = sql.ReleasePhase(query_args.phase) if query_args.phase else None
             if phase_value is not None:
@@ -1591,9 +1593,9 @@ async def signature_provenance(
         )
 
     if data.project_key is not None:
-        matched_committees = await _match_committees_scoped(key.committees, data)
+        matched_committees = await _match_committees_scoped(key.committees, data, _jwt_asf_uid())
     else:
-        matched_committees = await _match_committees(key.committees, data)
+        matched_committees = await _match_committees(key.committees, data, _jwt_asf_uid())
 
     for committee in matched_committees:
         keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
@@ -1841,6 +1843,12 @@ async def vote_cast(
     Cast a Trusted Vote ballot.
     """
     asf_uid = _jwt_asf_uid()
+    async with db.session() as db_data:
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(key=str(release_key), _committee=True).get()
+    if (release is not None) and user.embargo_hides_release(release, asf_uid, is_member=False):
+        raise exceptions.NotFound(f"Release {release_key} not found")
+
     fullname = await _ldap_fullname(asf_uid)
     try:
         async with storage.write(asf_uid) as write:
@@ -2007,6 +2015,9 @@ async def vote_tabulate(
             exceptions.NotFound(f"Release {release_key} not found"),
         )
 
+    if user.embargo_hides_release(release, _jwt_asf_uid(), is_member=False):
+        raise exceptions.NotFound(f"Release {release_key} not found")
+
     is_trusted = (release.effective_vote_mode == sql.VoteMode.TRUSTED) and (release.current_vote_seq is not None)
     trusted_ballots, trusted_summary, trusted_passed = await _vote_tabulate_trusted(release, is_trusted)
     details = await _vote_tabulate_email_details(release, is_trusted)
@@ -2132,7 +2143,7 @@ async def _ldap_fullname(asf_uid: str) -> str:
 
 
 async def _match_committees(
-    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs
+    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs, asf_uid: str
 ) -> list[sql.Committee]:
     matched: dict[str, sql.Committee] = {}
     async with db.session() as db_data:
@@ -2143,7 +2154,8 @@ async def _match_committees(
             release_dirs: list[safe.StatePath] = []
             for project in projects:
                 releases = await db_data.release(project_key=project.key).all()
-                release_dirs.extend(paths.release_directory(release) for release in releases)
+                visible = [r for r in releases if (not user.embargo_hides_release(r, asf_uid, is_member=False))]
+                release_dirs.extend(paths.release_directory(release) for release in visible)
             for release_dir in release_dirs:
                 if await _match_release(release_dir, data):
                     matched[committee.key] = committee
@@ -2152,7 +2164,7 @@ async def _match_committees(
 
 
 async def _match_committees_scoped(
-    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs
+    key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs, asf_uid: str
 ) -> list[sql.Committee]:
     project_key = data.project_key
     if project_key is None:
@@ -2176,10 +2188,13 @@ async def _match_committees_scoped(
             ).get()
             if release is None:
                 return []
+            if user.embargo_hides_release(release, asf_uid, is_member=False):
+                return []
             release_dirs = [paths.release_directory(release)]
         else:
             releases = await db_data.release(project_key=str(project_key)).all()
-            release_dirs = [paths.release_directory(release) for release in releases]
+            visible = [r for r in releases if (not user.embargo_hides_release(r, asf_uid, is_member=False))]
+            release_dirs = [paths.release_directory(release) for release in visible]
 
         for release_dir in release_dirs:
             if await _match_release(release_dir, data):

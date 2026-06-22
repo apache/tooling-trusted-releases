@@ -281,7 +281,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
         user_notifications: list[sql.Notification] = []
         if current_user is not None:
             current_uid = current_user.uid
-            topnav_unfinished_releases = await interaction.unfinished_releases(current_uid)
+            topnav_unfinished_releases = await interaction.unfinished_releases(current_uid, current_user.is_member)
             topnav_user_projects = await interaction.user_projects(current_uid)
             async with db.session() as data:
                 db_user = await data.user(asf_uid=current_uid).get()

@@ -230,7 +230,7 @@ class CommitteeMember(ReleaseManager):
             sql.ReleasePhase.RELEASE_PREVIEW,
             sql.ReleasePhase.RELEASE,
         }
-        if any(r.phase in post_draft_phases for r in project.releases):
+        if any(r.phase in post_draft_phases for r in project.releases_including_embargoed):
             raise storage.AccessError(
                 f"Cannot archive project '{project_key}' because it has active releases; complete or remove them first."
             )
@@ -267,7 +267,7 @@ class CommitteeMember(ReleaseManager):
                     f"Cannot delete project '{project_key}' because it is the only project in its committee."
                 )
 
-        if project.releases:
+        if project.releases_including_embargoed:
             raise storage.AccessError(
                 f"Cannot delete project '{project_key}' because it has associated releases. Delete them first.",
                 status=409,

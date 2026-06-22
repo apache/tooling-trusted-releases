@@ -61,6 +61,7 @@ def typed(func: Callable[..., Any]) -> web.RouteFunction[Any]:
         enhanced_session = await common.authenticate_public() if public else await common.authenticate()
         await common.validate_params(kwargs, validated_params)
         kwargs.update(literal_params)
+        await common.confidential_release_block(kwargs, validated_params, enhanced_session, allow_asf_member=True)
 
         start_time_ns = time.perf_counter_ns()
         response = await func(enhanced_session, **kwargs)

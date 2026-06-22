@@ -909,7 +909,7 @@ def trusted_vote_round(release: sql.Release) -> int | None:
     return None
 
 
-async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Release]]]:
+async def unfinished_releases(asfuid: str, is_member: bool) -> list[tuple[str, str, list[sql.Release]]]:
     releases: list[tuple[str, str, list[sql.Release]]] = []
     async with db.session() as data:
         user_projects = await user.projects(asfuid)
@@ -932,6 +932,8 @@ async def unfinished_releases(asfuid: str) -> list[tuple[str, str, list[sql.Rele
             )
             result = await data.execute(stmt)
             active_releases = list(result.scalars().all())
+            if not user.can_view_embargoed_release(project.committee, asfuid, is_member=is_member):
+                active_releases = [r for r in active_releases if (not r.is_embargoed)]
             if active_releases:
                 active_releases.sort(key=lambda r: r.created, reverse=True)
                 releases.append((project.short_display_name, project.key, active_releases))

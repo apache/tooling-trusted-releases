@@ -104,7 +104,9 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
                     .order_by(sql.validate_instrumented_attribute(sql.Release.created).desc())
                 )
                 result = await data.execute(stmt)
-                active_releases = result.scalars().all()
+                active_releases = list(result.scalars().all())
+                if not user.can_view_embargoed_release(project.committee, uid, is_member=session_data.is_member):
+                    active_releases = [r for r in active_releases if (not r.is_embargoed)]
                 completed_releases = (
                     len(await data.release(phase=sql.ReleasePhase.RELEASE, project_key=project.key).all()) > 0
                 )

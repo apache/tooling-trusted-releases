@@ -485,7 +485,7 @@ class Write:
         return outcome.Result(warm)
 
     def ensure_release_writable(self, release: sql.Release) -> None:
-        if (not release.expedited) or (release.phase == sql.ReleasePhase.RELEASE):
+        if not release.is_embargoed:
             return
         committee_key = release.project.committee_key
         if (committee_key is None) or (not self.__authorisation.is_member_of(committee_key)):

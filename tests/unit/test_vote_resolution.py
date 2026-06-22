@@ -1255,6 +1255,7 @@ async def test_vote_tabulate_api_passes_trusted_receipt_exclusions(monkeypatch: 
     )
     ballot_receipt_message_ids = mock.AsyncMock(return_value={"receipt@apache.org"})
 
+    monkeypatch.setattr(atr.api, "_jwt_asf_uid", lambda: "tester")
     monkeypatch.setattr(atr.api.db, "session", _db_session)
     monkeypatch.setattr(atr.api.storage, "write", _write_context)
     monkeypatch.setattr(
@@ -1289,6 +1290,7 @@ def _api_vote_tabulate_handler():
 def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+        is_embargoed=False,
         vote_mode=sql.VoteMode.EMAIL,
         effective_vote_mode=sql.VoteMode.EMAIL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),
