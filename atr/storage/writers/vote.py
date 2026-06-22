@@ -344,6 +344,8 @@ class ReleaseManager(CommitteeParticipant):
                 _committee=True,
             ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
+        if release.expedited and (release.committee is not None) and release.committee.is_podling:
+            raise storage.AccessError("Expedited releases are not available for podling projects", status=400)
         if promote:
             await self.__data.begin_immediate()
         try:
@@ -373,6 +375,17 @@ class ReleaseManager(CommitteeParticipant):
             committee = await self._committee_for_release(release)
             if committee is None:
                 raise storage.AccessError("Release has no committee", status=500)
+            if release.expedited:
+                email_to = f"private@{committee.key}.apache.org"
+                email_cc = []
+                email_bcc = []
+                second_round_email_to = None
+                vote_duration_choice = 0
+                permitted_recipients = [email_to]
+                notify_when_finished = False
+                automatic_resolve_when_finished = False
+                automatic_publish_when_resolved = False
+                download_path_suffix = None
             if notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
                 raise storage.AccessError("Vote end reminders are only available in Trusted Vote mode", status=403)
             if automatic_resolve_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
@@ -503,6 +516,9 @@ class ReleaseManager(CommitteeParticipant):
         ).demand(storage.AccessError("Release not found", status=404))
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)
+        if release.expedited:
+            additional_cc = []
+            additional_bcc = []
         additions = (additional_cc or []) + (additional_bcc or [])
         if (release.committee is not None) and additions:
             permitted = set(

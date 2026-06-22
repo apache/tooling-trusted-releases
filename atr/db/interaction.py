@@ -677,6 +677,9 @@ async def release_ready_to_start_vote(
     if committee is None:
         return "The committee for this release was not found"
 
+    if release.expedited and committee.is_podling:
+        return "Expedited releases are not available for podling projects"
+
     if release.effective_vote_mode not in allowed_vote_modes:
         return "This release's vote mode does not allow that action"
 

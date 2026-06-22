@@ -1429,6 +1429,10 @@ class Release(sqlmodel.SQLModel, table=True):
 
     @property
     def effective_vote_mode(self) -> VoteMode:
+        if self.expedited:
+            if (self.vote_mode is not None) and (self.vote_mode != VoteMode.TRUSTED):
+                raise RuntimeError(f"Expedited release {self.key} has a non-trusted vote mode: {self.vote_mode.value}")
+            return VoteMode.TRUSTED
         if (self.phase != ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (self.vote_mode is not None):
             return self.vote_mode
         return self.project.policy_vote_mode

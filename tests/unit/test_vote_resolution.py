@@ -1291,6 +1291,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE,
         is_embargoed=False,
+        expedited=False,
         vote_mode=sql.VoteMode.EMAIL,
         effective_vote_mode=sql.VoteMode.EMAIL,
         release_policy=SimpleNamespace(vote_mode=sql.VoteMode.EMAIL),

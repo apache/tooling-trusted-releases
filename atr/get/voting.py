@@ -92,7 +92,10 @@ async def selected(
 
         vote_mode = release.effective_vote_mode
         default_subject_template = await construct.start_vote_subject_default(project_key)
-        default_body_template = await construct.start_vote_default(project_key)
+        if release.expedited:
+            default_body_template = construct.START_VOTE_EXPEDITED_DEFAULT
+        else:
+            default_body_template = await construct.start_vote_default(project_key)
         subject_template_hash = construct.template_hash(default_subject_template)
 
         options = construct.StartVoteOptions(
@@ -101,7 +104,7 @@ async def selected(
             project_key=project_key,
             version_key=release.safe_version_key,
             revision_number=release.safe_latest_revision_number,
-            vote_duration=min_hours,
+            vote_duration=(0 if release.expedited else min_hours),
         )
         default_subject, default_body = await construct.start_vote_subject_and_body(
             default_subject_template, default_body_template, options
@@ -134,6 +137,7 @@ async def selected(
             flash_data=flash_data,
             publish_eligible=publish_eligible,
             default_download_path_suffix=default_download_path_suffix,
+            expedited=release.expedited,
         )
 
         return await template.blank(
@@ -216,7 +220,7 @@ def _render_body_field(default_body: str, project_key: str) -> htm.Element:
     return htm.div[textarea, link]
 
 
-async def _render_page(
+async def _render_page(  # noqa: C901
     release,
     revision_number: str,
     permitted_recipients: list[str],
@@ -234,6 +238,7 @@ async def _render_page(
     flash_data: dict,
     publish_eligible: bool,
     default_download_path_suffix: safe.RelPath | None,
+    expedited: bool,
 ) -> htm.Element:
     page = htm.Block()
 
@@ -266,6 +271,15 @@ async def _render_page(
         ]
     ]
 
+    if expedited:
+        private_address = f"private@{release.committee.key}.apache.org"
+        page.div(".p-3.mb-4.bg-info-subtle.border.border-info.rounded")[
+            htm.strong["Expedited release. "],
+            "Voting uses Trusted mode, and ballots and the announcement are sent only to ",
+            htm.code[private_address],
+            ". There is no minimum duration, and a PMC member must resolve the vote manually.",
+        ]
+
     if keys_file_missing:
         keys_url = util.as_url(keys.keys) + f"#committee-{release.committee.key}"
         page.div(".p-3.mb-4.bg-warning-subtle.border.border-warning.rounded")[
@@ -285,101 +299,131 @@ async def _render_page(
     )
 
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
-    custom_body_widget = _render_body_field(default_body, release.project.key)
-    policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.VOTE)
-    permitted_set = set(permitted_recipients)
-    fallback_to = permitted_recipients[0] if permitted_recipients else None
-    default_to = policy_to if (policy_to in permitted_set) else fallback_to
-    settings_url = util.as_url(projects.view, project_key=release.project.key) + "?tab=vote#email_to"
-    recipient_radios = htm.div[
-        render.html_recipients_to_radios(
-            permitted_recipients,
-            default_to=default_to,
-            documentation=(
-                "Note: The options to send to the user-tests "
-                "mailing list and yourself are provided for "
-                "testing purposes only, and will not be "
-                "available in the finished version of ATR. "
-                "If the option you pick is not a mailing list, "
-                "you will not be able to use vote tabulation."
-            ),
-        ),
-        htpy.details(".mt-2")[
-            htpy.summary["Select CC and BCC recipients"],
-            render.html_recipients_cc_bcc_table(
-                permitted_recipients,
-                selected_cc={address for address in policy_cc if (address in permitted_set)},
-                selected_bcc={address for address in policy_bcc if (address in permitted_set)},
-            ),
-        ],
-        render.html_recipients_defaults_note(settings_url),
-    ]
+    custom: dict[str, htm.Element | htm.VoidElement] = {"subject": custom_subject_widget}
 
-    custom: dict[str, htm.Element | htm.VoidElement] = {
-        "email_to": recipient_radios,
-        "subject": custom_subject_widget,
-        "body": custom_body_widget,
-    }
-    skip = ["email_cc", "email_bcc"]
-
-    if concern_groups:
-        custom["concerns_noted"] = render.html_concerns_noted_checkboxes(concern_groups, checked=submitted_concerns)
-    else:
-        skip.append("concerns_noted")
-
-    if second_round_recipients:
-        default_second_round = second_round_recipients[0]
-        custom["second_round_email_to"] = htm.div[
-            render.html_recipients_to_radios(
-                second_round_recipients,
-                default_to=default_second_round,
-                field_name="second_round_email_to",
-            ),
-        ]
-    else:
-        skip.append("second_round_email_to")
-
-    if vote_mode == sql.VoteMode.TRUSTED:
-        if podling_vote_round == 1:
-            vote_label = "first round vote"
-        elif podling_vote_round == 2:
-            vote_label = "second round vote"
-        else:
-            vote_label = "vote"
-        custom["notify_when_finished"] = htm.div[
-            htpy.input(
-                type="checkbox",
-                name="notify_when_finished",
-                id="notify_when_finished",
-                value="on",
-                class_="form-check-input",
-            ),
-            htm.div(".form-text.text-muted.mt-1")[
-                f"If enabled, ATR will send a reminder to {asf_uid}@apache.org when the {vote_label} finishes.",
+    if expedited:
+        private_address = f"private@{release.committee.key}.apache.org"
+        custom["email_to"] = htm.div[
+            htpy.input(type="hidden", name="email_to", value=private_address),
+            htm.div(".form-control.bg-light")[private_address],
+            htm.div(".form-text.text-muted.mt-2")[
+                "Ballots and the vote announcement are sent only to this private list.",
             ],
         ]
-        if podling_vote_round is None:
-            custom["automatic_resolve_when_finished"] = htm.div[
+        custom["body"] = htm.div[
+            htpy.textarea(
+                "#body.form-control.font-monospace",
+                name="body",
+                rows="12",
+            )[default_body],
+            htm.div(".form-text.text-muted.mt-2")[
+                "This is the default expedited vote message. Edit it if needed before sending.",
+            ],
+        ]
+        skip = [
+            "email_cc",
+            "email_bcc",
+            "second_round_email_to",
+            "vote_duration",
+            "notify_when_finished",
+            "automatic_resolve_when_finished",
+            "automatic_publish_when_resolved",
+            "download_path_suffix",
+        ]
+        if concern_groups:
+            custom["concerns_noted"] = render.html_concerns_noted_checkboxes(concern_groups, checked=submitted_concerns)
+        else:
+            skip.append("concerns_noted")
+    else:
+        custom["body"] = _render_body_field(default_body, release.project.key)
+        policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.VOTE)
+        permitted_set = set(permitted_recipients)
+        fallback_to = permitted_recipients[0] if permitted_recipients else None
+        default_to = policy_to if (policy_to in permitted_set) else fallback_to
+        settings_url = util.as_url(projects.view, project_key=release.project.key) + "?tab=vote#email_to"
+        custom["email_to"] = htm.div[
+            render.html_recipients_to_radios(
+                permitted_recipients,
+                default_to=default_to,
+                documentation=(
+                    "Note: The options to send to the user-tests "
+                    "mailing list and yourself are provided for "
+                    "testing purposes only, and will not be "
+                    "available in the finished version of ATR. "
+                    "If the option you pick is not a mailing list, "
+                    "you will not be able to use vote tabulation."
+                ),
+            ),
+            htpy.details(".mt-2")[
+                htpy.summary["Select CC and BCC recipients"],
+                render.html_recipients_cc_bcc_table(
+                    permitted_recipients,
+                    selected_cc={address for address in policy_cc if (address in permitted_set)},
+                    selected_bcc={address for address in policy_bcc if (address in permitted_set)},
+                ),
+            ],
+            render.html_recipients_defaults_note(settings_url),
+        ]
+        skip = ["email_cc", "email_bcc"]
+
+        if concern_groups:
+            custom["concerns_noted"] = render.html_concerns_noted_checkboxes(concern_groups, checked=submitted_concerns)
+        else:
+            skip.append("concerns_noted")
+
+        if second_round_recipients:
+            default_second_round = second_round_recipients[0]
+            custom["second_round_email_to"] = htm.div[
+                render.html_recipients_to_radios(
+                    second_round_recipients,
+                    default_to=default_second_round,
+                    field_name="second_round_email_to",
+                ),
+            ]
+        else:
+            skip.append("second_round_email_to")
+
+        if vote_mode == sql.VoteMode.TRUSTED:
+            if podling_vote_round == 1:
+                vote_label = "first round vote"
+            elif podling_vote_round == 2:
+                vote_label = "second round vote"
+            else:
+                vote_label = "vote"
+            custom["notify_when_finished"] = htm.div[
                 htpy.input(
                     type="checkbox",
-                    name="automatic_resolve_when_finished",
-                    id="automatic_resolve_when_finished",
+                    name="notify_when_finished",
+                    id="notify_when_finished",
                     value="on",
-                    checked=True,
                     class_="form-check-input",
                 ),
                 htm.div(".form-text.text-muted.mt-1")[
-                    f"If enabled, ATR will resolve the {vote_label} automatically, "
-                    "using only ATR ballots, when the voting period ends.",
+                    f"If enabled, ATR will send a reminder to {asf_uid}@apache.org when the {vote_label} finishes.",
                 ],
             ]
+            if podling_vote_round is None:
+                custom["automatic_resolve_when_finished"] = htm.div[
+                    htpy.input(
+                        type="checkbox",
+                        name="automatic_resolve_when_finished",
+                        id="automatic_resolve_when_finished",
+                        value="on",
+                        checked=True,
+                        class_="form-check-input",
+                    ),
+                    htm.div(".form-text.text-muted.mt-1")[
+                        f"If enabled, ATR will resolve the {vote_label} automatically, "
+                        "using only ATR ballots, when the voting period ends.",
+                    ],
+                ]
+            else:
+                skip.append("automatic_resolve_when_finished")
         else:
+            skip.append("notify_when_finished")
             skip.append("automatic_resolve_when_finished")
-    else:
-        skip.append("notify_when_finished")
-        skip.append("automatic_resolve_when_finished")
 
-    _add_automatic_publish_fields(custom, skip, publish_eligible, vote_mode, podling_vote_round)
+        _add_automatic_publish_fields(custom, skip, publish_eligible, vote_mode, podling_vote_round)
 
     download_suffix_default = str(default_download_path_suffix) if (default_download_path_suffix is not None) else ""
     vote_form = await form.render(

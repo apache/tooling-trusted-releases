@@ -129,6 +129,9 @@ async def selected(  # noqa: C901
                 "The vote mode has changed since you loaded the form. Please reload and try again.",
             )
 
+        if release.expedited:
+            return await _start_expedited(session, release, committee, start_voting_form, project_key, version_key)
+
         notify_error = await _notify_opt_in_error(
             session,
             start_voting_form,
@@ -294,3 +297,69 @@ async def _publish_opt_in_error(
             "Automatic SVN publish requires a committee member initiator.",
         )
     return None
+
+
+async def _start_expedited(
+    session: web.Committer,
+    release: sql.Release,
+    committee: sql.Committee,
+    start_voting_form: shared.voting.StartVotingForm,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> web.WerkzeugResponse | str:
+    subject_template = await construct.start_vote_subject_default(project_key)
+    if construct.template_hash(subject_template) != start_voting_form.subject_template_hash:
+        return await session.form_error(
+            "subject_template_hash",
+            "The subject template has been modified since you loaded the form. Please reload and try again.",
+        )
+
+    async with storage.read(session) as read:
+        concern_groups = await shared.voting.concern_groups_for_release(read.as_general_public(), release)
+    missing = util.missing_concern_groups(concern_groups, start_voting_form.concerns_noted)
+    if missing:
+        return await session.form_error("concerns_noted", util.concern_acknowledgement_error(missing))
+
+    options = construct.StartVoteOptions(
+        asfuid=session.uid,
+        fullname=session.fullname,
+        project_key=project_key,
+        version_key=version_key,
+        revision_number=release.safe_latest_revision_number,
+        vote_duration=start_voting_form.vote_duration,
+    )
+    subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
+
+    try:
+        async with storage.write_as_project_release_manager(project_key) as warm:
+            await warm.vote.start(
+                start_voting_form.email_to,
+                project_key,
+                version_key,
+                start_voting_form.vote_duration,
+                subject,
+                start_voting_form.body,
+                session.fullname,
+                release=release,
+                promote=True,
+                expected_vote_mode=sql.VoteMode.TRUSTED,
+                expected_revision=start_voting_form.rendered_revision,
+                acknowledged_concerns=frozenset(start_voting_form.concerns_noted),
+            )
+    except storage.AccessError as e:
+        if e.status != 409:
+            raise
+        return await session.redirect(
+            get.voting.selected,
+            error=str(e),
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+
+    private_address = f"private@{committee.key}.apache.org"
+    return await session.redirect(
+        get.vote.selected,
+        success=f"The expedited vote announcement will soon be sent to {private_address}.",
+        project_key=str(project_key),
+        version_key=str(version_key),
+    )

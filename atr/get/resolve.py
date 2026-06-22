@@ -295,29 +295,35 @@ async def selected(  # noqa: C901
     # Show the To for reference and offer a grid
     # to add further cc/bcc with inherited recipients locked.
     defaults["result_email_to"] = vote_recipient or "the original vote thread recipients"
-    permitted_recipients = (
-        util.permitted_voting_recipients(session.uid, release.committee.key, project=release.project)
-        if (release.committee is not None)
-        else []
-    )
-    original_cc = list(latest_vote_task.task_args.get("email_cc", [])) if (latest_vote_task is not None) else []
-    original_bcc = list(latest_vote_task.task_args.get("email_bcc", [])) if (latest_vote_task is not None) else []
-    # The To is shown separately and always included, so don't offer it as an
-    # addable cc/bcc - that keeps the grid free of duplicate choices.
-    grid_options = [address for address in permitted_recipients if (address != vote_recipient)]
-    for address in [*original_cc, *original_bcc]:
-        if address not in grid_options:
-            grid_options.append(address)
-    custom["email_cc"] = htm.div[
-        render.html_recipients_cc_bcc_table(
-            grid_options,
-            locked_cc=set(original_cc),
-            locked_bcc=set(original_bcc),
-        ),
-        htm.div(".form-text.text-muted.mt-1")[
-            "The original recipients are included and cannot be removed. Tick others to add them.",
-        ],
-    ]
+    if release.expedited:
+        custom["email_cc"] = htm.div(".form-text.text-muted")[
+            "This is an expedited release, so the result is sent only to the private list"
+            " and additional recipients cannot be added.",
+        ]
+    else:
+        permitted_recipients = (
+            util.permitted_voting_recipients(session.uid, release.committee.key, project=release.project)
+            if (release.committee is not None)
+            else []
+        )
+        original_cc = list(latest_vote_task.task_args.get("email_cc", [])) if (latest_vote_task is not None) else []
+        original_bcc = list(latest_vote_task.task_args.get("email_bcc", [])) if (latest_vote_task is not None) else []
+        # The To is shown separately and always included, so don't offer it as an
+        # addable cc/bcc - that keeps the grid free of duplicate choices.
+        grid_options = [address for address in permitted_recipients if (address != vote_recipient)]
+        for address in [*original_cc, *original_bcc]:
+            if address not in grid_options:
+                grid_options.append(address)
+        custom["email_cc"] = htm.div[
+            render.html_recipients_cc_bcc_table(
+                grid_options,
+                locked_cc=set(original_cc),
+                locked_bcc=set(original_bcc),
+            ),
+            htm.div(".form-text.text-muted.mt-1")[
+                "The original recipients are included and cannot be removed. Tick others to add them.",
+            ],
+        ]
     skip.append("email_bcc")
 
     if form_cls is shared.resolve.SubmitForm:

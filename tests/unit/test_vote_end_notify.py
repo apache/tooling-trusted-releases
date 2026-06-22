@@ -528,6 +528,7 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
         version="1.0.0",
         key="project-1.0.0",
         project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True),
+        expedited=False,
     )
     data.release = mock.MagicMock(return_value=SimpleNamespace(demand=mock.AsyncMock(return_value=release_for_start)))
     release_writer = SimpleNamespace(

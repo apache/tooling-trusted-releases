@@ -138,6 +138,33 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
 }
 
 
+START_VOTE_EXPEDITED_DEFAULT: Final[str] = """Hello {{COMMITTEE}},
+
+I'd like to call an expedited vote on releasing the following artifacts as
+Apache {{PROJECT_NAME}} {{VERSION}}. This vote is being conducted using an
+Alpha version of the Apache Trusted Releases (ATR) platform.
+Please report any bugs or issues to the ASF Tooling team.
+
+The release candidate page, including downloads, can be found at:
+
+  {{REVIEW_URL}}
+
+The release artifacts are signed with one or more OpenPGP keys from:
+
+  {{KEYS_FILE}}
+
+Please review the release candidate and cast your vote on ATR at the URL
+above. Votes are recorded by ATR, so replies to this email are not counted.
+
+This is an expedited vote. There is no minimum voting period, and a PMC
+member will resolve it manually once it has the required binding +1 votes.
+
+{{RELEASE_CHECKLIST}}
+Thanks,
+{{YOUR_FULL_NAME}} ({{YOUR_ASF_ID}})
+"""
+
+
 @dataclasses.dataclass
 class AnnounceReleaseOptions:
     asfuid: str
@@ -358,12 +385,11 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "VERSION": str(options.version_key),
         "VOTE_ENDS_UTC": vote_end_str,
     }
-    # TODO: Handle the DURATION == 0 case
     body_values: _VoteValues = {
         "BUG_DATABASE": project.bug_database or "",
         "CHECKLIST_URL": checklist_url,
         "COMMITTEE": committee.display_name,
-        "DURATION": str(options.vote_duration),
+        "DURATION": str(options.vote_duration or "an unlimited number of"),
         "HOMEPAGE": project.homepage or "",
         "KEYS_FILE": keys_file or "(Sorry, the KEYS file is missing!)",
         "PROJECT_NAME": project_display_name,

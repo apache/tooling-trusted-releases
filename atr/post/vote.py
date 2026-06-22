@@ -50,10 +50,6 @@ async def selected_post(  # noqa: C901
     if release.committee is None:
         raise ValueError("Release has no committee")
 
-    if release.expedited and (release.effective_vote_mode != sql.VoteMode.TRUSTED):
-        await quart.flash("Expedited releases can only be voted on in trusted mode.", "error")
-        return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
-
     if release.effective_vote_mode != cast_vote_form.vote_mode:
         await quart.flash("The vote form is stale, please refresh and try again.", "error")
         return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))

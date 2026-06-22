@@ -149,6 +149,7 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
         key="project-1.0.0",
         project_key="project",
         project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True),
+        expedited=False,
     )
     data.release = mock.MagicMock(
         return_value=SimpleNamespace(
