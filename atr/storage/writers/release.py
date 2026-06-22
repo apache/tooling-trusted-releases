@@ -89,6 +89,55 @@ class ArtifactInput:
     download_path_suffix: str | None = None
 
 
+async def _archive_release(
+    data: db.Session,
+    write_as: storage.WriteAs,
+    asf_uid: str,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    release: sql.Release,
+) -> str | None:
+    # The archive core, shared by a committee member archiving by hand and the
+    # system archiving a dist removal. Only an announced release can be
+    # archived.
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return f"Release {project_key!s} {version_key!s} is not in the release phase"
+
+    archive_date = datetime.datetime.now(datetime.UTC)
+    via = sql.validate_instrumented_attribute
+    update_stmt = (
+        sqlmodel.update(sql.Release)
+        .where(via(sql.Release.key) == release.key)
+        .where(via(sql.Release.archived).is_(None))
+        .values(archived=archive_date)
+    )
+    update_result = await data.execute_query(update_stmt)
+    if getattr(update_result, "rowcount", 0) != 1:
+        return f"Release {project_key!s} {version_key!s} is already archived"
+
+    await _remove_from_downloads(release)
+    # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
+
+    data.add(
+        sql.LifecycleEvent(
+            project_key=release.project_key,
+            cycle_key=release.cycle_key,
+            version_key=release.key,
+            event=sql.LifecycleEventType.ARCHIVE,
+            effective=archive_date,
+            published=archive_date,
+        )
+    )
+    await data.commit()
+    write_as.append_to_audit_log(
+        asf_uid=asf_uid,
+        project_key=str(project_key),
+        version=str(version_key),
+        archived=archive_date.isoformat(),
+    )
+    return None
+
+
 def _normalise_signature_field(value: object) -> str | None:
     if isinstance(value, str):
         stripped = value.strip()
@@ -98,6 +147,41 @@ def _normalise_signature_field(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+async def _release_download_links_delete(release: sql.Release) -> None:
+    # Hard-linked downloads share an inode with the finished files, so we
+    # find them by inode rather than path - that way an unknown
+    # download_path_suffix isn't a blocker.
+    finished_dir = paths.release_directory(release)
+    if not await aiofiles.os.path.isdir(finished_dir):
+        return
+    release_inodes: set[int] = set()
+    async for file_path in util.paths_recursive_all(finished_dir):
+        try:
+            stat_result = await aiofiles.os.stat(finished_dir / file_path)
+        except OSError:
+            continue
+        release_inodes.add(stat_result.st_ino)
+    if not release_inodes:
+        return
+    downloads_dir = paths.get_downloads_dir()
+    async for link_path in util.paths_recursive_all(downloads_dir):
+        full_link_path = downloads_dir / link_path
+        try:
+            link_stat = await aiofiles.os.stat(full_link_path)
+        except OSError:
+            continue
+        if link_stat.st_ino in release_inodes:
+            await aiofiles.os.remove(full_link_path)
+            log.info(f"Deleted download hard link: {full_link_path}")
+
+
+async def _remove_from_downloads(release: sql.Release) -> None:
+    try:
+        await _release_download_links_delete(release)
+    except Exception:
+        log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
 
 
 async def _signature_provenance_metadata_for(
@@ -152,90 +236,6 @@ async def _signature_provenance_metadata_for(
         if (value := _normalise_signature_field(payload.get(key))) is not None:
             metadata[key] = value
     return metadata
-
-
-async def _archive_release(
-    data: db.Session,
-    write_as: storage.WriteAs,
-    asf_uid: str,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    release: sql.Release,
-) -> str | None:
-    # The archive core, shared by a committee member archiving by hand and the
-    # system archiving a dist removal. Only an announced release can be
-    # archived.
-    if release.phase != sql.ReleasePhase.RELEASE:
-        return f"Release {project_key!s} {version_key!s} is not in the release phase"
-
-    archive_date = datetime.datetime.now(datetime.UTC)
-    via = sql.validate_instrumented_attribute
-    update_stmt = (
-        sqlmodel.update(sql.Release)
-        .where(via(sql.Release.key) == release.key)
-        .where(via(sql.Release.archived).is_(None))
-        .values(archived=archive_date)
-    )
-    update_result = await data.execute_query(update_stmt)
-    if getattr(update_result, "rowcount", 0) != 1:
-        return f"Release {project_key!s} {version_key!s} is already archived"
-
-    await _remove_from_downloads(release)
-    # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
-
-    data.add(
-        sql.LifecycleEvent(
-            project_key=release.project_key,
-            cycle_key=release.cycle_key,
-            version_key=release.key,
-            event=sql.LifecycleEventType.ARCHIVE,
-            effective=archive_date,
-            published=archive_date,
-        )
-    )
-    await data.commit()
-    write_as.append_to_audit_log(
-        asf_uid=asf_uid,
-        project_key=str(project_key),
-        version=str(version_key),
-        archived=archive_date.isoformat(),
-    )
-    return None
-
-
-async def _remove_from_downloads(release: sql.Release) -> None:
-    try:
-        await _release_download_links_delete(release)
-    except Exception:
-        log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
-
-
-async def _release_download_links_delete(release: sql.Release) -> None:
-    # Hard-linked downloads share an inode with the finished files, so we
-    # find them by inode rather than path - that way an unknown
-    # download_path_suffix isn't a blocker.
-    finished_dir = paths.release_directory(release)
-    if not await aiofiles.os.path.isdir(finished_dir):
-        return
-    release_inodes: set[int] = set()
-    async for file_path in util.paths_recursive_all(finished_dir):
-        try:
-            stat_result = await aiofiles.os.stat(finished_dir / file_path)
-        except OSError:
-            continue
-        release_inodes.add(stat_result.st_ino)
-    if not release_inodes:
-        return
-    downloads_dir = paths.get_downloads_dir()
-    async for link_path in util.paths_recursive_all(downloads_dir):
-        full_link_path = downloads_dir / link_path
-        try:
-            link_stat = await aiofiles.os.stat(full_link_path)
-        except OSError:
-            continue
-        if link_stat.st_ino in release_inodes:
-            await aiofiles.os.remove(full_link_path)
-            log.info(f"Deleted download hard link: {full_link_path}")
 
 
 class GeneralPublic:
