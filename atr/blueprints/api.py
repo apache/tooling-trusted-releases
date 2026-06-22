@@ -147,6 +147,32 @@ async def _api_rate_limit() -> None:
     pass
 
 
+def _decorate_view(
+    view: Callable[..., Any],
+    *,
+    auth_scheme: auth.Auth,
+    response: tuple[type[pydantic.BaseModel], int] | None,
+    query_param: tuple[str, type] | None,
+    body_param: tuple[str, type[pydantic.BaseModel]] | None,
+    rate_limit: tuple[int, datetime.timedelta] | None,
+) -> Callable[..., Any]:
+    # Layer the OpenAPI/validation/auth/rate-limit decorators onto the view in the
+    # order they must run: security annotation, response and request validation,
+    # then header auth (outside body validation), then rate limiting (outermost).
+    view = auth.security_scheme_for(auth_scheme)(view)
+    if response is not None:
+        view = quart_schema.validate_response(response[0], response[1])(view)
+    if query_param is not None:
+        view = quart_schema.validate_querystring(query_param[1])(view)
+    if body_param is not None:
+        view = quart_schema.validate_request(body_param[1])(view)
+    if auth_scheme in auth.HEADER_SCHEMES:
+        view = _require_header_auth(auth_scheme, view)
+    if rate_limit is not None:
+        view = rate_limiter.rate_limit(rate_limit[0], rate_limit[1])(view)
+    return view
+
+
 def _exempt_blueprint(app: base.QuartApp) -> None:
     csrf = app.extensions.get("csrf")
     if csrf is not None:
@@ -211,32 +237,6 @@ def _json_error(
     if extra is not None:
         payload.update(extra)
     return quart.jsonify(payload), status_code
-
-
-def _decorate_view(
-    view: Callable[..., Any],
-    *,
-    auth_scheme: auth.Auth,
-    response: tuple[type[pydantic.BaseModel], int] | None,
-    query_param: tuple[str, type] | None,
-    body_param: tuple[str, type[pydantic.BaseModel]] | None,
-    rate_limit: tuple[int, datetime.timedelta] | None,
-) -> Callable[..., Any]:
-    # Layer the OpenAPI/validation/auth/rate-limit decorators onto the view in the
-    # order they must run: security annotation, response and request validation,
-    # then header auth (outside body validation), then rate limiting (outermost).
-    view = auth.security_scheme_for(auth_scheme)(view)
-    if response is not None:
-        view = quart_schema.validate_response(response[0], response[1])(view)
-    if query_param is not None:
-        view = quart_schema.validate_querystring(query_param[1])(view)
-    if body_param is not None:
-        view = quart_schema.validate_request(body_param[1])(view)
-    if auth_scheme in auth.HEADER_SCHEMES:
-        view = _require_header_auth(auth_scheme, view)
-    if rate_limit is not None:
-        view = rate_limiter.rate_limit(rate_limit[0], rate_limit[1])(view)
-    return view
 
 
 def _require_header_auth(scheme: auth.Auth, inner: Callable[..., Any]) -> Callable[..., Any]:
