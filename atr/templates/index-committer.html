@@ -107,7 +107,7 @@
             <a href="{{ release_as_url(release) }}" class="text-decoration-none">
               <div class="card h-100 shadow-sm atr-cursor-pointer page-card">
                 <div class="card-body text-center d-flex flex-column justify-content-center">
-                  <div class="fw-semibold mb-3 fs-4 page-version">{{ release.version }}</div>
+                  <div class="fw-semibold mb-3 fs-4 page-version{% if release.is_embargoed %} text-danger{% endif %}"{% if release.is_embargoed %} title="Embargoed release"{% endif %}>{{ release.version }}</div>
                   <div class="atr-phase-themed mb-2">
                     {# set phase_symbols = ["1.", "2.", "3."] #}
                     {% set phase_symbols = ["①", "②", "③"] %}

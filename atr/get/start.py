@@ -81,11 +81,16 @@ def _existing_releases(ul: htm.Block, releases: list[sql.Release], max_revisions
             break
 
         phase_symbol = _get_phase_symbol(release.phase)
+        version = (
+            htm.span(".text-danger", title="Embargoed release")[release.version]
+            if release.is_embargoed
+            else release.version
+        )
         ul.li(".col-6.col-sm-4.col-md-3.col-lg-2")[
             htm.div(".text-nowrap")[
                 htm.span(class_="atr-phase-symbol fs-6")[phase_symbol],
                 " ",
-                release.version,
+                version,
             ]
         ]
 
