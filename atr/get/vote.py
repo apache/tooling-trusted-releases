@@ -417,7 +417,7 @@ def _render_header(
         htm.em[release.version],
     ]
 
-    if (badge := render.expedited_badge(release)) is not None:
+    if (badge := render.embargoed_badge(release)) is not None:
         page.append(htm.p[badge])
 
     if release.committee is None:

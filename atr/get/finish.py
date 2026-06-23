@@ -317,9 +317,6 @@ async def _render_page(
         htm.em[release.version],
     ]
 
-    if (badge := render.expedited_badge(release)) is not None:
-        page.append(htm.p[badge])
-
     if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)
 
@@ -456,7 +453,10 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
     if announce_disable_message:
         announce_classes += ".disabled"
     card = htm.div(".card.mb-4.shadow-sm", id=release.key)[
-        htm.div(".card-header.bg-light")[htm.h3(".card-title.mb-0")["About this release preview"]],
+        htm.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+            htm.h3(".card-title.mb-0")["About this release preview"],
+            render.embargoed_badge(release),
+        ],
         htm.div(".card-body")[
             htm.div(".d-flex.flex-wrap.gap-3.pb-3.mb-3.border-bottom.text-secondary.fs-6")[
                 htm.span(".page-preview-meta-item")[f"Revision: {release.latest_revision_number}"],

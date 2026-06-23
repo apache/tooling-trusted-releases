@@ -310,6 +310,12 @@ async def _render_page(
         return page.collect()
 
     page.p["This form will send an announcement to the selected recipients."]
+    if release.is_embargoed:
+        page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
+            "This is an expedited security release, and is embargoed up until the point that this form is"
+            " submitted. Please ensure that you have the authority to lift the embargo before submitting the"
+            " form. This action is not reversible."
+        ]
     await _render_announce_form(
         page,
         release,
@@ -327,7 +333,10 @@ async def _render_page(
 def _render_release_card(release: sql.Release) -> htm.Element:
     """Render the release information card."""
     card = htm.div(f"#{release.key}.card.mb-4.shadow-sm")[
-        htm.div(".card-header.bg-light")[htm.h3(".card-title.mb-0")["About this release preview"]],
+        htm.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
+            htm.h3(".card-title.mb-0")["About this release preview"],
+            render.embargoed_badge(release),
+        ],
         htm.div(".card-body")[
             htm.div(".d-flex.flex-wrap.gap-3.pb-1.text-secondary.fs-6")[
                 htm.span(".page-preview-meta-item")[f"Revision: {release.latest_revision_number}"],
