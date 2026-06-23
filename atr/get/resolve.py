@@ -111,7 +111,7 @@ async def selected(  # noqa: C901
     fetch_error = None
 
     latest_vote_task = await interaction.release_current_vote_task(release)
-    if latest_vote_task is not None:
+    if (latest_vote_task is not None) and (not release.expedited):
         task_mid = interaction.task_mid_get(latest_vote_task)
         task_recipient = interaction.task_recipient_get(latest_vote_task)
         if task_mid:
@@ -141,7 +141,7 @@ async def selected(  # noqa: C901
                 fetch_error = _tabulation_error(e)
         else:
             fetch_error = "The vote thread could not yet be found."
-    elif fetch_error is None:
+    elif (fetch_error is None) and (not release.expedited):
         fetch_error = "The vote thread could not yet be found."
 
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
