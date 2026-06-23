@@ -326,7 +326,7 @@ async def _start_expedited(
         project_key=project_key,
         version_key=version_key,
         revision_number=release.safe_latest_revision_number,
-        vote_duration=start_voting_form.vote_duration,
+        vote_duration=0,
     )
     subject, _ = await construct.start_vote_subject_and_body(subject_template, "", options)
 
@@ -336,7 +336,7 @@ async def _start_expedited(
                 start_voting_form.email_to,
                 project_key,
                 version_key,
-                start_voting_form.vote_duration,
+                0,
                 subject,
                 start_voting_form.body,
                 session.fullname,
