@@ -1,6 +1,9 @@
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-center">
     <h5 class="mb-0">Release information</h5>
+    {% if release.is_embargoed %}
+      <span class="badge text-bg-danger">Expedited release</span>
+    {% endif %}
   </div>
   <div class="card-body mb-0">
     <div class="row">
