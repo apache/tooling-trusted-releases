@@ -305,7 +305,7 @@ async def _render_page(  # noqa: C901
         private_address = f"private@{release.committee.key}.apache.org"
         custom["email_to"] = htm.div[
             htpy.input(type="hidden", name="email_to", value=private_address),
-            htm.div(".form-control.bg-light")[private_address],
+            htm.div(".form-control.bg-light.font-monospace")[private_address],
             htm.div(".form-text.text-muted.mt-2")[
                 "Ballots and the vote announcement are sent only to this private list.",
             ],
