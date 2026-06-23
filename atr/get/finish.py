@@ -317,6 +317,9 @@ async def _render_page(
         htm.em[release.version],
     ]
 
+    if (badge := render.expedited_badge(release)) is not None:
+        page.append(htm.p[badge])
+
     if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)
 

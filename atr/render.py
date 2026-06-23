@@ -98,6 +98,12 @@ def archived_project_banner(project: sql.Project, message: str = "") -> htm.Elem
     return htm.div(".alert.alert-warning.mb-4")[f"This project is archived. {message}"]
 
 
+def expedited_badge(release: sql.Release) -> htm.Element | None:
+    if not release.is_embargoed:
+        return None
+    return htm.span(".badge.text-bg-danger")["Expedited release"]
+
+
 def highest_severity(
     counts: Mapping[sql.CheckResultStatus, int],
 ) -> sql.CheckResultStatus | None:

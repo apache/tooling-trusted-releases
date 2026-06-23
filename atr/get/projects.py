@@ -504,6 +504,12 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
     return delete_form
 
 
+def _expedited_button_badges(release: sql.Release) -> list[htm.Element]:
+    if not release.is_embargoed:
+        return []
+    return [htm.span(".badge.text-bg-danger.ms-2")["Expedited"]]
+
+
 async def _generate_tabs(
     can_edit_metadata: bool,
     can_edit_policy: bool,
@@ -1132,6 +1138,7 @@ async def _render_releases_sections(
                 )[
                     f"{project.key} {drf.version} ",
                     htm.span(".badge.bg-secondary.ms-2")[util.plural(file_count, "file")],
+                    *_expedited_button_badges(drf),
                 ]
             )
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*draft_buttons]
@@ -1149,6 +1156,7 @@ async def _render_releases_sections(
                 )[
                     f"{project.key} {cnd.version} ",
                     htm.span(".badge.bg-info.ms-2")[util.plural(file_count, "file")],
+                    *_expedited_button_badges(cnd),
                 ]
             )
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*candidate_buttons]
@@ -1166,6 +1174,7 @@ async def _render_releases_sections(
                 )[
                     f"{project.key} {prv.version} ",
                     htm.span(".badge.bg-warning.ms-2")[util.plural(file_count, "file")],
+                    *_expedited_button_badges(prv),
                 ]
             )
         sections.div(".d-flex.flex-wrap.gap-2.mb-4")[*preview_buttons]
