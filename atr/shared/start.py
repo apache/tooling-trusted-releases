@@ -35,6 +35,12 @@ class StartReleaseForm(form.Form):
         "Auto archive prior release",
         "If set, release of this version will auto-archive the prior release in the cycle",
     )
+    expedited: form.Bool = form.label(
+        "Expedited security release",
+        "Expedited releases stay confidential until published, vote on the committee's"
+        " private list, and can be resolved as soon as enough binding votes arrive."
+        " Only PMC members can create them, not podlings, and this cannot be changed later.",
+    )
 
     @pydantic.field_validator("version_key", mode="after")
     @classmethod

@@ -56,6 +56,10 @@ Instead, each writer method that mutates a release calls [`write.ensure_release_
 
 File and revision changes are all funnelled through [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py) (`create_revision_with_quarantine`), so the check there covers every file mutation, and the remaining row level mutations carry the same check where they load the release. Member-tier and higher methods do not need the check, because a non-member can never obtain a member-tier writer in the first place.
 
+Creating an expedited release follows the same member-only rule from the other direction. The participant-tier `release.start` and the member-tier [`write.as_project_committee_member(project_name)`](/ref/atr/storage/__init__.py).`release.start_expedited(...)` both delegate to the module-level `_start_release` function, which is the only place that constructs a release carrying the `expedited` flag. The participant `start` always passes `expedited=False`; only `start_expedited` passes `expedited=True`, and `start_expedited` exists only on the member tier.
+
+The `expedited` argument is not a privilege switch: before persisting the new release, `_start_release` calls `ensure_release_writable` on it, so an expedited (and therefore embargoed) release is refused unless the actor is a member of its committee, no matter which tier reached the function or whether a future caller passes the flag. The member factory enforces the same rule earlier, when it constructs the writer, and the writable check runs before any row is written, so a refused attempt leaves no release behind. The flag is set only at creation, and no edit form or API exposes it afterwards, so it is immutable once chosen.
+
 Here is a more complete example from [`api/__init__.py`](/ref/atr/api/__init__.py) that shows the classic three step pattern:
 
 ```python

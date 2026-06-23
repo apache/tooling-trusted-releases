@@ -39,13 +39,18 @@ async def selected(
     """
 
     try:
+        version = safe.VersionKey(start_release_form.version_key)
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_key)
-            new_release, _project = await wacp.release.start(
-                project_key,
-                safe.VersionKey(start_release_form.version_key),
-                start_release_form.auto_archive_prior,
-            )
+            if start_release_form.expedited:
+                wacm = await write.as_project_committee_member(project_key)
+                new_release, _project = await wacm.release.start_expedited(
+                    project_key, version, start_release_form.auto_archive_prior
+                )
+            else:
+                wacp = await write.as_project_committee_participant(project_key)
+                new_release, _project = await wacp.release.start(
+                    project_key, version, start_release_form.auto_archive_prior
+                )
 
         return await session.redirect(
             get.compose.selected,
@@ -53,6 +58,6 @@ async def selected(
             version_key=new_release.version,
             success="Release candidate draft created successfully",
         )
-    except (web.FlashError, base.ASFQuartException) as e:
+    except (web.FlashError, base.ASFQuartException, storage.AccessError) as e:
         await quart.flash(str(e), "error")
         return await session.redirect(get.start.selected, project_key=str(project_key))

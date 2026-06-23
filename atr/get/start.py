@@ -50,7 +50,12 @@ async def selected(session: web.Committer, _start: Literal["start"], project_key
     releases = await interaction.all_releases(project)
     if not user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):
         releases = [r for r in releases if (not r.is_embargoed)]
-    content = await _render_page(project, releases)
+    can_create_expedited = bool(
+        project.committee
+        and user.is_committee_member(project.committee, session.uid)
+        and (not project.committee.is_podling)
+    )
+    content = await _render_page(project, releases, can_create_expedited)
     javascripts = ["start-cycle-preview"] if project.cycle_match else None
     return await template.blank(
         title=f"Start a new release for {project.display_name}",
@@ -116,7 +121,7 @@ def _get_phase_symbol(phase: sql.ReleasePhase) -> str:
             return "Ⓡ"
 
 
-async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm.Element:
+async def _render_page(project: sql.Project, releases: list[sql.Release], can_create_expedited: bool) -> htm.Element:
     page = htm.Block()
 
     page.h1[f"Start a new release for {project.display_name}"]
@@ -125,6 +130,11 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         htm.strong["release candidate draft"],
         ". You can then add files to this draft before promoting it for voting.",
     ]
+    skip = []
+    if not project.policy_auto_archive_prior_release:
+        skip.append("auto_archive_prior")
+    if not can_create_expedited:
+        skip.append("expedited")
     await form.render_block(
         page,
         model_cls=shared.start.StartReleaseForm,
@@ -134,7 +144,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release]) -> htm
         cancel_url=util.as_url(root.index),
         defaults={"project_key": project.key},
         pre_submit=_cycle_preview(project),
-        skip=["auto_archive_prior"] if not project.policy_auto_archive_prior_release else [],
+        skip=skip,
     )
     if releases:
         page.h2(".mt-5")["Existing releases"]
