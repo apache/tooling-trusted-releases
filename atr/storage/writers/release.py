@@ -816,7 +816,7 @@ class CommitteeParticipant(FoundationCommitter):
             message=f"Published to SVN as r{revision}",
         )
 
-    async def _start_vote_no_commit(  # noqa: C901
+    async def start_vote_no_commit(  # noqa: C901
         self,
         release_key: safe.ReleaseKey,
         expected_revision: safe.RevisionNumber | None,
@@ -881,7 +881,7 @@ class CommitteeParticipant(FoundationCommitter):
             if file_count == 0:
                 raise storage.AccessError("This candidate draft is empty, containing no files", status=400)
 
-            required_groups = await self._required_concern_groups(release_for_pre_checks)
+            required_groups = await self.__required_concern_groups(release_for_pre_checks)
             missing_groups = [g for g in required_groups if (g.checker not in acknowledged_concerns)]
             if missing_groups:
                 raise storage.AccessError(
@@ -931,7 +931,7 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.refresh(release_for_pre_checks)
         return release_for_pre_checks, vote_seq, vote_mode, revision_number
 
-    async def _required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
+    async def __required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
         # Avoid a filesystem walk when the DB has no concern rows at all
         check_results = await interaction.checks_for(release, caller_data=self.__data)
         if not any(cr.status == sql.CheckResultStatus.CONCERN for cr in check_results):
@@ -1382,7 +1382,7 @@ class ReleaseManager(CommitteeParticipant):
         """Promote a release candidate draft to a new phase."""
         try:
             await self.__data.begin_immediate()
-            release, vote_seq, vote_mode, revision_number = await self._start_vote_no_commit(
+            release, vote_seq, vote_mode, revision_number = await self.start_vote_no_commit(
                 release_key,
                 expected_revision,
                 allowed_vote_modes=allowed_vote_modes,

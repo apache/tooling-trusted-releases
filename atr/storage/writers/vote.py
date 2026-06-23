@@ -357,7 +357,7 @@ class ReleaseManager(CommitteeParticipant):
                     if (expected_vote_mode is not None)
                     else frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED})
                 )
-                release, vote_seq, vote_mode, revision_number = await self.__write_as.release._start_vote_no_commit(
+                release, vote_seq, vote_mode, revision_number = await self.__write_as.release.start_vote_no_commit(
                     release_key,
                     expected_revision,
                     allowed_vote_modes=allowed_vote_modes,
@@ -365,7 +365,7 @@ class ReleaseManager(CommitteeParticipant):
                     acknowledged_concerns=acknowledged_concerns,
                 )
             else:
-                release, vote_seq, vote_mode, revision_number = await self.__write_as.release._start_vote_no_commit(
+                release, vote_seq, vote_mode, revision_number = await self.__write_as.release.start_vote_no_commit(
                     release.safe_key,
                     expected_revision,
                     allowed_vote_modes=frozenset({sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}),

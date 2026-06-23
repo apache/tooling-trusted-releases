@@ -532,7 +532,7 @@ async def test_writer_start_rejects_notify_outside_trusted_mode() -> None:
     )
     data.release = mock.MagicMock(return_value=SimpleNamespace(demand=mock.AsyncMock(return_value=release_for_start)))
     release_writer = SimpleNamespace(
-        _start_vote_no_commit=mock.AsyncMock(
+        start_vote_no_commit=mock.AsyncMock(
             return_value=(release_for_start, 1, sql.VoteMode.EMAIL, safe.RevisionNumber("00001"))
         ),
     )

@@ -161,7 +161,7 @@ async def test_start_email_vote_sets_vote_seq_on_task() -> None:
         return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
     )
     release_writer = SimpleNamespace(
-        _start_vote_no_commit=mock.AsyncMock(
+        start_vote_no_commit=mock.AsyncMock(
             return_value=(release, 7, sql.VoteMode.EMAIL, safe.RevisionNumber("00001"))
         ),
     )

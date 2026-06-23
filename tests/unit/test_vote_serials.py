@@ -522,7 +522,7 @@ async def test_vote_start_allocation_rolls_back_with_task_creation(sqlite_sessio
         with pytest.raises(RuntimeError, match="task creation failed"):
             try:
                 await data.begin_immediate()
-                _release, vote_seq, _vote_mode, _revision_number = await writer._start_vote_no_commit(
+                _release, vote_seq, _vote_mode, _revision_number = await writer.start_vote_no_commit(
                     safe.ReleaseKey("project-1.0.0"),
                     safe.RevisionNumber("00001"),
                     allowed_vote_modes=frozenset({sql.VoteMode.EMAIL}),
