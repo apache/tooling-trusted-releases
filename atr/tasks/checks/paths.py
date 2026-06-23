@@ -180,7 +180,8 @@ async def _check_metadata_rules(
     # not be provided, unless named as indicated above." (RDP)
     # Also .mds is allowed, but we'll ignore that for now
     # TODO: Is .mds supported in analysis.METADATA_SUFFIXES?
-    if ext_metadata not in {".asc", ".cdx.json", ".sha256", ".sha512", ".md5", ".sha", ".sha1"}:
+    is_cyclonedx_sbom = analysis.is_cyclonedx(relative_path.as_path().name)
+    if (ext_metadata not in {".asc", ".sha256", ".sha512", ".md5", ".sha", ".sha1"}) and (not is_cyclonedx_sbom):
         warnings.append("The use of this metadata file is discouraged")
 
     # Check whether the corresponding artifact exists

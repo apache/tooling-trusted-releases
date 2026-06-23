@@ -111,6 +111,11 @@ def test_matchers_from_policy_empty(tmp_path):
     assert binary_matcher is None
 
 
+async def test_maven_cyclonedx_sbom_classified_as_metadata():
+    path = safe.RelPath("atr-maven-plugin-1.0.0-alpha-1-cyclonedx.json")
+    assert (await classify.classify(path)) == classify.FileType.METADATA
+
+
 async def test_metadata_suffix_detected():
     path = safe.RelPath("apache-widget-1.0.tar.gz.sha512")
     assert (await classify.classify(path)) == classify.FileType.METADATA

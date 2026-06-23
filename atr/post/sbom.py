@@ -22,6 +22,7 @@ from typing import Literal
 import asfquart.base as base
 import quart
 
+import atr.analysis as analysis
 import atr.blueprints.post as post
 import atr.get as get
 import atr.log as log
@@ -59,8 +60,8 @@ async def _augment(
     """Augment a CycloneDX SBOM file."""
     # Check that the file is a .cdx.json archive before creating a revision
     file_name = rel_path.as_path().name
-    if not (file_name.endswith(".cdx.json")):
-        raise base.ASFQuartException("SBOM augmentation is only supported for .cdx.json files", errorcode=400)
+    if not analysis.is_cyclonedx_json(file_name):
+        raise base.ASFQuartException("SBOM augmentation is only supported for CycloneDX JSON files", errorcode=400)
 
     try:
         release = await session.release(project_key, version_key, with_committee=False, with_project=False)
@@ -97,8 +98,8 @@ async def _scan(
     session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: safe.RelPath
 ) -> web.WerkzeugResponse:
     """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
-    if not (rel_path.as_path().name.endswith(".cdx.json")):
-        raise base.ASFQuartException("OSV scanning is only supported for .cdx.json files", errorcode=400)
+    if not analysis.is_cyclonedx_json(rel_path.as_path().name):
+        raise base.ASFQuartException("OSV scanning is only supported for CycloneDX JSON files", errorcode=400)
 
     try:
         release = await session.release(project_key, version_key, with_committee=False, with_project=False)

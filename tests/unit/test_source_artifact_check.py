@@ -219,6 +219,33 @@ async def test_keys_file_records_single_actionable_blocker(
 
 
 @pytest.mark.asyncio
+async def test_maven_cyclonedx_sbom_not_flagged_as_unknown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setattr(paths.user, "is_admin_async", mock.AsyncMock(return_value=False))
+    recorder_problems = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder_suggestions = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_warnings", "4")
+    recorder_notes = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_success", "4")
+
+    sbom = "atr-maven-plugin-1.0.0-alpha-1-cyclonedx.json"
+    artifact = "atr-maven-plugin-1.0.0-alpha-1.jar"
+    await paths._check_path_process_single(
+        "testuser",
+        safe.StatePath(tmp_path),
+        safe.RelPath(sbom),
+        recorder_problems,
+        recorder_suggestions,
+        recorder_notes,
+        {sbom, artifact},
+        False,
+    )
+
+    assert recorder_problems.messages == []
+    assert recorder_suggestions.messages == []
+    assert len(recorder_notes.messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
     recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
     args = _make_function_args(recorder)

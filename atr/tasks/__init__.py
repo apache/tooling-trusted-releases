@@ -24,6 +24,7 @@ from typing import Any, Final
 import sqlalchemy.exc
 import sqlmodel
 
+import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.db as db
 import atr.hashes as hashes
@@ -703,7 +704,7 @@ async def _draft_file_checks(
             await _add_task(data, archive_comparison_task)
     # TODO: Should we check .json files for their content?
     # Ideally we would not have to do that
-    if path.as_path().name.endswith(".cdx.json"):
+    if analysis.is_cyclonedx_json(path.as_path().name):
         cdx_task = await queued(
             asf_uid,
             sql.TaskType.SBOM_TOOL_SCORE,

@@ -23,6 +23,7 @@ import asfquart.base as base
 import htpy
 import quart
 
+import atr.analysis as analysis
 import atr.blueprints.get as get
 import atr.classify as classify
 import atr.db as db
@@ -381,7 +382,7 @@ def _render_file_row(
         count_cells.append(_count_cell(counts_after[status], status, has_checks_before, num_style))
 
     sbom_btn = None
-    if path.as_path().suffixes[-2:] == [".cdx", ".json"]:
+    if analysis.is_cyclonedx_json(path.as_path().name):
         sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=sbom_url)["SBOM report"]
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
 

@@ -25,6 +25,7 @@ import aiofiles
 import aiofiles.os
 import yyjson
 
+import atr.analysis as analysis
 import atr.archives as archives
 import atr.config as config
 import atr.log as log
@@ -81,7 +82,7 @@ async def augment(args: args.FileArgs) -> results.Results | None:
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
+    if not (analysis.is_cyclonedx_json(full_path_str) and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     # Read from the old revision
     bundle = sbom.utilities.path_to_bundle(full_path.path)
@@ -168,7 +169,7 @@ async def osv_scan(args: args.FileArgs) -> results.Results | None:
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
+    if not (analysis.is_cyclonedx_json(full_path_str) and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScanningError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:
@@ -234,7 +235,7 @@ async def score_qs(args: args.FileArgs) -> results.Results | None:
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
+    if not (analysis.is_cyclonedx_json(full_path_str) and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     proc = await asyncio.create_subprocess_exec(
         "sbomqs",
@@ -276,7 +277,7 @@ async def score_tool(args: args.ScoreArgs) -> results.Results | None:
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
     full_path_str = str(full_path)
-    if not (full_path_str.endswith(".cdx.json") and await aiofiles.os.path.isfile(full_path)):
+    if not (analysis.is_cyclonedx_json(full_path_str) and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:

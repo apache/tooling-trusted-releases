@@ -59,6 +59,10 @@ ARTIFACT_SUFFIXES: Final[list[str]] = [
     "zip",
 ]
 
+CYCLONEDX_JSON_SUFFIXES: Final[tuple[str, ...]] = (".cdx.json", "-cyclonedx.json")
+
+CYCLONEDX_XML_SUFFIXES: Final[tuple[str, ...]] = (".cdx.xml", "-cyclonedx.xml")
+
 DISALLOWED_FILENAMES: Final[frozenset[str]] = frozenset(
     {
         "desktop.ini",
@@ -127,12 +131,7 @@ SKIPPABLE_SUFFIXES: Final[list[str]] = [
     ".yaml",
 ]
 
-STANDALONE_METADATA_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {
-        ".cdx.json",
-        ".cdx.xml",
-    }
-)
+STANDALONE_METADATA_SUFFIXES: Final[frozenset[str]] = frozenset(CYCLONEDX_JSON_SUFFIXES + CYCLONEDX_XML_SUFFIXES)
 
 # Should perhaps not include javadoc
 # app
@@ -345,6 +344,18 @@ def is_candidate(path: pathlib.Path) -> bool:
 
 def is_candidate_segment(segment: str) -> bool:
     return bool(candidate_match(segment))
+
+
+def is_cyclonedx(name: str) -> bool:
+    return is_cyclonedx_json(name) or is_cyclonedx_xml(name)
+
+
+def is_cyclonedx_json(name: str) -> bool:
+    return name.endswith(CYCLONEDX_JSON_SUFFIXES)
+
+
+def is_cyclonedx_xml(name: str) -> bool:
+    return name.endswith(CYCLONEDX_XML_SUFFIXES)
 
 
 def is_skippable(path: pathlib.Path) -> bool:
