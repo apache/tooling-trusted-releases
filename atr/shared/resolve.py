@@ -28,7 +28,7 @@ type SUBMIT = Literal["submit"]
 
 
 class ResolveFormBase(form.Form):
-    result_email_to: str = form.label("To", widget=form.Widget.STATIC, default="")
+    result_email_to: str = form.label("To", widget=form.Widget.TEXT, default="", readonly=True)
     email_cc: form.StrList = form.label("Additional recipients", widget=form.Widget.CUSTOM)
     email_bcc: form.StrList = form.label("BCC")
     vote_mode: sql.VoteMode | None = form.label("Vote mode", default=None, widget=form.Widget.HIDDEN)
@@ -59,7 +59,7 @@ class CancelSubmitForm(ResolveFormBase):
 
 class SubmitForm(ResolveFormBase):
     variant: SUBMIT = form.value(SUBMIT)
-    result_subject: str = form.label("Subject", widget=form.Widget.STATIC, default="")
+    result_subject: str = form.label("Subject", widget=form.Widget.TEXT, default="", readonly=True)
     email_body: str = form.label(
         "Body",
         "{{OUTCOME}} is a placeholder - it will be replaced with the vote result you select when the email is sent.",

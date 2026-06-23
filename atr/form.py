@@ -983,6 +983,7 @@ def _render_widget(  # noqa: C901
     base_attrs: dict[str, str] = {"name": field_name, "id": field_name, "class_": widget_classes}
     if is_readonly:
         base_attrs["readonly"] = ""
+        base_attrs["class_"] = f"{widget_classes} bg-light"
 
     elements: list[htm.Element | htm.VoidElement] = []
 
