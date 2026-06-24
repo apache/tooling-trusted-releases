@@ -679,8 +679,8 @@ async def jwt_create(
     client_ip = quart.request.remote_addr
     # System tokens take a service-identity context, not the LDAP-backed write().
     if await storage.pat_is_system(data.pat):
-        async with storage.write_as_system_service(asf_uid) as wss:
-            jwt = await wss.tokens.issue_jwt(data.pat, client_ip)
+        async with storage.write_as_system_service(asf_uid) as wass:
+            jwt = await wass.tokens.issue_jwt(data.pat, client_ip)
     else:
         async with storage.write(asf_uid) as write:
             wafc = write.as_foundation_committer()
@@ -995,8 +995,8 @@ async def project_config_upsert(
     """
     asf_uid = _jwt_asf_uid()
     try:
-        async with storage.write_as_system_service(asf_uid) as wss:
-            created = await wss.project.upsert_config(data, update_type=sql.UpdateType.ASFYAML)
+        async with storage.write_as_system_service(asf_uid) as wass:
+            created = await wass.project.upsert_config(data, update_type=sql.UpdateType.ASFYAML)
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
     except ValueError as e:

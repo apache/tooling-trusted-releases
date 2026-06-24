@@ -55,8 +55,8 @@ async def _move_file_to_revision(
     target_dir_rel = move_form.target_directory
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_key)
-            creation_error, moved_files_names, skipped_files_names = await wacp.release.move_file(
+            wacm = await write.as_project_committee_member(project_key)
+            creation_error, moved_files_names, skipped_files_names = await wacm.release.move_file(
                 project_key, version_key, source_files_rel, target_dir_rel
             )
 
