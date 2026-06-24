@@ -110,7 +110,7 @@ _SRC_SOURCE_RE: Final[re.Pattern[str]] = re.compile(r"(^|[-_.])(project|source|s
 
 _TOKEN_SPLIT_RE: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
 
-_DEFAULT_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".jar"})
+_DEFAULT_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".jar", ".whl"})
 
 
 class FileType(enum.Enum):

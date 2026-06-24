@@ -99,6 +99,11 @@ async def test_jar_defaults_to_binary():
     assert (await classify.classify(path)) == classify.FileType.BINARY
 
 
+async def test_whl_defaults_to_binary():
+    path = safe.RelPath("apache_airflow_providers_airbyte-5.0.2-py3-none-any.whl")
+    assert (await classify.classify(path)) == classify.FileType.BINARY
+
+
 def test_matchers_from_policy_builds_both(tmp_path):
     source_matcher, binary_matcher = classify.matchers_from_policy(["*-src.*"], ["*-bin.*"], safe.StatePath(tmp_path))
     assert source_matcher is not None
