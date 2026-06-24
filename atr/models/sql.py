@@ -1905,6 +1905,15 @@ class Artifact(sqlmodel.SQLModel, table=True):
     classification: str | None = sqlmodel.Field(default=None, **example("source"))
     # Per-artifact SVN revision - not all artifacts in a release are added in the same commit
     svn_revision: int | None = sqlmodel.Field(default=None, index=True, **example(12345))
+    # True when the artifact came through ATR rather than being catalogued from dist
+    managed: bool = sqlmodel.Field(default=False)
+    # When the artifact was published: the release date for ATR, the commit date for a
+    # dist detection, the find date for a historical catalogue entry
+    dated: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+        **example(datetime.datetime(2025, 6, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
     # The release's path under the committee downloads dir, needed to build the public
     # download URLs. NULL means the files sit directly under the committee dir.
     download_path_suffix: str | None = sqlmodel.Field(default=None, **example("example/0.0.1"))

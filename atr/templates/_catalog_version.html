@@ -2,7 +2,7 @@
 <div class="card mb-3 shadow-sm atr-catalog-version" data-status="{{ version.status }}">
   <div class="d-flex">
     <div class="atr-certified-panel d-flex align-items-center justify-content-center border-end">
-      {% if version.svn_revision %}
+      {% if version.managed %}
         <img src="{{ static_url('svg/atr_certified_badge.svg') }}" class="atr-certified-badge" alt="ATR certified">
       {% endif %}
     </div>

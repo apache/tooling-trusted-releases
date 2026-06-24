@@ -57,6 +57,8 @@ def _artifact(
     release: sql.Release | None = None,
     svn_revision: int | None = None,
     sbom_path: str | None = None,
+    managed: bool = False,
+    dated: datetime.datetime | None = None,
 ) -> sql.Artifact:
     return sql.Artifact(
         project_key=project.key,
@@ -66,6 +68,8 @@ def _artifact(
         release=release,
         svn_revision=svn_revision,
         sbom_path=sbom_path,
+        managed=managed,
+        dated=dated,
     )
 
 
@@ -76,6 +80,7 @@ class _CatalogVersionStub:
             status="released" if cycle is not None else "archived",
             released=None,
             svn_revision=None,
+            managed=False,
             cycle=cycle.cycle if cycle is not None else None,
             artifacts=[],
         )
@@ -131,6 +136,29 @@ def test_only_released_versions_are_downloadable() -> None:
     assert versions["5.0.2"].artifacts[0].downloadable is True
     assert versions["4.1.7"].artifacts[0].downloadable is False
     assert versions["4.1.7"].svn_revision == 28114
+
+
+def test_version_is_managed_when_any_artifact_is_managed() -> None:
+    project = _project()
+    release = _release(project, "1.0.0", cycle_key="cassandra-default", released=_NOW)
+    artifacts = [
+        _artifact(project, "1.0.0", "a-1.0.0.tar.gz", release=release, managed=False),
+        _artifact(project, "1.0.0", "a-1.0.0.jar", release=release, managed=True),
+    ]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+
+    assert versions["1.0.0"].managed is True
+
+
+def test_svn_revision_alone_does_not_make_a_version_managed() -> None:
+    project = _project()
+    artifacts = [_artifact(project, "2.0.0", "a-2.0.0.tar.gz", svn_revision=999, managed=False)]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+
+    assert versions["2.0.0"].svn_revision == 999
+    assert versions["2.0.0"].managed is False
 
 
 def test_paired_sbom_shown_on_catalog_artifact() -> None:

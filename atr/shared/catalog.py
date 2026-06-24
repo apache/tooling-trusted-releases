@@ -94,6 +94,8 @@ def _artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: 
         sbom_path=row.sbom_path,
         key_fingerprint=row.key_fingerprint,
         svn_revision=row.svn_revision,
+        managed=row.managed,
+        dated=row.dated,
         downloadable=downloadable,
         artifact_url=artifact_url,
         signature_url=signature_url,
@@ -179,6 +181,7 @@ def _versions(
                 status=status,
                 released=(release.released or release.created) if (release is not None) else None,
                 svn_revision=max(svn_revisions) if svn_revisions else None,
+                managed=any(row.managed for row in rows),
                 cycle=cycle.cycle if (cycle is not None) else None,
                 cle_url=cle_release_url(atr_host, release.project_key, str(version))
                 if (atr_host is not None) and cle_eligible and (release is not None)

@@ -1541,10 +1541,9 @@ class FoundationAdmin(FoundationCommitter):
     ) -> str | None:
         """Catalogue a release found published in the dist area.
 
-        Records a release ATR didn't itself publish, so svn_revision and
-        key_fingerprint stay null. The
-        project must already exist; an already-catalogued release is left
-        alone.
+        Records a release ATR didn't itself publish, so the artifacts are left
+        unmanaged. The project must already exist - an already-catalogued
+        release is left alone.
         """
         project = await self.__data.project(key=str(project_key)).get()
         if project is None:
@@ -1595,6 +1594,8 @@ class FoundationAdmin(FoundationCommitter):
                     checksum_path=artifact.checksum_path,
                     sbom_path=artifact.sbom_path,
                     download_path_suffix=artifact.download_path_suffix,
+                    managed=False,
+                    dated=released,
                 )
             )
         await self.__data.commit()

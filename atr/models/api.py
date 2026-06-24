@@ -42,6 +42,9 @@ class CatalogArtifact(schema.Strict):
     sbom_path: str | None
     key_fingerprint: str | None
     svn_revision: int | None
+    # True when the artifact came through ATR; dated by its date of action
+    managed: bool
+    dated: datetime.datetime | None
     downloadable: bool
     # Public download URLs: the artifact via the mirror network, its signature,
     # checksum and SBOM from downloads.apache.org. None when the version is not downloadable.
@@ -50,12 +53,18 @@ class CatalogArtifact(schema.Strict):
     checksum_url: str | None
     sbom_url: str | None
 
+    @pydantic.field_validator("dated", mode="before")
+    @classmethod
+    def dated_from_iso(cls, v):
+        return datetime.datetime.fromisoformat(v) if isinstance(v, str) else v
+
 
 class CatalogVersion(schema.Strict):
     version: safe.VersionKey
     status: Literal["released", "archived"]
     released: datetime.datetime | None
     svn_revision: int | None
+    managed: bool
     # The cycle's display label (e.g. "2.x"), or None for versions outside any cycle.
     cycle: str | None
     # The per-version CLE feed, or None when no released-phase record backs this version.

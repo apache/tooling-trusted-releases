@@ -305,7 +305,12 @@ class ReleaseManager(CommitteeParticipant):
             # Record the artifacts before promoting, since promotion deletes the
             # revisions and cascade-deletes the file state we read classifications from
             await self.__write_artifact_rows(
-                release, finished_path, preview_revision_number, published_revision, effective_download_path_suffix
+                release,
+                finished_path,
+                preview_revision_number,
+                published_revision,
+                effective_download_path_suffix,
+                release_date,
             )
             await self.__promote_in_database(release, preview_revision_number, release_date)
             self.__data.add(
@@ -587,6 +592,7 @@ class ReleaseManager(CommitteeParticipant):
         revision_number: safe.RevisionNumber,
         svn_revision: int | None,
         download_path_suffix: safe.RelPath | None,
+        dated: datetime.datetime,
     ) -> None:
         revision_seq = int(str(revision_number))
         # The preview revision created when a vote passes has no checks of its own, so the
@@ -629,6 +635,8 @@ class ReleaseManager(CommitteeParticipant):
                     classification=classifications.get(rel),
                     svn_revision=svn_revision,
                     download_path_suffix=str(download_path_suffix) if download_path_suffix is not None else None,
+                    managed=True,
+                    dated=dated,
                 )
             )
 
