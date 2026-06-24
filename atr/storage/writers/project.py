@@ -217,64 +217,78 @@ class CommitteeMember(ReleaseManager):
         )
 
     async def archive(self, project_key: safe.ProjectKey) -> None:
-        project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).get()
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            project = await self.__data.project(
+                key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True
+            ).get()
+            if not project:
+                raise storage.AccessError(f"Project '{project_key}' not found.")
 
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.")
-
-        # TODO: when a project has current or archived releases, archiving the project
-        # should be allowed and should cascade-archive the current releases as well -
-        # for now we just block, and only drafts are handled (deleted by the caller)
-        post_draft_phases = {
-            sql.ReleasePhase.RELEASE_CANDIDATE,
-            sql.ReleasePhase.RELEASE_PREVIEW,
-            sql.ReleasePhase.RELEASE,
-        }
-        if any(r.phase in post_draft_phases for r in project.releases_including_embargoed):
-            raise storage.AccessError(
-                f"Cannot archive project '{project_key}' because it has active releases; complete or remove them first."
-            )
-
-        if project.committee_key:
-            committee_projects = await self.__data.project(
-                committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
-            ).all()
-            if len(committee_projects) <= 1:
+            # TODO: when a project has current or archived releases, archiving the project
+            # should be allowed and should cascade-archive the current releases as well -
+            # for now we just block, and only drafts are handled (deleted by the caller)
+            post_draft_phases = {
+                sql.ReleasePhase.RELEASE_CANDIDATE,
+                sql.ReleasePhase.RELEASE_PREVIEW,
+                sql.ReleasePhase.RELEASE,
+            }
+            if any(r.phase in post_draft_phases for r in project.releases_including_embargoed):
                 raise storage.AccessError(
-                    f"Cannot archive project '{project_key}' because it is the only project in its committee."
+                    f"Cannot archive project '{project_key}' because it has active releases;"
+                    " complete or remove them first."
                 )
 
-        project = await self.__data.merge(project)
-        project.status = sql.ProjectStatus.RETIRED
-        await self.__data.commit()
+            if project.committee_key:
+                committee_projects = await self.__data.project(
+                    committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
+                ).all()
+                if len(committee_projects) <= 1:
+                    raise storage.AccessError(
+                        f"Cannot archive project '{project_key}' because it is the only project in its committee."
+                    )
+
+            project.status = sql.ProjectStatus.RETIRED
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project_key),
         )
 
     async def delete(self, project_key: safe.ProjectKey) -> None:
-        project = await self.__data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True).get()
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            project = await self.__data.project(
+                key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True
+            ).get()
+            if not project:
+                raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
 
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+            if project.committee_key:
+                committee_projects = await self.__data.project(
+                    committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
+                ).all()
+                if len(committee_projects) <= 1:
+                    raise storage.AccessError(
+                        f"Cannot delete project '{project_key}' because it is the only project in its committee."
+                    )
 
-        if project.committee_key:
-            committee_projects = await self.__data.project(
-                committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
-            ).all()
-            if len(committee_projects) <= 1:
+            if project.releases_including_embargoed:
                 raise storage.AccessError(
-                    f"Cannot delete project '{project_key}' because it is the only project in its committee."
+                    f"Cannot delete project '{project_key}' because it has associated releases. Delete them first.",
+                    status=409,
                 )
 
-        if project.releases_including_embargoed:
-            raise storage.AccessError(
-                f"Cannot delete project '{project_key}' because it has associated releases. Delete them first.",
-                status=409,
-            )
-
-        await self.__data.delete(project)
-        await self.__data.commit()
+            await self.__data.delete(project)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project_key),
