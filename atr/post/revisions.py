@@ -52,23 +52,17 @@ async def _set_revision(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> web.WerkzeugResponse:
-    """Set a specific revision as the latest for a candidate draft or release preview."""
+    """Set a specific revision as the latest for a candidate draft."""
     selected_revision_number = set_revision_form.revision_number
 
     async with db.session() as data:
         release = await session.release(project_key, version_key, phase=None, data=data)
-        if release.phase not in {sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}:
-            raise base.ASFQuartException("Cannot set revision for non-draft or preview release", errorcode=400)
+        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            raise base.ASFQuartException("Cannot set revision for non-draft release", errorcode=400)
 
-        selected_revision = await data.revision(release_key=release.key, number=str(selected_revision_number)).demand(
+        await data.revision(release_key=release.key, number=str(selected_revision_number)).demand(
             base.ASFQuartException(f"Revision {selected_revision_number} not found", errorcode=404)
         )
-        if (release.phase == sql.ReleasePhase.RELEASE_PREVIEW) and (
-            selected_revision.phase != sql.ReleasePhase.RELEASE_PREVIEW
-        ):
-            raise base.ASFQuartException(
-                f"Revision {selected_revision_number} is not a preview revision", errorcode=400
-            )
 
     description = f"Copy of revision {selected_revision_number} through web interface"
     async with storage.write(session) as write:
@@ -77,7 +71,7 @@ async def _set_revision(
             project_key,
             version_key,
             session.uid,
-            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, sql.ReleasePhase.RELEASE_PREVIEW}),
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
             clone_from=selected_revision_number,
         )

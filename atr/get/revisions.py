@@ -222,8 +222,7 @@ async def _render_revision_card(
             _render_tag_form(card_body, revision, project_key, version_key)
 
             is_draft = phase_key == "draft"
-            revision_is_preview = revision.phase.value.lower() == "release_preview"
-            if (revision.number != latest_revision_number) and (is_draft or revision_is_preview):
+            if (revision.number != latest_revision_number) and is_draft:
                 await _render_revision_actions(card_body, revision, project_key, version_key)
 
 

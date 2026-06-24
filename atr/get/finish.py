@@ -16,18 +16,13 @@
 # under the License.
 
 
-import dataclasses
-import os
-import pathlib
 from collections.abc import Sequence
 from typing import Literal
 
-import aiofiles.os
 import asfquart.base as base
 import markupsafe
 import quart
 
-import atr.analysis as analysis
 import atr.blueprints.get as get
 import atr.config as config
 import atr.db as db
@@ -37,14 +32,12 @@ import atr.get.announce as announce
 import atr.get.distribution as distribution
 import atr.get.download as download
 import atr.get.file as file
-import atr.get.revisions as revisions
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -53,13 +46,6 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
-
-
-@dataclasses.dataclass
-class RCTagAnalysisResult:
-    affected_paths_preview: list[tuple[str, str]]
-    affected_count: int
-    total_paths: int
 
 
 @get.typed
@@ -75,7 +61,7 @@ async def selected(
     """
     await session.prevent_confusing_ui_display(project_key)
     try:
-        (release, deletable_dirs, rc_analysis, tasks) = await _get_page_data(project_key, version_key)
+        (release, tasks) = await _get_page_data(project_key, version_key)
     except ValueError:
         async with db.session() as data:
             release_fallback = await data.release(
@@ -86,9 +72,6 @@ async def selected(
             if release_fallback:
                 return await mapping.release_as_redirect(session, release_fallback)
 
-        await quart.flash("Preview revision directory not found.", "error")
-        return await session.redirect(root.index)
-    except FileNotFoundError:
         await quart.flash("Preview revision directory not found.", "error")
         return await session.redirect(root.index)
 
@@ -108,56 +91,14 @@ async def selected(
     return await _render_page(
         session=session,
         release=release,
-        deletable_dirs=deletable_dirs,
-        rc_analysis=rc_analysis,
         distribution_tasks=tasks,
         announce_disable_message=announce_msg,
     )
 
 
-async def _analyse_rc_tags(latest_revision_dir: os.PathLike) -> RCTagAnalysisResult:
-    r = RCTagAnalysisResult(
-        affected_paths_preview=[],
-        affected_count=0,
-        total_paths=0,
-    )
-
-    if not await aiofiles.os.path.exists(latest_revision_dir):
-        return r
-
-    async for p_rel in util.paths_recursive_all(latest_revision_dir):
-        r.total_paths += 1
-        original_path_str = str(p_rel)
-        stripped_path_str = str(analysis.candidate_removed(p_rel))
-        if original_path_str == stripped_path_str:
-            continue
-        r.affected_count += 1
-        if len(r.affected_paths_preview) >= 5:
-            # Can't break here, because we need to update the counts
-            continue
-        r.affected_paths_preview.append((original_path_str, stripped_path_str))
-
-    return r
-
-
-async def _deletable_choices(
-    latest_revision_dir: safe.StatePath, target_dirs: set[safe.RelPath]
-) -> list[tuple[str, str]]:
-    empty_deletable_dirs: list[safe.RelPath] = []
-    if await aiofiles.os.path.exists(latest_revision_dir):
-        for d_rel in target_dirs:
-            if d_rel == pathlib.Path("."):
-                # Disallow deletion of the root directory
-                continue
-            d_full = latest_revision_dir / d_rel
-            if (await aiofiles.os.path.isdir(d_full)) and (not await aiofiles.os.listdir(d_full)):
-                empty_deletable_dirs.append(d_rel)
-    return sorted([(str(p), str(p)) for p in empty_deletable_dirs])
-
-
 async def _get_page_data(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
-) -> tuple[sql.Release, list[tuple[str, str]], RCTagAnalysisResult, Sequence[sql.Task]]:
+) -> tuple[sql.Release, Sequence[sql.Task]]:
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
@@ -187,29 +128,7 @@ async def _get_page_data(
     if release.phase != sql.ReleasePhase.RELEASE_PREVIEW:
         raise ValueError("Release is not in preview phase")
 
-    latest_revision_dir = paths.release_directory(release)
-    _, target_dirs = await _sources_and_targets(latest_revision_dir)
-    deletable_dirs = await _deletable_choices(latest_revision_dir, target_dirs)
-    rc_analysis_result = await _analyse_rc_tags(latest_revision_dir)
-
-    return release, deletable_dirs, rc_analysis_result, tasks
-
-
-async def _render_delete_directory_form(deletable_dirs: list[tuple[str, str]]) -> htm.Element:
-    """Render the delete directory form."""
-    section = htm.Block()
-
-    section.h3["Delete an empty directory"]
-
-    await form.render_block(
-        section,
-        shared.finish.DeleteEmptyDirectoryForm,
-        defaults={"directory_to_delete": deletable_dirs},
-        submit_label="Delete empty directory",
-        submit_classes="btn-danger",
-    )
-
-    return section.collect()
+    return release, tasks
 
 
 def _render_dist_warning() -> htm.Element:
@@ -294,8 +213,6 @@ def _render_distribution_tasks(release: sql.Release, tasks: Sequence[sql.Task]) 
 async def _render_page(
     session: web.Committer,
     release: sql.Release,
-    deletable_dirs: list[tuple[str, str]],
-    rc_analysis: RCTagAnalysisResult,
     distribution_tasks: Sequence[sql.Task],
     announce_disable_message: str,
 ) -> str:
@@ -355,14 +272,6 @@ async def _render_page(
                 submit_label="Publish to SVN",
             )
 
-    page.h2["Tidy up the release"]
-    # Delete directory form
-    if deletable_dirs:
-        page.append(await _render_delete_directory_form(deletable_dirs))
-
-    # Remove RC tags section
-    page.append(await _render_rc_tags_section(rc_analysis))
-
     if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]
         activity_form = await form.render(
@@ -376,25 +285,6 @@ async def _render_page(
 
     # Custom styles
     page_styles = """
-        .page-file-select-text {
-            vertical-align: middle;
-            margin-left: 8px;
-        }
-        .page-table-button-cell {
-            width: 1%;
-            white-space: nowrap;
-            vertical-align: middle;
-        }
-        .page-table-path-cell {
-            vertical-align: middle;
-        }
-        .page-item-selected td {
-            background-color: #e9ecef;
-            font-weight: 500;
-        }
-        .page-table-row-interactive {
-            height: 52px;
-        }
         .page-extra-muted {
             color: #aaaaaa;
         }
@@ -408,43 +298,6 @@ async def _render_page(
         description=f"Finish {release.project.display_name} {release.version} as a release preview.",
         content=content,
     )
-
-
-def _render_rc_preview_table(affected_paths: list[tuple[str, str]]) -> htm.Element:
-    """Render the RC tags preview table."""
-    rows = [htm.tr[htm.td[original], htm.td[stripped]] for original, stripped in affected_paths]
-
-    return htm.div[
-        htm.p(".mb-2")["Preview of changes:"],
-        htm.table(".table.table-sm.table-striped.border.mt-3")[htm.tbody[rows]],
-    ]
-
-
-async def _render_rc_tags_section(rc_analysis: RCTagAnalysisResult) -> htm.Element:
-    """Render the remove RC tags section."""
-    section = htm.Block()
-
-    section.h3["Remove release candidate tags"]
-
-    if rc_analysis.affected_count > 0:
-        section.div(".alert.alert-info.mb-3")[
-            htm.p(".mb-3.fw-semibold")[
-                f"{rc_analysis.affected_count} / {rc_analysis.total_paths} paths would be affected by RC tag removal."
-            ],
-            _render_rc_preview_table(rc_analysis.affected_paths_preview) if rc_analysis.affected_paths_preview else "",
-        ]
-
-        await form.render_block(
-            section,
-            shared.finish.RemoveRCTagsForm,
-            submit_label="Remove RC tags",
-            submit_classes="btn-warning",
-            form_classes=".mb-4.atr-canary",
-        )
-    else:
-        section.p["No paths with RC tags found to remove."]
-
-    return section.collect()
 
 
 def _render_release_card(release: sql.Release, announce_disable_message: str) -> htm.Element:
@@ -488,18 +341,6 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     " Show files",
                 ],
                 htm.a(
-                    ".btn.btn-secondary.me-2",
-                    title=f"Show revisions for {release.key}",
-                    href=util.as_url(
-                        revisions.selected,
-                        project_key=release.project.key,
-                        version_key=release.version,
-                    ),
-                )[
-                    htm.icon("clock-history"),
-                    " Show revisions",
-                ],
-                htm.a(
                     f".btn{announce_classes}.me-2",
                     title=f"Publish and announce {release.key}",
                     href=util.as_url(
@@ -539,26 +380,3 @@ def _render_task(task: sql.Task) -> htm.Element:
             htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
             *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
         ]
-
-
-async def _sources_and_targets(latest_revision_dir: safe.StatePath) -> tuple[list[pathlib.Path], set[safe.RelPath]]:
-    source_items_rel: list[pathlib.Path] = []
-    target_dirs: set[safe.RelPath] = {safe.RelPath(".")}
-
-    async for item_rel_path in util.paths_recursive_all(latest_revision_dir):
-        current_parent = item_rel_path.parent
-        source_items_rel.append(item_rel_path)
-
-        while True:
-            target_dirs.add(safe.RelPath.from_path(current_parent))
-            if current_parent == pathlib.Path("."):
-                break
-            current_parent = current_parent.parent
-
-        item_abs_path = latest_revision_dir / item_rel_path
-        if await aiofiles.os.path.isfile(item_abs_path):
-            pass
-        elif await aiofiles.os.path.isdir(item_abs_path):
-            target_dirs.add(safe.RelPath.from_path(item_rel_path))
-
-    return source_items_rel, target_dirs

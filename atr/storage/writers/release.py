@@ -590,34 +590,6 @@ class CommitteeParticipant(FoundationCommitter):
             )
         return None
 
-    async def delete_empty_directory(
-        self, project_key: safe.ProjectKey, version_key: safe.VersionKey, dir_to_delete_rel: pathlib.Path
-    ) -> str | None:
-        description = f"Delete empty directory {dir_to_delete_rel} via web interface"
-
-        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
-            path_to_remove = path / dir_to_delete_rel
-            resolved = await asyncio.to_thread(path_to_remove.path.resolve)
-            resolved.relative_to(await asyncio.to_thread(path.path.resolve))
-            if not await aiofiles.os.path.isdir(path_to_remove):
-                raise datatypes.FailedError(f"Path '{dir_to_delete_rel}' is not a directory.")
-            if await aiofiles.os.listdir(path_to_remove):
-                raise datatypes.FailedError(f"Directory '{dir_to_delete_rel}' is not empty.")
-            await aiofiles.os.rmdir(path_to_remove)
-
-        try:
-            await self.__write_as.revision.create_revision_with_quarantine(
-                project_key,
-                version_key,
-                self.__asf_uid,
-                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
-                description=description,
-                modify=modify,
-            )
-        except datatypes.FailedError as e:
-            return str(e)
-        return None
-
     async def delete_file(
         self, project_key: safe.ProjectKey, version: safe.VersionKey, rel_path_to_delete: pathlib.Path
     ) -> int:
@@ -1079,30 +1051,6 @@ class CommitteeParticipant(FoundationCommitter):
         result = await self.__data.execute(upsert_stmt)
         return int(result.scalar_one())
 
-    async def remove_rc_tags(
-        self, project_key: safe.ProjectKey, version_key: safe.VersionKey
-    ) -> tuple[str | None, int, list[str]]:
-        description = "Remove RC tags from paths via web interface"
-        error_messages: list[str] = []
-        renamed_count = 0
-
-        async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
-            nonlocal renamed_count
-            renamed_count = await self.__remove_rc_tags_revision(path, error_messages)
-
-        try:
-            await self.__write_as.revision.create_revision_with_quarantine(
-                project_key,
-                version_key,
-                self.__asf_uid,
-                allowed_phases=frozenset({sql.ReleasePhase.RELEASE_PREVIEW}),
-                description=description,
-                modify=modify,
-            )
-        except datatypes.FailedError as e:
-            return str(e), renamed_count, error_messages
-        return None, renamed_count, error_messages
-
     async def start(
         self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool = False
     ) -> tuple[sql.Release, sql.Project]:
@@ -1177,15 +1125,6 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), len(files), False
         return None, len(files), isinstance(result, sql.Quarantined)
 
-    async def __current_paths(self, interim_path: safe.StatePath) -> list[pathlib.Path]:
-        all_current_paths_interim: list[pathlib.Path] = []
-        async for p_rel_interim in util.paths_recursive_all(interim_path):
-            all_current_paths_interim.append(p_rel_interim)
-
-        # This manner of sorting is necessary to ensure that directories are removed after their contents
-        all_current_paths_interim.sort(key=lambda p: (-len(p.parts), str(p)))
-        return all_current_paths_interim
-
     @contextlib.asynccontextmanager
     async def __open_for_replace(self, target_path: pathlib.Path) -> AsyncIterator[Any]:
         # Unlink first - the target could be a hardlink from a prior revision, locked 0o444.
@@ -1204,77 +1143,6 @@ class CommitteeParticipant(FoundationCommitter):
             parent_dir / f"{name_without_ext}.sha256",
             parent_dir / f"{name_without_ext}.sha512",
         ]
-
-    async def __remove_rc_tags_revision(
-        self,
-        interim_path: safe.StatePath,
-        error_messages: list[str],
-    ) -> int:
-        all_current_paths_interim = await self.__current_paths(interim_path)
-        renamed_count_local = 0
-        for path_rel_original_interim in all_current_paths_interim:
-            path_rel_stripped_interim = analysis.candidate_removed(path_rel_original_interim)
-
-            if path_rel_original_interim != path_rel_stripped_interim:
-                # Absolute paths of the source and destination
-                full_original_path = interim_path / path_rel_original_interim
-                full_stripped_path = interim_path / path_rel_stripped_interim
-
-                skip, renamed_count_local = await self.__remove_rc_tags_revision_item(
-                    safe.RelPath.from_path(path_rel_original_interim),
-                    full_original_path,
-                    full_stripped_path,
-                    error_messages,
-                    renamed_count_local,
-                )
-                if skip:
-                    continue
-
-                try:
-                    if not await aiofiles.os.path.exists(full_stripped_path.parent):
-                        # This could happen if e.g. a file is in an RC tagged directory
-                        await aiofiles.os.makedirs(full_stripped_path.parent, exist_ok=True)
-
-                    if await aiofiles.os.path.exists(full_stripped_path):
-                        error_messages.append(
-                            f"Skipped '{path_rel_original_interim}':"
-                            f" target '{path_rel_stripped_interim}' already exists."
-                        )
-                        continue
-
-                    await aiofiles.os.rename(full_original_path, full_stripped_path)
-                    renamed_count_local += 1
-                except Exception as e:
-                    error_messages.append(f"Error renaming '{path_rel_original_interim}': {e}")
-        return renamed_count_local
-
-    async def __remove_rc_tags_revision_item(
-        self,
-        path_rel_original_interim: safe.RelPath,
-        full_original_path: safe.StatePath,
-        full_stripped_path: safe.StatePath,
-        error_messages: list[str],
-        renamed_count_local: int,
-    ) -> tuple[bool, int]:
-        if await aiofiles.os.path.isdir(full_original_path):
-            # If moving an RC tagged directory to an existing directory...
-            is_target_dir_and_exists = await aiofiles.os.path.isdir(full_stripped_path)
-            if is_target_dir_and_exists and (full_stripped_path != full_original_path):
-                try:
-                    # And the source directory is empty...
-                    if not await aiofiles.os.listdir(full_original_path):
-                        # This means we probably moved files out of the RC tagged directory
-                        # In any case, we can't move it, so we have to delete it
-                        await aiofiles.os.rmdir(full_original_path)
-                        renamed_count_local += 1
-                    else:
-                        error_messages.append(
-                            f"Source RC directory '{path_rel_original_interim}' is not empty, skipping."
-                        )
-                except OSError as e:
-                    error_messages.append(f"Error removing source RC directory '{path_rel_original_interim}': {e}")
-                return True, renamed_count_local
-        return False, renamed_count_local
 
     async def __save_file(self, file: datastructures.FileStorage, target_path: pathlib.Path) -> None:
         async with self.__open_for_replace(target_path) as f:

@@ -20,12 +20,9 @@ from typing import Literal
 import quart
 
 import atr.blueprints.post as post
-import atr.errors as errors
-import atr.log as log
 import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
-import atr.util as util
 import atr.web as web
 
 
@@ -35,52 +32,12 @@ async def selected(
     _finish: Literal["finish"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    finish_form: shared.finish.FinishForm,
+    publish_form: shared.finish.PublishToSvnForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
     URL: /finish/<project_key>/<version_key>
     """
     respond = _respond_helper(session, project_key, version_key)
-
-    match finish_form:
-        case shared.finish.DeleteEmptyDirectoryForm() as delete_form:
-            return await _delete_empty_directory(delete_form, session, project_key, version_key, respond)
-        case shared.finish.PublishToSvnForm() as publish_form:
-            return await _publish_to_svn(publish_form, session, project_key, version_key, respond)
-        case shared.finish.RemoveRCTagsForm():
-            return await _remove_rc_tags(session, project_key, version_key, respond)
-
-
-async def _delete_empty_directory(
-    delete_form: shared.finish.DeleteEmptyDirectoryForm,
-    session: web.Committer,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    respond: shared.finish.Respond,
-) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
-    dir_to_delete_rel = delete_form.directory_to_delete
-    try:
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_key)
-            creation_error = await wacp.release.delete_empty_directory(
-                project_key, version_key, dir_to_delete_rel.as_path()
-            )
-    except Exception as e:
-        log.exception(f"Unexpected error deleting directory {dir_to_delete_rel} for {project_key}/{version_key}")
-        return await _server_error(respond, e, "An unexpected error occurred.")
-
-    if creation_error is not None:
-        return await respond(400, creation_error)
-    return await respond(200, f"Deleted empty directory '{dir_to_delete_rel}'.")
-
-
-async def _publish_to_svn(
-    publish_form: shared.finish.PublishToSvnForm,
-    session: web.Committer,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    respond: shared.finish.Respond,
-) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
@@ -90,38 +47,6 @@ async def _publish_to_svn(
     except storage.AccessError as e:
         return await respond(e.status or 409, str(e))
     return await respond(200, "SVN publish task queued.")
-
-
-async def _remove_rc_tags(
-    session: web.Committer,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    respond: shared.finish.Respond,
-) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
-    try:
-        async with storage.write(session) as write:
-            wacp = await write.as_project_committee_member(project_key)
-            creation_error, renamed_count, error_messages = await wacp.release.remove_rc_tags(project_key, version_key)
-
-        if creation_error is not None:
-            return await respond(409, creation_error)
-
-        if error_messages:
-            status_ok = renamed_count > 0
-            # TODO: Ideally HTTP would have a general mixed status, like 207 but for anything
-            http_status = 200 if status_ok else 500
-            msg = f"RC tags removed for {util.plural(renamed_count, 'item')}"
-            msg += f" with some errors: {'; '.join(error_messages)}"
-            return await respond(http_status, msg)
-
-        if renamed_count > 0:
-            return await respond(200, f"Successfully removed RC tags from {util.plural(renamed_count, 'item')}.")
-
-        return await respond(200, "No items required RC tag removal or no changes were made.")
-
-    except Exception as e:
-        log.exception(f"Unexpected error removing RC tags for {project_key}/{version_key}")
-        return await _server_error(respond, e, f"Unexpected error: {e!s}")
 
 
 def _respond_helper(
@@ -141,13 +66,3 @@ def _respond_helper(
         return await session.redirect(get.finish.selected, project_key=str(project_key), version_key=str(version_key))
 
     return respond
-
-
-async def _server_error(
-    respond: shared.finish.Respond,
-    error: BaseException,
-    summary: str,
-) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
-    if web.wants_json_response():
-        return errors.action_error_response(error, summary=summary, status=500)
-    return await respond(500, summary)
