@@ -39,10 +39,11 @@ _ALLOWED_TOP_LEVEL_SUFFIXES: Final = ("", ".adoc", ".md", ".rst", ".txt")
 _ALLOWED_TOP_LEVEL: Final = frozenset(
     (name + suffix) for name in _ALLOWED_TOP_LEVEL_NAMES for suffix in _ALLOWED_TOP_LEVEL_SUFFIXES
 )
+_DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "4"
+CHECK_VERSION: Final[str] = "5"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -113,6 +114,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         )
 
     await _check_source_artifact_present(args, recorder_problems, relative_paths, base_path)
+    await _check_documentation_tree(recorder_problems, relative_paths)
 
     return None
 
@@ -147,6 +149,25 @@ async def _check_artifact_rules(
         # TODO: Allow "incubator" too as #114 requests?
         if "incubating" not in full_path.path.name:
             blockers.append("Podling artifact filenames must include 'incubating'")
+
+
+async def _check_documentation_tree(
+    recorder_problems: checks.Recorder,
+    relative_paths: list[safe.RelPath],
+) -> None:
+    bundled = [path for path in relative_paths if _is_bundled_doc(path)]
+    if len(bundled) <= _DOC_TREE_MAX_FILES:
+        return
+    await recorder_problems.blocker(
+        f"Release bundles {len(bundled)} files, which exceeds the limit of {_DOC_TREE_MAX_FILES}. "
+        "If these files are documentation, please publish them to the project website instead.",
+        {
+            "doc_file_count": len(bundled),
+            "limit": _DOC_TREE_MAX_FILES,
+            "examples": [str(path) for path in bundled[:5]],
+        },
+        primary_rel_path=None,
+    )
 
 
 async def _check_metadata_rules(
@@ -358,6 +379,16 @@ async def _check_source_artifact_present(
             {},
             primary_rel_path=None,
         )
+
+
+def _is_bundled_doc(relative_path: safe.RelPath) -> bool:
+    if len(relative_path.as_path().parts) <= 1:
+        return False
+    path_str = str(relative_path)
+    search = re.search(analysis.extension_pattern(), path_str)
+    if search and (search.group("artifact") or search.group("metadata")):
+        return False
+    return not any(path_str.endswith(suffix) for suffix in analysis.STANDALONE_METADATA_SUFFIXES)
 
 
 async def _record(
