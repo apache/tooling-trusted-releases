@@ -27,15 +27,13 @@ import sqlmodel
 import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
-import atr.get.compose as compose
-import atr.get.finish as finish
-import atr.get.root as root
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
+import atr.render as render
 import atr.shared as shared
 import atr.template as template
 import atr.util as util
@@ -114,17 +112,6 @@ async def selected(
     )
 
 
-def _render_back_link(release: sql.Release, phase_key: str) -> htm.Element:
-    if phase_key == "draft":
-        back_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
-        return htm.a(".atr-back-link", href=back_url)[f"← Back to Compose {release.short_display_name}"]
-    elif phase_key == "preview":
-        back_url = util.as_url(finish.selected, project_key=release.project.key, version_key=release.version)
-        return htm.a(".atr-back-link", href=back_url)[f"← Back to Finish {release.short_display_name}"]
-    else:
-        return htm.a(".atr-back-link", href=util.as_url(root.index))["← Back to Select a release"]
-
-
 def _render_files_diff(body: htm.Block, files_diff: "FilesDiff") -> None:
     if not (files_diff.added or files_diff.removed or files_diff.modified):
         body.p(".fst-italic.text-muted.mt-2")["No file changes detected in this revision."]
@@ -168,10 +155,7 @@ async def _render_page(
 ) -> htm.Element:
     page = htm.Block()
 
-    page.p(".d-flex.justify-content-between.align-items-center")[
-        _render_back_link(release, phase_key),
-        _render_phase_indicator(phase_key),
-    ]
+    render.html_nav_phase(page, project_key, version_key, staging=(phase_key == "draft"))
 
     page.h1[
         "Revisions of ",
@@ -189,27 +173,6 @@ async def _render_page(
         page.div(".alert.alert-info")["No revision history found for this candidate draft."]
 
     return page.collect()
-
-
-def _render_phase_indicator(phase_key: str) -> htm.Element:
-    span = htm.Block(htm.span)
-
-    if phase_key == "draft":
-        span.strong(".atr-phase-one.atr-phase-symbol")["①"]
-        span.span(".atr-phase-one.atr-phase-label")["COMPOSE"]
-        span.span(".atr-phase-arrow")["→"]
-        span.span(".atr-phase-symbol-other")["②"]
-        span.span(".atr-phase-arrow")["→"]
-        span.span(".atr-phase-symbol-other")["③"]
-    elif phase_key == "preview":
-        span.span(".atr-phase-symbol-other")["①"]
-        span.span(".atr-phase-arrow")["→"]
-        span.span(".atr-phase-symbol-other")["②"]
-        span.span(".atr-phase-arrow")["→"]
-        span.strong(".atr-phase-three.atr-phase-symbol")["③"]
-        span.span(".atr-phase-three.atr-phase-label")["FINISH"]
-
-    return span.collect(separator=" ")
 
 
 async def _render_revision_actions(body: htm.Block, revision: sql.Revision, project_key: str, version_key: str) -> None:
