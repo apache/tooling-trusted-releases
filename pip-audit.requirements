@@ -387,5 +387,3 @@ wtforms==3.2.2
     # via quart-wtforms
 yarl==1.24.2
     # via aiohttp
-yyjson==4.0.6
-    # via tooling-trusted-releases

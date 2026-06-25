@@ -18,12 +18,11 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     import pathlib
 
-    import yyjson
     from cyclonedx.model.bom import Bom
     from cyclonedx.schema import SchemaVersion
 
@@ -33,6 +32,6 @@ class Bundle:
     source_type: Literal["json", "xml"]
     spec_version: SchemaVersion
     bom: Bom
-    doc: yyjson.Document
+    doc: dict[str, Any]
     path: pathlib.Path
     text: str

@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import datetime
 import urllib.parse
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import aiohttp
-import yyjson
+import orjson
 
 from . import constants, models
 from .maven import cache_read, cache_write
-from .utilities import ensure_metadata, get_pointer
+from .utilities import ensure_metadata, get_pointer, resolve_pointer
 
 if TYPE_CHECKING:
     from cyclonedx.model.component import Component
@@ -37,19 +37,19 @@ if TYPE_CHECKING:
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 
 
-def assemble_component_identifier(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
+def assemble_component_identifier(doc: dict[str, Any], patch_ops: models.patch.Patch, index: int) -> None:
     # May be able to derive this from other fields
     pass
 
 
-def assemble_component_name(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
+def assemble_component_name(doc: dict[str, Any], patch_ops: models.patch.Patch, index: int) -> None:
     # May be able to derive this from other fields
     pass
 
 
 async def assemble_component_supplier(
     session: aiohttp.ClientSession,
-    doc: yyjson.Document,
+    doc: dict[str, Any],
     patch_ops: models.patch.Patch,
     index: int,
 ) -> None:
@@ -145,7 +145,7 @@ async def assemble_component_supplier(
         try:
             async with session.get(url) as response:
                 response.raise_for_status()
-                data = yyjson.Document(await response.read())
+                data = orjson.loads(await response.read())
         except aiohttp.ClientResponseError:
             cache[key] = None
             cache_write(cache)
@@ -167,39 +167,39 @@ async def assemble_component_supplier(
         return
 
 
-def assemble_component_version(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
+def assemble_component_version(doc: dict[str, Any], patch_ops: models.patch.Patch, index: int) -> None:
     # May be able to derive this from other fields
     pass
 
 
-def assemble_dependencies(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_dependencies(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     # This is just a warning
     # There is nothing we can do, but we should alert the user
     pass
 
 
-def assemble_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_metadata(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     ensure_metadata(doc, patch_ops)
 
 
-def assemble_metadata_author(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_metadata_author(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     # We can't synthesise an author here
     pass
 
 
-def assemble_metadata_component(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_metadata_component(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     # This is a hard failure
     # The SBOM is completely invalid, and there is no recovery
     raise ValueError("metadata.component is required")
 
 
-def assemble_metadata_supplier(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_metadata_supplier(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     assemble_metadata(doc, patch_ops)
     # NOTE: The sbomqs tool requires a URL (or email) on a supplier
     patch_ops.append(models.patch.AddOp(op="add", path="/metadata/supplier", value=constants.conformance.ASF_ENTITY))
 
 
-def assemble_metadata_timestamp(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def assemble_metadata_timestamp(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     assemble_metadata(doc, patch_ops)
     if get_pointer(doc, "/metadata/timestamp") is None:
         patch_ops.append(
@@ -249,7 +249,7 @@ def ntia_2021_issues(
     warnings: list[models.conformance.Missing] = []
     errors: list[models.conformance.Missing] = []
     bom_value = bundle.bom
-    original_metadata = bundle.doc.get_pointer("/metadata")
+    original_metadata = resolve_pointer(bundle.doc, "/metadata")
 
     if bom_value.metadata:
         if bom_value.metadata.supplier is None:
@@ -342,7 +342,7 @@ def ntia_2021_issues(
 
 async def ntia_2021_patch(
     session: aiohttp.ClientSession,
-    doc: yyjson.Document,
+    doc: dict[str, Any],
     errors: list[models.conformance.Missing],
 ) -> models.patch.Patch:
     patch_ops: models.patch.Patch = []

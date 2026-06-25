@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from typing import TYPE_CHECKING, Any, Literal
@@ -35,7 +36,9 @@ if TYPE_CHECKING:
 
     import atr.sbom.models.osv as osv
 
-import yyjson
+import jsonpatch
+import jsonpointer
+import orjson
 
 import atr.util as util
 
@@ -67,7 +70,7 @@ _TOOL_METADATA = {
 
 def apply_patch(
     reason: str, revision: str, bundle: models.bundle.Bundle, patch_ops: models.patch.Patch
-) -> tuple[int, yyjson.Document]:
+) -> tuple[int, dict[str, Any]]:
     """Take a list of patch operations and apply them to the bundle. Returns the patched document, with the
     task recorded in `properties` and the SBOM version number incremented as per the CDX spec.
 
@@ -115,7 +118,7 @@ def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | N
     return str(textual), severities
 
 
-def ensure_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def ensure_metadata(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     if get_pointer(doc, "/metadata") is not None:
         return
     # Patches are built against the original doc, so don't queue a second bootstrap that would clobber the first
@@ -124,9 +127,9 @@ def ensure_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None
     patch_ops.append(models.patch.AddOp(op="add", path="/metadata", value={}))
 
 
-def get_pointer(doc: yyjson.Document, path: str) -> Any | None:
+def get_pointer(doc: dict[str, Any], path: str) -> Any | None:
     try:
-        return doc.get_pointer(path)
+        return resolve_pointer(doc, path)
     except ValueError as exc:
         # TODO: This is not necessarily stable
         if str(exc) == "JSON pointer cannot be resolved":
@@ -153,8 +156,8 @@ def osv_severity_to_cdx(severity: list[dict[str, Any]] | None, textual: str) -> 
     return None
 
 
-def patch_document(doc: yyjson.Document, patch_ops: models.patch.Patch) -> yyjson.Document:
-    return doc.patch(yyjson.Document(patch_to_data(patch_ops)))
+def patch_document(doc: dict[str, Any], patch_ops: models.patch.Patch) -> dict[str, Any]:
+    return jsonpatch.apply_patch(doc, patch_to_data(patch_ops))
 
 
 def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
@@ -190,11 +193,11 @@ def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
     if not bom or not source_type or not spec_version:
         raise ValueError("Error importing BOM")
     return models.bundle.Bundle(
-        doc=yyjson.Document(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
+        doc=orjson.loads(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
     )
 
 
-def record_atr_tool(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+def record_atr_tool(doc: dict[str, Any], patch_ops: models.patch.Patch) -> models.patch.Patch:
     """Ensure the ATR tool is recorded under metadata.tools.services, refreshing it if already present."""
     ensure_metadata(doc, patch_ops)
     tools: dict[str, Any] | None = get_pointer(doc, "/metadata/tools")
@@ -220,7 +223,7 @@ def record_atr_tool(doc: yyjson.Document, patch_ops: models.patch.Patch) -> mode
     return patch_ops
 
 
-def record_manufacturer(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+def record_manufacturer(doc: dict[str, Any], patch_ops: models.patch.Patch) -> models.patch.Patch:
     """Record ASF as the BOM manufacturer - the organisation that produced it."""
     # Generation-only - we deliberately don't stamp this in the ntia_2021_patch conformance flow
     ensure_metadata(doc, patch_ops)
@@ -228,6 +231,14 @@ def record_manufacturer(doc: yyjson.Document, patch_ops: models.patch.Patch) -> 
         models.patch.AddOp(op="add", path="/metadata/manufacturer", value=constants.conformance.ASF_ENTITY)
     )
     return patch_ops
+
+
+def resolve_pointer(doc: dict[str, Any], path: str) -> Any:
+    try:
+        value = jsonpointer.resolve_pointer(doc, path)
+    except jsonpointer.JsonPointerException:
+        raise ValueError("JSON pointer cannot be resolved") from None
+    return copy.deepcopy(value)
 
 
 def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:
@@ -265,7 +276,7 @@ def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:
             return {"severity": score_str}
 
 
-def _increment_version(doc: yyjson.Document, patch_ops: models.patch.Patch) -> int:
+def _increment_version(doc: dict[str, Any], patch_ops: models.patch.Patch) -> int:
     version: int | None = get_pointer(doc, "/version")
     if version is not None:
         version = version + 1
@@ -288,7 +299,7 @@ def _map_severity(severity: str) -> str:
     return "unknown"
 
 
-def _record_task(task: str, revision: str, doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+def _record_task(task: str, revision: str, doc: dict[str, Any], patch_ops: models.patch.Patch) -> models.patch.Patch:
     properties: list[dict[str, str]] | None = get_pointer(doc, "/properties")
     operation = {"name": f"asf:atr:{task}", "value": revision}
     if properties is None:

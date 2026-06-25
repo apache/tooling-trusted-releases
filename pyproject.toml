@@ -57,7 +57,6 @@ dependencies = [
   "standard-imghdr>=3.13.0",
   "strictyaml>=1.7.3",
   "structlog>=25.5.0",
-  "yyjson>=4.0.6",
 ]
 
 [dependency-groups]

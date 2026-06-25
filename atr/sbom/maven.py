@@ -21,7 +21,7 @@ import pathlib
 import tempfile
 from typing import Any, Final
 
-import yyjson
+import orjson
 
 from . import constants
 
@@ -33,7 +33,7 @@ def cache_read() -> dict[str, Any]:
         return {}
     try:
         with open(_CACHE_PATH) as file:
-            return yyjson.load(file)
+            return orjson.loads(file.read())
     except Exception:
         return {}
 
@@ -43,7 +43,7 @@ def cache_write(cache: dict[str, Any]) -> None:
         return
     try:
         with open(_CACHE_PATH, "w") as file:
-            yyjson.dump(cache, file)
+            file.write(orjson.dumps(cache).decode())
     except FileNotFoundError:
         pass
 

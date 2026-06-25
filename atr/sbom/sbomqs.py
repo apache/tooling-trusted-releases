@@ -20,18 +20,19 @@ from __future__ import annotations
 import pathlib
 import subprocess
 import tempfile
+from typing import Any
 
-import yyjson
+import orjson
 
 from . import models
 
 
-def total_score(value: pathlib.Path | str | yyjson.Document) -> float:
+def total_score(value: pathlib.Path | str | dict[str, Any]) -> float:
     args = ["sbomqs", "compliance", "--ntia", "--json", "--"]
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json") as tf:
         match value:
-            case yyjson.Document():
-                tf.write(value.dumps())
+            case dict():
+                tf.write(orjson.dumps(value).decode())
             case pathlib.Path():
                 tf.write(pathlib.Path(value).read_text(encoding="utf-8"))
             case str():

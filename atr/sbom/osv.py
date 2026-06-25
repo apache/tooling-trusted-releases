@@ -29,7 +29,6 @@ from . import models
 from .utilities import get_pointer, osv_severity_to_cdx
 
 if TYPE_CHECKING:
-    import yyjson
     from cyclonedx.model.component import Component
 
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
@@ -106,7 +105,7 @@ async def scan_bundle(bundle: models.bundle.Bundle) -> tuple[list[models.osv.Com
 
 
 async def vuln_patch(
-    doc: yyjson.Document,
+    doc: dict[str, Any],
     components: list[models.osv.ComponentVulnerabilities],
 ) -> models.patch.Patch:
     patch_ops: models.patch.Patch = []
@@ -128,7 +127,7 @@ def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulner
 
 
 def _assemble_component_vulnerability(
-    doc: yyjson.Document, patch_ops: models.patch.Patch, ref: str, vuln: models.osv.VulnerabilityDetails, index: int
+    doc: dict[str, Any], patch_ops: models.patch.Patch, ref: str, vuln: models.osv.VulnerabilityDetails, index: int
 ) -> None:
     vulnerability = {
         "bom-ref": f"vuln:{ref}/{vuln.id}",
@@ -158,7 +157,7 @@ def _assemble_component_vulnerability(
     )
 
 
-def _assemble_vulnerabilities(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+def _assemble_vulnerabilities(doc: dict[str, Any], patch_ops: models.patch.Patch) -> None:
     if get_pointer(doc, "/vulnerabilities") is not None:
         patch_ops.append(models.patch.RemoveOp(op="remove", path="/vulnerabilities"))
     patch_ops.append(

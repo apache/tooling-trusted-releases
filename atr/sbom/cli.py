@@ -19,7 +19,7 @@ import asyncio
 import pathlib
 import sys
 
-import yyjson
+import orjson
 from cyclonedx.model.bom import Bom
 from cyclonedx.output import make_outputter
 from cyclonedx.schema import OutputFormat
@@ -65,9 +65,9 @@ def command_merge(bundle: models.bundle.Bundle) -> None:
     else:
         output = bundle.doc
     if bundle.source_type == "json":
-        print(output.dumps())
+        print(orjson.dumps(output).decode())
     else:
-        bom: Bom | None = Bom.from_json(data=output.as_obj)
+        bom: Bom | None = Bom.from_json(data=output)
         if bom is None:
             print("Could not generate patched Bom")
             return
@@ -106,7 +106,7 @@ def command_patch_ntia(bundle: models.bundle.Bundle) -> None:
     patch_ops = asyncio.run(bundle_to_ntia_patch(bundle))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
-        print(yyjson.Document(patch_data).dumps())
+        print(orjson.dumps(patch_data).decode())
     else:
         print("no patch needed")
 
@@ -116,7 +116,7 @@ def command_patch_vuln(bundle: models.bundle.Bundle) -> None:
     patch_ops = asyncio.run(bundle_to_vuln_patch(bundle, results))
     if patch_ops:
         patch_data = patch_to_data(patch_ops)
-        print(yyjson.Document(patch_data).dumps())
+        print(orjson.dumps(patch_data).decode())
     else:
         print("no patch needed")
 
