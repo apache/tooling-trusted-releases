@@ -403,6 +403,9 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
+    # Temporary fix for alpha:
+    if "dist/atr" in body_values["KEYS_FILE"]:
+        body_values["KEYS_FILE"] = body_values["KEYS_FILE"].replace("dist/atr", "dist/release")
     subject = _substitute(subject, subject_values, "vote_subject")
     body = _substitute(body, body_values, "vote")
     return subject, body
