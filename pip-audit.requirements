@@ -176,8 +176,12 @@ jsbeautifier==2.0.1
     #   djlint
 json5==0.15.0
     # via djlint
+jsonpatch==1.33
+    # via tooling-trusted-releases
 jsonpointer==3.1.1
-    # via jsonschema
+    # via
+    #   jsonpatch
+    #   jsonschema
 jsonschema==4.26.0
     # via cyclonedx-python-lib
 jsonschema-specifications==2025.9.1
@@ -211,6 +215,8 @@ nodeenv==1.10.0
     # via
     #   pre-commit
     #   pyright
+orjson==3.11.9
+    # via tooling-trusted-releases
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
 packaging==26.2
