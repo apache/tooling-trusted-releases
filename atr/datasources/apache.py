@@ -575,10 +575,12 @@ _DORMANT_RE: Final[re.Pattern[str]] = re.compile(r"_+dormant_*$")
 
 
 def canonical_project_key(key: str) -> str:
-    # Tidy a projects.json key into an ATR project key: the webservices PMC ships
+    # Tidy a projects.json key into an ATR project key: the attic- prefix comes off
+    # (the Attic is a steward committee, not part of the key), the webservices PMC ships
     # under its full name, underscores become hyphens, the dormant marker comes off
     # (it's status), and Xerces uses shorter keys. Shared with the catalogue script
     # so its seed keys line up with what the registry sync creates.
+    key = key.removeprefix("attic-")
     key = key.replace("webservices-", "ws-")
     key = _DORMANT_RE.sub("", key)
     key = key.replace("_", "-")
