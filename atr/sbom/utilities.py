@@ -79,49 +79,10 @@ def apply_patch(
     return new_version, patch_document(bundle.doc, patch_ops)
 
 
-def ensure_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
-    if get_pointer(doc, "/metadata") is not None:
-        return
-    # Patches are built against the original doc, so don't queue a second bootstrap that would clobber the first
-    if any((op.op == "add") and (op.path == "/metadata") for op in patch_ops):
-        return
-    patch_ops.append(models.patch.AddOp(op="add", path="/metadata", value={}))
-
-
-def record_atr_tool(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
-    """Ensure the ATR tool is recorded under metadata.tools.services, refreshing it if already present."""
-    ensure_metadata(doc, patch_ops)
-    tools: dict[str, Any] | None = get_pointer(doc, "/metadata/tools")
-    services: list[dict[str, Any]] | None = get_pointer(doc, "/metadata/tools/services")
-    if tools is None:
-        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools", value={}))
-    if services is None:
-        services = []
-        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools/services", value=services))
-    try:
-        tool_index = [s.get("bom-ref", "") for s in services].index("tool:asf:atr")
-    except ValueError:
-        tool_index = -1
-    if tool_index == -1:
-        patch_ops.append(
-            models.patch.AddOp(op="add", path=f"/metadata/tools/services/{len(services)}", value=_TOOL_METADATA)
-        )
-    else:
-        # If we ever add more metadata to this, such as task-specific properties under the tool, this changes
-        patch_ops.append(
-            models.patch.ReplaceOp(op="replace", path=f"/metadata/tools/services/{tool_index}", value=_TOOL_METADATA)
-        )
-    return patch_ops
-
-
-def record_manufacturer(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
-    """Record ASF as the BOM manufacturer - the organisation that produced it."""
-    # Generation-only - we deliberately don't stamp this in the ntia_2021_patch conformance flow
-    ensure_metadata(doc, patch_ops)
-    patch_ops.append(
-        models.patch.AddOp(op="add", path="/metadata/manufacturer", value=constants.conformance.ASF_ENTITY)
+def bundle_outputter(bundle_value: models.bundle.Bundle) -> BaseOutput:
+    return make_outputter(
+        bom=bundle_value.bom, output_format=OutputFormat.JSON, schema_version=bundle_value.spec_version
     )
-    return patch_ops
 
 
 async def bundle_to_ntia_patch(bundle_value: models.bundle.Bundle) -> models.patch.Patch:
@@ -142,12 +103,6 @@ async def bundle_to_vuln_patch(
     return patch_ops
 
 
-def bundle_outputter(bundle_value: models.bundle.Bundle) -> BaseOutput:
-    return make_outputter(
-        bom=bundle_value.bom, output_format=OutputFormat.JSON, schema_version=bundle_value.spec_version
-    )
-
-
 def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | None, list[dict[str, str]]]:
     severities = [
         {
@@ -158,6 +113,15 @@ def cdx_severity_to_osv(severity: list[dict[str, str | float]]) -> tuple[str | N
     ]
     textual = severity[0].get("severity")
     return str(textual), severities
+
+
+def ensure_metadata(doc: yyjson.Document, patch_ops: models.patch.Patch) -> None:
+    if get_pointer(doc, "/metadata") is not None:
+        return
+    # Patches are built against the original doc, so don't queue a second bootstrap that would clobber the first
+    if any((op.op == "add") and (op.path == "/metadata") for op in patch_ops):
+        return
+    patch_ops.append(models.patch.AddOp(op="add", path="/metadata", value={}))
 
 
 def get_pointer(doc: yyjson.Document, path: str) -> Any | None:
@@ -228,6 +192,42 @@ def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
     return models.bundle.Bundle(
         doc=yyjson.Document(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
     )
+
+
+def record_atr_tool(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+    """Ensure the ATR tool is recorded under metadata.tools.services, refreshing it if already present."""
+    ensure_metadata(doc, patch_ops)
+    tools: dict[str, Any] | None = get_pointer(doc, "/metadata/tools")
+    services: list[dict[str, Any]] | None = get_pointer(doc, "/metadata/tools/services")
+    if tools is None:
+        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools", value={}))
+    if services is None:
+        services = []
+        patch_ops.append(models.patch.AddOp(op="add", path="/metadata/tools/services", value=services))
+    try:
+        tool_index = [s.get("bom-ref", "") for s in services].index("tool:asf:atr")
+    except ValueError:
+        tool_index = -1
+    if tool_index == -1:
+        patch_ops.append(
+            models.patch.AddOp(op="add", path=f"/metadata/tools/services/{len(services)}", value=_TOOL_METADATA)
+        )
+    else:
+        # If we ever add more metadata to this, such as task-specific properties under the tool, this changes
+        patch_ops.append(
+            models.patch.ReplaceOp(op="replace", path=f"/metadata/tools/services/{tool_index}", value=_TOOL_METADATA)
+        )
+    return patch_ops
+
+
+def record_manufacturer(doc: yyjson.Document, patch_ops: models.patch.Patch) -> models.patch.Patch:
+    """Record ASF as the BOM manufacturer - the organisation that produced it."""
+    # Generation-only - we deliberately don't stamp this in the ntia_2021_patch conformance flow
+    ensure_metadata(doc, patch_ops)
+    patch_ops.append(
+        models.patch.AddOp(op="add", path="/metadata/manufacturer", value=constants.conformance.ASF_ENTITY)
+    )
+    return patch_ops
 
 
 def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:

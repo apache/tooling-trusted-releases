@@ -37,13 +37,6 @@ if TYPE_CHECKING:
 _SAFE_URL_SCHEMES: Final = frozenset({"http", "https"})
 
 
-def _validate_url_protocol(url: str) -> str | None:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme.lower() not in _SAFE_URL_SCHEMES:
-        return None
-    return url
-
-
 def assemble_component_identifier(doc: yyjson.Document, patch_ops: models.patch.Patch, index: int) -> None:
     # May be able to derive this from other fields
     pass
@@ -380,3 +373,10 @@ async def ntia_2021_patch(
                     case models.conformance.ComponentProperty.IDENTIFIER if index is not None:
                         assemble_component_identifier(doc, patch_ops, index)
     return patch_ops
+
+
+def _validate_url_protocol(url: str) -> str | None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme.lower() not in _SAFE_URL_SCHEMES:
+        return None
+    return url
