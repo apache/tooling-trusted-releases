@@ -14,7 +14,7 @@ aioshutil==1.6
     # via tooling-trusted-releases
 aiosignal==1.4.0
     # via aiohttp
-aiosmtplib==5.1.1
+aiosmtplib==5.1.2
     # via tooling-trusted-releases
 aiosqlite==0.22.1
     # via tooling-trusted-releases
@@ -77,7 +77,7 @@ cryptography==49.0.0
     #   asfpy
     #   asyncssh
     #   tooling-trusted-releases
-cssbeautifier==1.15.4
+cssbeautifier==2.0.1
     # via djlint
 cvss==3.6
     # via tooling-trusted-releases
@@ -129,7 +129,7 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
-greenlet==3.5.1
+greenlet==3.5.2
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -170,11 +170,11 @@ jinja2==3.1.6
     # via
     #   flask
     #   quart
-jsbeautifier==1.15.4
+jsbeautifier==2.0.1
     # via
     #   cssbeautifier
     #   djlint
-json5==0.14.0
+json5==0.15.0
     # via djlint
 jsonpointer==3.1.1
     # via jsonschema
@@ -314,13 +314,11 @@ rpds-py==2026.5.1
     #   referencing
 rpgp-py==0.19.7
     # via tooling-trusted-releases
-ruff==0.15.17
+ruff==0.15.18
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
     # via
-    #   cssbeautifier
-    #   jsbeautifier
     #   python-dateutil
     #   rfc3339-validator
 sortedcontainers==2.4.0
