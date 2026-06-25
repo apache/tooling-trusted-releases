@@ -223,6 +223,38 @@ class FoundationAdmin(FoundationCommitter):
         log.auth_event("system_pat_issuance", self.__asf_uid, pat_hash=token_hash, name=label)
         return datatypes.PersonalAccessTokenSafe.from_sql(pat)
 
+    async def issue_system_jwt(self, pat_text: str, client_ip: str | None) -> str:
+        # No asfuid filter; a system PAT has no owning user.
+        pat_hash = hash_pat(pat_text)
+        pat = await self.__data.personal_access_token(pat_hash, is_system=True).get()
+        if (pat is None) or pat.is_expired or (not pat.allows_ip(client_ip)):
+            log.warning(
+                "Authentication failed",
+                extra={
+                    "reason": "invalid_or_expired_system_pat",
+                },
+            )
+            raise storage.AccessError("Authentication failed", status=401)
+
+        issued_jwt = jwtoken.issue(constants.SYSTEM_SERVICE_UID, pat_hash=pat_hash, system=True)
+        log.auth_event(
+            "jwt_issued",
+            constants.SYSTEM_SERVICE_UID,
+            pat_hash=pat_hash,
+            pat_owner=pat.created_by,
+            name=pat.label,
+            issued_by=self.__asf_uid,
+        )
+        pat.last_used = datetime.datetime.now(datetime.UTC)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            pat_hash=pat_hash,
+            pat_owner=pat.created_by,
+            name=pat.label,
+        )
+        return issued_jwt
+
     async def list_system_tokens(self) -> list[datatypes.PersonalAccessTokenSafe]:
         tokens = await (
             self.__data.personal_access_token(is_system=True)
@@ -286,46 +318,6 @@ class FoundationAdmin(FoundationCommitter):
             asf_uid=self.__asf_uid,
             action="rotate_jwt_signing_key",
         )
-
-
-class SystemService:
-    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
-        self.__write_as = write_as
-        self.__data = data
-        self.__asf_uid = write_as.asf_uid
-
-    async def issue_jwt(self, pat_text: str, client_ip: str | None) -> str:
-        # No asfuid filter; a system PAT has no owning user.
-        pat_hash = hash_pat(pat_text)
-        pat = await self.__data.personal_access_token(pat_hash, is_system=True).get()
-        # No LDAP check; the is_system match and fixed service identity are the gate.
-        if (
-            (pat is None)
-            or (self.__asf_uid != constants.SYSTEM_SERVICE_UID)
-            or pat.is_expired
-            or (not pat.allows_ip(client_ip))
-        ):
-            log.warning(
-                "Authentication failed",
-                extra={
-                    "reason": "invalid_or_expired_system_pat",
-                },
-            )
-            raise storage.AccessError("Authentication failed", status=401)
-
-        issued_jwt = jwtoken.issue(constants.SYSTEM_SERVICE_UID, pat_hash=pat_hash, system=True)
-        log.auth_event(
-            "jwt_issued", constants.SYSTEM_SERVICE_UID, pat_hash=pat_hash, pat_owner=pat.created_by, name=pat.label
-        )
-        pat.last_used = datetime.datetime.now(datetime.UTC)
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=constants.SYSTEM_SERVICE_UID,
-            pat_hash=pat_hash,
-            pat_owner=pat.created_by,
-            name=pat.label,
-        )
-        return issued_jwt
 
 
 def hash_pat(pat_text: str) -> str:

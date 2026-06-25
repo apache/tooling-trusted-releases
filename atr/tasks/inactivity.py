@@ -174,8 +174,8 @@ def _committee_key_for(release: sql.Release) -> str:
 
 
 async def _delete_or_dry_run(plan: Plan) -> None:
-    async with storage.write_as_system() as release_admin:
-        error = await release_admin.delete_inactive(
+    async with storage.write_as_system(storage.WriteAsInactivitySweepService) as waiss:
+        error = await waiss.release_delete_inactive(
             project_key=safe.ProjectKey(plan.project_key),
             version=safe.VersionKey(plan.version),
             dry_run=not _DELETION_ENABLED,

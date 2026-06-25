@@ -329,7 +329,7 @@ async def _mark_failed(
     location = " ".join(location_parts) if location_parts else "(unknown release)"
     try:
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications.create(
+            await waus.notifications_create(
                 f"Quarantine validation failed for {location}: {reason}",
                 sql.NotificationLevel.ERROR,
             )

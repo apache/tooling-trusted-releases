@@ -21,8 +21,7 @@ import contextlib
 import datetime
 import json
 import logging
-import types
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Final, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -53,6 +52,13 @@ class ReadAs(AccessAs): ...
 
 
 class WriteAs(AccessAs): ...
+
+
+class IdentifiedAuditWriteAs(Protocol):
+    @property
+    def asf_uid(self) -> str: ...
+
+    def append_to_audit_log(self, **kwargs: basic.JSON) -> None: ...
 
 
 # A = TypeVar("A", bound=AccessCredentials)
@@ -253,9 +259,11 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         # via MRO resolves to this class's property override, which reads
         # _WriteAsFoundationAdmin__asf_uid, which had not yet been assigned.
         super().__init__(write, data)
+        self.policy = writers.policy.FoundationAdmin(write, self, data)
+        self.project = writers.project.FoundationAdmin(write, self, data)
         self.release = writers.release.FoundationAdmin(write, self, data)
-        self.tokens = writers.tokens.FoundationAdmin(write, self, data)
         self.ssh = writers.ssh.FoundationAdmin(write, self, data)
+        self.tokens = writers.tokens.FoundationAdmin(write, self, data)
 
 
 class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
@@ -266,13 +274,12 @@ class WriteAsCommitteeAdmin(WriteAsCommitteeMember):
 
 
 class WriteAsUserService(WriteAs):
-    def __init__(self, data: db.Session, asf_uid: str):
+    def __init__(self, asf_uid: str, write: Write, data: db.Session):
         asf_uid = asf_uid.strip()
         if not asf_uid:
             raise AccessError("User service writes require an ASF UID", status=500)
-        self.__data = data
         self.__asf_uid = asf_uid
-        self.notifications = writers.notifications.UserService(self, data)
+        self.notifications_create = writers.notifications.FoundationCommitter(write, self, data).create
 
     @property
     def asf_uid(self) -> str:
@@ -280,22 +287,44 @@ class WriteAsUserService(WriteAs):
 
 
 class WriteAsSystemService(WriteAs):
-    # Built directly from the service identity rather than via Authorisation,
-    # which would reject an identity with no LDAP account.
-    def __init__(self, data: db.Session, asf_uid: str):
-        asf_uid = asf_uid.strip()
+    def __init__(self, write: Write, data: db.Session):
         # Only the fixed service identity is valid here; anything else means
         # a caller has wired this up wrongly.
-        if asf_uid != constants.SYSTEM_SERVICE_UID:
+        if write.authorisation.asf_uid != constants.SYSTEM_SERVICE_UID:
             raise AccessError("System service writes require the system service identity", status=401)
-        self.__asf_uid = asf_uid
-        self.policy = writers.policy.SystemService(self, data)
-        self.project = writers.project.SystemService(self, data)
-        self.tokens = writers.tokens.SystemService(self, data)
 
     @property
     def asf_uid(self) -> str:
-        return self.__asf_uid
+        return constants.SYSTEM_SERVICE_UID
+
+
+class WriteAsAsfYamlService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.project_upsert_config = admin.project.upsert_config
+
+
+class WriteAsDistCatalogService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.release_archive = admin.release.archive
+        self.release_catalogue_release = admin.release.catalogue_release
+
+
+class WriteAsInactivitySweepService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.release_delete_inactive = admin.release.delete_inactive
+
+
+class WriteAsJwtMintService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.tokens_issue_system_jwt = admin.tokens.issue_system_jwt
 
 
 # TODO: Could name this WriteDispatcher
@@ -636,23 +665,16 @@ async def write_as_project_release_manager(
 
 
 @contextlib.asynccontextmanager
-async def write_as_system() -> AsyncGenerator[writers.release.FoundationAdmin]:
+async def write_as_system[S: WriteAsSystemService](service_cls: type[S]) -> AsyncGenerator[S]:
+    authorisation = await principal.Authorisation(constants.SYSTEM_SERVICE_UID)
     async with db.session() as data:
-        system_authorisation = types.SimpleNamespace(asf_uid=constants.SYSTEM_SERVICE_UID)
-        system_write: Any = types.SimpleNamespace(authorisation=system_authorisation)
-        system_write_as: Any = WriteAs()
-        yield writers.release.FoundationAdmin(system_write, system_write_as, data)
-
-
-@contextlib.asynccontextmanager
-async def write_as_system_service(asf_uid: str) -> AsyncGenerator[WriteAsSystemService]:
-    async with db.session() as data:
-        wss = WriteAsSystemService(data, asf_uid)
-        yield wss
+        w = Write(authorisation, data)
+        yield service_cls(w, data)
 
 
 @contextlib.asynccontextmanager
 async def write_as_user_service(asf_uid: str) -> AsyncGenerator[WriteAsUserService]:
+    authorisation = await principal.Authorisation(None)
     async with db.session() as data:
-        waus = WriteAsUserService(data, asf_uid)
-        yield waus
+        w = Write(authorisation, data)
+        yield WriteAsUserService(asf_uid, w, data)

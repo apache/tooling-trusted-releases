@@ -356,11 +356,15 @@ class CommitteeMember(ReleaseManager):
 
 # No committee gate - the caller's right to act for the committee must be
 # established upstream, in the .asf.yaml feature.
-class SystemService:
-    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
+class FoundationAdmin(FoundationCommitter):
+    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
+        super().__init__(write, write_as, data)
         self.__write_as = write_as
         self.__data = data
-        self.__asf_uid = write_as.asf_uid
+        asf_uid = write.authorisation.asf_uid
+        if asf_uid is None:
+            raise storage.AccessError("Not authorized", status=403)
+        self.__asf_uid = asf_uid
 
     async def upsert_config(
         self,
@@ -369,17 +373,17 @@ class SystemService:
     ) -> bool:
         try:
             await self.__data.begin_immediate()
-            project, created = await self._resolve_or_create_project_no_commit(args)
+            project, created = await self.__resolve_or_create_project_no_commit(args)
             project_args = args.project
             if (project_args is not None) and project_args.model_fields_set:
-                await self._apply_project_args_no_commit(project, project_args)
+                await self.__apply_project_args_no_commit(project, project_args)
             policy_args = args.policy
             if (policy_args is not None) and policy_args.model_fields_set:
                 policy_update = api.PolicyUpdateArgs(
                     project=args.project_key,
                     **policy_args.model_dump(exclude_unset=True),
                 )
-                await self.__write_as.policy._edit_policy_no_commit(args.project_key, policy_update)
+                await self.__write_as.policy.edit_no_commit(args.project_key, policy_update)
             project.mark_updated(by=self.__asf_uid, update_type=update_type)
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as e:
@@ -403,7 +407,7 @@ class SystemService:
         )
         return created
 
-    async def _resolve_or_create_project_no_commit(
+    async def __resolve_or_create_project_no_commit(
         self,
         args: api.ProjectConfigArgs,
     ) -> tuple[sql.Project, bool]:
@@ -427,7 +431,7 @@ class SystemService:
         )
         return project, True
 
-    async def _apply_project_args_no_commit(
+    async def __apply_project_args_no_commit(
         self,
         project: sql.Project,
         args: api.ProjectConfigProjectArgs,

@@ -82,22 +82,22 @@ async def catalogue_commit(commit: dict) -> None:
     if not config.get().DIST_CATALOG_WRITE:
         _report(releases, archives, date)
         return
-    async with storage.write_as_system() as system:
-        await _apply_changes(system, releases, archives, date)
+    async with storage.write_as_system(storage.WriteAsDistCatalogService) as wadcs:
+        await _apply_changes(wadcs, releases, archives, date)
 
 
 async def _apply_changes(
-    system: release.FoundationAdmin,
+    wadcs: storage.WriteAsDistCatalogService,
     releases: list[_ResolvedRelease],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
 ) -> None:
     for project_key, version_key, artifacts in releases:
-        error = await system.catalogue_release(project_key, version_key, date, artifacts)
+        error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
         if error is not None:
             log.warning(f"dist watcher could not catalogue {project_key!s} {version_key!s}: {error}")
     for project_key, version_key in archives:
-        error = await system.archive(project_key, version_key)
+        error = await wadcs.release_archive(project_key, version_key)
         if error is not None:
             log.info(f"dist watcher did not archive {project_key!s} {version_key!s}: {error}")
 
@@ -217,6 +217,18 @@ async def _resolve_changes(
     return releases, archives
 
 
+async def _resolve_project(data: db.Session, committee: str, subproject: str | None) -> sql.Project | None:
+    # Resolve against what ATR already has, via the same remaps and candidate keys
+    # as the backfill. The watcher never invents projects; unknowns are logged
+    remapped = dist.PROJECT_REMAPS.get((committee, subproject))
+    candidates = [remapped] if remapped is not None else dist.candidate_keys(committee, subproject)
+    for candidate in candidates:
+        project = await data.project(key=candidate).get()
+        if project is not None:
+            return project
+    return None
+
+
 async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _ResolvedRelease | None:
     version = rel_files.version
     project = await _resolve_project(data, rel_files.committee, rel_files.subproject)
@@ -231,18 +243,6 @@ async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _Resol
         return None
     project_key, version_key = keys
     return project_key, version_key, _artifacts(rel_files)
-
-
-async def _resolve_project(data: db.Session, committee: str, subproject: str | None) -> sql.Project | None:
-    # Resolve against what ATR already has, via the same remaps and candidate keys
-    # as the backfill. The watcher never invents projects; unknowns are logged
-    remapped = dist.PROJECT_REMAPS.get((committee, subproject))
-    candidates = [remapped] if remapped is not None else dist.candidate_keys(committee, subproject)
-    for candidate in candidates:
-        project = await data.project(key=candidate).get()
-        if project is not None:
-            return project
-    return None
 
 
 def _safe_keys(project_key: str, version: str) -> tuple[safe.ProjectKey, safe.VersionKey] | None:

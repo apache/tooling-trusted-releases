@@ -23,6 +23,7 @@ from typing import Final
 
 # from attr import asdict
 import atr.config as config
+import atr.constants as constants
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.safe as safe
@@ -261,6 +262,12 @@ class AuthoriserLDAP:
 
     async def cache_refresh(self, asf_uid: str) -> None:
         if not self.__cache.outdated(asf_uid):
+            return
+
+        if asf_uid == constants.SYSTEM_SERVICE_UID:
+            self.__cache.member_of[asf_uid] = frozenset()
+            self.__cache.participant_of[asf_uid] = frozenset()
+            self.__cache.last_refreshed[asf_uid] = int(time.time())
             return
 
         if config.is_test_mode() and (asf_uid == "test"):
