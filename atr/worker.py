@@ -163,7 +163,7 @@ async def _notify_task_failure(
     message = _task_failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
     try:
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications.create(message, sql.NotificationLevel.ERROR)
+            await waus.notifications_create(message, sql.NotificationLevel.ERROR)
     except Exception:
         log.exception("Failed to record failure notification for task")
 

@@ -429,11 +429,12 @@ class CommitteeMember(ReleaseManager):
         self.__committee_key = committee_key
 
 
-class SystemService:
-    def __init__(self, write_as: storage.WriteAsSystemService, data: db.Session):
+class FoundationAdmin(FoundationCommitter):
+    def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
+        super().__init__(write, write_as, data)
         self.__data = data
 
-    async def _edit_policy_no_commit(
+    async def edit_no_commit(
         self,
         project_key: models.safe.ProjectKey,
         update: models.api.PolicyUpdateArgs,
