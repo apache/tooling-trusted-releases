@@ -25,7 +25,7 @@ from typing import Annotated, Any, Final
 import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
-_PROJECT_CHARS: Final = _ALPHANUM | frozenset("+")
+_PROJECT_CHARS: Final = _ALPHANUM
 _ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
 _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()")

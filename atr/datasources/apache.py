@@ -561,12 +561,15 @@ async def _update_podlings(
     return added_count, updated_count
 
 
-_XERCES_KEY_REMAP: Final[dict[str, str]] = {
+# The old xml.apache.org family has verbose projects.json keys, mapped to the short ATR keys
+_XML_PROJECT_KEY_REMAP: Final[dict[str, str]] = {
     "xerces-for-c++-xml-parser": "xerces-c",
     "xerces-for-java-xml-parser": "xerces-j",
     "xerces-for-perl-xml-parser": "xerces-p",
     "xerces-xml-commons-external": "xerces-xml-commons",
     "xerces-xml-commons-resolver": "xerces-xml-commons",
+    "xalan-for-c++-xslt-processor": "xalan-c",
+    "xalan-for-java-xslt-processor": "xalan-j",
 }
 
 # projects.json appends this to a dormant project's key (commons-chain__dormant_).
@@ -578,13 +581,13 @@ def canonical_project_key(key: str) -> str:
     # Tidy a projects.json key into an ATR project key: the attic- prefix comes off
     # (the Attic is a steward committee, not part of the key), the webservices PMC ships
     # under its full name, underscores become hyphens, the dormant marker comes off
-    # (it's status), and Xerces uses shorter keys. Shared with the catalogue script
-    # so its seed keys line up with what the registry sync creates.
+    # (it's status), and the xml.apache.org family (Xerces, Xalan) uses shorter keys. Shared with
+    # the catalogue script so its seed keys line up with what the registry sync creates.
     key = key.removeprefix("attic-")
     key = key.replace("webservices-", "ws-")
     key = _DORMANT_RE.sub("", key)
     key = key.replace("_", "-")
-    return _XERCES_KEY_REMAP.get(key, key)
+    return _XML_PROJECT_KEY_REMAP.get(key, key)
 
 
 async def _update_projects(data: db.Session, projects: ProjectsData) -> tuple[int, int]:
