@@ -841,6 +841,19 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
             data.add(test_project)
             await data.commit()
 
+        test_client_project = await data.project(key="test-client").get()
+        if not test_client_project:
+            test_client_project = sql.Project(
+                key="test-client",
+                name="Apache Test Client",
+                status=sql.ProjectStatus.ACTIVE,
+                committee_key="test",
+                created=datetime.datetime.now(datetime.UTC),
+                created_by="test",
+            )
+            data.add(test_client_project)
+            await data.commit()
+
         # A podling equivalent, so we can exercise incubator/podling behaviours in tests
         test_podling_committee = await data.committee(key="test-podling").get()
         if not test_podling_committee:
