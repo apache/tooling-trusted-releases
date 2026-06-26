@@ -1544,8 +1544,9 @@ class LifecycleEvent(sqlmodel.SQLModel, table=True):
         **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
     )
 
-    # When the row was recorded. Maps to ECMA-428 `published` and orders the
-    # spec id sequence, so retroactive entries get later ids than older ones.
+    # When the row was recorded (ECMA-428 `published`); may post-date `effective`
+    # for a retroactive entry. The eventId sequence is the auto-increment id, so a
+    # row recorded later sorts later whatever date it took effect.
     published: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),

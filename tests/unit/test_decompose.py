@@ -97,6 +97,18 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     ("jackrabbit", ("jackrabbit", "2.20.1"), "jackrabbit-2.20.1.tar.gz", None, "2.20.1", _SOURCE),
     # A combined name-version dir splits into subproject and version
     ("spark", ("spark-kubernetes-operator-0.8.0",), None, "spark-kubernetes-operator", "0.8.0", None),
+    # A numeric build tail stays part of the version (javaee-api 8.0 build 6)
+    ("tomee", ("javaee-api-8.0-6",), "javaee-api-8.0-6-source-release.zip", "javaee-api", "8.0-6", _SOURCE),
+    # A flat file with a digit mid-name (sharepoint-2007-plugin) keeps it in the subproject and
+    # comes apart at the trailing version, since the filename names the version directly
+    (
+        "manifoldcf",
+        (),
+        "apache-manifoldcf-sharepoint-2007-plugin-0.5-src.tar.gz",
+        "apache-manifoldcf-sharepoint-2007-plugin",
+        "0.5",
+        _SOURCE,
+    ),
     # A qualifier tail stays part of the version
     ("spark", (), "spark-4.1.0-preview1.tar.gz", None, "4.1.0-preview1", _SOURCE),
     # Kafka's binary carries the Scala version as a distractor; the dir pins the real one,
@@ -135,6 +147,13 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
         "1.0.0",
         _SOURCE,
     ),
+    # A qualifier build number after a separator is kept, so alpha-1 and alpha-2 stay distinct
+    ("accumulo", (), "accumulo-2.0.0-alpha-1.tar.gz", None, "2.0.0-alpha-1", _SOURCE),
+    ("accumulo", (), "accumulo-2.0.0-alpha-2.tar.gz", None, "2.0.0-alpha-2", _SOURCE),
+    ("continuum", (), "apache-continuum-1.1-beta-4.tar.gz", None, "1.1-beta-4", _SOURCE),
+    # The version qualifier is lowercased so a RC1/rc1 case split merges to one release
+    ("turbine", ("2.2-RC1",), None, None, "2.2-rc1", None),
+    ("turbine", (), "turbine-2.2-RC2.tar.gz", None, "2.2-rc2", _SOURCE),
 ]
 
 
@@ -154,3 +173,13 @@ def test_decompose_known_dist_layouts(
     assert result is not None
     assert result.subproject == subproject
     assert result.version == version
+
+
+def test_repos_subtree_is_not_a_release() -> None:
+    # A package repository under a release dir holds bundled components, not releases
+    result = dist.decompose(
+        "incubator",
+        ("bigtop", "bigtop-0.2.0-incubating", "repos", "centos5", "hadoop"),
+        "hadoop-0.20.205.0.2-1.x86_64.rpm",
+    )
+    assert result is None
