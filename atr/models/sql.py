@@ -83,7 +83,7 @@ class CheckResultStatusIgnore(enum.StrEnum):
     SUGGESTION = "suggestion"
 
     @classmethod
-    def from_form_field(cls, status: str) -> Optional["CheckResultStatusIgnore"]:
+    def from_form_field(cls, status: str) -> "CheckResultStatusIgnore | None":
         match status:
             case "None":
                 return None
