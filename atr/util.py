@@ -452,7 +452,9 @@ async def create_hard_link_clone(
     await _create_hard_link_clone_checks(source_dir, dest_dir, do_not_create_dest_dir, exist_ok, dry_run)
 
     async def _clone_recursive(current_source: safe.StatePath, current_dest: safe.StatePath) -> None:
-        for entry in await aiofiles.os.scandir(current_source):
+        with await aiofiles.os.scandir(current_source) as scan:
+            entries = list(scan)
+        for entry in entries:
             source_entry_path = current_source / entry.name
             dest_entry_path = current_dest / entry.name
 
@@ -929,7 +931,9 @@ async def paths_recursive_all(base_path: os.PathLike) -> AsyncGenerator[pathlib.
             continue
         visited_abs_paths.add(resolved_current_abs_item)
         with contextlib.suppress(FileNotFoundError, OSError):
-            for entry in await aiofiles.os.scandir(current_abs_item):
+            with await aiofiles.os.scandir(current_abs_item) as scan:
+                entries = list(scan)
+            for entry in entries:
                 entry_abs_path = pathlib.Path(entry.path)
                 relative_path = entry_abs_path.relative_to(resolved_base_path)
                 yield relative_path
