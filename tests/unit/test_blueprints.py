@@ -406,7 +406,7 @@ def test_setup_wrapper_sets_metadata():
     assert endpoint == "atr_get_dashboard_index"
     assert wrapper.__name__ == "index"
     assert wrapper.__doc__ == "Doc string."
-    assert wrapper.__annotations__["endpoint"] == "get_blueprint.atr_get_dashboard_index"
+    assert wrapper.endpoint == "get_blueprint.atr_get_dashboard_index"
 
 
 @pytest.mark.asyncio

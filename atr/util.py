@@ -235,12 +235,11 @@ def as_url(func: Callable, **kwargs: Any) -> str:
     if isinstance(func, jinja2.runtime.Undefined):
         log.exception("Undefined route in the calling template")
         raise RuntimeError("Undefined route in the calling template")
-    try:
-        annotations = func.__annotations__
-    except AttributeError as e:
-        log.error(f"Cannot get annotations for {func} (type: {type(func)})")
-        raise RuntimeError(f"Cannot get annotations for {func} (type: {type(func)})") from e
-    return quart.url_for(annotations["endpoint"], **kwargs)
+    endpoint = getattr(func, "endpoint", None)
+    if endpoint is None:
+        log.error(f"Cannot get endpoint for {func} (type: {type(func)})")
+        raise RuntimeError(f"Cannot get endpoint for {func} (type: {type(func)})")
+    return quart.url_for(endpoint, **kwargs)
 
 
 async def asf_uid_from_uids(uids: list[str], email_uid_lookup: EmailUidLookup, use_ldap: bool = True) -> str | None:

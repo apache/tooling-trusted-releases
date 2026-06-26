@@ -213,7 +213,7 @@ def setup_wrapper(wrapper: Callable[..., Any], func: Callable[..., Any], bluepri
     endpoint = func.__module__.replace(".", "_") + "_" + func.__name__
     wrapper.__name__ = func.__name__
     wrapper.__doc__ = func.__doc__
-    wrapper.__annotations__["endpoint"] = blueprint_name + "." + endpoint
+    setattr(wrapper, "endpoint", blueprint_name + "." + endpoint)
     return endpoint
 
 
