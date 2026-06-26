@@ -1291,14 +1291,18 @@ class Release(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2025, 6, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
-    # Mirrors the latest archive LifecycleEvent for this release. Null for
-    # releases that haven't been archived. Sourced by whatever archival flow
-    # #507 eventually settles on.
+    # Mirrors the latest archive LifecycleEvent for this release - the date it was
+    # archived. Null when there's no such event, which includes a release that's
+    # archived but undated (a catalogued historical release whose date we don't have);
+    # is_archived carries the status. Sourced by whatever archival flow #507 settles on.
     archived: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
     )
+    # The archived status. The archived date above can be null while this is true,
+    # for a catalogued historical release we know is archived but can't date
+    is_archived: bool = sqlmodel.Field(default=False)
     activity_at: datetime.datetime = sqlmodel.Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),

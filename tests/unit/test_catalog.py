@@ -91,7 +91,7 @@ def test_lifecycle_badge_prefers_lts_then_eol_then_active() -> None:
 def test_only_released_versions_are_downloadable() -> None:
     project = _project()
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
-    archived = _release(project, "4.1.7", cycle_key="cassandra-default", released=_NOW, archived=_NOW)
+    archived = _release(project, "4.1.7", cycle_key="cassandra-default", released=_NOW, archived=_NOW, is_archived=True)
     artifacts = [
         _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released),
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived, svn_revision=28114),
@@ -123,7 +123,7 @@ def test_simple_projects_use_the_flat_layout() -> None:
 def test_status_reflects_release_and_archive_state() -> None:
     project = _project()
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
-    archived = _release(project, "4.1.7", cycle_key="cassandra-default", released=_NOW, archived=_NOW)
+    archived = _release(project, "4.1.7", cycle_key="cassandra-default", released=_NOW, archived=_NOW, is_archived=True)
     artifacts = [
         _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released),
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived),
@@ -133,6 +133,19 @@ def test_status_reflects_release_and_archive_state() -> None:
 
     assert versions["5.0.2"].status == "released"
     assert versions["4.1.7"].status == "archived"
+
+
+def test_archived_status_holds_without_an_archive_date() -> None:
+    # A release known to be archived but with no date (a catalogued historical release) carries
+    # is_archived alone; it still reads as archived and isn't downloadable
+    project = _project()
+    undated = _release(project, "3.11.0", cycle_key="cassandra-default", released=_NOW, is_archived=True)
+    artifacts = [_artifact(project, "3.11.0", "a-3.11.0.tar.gz", release=undated)]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+
+    assert versions["3.11.0"].status == "archived"
+    assert versions["3.11.0"].artifacts[0].downloadable is False
 
 
 def test_svn_revision_alone_does_not_make_a_version_managed() -> None:
@@ -242,6 +255,7 @@ def _release(
     cycle_key: str,
     released: datetime.datetime | None = None,
     archived: datetime.datetime | None = None,
+    is_archived: bool = False,
 ) -> sql.Release:
     return sql.Release(
         phase=sql.ReleasePhase.RELEASE,
@@ -252,4 +266,5 @@ def _release(
         created=datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC),
         released=released,
         archived=archived,
+        is_archived=is_archived,
     )

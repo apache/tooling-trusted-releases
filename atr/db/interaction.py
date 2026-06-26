@@ -540,7 +540,7 @@ async def prior_release_for_archive(
         .where(
             sql.Release.project_key == project.key,
             sql.Release.phase == sql.ReleasePhase.RELEASE,
-            via(sql.Release.archived).is_(None),
+            via(sql.Release.is_archived).is_(False),
         )
         .where(via(sql.Release.version) != version)
     )

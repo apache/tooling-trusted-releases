@@ -194,7 +194,7 @@ async def _resolve_archive(
     if project is None:
         return None
     release_record = await data.release(key=f"{project.key}-{version}").get()
-    if (release_record is None) or (release_record.archived is not None):
+    if (release_record is None) or release_record.is_archived:
         return None
     return _safe_keys(project.key, version)
 

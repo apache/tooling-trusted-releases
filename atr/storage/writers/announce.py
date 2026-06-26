@@ -381,8 +381,8 @@ class ReleaseManager(CommitteeParticipant):
         update_stmt = (
             sqlmodel.update(sql.Release)
             .where(via(sql.Release.key) == release_row.key)
-            .where(via(sql.Release.archived).is_(None))
-            .values(archived=archive_date)
+            .where(via(sql.Release.is_archived).is_(False))
+            .values(archived=archive_date, is_archived=True)
         )
         update_result = await self.__data.execute_query(update_stmt)
         if getattr(update_result, "rowcount", 0) != 1:

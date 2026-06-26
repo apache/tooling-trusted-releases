@@ -143,7 +143,7 @@ def _lifecycle_badge(cycle: sql.ProjectCycle, now: datetime.datetime) -> str:
 
 def _status(release: sql.Release | None) -> Literal["released", "archived"]:
     # Treat a missing release as archived, so it is never shown as downloadable.
-    if (release is not None) and (release.archived is None):
+    if (release is not None) and not release.is_archived:
         return "released"
     return "archived"
 

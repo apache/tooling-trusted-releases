@@ -16,19 +16,19 @@
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
       {% for release in releases %}
         <div class="col">
-          <div class="card h-100 shadow-sm{% if release.archived %} border-secondary atr-archived-release{% endif %}">
+          <div class="card h-100 shadow-sm{% if release.is_archived %} border-secondary atr-archived-release{% endif %}">
             <div class="card-body d-flex flex-column">
               <div class="d-flex align-items-center gap-2 mb-1">
                 <strong class="card-title fs-5 mb-0">{{ release.version }}</strong>
-                {% if release.archived %}
+                {% if release.is_archived %}
                   <span class="badge bg-secondary" title="This release has been archived">
                     <i class="bi bi-archive me-1"></i>Archived
                   </span>
                 {% endif %}
               </div>
               <p class="card-text text-muted mb-1">Released on {{ format_datetime(release.released or release.created) }}</p>
-              <p class="card-text text-muted small mb-2{% if not release.archived %} invisible{% endif %}">
-                {% if release.archived %}Archived on {{ format_datetime(release.archived) }}{% else %}&nbsp;{% endif %}
+              <p class="card-text text-muted small mb-2{% if not release.is_archived %} invisible{% endif %}">
+                {% if release.archived %}Archived on {{ format_datetime(release.archived) }}{% elif release.is_archived %}Archived{% else %}&nbsp;{% endif %}
               </p>
               <div class="mt-auto">
                 <a href="{{ as_url(get.download.all_selected, project_key=release.project.key, version_key=release.version) }}"

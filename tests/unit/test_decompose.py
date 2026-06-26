@@ -116,6 +116,21 @@ _CASES: list[tuple[str, tuple[str, ...], str | None, str | None, str | None, cla
     # has no marker, so it falls to source, but both still attach to kafka 4.3.1
     ("kafka", ("4.3.1",), "kafka_2.13-4.3.1.tgz", None, "4.3.1", _SOURCE),
     ("kafka", ("4.3.1",), "kafka-4.3.1-src.tgz", None, "4.3.1", _SOURCE),
+    # A versioned sub-component inside a release's version dir is an artifact of that release, so
+    # the dir version holds and the component's own version is ignored - otherwise each binding
+    # forks a spurious release (opendal ships a dozen language bindings at independent versions)
+    ("opendal", ("0.45.1",), "apache-opendal-bindings-go-0.0.0-src.tar.gz", None, "0.45.1", _SOURCE),
+    # A component that happens to share the release version still lands on it
+    ("opendal", ("0.45.1",), "apache-opendal-core-0.45.1-src.tar.gz", None, "0.45.1", _SOURCE),
+    # A sub-component versioned higher than its release (an integration at 1.0.2 under 0.51.0) still
+    # collapses onto the release, so it can't mint a spurious higher release
+    ("opendal", ("0.51.0",), "apache-opendal-integrations-compat-1.0.2-src.tar.gz", None, "0.51.0", _SOURCE),
+    # A build variant whose version refines the dir (a hadoop1 build of the 0.98.13 release) keeps
+    # the filename version, since it's the same release built differently
+    ("hbase", ("0.98.13",), "hbase-0.98.13-hadoop1-bin.tar.gz", None, "0.98.13", _BINARY),
+    # A sub-component published in its own name-version dir, not inside a release dir, stays a
+    # distinct release
+    ("hbase", ("hbase-connectors-1.0.0",), "hbase-connectors-1.0.0-src.tar.gz", "hbase-connectors", "1.0.0", _SOURCE),
     # A series dir is still less specific than the filename, which pins the point release
     ("example", ("4.5",), "example-4.5.13.tar.gz", None, "4.5.13", _SOURCE),
     # A leading source/ dir is a build bucket, so a flat TLP release reads from the filename

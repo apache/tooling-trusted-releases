@@ -116,17 +116,17 @@ def version_from_filename(filename: str) -> str | None:
 def _choose_version(
     dir_version: str | None, dir_source: Literal["dir", "combined", "unknown"], filename: str | None
 ) -> tuple[str | None, Literal["dir", "combined", "filename", "unknown"]]:
-    # The dir and the filename can each carry a version. The filename usually wins (a 4.5/ series
-    # dir vs the 4.5.13 file), but when its leading version is a distractor (kafka_2.13-4.3.1.tgz,
-    # the 2.13 Scala build) and the dir pins a version the filename confirms, the dir wins - unless
-    # the filename merely refines the dir version (a 1.0.0-incubating tail)
+    # The dir and the filename can each carry a version. An explicit version dir is the release
+    # boundary, so a file under it whose own version doesn't refine the dir is a sub-component -
+    # an opendal language binding at its own version, or the kafka_2.13-4.3.1 Scala build - and
+    # stays on the dir's release. The filename wins only when it refines the dir (a 4.5 series dir
+    # the 4.5.13 file pins, a 1.0.0-incubating tail) or there's no dir version to anchor to
     if dir_version is not None:
         dir_version = _normalise_version(dir_version)
     name_version = version_from_filename(filename) if filename else None
     if name_version is None:
         return dir_version, dir_source
-    dir_confirmed = (dir_version is not None) and (filename is not None) and _version_in_filename(dir_version, filename)
-    if dir_confirmed and (dir_version is not None) and not name_version.startswith(dir_version):
+    if (dir_version is not None) and not name_version.startswith(dir_version):
         return dir_version, dir_source
     return name_version, "filename"
 
@@ -232,9 +232,3 @@ def _subproject_and_dir_version(
         if deeper is not None:
             return first, deeper[1], "combined"
     return first, None, "unknown"
-
-
-def _version_in_filename(version: str, filename: str) -> bool:
-    # The version appears in the filename as its own token, not as the prefix of a longer
-    # version (4.5 inside 4.5.13) nor tacked onto another number
-    return re.search(rf"(?<![\d.]){re.escape(version)}(?!\.?\d)", filename) is not None
