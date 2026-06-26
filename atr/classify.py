@@ -112,6 +112,10 @@ _TOKEN_SPLIT_RE: Final[re.Pattern[str]] = re.compile(r"[-_.]+")
 
 _DEFAULT_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".jar", ".whl"})
 
+# Platform packages are binary distributions even when they carry source (a src.rpm),
+# so they never identify a release on their own
+_PACKAGE_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".rpm", ".deb", ".msi", ".dmg", ".exe", ".apk"})
+
 
 class FileType(enum.Enum):
     BINARY = "binary"
@@ -201,6 +205,8 @@ async def classify(
 
 
 def classify_from_counts(path_str: str, source_count: int, binary_count: int, docs_count: int) -> FileType:
+    if any(path_str.endswith(suffix) for suffix in _PACKAGE_BINARY_EXTENSIONS):
+        return FileType.BINARY
     if (source_count == 0) and (binary_count == 0):
         if docs_count > 0:
             return FileType.DOCS
