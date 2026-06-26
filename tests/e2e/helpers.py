@@ -55,12 +55,6 @@ def delete_release_if_exists(page: Page, project_key: str, version_key: str) -> 
     page.wait_for_load_state()
 
 
-def log_in(page: Page) -> None:
-    page.goto(f"{_ATR_BASE_URL}/test/login")
-    page.wait_for_load_state()
-    ensure_test_user_key(page)
-
-
 def ensure_test_user_key(page: Page) -> None:
     """Make sure the bundled OpenPGP key is associated with the test user.
 
@@ -75,6 +69,12 @@ def ensure_test_user_key(page: Page) -> None:
     page.locator(f'input[name="selected_committees"][value="{_TEST_KEY_COMMITTEE}"]').check()
     page.get_by_role("button", name="Add OpenPGP key").click()
     page.wait_for_load_state()
+
+
+def log_in(page: Page) -> None:
+    page.goto(f"{_ATR_BASE_URL}/test/login")
+    page.wait_for_load_state()
+    ensure_test_user_key(page)
 
 
 def visit(page: Page, path: str) -> None:

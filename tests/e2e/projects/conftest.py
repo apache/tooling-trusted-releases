@@ -32,6 +32,24 @@ VERSION_KEY: Final[str] = "0.1+e2e-projects"
 COMPOSE_URL: Final[str] = f"/compose/{PROJECT_KEY}/{VERSION_KEY}"
 
 
+@pytest.fixture
+def page_active(projects_context: BrowserContext) -> Generator[Page]:
+    page = projects_context.new_page()
+    helpers.visit(page, COMPOSE_URL)
+    yield page
+    page.close()
+
+
+@pytest.fixture
+def page_archived(projects_context: BrowserContext) -> Generator[Page]:
+    page = projects_context.new_page()
+    helpers.api_post(page.request, "/api/test/archive-project", {"project_key": PROJECT_KEY})
+    helpers.visit(page, COMPOSE_URL)
+    yield page
+    helpers.api_post(page.request, "/api/test/activate-project", {"project_key": PROJECT_KEY})
+    page.close()
+
+
 @pytest.fixture(scope="module")
 def projects_context(browser: Browser) -> Generator[BrowserContext]:
     context = browser.new_context(ignore_https_errors=True)
@@ -49,21 +67,3 @@ def projects_context(browser: Browser) -> Generator[BrowserContext]:
     helpers.delete_release_if_exists(cleanup, PROJECT_KEY, VERSION_KEY)
     cleanup.close()
     context.close()
-
-
-@pytest.fixture
-def page_active(projects_context: BrowserContext) -> Generator[Page]:
-    page = projects_context.new_page()
-    helpers.visit(page, COMPOSE_URL)
-    yield page
-    page.close()
-
-
-@pytest.fixture
-def page_archived(projects_context: BrowserContext) -> Generator[Page]:
-    page = projects_context.new_page()
-    helpers.api_post(page.request, "/api/test/archive-project", {"project_key": PROJECT_KEY})
-    helpers.visit(page, COMPOSE_URL)
-    yield page
-    helpers.api_post(page.request, "/api/test/activate-project", {"project_key": PROJECT_KEY})
-    page.close()

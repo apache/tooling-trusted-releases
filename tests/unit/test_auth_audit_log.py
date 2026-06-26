@@ -20,19 +20,18 @@ import logging
 import atr.log as log
 
 
-def _capture_auth_log() -> list[str]:
-    captured: list[str] = []
+def test_auth_log_carries_request_id_and_source_ip_from_the_log_context() -> None:
+    log.clear_context()
+    log.add_context(request_id="req-123", source_ip="203.0.113.7")
+    captured = _capture_auth_log()
+    try:
+        log.auth_failure(type="jwt", reason="bad token", asfuid="bob")
 
-    class _Handler(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            captured.append(record.getMessage())
-
-    logger = logging.getLogger("atr.auth")
-    logger.handlers.clear()
-    logger.addHandler(_Handler())
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    return captured
+        entry = json.loads(captured[-1])
+        assert entry["request_id"] == "req-123"
+        assert entry["source_ip"] == "203.0.113.7"
+    finally:
+        log.clear_context()
 
 
 def test_auth_log_omits_request_fields_when_no_request_context_is_bound() -> None:
@@ -46,15 +45,16 @@ def test_auth_log_omits_request_fields_when_no_request_context_is_bound() -> Non
     assert "source_ip" not in entry
 
 
-def test_auth_log_carries_request_id_and_source_ip_from_the_log_context() -> None:
-    log.clear_context()
-    log.add_context(request_id="req-123", source_ip="203.0.113.7")
-    captured = _capture_auth_log()
-    try:
-        log.auth_failure(type="jwt", reason="bad token", asfuid="bob")
+def _capture_auth_log() -> list[str]:
+    captured: list[str] = []
 
-        entry = json.loads(captured[-1])
-        assert entry["request_id"] == "req-123"
-        assert entry["source_ip"] == "203.0.113.7"
-    finally:
-        log.clear_context()
+    class _Handler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record.getMessage())
+
+    logger = logging.getLogger("atr.auth")
+    logger.handlers.clear()
+    logger.addHandler(_Handler())
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    return captured

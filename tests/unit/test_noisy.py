@@ -35,39 +35,6 @@ K: Final = noisy.K
 PREFIX: Final = noisy.PREFIX
 Q: Final = noisy.Q
 
-
-def construct_namespace(fqdn: bytes | None) -> bytes:
-    return noisy.construct_namespace(noisy.FQDN(fqdn) if fqdn is not None else None)
-
-
-def construct_namespace_domain(namespace: bytes) -> bytes | None:
-    namespace = noisy.Namespace(noisy.NamespaceString(namespace))
-    return noisy.construct_namespace_domain(namespace)
-
-
-def is_namespace_string(value: bytes) -> bool:
-    return noisy.is_namespace_string(value)
-
-
-def checksum_compute(message: bytes | bytearray) -> bytes:
-    return noisy.checksum_compute(message)
-
-
-def construct_noisy_secret_tag(namespace: bytes, payload: bytes) -> bytes:
-    return noisy.construct_noisy_secret_tag(noisy.NamespaceString(namespace), noisy.PayloadString(payload))
-
-
-def domain(candidate: bytes) -> bytes | None:
-    if not noisy.is_candidate(candidate):
-        return None
-
-    namespace = noisy.construct_candidate_namespace(candidate)
-    payload = noisy.construct_candidate_payload(candidate)
-    if namespace is None or payload is None:
-        return None
-    return noisy.construct_namespace_domain(noisy.Namespace(namespace))
-
-
 _MAX_NAMESPACE: Final = b"z_" + b"a" * 29 + b"z"
 
 _REPRESENTATIVE_NAMESPACES: Final = (
@@ -108,6 +75,38 @@ _SPEC_VECTORS: Final = [
         b"secret_e_org_example_23456789abcdefghijkmnpqrstuvwxyztzeqda7b",
     ),
 ]
+
+
+def checksum_compute(message: bytes | bytearray) -> bytes:
+    return noisy.checksum_compute(message)
+
+
+def construct_namespace(fqdn: bytes | None) -> bytes:
+    return noisy.construct_namespace(noisy.FQDN(fqdn) if fqdn is not None else None)
+
+
+def construct_namespace_domain(namespace: bytes) -> bytes | None:
+    namespace = noisy.Namespace(noisy.NamespaceString(namespace))
+    return noisy.construct_namespace_domain(namespace)
+
+
+def construct_noisy_secret_tag(namespace: bytes, payload: bytes) -> bytes:
+    return noisy.construct_noisy_secret_tag(noisy.NamespaceString(namespace), noisy.PayloadString(payload))
+
+
+def domain(candidate: bytes) -> bytes | None:
+    if not noisy.is_candidate(candidate):
+        return None
+
+    namespace = noisy.construct_candidate_namespace(candidate)
+    payload = noisy.construct_candidate_payload(candidate)
+    if namespace is None or payload is None:
+        return None
+    return noisy.construct_namespace_domain(noisy.Namespace(namespace))
+
+
+def is_namespace_string(value: bytes) -> bool:
+    return noisy.is_namespace_string(value)
 
 
 def _det_4x4_mod(matrix: list[list[int]], mod: int) -> int:

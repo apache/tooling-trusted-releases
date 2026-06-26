@@ -23,10 +23,12 @@ import pytest
 import atr.models.api as api
 
 
-def _project_config(**policy: object) -> api.ProjectConfigArgs:
-    return api.ProjectConfigArgs.model_validate(
-        {"project_key": "tooling", "committee_key": "tooling", "policy": policy}
-    )
+def test_project_config_accepts_announce_recipients_on_any_apache_address() -> None:
+    args = _project_config(announce_recipients={"to": "announce@apache.org", "cc": ["dev@other.apache.org"]})
+
+    assert args.policy is not None
+    assert args.policy.announce_recipients is not None
+    assert args.policy.announce_recipients.to == "announce@apache.org"
 
 
 def test_project_config_accepts_vote_recipients_on_committee_domain() -> None:
@@ -37,9 +39,9 @@ def test_project_config_accepts_vote_recipients_on_committee_domain() -> None:
     assert args.policy.vote_recipients.to == "private@tooling.apache.org"
 
 
-def test_project_config_rejects_vote_recipient_on_another_committee() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("must be on 'tooling.apache.org'")):
-        _project_config(vote_recipients={"to": "dev@other.apache.org"})
+def test_project_config_rejects_announce_recipient_off_foundation() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("must be an apache.org address")):
+        _project_config(announce_recipients={"to": "someone@example.org"})
 
 
 def test_project_config_rejects_vote_recipient_off_foundation() -> None:
@@ -47,14 +49,12 @@ def test_project_config_rejects_vote_recipient_off_foundation() -> None:
         _project_config(vote_recipients={"to": "private@tooling.apache.org", "cc": ["someone@example.org"]})
 
 
-def test_project_config_accepts_announce_recipients_on_any_apache_address() -> None:
-    args = _project_config(announce_recipients={"to": "announce@apache.org", "cc": ["dev@other.apache.org"]})
-
-    assert args.policy is not None
-    assert args.policy.announce_recipients is not None
-    assert args.policy.announce_recipients.to == "announce@apache.org"
+def test_project_config_rejects_vote_recipient_on_another_committee() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("must be on 'tooling.apache.org'")):
+        _project_config(vote_recipients={"to": "dev@other.apache.org"})
 
 
-def test_project_config_rejects_announce_recipient_off_foundation() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("must be an apache.org address")):
-        _project_config(announce_recipients={"to": "someone@example.org"})
+def _project_config(**policy: object) -> api.ProjectConfigArgs:
+    return api.ProjectConfigArgs.model_validate(
+        {"project_key": "tooling", "committee_key": "tooling", "policy": policy}
+    )

@@ -20,26 +20,6 @@ import e2e.helpers as root_helpers  # type: ignore[reportMissingImports]
 from playwright.sync_api import BrowserContext, Page, expect
 
 
-def test_start_form_hides_auto_archive_when_policy_off(announce_context: BrowserContext) -> None:
-    """The per-release opt-in should only appear when the project policy allows it."""
-    page = announce_context.new_page()
-    try:
-        helpers.ensure_policy_auto_archive(page, enabled=False)
-        root_helpers.visit(page, helpers.START_URL)
-        expect(page.locator("input#auto_archive_prior")).to_have_count(0)
-    finally:
-        # Leave the policy on so the auto_archive_context fixture finds the
-        # project in a usable state regardless of test execution order.
-        helpers.ensure_policy_auto_archive(page, enabled=True)
-        page.close()
-
-
-def test_announce_hides_auto_archive_row_for_non_opted_in_release(page_announce: Page) -> None:
-    """A release that wasn't opted in at start time shouldn't show the row on announce."""
-    expect(page_announce.locator("input#auto_archive")).to_have_count(0)
-    expect(page_announce.locator("#auto_archive_release")).to_have_count(0)
-
-
 def test_announce_archives_prior_release(
     page_auto_archive_announce: Page, auto_archive_context: BrowserContext
 ) -> None:
@@ -71,3 +51,23 @@ def test_announce_archives_prior_release(
         expect(prior_card).to_contain_text("Archived on")
     finally:
         verify_page.close()
+
+
+def test_announce_hides_auto_archive_row_for_non_opted_in_release(page_announce: Page) -> None:
+    """A release that wasn't opted in at start time shouldn't show the row on announce."""
+    expect(page_announce.locator("input#auto_archive")).to_have_count(0)
+    expect(page_announce.locator("#auto_archive_release")).to_have_count(0)
+
+
+def test_start_form_hides_auto_archive_when_policy_off(announce_context: BrowserContext) -> None:
+    """The per-release opt-in should only appear when the project policy allows it."""
+    page = announce_context.new_page()
+    try:
+        helpers.ensure_policy_auto_archive(page, enabled=False)
+        root_helpers.visit(page, helpers.START_URL)
+        expect(page.locator("input#auto_archive_prior")).to_have_count(0)
+    finally:
+        # Leave the policy on so the auto_archive_context fixture finds the
+        # project in a usable state regardless of test execution order.
+        helpers.ensure_policy_auto_archive(page, enabled=True)
+        page.close()

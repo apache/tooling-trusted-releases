@@ -25,6 +25,16 @@ import atr.storage as storage
 import atr.storage.outcome as outcome
 
 
+class ProjectQuery:
+    def __init__(self, project_value: object | None) -> None:
+        self.project_value = project_value
+
+    async def demand(self, error: Exception) -> object:
+        if self.project_value is None:
+            raise error
+        return self.project_value
+
+
 def authorisation(
     asf_uid: str | None,
     *,
@@ -54,60 +64,11 @@ def project(committee_obj: object) -> SimpleNamespace:
     return SimpleNamespace(key="example", committee=committee_obj)
 
 
-class ProjectQuery:
-    def __init__(self, project_value: object | None) -> None:
-        self.project_value = project_value
-
-    async def demand(self, error: Exception) -> object:
-        if self.project_value is None:
-            raise error
-        return self.project_value
-
-
-def write(auth: object, project_value: object | None) -> storage.Write:
-    data = mock.MagicMock()
-    data.project = mock.MagicMock(return_value=ProjectQuery(project_value))
-    return storage.Write(auth, data)
-
-
 @pytest.mark.asyncio
-async def test_release_manager_outcome_succeeds_for_pmc_member() -> None:
-    auth = authorisation("chair", member_of=frozenset({"alpha"}))
-    proj = project(committee(release_managers=[], committers=[]))
-    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
-
-    assert isinstance(result, outcome.Result)
-
-
-@pytest.mark.asyncio
-async def test_release_manager_outcome_succeeds_for_designated_release_manager() -> None:
+async def test_release_manager_outcome_raises_for_missing_project() -> None:
     auth = authorisation("alice")
-    proj = project(committee(release_managers=["alice"], committers=["alice"]))
-    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
-
-    assert isinstance(result, outcome.Result)
-
-
-@pytest.mark.asyncio
-async def test_release_manager_outcome_rejects_release_manager_listing_without_committer_membership() -> None:
-    auth = authorisation("alice")
-    proj = project(committee(release_managers=["alice"], committers=["bob"]))
-    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
-
-    assert isinstance(result, outcome.Error)
-    assert isinstance(result.error_or_none(), storage.AccessError)
-    assert "Not a release manager" in str(result.error_or_none())
-
-
-@pytest.mark.asyncio
-async def test_release_manager_outcome_rejects_plain_committer() -> None:
-    auth = authorisation("dave")
-    proj = project(committee(release_managers=["alice"], committers=["alice", "dave"]))
-    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
-
-    assert isinstance(result, outcome.Error)
-    assert isinstance(result.error_or_none(), storage.AccessError)
-    assert "Not a release manager" in str(result.error_or_none())
+    with pytest.raises(storage.AccessError, match="Project not found"):
+        await write(auth, None).as_project_release_manager_outcome(safe.ProjectKey("missing"))
 
 
 @pytest.mark.asyncio
@@ -122,13 +83,6 @@ async def test_release_manager_outcome_rejects_anonymous_caller() -> None:
 
 
 @pytest.mark.asyncio
-async def test_release_manager_outcome_raises_for_missing_project() -> None:
-    auth = authorisation("alice")
-    with pytest.raises(storage.AccessError, match="Project not found"):
-        await write(auth, None).as_project_release_manager_outcome(safe.ProjectKey("missing"))
-
-
-@pytest.mark.asyncio
 async def test_release_manager_outcome_rejects_orphan_project() -> None:
     auth = authorisation("alice")
     proj = project(None)
@@ -137,3 +91,49 @@ async def test_release_manager_outcome_rejects_orphan_project() -> None:
     assert isinstance(result, outcome.Error)
     assert isinstance(result.error_or_none(), storage.AccessError)
     assert "No committee found" in str(result.error_or_none())
+
+
+@pytest.mark.asyncio
+async def test_release_manager_outcome_rejects_plain_committer() -> None:
+    auth = authorisation("dave")
+    proj = project(committee(release_managers=["alice"], committers=["alice", "dave"]))
+    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Error)
+    assert isinstance(result.error_or_none(), storage.AccessError)
+    assert "Not a release manager" in str(result.error_or_none())
+
+
+@pytest.mark.asyncio
+async def test_release_manager_outcome_rejects_release_manager_listing_without_committer_membership() -> None:
+    auth = authorisation("alice")
+    proj = project(committee(release_managers=["alice"], committers=["bob"]))
+    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Error)
+    assert isinstance(result.error_or_none(), storage.AccessError)
+    assert "Not a release manager" in str(result.error_or_none())
+
+
+@pytest.mark.asyncio
+async def test_release_manager_outcome_succeeds_for_designated_release_manager() -> None:
+    auth = authorisation("alice")
+    proj = project(committee(release_managers=["alice"], committers=["alice"]))
+    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Result)
+
+
+@pytest.mark.asyncio
+async def test_release_manager_outcome_succeeds_for_pmc_member() -> None:
+    auth = authorisation("chair", member_of=frozenset({"alpha"}))
+    proj = project(committee(release_managers=[], committers=[]))
+    result = await write(auth, proj).as_project_release_manager_outcome(safe.ProjectKey("example"))
+
+    assert isinstance(result, outcome.Result)
+
+
+def write(auth: object, project_value: object | None) -> storage.Write:
+    data = mock.MagicMock()
+    data.project = mock.MagicMock(return_value=ProjectQuery(project_value))
+    return storage.Write(auth, data)

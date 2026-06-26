@@ -30,6 +30,15 @@ if TYPE_CHECKING:
 RELEASES_URL: Final[str] = "/releases"
 
 
+@pytest.fixture
+def page_releases(releases_context: BrowserContext) -> Generator[Page]:
+    """Navigate to the releases page with a fresh page for each test."""
+    page = releases_context.new_page()
+    helpers.visit(page, RELEASES_URL)
+    yield page
+    page.close()
+
+
 @pytest.fixture(scope="module")
 def releases_context(browser: Browser) -> Generator[BrowserContext]:
     """Create a browser context with an authenticated user."""
@@ -41,12 +50,3 @@ def releases_context(browser: Browser) -> Generator[BrowserContext]:
     yield context
 
     context.close()
-
-
-@pytest.fixture
-def page_releases(releases_context: BrowserContext) -> Generator[Page]:
-    """Navigate to the releases page with a fresh page for each test."""
-    page = releases_context.new_page()
-    helpers.visit(page, RELEASES_URL)
-    yield page
-    page.close()

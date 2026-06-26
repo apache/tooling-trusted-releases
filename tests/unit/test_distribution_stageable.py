@@ -22,10 +22,13 @@ import atr.models.sql as sql
 import atr.shared.distribution as distribution
 
 
-def _data(platform: sql.DistributionPlatform) -> models_distribution.Data:
-    return models_distribution.Data.model_validate(
-        {"platform": platform, "package": "mypackage", "version": "1.0.0", "details": False}
-    )
+def test_platform_not_stageable_error_is_a_distribution_error() -> None:
+    assert issubclass(distribution.PlatformNotStageableError, distribution.DistributionError)
+
+
+def test_template_url_allows_any_platform_for_production() -> None:
+    url = distribution._template_url(_data(sql.DistributionPlatform.DOCKER_HUB), staging=False)
+    assert isinstance(url, str)
 
 
 def test_template_url_rejects_non_stageable_platform_for_staging() -> None:
@@ -38,10 +41,7 @@ def test_template_url_returns_staging_url_for_stageable_platform() -> None:
     assert isinstance(url, str)
 
 
-def test_template_url_allows_any_platform_for_production() -> None:
-    url = distribution._template_url(_data(sql.DistributionPlatform.DOCKER_HUB), staging=False)
-    assert isinstance(url, str)
-
-
-def test_platform_not_stageable_error_is_a_distribution_error() -> None:
-    assert issubclass(distribution.PlatformNotStageableError, distribution.DistributionError)
+def _data(platform: sql.DistributionPlatform) -> models_distribution.Data:
+    return models_distribution.Data.model_validate(
+        {"platform": platform, "package": "mypackage", "version": "1.0.0", "details": False}
+    )

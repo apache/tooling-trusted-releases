@@ -77,6 +77,35 @@ async def test_admins_startup_load_fetches_real_admins(
     assert cache_path.exists()
 
 
+def test_extract_uid_from_pubsub_falls_back_to_dn():
+    payload = ldap.PubSubPayload.model_validate(
+        {
+            "dn": "uid=bob,ou=people,dc=apache,dc=org",
+            "change_type": "modify",
+            "old_attributes": {},
+            "new_attributes": {},
+        }
+    )
+    assert ldap._extract_uid_from_pubsub(payload) == "bob"
+
+
+def test_extract_uid_from_pubsub_prefers_attributes():
+    payload = ldap.PubSubPayload.model_validate(_make_pubsub_payload(uid="alice"))
+    assert ldap._extract_uid_from_pubsub(payload) == "alice"
+
+
+def test_extract_uid_from_pubsub_returns_none_without_uid():
+    payload = ldap.PubSubPayload.model_validate(
+        {
+            "dn": "cn=some-group,ou=groups,dc=apache,dc=org",
+            "change_type": "modify",
+            "old_attributes": {},
+            "new_attributes": {},
+        }
+    )
+    assert ldap._extract_uid_from_pubsub(payload) is None
+
+
 @pytest.mark.asyncio
 async def test_fetch_admin_users_contains_only_nonempty_strings(ldap_configured: bool):
     _skip_if_unavailable(ldap_configured)
@@ -116,16 +145,93 @@ async def test_fetch_admin_users_returns_reasonable_count(ldap_configured: bool)
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_true_when_ldap_not_configured(monkeypatch: "MonkeyPatch"):
-    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: None)
-    assert await ldap.is_active("anyone") is True
+async def test_handle_update_handles_invalid_payload(monkeypatch: "MonkeyPatch"):
+    warnings: list[str] = []
+    monkeypatch.setattr("atr.log.warning", lambda msg: warnings.append(msg))
+
+    await ldap.handle_update({"not": "valid"})
+
+    assert any("Failed to parse" in msg for msg in warnings)
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_true_for_test_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
+async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
+    logged: list[str] = []
+    auth_events: list[str] = []
+    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
+    monkeypatch.setattr("atr.log.debug", lambda msg: None)
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
+
+    payload = _make_pubsub_payload(uid="normaluser", old_banned=[], new_banned=[])
+    await ldap.handle_update(payload)
+
+    assert not logged
+    assert not auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
+    logged: list[str] = []
+    auth_events: list[str] = []
+    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
+    monkeypatch.setattr("atr.log.debug", lambda msg: None)
+    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
+
+    payload = _make_pubsub_payload(uid="gooduser", old_banned=["yes"], new_banned=[])
+    await ldap.handle_update(payload)
+
+    assert any("gooduser" in msg and "reactivated" in msg for msg in logged)
+    assert "account_reactivated" in auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch"):
+    logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=2, token_count=3, ssh_key_count=1)
+
+    payload = _make_pubsub_payload(uid="baduser", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert any("baduser" in msg and "deactivated" in msg for msg in logged)
+    assert "account_deactivated" in auth_events
+    assert "sessions_revoked" in auth_events
+    assert "tokens_revoked" in auth_events
+    assert "ssh_keys_revoked" in auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: "MonkeyPatch"):
+    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1, token_count=0, ssh_key_count=0)
+
+    payload = _make_pubsub_payload(uid="user1", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert "sessions_revoked" in auth_events
+    assert "tokens_revoked" not in auth_events
+    assert "ssh_keys_revoked" not in auth_events
+
+
+@pytest.mark.asyncio
+async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatch: "MonkeyPatch"):
+    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=0, token_count=0, ssh_key_count=0)
+
+    payload = _make_pubsub_payload(uid="nouser", old_banned=[], new_banned=["yes"])
+    await ldap.handle_update(payload)
+
+    assert "account_deactivated" in auth_events
+    assert "sessions_revoked" not in auth_events
+    assert "tokens_revoked" not in auth_events
+    assert "ssh_keys_revoked" not in auth_events
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_false_for_banned_account(monkeypatch: "MonkeyPatch"):
+    account = ldap.Result.model_validate(
+        {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
+    )
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
-    assert await ldap.is_active("test") is True
+    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=account))
+    assert await ldap.is_active("bad") is False
 
 
 @pytest.mark.asyncio
@@ -153,14 +259,16 @@ async def test_is_active_returns_true_for_active_account(monkeypatch: "MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_is_active_returns_false_for_banned_account(monkeypatch: "MonkeyPatch"):
-    account = ldap.Result.model_validate(
-        {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
-    )
+async def test_is_active_returns_true_for_test_user_when_tests_allowed(monkeypatch: "MonkeyPatch"):
     monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
     monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
-    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(return_value=account))
-    assert await ldap.is_active("bad") is False
+    assert await ldap.is_active("test") is True
+
+
+@pytest.mark.asyncio
+async def test_is_active_returns_true_when_ldap_not_configured(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: None)
+    assert await ldap.is_active("anyone") is True
 
 
 def test_is_banned_returns_false_for_account_without_flag():
@@ -173,6 +281,44 @@ def test_is_banned_returns_true_for_account_with_flag():
         {"dn": "uid=bad,ou=people,dc=apache,dc=org", "uid": ["bad"], "asf-banned": ["yes"]}
     )
     assert ldap.is_banned(account) is True
+
+
+def test_pubsub_payload_detects_ban():
+    payload = _make_pubsub_payload(old_banned=[], new_banned=["yes"])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert not bool(parsed.old_attributes.asf_banned)
+    assert bool(parsed.new_attributes.asf_banned)
+
+
+def test_pubsub_payload_detects_unban():
+    payload = _make_pubsub_payload(old_banned=["yes"], new_banned=[])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert bool(parsed.old_attributes.asf_banned)
+    assert not bool(parsed.new_attributes.asf_banned)
+
+
+def test_pubsub_payload_ignores_extra_attributes():
+    payload = _make_pubsub_payload()
+    payload["new_attributes"]["mail"] = ["test@example.com"]
+    payload["new_attributes"]["objectClass"] = ["person", "top"]
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert parsed.new_attributes.uid == ["testuser"]
+
+
+def test_pubsub_payload_no_change_when_both_unbanned():
+    payload = _make_pubsub_payload(old_banned=[], new_banned=[])
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert not bool(parsed.old_attributes.asf_banned)
+    assert not bool(parsed.new_attributes.asf_banned)
+
+
+def test_pubsub_payload_parses_valid_event():
+    payload = _make_pubsub_payload(uid="alice")
+    parsed = ldap.PubSubPayload.model_validate(payload)
+    assert parsed.dn == "uid=alice,ou=people,dc=apache,dc=org"
+    assert parsed.change_type == "modify"
+    assert parsed.new_attributes.uid == ["alice"]
+    assert parsed.old_attributes.asf_banned == []
 
 
 def _make_pubsub_payload(
@@ -197,81 +343,6 @@ def _make_pubsub_payload(
         "pubsub_path": "/private/ldap",
         "pubsub_cursor": "test-cursor",
     }
-
-
-def _skip_if_unavailable(ldap_configured: bool) -> None:
-    if not ldap_configured:
-        pytest.skip("LDAP not configured")
-
-
-# --- PubSub payload parsing tests ---
-
-
-def test_pubsub_payload_parses_valid_event():
-    payload = _make_pubsub_payload(uid="alice")
-    parsed = ldap.PubSubPayload.model_validate(payload)
-    assert parsed.dn == "uid=alice,ou=people,dc=apache,dc=org"
-    assert parsed.change_type == "modify"
-    assert parsed.new_attributes.uid == ["alice"]
-    assert parsed.old_attributes.asf_banned == []
-
-
-def test_pubsub_payload_ignores_extra_attributes():
-    payload = _make_pubsub_payload()
-    payload["new_attributes"]["mail"] = ["test@example.com"]
-    payload["new_attributes"]["objectClass"] = ["person", "top"]
-    parsed = ldap.PubSubPayload.model_validate(payload)
-    assert parsed.new_attributes.uid == ["testuser"]
-
-
-def test_pubsub_payload_detects_ban():
-    payload = _make_pubsub_payload(old_banned=[], new_banned=["yes"])
-    parsed = ldap.PubSubPayload.model_validate(payload)
-    assert not bool(parsed.old_attributes.asf_banned)
-    assert bool(parsed.new_attributes.asf_banned)
-
-
-def test_pubsub_payload_detects_unban():
-    payload = _make_pubsub_payload(old_banned=["yes"], new_banned=[])
-    parsed = ldap.PubSubPayload.model_validate(payload)
-    assert bool(parsed.old_attributes.asf_banned)
-    assert not bool(parsed.new_attributes.asf_banned)
-
-
-def test_pubsub_payload_no_change_when_both_unbanned():
-    payload = _make_pubsub_payload(old_banned=[], new_banned=[])
-    parsed = ldap.PubSubPayload.model_validate(payload)
-    assert not bool(parsed.old_attributes.asf_banned)
-    assert not bool(parsed.new_attributes.asf_banned)
-
-
-def test_extract_uid_from_pubsub_prefers_attributes():
-    payload = ldap.PubSubPayload.model_validate(_make_pubsub_payload(uid="alice"))
-    assert ldap._extract_uid_from_pubsub(payload) == "alice"
-
-
-def test_extract_uid_from_pubsub_falls_back_to_dn():
-    payload = ldap.PubSubPayload.model_validate(
-        {
-            "dn": "uid=bob,ou=people,dc=apache,dc=org",
-            "change_type": "modify",
-            "old_attributes": {},
-            "new_attributes": {},
-        }
-    )
-    assert ldap._extract_uid_from_pubsub(payload) == "bob"
-
-
-def test_extract_uid_from_pubsub_returns_none_without_uid():
-    payload = ldap.PubSubPayload.model_validate(
-        {
-            "dn": "cn=some-group,ou=groups,dc=apache,dc=org",
-            "change_type": "modify",
-            "old_attributes": {},
-            "new_attributes": {},
-        }
-    )
-    assert ldap._extract_uid_from_pubsub(payload) is None
 
 
 def _mock_db_session(token_items: list | None = None, ssh_key_items: list | None = None) -> mock.MagicMock:
@@ -325,80 +396,6 @@ def _setup_ban_mocks(
     return logged, auth_events
 
 
-@pytest.mark.asyncio
-async def test_handle_update_revokes_all_credentials(monkeypatch: "MonkeyPatch"):
-    logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=2, token_count=3, ssh_key_count=1)
-
-    payload = _make_pubsub_payload(uid="baduser", old_banned=[], new_banned=["yes"])
-    await ldap.handle_update(payload)
-
-    assert any("baduser" in msg and "deactivated" in msg for msg in logged)
-    assert "account_deactivated" in auth_events
-    assert "sessions_revoked" in auth_events
-    assert "tokens_revoked" in auth_events
-    assert "ssh_keys_revoked" in auth_events
-
-
-@pytest.mark.asyncio
-async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatch: "MonkeyPatch"):
-    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=0, token_count=0, ssh_key_count=0)
-
-    payload = _make_pubsub_payload(uid="nouser", old_banned=[], new_banned=["yes"])
-    await ldap.handle_update(payload)
-
-    assert "account_deactivated" in auth_events
-    assert "sessions_revoked" not in auth_events
-    assert "tokens_revoked" not in auth_events
-    assert "ssh_keys_revoked" not in auth_events
-
-
-@pytest.mark.asyncio
-async def test_handle_update_revokes_only_sessions_when_no_keys_or_tokens(monkeypatch: "MonkeyPatch"):
-    _logged, auth_events = _setup_ban_mocks(monkeypatch, session_count=1, token_count=0, ssh_key_count=0)
-
-    payload = _make_pubsub_payload(uid="user1", old_banned=[], new_banned=["yes"])
-    await ldap.handle_update(payload)
-
-    assert "sessions_revoked" in auth_events
-    assert "tokens_revoked" not in auth_events
-    assert "ssh_keys_revoked" not in auth_events
-
-
-@pytest.mark.asyncio
-async def test_handle_update_logs_reactivation(monkeypatch: "MonkeyPatch"):
-    logged: list[str] = []
-    auth_events: list[str] = []
-    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
-    monkeypatch.setattr("atr.log.debug", lambda msg: None)
-    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
-
-    payload = _make_pubsub_payload(uid="gooduser", old_banned=["yes"], new_banned=[])
-    await ldap.handle_update(payload)
-
-    assert any("gooduser" in msg and "reactivated" in msg for msg in logged)
-    assert "account_reactivated" in auth_events
-
-
-@pytest.mark.asyncio
-async def test_handle_update_ignores_no_ban_change(monkeypatch: "MonkeyPatch"):
-    logged: list[str] = []
-    auth_events: list[str] = []
-    monkeypatch.setattr("atr.log.info", lambda msg: logged.append(msg))
-    monkeypatch.setattr("atr.log.debug", lambda msg: None)
-    monkeypatch.setattr("atr.log.auth_event", lambda event, asfuid=None, **kw: auth_events.append(event))
-
-    payload = _make_pubsub_payload(uid="normaluser", old_banned=[], new_banned=[])
-    await ldap.handle_update(payload)
-
-    assert not logged
-    assert not auth_events
-
-
-@pytest.mark.asyncio
-async def test_handle_update_handles_invalid_payload(monkeypatch: "MonkeyPatch"):
-    warnings: list[str] = []
-    monkeypatch.setattr("atr.log.warning", lambda msg: warnings.append(msg))
-
-    await ldap.handle_update({"not": "valid"})
-
-    assert any("Failed to parse" in msg for msg in warnings)
+def _skip_if_unavailable(ldap_configured: bool) -> None:
+    if not ldap_configured:
+        pytest.skip("LDAP not configured")

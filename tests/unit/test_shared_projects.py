@@ -87,8 +87,9 @@ def test_validate_display_name_rejects(name: str) -> None:
         shared_projects._validate_display_name(name)
 
 
-def test_validate_display_name_returns_normalised_value() -> None:
-    assert shared_projects._validate_display_name("  Apache   Example  ") == "Apache Example"
+def test_validate_display_name_accepts_explicit_prefix() -> None:
+    # Users who type "Apache" by habit shouldn't be punished.
+    assert shared_projects._validate_display_name("Apache Example") == "Apache Example"
 
 
 def test_validate_display_name_prepends_apache_when_omitted() -> None:
@@ -96,9 +97,8 @@ def test_validate_display_name_prepends_apache_when_omitted() -> None:
     assert shared_projects._validate_display_name("Example Components") == "Apache Example Components"
 
 
-def test_validate_display_name_accepts_explicit_prefix() -> None:
-    # Users who type "Apache" by habit shouldn't be punished.
-    assert shared_projects._validate_display_name("Apache Example") == "Apache Example"
+def test_validate_display_name_returns_normalised_value() -> None:
+    assert shared_projects._validate_display_name("  Apache   Example  ") == "Apache Example"
 
 
 @pytest.mark.parametrize(

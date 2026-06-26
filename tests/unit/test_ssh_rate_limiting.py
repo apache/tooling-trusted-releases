@@ -31,53 +31,46 @@ if TYPE_CHECKING:
     from pytest import MonkeyPatch
 
 
-@pytest.fixture(autouse=True)
-def _clear_rate_buckets():
-    """Clear global rate limit buckets before each test to prevent state leakage."""
-    ssh.global_ip_rate_buckets.clear()
-    ssh.global_user_rate_buckets.clear()
-    yield
-    ssh.global_ip_rate_buckets.clear()
-    ssh.global_user_rate_buckets.clear()
+def test_auth_completed_allows_within_user_limit():
+    server = _make_server()
+    server._conn = _make_conn_with_username("alice")
+    server.auth_completed()
+    server._conn.disconnect.assert_not_called()
 
 
-# _rate_limit_check
-
-
-def test_rate_limit_check_allows_within_limit():
-    bucket: dict[str, collections.deque[float]] = {}
+def test_auth_completed_blocks_when_user_limit_exceeded():
     for _ in range(ssh._RATE_LIMIT_USER):
-        assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is True
+        server = _make_server()
+        server._conn = _make_conn_with_username("alice")
+        server.auth_completed()
+    server = _make_server()
+    server._conn = _make_conn_with_username("alice")
+    server.auth_completed()
+    server._conn.disconnect.assert_called_once_with(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
 
 
-def test_rate_limit_check_blocks_when_limit_reached():
-    bucket: dict[str, collections.deque[float]] = {}
+def test_auth_completed_different_users_are_independent():
     for _ in range(ssh._RATE_LIMIT_USER):
-        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
-    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
+        server = _make_server()
+        server._conn = _make_conn_with_username("alice")
+        server.auth_completed()
+    server = _make_server()
+    server._conn = _make_conn_with_username("bob")
+    server.auth_completed()
+    server._conn.disconnect.assert_not_called()
 
 
-def test_rate_limit_check_allows_after_window_expires(monkeypatch: "MonkeyPatch"):
-    current_time = [1000.0]
-    monkeypatch.setattr("atr.ssh.time.monotonic", lambda: current_time[0])
-    bucket: dict[str, collections.deque[float]] = {}
+def test_auth_completed_github_uses_asf_uid_for_rate_limit():
     for _ in range(ssh._RATE_LIMIT_USER):
-        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
-    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
-
-    current_time[0] = 1000.0 + ssh._RATE_WINDOW + 1.0
-    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is True
-
-
-def test_rate_limit_check_keys_are_independent():
-    bucket: dict[str, collections.deque[float]] = {}
-    for _ in range(ssh._RATE_LIMIT_USER):
-        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
-    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
-    assert ssh._rate_limit_check(bucket, "bob", ssh._RATE_LIMIT_USER) is True
-
-
-# connection_made — IP rate limit
+        server = _make_server()
+        server._conn = _make_conn_with_username("github")
+        server._github_asf_uid = "alice"
+        server.auth_completed()
+    server = _make_server()
+    server._conn = _make_conn_with_username("github")
+    server._github_asf_uid = "alice"
+    server.auth_completed()
+    server._conn.disconnect.assert_called_once_with(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
 
 
 def test_connection_made_allows_within_ip_limit():
@@ -107,52 +100,47 @@ def test_connection_made_different_ips_are_independent():
     conn.disconnect.assert_not_called()
 
 
-# auth_completed — user rate limit
-
-
-def test_auth_completed_allows_within_user_limit():
-    server = _make_server()
-    server._conn = _make_conn_with_username("alice")
-    server.auth_completed()
-    server._conn.disconnect.assert_not_called()
-
-
-def test_auth_completed_blocks_when_user_limit_exceeded():
+def test_rate_limit_check_allows_after_window_expires(monkeypatch: "MonkeyPatch"):
+    current_time = [1000.0]
+    monkeypatch.setattr("atr.ssh.time.monotonic", lambda: current_time[0])
+    bucket: dict[str, collections.deque[float]] = {}
     for _ in range(ssh._RATE_LIMIT_USER):
-        server = _make_server()
-        server._conn = _make_conn_with_username("alice")
-        server.auth_completed()
-    server = _make_server()
-    server._conn = _make_conn_with_username("alice")
-    server.auth_completed()
-    server._conn.disconnect.assert_called_once_with(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
+    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
+
+    current_time[0] = 1000.0 + ssh._RATE_WINDOW + 1.0
+    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is True
 
 
-def test_auth_completed_github_uses_asf_uid_for_rate_limit():
+def test_rate_limit_check_allows_within_limit():
+    bucket: dict[str, collections.deque[float]] = {}
     for _ in range(ssh._RATE_LIMIT_USER):
-        server = _make_server()
-        server._conn = _make_conn_with_username("github")
-        server._github_asf_uid = "alice"
-        server.auth_completed()
-    server = _make_server()
-    server._conn = _make_conn_with_username("github")
-    server._github_asf_uid = "alice"
-    server.auth_completed()
-    server._conn.disconnect.assert_called_once_with(asyncssh.DISC_TOO_MANY_CONNECTIONS, "Rate limit exceeded")
+        assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is True
 
 
-def test_auth_completed_different_users_are_independent():
+def test_rate_limit_check_blocks_when_limit_reached():
+    bucket: dict[str, collections.deque[float]] = {}
     for _ in range(ssh._RATE_LIMIT_USER):
-        server = _make_server()
-        server._conn = _make_conn_with_username("alice")
-        server.auth_completed()
-    server = _make_server()
-    server._conn = _make_conn_with_username("bob")
-    server.auth_completed()
-    server._conn.disconnect.assert_not_called()
+        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
+    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
 
 
-# helpers
+def test_rate_limit_check_keys_are_independent():
+    bucket: dict[str, collections.deque[float]] = {}
+    for _ in range(ssh._RATE_LIMIT_USER):
+        ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER)
+    assert ssh._rate_limit_check(bucket, "alice", ssh._RATE_LIMIT_USER) is False
+    assert ssh._rate_limit_check(bucket, "bob", ssh._RATE_LIMIT_USER) is True
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_buckets():
+    """Clear global rate limit buckets before each test to prevent state leakage."""
+    ssh.global_ip_rate_buckets.clear()
+    ssh.global_user_rate_buckets.clear()
+    yield
+    ssh.global_ip_rate_buckets.clear()
+    ssh.global_user_rate_buckets.clear()
 
 
 def _make_conn_with_ip(ip: str) -> mock.MagicMock:

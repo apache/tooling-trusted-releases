@@ -104,56 +104,6 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     context.close()
 
 
-@pytest.fixture
-def page_announce(announce_context: BrowserContext) -> Generator[Page]:
-    """Navigate to the announce page with a fresh page for each test."""
-    page = announce_context.new_page()
-    helpers.visit(page, ANNOUNCE_URL)
-    yield page
-    page.close()
-
-
-@pytest.fixture
-def page_finish(announce_context: BrowserContext) -> Generator[Page]:
-    """Navigate to the finish page with a fresh page for each test."""
-    page = announce_context.new_page()
-    helpers.visit(page, FINISH_URL)
-    yield page
-    page.close()
-
-
-def _poll_for_vote_thread_link(page: Page, max_attempts: int = 30) -> None:
-    """Poll for the vote task to be completed."""
-    thread_link_locator = page.locator('a:has-text("view thread")')
-    for _ in range(max_attempts):
-        if thread_link_locator.is_visible(timeout=500):
-            return
-        time.sleep(0.5)
-        page.reload()
-
-
-def _wait_for_vote_start_readiness(
-    context: BrowserContext,
-    vote_path: str,
-    timeout: float = 60,
-    stable_polls: int = 2,
-) -> None:
-    checks_path = vote_path.replace("/voting/", "/api/checks/ongoing/", 1)
-    deadline = time.monotonic() + timeout
-    stable_zero_polls = 0
-    while True:
-        ongoing = int(helpers.api_get(context.request, checks_path)["ongoing"])
-        if ongoing == 0:
-            stable_zero_polls += 1
-            if stable_zero_polls >= stable_polls:
-                return
-        else:
-            stable_zero_polls = 0
-        if time.monotonic() > deadline:
-            raise TimeoutError(f"Checks did not finish for {checks_path} within {timeout}s")
-        time.sleep(0.5)
-
-
 @pytest.fixture(scope="module")
 def auto_archive_context(browser: Browser) -> Generator[BrowserContext]:
     """Build a published prior release and a current release sitting on announce."""
@@ -186,11 +136,46 @@ def auto_archive_context(browser: Browser) -> Generator[BrowserContext]:
 
 
 @pytest.fixture
+def page_announce(announce_context: BrowserContext) -> Generator[Page]:
+    """Navigate to the announce page with a fresh page for each test."""
+    page = announce_context.new_page()
+    helpers.visit(page, ANNOUNCE_URL)
+    yield page
+    page.close()
+
+
+@pytest.fixture
 def page_auto_archive_announce(auto_archive_context: BrowserContext) -> Generator[Page]:
     page = auto_archive_context.new_page()
     helpers.visit(page, announce_helpers.CURRENT_ANNOUNCE_URL)
     yield page
     page.close()
+
+
+@pytest.fixture
+def page_finish(announce_context: BrowserContext) -> Generator[Page]:
+    """Navigate to the finish page with a fresh page for each test."""
+    page = announce_context.new_page()
+    helpers.visit(page, FINISH_URL)
+    yield page
+    page.close()
+
+
+def _poll_for_vote_thread_link(page: Page, max_attempts: int = 30) -> None:
+    """Poll for the vote task to be completed."""
+    thread_link_locator = page.locator('a:has-text("view thread")')
+    for _ in range(max_attempts):
+        if thread_link_locator.is_visible(timeout=500):
+            return
+        time.sleep(0.5)
+        page.reload()
+
+
+def _publish_release(page: Page, version: str) -> None:
+    helpers.visit(page, f"/announce/{PROJECT_KEY}/{version}")
+    page.locator("input#confirm_announce").fill("CONFIRM")
+    page.get_by_role("button", name="Publish & announce").click()
+    page.wait_for_url(f"**/releases/finished/{PROJECT_KEY}**")
 
 
 def _run_release_to_finish(context: BrowserContext, page: Page, version: str, opt_in_archive: bool) -> None:
@@ -241,8 +226,23 @@ def _run_release_to_finish(context: BrowserContext, page: Page, version: str, op
     page.wait_for_url(f"**/finish/{PROJECT_KEY}/{version}")
 
 
-def _publish_release(page: Page, version: str) -> None:
-    helpers.visit(page, f"/announce/{PROJECT_KEY}/{version}")
-    page.locator("input#confirm_announce").fill("CONFIRM")
-    page.get_by_role("button", name="Publish & announce").click()
-    page.wait_for_url(f"**/releases/finished/{PROJECT_KEY}**")
+def _wait_for_vote_start_readiness(
+    context: BrowserContext,
+    vote_path: str,
+    timeout: float = 60,
+    stable_polls: int = 2,
+) -> None:
+    checks_path = vote_path.replace("/voting/", "/api/checks/ongoing/", 1)
+    deadline = time.monotonic() + timeout
+    stable_zero_polls = 0
+    while True:
+        ongoing = int(helpers.api_get(context.request, checks_path)["ongoing"])
+        if ongoing == 0:
+            stable_zero_polls += 1
+            if stable_zero_polls >= stable_polls:
+                return
+        else:
+            stable_zero_polls = 0
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"Checks did not finish for {checks_path} within {timeout}s")
+        time.sleep(0.5)

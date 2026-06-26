@@ -99,11 +99,6 @@ async def test_jar_defaults_to_binary():
     assert (await classify.classify(path)) == classify.FileType.BINARY
 
 
-async def test_whl_defaults_to_binary():
-    path = safe.RelPath("apache_airflow_providers_airbyte-5.0.2-py3-none-any.whl")
-    assert (await classify.classify(path)) == classify.FileType.BINARY
-
-
 def test_matchers_from_policy_builds_both(tmp_path):
     source_matcher, binary_matcher = classify.matchers_from_policy(["*-src.*"], ["*-bin.*"], safe.StatePath(tmp_path))
     assert source_matcher is not None
@@ -202,6 +197,11 @@ async def test_stem_heuristics_are_fallback_after_policy(tmp_path):
         path, base_path=safe.StatePath(tmp_path), source_matcher=_always_false, binary_matcher=_always_false
     )
     assert result == classify.FileType.SOURCE
+
+
+async def test_whl_defaults_to_binary():
+    path = safe.RelPath("apache_airflow_providers_airbyte-5.0.2-py3-none-any.whl")
+    assert (await classify.classify(path)) == classify.FileType.BINARY
 
 
 def _always_false(_path: str) -> bool:

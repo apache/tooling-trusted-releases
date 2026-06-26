@@ -18,21 +18,6 @@
 from playwright.sync_api import Page, expect
 
 
-def test_releases_page_shows_committee_grid(page_releases: Page) -> None:
-    """The releases page renders the committee-grouped grid heading."""
-    expect(page_releases.locator("h1")).to_have_text("Releases")
-
-
-def test_project_tiles_link_to_finished_releases(page_releases: Page) -> None:
-    """Project tiles link through to a project's finished releases."""
-    tiles = page_releases.locator(".page-project-subcard a.stretched-link")
-    if tiles.count() == 0:
-        return
-    href = tiles.first.get_attribute("href")
-    assert href is not None
-    assert "/releases/finished/" in href
-
-
 def test_filter_narrows_committee_count(page_releases: Page) -> None:
     """Filtering by a non-matching name drives the committee count to zero."""
     count_span = page_releases.locator("#committee-count")
@@ -45,3 +30,18 @@ def test_filter_narrows_committee_count(page_releases: Page) -> None:
     filter_button.click()
 
     expect(count_span).to_have_text("0")
+
+
+def test_project_tiles_link_to_finished_releases(page_releases: Page) -> None:
+    """Project tiles link through to a project's finished releases."""
+    tiles = page_releases.locator(".page-project-subcard a.stretched-link")
+    if tiles.count() == 0:
+        return
+    href = tiles.first.get_attribute("href")
+    assert href is not None
+    assert "/releases/finished/" in href
+
+
+def test_releases_page_shows_committee_grid(page_releases: Page) -> None:
+    """The releases page renders the committee-grouped grid heading."""
+    expect(page_releases.locator("h1")).to_have_text("Releases")

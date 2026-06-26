@@ -215,6 +215,14 @@ def test_plan_still_current_skips_preview_escalation_on_archived_project() -> No
     )
 
 
+def test_preview_escalation_body_uses_threshold_not_synthetic_date() -> None:
+    body = inactivity._preview_escalation_body(_warning_plan(sql.ReleasePhase.RELEASE_PREVIEW))
+    lowered = body.lower()
+    assert "inactive for at least 90 days" in lowered
+    assert "is being\nflagged" in lowered
+    assert "2026-02-25" not in lowered
+
+
 def test_private_committee_list_format() -> None:
     assert inactivity.private_committee_list("example") == "private@example.apache.org"
 
@@ -391,14 +399,6 @@ def test_warning_body_for_preview_does_not_say_deleted() -> None:
     assert "will be deleted in" not in lowered
     assert "flagged in\n10 days" in lowered
     assert "not automatically deleted" in lowered
-    assert "2026-02-25" not in lowered
-
-
-def test_preview_escalation_body_uses_threshold_not_synthetic_date() -> None:
-    body = inactivity._preview_escalation_body(_warning_plan(sql.ReleasePhase.RELEASE_PREVIEW))
-    lowered = body.lower()
-    assert "inactive for at least 90 days" in lowered
-    assert "is being\nflagged" in lowered
     assert "2026-02-25" not in lowered
 
 

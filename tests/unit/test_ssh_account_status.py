@@ -27,6 +27,20 @@ if TYPE_CHECKING:
     from pytest import MonkeyPatch
 
 
+class WorkflowKeySession:
+    def __init__(self, workflow_key: mock.MagicMock, on_exit):
+        self._workflow_key = workflow_key
+        self._on_exit = on_exit
+
+    async def __aenter__(self) -> mock.MagicMock:
+        data = mock.MagicMock()
+        data.workflow_ssh_key.return_value.get = mock.AsyncMock(return_value=self._workflow_key)
+        return data
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        self._on_exit()
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_patch_ldap_active")
 async def test_begin_auth_allows_active_user(monkeypatch: "MonkeyPatch"):
@@ -130,24 +144,6 @@ async def test_validate_public_key_allows_active_workflow_user(monkeypatch: "Mon
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("_patch_ldap_disabled")
-async def test_validate_public_key_rejects_disabled_workflow_user(monkeypatch: "MonkeyPatch"):
-    server = _make_server()
-    key = mock.MagicMock(spec=asyncssh.SSHKey)
-    key.get_fingerprint.return_value = "SHA256:abc"
-    mock_workflow_key = mock.MagicMock()
-    mock_workflow_key.asf_uid = "banned-user"
-    mock_workflow_key.expires = 9999999999
-    mock_data = mock.MagicMock()
-    mock_data.workflow_ssh_key.return_value.get = mock.AsyncMock(return_value=mock_workflow_key)
-    mock_session = mock.AsyncMock()
-    mock_session.__aenter__.return_value = mock_data
-    monkeypatch.setattr("atr.db.session", lambda: mock_session)
-    result = await server.validate_public_key("github", key)
-    assert result is False
-
-
-@pytest.mark.asyncio
 async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "MonkeyPatch"):
     server = _make_server()
     key = mock.MagicMock(spec=asyncssh.SSHKey)
@@ -208,6 +204,24 @@ async def test_validate_public_key_closes_db_session_before_ldap(monkeypatch: "M
     assert session_closed is True
 
 
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_patch_ldap_disabled")
+async def test_validate_public_key_rejects_disabled_workflow_user(monkeypatch: "MonkeyPatch"):
+    server = _make_server()
+    key = mock.MagicMock(spec=asyncssh.SSHKey)
+    key.get_fingerprint.return_value = "SHA256:abc"
+    mock_workflow_key = mock.MagicMock()
+    mock_workflow_key.asf_uid = "banned-user"
+    mock_workflow_key.expires = 9999999999
+    mock_data = mock.MagicMock()
+    mock_data.workflow_ssh_key.return_value.get = mock.AsyncMock(return_value=mock_workflow_key)
+    mock_session = mock.AsyncMock()
+    mock_session.__aenter__.return_value = mock_data
+    monkeypatch.setattr("atr.db.session", lambda: mock_session)
+    result = await server.validate_public_key("github", key)
+    assert result is False
+
+
 def _make_conn(authorized_keys: list[str] | None = None) -> mock.MagicMock:
     conn = mock.MagicMock(spec=asyncssh.SSHServerConnection)
     conn.get_extra_info.return_value = ("127.0.0.1", 22)
@@ -229,20 +243,6 @@ def _make_server() -> ssh.SSHServer:
     server._github_asf_uid = None
     server._github_payload = None
     return server
-
-
-class WorkflowKeySession:
-    def __init__(self, workflow_key: mock.MagicMock, on_exit):
-        self._workflow_key = workflow_key
-        self._on_exit = on_exit
-
-    async def __aenter__(self) -> mock.MagicMock:
-        data = mock.MagicMock()
-        data.workflow_ssh_key.return_value.get = mock.AsyncMock(return_value=self._workflow_key)
-        return data
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        self._on_exit()
 
 
 @pytest.fixture

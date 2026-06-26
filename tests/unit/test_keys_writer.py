@@ -48,13 +48,6 @@ mhZeqo6zyn8zrO9RGU7+8jmeb5nVnXw1YmZcw2fiJgI9+tTMkTfomyR6k0EDvcEu
 """
 
 
-def _playwright_test_key_text() -> str:
-    key_path = (
-        pathlib.Path(__file__).resolve().parents[2] / "playwright" / "557F8D855DEF8BBE2DC5603B64C271BB87B7FE7B.asc"
-    )
-    return key_path.read_text(encoding="utf-8")
-
-
 class Query:
     def __init__(self, value):
         self._value = value
@@ -555,6 +548,13 @@ def _make_foundation_committer_with_audit(data: MockData, asf_uid: str = "alice"
     write.as_committee_participant = mock.MagicMock()
     write_as = mock.MagicMock()
     return keys_writer.FoundationCommitter(write, write_as, data), write, write_as
+
+
+def _playwright_test_key_text() -> str:
+    key_path = (
+        pathlib.Path(__file__).resolve().parents[2] / "playwright" / "557F8D855DEF8BBE2DC5603B64C271BB87B7FE7B.asc"
+    )
+    return key_path.read_text(encoding="utf-8")
 
 
 def _public_key(

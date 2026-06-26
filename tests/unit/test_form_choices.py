@@ -34,9 +34,9 @@ class _StaticallyFilteredColourForm(form.Form):
     colour: form.Enum[_Colour] = form.label("Colour", widget=form.Widget.SELECT, enum_filter_include=["green"])
 
 
-def test_get_choices_returns_all_members_by_default() -> None:
+def test_get_choices_applies_render_time_filter() -> None:
     field_info = _ColourForm.model_fields["colour"]
-    assert form._get_choices(field_info) == [("red", "red"), ("green", "green"), ("blue", "blue")]
+    assert form._get_choices(field_info, filter_keys=["red", "blue"]) == [("red", "red"), ("blue", "blue")]
 
 
 def test_get_choices_honours_static_enum_filter_include() -> None:
@@ -44,9 +44,9 @@ def test_get_choices_honours_static_enum_filter_include() -> None:
     assert form._get_choices(field_info) == [("green", "green")]
 
 
-def test_get_choices_applies_render_time_filter() -> None:
+def test_get_choices_returns_all_members_by_default() -> None:
     field_info = _ColourForm.model_fields["colour"]
-    assert form._get_choices(field_info, filter_keys=["red", "blue"]) == [("red", "red"), ("blue", "blue")]
+    assert form._get_choices(field_info) == [("red", "red"), ("green", "green"), ("blue", "blue")]
 
 
 def test_render_time_filter_overrides_static_filter() -> None:

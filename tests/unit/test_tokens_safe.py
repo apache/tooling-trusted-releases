@@ -57,29 +57,6 @@ class FakeQuery:
         return self._tokens[0] if self._tokens else None
 
 
-def _apply_pat_filters(
-    tokens: list[sql.PersonalAccessToken],
-    token_hash: object = db.NOT_SET,
-    id: object = db.NOT_SET,
-    asfuid: object = db.NOT_SET,
-    created_by: object = db.NOT_SET,
-    is_system: object = False,
-) -> list[sql.PersonalAccessToken]:
-    # Default is_system=False mirrors db.Session.personal_access_token.
-    result = list(tokens)
-    if db.is_defined(token_hash):
-        result = [t for t in result if t.token_hash == token_hash]
-    if db.is_defined(id):
-        result = [t for t in result if t.id == id]
-    if db.is_defined(asfuid):
-        result = [t for t in result if t.asfuid == asfuid]
-    if db.is_defined(created_by):
-        result = [t for t in result if t.created_by == created_by]
-    if db.is_defined(is_system):
-        result = [t for t in result if t.is_system == is_system]
-    return result
-
-
 class FakeReadData:
     def __init__(self, tokens: list[sql.PersonalAccessToken], most_recent: sql.PersonalAccessToken | None):
         self._tokens = tokens
@@ -129,24 +106,26 @@ class FakeWriteData:
         return FakeQuery(_apply_pat_filters(self._tokens, **kwargs))
 
 
-def _make_pat(
-    *,
-    expires: datetime.datetime | None = None,
-    allowed_ip: str | None = None,
-    is_system: bool = False,
-) -> sql.PersonalAccessToken:
+def test_allows_ip() -> None:
+    unrestricted = _make_pat(allowed_ip=None)
+    assert unrestricted.allows_ip("1.2.3.4") is True
+    assert unrestricted.allows_ip(None) is True
+
+    single = _make_pat(allowed_ip="1.2.3.4")
+    assert single.allows_ip("1.2.3.4") is True
+    assert single.allows_ip("1.2.3.5") is False
+    assert single.allows_ip(None) is False
+    assert single.allows_ip("not-an-ip") is False
+
+    cidr = _make_pat(allowed_ip="10.0.0.0/8")
+    assert cidr.allows_ip("10.1.2.3") is True
+    assert cidr.allows_ip("11.0.0.1") is False
+
+
+def test_is_expired() -> None:
     now = datetime.datetime.now(tz=datetime.UTC)
-    # System PATs have no owning user; user PATs have asfuid equal to created_by.
-    asfuid = None if is_system else "test"
-    return sql.PersonalAccessToken(
-        asfuid=asfuid,
-        created_by="test",
-        token_hash="0" * 64,
-        created=now,
-        expires=expires if expires is not None else now + datetime.timedelta(days=1),
-        allowed_ip=allowed_ip,
-        is_system=is_system,
-    )
+    assert _make_pat(expires=now + datetime.timedelta(days=1)).is_expired is False
+    assert _make_pat(expires=now - datetime.timedelta(days=1)).is_expired is True
 
 
 def test_personal_access_token_safe_excludes_token_hash() -> None:
@@ -169,6 +148,22 @@ def test_personal_access_token_safe_excludes_token_hash() -> None:
     assert safe.is_system is False
     assert "token_hash" not in safe.model_dump()
     assert not hasattr(safe, "token_hash")
+
+
+@pytest.mark.asyncio
+async def test_reader_hides_system_pats_from_user_listing() -> None:
+    user_token = _make_pat()
+    user_token.id = 11
+    system_token = _make_pat(is_system=True)
+    system_token.id = 12
+
+    read = FakeRead("test")
+    data = FakeReadData([user_token, system_token], None)
+    reader = atr.storage.readers.tokens.FoundationCommitter(read, mock.MagicMock(), data)
+
+    tokens_list = await reader.own_personal_access_tokens()
+
+    assert [t.id for t in tokens_list] == [11]
 
 
 @pytest.mark.asyncio
@@ -200,22 +195,6 @@ async def test_reader_pat_methods_return_safe_tokens() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reader_hides_system_pats_from_user_listing() -> None:
-    user_token = _make_pat()
-    user_token.id = 11
-    system_token = _make_pat(is_system=True)
-    system_token.id = 12
-
-    read = FakeRead("test")
-    data = FakeReadData([user_token, system_token], None)
-    reader = atr.storage.readers.tokens.FoundationCommitter(read, mock.MagicMock(), data)
-
-    tokens_list = await reader.own_personal_access_tokens()
-
-    assert [t.id for t in tokens_list] == [11]
-
-
-@pytest.mark.asyncio
 async def test_verify_rejects_jwt_without_nbf(monkeypatch: pytest.MonkeyPatch) -> None:
     now = datetime.datetime.now(tz=datetime.UTC)
     monkeypatch.setattr("atr.jwtoken._signing_key", lambda: "a" * 64)
@@ -239,45 +218,59 @@ async def test_verify_rejects_jwt_without_nbf(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.asyncio
-async def test_writer_add_token_returns_safe_token() -> None:
-    created = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
-    write = FakeWrite("test")
-    write_as = FakeWriteAs()
-    data = FakeWriteData()
-    writer = atr.storage.writers.tokens.FoundationCommitter(write, write_as, data)
-
-    safe = await writer.add_token(
-        token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        created=created,
-        expires=created + datetime.timedelta(days=180),
-        label="writer-test",
-    )
-
-    assert isinstance(safe, datatypes.PersonalAccessTokenSafe)
-    assert safe.id == 101
-    assert "token_hash" not in safe.model_dump()
+async def test_verify_system_claim_without_pat_hash_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
+    with pytest.raises(base.ASFQuartException):
+        await jwtoken.verify(_signed_jwt(secret, atr_th=None))
 
 
-def test_is_expired() -> None:
-    now = datetime.datetime.now(tz=datetime.UTC)
-    assert _make_pat(expires=now + datetime.timedelta(days=1)).is_expired is False
-    assert _make_pat(expires=now - datetime.timedelta(days=1)).is_expired is True
+@pytest.mark.asyncio
+async def test_verify_system_token_rejects_non_system_pat(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
+    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=False)))
+
+    with pytest.raises(base.ASFQuartException):
+        await jwtoken.verify(_signed_jwt(secret))
 
 
-def test_allows_ip() -> None:
-    unrestricted = _make_pat(allowed_ip=None)
-    assert unrestricted.allows_ip("1.2.3.4") is True
-    assert unrestricted.allows_ip(None) is True
+@pytest.mark.asyncio
+async def test_verify_system_token_rejects_wrong_subject(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
+    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=True)))
 
-    single = _make_pat(allowed_ip="1.2.3.4")
-    assert single.allows_ip("1.2.3.4") is True
-    assert single.allows_ip("1.2.3.5") is False
-    assert single.allows_ip(None) is False
-    assert single.allows_ip("not-an-ip") is False
+    with pytest.raises(base.ASFQuartException):
+        await jwtoken.verify(_signed_jwt(secret, sub="someuser"))
 
-    cidr = _make_pat(allowed_ip="10.0.0.0/8")
-    assert cidr.allows_ip("10.1.2.3") is True
-    assert cidr.allows_ip("11.0.0.1") is False
+
+@pytest.mark.asyncio
+async def test_verify_system_token_skips_ldap(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
+    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=True)))
+
+    claims = await jwtoken.verify(_signed_jwt(secret))
+
+    assert claims["sub"] == constants.SYSTEM_SERVICE_UID
+    assert claims["atr_sys"] is True
+
+
+@pytest.mark.asyncio
+async def test_verify_user_token_requires_ldap_active(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "a" * 64
+    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
+    is_active = mock.AsyncMock(return_value=False)
+    monkeypatch.setattr("atr.ldap.is_active", is_active)
+
+    with pytest.raises(base.ASFQuartException):
+        await jwtoken.verify(_signed_jwt(secret, sub="someuser", atr_sys=False, atr_th=None))
+    is_active.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -310,6 +303,26 @@ async def test_writer_add_system_token() -> None:
 
 
 @pytest.mark.asyncio
+async def test_writer_add_token_returns_safe_token() -> None:
+    created = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    write = FakeWrite("test")
+    write_as = FakeWriteAs()
+    data = FakeWriteData()
+    writer = atr.storage.writers.tokens.FoundationCommitter(write, write_as, data)
+
+    safe = await writer.add_token(
+        token_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        created=created,
+        expires=created + datetime.timedelta(days=180),
+        label="writer-test",
+    )
+
+    assert isinstance(safe, datatypes.PersonalAccessTokenSafe)
+    assert safe.id == 101
+    assert "token_hash" not in safe.model_dump()
+
+
+@pytest.mark.asyncio
 async def test_writer_revoke_system_token() -> None:
     token = _make_pat(is_system=True)
     token.id = 5
@@ -323,6 +336,60 @@ async def test_writer_revoke_system_token() -> None:
     empty = FakeWriteData(tokens=[])
     writer_empty = atr.storage.writers.tokens.FoundationAdmin(write, FakeWriteAs(), empty)
     assert await writer_empty.revoke_system_token(999) is False
+
+
+def _apply_pat_filters(
+    tokens: list[sql.PersonalAccessToken],
+    token_hash: object = db.NOT_SET,
+    id: object = db.NOT_SET,
+    asfuid: object = db.NOT_SET,
+    created_by: object = db.NOT_SET,
+    is_system: object = False,
+) -> list[sql.PersonalAccessToken]:
+    # Default is_system=False mirrors db.Session.personal_access_token.
+    result = list(tokens)
+    if db.is_defined(token_hash):
+        result = [t for t in result if t.token_hash == token_hash]
+    if db.is_defined(id):
+        result = [t for t in result if t.id == id]
+    if db.is_defined(asfuid):
+        result = [t for t in result if t.asfuid == asfuid]
+    if db.is_defined(created_by):
+        result = [t for t in result if t.created_by == created_by]
+    if db.is_defined(is_system):
+        result = [t for t in result if t.is_system == is_system]
+    return result
+
+
+def _fake_db_session(pat: sql.PersonalAccessToken | None) -> mock.MagicMock:
+    pat_query = mock.MagicMock()
+    pat_query.get = mock.AsyncMock(return_value=pat)
+    fake_data = mock.MagicMock()
+    fake_data.personal_access_token = mock.MagicMock(return_value=pat_query)
+    ctx = mock.AsyncMock()
+    ctx.__aenter__ = mock.AsyncMock(return_value=fake_data)
+    ctx.__aexit__ = mock.AsyncMock(return_value=False)
+    return mock.MagicMock(return_value=ctx)
+
+
+def _make_pat(
+    *,
+    expires: datetime.datetime | None = None,
+    allowed_ip: str | None = None,
+    is_system: bool = False,
+) -> sql.PersonalAccessToken:
+    now = datetime.datetime.now(tz=datetime.UTC)
+    # System PATs have no owning user; user PATs have asfuid equal to created_by.
+    asfuid = None if is_system else "test"
+    return sql.PersonalAccessToken(
+        asfuid=asfuid,
+        created_by="test",
+        token_hash="0" * 64,
+        created=now,
+        expires=expires if expires is not None else now + datetime.timedelta(days=1),
+        allowed_ip=allowed_ip,
+        is_system=is_system,
+    )
 
 
 def _signed_jwt(
@@ -347,70 +414,3 @@ def _signed_jwt(
     if atr_th is not None:
         payload["atr_th"] = atr_th
     return jwt.encode(payload, secret, algorithm=jwtoken._ALGORITHM)
-
-
-def _fake_db_session(pat: sql.PersonalAccessToken | None) -> mock.MagicMock:
-    pat_query = mock.MagicMock()
-    pat_query.get = mock.AsyncMock(return_value=pat)
-    fake_data = mock.MagicMock()
-    fake_data.personal_access_token = mock.MagicMock(return_value=pat_query)
-    ctx = mock.AsyncMock()
-    ctx.__aenter__ = mock.AsyncMock(return_value=fake_data)
-    ctx.__aexit__ = mock.AsyncMock(return_value=False)
-    return mock.MagicMock(return_value=ctx)
-
-
-@pytest.mark.asyncio
-async def test_verify_system_token_skips_ldap(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "a" * 64
-    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
-    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
-    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=True)))
-
-    claims = await jwtoken.verify(_signed_jwt(secret))
-
-    assert claims["sub"] == constants.SYSTEM_SERVICE_UID
-    assert claims["atr_sys"] is True
-
-
-@pytest.mark.asyncio
-async def test_verify_system_token_rejects_wrong_subject(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "a" * 64
-    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
-    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
-    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=True)))
-
-    with pytest.raises(base.ASFQuartException):
-        await jwtoken.verify(_signed_jwt(secret, sub="someuser"))
-
-
-@pytest.mark.asyncio
-async def test_verify_system_token_rejects_non_system_pat(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "a" * 64
-    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
-    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
-    monkeypatch.setattr("atr.db.session", _fake_db_session(_make_pat(is_system=False)))
-
-    with pytest.raises(base.ASFQuartException):
-        await jwtoken.verify(_signed_jwt(secret))
-
-
-@pytest.mark.asyncio
-async def test_verify_system_claim_without_pat_hash_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "a" * 64
-    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
-    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=AssertionError("LDAP consulted")))
-    with pytest.raises(base.ASFQuartException):
-        await jwtoken.verify(_signed_jwt(secret, atr_th=None))
-
-
-@pytest.mark.asyncio
-async def test_verify_user_token_requires_ldap_active(monkeypatch: pytest.MonkeyPatch) -> None:
-    secret = "a" * 64
-    monkeypatch.setattr("atr.jwtoken._signing_key", lambda: secret)
-    is_active = mock.AsyncMock(return_value=False)
-    monkeypatch.setattr("atr.ldap.is_active", is_active)
-
-    with pytest.raises(base.ASFQuartException):
-        await jwtoken.verify(_signed_jwt(secret, sub="someuser", atr_sys=False, atr_th=None))
-    is_active.assert_awaited_once()

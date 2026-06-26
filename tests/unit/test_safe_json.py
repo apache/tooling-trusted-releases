@@ -48,24 +48,6 @@ _STATE_ROOT = pathlib.Path("/srv/atr/state")
 _STATE_PATH = safe.StatePath(_STATE_ROOT / "releases" / "example", _STATE_ROOT)
 
 
-def _concrete_safe_types() -> set[type[safe.SafeType]]:
-    # Walk the whole SafeType tree. The base SafeType has an empty valid-char
-    # set and isn't used directly, so the leaves and intermediate concrete
-    # types (Alphanumeric, Numeric) are what we care about.
-    found: set[type[safe.SafeType]] = set()
-    stack = list(safe.SafeType.__subclasses__())
-    while stack:
-        cls = stack.pop()
-        found.add(cls)
-        stack.extend(cls.__subclasses__())
-    return found
-
-
-def test_every_safe_type_has_a_serialisation_example() -> None:
-    missing = _concrete_safe_types() - set(_SAFE_TYPE_EXAMPLES)
-    assert not missing, f"New safe type(s) without SafeJSON round-trip coverage: {sorted(c.__name__ for c in missing)}"
-
-
 def test_all_safe_types_round_trip_through_safe_json() -> None:
     # Build a dict holding one instance of every safe type, then put it through
     # the SafeJSON write/read cycle the task_args column uses.
@@ -88,3 +70,21 @@ def test_all_safe_types_round_trip_through_safe_json() -> None:
     assert isinstance(decoded["StatePath"], safe.StatePath)
     assert decoded["StatePath"] == _STATE_PATH
     assert decoded["StatePath"].root == _STATE_PATH.root
+
+
+def test_every_safe_type_has_a_serialisation_example() -> None:
+    missing = _concrete_safe_types() - set(_SAFE_TYPE_EXAMPLES)
+    assert not missing, f"New safe type(s) without SafeJSON round-trip coverage: {sorted(c.__name__ for c in missing)}"
+
+
+def _concrete_safe_types() -> set[type[safe.SafeType]]:
+    # Walk the whole SafeType tree. The base SafeType has an empty valid-char
+    # set and isn't used directly, so the leaves and intermediate concrete
+    # types (Alphanumeric, Numeric) are what we care about.
+    found: set[type[safe.SafeType]] = set()
+    stack = list(safe.SafeType.__subclasses__())
+    while stack:
+        cls = stack.pop()
+        found.add(cls)
+        stack.extend(cls.__subclasses__())
+    return found

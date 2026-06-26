@@ -41,6 +41,26 @@ class _ReleaseQuery:
 
 
 @pytest.mark.asyncio
+async def test_admin_delete_allows_announced_release(monkeypatch):
+    fake_release = SimpleNamespace(
+        phase=sql.ReleasePhase.RELEASE,
+        project=SimpleNamespace(is_active=True),
+    )
+    mock_data = mock.MagicMock()
+    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(fake_release))
+    mock_write = mock.MagicMock()
+    mock_write.authorisation.asf_uid = "admin"
+    admin = release.FoundationAdmin(mock_write, mock.MagicMock(), mock_data)
+
+    delete_body = mock.AsyncMock(return_value=None)
+    monkeypatch.setattr(release.FoundationAdmin, "_FoundationAdmin__delete_body", delete_body)
+    error = await admin.delete(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+    assert error is None
+    delete_body.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_archive_returns_error_when_release_already_archived():
     fake_release = SimpleNamespace(
         key="example-1.0.0",
@@ -140,26 +160,6 @@ async def test_remove_from_downloads_swallows_errors(monkeypatch):
     monkeypatch.setattr(release, "_release_download_links_delete", boom)
     await release._remove_from_downloads(_fake_release())
     boom.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_admin_delete_allows_announced_release(monkeypatch):
-    fake_release = SimpleNamespace(
-        phase=sql.ReleasePhase.RELEASE,
-        project=SimpleNamespace(is_active=True),
-    )
-    mock_data = mock.MagicMock()
-    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(fake_release))
-    mock_write = mock.MagicMock()
-    mock_write.authorisation.asf_uid = "admin"
-    admin = release.FoundationAdmin(mock_write, mock.MagicMock(), mock_data)
-
-    delete_body = mock.AsyncMock(return_value=None)
-    monkeypatch.setattr(release.FoundationAdmin, "_FoundationAdmin__delete_body", delete_body)
-    error = await admin.delete(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-
-    assert error is None
-    delete_body.assert_awaited_once()
 
 
 def _fake_release() -> sql.Release:

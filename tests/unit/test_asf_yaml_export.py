@@ -95,6 +95,48 @@ def test_export_includes_only_recipient_keys_that_are_set() -> None:
     assert policy == {"vote_recipients": {"to": "private@example.apache.org"}}
 
 
+def test_export_includes_set_policy_fields() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        recipients={
+            sql.RecipientAction.VOTE: {"to": "private@example.apache.org"},
+            sql.RecipientAction.ANNOUNCE: {"to": "announce@example.apache.org"},
+        },
+        release_policy=_FakePolicy(
+            license_check_mode=sql.LicenseCheckMode.RAT,
+            source_excludes_rat=["*.md"],
+            file_tag_mappings={"docs": ["*.md"]},
+            vote_mode=sql.VoteMode.MANUAL,
+            min_hours=48,
+            start_vote_subject="[VOTE] Custom {{VERSION}}",
+            announce_release_subject="[ANNOUNCE] Custom {{VERSION}}",
+            preserve_download_files=True,
+            github_repository_name="apache/example",
+            github_compose_workflow_path=[".github/workflows/compose.yml"],
+        ),
+    )
+
+    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
+
+    # strictyaml reads scalars back as strings, so ints and bools round-trip as text
+    assert policy == {
+        "license_check_mode": "RAT",
+        "source_excludes_rat": ["*.md"],
+        "file_tag_mappings": {"docs": ["*.md"]},
+        "vote_recipients": {"to": "private@example.apache.org"},
+        "vote_mode": "manual",
+        "min_hours": "48",
+        "start_vote_subject": "[VOTE] Custom {{VERSION}}",
+        "announce_recipients": {"to": "announce@example.apache.org"},
+        "announce_release_subject": "[ANNOUNCE] Custom {{VERSION}}",
+        "preserve_download_files": "true",
+        "github_repository_name": "apache/example",
+        "github_compose_workflow_path": [".github/workflows/compose.yml"],
+    }
+
+
 def test_export_minimal_project_omits_empty_blocks() -> None:
     project = _FakeProject(key="trusted-releases", committee_key="tooling", name="Apache Trusted Releases")
 
@@ -106,6 +148,20 @@ def test_export_minimal_project_omits_empty_blocks() -> None:
             "features": {"atr_sync": "true"},
         }
     }
+
+
+def test_export_omits_default_policy_fields() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(),
+    )
+
+    loaded = strictyaml.load(projects._asf_yaml_export(project)).data["project"]
+
+    # A policy row with nothing set away from defaults shouldn't add a policy block
+    assert "policy" not in loaded
 
 
 def test_export_reproduces_every_field() -> None:
@@ -171,59 +227,3 @@ def test_export_splits_comma_joined_columns_into_sequences() -> None:
 
     assert metadata["categories"] == ["data", "storage"]
     assert metadata["programming_languages"] == ["c", "python"]
-
-
-def test_export_includes_set_policy_fields() -> None:
-    project = _FakeProject(
-        key="example",
-        committee_key="tooling",
-        name="Apache Example",
-        recipients={
-            sql.RecipientAction.VOTE: {"to": "private@example.apache.org"},
-            sql.RecipientAction.ANNOUNCE: {"to": "announce@example.apache.org"},
-        },
-        release_policy=_FakePolicy(
-            license_check_mode=sql.LicenseCheckMode.RAT,
-            source_excludes_rat=["*.md"],
-            file_tag_mappings={"docs": ["*.md"]},
-            vote_mode=sql.VoteMode.MANUAL,
-            min_hours=48,
-            start_vote_subject="[VOTE] Custom {{VERSION}}",
-            announce_release_subject="[ANNOUNCE] Custom {{VERSION}}",
-            preserve_download_files=True,
-            github_repository_name="apache/example",
-            github_compose_workflow_path=[".github/workflows/compose.yml"],
-        ),
-    )
-
-    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
-
-    # strictyaml reads scalars back as strings, so ints and bools round-trip as text
-    assert policy == {
-        "license_check_mode": "RAT",
-        "source_excludes_rat": ["*.md"],
-        "file_tag_mappings": {"docs": ["*.md"]},
-        "vote_recipients": {"to": "private@example.apache.org"},
-        "vote_mode": "manual",
-        "min_hours": "48",
-        "start_vote_subject": "[VOTE] Custom {{VERSION}}",
-        "announce_recipients": {"to": "announce@example.apache.org"},
-        "announce_release_subject": "[ANNOUNCE] Custom {{VERSION}}",
-        "preserve_download_files": "true",
-        "github_repository_name": "apache/example",
-        "github_compose_workflow_path": [".github/workflows/compose.yml"],
-    }
-
-
-def test_export_omits_default_policy_fields() -> None:
-    project = _FakeProject(
-        key="example",
-        committee_key="tooling",
-        name="Apache Example",
-        release_policy=_FakePolicy(),
-    )
-
-    loaded = strictyaml.load(projects._asf_yaml_export(project)).data["project"]
-
-    # A policy row with nothing set away from defaults shouldn't add a policy block
-    assert "policy" not in loaded

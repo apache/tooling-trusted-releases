@@ -39,17 +39,10 @@ def test_auth_enum_matches_the_declared_schemes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_header_requires_system_claim_for_system_bearer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_authenticate() -> dict[str, object]:
-        return {"sub": "alice"}
-
-    monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
-
-    with pytest.raises(base.ASFQuartException) as excinfo:
-        await api_auth.authenticate_header(api_auth.Auth.SYSTEM_BEARER)
-    assert excinfo.value.errorcode == 403
+async def test_authenticate_body_is_a_noop_for_non_body_levels() -> None:
+    # PAT routes validate the credential themselves; nothing to enforce here.
+    await api_auth.authenticate_body(api_auth.Auth.PAT, None)
+    await api_auth.authenticate_body(api_auth.Auth.PUBLIC, None)
 
 
 @pytest.mark.asyncio
@@ -81,10 +74,17 @@ async def test_authenticate_header_propagates_token_failures(
 
 
 @pytest.mark.asyncio
-async def test_authenticate_body_is_a_noop_for_non_body_levels() -> None:
-    # PAT routes validate the credential themselves; nothing to enforce here.
-    await api_auth.authenticate_body(api_auth.Auth.PAT, None)
-    await api_auth.authenticate_body(api_auth.Auth.PUBLIC, None)
+async def test_authenticate_header_requires_system_claim_for_system_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_authenticate() -> dict[str, object]:
+        return {"sub": "alice"}
+
+    monkeypatch.setattr(jwtoken, "authenticate", fake_authenticate)
+
+    with pytest.raises(base.ASFQuartException) as excinfo:
+        await api_auth.authenticate_header(api_auth.Auth.SYSTEM_BEARER)
+    assert excinfo.value.errorcode == 403
 
 
 @pytest.mark.asyncio
