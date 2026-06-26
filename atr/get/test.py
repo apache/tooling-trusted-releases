@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
+import hashlib
 import json
 from typing import Literal
 
@@ -34,6 +36,7 @@ import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.noisy as noisy
 import atr.paths as paths
 import atr.sessions as sessions
 import atr.shared as shared
@@ -196,6 +199,26 @@ async def test_multiple(_session: web.Public, _test_multiple: Literal["test/mult
     ]
 
     return await template.blank(title="Test multiple forms", content=forms_html)
+
+
+@get.typed
+async def test_pat(_session: web.Public, _test_pat: Literal["test/pat"]) -> web.QuartResponse:
+    """
+    URL: /test/pat
+    """
+    if not config.is_test_mode():
+        return quart.abort(404)
+
+    plaintext = noisy.create(shared.tokens.PAT_NOISY_SECRET_DOMAIN).decode("ascii")
+    token_hash = hashlib.sha3_256(plaintext.encode()).hexdigest()
+    created = datetime.datetime.now(datetime.UTC)
+    expires = created + datetime.timedelta(days=1)
+    async with storage.write("test") as write:
+        wafc = write.as_foundation_committer()
+        await wafc.tokens.add_token(token_hash, created, expires, "client-compat-ci")
+    response = web.TextResponse(plaintext)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @get.typed
