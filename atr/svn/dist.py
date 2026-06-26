@@ -27,8 +27,11 @@ from typing import Final, Literal
 # committee-level layout. Per-entry only - a blanket rule mis-hits (camel-karaf is Camel's)
 PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {
     ("activemq", "activemq-artemis"): "artemis",  # Artemis graduated from ActiveMQ, dist still splits it
+    ("apr", None): "apr-portable-runtime",  # the committee's top level is the Portable Runtime itself
     ("httpd", None): "httpd-http-server",  # the committee's top level is the HTTP Server
+    ("sis", None): "sis-spatial-information-system",
     ("trafficcontrol", None): "traffic-control",
+    ("trafficserver", None): "trafficserver-traffic-server",
     ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",
 }
 
