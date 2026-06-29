@@ -20,6 +20,7 @@ import os
 import pathlib
 import stat
 
+import atr.models.safe as safe
 import atr.util as util
 
 
@@ -90,6 +91,24 @@ def test_chmod_files_sets_default_permissions(tmp_path: pathlib.Path):
 
     file_mode = stat.S_IMODE(test_file.stat().st_mode)
     assert file_mode == 0o444
+
+
+async def test_create_hard_link_clone_reuses_existing_destination_directory(tmp_path: pathlib.Path):
+    first_source = tmp_path / "first"
+    first_source.mkdir()
+    (first_source / "apache-39.pom").write_text("first")
+    second_source = tmp_path / "second"
+    second_source.mkdir()
+    (second_source / "maven-parent-49.pom").write_text("second")
+
+    dest = safe.StatePath(tmp_path) / "downloads" / "maven" / "pom"
+    await util.create_hard_link_clone(safe.StatePath(first_source), dest, exist_ok=False)
+    await util.create_hard_link_clone(safe.StatePath(second_source), dest, exist_ok=False)
+
+    dest_path = pathlib.Path(dest)
+    assert (dest_path / "apache-39.pom").read_text() == "first"
+    assert (dest_path / "maven-parent-49.pom").read_text() == "second"
+    assert (dest_path / "apache-39.pom").stat().st_ino == (first_source / "apache-39.pom").stat().st_ino
 
 
 def test_json_for_script_element_escapes_correctly():

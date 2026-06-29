@@ -449,7 +449,7 @@ async def create_hard_link_clone(
     dry_run: bool = False,
 ) -> None:
     """Recursively create a clone of source_dir in dest_dir using hard links for files."""
-    await _create_hard_link_clone_checks(source_dir, dest_dir, do_not_create_dest_dir, exist_ok, dry_run)
+    await _create_hard_link_clone_checks(source_dir, dest_dir, do_not_create_dest_dir, dry_run)
 
     async def _clone_recursive(current_source: safe.StatePath, current_dest: safe.StatePath) -> None:
         with await aiofiles.os.scandir(current_source) as scan:
@@ -1538,11 +1538,10 @@ async def _create_hard_link_clone_checks(
     source_dir: safe.StatePath,
     dest_dir: safe.StatePath,
     do_not_create_dest_dir: bool = False,
-    exist_ok: bool = False,
     dry_run: bool = False,
 ) -> None:
-    if dry_run and ((not do_not_create_dest_dir) or (not exist_ok)):
-        raise ValueError("Cannot dry run and create destination directory or exist ok")
+    if dry_run and (not do_not_create_dest_dir):
+        raise ValueError("Cannot dry run and create destination directory")
 
     # Ensure source exists and is a directory
     if (not dry_run) and (not await aiofiles.os.path.isdir(source_dir)):
@@ -1550,17 +1549,7 @@ async def _create_hard_link_clone_checks(
 
     # Create destination directory
     if do_not_create_dest_dir is False:
-        try:
-            await aiofiles.os.makedirs(dest_dir, exist_ok=exist_ok)
-        except FileExistsError:
-            log.error(
-                f"Arguments to __create_hard_link_clone_checks: "
-                f"source_dir={source_dir}, "
-                f"dest_dir={dest_dir}, "
-                f"do_not_create_dest_dir={do_not_create_dest_dir}, "
-                f"exist_ok={exist_ok}"
-            )
-            raise
+        await aiofiles.os.makedirs(dest_dir, exist_ok=True)
 
 
 def _generate_hexdump(data: bytes) -> str:
