@@ -890,6 +890,7 @@ class Project(sqlmodel.SQLModel, table=True):
     version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))
     version_pattern: str | None = sqlmodel.Field(default=None, **example(r"^\d+\.\d+\.\d+$"))
     cycle_match: str | None = sqlmodel.Field(default=None, **example(r"^(\d+)\.\d+\.\d+$"))
+    calver_format: str | None = sqlmodel.Field(default=None, **example("(YY.MM).N"))
     branch_template: str | None = sqlmodel.Field(default=None, **example("release-{cycle}"))
 
     # M-1: Project -> Committee

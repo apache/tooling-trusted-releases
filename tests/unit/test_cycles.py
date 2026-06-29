@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import atr.calver as calver
 import atr.cycles as cycles
 import atr.models.sql as sql
 
@@ -57,15 +58,68 @@ def test_cycle_name_supports_named_cycle_via_capture():
     assert cycles.cycle_name_for_version(project, "stable-2.5") == "stable"
 
 
-def test_prior_release_calver_returns_none():
-    # CALVER ordering not yet implemented - confirm explicit None contract.
+def test_prior_release_calver_picks_highest_below_target_within_a_cycle():
+    # A cycled calver project: the YY.MM is the cycle, the trailing serial
+    # the patch level. The prior of a patch is the patch below it in the line.
     project = SimpleNamespace(
         key="example",
-        cycle_match=r"^(\d{4})\.\d+$",
+        cycle_match=calver.cycle_regex("(YY.MM).N"),
+        calver_format="(YY.MM).N",
+        version_method=sql.VersionMethod.CALVER,
+    )
+    candidates = [
+        _release("09.04", _ts(1)),
+        _release("09.04.01", _ts(2)),
+        _release("09.04.02", _ts(3)),
+        _release("10.04", _ts(4)),
+    ]
+    prior = cycles.prior_release_in_cycle(project, "09.04.03", candidates)
+    assert prior is not None
+    assert prior.version == "09.04.02"
+
+
+def test_prior_release_calver_orders_non_padded_dotted_dates():
+    # A linear calver project with no cycle span: every release shares the
+    # default cycle and ordering is purely by date.
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=None,
+        calver_format="YYYY.M.D",
+        version_method=sql.VersionMethod.CALVER,
+    )
+    # Released-date ordering deliberately reversed to prove we sort by version.
+    candidates = [
+        _release("2020.10.5", _ts(1)),
+        _release("2020.6.24", _ts(10)),
+        _release("2020.11.13", _ts(5)),
+    ]
+    prior = cycles.prior_release_in_cycle(project, "2020.12.1", candidates)
+    assert prior is not None
+    assert prior.version == "2020.11.13"
+
+
+def test_prior_release_calver_falls_back_to_released_without_a_mask():
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=None,
+        calver_format=None,
         version_method=sql.VersionMethod.CALVER,
     )
     candidates = [_release("2025.1", _ts(1)), _release("2025.2", _ts(5))]
-    assert cycles.prior_release_in_cycle(project, "2025.3", candidates) is None
+    prior = cycles.prior_release_in_cycle(project, "2025.3", candidates)
+    assert prior is not None
+    assert prior.version == "2025.2"
+
+
+def test_prior_release_calver_returns_none_when_target_does_not_fit_mask():
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=None,
+        calver_format="YYYY.MM.DD",
+        version_method=sql.VersionMethod.CALVER,
+    )
+    candidates = [_release("2025.01.01", _ts(1))]
+    assert cycles.prior_release_in_cycle(project, "garbage", candidates) is None
 
 
 def test_prior_release_filters_to_same_cycle_for_semver():

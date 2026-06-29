@@ -190,7 +190,7 @@ Per-field coverage:
 
 ### Project validation
 
-Projects do have an input layer. [`AddProjectForm`](/ref/atr/shared/projects.py) (AddProjectForm) validates the key and display name at creation, and [`EditVersionSchemeForm`](/ref/atr/shared/projects.py) (EditVersionSchemeForm) rejects a `version_pattern` or `cycle_match` that is not a valid regex (and a `cycle_match` with no capture group). The data integrity validators mirror these and cover fields that have no form.
+Projects do have an input layer. [`AddProjectForm`](/ref/atr/shared/projects.py) (AddProjectForm) validates the key and display name at creation, and [`EditVersionSchemeForm`](/ref/atr/shared/projects.py) (EditVersionSchemeForm) rejects a `version_pattern` or `cycle_match` that is not a valid regex (and a `cycle_match` with no capture group). Calver projects describe their cycles with a `calver_format` date format instead of a regex; see [Calver cycle formats](#calver-cycle-formats) below. The data integrity validators mirror these and cover fields that have no form.
 
 The [`project`](/ref/atr/validate.py) (project) function checks:
 
@@ -200,6 +200,7 @@ The [`project`](/ref/atr/validate.py) (project) function checks:
 * `created` timestamp must be in the past
 * `created_by`, if set, must look like an ASF UID
 * `cycle_match`, if set, must be a regex with at least one capture group
+* `calver_format`, if set, must be a valid date format with at least one calendar field
 * `full_name` must be set and start with "Apache "
 * `programming_languages` must use comma-separated labels without colons
 * `release_policy_id` must be None (not used)
@@ -218,10 +219,33 @@ Per-field coverage:
 | `version_method` | `EditVersionSchemeForm` (enum) | type-enforced (enum) |
 | `version_pattern` | `EditVersionSchemeForm` (regex validity) | compilable regex |
 | `cycle_match` | `EditVersionSchemeForm` (regex and capture group) | regex with capture group |
+| `calver_format` | `EditVersionSchemeForm` (date format) | valid format with a calendar field |
 | `branch_template` | `EditVersionSchemeForm` (free text) | none, not currently enforced |
 | `committee_key` | `safe.CommitteeKey` | must be set |
 | `created` | set at creation | in the past |
 | `created_by` | none | ASF UID format |
+
+#### Calver cycle formats
+
+Calver projects declare the shape of their version strings with a date format string rather than a regex. The format is a sequence of tokens with literal separators between them:
+
+| Token | Matches | Role |
+| --- | --- | --- |
+| `YYYY` / `YY` | four- or two-digit year | ordering |
+| `MM` / `M` | zero-padded or 1-2 digit month | ordering |
+| `DD` / `D` | zero-padded or 1-2 digit day | ordering |
+| `N` | a numeric serial (a patch ordinal within a calendar line) | ordering |
+
+Wrap the part of the version that names the cycle in parentheses. A format with no parentheses keeps a single release track; one with a parenthesised span splits releases into one cycle per matched value. Trailing tokens are optional, so one format covers mixed-granularity histories - `YYYYMMDD` matches both `20130710` and `201407`, reading the missing day as zero.
+
+Examples:
+
+| Version | Format | Cycle | Notes |
+| --- | --- | --- | --- |
+| `2020.6.24` | `YYYY.M.D` | default | non-padded month and day |
+| `2025-11-03` | `YYYY-MM-DD` | default | dashed date |
+| `20130710` | `YYYYMMDD` | default | run-together, day optional |
+| `09.04.01` | `(YY.MM).N` | `09.04` | the `YY.MM` line is the cycle, `N` the patch |
 
 ### Release validation
 

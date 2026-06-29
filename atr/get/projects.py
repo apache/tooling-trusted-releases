@@ -335,7 +335,7 @@ async def view(
 
     content = page.collect()
 
-    javascripts = ["copy-variable"] if can_edit_policy else []
+    javascripts = ["copy-variable", "version-scheme-toggle"] if can_edit_policy else []
     return await template.blank(
         title=f"{project.display_name}",
         description=f"Information regarding {project.display_name}.",
@@ -1317,6 +1317,7 @@ async def _render_version_scheme_form(project: sql.Project) -> htm.Element:
                 "version_method": project.version_method,
                 "version_pattern": project.version_pattern or "",
                 "cycle_match": project.cycle_match or "",
+                "calver_format": project.calver_format or "",
                 "branch_template": project.branch_template or "",
             },
         )

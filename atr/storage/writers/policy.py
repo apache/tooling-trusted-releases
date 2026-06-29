@@ -26,6 +26,7 @@ import sqlmodel
 import strictyaml
 import strictyaml.ruamel.error as error
 
+import atr.calver as calver
 import atr.cycles as cycles
 import atr.db as db
 import atr.models as models
@@ -266,16 +267,27 @@ class ReleaseManager(CommitteeParticipant):
         project_key = form.project_key
         project = await self.__validate_project_in_committee(project_key)
 
-        # Validate cycle_match by trying to compile it. Empty becomes None
-        # so we don't store empty strings in nullable columns.
-        cycle_match = form.cycle_match.strip() or None
-        if cycle_match is not None:
-            try:
-                compiled = re.compile(cycle_match)
-            except re.error as exc:
-                raise ValueError(f"Invalid cycle_match regex: {exc}") from exc
-            if compiled.groups < 1:
-                raise ValueError("cycle_match must contain at least one capture group")
+        try:
+            version_method = models.sql.VersionMethod(form.version_method)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported version method: {form.version_method}") from exc
+
+        # Calver projects describe cycles through a date format; everyone else
+        # through a cycle_match regex. Whichever applies, empty becomes None so
+        # we don't store empty strings in nullable columns.
+        if version_method is models.sql.VersionMethod.CALVER:
+            calver_format = form.calver_format.strip() or None
+            cycle_match = _calver_cycle_match(calver_format)
+        else:
+            calver_format = None
+            cycle_match = form.cycle_match.strip() or None
+            if cycle_match is not None:
+                try:
+                    compiled = re.compile(cycle_match)
+                except re.error as exc:
+                    raise ValueError(f"Invalid cycle_match regex: {exc}") from exc
+                if compiled.groups < 1:
+                    raise ValueError("cycle_match must contain at least one capture group")
 
         version_pattern = form.version_pattern.strip() or None
         if version_pattern is not None:
@@ -284,13 +296,10 @@ class ReleaseManager(CommitteeParticipant):
             except re.error as exc:
                 raise ValueError(f"Invalid version_pattern regex: {exc}") from exc
 
-        try:
-            version_method = models.sql.VersionMethod(form.version_method)
-        except ValueError as exc:
-            raise ValueError(f"Unsupported version method: {form.version_method}") from exc
         project.version_method = version_method
         project.version_pattern = version_pattern
         project.cycle_match = cycle_match
+        project.calver_format = calver_format
         project.branch_template = form.branch_template.strip() or None
 
         await cycles.reassign_release_cycles(self.__data, project)
@@ -486,6 +495,19 @@ async def _apply_policy_update_no_commit(
 
     for field in fields_to_update:
         setattr(release_policy, field, normalised_values[field])
+
+
+def _calver_cycle_match(calver_format: str | None) -> str | None:
+    # The format string's cycle group compiles to a cycle_match regex, so we don't
+    # need special calver membership handling. A string
+    # with no group (a linear project) leaves cycle_match unset.
+    if calver_format is None:
+        return None
+    try:
+        calver.validate(calver_format)
+    except ValueError as exc:
+        raise ValueError(f"Invalid calver format: {exc}") from exc
+    return calver.cycle_regex(calver_format)
 
 
 def _collapse_to_default(submitted: str, default_text: str) -> str:

@@ -508,6 +508,7 @@ async def _build_and_add_project(
         version_method=super_project.version_method if super_project else sql.VersionMethod.SIMPLE,
         version_pattern=super_project.version_pattern if super_project else None,
         cycle_match=super_project.cycle_match if super_project else None,
+        calver_format=super_project.calver_format if super_project else None,
         branch_template=super_project.branch_template if super_project else None,
         committee_key=str(committee_key),
         created=now,

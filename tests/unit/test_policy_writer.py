@@ -16,6 +16,7 @@
 # under the License.
 
 import datetime
+import re
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -263,6 +264,45 @@ async def test_edit_version_scheme_saves_all_fields_normalised():
     data.commit.assert_awaited_once()
 
 
+async def test_edit_version_scheme_compiles_calver_mask_cycle_span_into_cycle_match():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(version_method=sql.VersionMethod.CALVER, calver_format="(YY.MM).N")
+
+    await writer.edit_version_scheme(form)
+
+    assert project.version_method is sql.VersionMethod.CALVER
+    assert project.calver_format == "(YY.MM).N"
+    # The parenthesised span becomes the cycle_match capture group.
+    assert project.cycle_match is not None
+    matched = re.compile(project.cycle_match).fullmatch("09.04.01")
+    assert matched is not None
+    assert matched.group(1) == "09.04"
+
+
+async def test_edit_version_scheme_leaves_cycle_match_unset_for_linear_calver():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+    form = _version_scheme_form(version_method=sql.VersionMethod.CALVER, calver_format="YYYY.MM.DD")
+
+    await writer.edit_version_scheme(form)
+
+    assert project.calver_format == "YYYY.MM.DD"
+    assert project.cycle_match is None
+
+
+async def test_edit_version_scheme_rejects_invalid_calver_mask():
+    project = _project()
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+
+    with pytest.raises(pydantic.ValidationError, match="at least one"):
+        form = _version_scheme_form(version_method=sql.VersionMethod.CALVER, calver_format="N.N")
+        await writer.edit_version_scheme(form)
+
+
 async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
     project = _project()
     releases = [_release("0.1", cycle_key="example-0")]
@@ -344,6 +384,7 @@ def _version_scheme_form(
     version_method=sql.VersionMethod.SIMPLE,
     version_pattern="",
     cycle_match="",
+    calver_format="",
     branch_template="",
 ):
     return shared_projects.EditVersionSchemeForm(
@@ -353,5 +394,6 @@ def _version_scheme_form(
         version_method=version_method,
         version_pattern=version_pattern,
         cycle_match=cycle_match,
+        calver_format=calver_format,
         branch_template=branch_template,
     )

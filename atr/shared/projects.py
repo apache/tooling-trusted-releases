@@ -22,6 +22,7 @@ from typing import Annotated, Literal
 
 import pydantic
 
+import atr.calver as calver
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -301,8 +302,15 @@ class EditVersionSchemeForm(form.Form):
     )
     cycle_match: str = form.label(
         "Cycle match",
-        "Regex applied to the version string; capture group 1 is the cycle name."
+        "For semver projects: a regex applied to the version string; capture group 1 is the cycle name."
         r" For example, (\d+)\..* maps version 2.0.1 into cycle 2."
+        " Leave empty for projects that keep a single default cycle.",
+    )
+    calver_format: str = form.label(
+        "Cycle format",
+        "For calver projects: a date format describing the version shape."
+        " Tokens YYYY/YY, MM/M, DD/D and N (a serial), with literal separators."
+        " Wrap the part that names the cycle in parentheses, e.g. (YY.MM).N."
         " Leave empty for projects that keep a single default cycle.",
     )
     branch_template: str = form.label(
@@ -334,6 +342,14 @@ class EditVersionSchemeForm(form.Form):
             if compiled.groups < 1:
                 raise ValueError("Cycle match must contain at least one capture group for the cycle name.")
 
+        return val
+
+    @pydantic.field_validator("calver_format", mode="before")
+    @classmethod
+    def validate_calver_format(cls, val: str) -> str:
+        calver_format = val.strip()
+        if calver_format:
+            calver.validate(calver_format)
         return val
 
 

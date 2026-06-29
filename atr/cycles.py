@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Final
 
 import semver
 
+import atr.calver as calver
 import atr.models.sql as sql
 
 if TYPE_CHECKING:
@@ -82,7 +83,8 @@ def prior_release_in_cycle(
 
       - SIMPLE: the most recently released candidate
       - SEMVER: the highest semver version strictly less than `version`
-      - CALVER: not supported yet, returns None
+      - CALVER: the highest calendar version strictly less than `version`,
+        ordered through the project's `calver_format` date format
     """
     try:
         target_cycle = cycle_name_for_version(project, version)
@@ -107,7 +109,7 @@ def prior_release_in_cycle(
         case sql.VersionMethod.SEMVER:
             return _prior_release_semver(version, same_cycle)
         case sql.VersionMethod.CALVER:
-            return None
+            return _prior_release_calver(project, version, same_cycle)
 
 
 async def reassign_release_cycles(data: db.Session, project: sql.Project) -> None:
@@ -144,6 +146,29 @@ def _prior_release_by_released(candidates: list[sql.Release]) -> sql.Release | N
         return None
     timed.sort(key=lambda pair: pair[0], reverse=True)
     return timed[0][1]
+
+
+def _prior_release_calver(project: sql.Project, version: str, candidates: list[sql.Release]) -> sql.Release | None:
+    # Without a format string there's no way to order calendar versions, so fall back to
+    # the most recently released candidate, as SIMPLE projects do.
+    format_str = project.calver_format
+    if not format_str:
+        return _prior_release_by_released(candidates)
+    target = calver.order_key(format_str, version)
+    if target is None:
+        return None
+    ranked: list[tuple[tuple[int, int, int, int], sql.Release]] = []
+    for candidate in candidates:
+        key = calver.order_key(format_str, candidate.version)
+        if key is None:
+            continue
+        if key >= target:
+            continue
+        ranked.append((key, candidate))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return ranked[0][1]
 
 
 def _prior_release_semver(version: str, candidates: list[sql.Release]) -> sql.Release | None:
