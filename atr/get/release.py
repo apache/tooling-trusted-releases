@@ -133,7 +133,7 @@ def _committee_release_catalog(releases: Sequence[sql.Release]) -> list[_Committ
         _CommitteeReleaseEntry(committee=committees[key], projects=_project_entries(committee_releases))
         for key, committee_releases in by_committee.items()
     ]
-    catalog.sort(key=lambda entry: entry.committee.display_name)
+    catalog.sort(key=lambda entry: entry.committee.display_name.lower())
     return catalog
 
 
