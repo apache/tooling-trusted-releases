@@ -1,0 +1,109 @@
+name: Client compatibility
+
+on:
+  push:
+    branches: [altera, arm, main, sbp, tertia]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: client-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client-compat:
+    runs-on: self-hosted
+    continue-on-error: true
+    env:
+      SRV: atr-ci-srv-${{ github.run_id }}
+      CLI: atr-ci-cli-${{ github.run_id }}
+      IMG: atr-ci-img-${{ github.run_id }}
+    steps:
+      - name: Check out server (this branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build and start the test-mode server
+        run: |
+          set -euo pipefail
+          docker rm -f "$SRV" "$CLI" 2>/dev/null || true
+          docker build -f Dockerfile.alpine -t "$IMG" .
+          docker run -d --name "$SRV" \
+            -e TESTS=1 \
+            -e APP_HOST=localhost.apache.org:8080 \
+            -e BIND=0.0.0.0:8080 \
+            -e SSH_HOST=0.0.0.0 \
+            "$IMG"
+          for _ in $(seq 1 60); do
+            docker exec "$SRV" curl -ksf https://127.0.0.1:8080/ >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec "$SRV" curl -ksf https://127.0.0.1:8080/ >/dev/null
+
+      - name: Mint a PAT for the test user
+        run: |
+          set -euo pipefail
+          docker exec "$SRV" curl -ksSf https://127.0.0.1:8080/test/pat > atr-pat
+          test -s atr-pat
+
+      - name: Check out client HEAD
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: apache/tooling-releases-client
+          ref: main
+          path: client
+          persist-credentials: false
+
+      - name: Prepare the client (auth + deps)
+        run: |
+          set -euo pipefail
+          docker run -d --name "$CLI" \
+            --network "container:$SRV" \
+            -e USER=test \
+            -v "$PWD/client:/work:ro" \
+            ghcr.io/astral-sh/uv:python3.13-bookworm-slim sleep infinity
+          docker exec "$CLI" sh -ec 'echo "127.0.0.1 localhost.apache.org" >> /etc/hosts; cp -r /work /build; cd /build && uv sync --frozen --all-groups'
+          docker cp atr-pat "$CLI:/root/.atr-pat"
+
+      - name: Run client transcripts against server branch
+        id: smoke
+        continue-on-error: true
+        run: docker exec -w /build "$CLI" uv run --frozen pytest -q
+
+      - name: Open an issue on new breakage
+        if: steps.smoke.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPO}"
+          title="Client HEAD broke against server [${BRANCH}]"
+          existing=$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues?state=open&labels=client-compat&per_page=100")
+          if printf '%s' "$existing" | grep -Fq "\"${title}\""; then
+            echo "An open client-compat issue already exists for ${BRANCH}; doing nothing."
+            exit 0
+          fi
+          body="The client (apache/tooling-releases-client at HEAD) failed the compatibility check against server branch ${BRANCH} at commit ${SHA}. Run: ${RUN_URL} (cc @${ACTOR})"
+          data=$(printf '{"title":"%s","body":"%s","labels":["client-compat"]}' "$title" "$body")
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues" -d "$data" >/dev/null
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f "$CLI" "$SRV" || true
+          docker rmi "$IMG" || true
