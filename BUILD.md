@@ -8,14 +8,14 @@ This guide covers building ATR and its components. For development setup, see [D
 - **uv** - Python package manager
 - **make** - POSIX-compliant make utility
 - **cmark** - CommonMark processor (for documentation)
-- **Python 3.13** - Required runtime
+- **Python 3.14** - Required runtime
 
 Install on Alpine Linux:
 
 ```shell
 apk add cmark curl git make mkcert@testing
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
-uv python install 3.13
+uv python install 3.14
 ```
 
 Install on macOS (Homebrew):
@@ -24,7 +24,7 @@ Install on macOS (Homebrew):
 brew install cmark mkcert
 curl -LsSf https://astral.sh/uv/install.sh | sh
 rehash
-uv python install 3.13
+uv python install 3.14
 ```
 
 ## Container build

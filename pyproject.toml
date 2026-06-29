@@ -7,7 +7,7 @@ authors = [
 ]
 license = "Apache-2.0"
 readme = "README.md"
-requires-python = "~=3.13.0"
+requires-python = "~=3.14.0"
 dependencies = [
   "aiofiles>=24.1.0,<26.0.0",
   "aiohttp>=3.13.4",
@@ -110,9 +110,9 @@ reportMissingTypeStubs = false
 reportUnnecessaryComparison = "error"
 reportUnusedCoroutine = "error"
 # typeCheckingMode = "strict"
-pythonVersion = "3.13"
+pythonVersion = "3.14"
 executionEnvironments = [
-  { root = ".", pythonVersion = "3.13" }
+  { root = ".", pythonVersion = "3.14" }
 ]
 
 [tool.pytest.ini_options]
@@ -123,6 +123,7 @@ addopts = "--ignore=tests/e2e"
 
 [tool.ruff]
 line-length = 120
+target-version = "py313"
 extend-exclude = [
     "node_modules",
 ]

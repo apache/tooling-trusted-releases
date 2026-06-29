@@ -9,7 +9,7 @@ ATR can be developed on **Linux** or **macOS**. Windows and other platforms are 
 **Required (install manually):**
 
 - **Git** - For cloning the repository
-- **Python 3.13** - The runtime for ATR (can be installed via uv)
+- **Python 3.14** - The runtime for ATR (can be installed via uv)
 - **uv** - Python package manager ([installation guide](https://docs.astral.sh/uv/#installation))
 - **Docker or Podman** - For containerized development (recommended)
 - **mkcert** - For local TLS certificates (if running directly)
@@ -26,7 +26,7 @@ ATR can be developed on **Linux** or **macOS**. Windows and other platforms are 
 ```shell
 apk add cmark curl git make mkcert@testing
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
-uv python install 3.13
+uv python install 3.14
 ```
 
 **macOS (Homebrew):**
@@ -35,7 +35,7 @@ uv python install 3.13
 brew install cmark mkcert
 curl -LsSf https://astral.sh/uv/install.sh | sh
 rehash
-uv python install 3.13
+uv python install 3.14
 ```
 
 ## Quick start
