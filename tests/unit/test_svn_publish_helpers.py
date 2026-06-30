@@ -96,6 +96,23 @@ def test_public_download_url_falls_back_to_self_host_without_svn(monkeypatch: py
     assert url == "https://atr.example/downloads/apple/apple-1.0/apple-1.0.tar.gz"
 
 
+def test_public_download_url_uses_archive_for_archived_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An archived release lives on archive.apache.org on every host, so even with no SVN publishing
+    # configured (dev) it short-circuits the self-hosted fallback rather than using it
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    url = util.public_download_url(
+        committee,
+        safe.RelPath("apple-1.0"),
+        util.DownloadFile.ARTIFACT,
+        filename="apple-1.0.tar.gz",
+        archived=True,
+    )
+
+    assert url == f"{constants.ARCHIVE_APACHE_URL}/apple/apple-1.0/apple-1.0.tar.gz"
+
+
 def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
     monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")

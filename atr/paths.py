@@ -65,6 +65,12 @@ def committee_downloads_url(host: str, committee: sql.Committee) -> str:
     return f"https://{host}/downloads/{committee.key}"
 
 
+def archive_download_url(relpath: safe.RelPath) -> str:
+    # archive.apache.org keeps every release ever published, including those pruned from the
+    # live mirror, so an archived release's files are served from here regardless of host.
+    return f"{constants.ARCHIVE_APACHE_URL}/{relpath}"
+
+
 def downloads_url(relpath: safe.RelPath) -> str:
     # downloads.apache.org itself, not a mirror. Signatures, checksums and KEYS
     # must come from here rather than a mirror, otherwise a bad mirror could serve

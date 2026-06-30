@@ -1029,9 +1029,12 @@ def public_download_url(
     kind: DownloadFile,
     filename: str | None = None,
     host: str | None = None,
+    archived: bool = False,
 ) -> str:
     # The single place that resolves where a release file is fetched from, by
-    # lifecycle (beta vs released) and role (artifact vs metadata).
+    # lifecycle (archived vs beta vs released) and role (artifact vs metadata).
+    if archived:
+        return paths.archive_download_url(paths.committee_dist_relpath(committee, suffix, filename))
     if not config.get().SVN_PUBLISH_URL:
         # No SVN publishing configured (dev), so ATR serves the downloads itself.
         url = paths.committee_downloads_url(host or config.get().APP_HOST, committee)

@@ -82,10 +82,12 @@ class Decomposed:
 
 def candidate_keys(committee: str, subproject: str | None) -> list[str]:
     # Dist layout and projects.json keys don't always line up (commons/lang -> commons-lang, but
-    # accumulo/accumulo-access is already its key), so try the obvious shapes; apache- is stripped
+    # accumulo/accumulo-access is already its key), so try the obvious shapes. apache-/apache_ come
+    # off and underscores become hyphens, so a dist name like apache_airflow_providers_alibaba lines
+    # up with the registry's airflow-providers-alibaba instead of seeding an underscore duplicate
     if not subproject:
         return [committee]
-    bare = subproject.removeprefix("apache-")
+    bare = subproject.removeprefix("apache-").removeprefix("apache_").replace("_", "-")
     keys: list[str] = []
     for name in dict.fromkeys([bare, subproject]):
         keys += [name, f"{committee}-{name}"]

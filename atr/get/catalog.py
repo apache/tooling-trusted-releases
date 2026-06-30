@@ -24,7 +24,6 @@ import atr.api as api
 import atr.blueprints.get as get
 import atr.db as db
 import atr.models.safe as safe
-import atr.models.sql as sql
 import atr.shared.catalog as catalog
 import atr.template as template
 import atr.util as util
@@ -38,7 +37,7 @@ async def project(_session: web.Public, _catalog: Literal["catalog"], project_ke
     The release catalogue for a project: versions and their artifacts.
     """
     async with db.session() as data:
-        project_obj = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE).demand(
+        project_obj = await data.project(key=str(project_key)).demand(
             base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
         )
         artifacts = await data.artifact(project_key=project_obj.key, _release=True).all()

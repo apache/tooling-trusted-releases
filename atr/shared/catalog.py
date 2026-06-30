@@ -66,7 +66,9 @@ def assemble(
     return CatalogProject(versions=versions, cycles=cycles, grouped=grouped)
 
 
-def _artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: bool) -> models.api.CatalogArtifact:
+def _artifact(
+    row: sql.Artifact, committee: sql.Committee | None, downloadable: bool, archived: bool
+) -> models.api.CatalogArtifact:
     suffix = safe.RelPath(row.download_path_suffix) if row.download_path_suffix else None
     artifact_url: str | None = None
     signature_url: str | None = None
@@ -74,18 +76,20 @@ def _artifact(row: sql.Artifact, committee: sql.Committee | None, downloadable: 
     sbom_url: str | None = None
     if downloadable and (committee is not None):
         artifact_url = util.public_download_url(
-            committee, suffix, util.DownloadFile.ARTIFACT, filename=row.artifact_path
+            committee, suffix, util.DownloadFile.ARTIFACT, filename=row.artifact_path, archived=archived
         )
         if row.signature_path:
             signature_url = util.public_download_url(
-                committee, suffix, util.DownloadFile.METADATA, filename=row.signature_path
+                committee, suffix, util.DownloadFile.METADATA, filename=row.signature_path, archived=archived
             )
         if row.checksum_path:
             checksum_url = util.public_download_url(
-                committee, suffix, util.DownloadFile.METADATA, filename=row.checksum_path
+                committee, suffix, util.DownloadFile.METADATA, filename=row.checksum_path, archived=archived
             )
         if row.sbom_path:
-            sbom_url = util.public_download_url(committee, suffix, util.DownloadFile.METADATA, filename=row.sbom_path)
+            sbom_url = util.public_download_url(
+                committee, suffix, util.DownloadFile.METADATA, filename=row.sbom_path, archived=archived
+            )
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
         classification=row.classification,
@@ -168,8 +172,9 @@ def _versions(
     for version, rows in by_version.items():
         release = next((row.release for row in rows if row.release is not None), None)
         status = _status(release)
-        # Archived versions aren't served from the download route, so show metadata only.
-        downloadable = status == "released"
+        # Released files come off the live download route, archived ones off archive.apache.org;
+        # either way they're downloadable
+        downloadable = status in ("released", "archived")
         cycle = cycles_by_key.get(release.cycle_key) if (release is not None) else None
         svn_revisions = [row.svn_revision for row in rows if row.svn_revision is not None]
         # CLE only resolves for a released-phase record, so historical svn-only
@@ -186,7 +191,7 @@ def _versions(
                 cle_url=cle_release_url(atr_host, release.project_key, str(version))
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
-                artifacts=[_artifact(row, committee, downloadable) for row in rows],
+                artifacts=[_artifact(row, committee, downloadable, status == "archived") for row in rows],
             )
         )
 

@@ -88,7 +88,7 @@ def test_lifecycle_badge_prefers_lts_then_eol_then_active() -> None:
     assert catalog._lifecycle_badge(_cycle("5.0"), _NOW) == "Active"
 
 
-def test_only_released_versions_are_downloadable() -> None:
+def test_released_and_archived_versions_are_downloadable() -> None:
     project = _project()
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
     archived = _release(project, "4.1.7", cycle_key="cassandra-default", released=_NOW, archived=_NOW, is_archived=True)
@@ -99,8 +99,9 @@ def test_only_released_versions_are_downloadable() -> None:
 
     versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
 
+    # Released off the live route, archived off archive.apache.org - both downloadable
     assert versions["5.0.2"].artifacts[0].downloadable is True
-    assert versions["4.1.7"].artifacts[0].downloadable is False
+    assert versions["4.1.7"].artifacts[0].downloadable is True
     assert versions["4.1.7"].svn_revision == 28114
 
 
@@ -137,7 +138,7 @@ def test_status_reflects_release_and_archive_state() -> None:
 
 def test_archived_status_holds_without_an_archive_date() -> None:
     # A release known to be archived but with no date (a catalogued historical release) carries
-    # is_archived alone; it still reads as archived and isn't downloadable
+    # is_archived alone; it still reads as archived, and stays downloadable off archive.apache.org
     project = _project()
     undated = _release(project, "3.11.0", cycle_key="cassandra-default", released=_NOW, is_archived=True)
     artifacts = [_artifact(project, "3.11.0", "a-3.11.0.tar.gz", release=undated)]
@@ -145,7 +146,7 @@ def test_archived_status_holds_without_an_archive_date() -> None:
     versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
 
     assert versions["3.11.0"].status == "archived"
-    assert versions["3.11.0"].artifacts[0].downloadable is False
+    assert versions["3.11.0"].artifacts[0].downloadable is True
 
 
 def test_svn_revision_alone_does_not_make_a_version_managed() -> None:
