@@ -441,6 +441,7 @@ class PolicyArgsBase(schema.Strict):
     license_check_mode: sql.LicenseCheckMode | None = None
     vote_recipients: RecipientDefaults | None = None
     announce_recipients: RecipientDefaults | None = None
+    download_path_suffix: str | None = None
     manual_vote: bool | None = None
     min_hours: int | None = None
     preserve_download_files: bool | None = None
@@ -482,6 +483,9 @@ class PolicyArgsBase(schema.Strict):
         if self.min_hours is not None:
             validation.validate_policy_min_hours(self.min_hours)
 
+        if self.download_path_suffix is not None:
+            validation.validate_download_path_suffix(self.download_path_suffix)
+
         github_repository_name = self.github_repository_name
         if github_repository_name is not None:
             validation.validate_github_repository_name(github_repository_name.strip())
@@ -518,6 +522,9 @@ class ProjectConfigProjectArgs(schema.Strict):
     download_page: pydantic.HttpUrl | None = None
     bug_database: pydantic.HttpUrl | None = None
     mailing_lists: pydantic.HttpUrl | None = None
+    security_contact: str | None = None
+    threat_model_link: pydantic.HttpUrl | None = None
+    threat_model_src_link: pydantic.HttpUrl | None = None
     repositories: list[str] | None = None
     standards: list[str] | None = None
     categories: list[str] | None = None
@@ -579,6 +586,14 @@ class ProjectConfigArgs(schema.Strict):
             validation.validate_vote_recipients(committee_key, self.policy.vote_recipients.addresses())
         if self.policy.announce_recipients is not None:
             validation.validate_announce_recipients(self.policy.announce_recipients.addresses())
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _validate_security_contact(self) -> Self:
+        if self.project is None:
+            return self
+        contact = self.project.security_contact
+        validation.validate_security_contact(str(self.committee_key), contact.strip() if contact else contact)
         return self
 
 

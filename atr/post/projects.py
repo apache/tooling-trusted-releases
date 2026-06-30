@@ -408,6 +408,30 @@ async def _process_remove_language(
     )
 
 
+async def _process_security_form(
+    session: web.Committer, security_form: shared.projects.SecurityForm
+) -> web.WerkzeugResponse:
+    project_key = security_form.project_key
+
+    async with storage.write(session) as write:
+        warm = await write.as_project_release_manager(project_key)
+        try:
+            await warm.project.edit_security(security_form)
+        except storage.AccessError as e:
+            return await session.redirect(
+                get.projects.view,
+                project_key=str(project_key),
+                tab="security",
+                error=f"Error saving security metadata: {e}",
+            )
+        except ValueError as e:
+            return await session.redirect(get.projects.view, project_key=str(project_key), tab="security", error=str(e))
+
+    return await session.redirect(
+        get.projects.view, project_key=str(project_key), tab="security", success="Security metadata saved."
+    )
+
+
 async def _process_trusted_publishing_form(
     session: web.Committer, tp_form: shared.projects.TrustedPublishingPolicyForm
 ) -> web.WerkzeugResponse:
@@ -464,6 +488,7 @@ _VIEW_HANDLERS: Final[dict[type, Callable[[web.Committer, Any], Awaitable[web.We
     shared.projects.EditMetadataForm: _process_edit_metadata_form,
     shared.projects.EditVersionSchemeForm: _process_edit_version_scheme_form,
     shared.projects.FinishPolicyForm: _process_finish_form,
+    shared.projects.SecurityForm: _process_security_form,
     shared.projects.TrustedPublishingPolicyForm: _process_trusted_publishing_form,
     shared.projects.RemoveCategoryForm: _process_remove_category,
     shared.projects.RemoveLanguageForm: _process_remove_language,

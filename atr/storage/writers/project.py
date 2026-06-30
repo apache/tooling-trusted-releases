@@ -29,6 +29,7 @@ import atr.db as db
 import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.registry as registry
 import atr.storage as storage
 
@@ -111,6 +112,21 @@ class ReleaseManager(CommitteeParticipant):
         project.mailing_lists = str(form.mailing_lists) if form.mailing_lists else None
         project.repositories = list(form.repositories)
         project.standards = list(form.standards)
+        project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project.key),
+        )
+
+    async def edit_security(self, form: shared.projects.SecurityForm) -> None:
+        project = await self.__validate_project_in_committee(form.project_key)
+        contact = form.security_contact.strip() or None
+        validation.validate_security_contact(self.__committee_key, contact)
+        project.security_contact = contact
+        project.threat_model_link = str(form.threat_model_link) if form.threat_model_link else None
+        project.threat_model_src_link = str(form.threat_model_src_link) if form.threat_model_src_link else None
         project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
 
         await self.__data.commit()
@@ -445,6 +461,9 @@ class FoundationAdmin(FoundationCommitter):
             "download_page",
             "bug_database",
             "mailing_lists",
+            "security_contact",
+            "threat_model_link",
+            "threat_model_src_link",
             "version_pattern",
             "cycle_match",
             "branch_template",

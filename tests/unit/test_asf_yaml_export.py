@@ -34,6 +34,9 @@ class _FakeProject:
             "download_page": None,
             "bug_database": None,
             "mailing_lists": None,
+            "security_contact": None,
+            "threat_model_link": None,
+            "threat_model_src_link": None,
             "repositories": [],
             "standards": [],
             "categories": None,
@@ -75,6 +78,7 @@ class _FakePolicy:
             "github_compose_workflow_path": [],
             "github_vote_workflow_path": [],
             "github_finish_workflow_path": [],
+            "download_path_suffix": "",
         }
         defaults.update(fields)
         for key, value in defaults.items():
@@ -175,6 +179,9 @@ def test_export_reproduces_every_field() -> None:
         download_page="https://github.com/apache/tooling-trusted-releases",
         bug_database="https://github.com/apache/tooling-trusted-releases/issues",
         mailing_lists="https://tooling.apache.org/volunteer.html",
+        security_contact="security@tooling.apache.org",
+        threat_model_link="https://tooling.apache.org/security/threat-model",
+        threat_model_src_link="https://tooling.apache.org/security/threat-model.md",
         repositories=["git+ssh://git@github.com:apache/tooling-trusted-releases.git"],
         standards=["https://owasp.org/www-project-application-security-verification-standard/"],
         categories="build-management",
@@ -200,6 +207,9 @@ def test_export_reproduces_every_field() -> None:
                 "download_page": "https://github.com/apache/tooling-trusted-releases",
                 "bug_database": "https://github.com/apache/tooling-trusted-releases/issues",
                 "mailing_lists": "https://tooling.apache.org/volunteer.html",
+                "security_contact": "security@tooling.apache.org",
+                "threat_model_link": "https://tooling.apache.org/security/threat-model",
+                "threat_model_src_link": "https://tooling.apache.org/security/threat-model.md",
                 "repositories": ["git+ssh://git@github.com:apache/tooling-trusted-releases.git"],
                 "standards": ["https://owasp.org/www-project-application-security-verification-standard/"],
                 "categories": ["build-management"],
@@ -227,3 +237,16 @@ def test_export_splits_comma_joined_columns_into_sequences() -> None:
 
     assert metadata["categories"] == ["data", "storage"]
     assert metadata["programming_languages"] == ["c", "python"]
+
+
+def test_export_includes_download_path_suffix_when_set() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(download_path_suffix="{{PROJECT_KEY}}-{{VERSION}}"),
+    )
+
+    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
+
+    assert policy["download_path_suffix"] == "{{PROJECT_KEY}}-{{VERSION}}"

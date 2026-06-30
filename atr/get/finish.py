@@ -25,6 +25,7 @@ import quart
 
 import atr.blueprints.get as get
 import atr.config as config
+import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -259,8 +260,14 @@ async def _render_page(
         if (in_flight is None) and (completed is None):
             download_path_suffix = ""
             committee = release.project.committee
-            if (committee is not None) and (release.project.key != util.unwrap(committee.key)):
-                download_path_suffix = f"{release.project.key}-{release.version}"
+            if committee is not None:
+                suffix = construct.resolve_download_path_suffix(
+                    template=release.project.policy_download_path_suffix,
+                    project_key=release.project.key,
+                    version=release.version,
+                    is_top_level=(release.project.key == util.unwrap(committee.key)),
+                )
+                download_path_suffix = str(suffix) if suffix is not None else ""
             page.h2["Publish to SVN"]
             await form.render_block(
                 page,

@@ -69,9 +69,12 @@ async def selected(
     if (committee := release.project.committee) is None:
         raise ValueError("Release has no committee")
     top_level_project = release.project.key == util.unwrap(committee.key)
-    # These defaults are as per #136, but we allow the user to change the result
-    default_download_path_suffix = (
-        None if top_level_project else safe.RelPath(f"{release.project.key}-{release.version}")
+    # The stored policy template wins; empty falls back to defaults
+    default_download_path_suffix = construct.resolve_download_path_suffix(
+        template=release.project.policy_download_path_suffix,
+        project_key=release.project.key,
+        version=release.version,
+        is_top_level=top_level_project,
     )
     default_download_path_value = (
         "/" if (default_download_path_suffix is None) else f"/{default_download_path_suffix!s}/"

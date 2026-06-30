@@ -181,9 +181,12 @@ async def _committee_keys_file_missing(committee: sql.Committee) -> bool:
 
 
 def _default_download_path_suffix(release: sql.Release, committee: sql.Committee) -> safe.RelPath | None:
-    if release.project.key == util.unwrap(committee.key):
-        return None
-    return safe.RelPath(f"{release.project.key}-{release.version}")
+    return construct.resolve_download_path_suffix(
+        template=release.project.policy_download_path_suffix,
+        project_key=release.project.key,
+        version=release.version,
+        is_top_level=(release.project.key == util.unwrap(committee.key)),
+    )
 
 
 def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int | None:

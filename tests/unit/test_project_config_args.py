@@ -54,7 +54,55 @@ def test_project_config_rejects_vote_recipient_on_another_committee() -> None:
         _project_config(vote_recipients={"to": "dev@other.apache.org"})
 
 
+def test_project_config_accepts_foundation_security_contact() -> None:
+    args = _project_config_project(security_contact="security@apache.org")
+
+    assert args.project is not None
+    assert args.project.security_contact == "security@apache.org"
+
+
+def test_project_config_accepts_pmc_security_contact() -> None:
+    args = _project_config_project(security_contact="security@tooling.apache.org")
+
+    assert args.project is not None
+    assert args.project.security_contact == "security@tooling.apache.org"
+
+
+def test_project_config_rejects_arbitrary_security_contact() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("must be 'security@apache.org'")):
+        _project_config_project(security_contact="security@evil.example.org")
+
+
+def test_project_config_rejects_other_committee_security_contact() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("must be 'security@apache.org'")):
+        _project_config_project(security_contact="security@other.apache.org")
+
+
+def test_project_config_accepts_threat_model_links() -> None:
+    args = _project_config_project(
+        threat_model_link="https://example.apache.org/threats",
+        threat_model_src_link="https://example.apache.org/threats.md",
+    )
+
+    assert args.project is not None
+    assert args.project.threat_model_link is not None
+    assert args.project.threat_model_src_link is not None
+
+
+def test_project_config_accepts_download_path_suffix() -> None:
+    args = _project_config(download_path_suffix="{{PROJECT_KEY}}-{{VERSION}}")
+
+    assert args.policy is not None
+    assert args.policy.download_path_suffix == "{{PROJECT_KEY}}-{{VERSION}}"
+
+
 def _project_config(**policy: object) -> api.ProjectConfigArgs:
     return api.ProjectConfigArgs.model_validate(
         {"project_key": "tooling", "committee_key": "tooling", "policy": policy}
+    )
+
+
+def _project_config_project(**project: object) -> api.ProjectConfigArgs:
+    return api.ProjectConfigArgs.model_validate(
+        {"project_key": "tooling", "committee_key": "tooling", "project": project}
     )

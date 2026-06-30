@@ -420,6 +420,18 @@ async def start_vote_subject_default(project_key: safe.ProjectKey) -> str:
     return project.policy_start_vote_subject
 
 
+def resolve_download_path_suffix(
+    *, template: str, project_key: str, version: str, is_top_level: bool
+) -> safe.RelPath | None:
+    resolved = template.strip()
+    if resolved:
+        resolved = resolved.replace("{{PROJECT_KEY}}", project_key).replace("{{VERSION}}", version)
+        return safe.RelPath(resolved)
+    if is_top_level:
+        return None
+    return safe.RelPath(f"{project_key}-{version}")
+
+
 def template_hash(template: str) -> str:
     """Compute a hash of a template for verification."""
     return hashlib.sha256(template.encode()).hexdigest()

@@ -248,6 +248,7 @@ class ReleaseManager(CommitteeParticipant):
         )
         release_policy.preserve_download_files = form.preserve_download_files
         release_policy.auto_archive_prior_release = form.archive_prior_release
+        release_policy.download_path_suffix = form.download_path_suffix.strip()
 
         await self.__commit_and_log(str(project_key))
 

@@ -368,6 +368,9 @@ def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
         "download_page",
         "bug_database",
         "mailing_lists",
+        "security_contact",
+        "threat_model_link",
+        "threat_model_src_link",
     ):
         value = getattr(project, field)
         if value:
@@ -425,6 +428,7 @@ def _asf_yaml_policy_fields(release_policy: sql.ReleasePolicy) -> dict[str, obje
         "release_checklist",
         "github_repository_name",
         "github_repository_branch",
+        "download_path_suffix",
     ):
         value = getattr(release_policy, field)
         if value:
@@ -540,6 +544,11 @@ async def _generate_tabs(
                 can_manage_taxonomy=can_manage_taxonomy,
             ),
         ),
+        htm.Tab(
+            key="security",
+            label="Security",
+            render=lambda: _render_security_tab(project, can_edit_metadata=can_edit_metadata),
+        ),
     ]
 
     if can_edit_policy:
@@ -625,6 +634,12 @@ def _input_with_variables(
     elements.append(details)
 
     return htm.div[elements]
+
+
+def _optional_link(url: str | None) -> htm.Element | str:
+    if not url:
+        return "Not set"
+    return htm.a(href=url)[url]
 
 
 def _recipient_grid_widget(project: sql.Project, action: sql.RecipientAction) -> htm.Element:
@@ -885,6 +900,7 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
                 "announce_release_template": project.policy_announce_release_template or "",
                 "preserve_download_files": project.policy_preserve_download_files,
                 "archive_prior_release": project.policy_auto_archive_prior_release,
+                "download_path_suffix": project.policy_download_path_suffix,
             },
             form_classes=".atr-canary.py-4.px-5",
             border=True,
@@ -1271,6 +1287,63 @@ async def _render_releases_tab(
     return block.collect()
 
 
+async def _render_security_form(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-0")["Security"]]
+
+    defaults_dict = {
+        "project_key": str(project.key),
+        "security_contact": project.security_contact or "security@apache.org",
+        "threat_model_link": project.threat_model_link or "",
+        "threat_model_src_link": project.threat_model_src_link or "",
+    }
+
+    with card.block(htm.div, classes=".card-body") as card_body:
+        await form.render_block(
+            card_body,
+            model_cls=shared.projects.SecurityForm,
+            action=_view_action(project, "security"),
+            submit_label="Save",
+            defaults=defaults_dict,
+            form_classes=".atr-canary.py-4.px-5",
+            border=True,
+            custom={
+                "security_contact": _security_contact_radios(project),
+            },
+        )
+    return card.collect()
+
+
+def _render_security_readonly(project: sql.Project) -> htm.Element:
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-2")["Security"]]
+
+    contact = project.security_contact or "security@apache.org"
+    tbody = htm.tbody[
+        htm.tr[
+            htm.th(".border-0.w-25")["Security contact"],
+            htm.td(".text-break.border-0")[contact],
+        ],
+        htm.tr[
+            htm.th(".border-0")["Threat model"],
+            htm.td(".text-break.border-0")[_optional_link(project.threat_model_link)],
+        ],
+        htm.tr[
+            htm.th(".border-0")["Threat model source"],
+            htm.td(".text-break.border-0")[_optional_link(project.threat_model_src_link)],
+        ],
+    ]
+
+    card.div(".card-body")[htm.div(".card.h-100.border")[htm.div(".card-body")[htm.table(".table.mb-0")[tbody]]]]
+    return card.collect()
+
+
+async def _render_security_tab(project: sql.Project, *, can_edit_metadata: bool) -> htm.Element:
+    if can_edit_metadata:
+        return await _render_security_form(project)
+    return _render_security_readonly(project)
+
+
 async def _render_trusted_publishing_form(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light.d-flex.justify-content-between.align-items-center")[
@@ -1394,6 +1467,34 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
             skip=["email_cc", "email_bcc"],
         )
     return card.collect()
+
+
+def _security_contact_radios(project: sql.Project) -> htm.Element:
+    committee = project.committee
+    options = ["security@apache.org"]
+    if committee is not None:
+        options.append(f"security@{committee.key}.apache.org")
+    selected = project.security_contact or "security@apache.org"
+    radios: list[htm.Element] = []
+    for address in options:
+        radio_id = f"security_contact_{address}"
+        attrs: dict[str, str] = {
+            "type": "radio",
+            "name": "security_contact",
+            "id": radio_id,
+            "value": address,
+            "class_": "form-check-input",
+            "required": "",
+        }
+        if address == selected:
+            attrs["checked"] = ""
+        radios.append(
+            htpy.div(".form-check")[
+                htpy.input(**attrs),
+                htpy.label(".form-check-label", for_=radio_id)[address],
+            ]
+        )
+    return htm.div("#security_contact")[*radios]
 
 
 def _textarea_with_variables(

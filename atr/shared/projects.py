@@ -34,6 +34,7 @@ type EDIT_CYCLE_DATES = Literal["edit_cycle_dates"]
 type EDIT_METADATA = Literal["edit_metadata"]
 type EDIT_VERSION_SCHEME = Literal["edit_version_scheme"]
 type FINISH = Literal["finish"]
+type SECURITY = Literal["security"]
 type TRUSTED_PUBLISHING = Literal["trusted_publishing"]
 type VOTE = Literal["vote"]
 type ADD_CATEGORY = Literal["add_category"]
@@ -217,6 +218,25 @@ class VotePolicyForm(form.Form):
         return self
 
 
+class SecurityForm(form.Form):
+    variant: SECURITY = form.value(SECURITY)
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    security_contact: str = form.label(
+        "Security contact",
+        "Where security vulnerability reports for this project should be sent.",
+        widget=form.Widget.CUSTOM,
+        default="",
+    )
+    threat_model_link: form.OptionalURL = form.label(
+        "Threat model",
+        "URL of the project's published, human-readable threat model.",
+    )
+    threat_model_src_link: form.OptionalURL = form.label(
+        "Threat model source",
+        "URL of the threat model's plain-text source document.",
+    )
+
+
 class EditCycleDatesForm(form.Form):
     variant: EDIT_CYCLE_DATES = form.value(EDIT_CYCLE_DATES)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
@@ -382,6 +402,19 @@ class FinishPolicyForm(form.Form):
         "Preserve download files",
         "If enabled, existing download files will not be overwritten.",
     )
+    download_path_suffix: str = form.label(
+        "Default download path suffix",
+        "Pre-fills the SVN publish path. May use {{PROJECT_KEY}} and {{VERSION}}."
+        " Leave empty for the default (project root for a top-level project,"
+        " {{PROJECT_KEY}}-{{VERSION}} for a subproject).",
+        default="",
+    )
+
+    @pydantic.field_validator("download_path_suffix", mode="before")
+    @classmethod
+    def validate_download_path_suffix(cls, val: str) -> str:
+        validation.validate_download_path_suffix(val)
+        return val
 
 
 class TrustedPublishingPolicyForm(form.Form):
@@ -475,6 +508,7 @@ type ProjectViewForm = Annotated[
     | EditMetadataForm
     | EditVersionSchemeForm
     | FinishPolicyForm
+    | SecurityForm
     | TrustedPublishingPolicyForm
     | VotePolicyForm
     | AddCategoryForm

@@ -885,6 +885,14 @@ class Project(sqlmodel.SQLModel, table=True):
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
 
+    security_contact: str | None = sqlmodel.Field(default=None, **example("security@example.apache.org"))
+    threat_model_link: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/security/threat-model")
+    )
+    threat_model_src_link: str | None = sqlmodel.Field(
+        default=None, **example("https://example.apache.org/security/threat-model.md")
+    )
+
     # Version-scheme metadata (#912). For "simple" projects the pattern fields are null
     # and the project keeps a single "default" cycle.
     version_method: VersionMethod = sqlmodel.Field(default=VersionMethod.SIMPLE, **example(VersionMethod.SIMPLE))
@@ -1094,6 +1102,12 @@ Sincerely,
             # TODO: Not sure what the default should be
             return self.policy_default_min_hours
         return policy.min_hours
+
+    @property
+    def policy_download_path_suffix(self) -> str:
+        if ((policy := self.release_policy) is None) or (policy.download_path_suffix == ""):
+            return ""
+        return policy.download_path_suffix
 
     @property
     def policy_release_checklist(self) -> str:
@@ -1981,6 +1995,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
     )
     auto_archive_prior_release: bool = sqlmodel.Field(default=False)
     preserve_download_files: bool = sqlmodel.Field(default=False)
+    download_path_suffix: str = sqlmodel.Field(default="")
 
     # 1-1: ReleasePolicy -> Project
     # 1-1: Project -C-> ReleasePolicy
@@ -2012,6 +2027,7 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             github_finish_workflow_path=list(self.github_finish_workflow_path),
             auto_archive_prior_release=self.auto_archive_prior_release,
             preserve_download_files=self.preserve_download_files,
+            download_path_suffix=self.download_path_suffix,
         )
 
 

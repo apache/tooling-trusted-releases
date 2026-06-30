@@ -20,6 +20,8 @@ from typing import Any, Final
 
 import hyperscan
 
+from . import safe
+
 MAX_IGNORE_PATTERN_LENGTH: Final[int] = 128
 
 
@@ -93,6 +95,19 @@ def validate_announce_recipients(recipients: list[str]) -> None:
             raise ValueError(f"Announce recipient '{recipient}' must be an apache.org address.")
 
 
+def validate_download_path_suffix(template: str) -> None:
+    resolved = template.strip()
+    if not resolved:
+        return
+    # The template is filled in per release, so probe with placeholder stand-ins
+    # to check the result is a path we'd accept
+    probe = resolved.replace("{{PROJECT_KEY}}", "x").replace("{{VERSION}}", "x")
+    try:
+        safe.RelPath(probe)
+    except ValueError as e:
+        raise ValueError(f"Download path suffix is not a valid path: {e}") from e
+
+
 def validate_github_repository_name(github_repository_name: str | None) -> None:
     if github_repository_name and ("/" in github_repository_name):
         raise ValueError("GitHub repository name must not contain a slash.")
@@ -111,6 +126,17 @@ def validate_ignore_pattern(pattern: str) -> None:
 def validate_policy_min_hours(min_hours: int) -> None:
     if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
         raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
+
+
+def validate_security_contact(committee_key: str, security_contact: str | None) -> None:
+    if not security_contact:
+        return
+    allowed = {"security@apache.org", f"security@{committee_key}.apache.org"}
+    if security_contact not in allowed:
+        raise ValueError(
+            f"Security contact '{security_contact}' must be 'security@apache.org' "
+            f"or 'security@{committee_key}.apache.org'."
+        )
 
 
 def validate_trusted_publishing_workflow_paths(paths: list[str]) -> None:
