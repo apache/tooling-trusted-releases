@@ -36,8 +36,6 @@ import netifaces
 import rich.logging
 from playwright.sync_api import BrowserContext, Dialog, Page, Request, Response, expect, sync_playwright
 
-# Temporary debugging, version 1782917963
-
 ATR_BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
 OPENPGP_TEST_UID: Final[str] = "<apache-tooling@example.invalid>"
 SSH_KEY_COMMENT: Final[str] = "atr-playwright-test@127.0.0.1"
@@ -401,6 +399,7 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
         elapsed_time = time.monotonic() - start_time
         if elapsed_time > max_wait_seconds:
             dump_ongoing_task_details(page, project_key, version_key, revision)
+            dump_server_logs(page)
             raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
 
         response = page.request.get(polling_url)
@@ -424,6 +423,7 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
             raise
 
     dump_ongoing_task_details(page, project_key, version_key, revision)
+    dump_server_logs(page)
     raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
 
 
@@ -478,6 +478,23 @@ def dump_ongoing_task_details(page: Page, project_key: str, version_key: str, re
         logging.error(f"Blocking-task status counts for {rev_path}: {status_counts}")
     except Exception:
         logging.exception(f"Failed to dump ongoing task details for {rev_path}")
+
+
+def dump_server_logs(page: Page) -> None:
+    try:
+        response = page.request.get(f"{ATR_BASE_URL}/admin/logs")
+        if not response.ok:
+            logging.error(f"Server log request failed with status {response.status}")
+            return
+        body = response.text().strip()
+        if not body:
+            logging.error("Server log ring buffer was empty")
+            return
+        logging.error("Recent ATR server logs (main process):")
+        for line in body.splitlines():
+            logging.error(f"  [atr] {line}")
+    except Exception:
+        logging.exception("Failed to dump ATR server logs")
 
 
 def ensure_note_results_are_visible(page: Page, result_type: str) -> None:
