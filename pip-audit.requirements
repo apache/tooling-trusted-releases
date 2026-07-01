@@ -20,7 +20,7 @@ aiosqlite==0.22.1
     # via tooling-trusted-releases
 aiozipstream==0.4
     # via tooling-trusted-releases
-alembic==1.18.4
+alembic==1.18.5
     # via tooling-trusted-releases
 annotated-types==0.7.0
     # via pydantic
