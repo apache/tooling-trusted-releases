@@ -26,6 +26,7 @@ jobs:
     needs: dedup
     permissions:
       contents: read
+      issues: write
     # Run on our own runner for trusted sources (push/dispatch, or a same-repo
     # PR); fork PRs fall back to the hosted runner so they never touch it.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'self-hosted' || 'ubuntu-latest' }}
@@ -48,6 +49,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: apache/tooling-actions
+          ref: main
+          path: tooling-actions
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -62,6 +69,42 @@ jobs:
       - name: Run unit tests
         run: |
           uv run --frozen pytest -rs tests
+
+      - name: Run actions contract tests
+        id: actions-contract
+        continue-on-error: true
+        run: |
+          TOOLING_ACTIONS_PATH="$GITHUB_WORKSPACE/tooling-actions" uv run --frozen pytest -rs tests/contract
+
+      - name: Open an issue on new actions breakage
+        if: >-
+          steps.actions-contract.outcome == 'failure' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${REPO}"
+          title="tooling-actions HEAD broke against server [${BRANCH}]"
+          existing=$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues?state=open&labels=actions-contract&per_page=100")
+          if printf '%s' "$existing" | grep -Fq "\"${title}\""; then
+            echo "An open actions-contract issue already exists for ${BRANCH}; doing nothing."
+            exit 0
+          fi
+          body="The actions (apache/tooling-actions at HEAD) failed the contract check against server branch ${BRANCH} at commit ${SHA}. Run: ${RUN_URL} (cc @${ACTOR})"
+          data=$(printf '{"title":"%s","body":"%s","labels":["actions-contract"]}' "$title" "$body")
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${api}/issues" -d "$data" >/dev/null
 
       - name: Run Playwright end-to-end tests
         run: |
