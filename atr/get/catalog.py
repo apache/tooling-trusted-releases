@@ -47,7 +47,6 @@ async def project(_session: web.Public, _catalog: Literal["catalog"], project_ke
         project_obj.version_method,
         artifacts,
         project_cycles,
-        project_obj.committee,
         datetime.datetime.now(datetime.UTC),
     )
 

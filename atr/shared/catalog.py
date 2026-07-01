@@ -48,14 +48,13 @@ def assemble(
     version_method: sql.VersionMethod,
     artifacts: Sequence[sql.Artifact],
     project_cycles: Sequence[sql.ProjectCycle],
-    committee: sql.Committee | None,
     now: datetime.datetime,
     atr_host: str | None = None,
 ) -> CatalogProject:
     # `atr_host` is only supplied by the API, which needs absolute CLE links. The
     # page leaves it None and renders its own relative links via as_url instead.
     cycles_by_key = {cycle.cycle_key: cycle for cycle in project_cycles}
-    versions = _versions(artifacts, cycles_by_key, committee, atr_host)
+    versions = _versions(artifacts, cycles_by_key, atr_host)
     grouped = _grouped_layout(version_method)
     if grouped:
         # Cycle labels are unique within a project, so they group and look up safely.
@@ -66,29 +65,30 @@ def assemble(
     return CatalogProject(versions=versions, cycles=cycles, grouped=grouped)
 
 
-def _artifact(
-    row: sql.Artifact, committee: sql.Committee | None, downloadable: bool, archived: bool
-) -> models.api.CatalogArtifact:
-    suffix = safe.RelPath(row.download_path_suffix) if row.download_path_suffix else None
+def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.api.CatalogArtifact:
     artifact_url: str | None = None
     signature_url: str | None = None
     checksum_url: str | None = None
     sbom_url: str | None = None
-    if downloadable and (committee is not None):
-        artifact_url = util.public_download_url(
-            committee, suffix, util.DownloadFile.ARTIFACT, filename=row.artifact_path, archived=archived
+    if downloadable and row.download_path_suffix:
+        # The stored directory is the file's real dist location, so a moved project's artifacts
+        # (graduated from an umbrella, or shifted to the Attic) resolve where they actually live. The
+        # signature, checksum and SBOM share the directory
+        directory = safe.RelPath(row.download_path_suffix)
+        artifact_url = util.download_url_for_path(
+            directory.append(row.artifact_path), util.DownloadFile.ARTIFACT, archived=archived
         )
         if row.signature_path:
-            signature_url = util.public_download_url(
-                committee, suffix, util.DownloadFile.METADATA, filename=row.signature_path, archived=archived
+            signature_url = util.download_url_for_path(
+                directory.append(row.signature_path), util.DownloadFile.METADATA, archived=archived
             )
         if row.checksum_path:
-            checksum_url = util.public_download_url(
-                committee, suffix, util.DownloadFile.METADATA, filename=row.checksum_path, archived=archived
+            checksum_url = util.download_url_for_path(
+                directory.append(row.checksum_path), util.DownloadFile.METADATA, archived=archived
             )
         if row.sbom_path:
-            sbom_url = util.public_download_url(
-                committee, suffix, util.DownloadFile.METADATA, filename=row.sbom_path, archived=archived
+            sbom_url = util.download_url_for_path(
+                directory.append(row.sbom_path), util.DownloadFile.METADATA, archived=archived
             )
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
@@ -161,7 +161,6 @@ def _version_sort_key(version: models.api.CatalogVersion) -> tuple[datetime.date
 def _versions(
     artifacts: Sequence[sql.Artifact],
     cycles_by_key: dict[str, sql.ProjectCycle],
-    committee: sql.Committee | None,
     atr_host: str | None = None,
 ) -> list[models.api.CatalogVersion]:
     by_version: dict[safe.VersionKey, list[sql.Artifact]] = collections.defaultdict(list)
@@ -191,7 +190,7 @@ def _versions(
                 cle_url=cle_release_url(atr_host, release.project_key, str(version))
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
-                artifacts=[_artifact(row, committee, downloadable, status == "archived") for row in rows],
+                artifacts=[_artifact(row, downloadable, status == "archived") for row in rows],
             )
         )
 

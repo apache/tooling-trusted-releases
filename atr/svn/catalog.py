@@ -121,10 +121,10 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
             release.ArtifactInput(
                 artifact_path=name,
                 classification=file_type.value,
+                download_path_suffix=dirpath,
                 signature_path=_companion(siblings, name, _SIGNATURE_SUFFIXES),
                 checksum_path=_companion(siblings, name, _CHECKSUM_SUFFIXES),
                 sbom_path=_companion(siblings, name, _SBOM_SUFFIXES),
-                download_path_suffix="/".join(dirpath.split("/")[1:]) or None,
             )
         )
     return artifacts

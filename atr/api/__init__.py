@@ -210,7 +210,6 @@ async def catalog_project(
         project.version_method,
         artifacts,
         project_cycles,
-        project.committee,
         datetime.datetime.now(datetime.UTC),
         atr_host=atr_host,
     )

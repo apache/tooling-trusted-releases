@@ -41,7 +41,7 @@ def test_cle_url_is_omitted_for_versions_without_a_backing_release() -> None:
     project = _project()
     artifacts = [_artifact(project, "3.0.0", "a-3.0.0.tar.gz", svn_revision=100)]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, "atr.example.org")}
 
     assert versions["3.0.0"].cle_url is None
 
@@ -52,7 +52,7 @@ def test_cle_url_is_omitted_when_no_host_is_supplied() -> None:
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
     artifacts = [_artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released)]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["5.0.2"].cle_url is None
 
@@ -62,7 +62,7 @@ def test_cle_url_links_versions_backed_by_a_release_when_a_host_is_supplied() ->
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
     artifacts = [_artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released)]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key, "atr.example.org")}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, "atr.example.org")}
 
     assert versions["5.0.2"].cle_url == "https://atr.example.org/api/cle/release/cassandra/5.0.2"
 
@@ -97,7 +97,7 @@ def test_released_and_archived_versions_are_downloadable() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived, svn_revision=28114),
     ]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     # Released off the live route, archived off archive.apache.org - both downloadable
     assert versions["5.0.2"].artifacts[0].downloadable is True
@@ -112,7 +112,7 @@ def test_paired_sbom_shown_on_catalog_artifact() -> None:
         _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released, sbom_path="a-5.0.2.tar.gz.cdx.json"),
     ]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["5.0.2"].artifacts[0].sbom_path == "a-5.0.2.tar.gz.cdx.json"
 
@@ -130,7 +130,7 @@ def test_status_reflects_release_and_archive_state() -> None:
         _artifact(project, "4.1.7", "a-4.1.7.tar.gz", release=archived),
     ]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["5.0.2"].status == "released"
     assert versions["4.1.7"].status == "archived"
@@ -143,7 +143,7 @@ def test_archived_status_holds_without_an_archive_date() -> None:
     undated = _release(project, "3.11.0", cycle_key="cassandra-default", released=_NOW, is_archived=True)
     artifacts = [_artifact(project, "3.11.0", "a-3.11.0.tar.gz", release=undated)]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["3.11.0"].status == "archived"
     assert versions["3.11.0"].artifacts[0].downloadable is True
@@ -153,7 +153,7 @@ def test_svn_revision_alone_does_not_make_a_version_managed() -> None:
     project = _project()
     artifacts = [_artifact(project, "2.0.0", "a-2.0.0.tar.gz", svn_revision=999, managed=False)]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["2.0.0"].svn_revision == 999
     assert versions["2.0.0"].managed is False
@@ -167,7 +167,7 @@ def test_version_is_managed_when_any_artifact_is_managed() -> None:
         _artifact(project, "1.0.0", "a-1.0.0.jar", release=release, managed=True),
     ]
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {}, project.committee_key)}
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
 
     assert versions["1.0.0"].managed is True
 
@@ -190,7 +190,7 @@ def test_versions_are_newest_first() -> None:
         _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=newer),
     ]
 
-    versions = catalog._versions(artifacts, {}, project.committee_key)
+    versions = catalog._versions(artifacts, {})
 
     assert [str(v.version) for v in versions] == ["5.0.2", "5.0.1"]
 
@@ -227,6 +227,7 @@ def _artifact(
         release=release,
         svn_revision=svn_revision,
         sbom_path=sbom_path,
+        download_path_suffix=f"{project.key}/{version}",
         managed=managed,
         dated=dated,
     )

@@ -83,10 +83,11 @@ class ArtifactInput:
     # just the typed handoff so catalogue_release never sees an untyped dict
     artifact_path: str
     classification: str
+    # The file's directory under the dist root, as the watcher observed it
+    download_path_suffix: str
     signature_path: str | None = None
     checksum_path: str | None = None
     sbom_path: str | None = None
-    download_path_suffix: str | None = None
 
 
 async def _archive_release(

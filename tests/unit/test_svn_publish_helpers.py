@@ -96,21 +96,28 @@ def test_public_download_url_falls_back_to_self_host_without_svn(monkeypatch: py
     assert url == "https://atr.example/downloads/apple/apple-1.0/apple-1.0.tar.gz"
 
 
-def test_public_download_url_uses_archive_for_archived_release(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_download_url_for_path_uses_archive_when_archived(monkeypatch: pytest.MonkeyPatch) -> None:
     # An archived release lives on archive.apache.org on every host, so even with no SVN publishing
-    # configured (dev) it short-circuits the self-hosted fallback rather than using it
+    # configured (dev) it comes off the archive rather than the self-hosted fallback. The catalogue
+    # passes the artifact's stored full path, so a retired project resolves under its original dir
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
-    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    url = util.public_download_url(
-        committee,
-        safe.RelPath("apple-1.0"),
-        util.DownloadFile.ARTIFACT,
-        filename="apple-1.0.tar.gz",
-        archived=True,
+    url = util.download_url_for_path(
+        safe.RelPath("abdera/1.0/apache-abdera-1.0.tar.gz"), util.DownloadFile.ARTIFACT, archived=True
     )
 
-    assert url == f"{constants.ARCHIVE_APACHE_URL}/apple/apple-1.0/apple-1.0.tar.gz"
+    assert url == f"{constants.ARCHIVE_APACHE_URL}/abdera/1.0/apache-abdera-1.0.tar.gz"
+
+
+def test_download_url_for_path_self_hosts_without_svn(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With no SVN publishing (dev), a stored full path is served from ATR's own host
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+
+    url = util.download_url_for_path(
+        safe.RelPath("abdera/1.0/apache-abdera-1.0.tar.gz"), util.DownloadFile.ARTIFACT, host="atr.example"
+    )
+
+    assert url == "https://atr.example/downloads/abdera/1.0/apache-abdera-1.0.tar.gz"
 
 
 def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypatch: pytest.MonkeyPatch) -> None:

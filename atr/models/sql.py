@@ -1934,9 +1934,10 @@ class Artifact(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
         **example(datetime.datetime(2025, 6, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
-    # The release's path under the committee downloads dir, needed to build the public
-    # download URLs. NULL means the files sit directly under the committee dir.
-    download_path_suffix: str | None = sqlmodel.Field(default=None, **example("example/0.0.1"))
+    # The artifact's directory under the dist root: the committee dir (incubator prefix for a
+    # podling) plus the release sub-path. artifact_path is the file name within it, and the
+    # signature, checksum and SBOM share the directory
+    download_path_suffix: str | None = sqlmodel.Field(default=None, **example("incubator/example/0.0.1"))
 
     # M-1: Artifact -> Release
     # 1-M: Release -> [Artifact]

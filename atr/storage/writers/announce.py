@@ -306,6 +306,7 @@ class ReleaseManager(CommitteeParticipant):
             # revisions and cascade-deletes the file state we read classifications from
             await self.__write_artifact_rows(
                 release,
+                committee,
                 finished_path,
                 preview_revision_number,
                 published_revision,
@@ -588,6 +589,7 @@ class ReleaseManager(CommitteeParticipant):
     async def __write_artifact_rows(
         self,
         release: sql.Release,
+        committee: sql.Committee,
         finished_path: safe.StatePath,
         revision_number: safe.RevisionNumber,
         svn_revision: int | None,
@@ -600,6 +602,8 @@ class ReleaseManager(CommitteeParticipant):
         parent_revision_number = await self.__parent_revision_number(release.key, revision_number)
         rel_paths = {str(p) async for p in util.paths_recursive(finished_path)}
         classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
+        # The directory the files publish to under the dist root, the same for every artifact here
+        dist_dir = str(paths.committee_dist_relpath(committee, download_path_suffix))
 
         for rel in sorted(rel_paths):
             if not analysis.is_artifact(rel):
@@ -634,7 +638,7 @@ class ReleaseManager(CommitteeParticipant):
                     sbom_path=sbom_path,
                     classification=classifications.get(rel),
                     svn_revision=svn_revision,
-                    download_path_suffix=str(download_path_suffix) if download_path_suffix is not None else None,
+                    download_path_suffix=dist_dir,
                     managed=True,
                     dated=dated,
                 )

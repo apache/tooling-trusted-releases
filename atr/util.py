@@ -1023,35 +1023,48 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     return word
 
 
+def download_url_for_path(
+    relpath: safe.RelPath, kind: DownloadFile, host: str | None = None, archived: bool = False
+) -> str:
+    # Where a file at a known dist-relative path is fetched from, by lifecycle (archived vs beta vs
+    # released) and role (artifact vs metadata). The catalogue stores each artifact's exact path, so
+    # nothing has to be reconstructed from a committee here
+    if archived:
+        # archive.apache.org keeps every release ever published, on every host
+        return paths.archive_download_url(relpath)
+    if not config.get().SVN_PUBLISH_URL:
+        # No SVN publishing configured (dev), so ATR serves the downloads itself
+        return f"https://{host or config.get().APP_HOST}/downloads/{relpath}"
+    match svn_publish_target():
+        case SvnPublishTarget.ATR:
+            # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored
+            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
+        case SvnPublishTarget.RELEASE:
+            if kind is DownloadFile.ARTIFACT:
+                return paths.closer_download_url(relpath)
+            return paths.downloads_url(relpath)
+
+
 def public_download_url(
     committee: sql.Committee,
     suffix: safe.RelPath | None,
     kind: DownloadFile,
     filename: str | None = None,
     host: str | None = None,
-    archived: bool = False,
 ) -> str:
-    # The single place that resolves where a release file is fetched from, by
-    # lifecycle (archived vs beta vs released) and role (artifact vs metadata).
-    if archived:
-        return paths.archive_download_url(paths.committee_dist_relpath(committee, suffix, filename))
+    # Where a live release file is fetched from, built from its committee (which knows is_podling)
+    # plus the release suffix and file name. Historical catalogue artifacts resolve from their
+    # stored path via download_url_for_path instead, and never come through here
     if not config.get().SVN_PUBLISH_URL:
-        # No SVN publishing configured (dev), so ATR serves the downloads itself.
-        url = paths.committee_downloads_url(host or config.get().APP_HOST, committee)
+        # No SVN publishing (dev): ATR serves downloads itself, built config-light without the
+        # storage-dir the dist relpath would otherwise need
+        base = paths.committee_downloads_url(host or config.get().APP_HOST, committee)
         if suffix is not None:
-            url = f"{url}/{suffix}"
+            base = f"{base}/{suffix}"
         if filename is not None:
-            url = f"{url}/{filename}"
-        return url
-    relpath = paths.committee_dist_relpath(committee, suffix, filename)
-    match svn_publish_target():
-        case SvnPublishTarget.ATR:
-            # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored.
-            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
-        case SvnPublishTarget.RELEASE:
-            if kind is DownloadFile.ARTIFACT:
-                return paths.closer_download_url(relpath)
-            return paths.downloads_url(relpath)
+            base = f"{base}/{filename}"
+        return base
+    return download_url_for_path(paths.committee_dist_relpath(committee, suffix, filename), kind, host)
 
 
 async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tuple[str | None, bool, bool, str | None]:
