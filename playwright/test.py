@@ -19,6 +19,7 @@
 
 import argparse
 import dataclasses
+import datetime
 import glob
 import json
 import logging
@@ -34,6 +35,8 @@ from typing import Any, Final
 import netifaces
 import rich.logging
 from playwright.sync_api import BrowserContext, Dialog, Page, Request, Response, expect, sync_playwright
+
+# Temporary debugging, version 1782917963
 
 ATR_BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
 OPENPGP_TEST_UID: Final[str] = "<apache-tooling@example.invalid>"
@@ -397,6 +400,7 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
 
         elapsed_time = time.monotonic() - start_time
         if elapsed_time > max_wait_seconds:
+            dump_ongoing_task_details(page, project_key, version_key, revision)
             raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
 
         response = page.request.get(polling_url)
@@ -407,6 +411,8 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
             if not ongoing_count_str:
                 raise RuntimeError("Polling request returned empty body")
             ongoing_count = int(ongoing_count_str)
+            if (attempt > 0) and ((attempt % 20) == 0):
+                logging.info(f"Still waiting on {rev_path}: ongoing={ongoing_count}, elapsed={elapsed_time:.1f}s")
             if ongoing_count == 0:
                 elapsed_time = time.monotonic() - start_time
                 logging.info(f"All tasks completed in {elapsed_time} seconds")
@@ -417,7 +423,61 @@ def poll_for_tasks_completion(page: Page, project_key: str, version_key: str, re
             logging.exception("Unexpected error during polling response processing")
             raise
 
+    dump_ongoing_task_details(page, project_key, version_key, revision)
     raise TimeoutError(f"Tasks did not complete within {max_wait_seconds} seconds")
+
+
+def task_age_seconds(now: datetime.datetime, iso_timestamp: str | None) -> float | None:
+    if not iso_timestamp:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.UTC)
+    return (now - parsed).total_seconds()
+
+
+def dump_ongoing_task_details(page: Page, project_key: str, version_key: str, revision: str) -> None:
+    rev_path = f"{project_key}/{version_key}/{revision}"
+    try:
+        response = page.request.get(f"{ATR_BASE_URL}/admin/tasks/list?limit=1000")
+        if not response.ok:
+            logging.error(f"Task detail request for {rev_path} failed with status {response.status}")
+            return
+        all_tasks = response.json().get("data", [])
+        matching = [
+            task
+            for task in all_tasks
+            if (task.get("project_key") == project_key)
+            and (task.get("version_key") == version_key)
+            and (str(task.get("revision_number")) == str(revision))
+        ]
+        if not matching:
+            logging.error(
+                f"No task rows found for {rev_path} among {len(all_tasks)} recent tasks "
+                f"(raise the limit if this list is truncated)"
+            )
+            return
+        now = datetime.datetime.now(datetime.UTC)
+        status_counts: dict[str, int] = {}
+        logging.error(f"Blocking-task dump for {rev_path} ({len(matching)} matching tasks):")
+        for task in matching:
+            status = str(task.get("status"))
+            status_counts[status] = status_counts.get(status, 0) + 1
+            started = task.get("started")
+            age = task_age_seconds(now, started or task.get("added"))
+            age_text = f"{age:.1f}s" if age is not None else "unknown"
+            phase = "running_for" if started else "queued_for"
+            logging.error(
+                f"  task {task.get('id')} type={task.get('task_type')} status={status} "
+                f"pid={task.get('pid')} {phase}={age_text} path={task.get('primary_rel_path')} "
+                f"error={task.get('error')}"
+            )
+        logging.error(f"Blocking-task status counts for {rev_path}: {status_counts}")
+    except Exception:
+        logging.exception(f"Failed to dump ongoing task details for {rev_path}")
 
 
 def ensure_note_results_are_visible(page: Page, result_type: str) -> None:
