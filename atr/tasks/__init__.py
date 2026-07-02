@@ -26,6 +26,7 @@ import sqlmodel
 
 import atr.analysis as analysis
 import atr.attestable as attestable
+import atr.constants as constants
 import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
@@ -34,6 +35,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
+import atr.tasks.cap as cap
 import atr.tasks.checks as checks
 import atr.tasks.checks.compare as compare
 import atr.tasks.checks.hashing as hashing
@@ -89,6 +91,33 @@ async def asc_checks(
         )
 
     return tasks
+
+
+async def cap_approval_resolve(
+    approval_request_id: int,
+    *,
+    schedule: datetime.datetime,
+    attempt: int = 0,
+    caller_data: db.Session | None = None,
+) -> sql.Task:
+    task_args = args.CapApprovalResolveArgs(approval_request_id=approval_request_id, attempt=attempt)
+    async with db.ensure_session(caller_data) as data:
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.CAP_APPROVAL_RESOLVE,
+            task_args=task_args.model_dump(),
+            asf_uid=constants.SYSTEM_SERVICE_UID,
+            revision_number=None,
+            primary_rel_path=None,
+            project_key=None,
+            version_key=None,
+        )
+        task.scheduled = schedule
+        data.add(task)
+        await data.flush()
+        if caller_data is None:
+            await data.commit()
+        return task
 
 
 async def clear_scheduled(caller_data: db.Session | None = None) -> None:
@@ -316,6 +345,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
     match task_type:
         case sql.TaskType.ARCHIVE_COMPARISON:
             return parity.across_formats
+        case sql.TaskType.CAP_APPROVAL_RESOLVE:
+            return cap.resolve
         case sql.TaskType.COMPARE_SOURCE_TREES:
             return compare.source_trees
         case sql.TaskType.DISTRIBUTION_STATUS:

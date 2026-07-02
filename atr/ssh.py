@@ -710,6 +710,7 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
     """Ensure the release object exists or create it for a write operation."""
     release_key = sql.release_key(str(project_key), str(version_key))
     async with db.session() as data:
+        await data.begin_immediate()
         release = await data.release(key=release_key, _committee=True).get()
         if release is None:
             project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(

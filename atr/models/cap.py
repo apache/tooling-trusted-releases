@@ -15,37 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from . import (
-    api,
-    args,
-    basic,
-    cap,
-    distribution,
-    github,
-    helpers,
-    mail,
-    results,
-    safe,
-    schema,
-    sql,
-    tabulate,
-    validation,
-)
+from . import schema
 
-# If we use .__name__, pyright gives a warning
-__all__ = [
-    "api",
-    "args",
-    "basic",
-    "cap",
-    "distribution",
-    "github",
-    "helpers",
-    "mail",
-    "results",
-    "safe",
-    "schema",
-    "sql",
-    "tabulate",
-    "validation",
-]
+
+class ErrorMessage(schema.Subset):
+    error: str
+
+
+class Question(schema.Subset):
+    question_id: int
+    outcome: str | None = None
+    permalink: str | None = None
+
+
+class Resolution(schema.Subset):
+    outcome: str | None = None
+    permalink: str | None = None
+
+
+class TokenIssued(schema.Subset):
+    token: str

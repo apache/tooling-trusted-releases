@@ -305,6 +305,13 @@ class WriteAsAsfYamlService(WriteAsSystemService):
         self.project_upsert_config = admin.project.upsert_config
 
 
+class WriteAsCapResolveService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.project_record_approval_outcome = admin.project.record_approval_outcome
+
+
 class WriteAsDistCatalogService(WriteAsSystemService):
     def __init__(self, write: Write, data: db.Session):
         super().__init__(write, data)

@@ -498,6 +498,10 @@ class ArchiveSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
+class CompleteApprovalRequest(form.Form):
+    approval_request_id: form.Int = form.label("Approval request ID", widget=form.Widget.HIDDEN)
+
+
 class DeleteSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 

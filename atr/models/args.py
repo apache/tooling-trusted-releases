@@ -22,6 +22,11 @@ import pydantic
 from . import mail, safe, schema
 
 
+class CapApprovalResolveArgs(schema.Strict):
+    approval_request_id: int = schema.description("The ApprovalRequest row to resolve")
+    attempt: int = pydantic.Field(default=0, description="The current resolve attempt count")
+
+
 class ConvertCycloneDX(schema.Strict):
     """Arguments for the task to convert an artifact to a CycloneDX SBOM."""
 

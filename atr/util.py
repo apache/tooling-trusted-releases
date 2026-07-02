@@ -47,6 +47,7 @@ import asfquart.session as session
 import gitignore_parser
 import jinja2
 import markupsafe
+import pydantic
 import quart
 
 # NOTE: The atr.db module imports this module
@@ -55,6 +56,7 @@ import atr.config as config
 import atr.constants as constants
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.cap as cap
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -105,6 +107,7 @@ PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
 )
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
+CAP_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 MAX_PROPAGATION_ARTIFACTS: Final[int] = 24
 EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
 EXPECTED_DEFAULT_TLS_MINIMUM_VERSION: Final[ssl.TLSVersion] = ssl.TLSVersion.TLSv1_2
@@ -314,6 +317,90 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
         with contextlib.suppress(FileNotFoundError):
             await aiofiles.os.remove(temp_path)
         raise
+
+
+async def cap_create_question(
+    token: str,
+    *,
+    project_id: str,
+    title: str,
+    description: str,
+    target_audience: str,
+    approval_type: str,
+    closes_at: datetime.datetime,
+) -> cap.Question:
+    url = f"{config.get().CAP_API_BASE_URL.rstrip('/')}/api/question"
+    headers = {"Authorization": f"bearer {token}"}
+    payload = {
+        "project_id": project_id,
+        "title": title,
+        "description": description,
+        "target_audience": target_audience,
+        "approval_type": approval_type,
+        "is_binding": True,
+        "is_private": True,
+        "response_option": {"kind": "vote"},
+        "closes_at": closes_at.astimezone(datetime.UTC).isoformat(),
+    }
+    try:
+        async with create_secure_session(timeout=CAP_TIMEOUT) as http_session:
+            async with http_session.post(url, json=payload, headers=headers) as response:
+                status = response.status
+                body = await response.text()
+    except Exception as exc:
+        raise FetchError(f"CAP question creation failed: {exc}", url=url) from exc
+    if status != 201:
+        raise FetchError(f"CAP question creation failed ({status}): {body}", url=url)
+    try:
+        return cap.Question.model_validate_json(body)
+    except pydantic.ValidationError as exc:
+        raise FetchError(f"CAP question creation returned an invalid response: {exc}", url=url) from exc
+
+
+async def cap_mint_token() -> str:
+    url = f"{config.get().CAP_API_BASE_URL.rstrip('/')}/api/token"
+    permanent = config.get().CAP_ROLE_ACCOUNT_TOKEN
+    if not permanent:
+        raise FetchError("CAP role account token is not configured", url=url)
+    headers = {"Authorization": f"bearer {permanent}"}
+    try:
+        async with create_secure_session(timeout=CAP_TIMEOUT) as http_session:
+            async with http_session.get(url, headers=headers) as response:
+                status = response.status
+                body = await response.text()
+    except Exception as exc:
+        raise FetchError(f"CAP token minting failed: {exc}", url=url) from exc
+    if status != 201:
+        raise FetchError(f"CAP token minting failed ({status})", url=url)
+    try:
+        return cap.TokenIssued.model_validate_json(body).token
+    except pydantic.ValidationError as exc:
+        raise FetchError(f"CAP token minting returned an invalid response: {exc}", url=url) from exc
+
+
+async def cap_resolve_question(token: str, question_id: int) -> cap.Resolution | None:
+    url = f"{config.get().CAP_API_BASE_URL.rstrip('/')}/api/question/{question_id}/resolve"
+    headers = {"Authorization": f"bearer {token}"}
+    try:
+        async with create_secure_session(timeout=CAP_TIMEOUT) as http_session:
+            async with http_session.post(url, headers=headers) as response:
+                status = response.status
+                body = await response.text()
+    except Exception as exc:
+        raise FetchError(f"CAP question resolution failed: {exc}", url=url) from exc
+    if status == 403:
+        try:
+            error_kind = cap.ErrorMessage.model_validate_json(body).error
+        except pydantic.ValidationError:
+            error_kind = None
+        if error_kind == "deadline_in_future":
+            return None
+    if status != 200:
+        raise FetchError(f"CAP question resolution failed ({status}): {body}", url=url)
+    try:
+        return cap.Resolution.model_validate_json(body)
+    except pydantic.ValidationError as exc:
+        raise FetchError(f"CAP question resolution returned an invalid response: {exc}", url=url) from exc
 
 
 async def check_propagation(

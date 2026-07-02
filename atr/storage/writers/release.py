@@ -305,6 +305,7 @@ async def _start_release(
     expedited: bool,
 ) -> tuple[sql.Release, sql.Project]:
     """Creates the initial release draft record and revision directory."""
+    await data.begin_immediate()
     project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).get()
     if not project:
         raise storage.AccessError(f"Project {project_key} not found", status=404)

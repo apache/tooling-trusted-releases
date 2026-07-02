@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy.exc
 
+import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
 import atr.models.api as api
@@ -32,6 +33,8 @@ import atr.models.sql as sql
 import atr.models.validation as validation
 import atr.registry as registry
 import atr.storage as storage
+import atr.tasks as tasks
+import atr.util as util
 
 if TYPE_CHECKING:
     import atr.shared as shared
@@ -232,10 +235,11 @@ class CommitteeMember(ReleaseManager):
             project_key=str(project_key),
         )
 
-    async def archive(self, project_key: safe.ProjectKey) -> None:
+    async def archive(self, project_key: safe.ProjectKey, approval_request_id: int) -> None:
         await self.__data.begin_immediate()
         self.__data.expire_all()
         try:
+            await self.__claim_approval(approval_request_id, project_key, sql.ApprovalAction.ARCHIVE)
             project = await self.__data.project(
                 key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True
             ).get()
@@ -256,6 +260,12 @@ class CommitteeMember(ReleaseManager):
                     " complete or remove them first."
                 )
 
+            if project.releases_including_embargoed:
+                raise storage.AccessError(
+                    f"Cannot archive project '{project_key}' because it still has draft releases;"
+                    " delete them and try again."
+                )
+
             if project.committee_key:
                 committee_projects = await self.__data.project(
                     committee_key=project.committee_key, status=sql.ProjectStatus.ACTIVE
@@ -273,12 +283,14 @@ class CommitteeMember(ReleaseManager):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project_key),
+            approval_request_id=approval_request_id,
         )
 
-    async def delete(self, project_key: safe.ProjectKey) -> None:
+    async def delete(self, project_key: safe.ProjectKey, approval_request_id: int) -> None:
         await self.__data.begin_immediate()
         self.__data.expire_all()
         try:
+            await self.__claim_approval(approval_request_id, project_key, sql.ApprovalAction.DELETE)
             project = await self.__data.project(
                 key=str(project_key), status=sql.ProjectStatus.ACTIVE, _releases=True
             ).get()
@@ -308,6 +320,7 @@ class CommitteeMember(ReleaseManager):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project_key),
+            approval_request_id=approval_request_id,
         )
         return None
 
@@ -355,6 +368,62 @@ class CommitteeMember(ReleaseManager):
             return True
         return False
 
+    async def request_approval(
+        self,
+        project_key: safe.ProjectKey,
+        action: sql.ApprovalAction,
+        cap_question_id: int,
+        closes_at: datetime.datetime,
+    ) -> sql.ApprovalRequest:
+        approval = sql.ApprovalRequest(
+            project_key=str(project_key),
+            committee_key=self.__committee_key,
+            action=action,
+            cap_question_id=cap_question_id,
+            requested_by=self.__asf_uid,
+            closes_at=closes_at,
+        )
+        try:
+            self.__data.add(approval)
+            await self.__data.flush()
+            await tasks.cap_approval_resolve(
+                util.unwrap(approval.id),
+                schedule=closes_at + constants.CAP_RESOLVE_INITIAL_DELAY,
+                caller_data=self.__data,
+            )
+            await self.__data.commit()
+        except sqlalchemy.exc.IntegrityError as error:
+            await self.__data.rollback()
+            if "approvalrequest.project_key" in str(error):
+                raise storage.AccessError("A CAP approval request for this project is already in progress.", status=409)
+            raise storage.AccessError(
+                f"CAP issued question #{cap_question_id}, which ATR has already recorded for another request.",
+                status=409,
+            )
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            approval_action=action.value,
+            cap_question_id=cap_question_id,
+            closes_at=closes_at.isoformat(),
+        )
+        return approval
+
+    async def __claim_approval(
+        self, approval_request_id: int, project_key: safe.ProjectKey, action: sql.ApprovalAction
+    ) -> None:
+        approval = await self.__data.approval_request(id=approval_request_id).get()
+        if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
+            raise storage.AccessError("This approval request is not ready to complete.", status=409)
+        if (approval.project_key != str(project_key)) or (approval.action != action):
+            raise storage.AccessError("This approval request does not match the requested action.", status=409)
+        if approval.committee_key != self.__committee_key:
+            raise storage.AccessError("This approval request was filed for a different committee.", status=409)
+        approval.status = sql.ApprovalStatus.COMPLETED
+
     def __current_categories(self, project: sql.Project) -> list[str]:
         return (
             [category.strip() for category in (project.categories or "").split(",") if category.strip()]
@@ -381,6 +450,40 @@ class FoundationAdmin(FoundationCommitter):
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
+
+    async def record_approval_outcome(
+        self,
+        approval_request_id: int,
+        status: sql.ApprovalStatus,
+        vote_outcome: str | None,
+        permalink: str | None,
+        error: str | None = None,
+    ) -> bool:
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            approval = await self.__data.approval_request(id=approval_request_id).get()
+            if (approval is None) or (approval.status != sql.ApprovalStatus.PENDING):
+                await self.__data.rollback()
+                return False
+            approval.status = status
+            approval.outcome = vote_outcome
+            approval.permalink = permalink
+            approval.error = error
+            if error is None:
+                approval.resolved_at = datetime.datetime.now(datetime.UTC)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            approval_request_id=approval_request_id,
+            approval_status=status.value,
+            outcome=vote_outcome,
+            error=error,
+        )
+        return True
 
     async def upsert_config(
         self,

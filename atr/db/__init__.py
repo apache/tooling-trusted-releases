@@ -156,6 +156,37 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
     async def begin_immediate(self) -> None:
         await self.execute(sqlalchemy.text("BEGIN IMMEDIATE"))
 
+    def approval_request(
+        self,
+        id: Opt[int] = NOT_SET,
+        project_key: Opt[str] = NOT_SET,
+        action: Opt[sql.ApprovalAction] = NOT_SET,
+        cap_question_id: Opt[int] = NOT_SET,
+        status: Opt[sql.ApprovalStatus] = NOT_SET,
+        status_in: Opt[Sequence[sql.ApprovalStatus]] = NOT_SET,
+        project_key_in: Opt[Sequence[str]] = NOT_SET,
+    ) -> Query[sql.ApprovalRequest]:
+        query = sqlmodel.select(sql.ApprovalRequest)
+
+        via = sql.validate_instrumented_attribute
+
+        if is_defined(id):
+            query = query.where(sql.ApprovalRequest.id == id)
+        if is_defined(project_key):
+            query = query.where(sql.ApprovalRequest.project_key == project_key)
+        if is_defined(action):
+            query = query.where(sql.ApprovalRequest.action == action)
+        if is_defined(cap_question_id):
+            query = query.where(sql.ApprovalRequest.cap_question_id == cap_question_id)
+        if is_defined(status):
+            query = query.where(sql.ApprovalRequest.status == status)
+        if is_defined(status_in):
+            query = query.where(via(sql.ApprovalRequest.status).in_(status_in))
+        if is_defined(project_key_in):
+            query = query.where(via(sql.ApprovalRequest.project_key).in_(project_key_in))
+
+        return Query(self, query)
+
     def artifact(
         self,
         project_key: Opt[str] = NOT_SET,

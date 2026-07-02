@@ -92,6 +92,8 @@ class AppConfig:
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
+    CAP_API_BASE_URL = decouple.config("CAP_API_BASE_URL", default="https://cap-test.apache.org")
+    CAP_ROLE_ACCOUNT_TOKEN = _config_secrets("CAP_ROLE_ACCOUNT_TOKEN", STATE_DIR, default=None, cast=str)
 
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False

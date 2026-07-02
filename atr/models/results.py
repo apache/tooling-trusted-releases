@@ -22,6 +22,10 @@ import pydantic
 from . import safe, schema
 
 
+class CapApprovalResolve(schema.Strict):
+    kind: Literal["cap_approval_resolve"] = schema.Field(alias="kind")
+
+
 class DistributionStatusCheck(schema.Strict):
     """Result of the task to check pending distribution statuses."""
 
@@ -279,7 +283,8 @@ class MetadataUpdate(schema.Strict):
 
 
 Results = Annotated[
-    DistributionStatusCheck
+    CapApprovalResolve
+    | DistributionStatusCheck
     | DistributionWorkflow
     | DistributionWorkflowStatus
     | HashingCheck

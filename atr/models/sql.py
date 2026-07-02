@@ -69,6 +69,19 @@ class DistributionPlatformValue:
 # Enumerations
 
 
+class ApprovalAction(enum.StrEnum):
+    ARCHIVE = "archive"
+    DELETE = "delete"
+
+
+class ApprovalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class CheckResultStatus(enum.StrEnum):
     BLOCKER = "blocker"
     CONCERN = "concern"
@@ -217,6 +230,7 @@ class TaskStatus(enum.StrEnum):
 
 class TaskType(enum.StrEnum):
     ARCHIVE_COMPARISON = "archive_comparison"
+    CAP_APPROVAL_RESOLVE = "cap_approval_resolve"
     COMPARE_SOURCE_TREES = "compare_source_trees"
     DISTRIBUTION_STATUS = "distribution_status"
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
@@ -253,6 +267,8 @@ class TaskType(enum.StrEnum):
         match self:
             case TaskType.ARCHIVE_COMPARISON:
                 return "Archive comparison"
+            case TaskType.CAP_APPROVAL_RESOLVE:
+                return "CAP approval resolution"
             case TaskType.COMPARE_SOURCE_TREES:
                 return "Compare source trees"
             case TaskType.DISTRIBUTION_STATUS:
@@ -550,6 +566,35 @@ def example(value: Any) -> dict[Literal["schema_extra"], dict[str, Any]]:
 
 
 # SQL models with no dependencies
+
+
+# ApprovalRequest:
+class ApprovalRequest(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    project_key: str = sqlmodel.Field()
+    committee_key: str = sqlmodel.Field()
+    action: ApprovalAction = sqlmodel.Field()
+    cap_question_id: int = sqlmodel.Field(unique=True)
+    status: ApprovalStatus = sqlmodel.Field(default=ApprovalStatus.PENDING, index=True)
+    outcome: str | None = None
+    requested_by: str = sqlmodel.Field()
+    requested_at: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+    closes_at: datetime.datetime = sqlmodel.Field(sa_column=sqlalchemy.Column(UTCDateTime, nullable=False))
+    resolved_at: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    permalink: str | None = None
+    error: str | None = None
+
+    __table_args__ = (
+        sqlalchemy.Index(
+            "ix_approvalrequest_active_project",
+            "project_key",
+            unique=True,
+            sqlite_where=sqlalchemy.text("status IN ('PENDING', 'APPROVED')"),
+        ),
+    )
 
 
 # KeyLink:

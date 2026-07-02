@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 from typing import Final
 
 CLOSER_LUA_URL: Final[str] = "https://www.apache.org/dyn/closer.lua"
@@ -22,6 +23,19 @@ DOWNLOADS_APACHE_URL: Final[str] = "https://downloads.apache.org"
 ARCHIVE_APACHE_URL: Final[str] = "https://archive.apache.org/dist"
 SVN_DIST_PUBLIC_URL: Final[str] = "https://dist.apache.org/repos/dist/atr"
 SVN_DIST_ROOT_URL: Final[str] = "https://dist.apache.org/repos/dist"
+
+CAP_VOTE_DURATION_MINUTES: Final[int] = 7 * 24 * 60
+CAP_ARCHIVE_APPROVAL_TYPE: Final[str] = "majority_approval"
+CAP_DELETE_APPROVAL_TYPE: Final[str] = "majority_approval"
+CAP_RESOLVE_INITIAL_DELAY: Final[datetime.timedelta] = datetime.timedelta(minutes=1)
+CAP_RESOLVE_RETRY_DELAYS: Final[tuple[datetime.timedelta, ...]] = (
+    datetime.timedelta(minutes=2),
+    datetime.timedelta(minutes=5),
+    datetime.timedelta(minutes=15),
+    datetime.timedelta(minutes=45),
+    datetime.timedelta(hours=2),
+    datetime.timedelta(hours=6),
+)
 
 APACHE_LICENSE_2_0: Final[str] = """\
 

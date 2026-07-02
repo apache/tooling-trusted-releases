@@ -161,6 +161,11 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
     """
     async with db.session() as data:
         projects = await data.project(_committee=True, _releases=True).order_by(sql.Project.name).all()
+        approvals = await data.approval_request(
+            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED]
+        ).all()
+
+    approvals_by_project = {a.project_key: a for a in approvals}
 
     committee_project_counts: Counter[str] = Counter(
         str(p.committee.key) for p in projects if p.committee and p.is_active
@@ -173,6 +178,10 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                 continue
             if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
                 continue
+            approval = approvals_by_project.get(str(project.key))
+            if approval is not None:
+                action_forms[str(project.key)] = await _approval_request_element(approval)
+                continue
             if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
                 continue
             project_releases = project.releases_including_embargoed
@@ -182,10 +191,13 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                     action=util.as_url(post.projects.delete),
                     form_classes=".d-inline-block.m-0",
                     submit_classes="btn-sm btn-outline-danger",
-                    submit_label="Delete project",
+                    submit_label="Request deletion",
                     empty=True,
                     defaults={"project_key": str(project.key)},
-                    confirm="Are you sure you want to delete this project? This cannot be undone.",
+                    confirm=(
+                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                        " ready to delete only if the vote passes, and you must then return to complete it."
+                    ),
                 )
             elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project_releases):
                 action_forms[str(project.key)] = await form.render(
@@ -193,13 +205,13 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                     action=util.as_url(post.projects.archive),
                     form_classes=".d-inline-block.m-0",
                     submit_classes="btn-sm btn-outline-secondary",
-                    submit_label="Archive project",
+                    submit_label="Request archival",
                     empty=True,
                     defaults={"project_key": str(project.key)},
                     confirm=(
-                        f"This project has {util.plural(len(project_releases), 'draft release')}."
-                        " Archiving will delete those drafts and mark the project as retired."
-                        " Continue?"
+                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                        " ready to archive only if the vote passes, and you must then return to complete it, which"
+                        " deletes the draft releases and retires the project."
                     ),
                 )
 
@@ -344,6 +356,28 @@ async def view(
     )
 
 
+async def _approval_request_element(approval: sql.ApprovalRequest) -> htm.Element:
+    verb = approval.action.value
+    if approval.status == sql.ApprovalStatus.APPROVED:
+        return await form.render(
+            shared.projects.CompleteApprovalRequest,
+            action=util.as_url(post.projects.complete_approval),
+            form_classes=".d-inline-block.m-0",
+            submit_classes="btn-sm btn-outline-danger",
+            submit_label=f"Complete {verb}",
+            empty=True,
+            defaults={"approval_request_id": approval.id},
+            confirm=f"The CAP approval vote passed. This will {verb} the project now. Continue?",
+        )
+    closes = approval.closes_at.strftime("%Y-%m-%d %H:%M UTC")
+    question_url = f"{config.get().CAP_API_BASE_URL.rstrip('/')}/#/question/{approval.cap_question_id}"
+    return htm.p(".text-muted.small.mb-0")[
+        "CAP approval vote ",
+        htm.a(href=question_url)[f"#{approval.cap_question_id}"],
+        f" to {verb} in progress (ends {closes}).",
+    ]
+
+
 def _asf_yaml_export(project: sql.Project) -> str:
     block: dict[str, object] = {"metadata": _asf_yaml_metadata(project)}
     policy = _asf_yaml_policy(project)
@@ -477,17 +511,27 @@ def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
 
 
 async def _delete_form(project: sql.Project) -> htm.Element | None:
+    async with db.session() as data:
+        approval = await data.approval_request(
+            project_key=str(project.key),
+            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+        ).get()
+    if approval is not None:
+        return await _approval_request_element(approval)
     delete_form = None
     releases = project.releases_including_embargoed
     if not releases:
         delete_form = await form.render(
             shared.projects.DeleteSelectedProject,
             action=util.as_url(post.projects.delete),
-            form_classes="",
+            form_classes=".d-inline-block.m-0",
             submit_classes="btn-sm btn-outline-danger",
-            submit_label="Delete project",
+            submit_label="Request deletion",
             defaults={"project_key": str(project.key)},
-            confirm="Are you sure you want to delete this project? This cannot be undone.",
+            confirm=(
+                "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                " ready to delete only if the vote passes, and you must then return to complete it."
+            ),
             empty=True,
         )
     elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in releases):
@@ -496,13 +540,13 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             action=util.as_url(post.projects.archive),
             form_classes=".d-inline-block.m-0",
             submit_classes="btn-sm btn-outline-secondary",
-            submit_label="Archive project",
+            submit_label="Request archival",
             empty=True,
             defaults={"project_key": str(project.key)},
             confirm=(
-                f"This project has {util.plural(len(releases), 'draft release')}."
-                " Archiving will delete those drafts and mark the project as retired."
-                " Continue?"
+                "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                " ready to archive only if the vote passes, and you must then return to complete it, which"
+                " deletes the draft releases and retires the project."
             ),
         )
     return delete_form
@@ -695,7 +739,7 @@ async def _render_actions_card(
 ) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Actions"]]
-    with card.block(htm.div, classes=".card-body") as body:
+    with card.block(htm.div, classes=".card-body.d-flex.flex-column.align-items-start.gap-2") as body:
         if project.is_active and not is_sole_active_project:
             action_form = await _delete_form(project)
             if action_form:
@@ -704,20 +748,16 @@ async def _render_actions_card(
         if project.committee:
             if (project.committee.key in session.member_committees) or is_privileged:
                 body.append(
-                    htm.p[
-                        htm.a(
-                            ".btn.btn-sm.btn-outline-primary",
-                            href=util.as_url(add_project, committee_key=project.committee.key),
-                        )["Create a sibling project"]
-                    ]
+                    htm.a(
+                        ".btn.btn-sm.btn-outline-primary",
+                        href=util.as_url(add_project, committee_key=project.committee.key),
+                    )["Create a sibling project"]
                 )
                 body.append(
-                    htm.p[
-                        htm.a(
-                            ".btn.btn-sm.btn-outline-secondary",
-                            href=util.as_url(project_yaml, project_key=project.key),
-                        )["Export .asf.yaml"]
-                    ]
+                    htm.a(
+                        ".btn.btn-sm.btn-outline-secondary",
+                        href=util.as_url(project_yaml, project_key=project.key),
+                    )["Export .asf.yaml"]
                 )
     return card.collect()
 
