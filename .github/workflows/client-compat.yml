@@ -9,10 +9,6 @@ permissions:
   contents: read
   issues: write
 
-concurrency:
-  group: client-compat-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   client-compat:
     runs-on: self-hosted
