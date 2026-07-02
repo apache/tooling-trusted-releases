@@ -72,6 +72,39 @@ _SEMVER_FILE_RE: Final[re.Pattern[str]] = re.compile(
 # Calver dates (2026-01-27 or 20050330), limited to 19xx/20xx
 _CALVER_FILE_RE: Final[re.Pattern[str]] = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2}|(?:19|20)\d{6})(?!\d)")
 
+# Airflow ships its providers as flat calver batches: a dated source alongside every provider
+# package, in one dir with no version subdir. These spot the drop area and the batch source so the
+# watcher and cataloguer can collapse the per-provider subprojects into one project keyed by calver
+AIRFLOW_PROVIDER_AREAS: Final[frozenset[str]] = frozenset({"providers", "backport-providers"})
+_AIRFLOW_CALVER_SOURCE_RE: Final[re.Pattern[str]] = re.compile(
+    r"^apache[-_]airflow[-_](?:backport[-_])?providers-(\d{4})[-.](\d{1,2})[-.](\d{1,2})-source\.tar\.gz$"
+)
+_AIRFLOW_PROVIDER_FILE_RE: Final[re.Pattern[str]] = re.compile(r"^apache[-_]airflow[-_](?:backport[-_])?providers[-_]")
+
+
+def airflow_provider_area(committee: str, parts: tuple[str, ...]) -> str | None:
+    # The airflow provider area a file sits under (airflow/<area>/), or None
+    if committee != "airflow":
+        return None
+    if parts and (parts[0] in AIRFLOW_PROVIDER_AREAS):
+        return parts[0]
+    return None
+
+
+def is_airflow_provider_filename(filename: str) -> bool:
+    # A provider package or its batch source, by name - used to skip the stray copies of these that
+    # sit directly under airflow/ (duplicates of the ones under airflow/providers/)
+    return _AIRFLOW_PROVIDER_FILE_RE.match(filename) is not None
+
+
+def airflow_calver_date(filename: str) -> str | None:
+    # The calver date of a providers batch source, normalised to YYYY-MM-DD, or None
+    match = _AIRFLOW_CALVER_SOURCE_RE.match(filename)
+    if match is None:
+        return None
+    year, month, day = match.groups()
+    return f"{year}-{int(month):02d}-{int(day):02d}"
+
 
 @dataclasses.dataclass(frozen=True)
 class Decomposed:
@@ -83,8 +116,8 @@ class Decomposed:
 def candidate_keys(committee: str, subproject: str | None) -> list[str]:
     # Dist layout and projects.json keys don't always line up (commons/lang -> commons-lang, but
     # accumulo/accumulo-access is already its key), so try the obvious shapes. apache-/apache_ come
-    # off and underscores become hyphens, so a dist name like apache_airflow_providers_alibaba lines
-    # up with the registry's airflow-providers-alibaba instead of seeding an underscore duplicate
+    # off and underscores become hyphens, so an underscored dist name lines up with the registry's
+    # hyphenated key instead of seeding an underscore duplicate
     if not subproject:
         return [committee]
     bare = subproject.removeprefix("apache-").removeprefix("apache_").replace("_", "-")

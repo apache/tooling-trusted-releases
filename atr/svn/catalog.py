@@ -70,6 +70,7 @@ async def catalogue_commit(commit: dict) -> None:
         log.warning(f"dist commit payload has unexpected changed shape: {type(changed).__name__}")
         return
     added, removed = _structural_changes(changed)
+    added = _collapse_airflow_providers(added)
     if not (added or removed):
         return
     date = _commit_date(commit)
@@ -285,3 +286,54 @@ def _structural_changes(
             if file_type is classify.FileType.SOURCE:
                 bundle.has_source = True
     return {key: bundle for key, bundle in added.items() if bundle.has_source}, removed
+
+
+def _airflow_bundle_area(bundle: _ReleaseFiles) -> str | None:
+    if bundle.committee != "airflow":
+        return None
+    for dirpath, _name, _kind in bundle.files:
+        # dirpath is under the release root and leads with the committee, so drop that segment
+        area = dist.airflow_provider_area("airflow", tuple(dirpath.split("/")[1:]))
+        if area is not None:
+            return area
+    return None
+
+
+def _airflow_file_kind(name: str, kind: classify.FileType) -> classify.FileType:
+    # The batch source stays the release's source; a provider package that classified as source is a
+    # binary of the batch, and companions keep their kind
+    if dist.airflow_calver_date(name) is not None:
+        return classify.FileType.SOURCE
+    if kind is classify.FileType.SOURCE:
+        return classify.FileType.BINARY
+    return kind
+
+
+def _collapse_airflow_providers(
+    added: dict[tuple[str, str | None, str], _ReleaseFiles],
+) -> dict[tuple[str, str | None, str], _ReleaseFiles]:
+    # Airflow ships its providers as a calver batch: a dated source plus that day's provider
+    # packages, flat in one dir. Collapse the per-provider bundles this commit produced into one
+    # release per area keyed by the batch's calver date, source kept as source and the rest binaries.
+    # A commit with no batch source is left as it decomposed
+    date_by_area: dict[str, str] = {}
+    keys_by_area: dict[str, list[tuple[str, str | None, str]]] = {}
+    for key, bundle in added.items():
+        area = _airflow_bundle_area(bundle)
+        if area is None:
+            continue
+        keys_by_area.setdefault(area, []).append(key)
+        for _dirpath, name, _kind in bundle.files:
+            date = dist.airflow_calver_date(name)
+            if date is not None:
+                date_by_area[area] = date
+    for area, date in date_by_area.items():
+        merged = _ReleaseFiles("airflow", area, date)
+        for key in keys_by_area[area]:
+            for dirpath, name, kind in added.pop(key).files:
+                merged_kind = _airflow_file_kind(name, kind)
+                merged.files.append((dirpath, name, merged_kind))
+                if merged_kind is classify.FileType.SOURCE:
+                    merged.has_source = True
+        added[("airflow", area, date)] = merged
+    return added

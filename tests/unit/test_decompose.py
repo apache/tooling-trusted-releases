@@ -201,8 +201,8 @@ def test_repos_subtree_is_not_a_release() -> None:
 
 
 def test_candidate_keys_bridge_underscore_package_names() -> None:
-    # A dist filename's underscore package name lines up with the registry's hyphenated key, so
-    # the airflow providers resolve to airflow-providers-<name> rather than seeding a duplicate
+    # An underscored dist package name bridges to the registry's hyphenated key, so candidate_keys
+    # offers the hyphenated form rather than only the underscore duplicate
     assert "airflow-providers-alibaba" in dist.candidate_keys("airflow", "apache_airflow_providers_alibaba")
     assert "airflow-providers" in dist.candidate_keys("airflow", "apache_airflow_providers")
     # An apache- prefixed name still strips to the bare key, as before
