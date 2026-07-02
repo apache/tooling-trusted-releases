@@ -16,14 +16,18 @@
 # under the License.
 
 import os
+import pathlib
 
 import pytest
 
 
 def pytest_collection_modifyitems(config, items):
-    if not os.environ.get("TOOLING_ACTIONS_PATH"):
-        skip = pytest.mark.skip(
-            reason=("TOOLING_ACTIONS_PATH not set; point it at a tooling-actions checkout to enable contract tests")
-        )
-        for item in items:
+    if os.environ.get("TOOLING_ACTIONS_PATH"):
+        return
+    skip = pytest.mark.skip(
+        reason=("TOOLING_ACTIONS_PATH not set; point it at a tooling-actions checkout to enable contract tests")
+    )
+    directory = pathlib.Path(__file__).parent
+    for item in items:
+        if item.path.is_relative_to(directory):
             item.add_marker(skip)
