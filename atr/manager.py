@@ -292,28 +292,29 @@ class WorkerManager:
             return
         via = sql.validate_instrumented_attribute
         try:
-            active_query = (
-                sqlmodel.select(sqlalchemy.func.count())
-                .select_from(sql.Task)
-                .where(
-                    sql.Task.pid == pid,
-                    sql.Task.status == sql.TaskStatus.ACTIVE,
-                    via(sql.Task.started) >= worker.started,
+            async with data.begin():
+                active_query = (
+                    sqlmodel.select(sqlalchemy.func.count())
+                    .select_from(sql.Task)
+                    .where(
+                        sql.Task.pid == pid,
+                        sql.Task.status == sql.TaskStatus.ACTIVE,
+                        via(sql.Task.started) >= worker.started,
+                    )
                 )
-            )
-            active = (await data.execute(active_query)).scalar_one()
-            if not active:
-                return
-            finished_query = (
-                sqlmodel.select(sqlalchemy.func.count())
-                .select_from(sql.Task)
-                .where(
-                    sql.Task.pid == pid,
-                    via(sql.Task.status).in_([sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED]),
-                    via(sql.Task.started) >= worker.started,
+                active = (await data.execute(active_query)).scalar_one()
+                if not active:
+                    return
+                finished_query = (
+                    sqlmodel.select(sqlalchemy.func.count())
+                    .select_from(sql.Task)
+                    .where(
+                        sql.Task.pid == pid,
+                        via(sql.Task.status).in_([sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED]),
+                        via(sql.Task.started) >= worker.started,
+                    )
                 )
-            )
-            finished = (await data.execute(finished_query)).scalar_one()
+                finished = (await data.execute(finished_query)).scalar_one()
         except Exception as e:
             log.error(f"Error counting processed tasks for worker {pid}: {e}")
             return
