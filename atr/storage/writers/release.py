@@ -35,6 +35,7 @@ import sqlmodel
 import atr.analysis as analysis
 import atr.config as config
 import atr.constants as constants
+import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
@@ -1415,7 +1416,7 @@ class FoundationAdmin(FoundationCommitter):
         unmanaged. The project must already exist - an already-catalogued
         release is left alone.
         """
-        project = await self.__data.project(key=str(project_key)).get()
+        project = await self.__data.project(key=str(project_key), _committee=True).get()
         if project is None:
             return f"Project {project_key!s} not found"
         release_key = f"{project.key}-{version!s}"
@@ -1466,6 +1467,21 @@ class FoundationAdmin(FoundationCommitter):
                     download_path_suffix=artifact.download_path_suffix,
                     managed=False,
                     dated=released,
+                )
+            )
+        # A release we didn't make has been seen in the dist area, so tell the releases list.
+        # Only new releases reach here (the early return skips ones we already know), so an ATR
+        # release never double-notifies even once its dist commit lands under a watched path
+        if project.committee is not None:
+            notification = construct.release_notification(project.committee, project, str(version), released)
+            self.__data.add(
+                sql.Task(
+                    status=sql.TaskStatus.QUEUED,
+                    task_type=sql.TaskType.MESSAGE_SEND,
+                    task_args=notification.as_task_args(),
+                    asf_uid=self.__asf_uid,
+                    project_key=str(project_key),
+                    version_key=str(version),
                 )
             )
         await self.__data.commit()

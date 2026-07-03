@@ -23,16 +23,20 @@ from collections.abc import Mapping
 from typing import Final, Literal, TypedDict, overload
 
 import aiofiles.os
-import quart
 
 import atr.config as config
 import atr.db as db
+import atr.mail as mail
+import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.util as util
 
 type Context = Literal["announce", "announce_subject", "checklist", "finish_vote", "vote", "vote_subject"]
+
+# The list that hears about every release, whether ATR made it or the watcher spotted it
+_RELEASES_LIST_ADDRESS: Final[str] = "releases@tooling.apache.org"
 
 
 class _AnnounceSubjectValues(TypedDict):
@@ -197,10 +201,7 @@ async def announce_release_default(project_key: safe.ProjectKey) -> str:
 async def announce_release_subject_and_body(
     subject: str, body: str, options: AnnounceReleaseOptions
 ) -> tuple[str, str]:
-    try:
-        host = quart.request.host
-    except RuntimeError:
-        host = config.get().APP_HOST
+    host = config.get().APP_HOST
 
     async with db.session() as data:
         release = await data.release(
@@ -274,10 +275,7 @@ def checklist_body(
 ) -> str:
     import atr.get.vote as vote
 
-    try:
-        host = quart.request.host
-    except RuntimeError:
-        host = config.get().APP_HOST
+    host = config.get().APP_HOST
 
     revision_number = revision.number if revision else ""
     revision_tag = revision.tag if (revision and revision.tag) else ""
@@ -310,6 +308,35 @@ def finish_vote_template_variables() -> list[tuple[str, str]]:
     return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_FinishVoteValues.__required_keys__)]
 
 
+def release_notification(
+    committee: sql.Committee,
+    project: sql.Project,
+    version: str,
+    released: datetime.datetime,
+) -> args.Send:
+    host = config.get().APP_HOST
+    catalogue_url = f"https://{host}/catalog/{project.key}"
+
+    subject = f"{committee.display_name} Released {project.short_display_name} {version}"
+    body = (
+        f"{committee.display_name} has released {project.short_display_name} {version}.\n\n"
+        f"Committee: {committee.display_name}\n"
+        f"Project: {project.short_display_name}\n"
+        f"Version: {version}\n"
+        f"Released: {util.format_datetime(released)}\n\n"
+        f"The release artifacts and their download links are catalogued at:\n\n"
+        f"  {catalogue_url}\n"
+    )
+    return args.Send(
+        email_sender=mail.NOREPLY_EMAIL_ADDRESS,
+        email_to=_RELEASES_LIST_ADDRESS,
+        subject=subject,
+        body=body,
+        in_reply_to=None,
+        footer_category=mail.MailFooterCategory.AUTO,
+    )
+
+
 async def start_vote_default(project_key: safe.ProjectKey) -> str:
     async with db.session() as data:
         project = await data.project(
@@ -339,10 +366,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         revision_number = revision.number if revision else ""
         revision_tag = revision.tag if (revision and revision.tag) else ""
 
-    try:
-        host = quart.request.host
-    except RuntimeError:
-        host = config.get().APP_HOST
+    host = config.get().APP_HOST
 
     checklist_path = util.as_url(
         checklist.selected, project_key=str(options.project_key), version_key=str(options.version_key)

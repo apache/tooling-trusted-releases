@@ -302,6 +302,20 @@ class ReleaseManager(CommitteeParticipant):
             )
             self.__data.add(task)
 
+            # A release has been made, so tell the releases list. This is separate from the
+            # announcement above, and goes out from noreply rather than the release manager
+            notification = construct.release_notification(committee, release.project, str(version_key), release_date)
+            self.__data.add(
+                sql.Task(
+                    status=sql.TaskStatus.QUEUED,
+                    task_type=sql.TaskType.MESSAGE_SEND,
+                    task_args=notification.as_task_args(),
+                    asf_uid=self.__asf_uid,
+                    project_key=str(project_key),
+                    version_key=str(version_key),
+                )
+            )
+
             # Record the artifacts before promoting, since promotion deletes the
             # revisions and cascade-deletes the file state we read classifications from
             await self.__write_artifact_rows(

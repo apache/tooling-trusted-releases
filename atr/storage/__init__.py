@@ -334,6 +334,13 @@ class WriteAsJwtMintService(WriteAsSystemService):
         self.tokens_issue_system_jwt = admin.tokens.issue_system_jwt
 
 
+class WriteAsAutomatedMailService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        committer = WriteAsFoundationCommitter(write, data)
+        self.mail_send = committer.mail.send
+
+
 # TODO: Could name this WriteDispatcher
 class Write:
     # Read and Write have authenticator methods which return access outcomes
