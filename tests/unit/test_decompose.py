@@ -207,3 +207,16 @@ def test_candidate_keys_bridge_underscore_package_names() -> None:
     assert "airflow-providers" in dist.candidate_keys("airflow", "apache_airflow_providers")
     # An apache- prefixed name still strips to the bare key, as before
     assert dist.candidate_keys("cassandra", "apache-cassandra")[0] == "cassandra"
+
+
+def test_module_component_collapses_reverse_domain_modules() -> None:
+    # A maven module named <committee>.<component>.<submodule> collapses to its component, so a PMC's
+    # many modules key to their real subprojects; the org.apache. qualifier comes off first
+    assert dist.module_component("aries", "aries.blueprint.core") == "blueprint"
+    assert dist.module_component("sling", "sling.auth.form") == "auth"
+    assert dist.module_component("felix", "org.apache.felix.gogo.runtime") == "gogo"
+    assert dist.module_component("directory", "directory.ldapstudio.browser") == "ldapstudio"
+    # A plain subproject, or a re-published spec jar outside the committee's package, is left alone
+    assert dist.module_component("commons", "lang") is None
+    assert dist.module_component("felix", "org.osgi.core") is None
+    assert dist.module_component("aries", None) is None

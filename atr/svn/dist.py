@@ -113,6 +113,19 @@ class Decomposed:
     source: Literal["dir", "combined", "filename", "unknown"]
 
 
+def module_component(committee: str, subproject: str | None) -> str | None:
+    # aries, sling and felix ship each maven module as its own release named committee.component.submodule
+    # (aries.blueprint.core, sling.auth.core), so hundreds of modules would key as separate projects.
+    # Return the component - the segment after the committee - to collapse them, or None when the
+    # subproject isn't that shape (a plain name, or a re-published spec jar like org.osgi.core)
+    if subproject is None:
+        return None
+    bare = subproject.removeprefix("org.apache.")
+    if not bare.startswith(f"{committee}."):
+        return None
+    return bare[len(committee) + 1 :].split(".")[0] or None
+
+
 def candidate_keys(committee: str, subproject: str | None) -> list[str]:
     # Dist layout and projects.json keys don't always line up (commons/lang -> commons-lang, but
     # accumulo/accumulo-access is already its key), so try the obvious shapes. apache-/apache_ come

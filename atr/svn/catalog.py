@@ -271,13 +271,15 @@ def _structural_changes(
         committee, decomposed, is_dir, filename = change
         if decomposed.version is None:
             continue
-        key = (committee, decomposed.subproject, decomposed.version)
+        # aries/sling/felix ship each maven module as its own release; collapse to the component
+        subproject = dist.module_component(committee, decomposed.subproject) or decomposed.subproject
+        key = (committee, subproject, decomposed.version)
         if flags.startswith("D") and is_dir:
             removed.add(key)
         elif flags.startswith("A") and (filename is not None):
             bundle = added.get(key)
             if bundle is None:
-                bundle = _ReleaseFiles(committee, decomposed.subproject, decomposed.version)
+                bundle = _ReleaseFiles(committee, subproject, decomposed.version)
                 added[key] = bundle
             rel = path.removeprefix(_RELEASE_PREFIX)
             dirpath = rel.rsplit("/", 1)[0] if "/" in rel else ""
