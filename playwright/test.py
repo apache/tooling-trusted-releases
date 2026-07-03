@@ -281,6 +281,11 @@ def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_
     form_locator = page.locator(f'form[action="/announce/{TEST_PROJECT}/{esc_id(version_key)}"]')
     expect(form_locator).to_be_visible()
 
+    logging.info("Filling the download page URL if the project does not have one")
+    download_page_locator = form_locator.locator('input[name="download_page"]')
+    if download_page_locator.count() == 1:
+        download_page_locator.fill("https://test.apache.org/download")
+
     logging.info("Locating the confirmation input within the form")
     confirm_input_locator = form_locator.locator('input[name="confirm_announce"]')
     expect(confirm_input_locator).to_be_visible()

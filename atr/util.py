@@ -27,10 +27,12 @@ import email.utils
 import enum
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 import pathlib
 import re
+import socket
 import ssl
 import tempfile
 import unicodedata
@@ -41,6 +43,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import aiofiles.os
 import aiohttp
+import aiohttp.abc
 import aioshutil
 import asfquart.base as base
 import asfquart.session as session
@@ -224,6 +227,23 @@ class FetchError(RuntimeError):
     def __init__(self, message: str, url: str):
         super().__init__(message)
         self.url = url
+
+
+class PublicResolver(aiohttp.abc.AbstractResolver):
+    def __init__(self) -> None:
+        self.__resolver = aiohttp.DefaultResolver()
+
+    async def close(self) -> None:
+        await self.__resolver.close()
+
+    async def resolve(
+        self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET
+    ) -> list[aiohttp.abc.ResolveResult]:
+        results = await self.__resolver.resolve(host, port, family)
+        for result in results:
+            if not ipaddress.ip_address(result["host"]).is_global:
+                raise aiohttp.ClientConnectionError(f"The address of {host} is not public")
+        return results
 
 
 def archive_format_stem(name: str) -> str | None:
@@ -586,9 +606,11 @@ def create_path_matcher(
 
 def create_secure_session(
     timeout: aiohttp.ClientTimeout | None = None,
+    public: bool = False,
 ) -> aiohttp.ClientSession:
     """Create a secure aiohttp.ClientSession with hardened SSL/TLS configuration."""
-    connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context())
+    resolver = PublicResolver() if public else None
+    connector = aiohttp.TCPConnector(ssl=create_secure_ssl_context(), resolver=resolver)
     # We pass the timeout to the ClientSession constructor
     return aiohttp.ClientSession(connector=connector, timeout=timeout)
 
@@ -614,6 +636,19 @@ async def delete_immutable_directory(path: safe.StatePath, reason: str) -> None:
     log.info(f"Deleting immutable directory {path} because {reason}")
     await asyncio.to_thread(chmod_directories, path, 0o755)
     await aioshutil.rmtree(path)
+
+
+def download_page_url_error(url: str) -> str | None:
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https":
+        return "Must use https"
+    if not parts.hostname:
+        return "Must include a host"
+    try:
+        ipaddress.ip_address(parts.hostname)
+    except ValueError:
+        return None
+    return "Must not use a literal IP address"
 
 
 def download_url_for_path(
@@ -938,6 +973,21 @@ def missing_concern_groups(
 ) -> list[ConcernGroup]:
     submitted_set = set(submitted)
     return [group for group in groups if (group.checker not in submitted_set)]
+
+
+def normalized_url(url: str) -> str:
+    parts = urllib.parse.urlsplit(url.strip())
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    default_port = {"http": 80, "https": 443}.get(scheme)
+    netloc = host if (port is None) or (port == default_port) else f"{host}:{port}"
+    return urllib.parse.urlunsplit((scheme, netloc, parts.path.rstrip("/"), parts.query, parts.fragment))
 
 
 async def number_of_release_files(release: sql.Release) -> int:

@@ -17,9 +17,14 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import urllib.parse
+from typing import Final, Literal
+
+import aiohttp
+import quart
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.construct as construct
 import atr.form as form
 import atr.get as get
@@ -29,6 +34,14 @@ import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
+
+_DOWNLOAD_PAGE_KEPT: Final = (
+    "The project already received a different download page URL, {url}, before this form was submitted."
+    " The existing URL has been kept."
+)
+_DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 5
+_DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=30)
+_REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
 
 
 class PreviewForm(form.Form):
@@ -104,6 +117,9 @@ async def selected(
 
     try:
         async with storage.write_as_project_release_manager(project_key, session) as warm:
+            if response := await _validate_download_page(session, release, announce_form):
+                return response
+            await _record_download_page(warm, project_key, release.project.download_page, announce_form)
             await warm.announce.release(
                 project_key=project_key,
                 version_key=version_key,
@@ -130,6 +146,47 @@ async def selected(
     )
 
 
+async def _download_page_error(url: str) -> str | None:
+    if config.is_dev_environment():
+        return None
+    try:
+        async with util.create_secure_session(timeout=_DOWNLOAD_PAGE_TIMEOUT, public=True) as http_session:
+            return await _download_page_fetch_error(http_session, url)
+    except (aiohttp.ClientError, TimeoutError) as e:
+        return f"The download page URL could not be checked: {e}"
+
+
+async def _download_page_fetch_error(http_session: aiohttp.ClientSession, url: str) -> str | None:
+    for _ in range(_DOWNLOAD_PAGE_REDIRECT_LIMIT + 1):
+        if error := util.download_page_url_error(url):
+            return f"The download page URL check led to {url}: {error}"
+        async with http_session.get(url, allow_redirects=False) as response:
+            location = response.headers.get("Location")
+            if (response.status in _REDIRECT_STATUSES) and location:
+                url = urllib.parse.urljoin(str(response.url), location)
+                continue
+            if response.status == 200:
+                return None
+            return f"The download page URL returned HTTP {response.status}, not 200"
+    return "The download page URL used too many redirects"
+
+
+async def _record_download_page(
+    warm: storage.WriteAsReleaseManager,
+    project_key: safe.ProjectKey,
+    stored: str | None,
+    announce_form: shared.announce.AnnounceForm,
+) -> None:
+    if stored or (announce_form.download_page is None):
+        return
+    download_page = str(announce_form.download_page)
+    existing = await warm.project.set_download_page(project_key, download_page)
+    if existing is None:
+        return
+    if util.normalized_url(download_page) != util.normalized_url(existing):
+        await quart.flash(_DOWNLOAD_PAGE_KEPT.format(url=existing), "warning")
+
+
 async def _validate_distributions(
     session: web.Committer,
     release: sql.Release,
@@ -151,6 +208,24 @@ async def _validate_distributions(
         project_key=str(project_key),
         version_key=str(version_key),
     )
+
+
+async def _validate_download_page(
+    session: web.Committer,
+    release: sql.Release,
+    announce_form: shared.announce.AnnounceForm,
+) -> web.WerkzeugResponse | None:
+    download_page = str(announce_form.download_page) if (announce_form.download_page is not None) else None
+    stored = release.project.download_page
+    if stored:
+        if (download_page is not None) and (util.normalized_url(download_page) != util.normalized_url(stored)):
+            await quart.flash(_DOWNLOAD_PAGE_KEPT.format(url=stored), "warning")
+        return None
+    if download_page is None:
+        return await session.form_error("download_page", "Enter the URL of the project download page")
+    if error := await _download_page_error(download_page):
+        return await session.form_error("download_page", error)
+    return None
 
 
 async def _validate_recipients(

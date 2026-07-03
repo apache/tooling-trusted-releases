@@ -208,6 +208,7 @@ def test_release_manager_surface_exposes_only_approved_committee_member_writers(
     assert hasattr(warm.distributions, "record_from_data")
     assert hasattr(warm.policy, "edit_vote")
     assert hasattr(warm.project, "edit_metadata")
+    assert hasattr(warm.project, "set_download_page")
     assert hasattr(warm.release, "promote_to_candidate")
     assert hasattr(warm.vote, "resolve")
     assert hasattr(warm.vote, "start")
@@ -221,6 +222,24 @@ def test_release_manager_surface_exposes_only_approved_committee_member_writers(
     assert not hasattr(warm.project, "language_add")
     assert not hasattr(warm.project, "upsert_config")
     assert not hasattr(warm.release, "archive")
+
+
+@pytest.mark.asyncio
+async def test_set_download_page_rejects_http_and_audits() -> None:
+    write_as = mock.MagicMock()
+    writer = object.__new__(project.ReleaseManager)
+    writer._ReleaseManager__asf_uid = "alice"
+    writer._ReleaseManager__write_as = write_as
+
+    with pytest.raises(storage.AccessError, match="https"):
+        await writer.set_download_page(safe.ProjectKey("example"), "http://example.apache.org/download")
+
+    write_as.append_to_audit_log.assert_called_once_with(
+        asf_uid="alice",
+        project_key="example",
+        download_page="http://example.apache.org/download",
+        rejected="Must use https",
+    )
 
 
 @pytest.mark.asyncio

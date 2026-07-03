@@ -19,6 +19,10 @@ import json
 import os
 import pathlib
 import stat
+import unittest.mock as mock
+
+import aiohttp
+import pytest
 
 import atr.models.safe as safe
 import atr.util as util
@@ -111,6 +115,19 @@ async def test_create_hard_link_clone_reuses_existing_destination_directory(tmp_
     assert (dest_path / "apache-39.pom").stat().st_ino == (first_source / "apache-39.pom").stat().st_ino
 
 
+def test_download_page_url_error_accepts_https():
+    assert util.download_page_url_error("https://example.apache.org/download") is None
+
+
+def test_download_page_url_error_rejects_http():
+    assert util.download_page_url_error("http://example.apache.org/download") == "Must use https"
+
+
+def test_download_page_url_error_rejects_literal_ip():
+    assert util.download_page_url_error("https://192.0.2.1/download") == "Must not use a literal IP address"
+    assert util.download_page_url_error("https://[2001:db8::1]/download") == "Must not use a literal IP address"
+
+
 def test_json_for_script_element_escapes_correctly():
     payload = ["example.txt", "</script><script>alert(1)</script>", "apple&banana"]
 
@@ -123,6 +140,15 @@ def test_json_for_script_element_escapes_correctly():
     assert json.loads(serialized) == payload
 
 
+def test_normalized_url_distinguishes_different_pages():
+    assert util.normalized_url("https://example.org/a") != util.normalized_url("https://example.org/b")
+
+
+def test_normalized_url_equates_cosmetic_differences():
+    normalized = util.normalized_url("https://Example.org:443/download/")
+    assert normalized == util.normalized_url("https://example.org/download")
+
+
 async def test_number_of_release_files_counts_paths_with_spaces(monkeypatch, tmp_path: pathlib.Path):
     (tmp_path / "filename with spaces.txt").write_text("content")
     nested = tmp_path / "nested directory"
@@ -132,3 +158,22 @@ async def test_number_of_release_files_counts_paths_with_spaces(monkeypatch, tmp
     monkeypatch.setattr(util.paths, "release_directory_revision", lambda release: tmp_path)
 
     assert await util.number_of_release_files(object()) == 2
+
+
+async def test_public_resolver_allows_global_addresses():
+    resolver = util.PublicResolver()
+    inner = mock.AsyncMock()
+    inner.resolve.return_value = [{"host": "93.184.216.34", "port": 443}]
+    resolver._PublicResolver__resolver = inner
+
+    assert await resolver.resolve("example.apache.org", 443) == inner.resolve.return_value
+
+
+async def test_public_resolver_rejects_non_global_addresses():
+    resolver = util.PublicResolver()
+    inner = mock.AsyncMock()
+    inner.resolve.return_value = [{"host": "10.0.0.1", "port": 443}]
+    resolver._PublicResolver__resolver = inner
+
+    with pytest.raises(aiohttp.ClientConnectionError):
+        await resolver.resolve("internal.apache.org", 443)

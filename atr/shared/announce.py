@@ -35,6 +35,11 @@ class AnnounceForm(form.Form):
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
     download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
+    download_page: form.OptionalURL = form.label(
+        "Download page URL",
+        "URL of the project's official download page. It is checked for a 200 response and then"
+        " saved to the project metadata.",
+    )
     auto_archive: form.Bool = form.label(
         "Auto archive prior release",
         "If set, the release shown below will be auto-archived",
@@ -46,6 +51,15 @@ class AnnounceForm(form.Form):
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",
     )
+
+    @pydantic.field_validator("download_page")
+    @classmethod
+    def _validate_download_page(cls, value: pydantic.HttpUrl | None) -> pydantic.HttpUrl | None:
+        if value is None:
+            return None
+        if error := util.download_page_url_error(str(value)):
+            raise ValueError(error)
+        return value
 
     @pydantic.model_validator(mode="after")
     def _validate_recipients(self) -> "AnnounceForm":

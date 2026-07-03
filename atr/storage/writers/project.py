@@ -138,6 +138,35 @@ class ReleaseManager(CommitteeParticipant):
             project_key=str(project.key),
         )
 
+    async def set_download_page(self, project_key: safe.ProjectKey, url: str) -> str | None:
+        if error := util.download_page_url_error(url):
+            self.__write_as.append_to_audit_log(
+                asf_uid=self.__asf_uid,
+                project_key=str(project_key),
+                download_page=url,
+                rejected=error,
+            )
+            raise storage.AccessError(error, status=400)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            project = await self.__validate_project_in_committee(project_key)
+            if existing := project.download_page:
+                await self.__data.rollback()
+                return existing
+            project.download_page = url
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            download_page=url,
+        )
+        return None
+
     async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
         project = await self.__data.project(key=str(project_key), _committee=True).demand(
             storage.AccessError(f"Project '{project_key}' not found.", status=404)
