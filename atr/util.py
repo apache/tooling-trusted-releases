@@ -616,6 +616,28 @@ async def delete_immutable_directory(path: safe.StatePath, reason: str) -> None:
     await aioshutil.rmtree(path)
 
 
+def download_url_for_path(
+    relpath: safe.RelPath, kind: DownloadFile, host: str | None = None, archived: bool = False
+) -> str:
+    # Where a file at a known dist-relative path is fetched from, by lifecycle (archived vs beta vs
+    # released) and role (artifact vs metadata). The catalogue stores each artifact's exact path, so
+    # nothing has to be reconstructed from a committee here
+    if archived:
+        # archive.apache.org keeps every release ever published, on every host
+        return paths.archive_download_url(relpath)
+    if not config.get().SVN_PUBLISH_URL:
+        # No SVN publishing configured (dev), so ATR serves the downloads itself
+        return f"https://{host or config.get().APP_HOST}/downloads/{relpath}"
+    match svn_publish_target():
+        case SvnPublishTarget.ATR:
+            # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored
+            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
+        case SvnPublishTarget.RELEASE:
+            if kind is DownloadFile.ARTIFACT:
+                return paths.closer_download_url(relpath)
+            return paths.downloads_url(relpath)
+
+
 def email_from_uid(uid: str) -> str | None:
     if m := re.search(r"<([^>]+)>", uid):
         return m.group(1).lower()
@@ -1108,28 +1130,6 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     if include_count:
         return f"{count} {word}"
     return word
-
-
-def download_url_for_path(
-    relpath: safe.RelPath, kind: DownloadFile, host: str | None = None, archived: bool = False
-) -> str:
-    # Where a file at a known dist-relative path is fetched from, by lifecycle (archived vs beta vs
-    # released) and role (artifact vs metadata). The catalogue stores each artifact's exact path, so
-    # nothing has to be reconstructed from a committee here
-    if archived:
-        # archive.apache.org keeps every release ever published, on every host
-        return paths.archive_download_url(relpath)
-    if not config.get().SVN_PUBLISH_URL:
-        # No SVN publishing configured (dev), so ATR serves the downloads itself
-        return f"https://{host or config.get().APP_HOST}/downloads/{relpath}"
-    match svn_publish_target():
-        case SvnPublishTarget.ATR:
-            # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored
-            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
-        case SvnPublishTarget.RELEASE:
-            if kind is DownloadFile.ARTIFACT:
-                return paths.closer_download_url(relpath)
-            return paths.downloads_url(relpath)
 
 
 def public_download_url(
