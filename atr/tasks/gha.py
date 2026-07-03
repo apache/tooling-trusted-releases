@@ -41,6 +41,29 @@ _FAILED_STATUSES: Final[list[str]] = ["failure", "startup_failure"]
 _TIMEOUT_S = 60
 
 
+def dispatch_workflow_and_payload(
+    task_args: args.DistributionWorkflow, task_id: int | None, unique_id: str
+) -> tuple[str, dict[str, Any]]:
+    sql_platform = sql.DistributionPlatform[task_args.platform]
+    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if task_args.staging else ''}.yml"
+    payload = {
+        "ref": "main",
+        "inputs": {
+            "atr-id": unique_id,
+            "asf-uid": task_args.asf_uid,
+            "task_id": task_id,
+            "project": str(task_args.project_key),
+            "phase": task_args.phase,
+            "version": str(task_args.version_key),
+            "distribution-owner-namespace": task_args.namespace,
+            "distribution-package": str(task_args.package),
+            "distribution-version": str(task_args.version),
+            # **task_args.arguments,
+        },
+    }
+    return workflow, payload
+
+
 @checks.with_model(args.WorkflowStatusCheck)
 async def status_check(task_args: args.WorkflowStatusCheck) -> results.DistributionWorkflowStatus:
     """Check remote workflow statuses."""
@@ -119,25 +142,9 @@ async def trigger_workflow(
     unique_id = f"atr-dist-{task_args.name}-{uuid.uuid4()}"
     project = task_args.project_key
     try:
-        sql_platform = sql.DistributionPlatform[task_args.platform]
+        workflow, payload = dispatch_workflow_and_payload(task_args, task_id, unique_id)
     except KeyError:
         _fail(f"Invalid platform: {task_args.platform}")
-    workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if task_args.staging else ''}.yml"
-    payload = {
-        "ref": "main",
-        "inputs": {
-            "atr-id": unique_id,
-            "asf-uid": task_args.asf_uid,
-            "task_id": task_id,
-            "project": str(task_args.project_key),
-            "phase": task_args.phase,
-            "version": str(task_args.version_key),
-            "distribution-owner-namespace": task_args.namespace,
-            "distribution-package": str(task_args.package),
-            "distribution-version": str(task_args.version),
-            # **task_args.arguments,
-        },
-    }
 
     headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {config.get().GITHUB_TOKEN}"}
     log.info(
