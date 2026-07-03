@@ -166,7 +166,7 @@ jobs:
           ./build.sh
 
       - name: Upload to ATR
-        uses: apache/tooling-actions/upload-to-atr@04741906f3f38a64ed4489bb12ad78b99424a7a0
+        uses: apache/tooling-actions/upload-to-atr@f5f4c0e7ddfbde6b1f8288cef36324c6def68051
         with:
           project: {project_key!s}
           version: ${{{{github.ref_name}}}}

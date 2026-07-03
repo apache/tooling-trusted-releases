@@ -42,7 +42,7 @@ _TIMEOUT_S = 60
 
 
 def dispatch_workflow_and_payload(
-    task_args: args.DistributionWorkflow, task_id: int | None, unique_id: str
+    task_args: args.DistributionWorkflow, task_id: int, unique_id: str
 ) -> tuple[str, dict[str, Any]]:
     sql_platform = sql.DistributionPlatform[task_args.platform]
     workflow = f"distribute-{sql_platform.value.gh_slug}{'-stg' if task_args.staging else ''}.yml"
@@ -51,7 +51,7 @@ def dispatch_workflow_and_payload(
         "inputs": {
             "atr-id": unique_id,
             "asf-uid": task_args.asf_uid,
-            "task_id": task_id,
+            "task_id": str(task_id),
             "project": str(task_args.project_key),
             "phase": task_args.phase,
             "version": str(task_args.version_key),
@@ -136,9 +136,7 @@ async def status_check(task_args: args.WorkflowStatusCheck) -> results.Distribut
 
 
 @checks.with_model(args.DistributionWorkflow)
-async def trigger_workflow(
-    task_args: args.DistributionWorkflow, *, task_id: int | None = None
-) -> results.Results | None:
+async def trigger_workflow(task_args: args.DistributionWorkflow, *, task_id: int) -> results.Results | None:
     unique_id = f"atr-dist-{task_args.name}-{uuid.uuid4()}"
     project = task_args.project_key
     try:
