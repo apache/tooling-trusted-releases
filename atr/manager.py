@@ -26,9 +26,11 @@ import os
 import signal
 import sys
 
+import sqlalchemy
 import sqlalchemy.engine as engine
 import sqlmodel
 
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
@@ -48,15 +50,15 @@ class WorkerManager:
     def __init__(
         self,
         min_workers: int = 4,
-        max_workers: int = 8,
         check_interval_seconds: float = 2.0,
         max_task_seconds: float = 300.0,
     ):
         self.min_workers = min_workers
-        self.max_workers = max_workers
+        self.max_workers = 2 * min_workers
         self.check_interval_seconds = check_interval_seconds
         self.max_task_seconds = max_task_seconds
         self.workers: dict[int, WorkerProcess] = {}
+        self.budget_index = 0
         self.running = False
         self.check_task: asyncio.Task | None = None
 
@@ -137,6 +139,10 @@ class WorkerManager:
             python_path = env.get("PYTHONPATH", "")
             env["PYTHONPATH"] = f"{project_root}:{python_path}" if python_path else project_root
 
+            budget = constants.WORKER_TASK_BUDGETS[self.budget_index % len(constants.WORKER_TASK_BUDGETS)]
+            self.budget_index += 1
+            env[constants.WORKER_MAX_TASKS_ENV] = str(budget)
+
             # Get absolute path to worker script
             worker_script = os.path.join(project_root, "atr", "worker.py")
 
@@ -168,10 +174,10 @@ class WorkerManager:
                 preexec_fn=os.setsid,
             )
 
-            worker = WorkerProcess(process, datetime.datetime.now(datetime.UTC))
+            worker = WorkerProcess(process, datetime.datetime.now(datetime.UTC), budget)
             if worker.pid:
                 self.workers[worker.pid] = worker
-                log.info(f"Started worker process {worker.pid}")
+                log.info(f"Started worker process {worker.pid} with task budget {budget}")
                 if global_worker_debug and log_file_path:
                     log.info(f"Worker {worker.pid} logs: {log_file_path}")
             else:
@@ -211,6 +217,9 @@ class WorkerManager:
                 # This also stops tasks if they have indeed been running for too long
                 if await self.check_task_duration(data, pid, worker):
                     exited_workers.append(pid)
+                    continue
+
+                await self.pre_spawn_replacement(data, pid, worker)
 
         # Remove exited workers
         for pid in exited_workers:
@@ -277,6 +286,42 @@ class WorkerManager:
             log.error(f"Error checking task duration for worker {pid}: {e}")
             # TODO: Return False here to avoid over-reporting errors
             return False
+
+    async def pre_spawn_replacement(self, data: db.Session, pid: int, worker: WorkerProcess) -> None:
+        if worker.pre_spawned:
+            return
+        via = sql.validate_instrumented_attribute
+        try:
+            active_query = (
+                sqlmodel.select(sqlalchemy.func.count())
+                .select_from(sql.Task)
+                .where(
+                    sql.Task.pid == pid,
+                    sql.Task.status == sql.TaskStatus.ACTIVE,
+                    via(sql.Task.started) >= worker.started,
+                )
+            )
+            active = (await data.execute(active_query)).scalar_one()
+            if not active:
+                return
+            finished_query = (
+                sqlmodel.select(sqlalchemy.func.count())
+                .select_from(sql.Task)
+                .where(
+                    sql.Task.pid == pid,
+                    via(sql.Task.status).in_([sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED]),
+                    via(sql.Task.started) >= worker.started,
+                )
+            )
+            finished = (await data.execute(finished_query)).scalar_one()
+        except Exception as e:
+            log.error(f"Error counting processed tasks for worker {pid}: {e}")
+            return
+        if finished < (worker.budget - 1):
+            return
+        worker.pre_spawned = True
+        log.info(f"Worker {pid} started the last of its {worker.budget} tasks, spawning a replacement")
+        await self.spawn_worker()
 
     async def maintain_worker_pool(self) -> None:
         """Ensure we maintain the minimum number of workers."""
@@ -350,10 +395,12 @@ class WorkerManager:
 class WorkerProcess:
     """Interface to control a worker process."""
 
-    def __init__(self, process: asyncio.subprocess.Process, started: datetime.datetime):
+    def __init__(self, process: asyncio.subprocess.Process, started: datetime.datetime, budget: int):
         self.process = process
         self.started = started
         self.last_checked = started
+        self.budget = budget
+        self.pre_spawned = False
 
     @property
     def pid(self) -> int | None:

@@ -367,7 +367,7 @@ def _truncate_single_line(text: str | None, max_length: int) -> str:
 async def _worker_loop_run() -> None:
     """Main worker loop."""
     processed = 0
-    max_to_process = 10
+    max_to_process = int(os.environ.get(constants.WORKER_MAX_TASKS_ENV, "10"))
     while True:
         log.clear_context()
         try:

@@ -258,3 +258,6 @@ INACTIVITY_WARNING_DAYS: Final[int] = 80
 # Fixed sub claim on JWTs minted from system PATs, and the UID we log for
 # their actions. The minting admin is recorded separately in PAT.created_by.
 SYSTEM_SERVICE_UID: Final[str] = "system"
+
+WORKER_MAX_TASKS_ENV: Final[str] = "ATR_WORKER_MAX_TASKS"
+WORKER_TASK_BUDGETS: Final[tuple[int, ...]] = (8, 14, 10, 16, 12)
