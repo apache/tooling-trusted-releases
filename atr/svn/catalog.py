@@ -114,7 +114,7 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
     for dirpath, name, file_type in rel_files.files:
         if (name in seen) or (file_type in (classify.FileType.METADATA, classify.FileType.DISALLOWED)):
             continue
-        if (not analysis.is_artifact(name)) or name.endswith(dist.IGNORED_ARTIFACT_SUFFIXES):
+        if not analysis.is_artifact(name):
             continue
         seen.add(name)
         siblings = by_dir[dirpath]

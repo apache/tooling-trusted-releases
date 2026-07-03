@@ -35,9 +35,6 @@ PROJECT_REMAPS: Final[dict[tuple[str, str | None], str]] = {
     ("xmlgraphics", "commons"): "xmlgraphics-xml-graphics-commons",
 }
 
-# Wheels ship beside the source tarball, so they're a build, not a release
-IGNORED_ARTIFACT_SUFFIXES: Final[tuple[str, ...]] = (".whl",)
-
 # Lead dirs that name a distribution bucket, not a subproject
 _GROUPING_BUCKETS: Final[frozenset[str]] = frozenset(
     {"providers", "source", "sources", "binaries", "bin", "src", "releases"}
