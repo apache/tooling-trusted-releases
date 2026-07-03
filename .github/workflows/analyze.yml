@@ -38,6 +38,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -70,3 +71,20 @@ jobs:
       - name: Run pre-commit
         run: |
           uv run --frozen pre-commit run --show-diff-on-failure --color=always --all-files
+
+      - name: Run pre-commit on each pushed commit
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if ! git rev-parse --verify --quiet "${BEFORE}^{commit}" > /dev/null; then
+            echo "WARNING: previous tip ${BEFORE} is unavailable, skipping per-commit checks for this push"
+            exit 0
+          fi
+          for commit in $(git rev-list --reverse --no-merges "${BEFORE}..HEAD"); do
+            echo "::group::pre-commit at ${commit}"
+            git checkout --quiet "${commit}"
+            uv run --frozen pre-commit run --show-diff-on-failure --color=always --from-ref "${commit}^" --to-ref "${commit}"
+            echo "::endgroup::"
+          done
+          git checkout --quiet "${GITHUB_SHA}"

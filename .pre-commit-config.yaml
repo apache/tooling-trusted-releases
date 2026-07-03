@@ -224,6 +224,14 @@ repos:
       language: system
       files: ^atr/models/sql\.py$
 
+    - id: check-migrations-immutable
+      name: check migration immutability
+      description: Refuse to modify, rename, or delete an existing migrations/versions/ file, because shipped migrations are append only
+      entry: uv run --frozen python scripts/check_migrations_immutable.py
+      language: system
+      pass_filenames: false
+      always_run: true
+
     - id: template-usage-linter
       name: check template usage
       description: Ensure that all templates are used and available w/o duplicates
