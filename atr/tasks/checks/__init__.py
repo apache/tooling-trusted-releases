@@ -478,8 +478,13 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
     via = sql.validate_instrumented_attribute
     committee_key = release.committee.key
     async with db.session() as data:
-        statement = sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
-            via(sql.KeyLink.committee_key) == committee_key
+        statement = (
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint))
+            .join(sql.PublicSigningKey)
+            .where(
+                via(sql.KeyLink.committee_key) == committee_key,
+                via(sql.PublicSigningKey.deleted).is_(None),
+            )
         )
         result = await data.execute(statement)
         fingerprints = result.scalars().all()

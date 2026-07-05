@@ -30,7 +30,6 @@ import aiofiles
 import aiofiles.os
 import openpgp
 import sqlalchemy.dialects.sqlite as sqlite
-import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.cache as cache
@@ -213,13 +212,24 @@ class FoundationCommitter(GeneralPublic):
 
     async def delete_key(self, fingerprint: str) -> outcome.Outcome[sql.PublicSigningKey]:
         try:
+            via = sql.validate_instrumented_attribute
             key = await self.__data.public_signing_key(
                 fingerprint=fingerprint,
                 apache_uid=self.__asf_uid,
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
-            await self.__data.delete(key)
+            update_result = await self.__data.execute(
+                sqlmodel.update(sql.PublicSigningKey)
+                .where(
+                    via(sql.PublicSigningKey.fingerprint) == key.fingerprint,
+                    via(sql.PublicSigningKey.apache_uid) == self.__asf_uid,
+                    via(sql.PublicSigningKey.deleted).is_(None),
+                )
+                .values(deleted=datetime.datetime.now(datetime.UTC))
+            )
+            if getattr(update_result, "rowcount", 0) != 1:
+                raise storage.AccessError(f"Key not found: {fingerprint}", status=404)
             await self.__data.commit()
             self.__write_as.append_to_audit_log(
                 action="key_delete",
@@ -391,7 +401,9 @@ class FoundationCommitter(GeneralPublic):
             return outcome.Error(storage.AccessError("Test key deletion not enabled", status=403))
 
         try:
-            test_user_keys = await self.__data.public_signing_key(apache_uid=test_uid, _committees=True).all()
+            test_user_keys = await self.__data.public_signing_key(
+                apache_uid=test_uid, deleted=db.NOT_SET, _committees=True
+            ).all()
 
             deleted_count = 0
             deleted_fingerprints: list[str] = []
@@ -501,7 +513,11 @@ class FoundationCommitter(GeneralPublic):
         public_key, _ = openpgp.PublicKey.from_armor(key_block)
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
         _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
-        return datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key_model)
+        return datatypes.Key(
+            status=datatypes.KeyStatus.PARSED,
+            key_model=key_model,
+            member_ids=sorted(util.openpgp_member_ids(public_key)),
+        )
 
     async def __database_add_model(
         self,
@@ -518,9 +534,31 @@ class FoundationCommitter(GeneralPublic):
             .on_conflict_do_nothing(index_elements=["fingerprint"])
             .returning(via(sql.PublicSigningKey.fingerprint))
         )
+        inserted = key_insert_result.one_or_none() is not None
+        undeleted = []
+        if inserted:
+            await self.__signature_hints_consume([key])
+        else:
+            undeleted = await self.__undelete_keys([key.key_model.fingerprint])
+            if undeleted:
+                await self.__data.execute(
+                    sqlmodel.update(sql.PublicSigningKey)
+                    .where(via(sql.PublicSigningKey.fingerprint) == key.key_model.fingerprint)
+                    .values(apache_uid=key.key_model.apache_uid)
+                )
         await self.__data.commit()
 
-        if key_insert_result.one_or_none() is None:
+        if undeleted:
+            self.__write_as.append_to_audit_log(
+                action="key_undelete",
+                asf_uid=self.__asf_uid,
+                fingerprints=[f for f in undeleted],
+            )
+            await self.__sync_committees_for_keys(undeleted)
+            log.info(f"Undeleted key {key.key_model.fingerprint}")
+            return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model))
+
+        if not inserted:
             log.info(f"Key {key.key_model.fingerprint} already exists in database")
             return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key.key_model))
 
@@ -608,6 +646,43 @@ and was published by the committee.\
         full_keys_file_content = header_content + key_blocks_str
         return full_keys_file_content
 
+    async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
+        via = sql.validate_instrumented_attribute
+        member_map = {key.key_model.fingerprint: set(key.member_ids) for key in keys}
+        all_ids = sorted({member_id for member_ids in member_map.values() for member_id in member_ids})
+        if not all_ids:
+            return []
+        hint_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.SignatureHint.hint)).where(via(sql.SignatureHint.hint).in_(all_ids))
+        )
+        matched = set(hint_rows.scalars().all())
+        if not matched:
+            return []
+        flagged = sorted(fingerprint for fingerprint, member_ids in member_map.items() if member_ids & matched)
+        await self.__data.execute(
+            sqlmodel.update(sql.PublicSigningKey)
+            .where(via(sql.PublicSigningKey.fingerprint).in_(flagged))
+            .values(historic_use=True)
+        )
+        await self.__data.execute(
+            sqlmodel.delete(sql.SignatureHint).where(via(sql.SignatureHint.hint).in_(sorted(matched)))
+        )
+        return flagged
+
+    async def __sync_committees_for_keys(self, fingerprints: list[str]) -> None:
+        if not fingerprints:
+            return
+        via = sql.validate_instrumented_attribute
+        link_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.committee_key))
+            .where(via(sql.KeyLink.key_fingerprint).in_(fingerprints))
+            .distinct()
+        )
+        committee_keys = sorted(set(link_rows.scalars().all()))
+        for committee_key in committee_keys:
+            await self._sync_committee_keys_file(committee_key)
+        await self._recheck_committee_drafts(*committee_keys)
+
     def __uids_asf_uid(self, uids: list[str], ldap_data: cache.EmailUidLookup) -> str | None:
         # Test data
         test_key_uids = [
@@ -639,6 +714,21 @@ and was published by the committee.\
                 return ldap_data[email]
         return None
 
+    async def __undelete_keys(self, fingerprints: list[str]) -> list[str]:
+        if not fingerprints:
+            return []
+        via = sql.validate_instrumented_attribute
+        result = await self.__data.execute(
+            sqlmodel.update(sql.PublicSigningKey)
+            .where(
+                via(sql.PublicSigningKey.fingerprint).in_(sorted(fingerprints)),
+                via(sql.PublicSigningKey.deleted).is_not(None),
+            )
+            .values(deleted=None)
+            .returning(via(sql.PublicSigningKey.fingerprint))
+        )
+        return sorted(result.scalars().all())
+
 
 class CommitteeParticipant(FoundationCommitter):
     def __init__(
@@ -662,6 +752,9 @@ class CommitteeParticipant(FoundationCommitter):
         via = sql.validate_instrumented_attribute
         link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}]
         try:
+            await self.__data.public_signing_key(fingerprint=fingerprint).demand(
+                storage.AccessError(f"Key not found: {fingerprint}", status=404)
+            )
             link_insert_result = await self.__data.execute(
                 sqlite.insert(sql.KeyLink)
                 .values(link_values)
@@ -793,7 +886,11 @@ class CommitteeParticipant(FoundationCommitter):
         try:
             key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
             _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
-            key = datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key_model)
+            key = datatypes.Key(
+                status=datatypes.KeyStatus.PARSED,
+                key_model=key_model,
+                member_ids=sorted(util.openpgp_member_ids(public_key)),
+            )
             key_list.append(key)
         except Exception as e:
             key_list.append(e)
@@ -854,6 +951,8 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes.update_roes(Exception, replace_with_inserted)
 
         persisted_fingerprints = {v["fingerprint"] for v in key_values}
+        undeleted = await self.__undelete_keys(sorted(persisted_fingerprints))
+        await self.__signature_hints_consume(key_list)
         await self.__data.flush()
 
         existing_fingerprints = {k.fingerprint for k in committee.public_signing_keys}
@@ -894,6 +993,13 @@ class CommitteeParticipant(FoundationCommitter):
                 inserted_fingerprints=sorted(key_inserts),
                 linked_fingerprints=sorted(link_inserts),
             )
+        if undeleted:
+            self.__write_as.append_to_audit_log(
+                action="key_undelete",
+                asf_uid=self.__asf_uid,
+                fingerprints=[f for f in undeleted],
+            )
+            await self.__sync_committees_for_keys(undeleted)
         if link_inserts:
             await self._recheck_committee_drafts(self.__committee_key)
         return outcomes
@@ -926,6 +1032,58 @@ class CommitteeParticipant(FoundationCommitter):
         # Try adding the keys to the database
         # If not, all keys will be replaced with a PostParseError
         return await self.__database_add_models(outcomes, associate=associate)
+
+    async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
+        via = sql.validate_instrumented_attribute
+        member_map = {key.key_model.fingerprint: set(key.member_ids) for key in keys}
+        all_ids = sorted({member_id for member_ids in member_map.values() for member_id in member_ids})
+        if not all_ids:
+            return []
+        hint_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.SignatureHint.hint)).where(via(sql.SignatureHint.hint).in_(all_ids))
+        )
+        matched = set(hint_rows.scalars().all())
+        if not matched:
+            return []
+        flagged = sorted(fingerprint for fingerprint, member_ids in member_map.items() if member_ids & matched)
+        await self.__data.execute(
+            sqlmodel.update(sql.PublicSigningKey)
+            .where(via(sql.PublicSigningKey.fingerprint).in_(flagged))
+            .values(historic_use=True)
+        )
+        await self.__data.execute(
+            sqlmodel.delete(sql.SignatureHint).where(via(sql.SignatureHint.hint).in_(sorted(matched)))
+        )
+        return flagged
+
+    async def __sync_committees_for_keys(self, fingerprints: list[str]) -> None:
+        if not fingerprints:
+            return
+        via = sql.validate_instrumented_attribute
+        link_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.committee_key))
+            .where(via(sql.KeyLink.key_fingerprint).in_(fingerprints))
+            .distinct()
+        )
+        committee_keys = sorted(set(link_rows.scalars().all()))
+        for committee_key in committee_keys:
+            await self._sync_committee_keys_file(committee_key)
+        await self._recheck_committee_drafts(*committee_keys)
+
+    async def __undelete_keys(self, fingerprints: list[str]) -> list[str]:
+        if not fingerprints:
+            return []
+        via = sql.validate_instrumented_attribute
+        result = await self.__data.execute(
+            sqlmodel.update(sql.PublicSigningKey)
+            .where(
+                via(sql.PublicSigningKey.fingerprint).in_(sorted(fingerprints)),
+                via(sql.PublicSigningKey.deleted).is_not(None),
+            )
+            .values(deleted=None)
+            .returning(via(sql.PublicSigningKey.fingerprint))
+        )
+        return sorted(result.scalars().all())
 
 
 class CommitteeMember(CommitteeParticipant):
@@ -971,28 +1129,43 @@ class FoundationAdmin(CommitteeMember):
 
     async def delete_committee_keys(self) -> tuple[int, int]:
         via = sql.validate_instrumented_attribute
-        committee_query = self.__data.committee(key=self.__committee_key)
-        committee_query.query = committee_query.query.options(
-            orm.selectinload(via(sql.Committee.public_signing_keys)).selectinload(via(sql.PublicSigningKey.committees))
-        )
-        committee = await committee_query.demand(
+        await self.__data.committee(key=self.__committee_key).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
 
-        keys_to_check = list(committee.public_signing_keys)
-        if not keys_to_check:
+        await self.__data.begin_immediate()
+        link_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(
+                via(sql.KeyLink.committee_key) == self.__committee_key
+            )
+        )
+        unlinked = sorted(set(link_rows.scalars().all()))
+        if not unlinked:
+            await self.__data.commit()
             return (0, 0)
 
-        num_unlinked = len(keys_to_check)
-        fingerprints: list[basic.JSON] = [key_obj.fingerprint for key_obj in keys_to_check]
-        committee.public_signing_keys.clear()
-        await self.__data.flush()
+        num_unlinked = len(unlinked)
+        fingerprints: list[basic.JSON] = [fingerprint for fingerprint in unlinked]
+        await self.__data.execute(
+            sqlmodel.delete(sql.KeyLink).where(via(sql.KeyLink.committee_key) == self.__committee_key)
+        )
+        still_linked_rows = await self.__data.execute(
+            sqlmodel.select(via(sql.KeyLink.key_fingerprint)).where(via(sql.KeyLink.key_fingerprint).in_(unlinked))
+        )
+        still_linked = set(still_linked_rows.scalars().all())
+        orphaned = [fingerprint for fingerprint in unlinked if fingerprint not in still_linked]
 
         num_deleted = 0
-        for key_obj in keys_to_check:
-            if not key_obj.committees:
-                await self.__data.delete(key_obj)
-                num_deleted += 1
+        if orphaned:
+            update_result = await self.__data.execute(
+                sqlmodel.update(sql.PublicSigningKey)
+                .where(
+                    via(sql.PublicSigningKey.fingerprint).in_(orphaned),
+                    via(sql.PublicSigningKey.deleted).is_(None),
+                )
+                .values(deleted=datetime.datetime.now(datetime.UTC))
+            )
+            num_deleted = getattr(update_result, "rowcount", 0)
 
         await self.__data.commit()
         self.__write_as.append_to_audit_log(

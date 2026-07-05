@@ -551,6 +551,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         secondary_declared_uids: Opt[list[str]] = NOT_SET,
         apache_uid: Opt[str | None] = NOT_SET,
         ascii_armored_key: Opt[str] = NOT_SET,
+        deleted: Opt[bool] = False,
+        historic_use: Opt[bool] = NOT_SET,
         _committees: bool = False,
     ) -> Query[sql.PublicSigningKey]:
         via = sql.validate_instrumented_attribute
@@ -574,6 +576,13 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(via(sql.PublicSigningKey.apache_uid) == apache_uid)
         if is_defined(ascii_armored_key):
             query = query.where(via(sql.PublicSigningKey.ascii_armored_key) == ascii_armored_key)
+        if is_defined(deleted):
+            if deleted:
+                query = query.where(via(sql.PublicSigningKey.deleted).is_not(None))
+            else:
+                query = query.where(via(sql.PublicSigningKey.deleted).is_(None))
+        if is_defined(historic_use):
+            query = query.where(via(sql.PublicSigningKey.historic_use) == historic_use)
 
         if _committees:
             query = query.options(select_in_load(sql.PublicSigningKey.committees))
@@ -924,6 +933,20 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.RevisionCounter.release_key == release_key)
         if is_defined(last_allocated_number):
             query = query.where(sql.RevisionCounter.last_allocated_number == last_allocated_number)
+
+        return Query(self, query)
+
+    def signature_hint(
+        self,
+        hint: Opt[str] = NOT_SET,
+        hint_in: Opt[Sequence[str]] = NOT_SET,
+    ) -> Query[sql.SignatureHint]:
+        query = sqlmodel.select(sql.SignatureHint)
+
+        if is_defined(hint):
+            query = query.where(sql.SignatureHint.hint == hint)
+        if is_defined(hint_in):
+            query = query.where(sql.validate_instrumented_attribute(sql.SignatureHint.hint).in_(hint_in))
 
         return Query(self, query)
 

@@ -1810,7 +1810,11 @@ async def users_list(
         result = await data.execute(sqlalchemy.select(via(sql.SSHKey.asf_uid)).distinct())
         ssh_uids = set(result.scalars().all())
 
-        result = await data.execute(sqlalchemy.select(via(sql.PublicSigningKey.apache_uid)).distinct())
+        result = await data.execute(
+            sqlalchemy.select(via(sql.PublicSigningKey.apache_uid))
+            .where(via(sql.PublicSigningKey.deleted).is_(None))
+            .distinct()
+        )
         public_signing_uids = set(result.scalars().all())
 
         result = await data.execute(sqlalchemy.select(via(sql.Revision.asfuid)).distinct())

@@ -50,6 +50,7 @@ import asfquart.session as session
 import gitignore_parser
 import jinja2
 import markupsafe
+import openpgp
 import pydantic
 import quart
 
@@ -1003,6 +1004,14 @@ async def number_of_release_files(release: sql.Release) -> int:
             if await aiofiles.os.path.isfile(abs_path_to_check):
                 count += 1
     return count
+
+
+def openpgp_member_ids(key: openpgp.PublicKey) -> set[str]:
+    member_ids = {key.fingerprint.lower(), key.key_id.lower()}
+    for binding in key.subkey_bindings():
+        member_ids.add(binding.fingerprint.lower())
+        member_ids.add(binding.key_id.lower())
+    return member_ids
 
 
 def parse_key_blocks(keys_text: str) -> list[str]:

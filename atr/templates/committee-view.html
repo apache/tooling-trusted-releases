@@ -173,6 +173,7 @@
                   <th class="px-2" scope="col">Apache UID</th>
                   <th class="px-2" scope="col">Role</th>
                   <th class="px-2 text-end" scope="col">Artifacts</th>
+                  <th class="px-2 text-end" scope="col">Any historic use</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +194,13 @@
                       {% endif %}
                     </td>
                     <td class="px-2 text-end">{{ artifact_counts.get(key.fingerprint, 0) }}</td>
+                    <td class="px-2 text-end">
+                      {% if key.historic_use %}
+                        Yes
+                      {% else %}
+                        <span class="text-muted">−</span>
+                      {% endif %}
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>

@@ -52,6 +52,7 @@ class KeyStatus(enum.Flag):
 class Key(schema.Strict):
     status: KeyStatus
     key_model: sql.PublicSigningKey
+    member_ids: list[str] = schema.factory(list)
 
 
 class UnknownApacheUidError(ValueError):

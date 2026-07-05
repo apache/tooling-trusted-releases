@@ -164,6 +164,7 @@ async def automated_release_signing_committees(caller_data: db.Session | None = 
                         via(sql.PublicSigningKey.primary_declared_uid).like("%Services RM%"),
                     ),
                     via(sql.PublicSigningKey.primary_declared_uid).like("%private@%.apache.org%"),
+                    via(sql.PublicSigningKey.deleted).is_(None),
                 )
             )
         )
@@ -192,6 +193,7 @@ async def automated_release_signing_keys(caller_data: db.Session | None = None) 
                     via(sql.PublicSigningKey.primary_declared_uid).like("%Services RM%"),
                 ),
                 via(sql.PublicSigningKey.primary_declared_uid).like("%private@%.apache.org%"),
+                via(sql.PublicSigningKey.deleted).is_(None),
             ),
         )
         result = await data.execute(query)

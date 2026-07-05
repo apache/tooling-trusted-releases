@@ -346,6 +346,7 @@ async def _committee_keys(
                         htm.th(".px-2", scope="col")["Apache UID"],
                         htm.th(".px-2", scope="col")["Role"],
                         htm.th(".px-2.text-end", scope="col")["Artifacts"],
+                        htm.th(".px-2.text-end", scope="col")["Any historic use"],
                     ]
                 ]
                 tbody = htm.Block(htm.tbody)
@@ -365,6 +366,7 @@ async def _committee_keys(
                         role = "-"
                     row.td(".text-break.px-2")[role]
                     row.td(".text-break.px-2.text-end")[str(artifact_counts.get(key.fingerprint, 0))]
+                    row.td(".text-break.px-2.text-end")["Yes" if key.historic_use else "-"]
                     tbody.append(row.collect())
 
                 page.div(".table-responsive.mb-2")[
@@ -427,6 +429,7 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) 
             htm.tr[
                 htm.th(".px-2", scope="col")["Key ID"],
                 htm.th(".px-2", scope="col")["Committees"],
+                htm.th(".px-2", scope="col")["Any historic use"],
                 htm.th(".px-2", scope="col")["Action"],
             ]
         ]
@@ -442,6 +445,7 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) 
                 row.td(".text-break.px-2.align-middle")[committee_keys]
             else:
                 row.td(".text-break.px-2.align-middle")["Not associated with any committee"]
+            row.td(".text-break.px-2.align-middle")["Yes" if key.historic_use else "-"]
             with row.block(htm.td, classes=".px-2") as td:
                 await form.render_block(
                     td,

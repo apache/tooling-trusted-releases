@@ -813,6 +813,11 @@ class SessionFormError(sqlmodel.SQLModel, table=True):
     cts: float = sqlmodel.Field(default=0.0, nullable=False)
 
 
+# SignatureHint:
+class SignatureHint(sqlmodel.SQLModel, table=True):
+    hint: str = sqlmodel.Field(primary_key=True, **example("0123456789abcdef"))
+
+
 # WorkflowSSHKey:
 class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True, index=True)
@@ -873,7 +878,12 @@ class Committee(sqlmodel.SQLModel, table=True):
     # M-M: Committee -> [PublicSigningKey]
     # M-M: PublicSigningKey -> [Committee]
     public_signing_keys: list["PublicSigningKey"] = sqlmodel.Relationship(
-        back_populates="committees", link_model=KeyLink
+        back_populates="committees",
+        link_model=KeyLink,
+        sa_relationship_kwargs={
+            "secondaryjoin": "and_(PublicSigningKey.fingerprint == KeyLink.key_fingerprint,"
+            " PublicSigningKey.deleted.is_(None))",
+        },
     )
 
     updated: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
@@ -1848,6 +1858,8 @@ class PublicSigningKey(sqlmodel.SQLModel, table=True):
     ascii_armored_key: str = sqlmodel.Field(
         **example("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n...\n-----END PGP PUBLIC KEY BLOCK-----\n")
     )
+    deleted: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    historic_use: bool = sqlmodel.Field(default=False)
 
     # M-M: PublicSigningKey -> [Committee]
     # M-M: Committee -> [PublicSigningKey]
@@ -1957,7 +1969,7 @@ class Artifact(sqlmodel.SQLModel, table=True):
     key_fingerprint: str | None = sqlmodel.Field(
         default=None,
         foreign_key="publicsigningkey.fingerprint",
-        ondelete="SET NULL",
+        ondelete="RESTRICT",
         index=True,
         **example("0123456789abcdef0123456789abcdef01234567"),
     )

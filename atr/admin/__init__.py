@@ -1575,7 +1575,7 @@ async def _data_browse(_session: web.Committer, model: str = "Committee") -> str
             "CheckResultIgnore": data.check_result_ignore,
             "Committee": data.committee,
             "Project": data.project,
-            "PublicSigningKey": data.public_signing_key,
+            "PublicSigningKey": lambda: data.public_signing_key(deleted=db.NOT_SET),
             "Release": data.release,
             "ReleasePolicy": data.release_policy,
             "Revision": data.revision,

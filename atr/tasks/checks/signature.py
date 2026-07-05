@@ -88,7 +88,10 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
             sqlmodel.select(sql.PublicSigningKey)
             .join(sql.KeyLink)
             .join(sql.Committee)
-            .where(sql.validate_instrumented_attribute(sql.Committee.key) == committee_key)
+            .where(
+                sql.validate_instrumented_attribute(sql.Committee.key) == committee_key,
+                sql.validate_instrumented_attribute(sql.PublicSigningKey.deleted).is_(None),
+            )
         )
         result = await session.execute(statement)
         db_public_keys = result.scalars().all()

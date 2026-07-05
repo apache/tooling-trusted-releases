@@ -21,7 +21,11 @@ import unittest.mock as mock
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlmodel
 
+import atr.db as db
 import atr.models.safe as safe
 import atr.storage as storage
 import atr.storage.outcome as outcome
@@ -46,6 +50,21 @@ mhZeqo6zyn8zrO9RGU7+8jmeb5nVnXw1YmZcw2fiJgI9+tTMkTfomyR6k0EDvcEu
 =xsEd
 -----END PGP PUBLIC KEY BLOCK-----
 """
+
+
+@pytest.fixture
+async def sqlite_data():
+    engine = sqlalchemy.ext.asyncio.create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=sqlalchemy.pool.StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(sqlmodel.SQLModel.metadata.create_all)
+    sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
+    async with sessionmaker() as data:
+        yield data
+    await engine.dispose()
 
 
 class Query:
@@ -104,7 +123,7 @@ async def test_database_add_model_audits_inserted_key():
         apache_uid="alice",
         ascii_armored_key="-----BEGIN PGP PUBLIC KEY BLOCK-----\nbody\n-----END PGP PUBLIC KEY BLOCK-----\n",
     )
-    key = SimpleNamespace(key_model=key_model)
+    key = SimpleNamespace(key_model=key_model, member_ids=[])
 
     result = await writer._FoundationCommitter__database_add_model(key)
 
@@ -120,11 +139,9 @@ async def test_database_add_model_audits_inserted_key():
 
 
 @pytest.mark.asyncio
-async def test_delete_committee_keys_audits_committed_delete_when_sync_fails():
-    key_orphaned = SimpleNamespace(fingerprint="fp1", committees=[])
-    initial_committee = SimpleNamespace(public_signing_keys=[key_orphaned])
-    data = MockData(None, committees_after_commit={"alpha": initial_committee})
-    writer, write_as = _make_foundation_admin(data, "alpha")
+async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sqlite_data):
+    await _seed_committee_key(sqlite_data, "alpha", "fp1")
+    writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
     error_message = "Failed to remove KEYS file for committee alpha: permission denied"
 
     with mock.patch.object(
@@ -135,7 +152,6 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails():
         with pytest.raises(storage.AccessError, match="permission denied"):
             await writer.delete_committee_keys()
 
-    data.commit.assert_awaited_once()
     assert write_as.append_to_audit_log.call_count == 2
 
     delete_audit = write_as.append_to_audit_log.call_args_list[0].kwargs
@@ -150,23 +166,33 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails():
     assert sync_failure_audit["committee_key"] == "alpha"
     assert sync_failure_audit["error"] == error_message
 
+    key = await sqlite_data.public_signing_key(fingerprint="fp1", deleted=True).get()
+    assert key is not None
+
 
 @pytest.mark.asyncio
-async def test_delete_committee_keys_removes_links_and_orphaned_keys():
-    key_orphaned = SimpleNamespace(fingerprint="fp1", committees=[])
-    key_shared = SimpleNamespace(fingerprint="fp2", committees=[SimpleNamespace(key="beta")])
-    initial_committee = SimpleNamespace(public_signing_keys=[key_orphaned, key_shared])
-    data = MockData(None, committees_after_commit={"alpha": initial_committee})
-    writer, write_as = _make_foundation_admin(data, "alpha")
+async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data):
+    await _seed_committee_key(sqlite_data, "alpha", "fp1")
+    sqlite_data.add(keys_writer.sql.Committee(key="beta"))
+    sqlite_data.add(_public_signing_key("fp2", apache_uid="bob"))
+    await sqlite_data.commit()
+    sqlite_data.add(keys_writer.sql.KeyLink(committee_key="alpha", key_fingerprint="fp2"))
+    sqlite_data.add(keys_writer.sql.KeyLink(committee_key="beta", key_fingerprint="fp2"))
+    await sqlite_data.commit()
+    writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
     with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
         num_unlinked, num_deleted = await writer.delete_committee_keys()
 
     assert num_unlinked == 2
     assert num_deleted == 1
-    data.delete.assert_awaited_once_with(key_orphaned)
-    data.flush.assert_awaited_once()
-    data.commit.assert_awaited_once()
+    orphaned = await sqlite_data.public_signing_key(fingerprint="fp1", deleted=True).get()
+    assert orphaned is not None
+    shared = await sqlite_data.public_signing_key(fingerprint="fp2").get()
+    assert shared is not None
+    assert shared.deleted is None
+    links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
+    assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [("beta", "fp2")]
     mock_sync.assert_awaited_once_with("alpha")
     write_as.append_to_audit_log.assert_called_once()
     audit_kwargs = write_as.append_to_audit_log.call_args[1]
@@ -178,17 +204,15 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys():
 
 
 @pytest.mark.asyncio
-async def test_delete_committee_keys_returns_zero_when_no_keys():
-    empty_committee = SimpleNamespace(public_signing_keys=[])
-    data = MockData(None, committees_after_commit={"alpha": empty_committee})
-    writer, write_as = _make_foundation_admin(data, "alpha")
+async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    await sqlite_data.commit()
+    writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
     num_unlinked, num_deleted = await writer.delete_committee_keys()
 
     assert num_unlinked == 0
     assert num_deleted == 0
-    data.delete.assert_not_awaited()
-    data.commit.assert_not_awaited()
     write_as.append_to_audit_log.assert_not_called()
 
 
@@ -202,6 +226,7 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
         owned_key,
         committees_after_commit={"alpha": _committee("alpha", [])},
     )
+    data.execute.return_value = SimpleNamespace(rowcount=1)
     writer, _write, write_as = _make_foundation_committer_with_audit(data)
 
     keys_path = tmp_path / "alpha" / "KEYS"
@@ -216,7 +241,7 @@ async def test_delete_key_removal_deletes_empty_keys_file(tmp_path):
 
     assert isinstance(result, outcome.Result)
     assert not keys_path.exists()
-    data.delete.assert_awaited_once_with(owned_key)
+    data.delete.assert_not_awaited()
     data.commit.assert_awaited_once()
     write_as.append_to_audit_log.assert_called_once()
     audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
@@ -572,6 +597,14 @@ def _public_key(
         primary_declared_uid=primary_declared_uid,
         ascii_armored_key=ascii_armored_key,
     )
+
+
+async def _seed_committee_key(data: db.Session, committee_key: str, fingerprint: str) -> None:
+    data.add(keys_writer.sql.Committee(key=committee_key))
+    data.add(_public_signing_key(fingerprint, apache_uid="alice"))
+    await data.commit()
+    data.add(keys_writer.sql.KeyLink(committee_key=committee_key, key_fingerprint=fingerprint))
+    await data.commit()
 
 
 def _public_signing_key(fingerprint: str, apache_uid: str | None) -> keys_writer.sql.PublicSigningKey:
