@@ -197,10 +197,7 @@ class CommitteeMember(ReleaseManager):
         self.__committee_key = committee_key
 
     async def category_add(self, project_key: safe.ProjectKey, new_category: str) -> bool:
-        project = await self.__data.project(key=str(project_key)).get()
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
-        storage.ensure_project_active(project)
+        project = await self.__validate_project_in_committee(project_key)
         new_category = new_category.strip()
         current_categories = self.__current_categories(project)
         if new_category and (new_category not in current_categories):
@@ -224,10 +221,7 @@ class CommitteeMember(ReleaseManager):
         return False
 
     async def category_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
-        project = await self.__data.project(key=str(project_key)).get()
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
-        storage.ensure_project_active(project)
+        project = await self.__validate_project_in_committee(project_key)
         current_categories = self.__current_categories(project)
         if action_value in current_categories:
             if action_value in registry.FORBIDDEN_PROJECT_CATEGORIES:
@@ -246,7 +240,8 @@ class CommitteeMember(ReleaseManager):
             return True
         return False
 
-    async def create(self, committee_key: safe.CommitteeKey, display_name: str, project_key: safe.ProjectKey) -> None:
+    async def create(self, display_name: str, project_key: safe.ProjectKey) -> None:
+        committee_key = safe.CommitteeKey(self.__committee_key)
         try:
             await _build_and_add_project(self.__data, self.__asf_uid, committee_key, display_name, project_key)
             await self.__data.commit()
@@ -274,6 +269,10 @@ class CommitteeMember(ReleaseManager):
             ).get()
             if not project:
                 raise storage.AccessError(f"Project '{project_key}' not found.")
+            if project.committee_key != self.__committee_key:
+                raise storage.AccessError(
+                    f"Project {project_key} is not in committee {self.__committee_key}", status=403
+                )
 
             # TODO: when a project has current or archived releases, archiving the project
             # should be allowed and should cascade-archive the current releases as well -
@@ -325,6 +324,10 @@ class CommitteeMember(ReleaseManager):
             ).get()
             if not project:
                 raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+            if project.committee_key != self.__committee_key:
+                raise storage.AccessError(
+                    f"Project {project_key} is not in committee {self.__committee_key}", status=403
+                )
 
             if project.committee_key:
                 committee_projects = await self.__data.project(
@@ -354,9 +357,7 @@ class CommitteeMember(ReleaseManager):
         return None
 
     async def language_add(self, project_key: safe.ProjectKey, new_language: str) -> bool:
-        project = await self.__data.project(key=str(project_key)).get()
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        project = await self.__validate_project_in_committee(project_key)
         new_language = new_language.strip()
         current_languages = self.__current_languages(project)
         if new_language and (new_language not in current_languages):
@@ -378,9 +379,7 @@ class CommitteeMember(ReleaseManager):
         return False
 
     async def language_remove(self, project_key: safe.ProjectKey, action_value: str) -> bool:
-        project = await self.__data.project(key=str(project_key)).get()
-        if not project:
-            raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        project = await self.__validate_project_in_committee(project_key)
         current_languages = self.__current_languages(project)
         if action_value in current_languages:
             current_languages.remove(action_value)
@@ -404,6 +403,7 @@ class CommitteeMember(ReleaseManager):
         cap_question_id: int,
         closes_at: datetime.datetime,
     ) -> sql.ApprovalRequest:
+        await self.__validate_project_in_committee(project_key)
         approval = sql.ApprovalRequest(
             project_key=str(project_key),
             committee_key=self.__committee_key,
@@ -466,6 +466,15 @@ class CommitteeMember(ReleaseManager):
             if project.programming_languages
             else []
         )
+
+    async def __validate_project_in_committee(self, project_key: safe.ProjectKey) -> sql.Project:
+        project = await self.__data.project(key=str(project_key)).demand(
+            storage.AccessError(f"Project '{project_key}' not found.", status=404)
+        )
+        if project.committee_key != self.__committee_key:
+            raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
+        storage.ensure_project_active(project)
+        return project
 
 
 # No committee gate - the caller's right to act for the committee must be

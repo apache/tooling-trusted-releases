@@ -60,9 +60,9 @@ async def add_project(
         raise ValueError(f"Invalid committee key: {committee_key}")
 
     async with storage.write(session) as write:
-        wacm = await write.as_project_committee_member(safe.ProjectKey(str(committee_key)))
+        wacm = write.as_committee_member(str(committee_key))
         try:
-            await wacm.project.create(committee_key, display_name, project_key)
+            await wacm.project.create(display_name, project_key)
         except storage.AccessError as e:
             return await session.redirect(
                 get.projects.add_project, committee_key=str(committee_key), error=f"Error adding project: {e}"

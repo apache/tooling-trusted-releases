@@ -78,9 +78,20 @@ class FakeQuery:
         return self._row
 
 
+class FakeProjectQuery:
+    def __init__(self, row: sql.Project | None):
+        self._row = row
+
+    async def demand(self, error: Exception, log_query: bool = False) -> sql.Project:
+        if self._row is None:
+            raise error
+        return self._row
+
+
 class FakeData:
     def __init__(self, row: sql.ApprovalRequest | None):
         self.row = row
+        self.project_row = sql.Project(key="commons-foo", committee_key="commons", status=sql.ProjectStatus.ACTIVE)
 
     def approval_request(self, **kwargs: object) -> FakeQuery:
         return FakeQuery(self.row)
@@ -101,6 +112,9 @@ class FakeData:
 
     async def flush(self) -> None:
         return None
+
+    def project(self, **kwargs: object) -> FakeProjectQuery:
+        return FakeProjectQuery(self.project_row)
 
     async def rollback(self) -> None:
         return None
@@ -297,6 +311,16 @@ async def test_request_approval_question_id_collision(monkeypatch: pytest.Monkey
     closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
     with pytest.raises(storage.AccessError, match="already recorded"):
         await wacm.request_approval(safe.ProjectKey("commons-foo"), sql.ApprovalAction.ARCHIVE, 42, closes_at)
+
+
+@pytest.mark.asyncio
+async def test_request_approval_rejects_cross_committee_project() -> None:
+    data = FakeData(None)
+    data.project_row = sql.Project(key="tomcat-foo", committee_key="tomcat", status=sql.ProjectStatus.ACTIVE)
+    wacm = project.CommitteeMember(FakeWrite(), FakeWriteAs(), data, "commons")
+    closes_at = datetime.datetime(2026, 7, 1, tzinfo=datetime.UTC)
+    with pytest.raises(storage.AccessError, match="not in committee"):
+        await wacm.request_approval(safe.ProjectKey("tomcat-foo"), sql.ApprovalAction.ARCHIVE, 42, closes_at)
 
 
 @pytest.mark.asyncio
