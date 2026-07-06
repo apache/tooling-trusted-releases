@@ -456,13 +456,20 @@ class CommitteeParticipant(FoundationCommitter):
         include_downloads: bool = True,
     ) -> str | None:
         """Handle the deletion of database records and filesystem data for a release."""
-        release = await self.__data.release(
-            project_key=str(project_key), version=str(version), phase=phase, _committee=True
-        ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
-        storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.release(
+                project_key=str(project_key), version=str(version), phase=phase, _committee=True
+            ).demand(storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404))
+            storage.ensure_project_active(release.project)
+            self.__write.ensure_release_writable(release)
+        except Exception:
+            await self.__data.rollback()
+            raise
         # Once a release has been announced it can only be archived, never deleted
         if release.phase == sql.ReleasePhase.RELEASE:
+            await self.__data.rollback()
             return f"Release '{project_key!s} {version!s}' has been announced; it can only be archived, not deleted."
         return await self.__delete_body(release, project_key, version, include_downloads)
 

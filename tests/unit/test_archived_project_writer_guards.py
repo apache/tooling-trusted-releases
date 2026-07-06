@@ -404,6 +404,8 @@ async def test_release_bump_activity_updates_activity() -> None:
 async def test_release_delete_blocks_retired() -> None:
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
+    data.begin_immediate = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
     writer = object.__new__(release.CommitteeParticipant)
     writer._CommitteeParticipant__data = data
     writer._CommitteeParticipant__asf_uid = "tester"

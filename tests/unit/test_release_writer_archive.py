@@ -27,7 +27,7 @@ import atr.models.sql as sql
 import atr.storage.writers.release as release
 
 
-class _ReleaseQuery:
+class ReleaseQuery:
     def __init__(self, result: object) -> None:
         self._result = result
 
@@ -47,7 +47,7 @@ async def test_admin_delete_allows_announced_release(monkeypatch):
         project=SimpleNamespace(is_active=True),
     )
     mock_data = mock.MagicMock()
-    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(fake_release))
+    mock_data.release = mock.MagicMock(return_value=ReleaseQuery(fake_release))
     mock_write = mock.MagicMock()
     mock_write.authorisation.asf_uid = "admin"
     admin = release.FoundationAdmin(mock_write, mock.MagicMock(), mock_data)
@@ -174,7 +174,7 @@ def _fake_release() -> sql.Release:
 
 def _make_member(release_result: object) -> release.CommitteeMember:
     mock_data = mock.MagicMock()
-    mock_data.release = mock.MagicMock(return_value=_ReleaseQuery(release_result))
+    mock_data.release = mock.MagicMock(return_value=ReleaseQuery(release_result))
     mock_data.execute_query = mock.AsyncMock()
     mock_data.add = mock.MagicMock()
     mock_data.commit = mock.AsyncMock()
