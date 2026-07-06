@@ -962,6 +962,7 @@ type Results = Annotated[
     | CommitteesListResults
     | DistributionListResults
     | DistributionRecordResults
+    | DistributeSshRegisterResults
     | IgnoreAddResults
     | IgnoreDeleteResults
     | IgnoreListResults
