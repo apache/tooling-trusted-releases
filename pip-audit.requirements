@@ -3,7 +3,7 @@ aiofiles==25.1.0
     #   quart
     #   quart-uploads
     #   tooling-trusted-releases
-aiohappyeyeballs==2.6.2
+aiohappyeyeballs==2.7.1
     # via aiohttp
 aiohttp==3.14.1
     # via
@@ -32,7 +32,7 @@ asfpy==0.58
     # via asfquart
 asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@cb9b3fe9bbd6a6065f77cee595b617a8e4906013
     # via tooling-trusted-releases
-asyncssh==2.23.1
+asyncssh==2.24.0
     # via tooling-trusted-releases
 attrs==26.1.0
     # via
@@ -74,7 +74,7 @@ cryptography==49.0.0
     #   asfpy
     #   asyncssh
     #   tooling-trusted-releases
-cssbeautifier==2.0.1
+cssbeautifier==2.0.3
     # via djlint
 cvss==3.6
     # via tooling-trusted-releases
@@ -85,12 +85,12 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.39.4
+djlint==1.40.0
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.6
+dulwich==1.2.7
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -126,7 +126,7 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
-greenlet==3.5.2
+greenlet==3.5.3
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -167,7 +167,7 @@ jinja2==3.1.6
     # via
     #   flask
     #   quart
-jsbeautifier==2.0.1
+jsbeautifier==2.0.3
     # via
     #   cssbeautifier
     #   djlint
@@ -297,7 +297,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.5.9
+regex==2026.6.28
     # via djlint
 requests==2.34.2
     # via
@@ -311,13 +311,13 @@ rfc3987-syntax==1.1.0
     # via jsonschema
 rich==15.0.0
     # via tooling-trusted-releases
-rpds-py==2026.5.1
+rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
 rpgp-py==0.19.7
     # via tooling-trusted-releases
-ruff==0.15.19
+ruff==0.15.20
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
