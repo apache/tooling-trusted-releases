@@ -24,6 +24,7 @@ import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.htm as htm
 import atr.models.safe as safe
@@ -83,6 +84,8 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
             )
             artifact_counts = {fp: n for fp, n in count_rows.all() if fp is not None}
 
+        signing_committees = await interaction.automated_release_signing_committees(data)
+
     project_list = list(committee.projects)
     signing_keys = sorted(
         committee.public_signing_keys,
@@ -132,6 +135,7 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         names=names,
         signing_keys=signing_keys,
         artifact_counts=artifact_counts,
+        ci_builds_enabled=committee.key in signing_committees,
         algorithms=shared.algorithms,
         now=datetime.datetime.now(datetime.UTC),
         email_from_key=util.email_from_uid,
