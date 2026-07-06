@@ -86,6 +86,7 @@ ARCHIVE_ROOT_SUFFIXES: Final[tuple[str, ...]] = (
     "-source",
     "-src",
 )
+AUTOMATED_RELEASE_SIGNING_LABELS: Final[tuple[str, ...]] = ("Automated Release Signing", "Services RM")
 CONCERN_ACKNOWLEDGEMENT_MESSAGE: Final[str] = (
     "Review and acknowledge every current concern group before starting the vote"
 )
@@ -874,6 +875,14 @@ def intersect_algs(policy: dict[str, Any], policy_key: str, supported: set[bytes
     if not isinstance(algs, list):
         raise TypeError(f"ssh-audit policy '{policy_key}' is not a list")
     return [a for a in algs if isinstance(a, str) and (a.encode("ascii") in supported)]
+
+
+def is_automated_release_signing_uid(uid: str | None, committee_key: str) -> bool:
+    if not uid:
+        return False
+    if not any(label in uid for label in AUTOMATED_RELEASE_SIGNING_LABELS):
+        return False
+    return email_from_uid(uid) == f"private@{committee_key}.apache.org"
 
 
 async def is_dir_resolve(path: os.PathLike) -> pathlib.Path | None:

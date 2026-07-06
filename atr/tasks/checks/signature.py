@@ -98,19 +98,10 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
     log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
     for key in db_public_keys:
-        if key.fingerprint:
-            apache_uid_map[key.fingerprint.lower()] = False
-            if key.apache_uid:
-                apache_uid_map[key.fingerprint.lower()] = True
-            elif key.primary_declared_uid:
-                if email := util.email_from_uid(key.primary_declared_uid):
-                    # Allow uploaded keys of the form private@<committee_key>.apache.org
-                    allowed_github_key_email = f"private@{committee_key}.apache.org"
-                    log.info(
-                        f"Comparing {key.fingerprint.upper()} with email {email} to allowed {allowed_github_key_email}"
-                    )
-                    if email == allowed_github_key_email:
-                        apache_uid_map[key.fingerprint.lower()] = True
+        if not key.fingerprint:
+            continue
+        automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key)
+        apache_uid_map[key.fingerprint.lower()] = bool(key.apache_uid) or automated
 
     public_keys = [key.ascii_armored_key for key in db_public_keys]
     for i, key in enumerate(public_keys):

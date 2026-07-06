@@ -88,12 +88,12 @@ ATR identifies automated release keys in two ways, at two different levels.
 
 ### Signature verification
 
-When ATR verifies an `.asc` signature file, it loads all public signing keys that are linked to the release committee and checks each one. For personal committer keys, the key has an ASF UID field in ATR behind the scenes that ties it to a specific ASF account. Automated project keys do not have an ASF UID because they belong to the project rather than to a person. Instead, ATR looks at the email address in the key's primary UID. If the email matches exactly `private@`_committee_`.apache.org`, ATR treats the key as valid for that committee. In other words, it acts as a kind of committee key. A signature made by either kind of key, i.e. personal with an ASF UID or a committee key with the correct email address, will pass signature verification.
+When ATR verifies an `.asc` signature file, it loads all public signing keys that are linked to the release committee and checks each one. For personal committer keys, the key has an ASF UID field in ATR behind the scenes that ties it to a specific ASF account. Automated project keys do not have an ASF UID because they belong to the project rather than to a person. Instead, ATR checks the key's primary UID against the automated release key naming convention: the UID must contain "Automated Release Signing" or "Services RM", and its email address must be exactly `private@`_committee_`.apache.org`. A key following the convention acts as a kind of committee key. A signature made by either kind of key, i.e. personal with an ASF UID or a committee key following the naming convention, will pass signature verification.
 
 You can read more about [signature verification](checks#signature-verification) on the checks page.
 
 ### Committee eligibility
 
-Separately, ATR determines which committees are eligible for Trusted Publishing by querying for keys whose primary UID contains "Automated Release Signing" or "Services RM" and whose email matches the `private@`_committee_`.apache.org` pattern. A committee must have at least one such key before ATR will accept releases triggered by GitHub workflows for projects in that committee.
+Separately, ATR determines which committees are eligible for Trusted Publishing by querying for keys whose primary UID contains "Automated Release Signing" or "Services RM" and whose email is exactly `private@`_committee_`.apache.org` for the committee that the key is linked to. A committee must have at least one such key before ATR will accept releases triggered by GitHub workflows for projects in that committee.
 
 Registering a correctly named key therefore does two things at once: it enables signature verification for artifacts signed by that key, and it marks the committee as eligible for Trusted Publishing.
