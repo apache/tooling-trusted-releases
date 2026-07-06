@@ -262,13 +262,6 @@ class ReleaseManager(CommitteeParticipant):
                 email_cc=basic.as_json(email_cc or []),
                 email_bcc=basic.as_json(email_bcc or []),
             )
-            if unfinished_revisions_path:
-                # This removes all of the prior revisions
-                # Each prior revision directory is immutable
-                await util.delete_immutable_directory(
-                    unfinished_revisions_path,
-                    reason=f"user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
-                )
         except Exception as e:
             raise storage.AccessError(f"Error moving files: {e!s}", status=500)
 
@@ -345,6 +338,19 @@ class ReleaseManager(CommitteeParticipant):
         except Exception as e:
             raise storage.AccessError(
                 f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed.",
+                status=500,
+            )
+        try:
+            if unfinished_revisions_path:
+                # This removes all of the prior revisions
+                # Each prior revision directory is immutable
+                await util.delete_immutable_directory(
+                    unfinished_revisions_path,
+                    reason=f"user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
+                )
+        except Exception as e:
+            raise storage.AccessError(
+                f"Release announced, but error deleting prior revisions: {e!s}. Manual cleanup needed.",
                 status=500,
             )
         await self.__archive_prior_release(release, auto_archive_prior)
