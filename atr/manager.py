@@ -25,6 +25,8 @@ import io
 import os
 import signal
 import sys
+import time
+from typing import Final
 
 import sqlalchemy
 import sqlalchemy.engine as engine
@@ -42,6 +44,8 @@ global_worker_debug: bool = False
 # Global worker manager instance
 # Can't use "StringClass" | None, must use Optional["StringClass"] for forward references
 global_worker_manager: WorkerManager | None = None
+
+_POOL_RESOURCES_INTERVAL_SECONDS: Final = 60.0
 
 
 class WorkerManager:
@@ -61,6 +65,7 @@ class WorkerManager:
         self.budget_index = 0
         self.running = False
         self.check_task: asyncio.Task | None = None
+        self.resources_logged_at = 0.0
 
     async def start(self) -> None:
         """Start the worker manager."""
@@ -192,6 +197,9 @@ class WorkerManager:
         while self.running:
             try:
                 await self.check_workers()
+                if (time.monotonic() - self.resources_logged_at) >= _POOL_RESOURCES_INTERVAL_SECONDS:
+                    self.resources_logged_at = time.monotonic()
+                    await self.log_pool_resources()
                 await asyncio.sleep(self.check_interval_seconds)
             except asyncio.CancelledError:
                 break
@@ -245,6 +253,20 @@ class WorkerManager:
 
         # Reset any tasks that were being processed by now inactive workers
         await self.reset_broken_tasks()
+
+    async def log_pool_resources(self) -> None:
+        async with db.session() as data:
+            count_query = (
+                sqlmodel.select(sqlalchemy.func.count())
+                .select_from(sql.Task)
+                .where(sql.Task.status == sql.TaskStatus.QUEUED)
+            )
+            queued = (await data.execute(count_query)).scalar_one()
+        rss_parts = []
+        for pid in sorted(self.workers):
+            rss, _ = await asyncio.to_thread(util.proc_memory_kb, pid)
+            rss_parts.append(f"{pid}:{'?' if (rss is None) else rss}")
+        log.resources(f"pool queued={queued} workers={len(self.workers)} rss={','.join(rss_parts)}")
 
     async def terminate_long_running_task(self, task: sql.Task, worker: WorkerProcess, task_id: int, pid: int) -> None:
         """

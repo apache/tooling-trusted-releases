@@ -23,14 +23,17 @@ import logging
 import logging.handlers
 import queue
 import threading
+import time
 from typing import Any, Final
 
 import structlog
 
 PERFORMANCE: logging.Logger | None = None
+RESOURCES: logging.Logger | None = None
 
 _global_recent_logs: collections.deque[str] | None = None
 _global_recent_logs_lock = threading.Lock()
+_line_listeners: list[logging.handlers.QueueListener] = []
 
 
 class BufferingHandler(logging.Handler):
@@ -187,6 +190,12 @@ def interface_name(depth: int = 1) -> str:
     return caller_name(depth=depth)
 
 
+def listeners_stop() -> None:
+    for listener in _line_listeners:
+        listener.stop()
+    _line_listeners.clear()
+
+
 def log(level: int, msg: str, **kwargs) -> None:
     # Custom log level
     _event(level, msg, **kwargs)
@@ -198,8 +207,10 @@ def performance(msg: str) -> None:
 
 
 def performance_init() -> None:
+    import atr.config as config
+
     global PERFORMANCE
-    PERFORMANCE = _performance_logger()
+    PERFORMANCE = _line_logger("log.performance", config.get().PERFORMANCE_LOG_FILE)
 
 
 def python_repr(object_name: str) -> str:
@@ -211,6 +222,18 @@ def request_context_fields() -> dict[str, str]:
     if request_id is None:
         return {}
     return {"request_id": request_id}
+
+
+def resources(msg: str) -> None:
+    if RESOURCES is not None:
+        RESOURCES.info(msg)
+
+
+def resources_init() -> None:
+    import atr.config as config
+
+    global RESOURCES
+    RESOURCES = _line_logger("log.resources", config.get().RESOURCES_LOG_FILE)
 
 
 def set_asf_uid(asfuid: str | None) -> None:
@@ -257,24 +280,23 @@ def _event(level: int, msg: str, stacklevel: int = 3, exc_info: bool = False, **
     logger.log(level, msg, stacklevel=stacklevel, exc_info=exc_info, **kwargs)
 
 
-def _performance_logger() -> logging.Logger:
-    import atr.config as config
-
+def _line_logger(name: str, path: str) -> logging.Logger:
     class MicrosecondsFormatter(logging.Formatter):
         # Answers on a postcard if you know why Python decided to use a comma by default
         default_msec_format = "%s.%03d"
+        converter = time.gmtime
 
-    performance: Final = logging.getLogger("log.performance")
+    logger: Final = logging.getLogger(name)
     # Use custom formatter that properly includes microseconds
-    # TODO: Is this actually UTC?
-    performance_handler: Final = logging.FileHandler(config.get().PERFORMANCE_LOG_FILE, encoding="utf-8")
-    performance_handler.setFormatter(MicrosecondsFormatter("%(asctime)s - %(message)s"))
-    performance_queue = queue.Queue(-1)
-    performance_listener = logging.handlers.QueueListener(performance_queue, performance_handler)
-    performance_listener.start()
-    performance.addHandler(StructlogQueueHandler(performance_queue))
-    performance.setLevel(logging.INFO)
+    handler: Final = logging.handlers.WatchedFileHandler(path, encoding="utf-8")
+    handler.setFormatter(MicrosecondsFormatter("%(asctime)s - %(message)s"))
+    log_queue = queue.Queue(-1)
+    listener = logging.handlers.QueueListener(log_queue, handler)
+    listener.start()
+    _line_listeners.append(listener)
+    logger.addHandler(StructlogQueueHandler(log_queue))
+    logger.setLevel(logging.INFO)
     # If we don't set propagate to False then it logs to the term as well
-    performance.propagate = False
+    logger.propagate = False
 
-    return performance
+    return logger

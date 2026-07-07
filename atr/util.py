@@ -1200,6 +1200,22 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     return word
 
 
+def proc_memory_kb(pid: int) -> tuple[int | None, int | None]:
+    try:
+        with open(f"/proc/{pid}/status", encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None, None
+    rss = None
+    hwm = None
+    for line in text.splitlines():
+        if line.startswith("VmRSS:"):
+            rss = int(line.split()[1])
+        elif line.startswith("VmHWM:"):
+            hwm = int(line.split()[1])
+    return rss, hwm
+
+
 def public_download_url(
     committee: sql.Committee,
     suffix: safe.RelPath | None,

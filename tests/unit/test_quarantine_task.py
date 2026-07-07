@@ -215,7 +215,7 @@ async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
     tmp_root = temp_dir / "temporary"
     recorded: dict[str, pathlib.Path] = {}
 
-    def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
+    def extract_measured(_archive_path: safe.StatePath, extract_dir: str, _config: object) -> None:
         staging_dir = pathlib.Path(extract_dir)
         recorded["staging_dir"] = staging_dir
         (staging_dir / "content.txt").write_text("staged")
@@ -228,7 +228,7 @@ async def test_extract_archives_discards_staging_dir_on_enotempty_collision(
 
     monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
-    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+    monkeypatch.setattr(quarantine.archives, "extract_measured", extract_measured)
     monkeypatch.setattr(quarantine.os, "rename", rename)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:ghi", errors=[])]
@@ -261,7 +261,7 @@ async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
     tmp_root = temp_dir / "temporary"
     recorded: dict[str, pathlib.Path] = {}
 
-    def extract_archive(_archive_path: str, extract_dir: str, _config: object) -> None:
+    def extract_measured(_archive_path: safe.StatePath, extract_dir: str, _config: object) -> None:
         staging_dir = pathlib.Path(extract_dir)
         recorded["staging_dir"] = staging_dir
         (staging_dir / "content.txt").write_text("staged")
@@ -274,7 +274,7 @@ async def test_extract_archives_discards_staging_dir_when_other_worker_wins(
 
     monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
-    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+    monkeypatch.setattr(quarantine.archives, "extract_measured", extract_measured)
     monkeypatch.setattr(quarantine.os, "rename", rename)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:def", errors=[])]
@@ -306,12 +306,12 @@ async def test_extract_archives_propagates_exarch_error_to_file_entry(
     cache_root = temp_dir / "cache"
     tmp_root = temp_dir / "temporary"
 
-    def extract_archive(_archive_path: str, _extract_dir: str, _config: object) -> None:
+    def extract_measured(_archive_path: safe.StatePath, _extract_dir: str, _config: object) -> None:
         raise RuntimeError("unsafe zip detected")
 
     monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
-    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+    monkeypatch.setattr(quarantine.archives, "extract_measured", extract_measured)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:bad", errors=[])]
 
@@ -341,15 +341,15 @@ async def test_extract_archives_stages_in_temporary_then_promotes(
     tmp_root = temp_dir / "temporary"
     recorded: dict[str, str] = {}
 
-    def extract_archive(archive_path: str, extract_dir: str, _config: object) -> None:
-        recorded["archive_path"] = archive_path
+    def extract_measured(archive_path: safe.StatePath, extract_dir: str, _config: object) -> None:
+        recorded["archive_path"] = str(archive_path)
         recorded["extract_dir"] = extract_dir
         extract_path = pathlib.Path(extract_dir)
         (extract_path / "content.txt").write_text("cached")
 
     monkeypatch.setattr(quarantine.paths, "get_archives_dir", lambda: cache_root)
     monkeypatch.setattr(quarantine.paths, "get_tmp_dir", lambda: tmp_root)
-    monkeypatch.setattr(quarantine.exarch, "extract_archive", extract_archive)
+    monkeypatch.setattr(quarantine.archives, "extract_measured", extract_measured)
 
     entries = [sql.QuarantineFileEntryV1(rel_path=archive_rel_path, size_bytes=7, content_hash="blake3:abc", errors=[])]
 
