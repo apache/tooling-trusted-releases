@@ -1,0 +1,11 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Catalogue: {{ committee_key }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Correct the projects and artifacts for {{ committee_key }}.{%- endblock description -%}
+
+{% block content %}
+    <h1>Catalogue: {{ committee_key }}</h1>
+    <p><a href="/admin/catalog">Back to committees</a></p>
+    {{ projects }}
+{% endblock content %}

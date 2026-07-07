@@ -1,0 +1,11 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Catalogue corrections ~ ATR{%- endblock title -%}
+
+{%- block description -%}Pick a committee to correct its projects and artifacts.{%- endblock description -%}
+
+{% block content %}
+    <h1>Catalogue corrections</h1>
+    <p>Choose a committee to review and correct its catalogued projects.</p>
+    {{ committees }}
+{% endblock content %}

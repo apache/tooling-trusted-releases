@@ -1,0 +1,12 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}{{ heading }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Confirm a catalogue correction.{%- endblock description -%}
+
+{% block content %}
+    <h1>{{ heading }}</h1>
+    <p><a href="/admin/catalog/{{ committee_key }}">Back to {{ committee_key }}</a></p>
+    {{ intro }}
+    {{ form }}
+{% endblock content %}

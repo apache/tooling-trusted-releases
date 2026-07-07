@@ -275,6 +275,312 @@ async def browse_as_post(
 
 
 @admin.typed
+async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"]) -> str:
+    """
+    URL: GET /catalog
+
+    Pick a committee to correct.
+    """
+    async with db.session() as data:
+        committees = await data.committee().order_by(sql.Committee.key).all()
+
+    listing = htpy.ul(".list-group")[
+        [
+            htpy.li(".list-group-item")[htpy.a(href=f"/admin/catalog/{committee.key}")[committee.name or committee.key]]
+            for committee in committees
+        ]
+    ]
+    return await template.render("admin-catalog.html", committees=listing)
+
+
+@admin.typed
+async def catalog_committee_get(
+    _session: web.Committer, _catalog: Literal["catalog"], committee_key: safe.CommitteeKey
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>
+
+    List a committee's projects with their release and artifact counts.
+    """
+    async with db.session() as data:
+        projects = await data.project(committee_key=str(committee_key), _releases=True).order_by(sql.Project.key).all()
+        artifact_counts = await _catalog_artifact_counts(data, [str(project.key) for project in projects])
+        summaries = [
+            (project, len(project.releases_including_embargoed), artifact_counts.get(str(project.key), 0))
+            for project in projects
+        ]
+
+    table = htpy.table(".table")[
+        htpy.thead[
+            htpy.tr[
+                htpy.th["Project"],
+                htpy.th["Status"],
+                htpy.th["Releases"],
+                htpy.th["Artifacts"],
+                htpy.th["Actions"],
+            ]
+        ],
+        htpy.tbody[
+            [
+                htpy.tr[
+                    htpy.td[htpy.strong[project.key]],
+                    htpy.td[project.status.value],
+                    htpy.td[str(release_count)],
+                    htpy.td[str(artifact_count)],
+                    htpy.td[
+                        htpy.a(
+                            ".btn.btn-sm.btn-outline-secondary.me-1",
+                            href=f"/admin/catalog/{committee_key}/rename/{project.key}",
+                        )["Rename"],
+                        htpy.a(
+                            ".btn.btn-sm.btn-outline-secondary.me-1",
+                            href=f"/admin/catalog/{committee_key}/move/{project.key}",
+                        )["Move"],
+                        htpy.a(
+                            ".btn.btn-sm.btn-outline-danger",
+                            href=f"/admin/catalog/{committee_key}/remove/{project.key}",
+                        )["Delete or merge"],
+                    ],
+                ]
+                for project, release_count, artifact_count in summaries
+            ]
+        ],
+    ]
+    return await template.render("catalog-committee.html", committee_key=str(committee_key), projects=table)
+
+
+def _catalog_select(name: str, options: list[tuple[str, str]], placeholder: str) -> htpy.Element:
+    return htpy.select(".form-select", name=name)[
+        htpy.option(value="", disabled=True, selected=True)[placeholder],
+        [htpy.option(value=value)[label] for value, label in options],
+    ]
+
+
+async def _catalog_artifact_counts(data: db.Session, project_keys: list[str]) -> dict[str, int]:
+    if not project_keys:
+        return {}
+    via = sql.validate_instrumented_attribute
+    result = await data.execute(
+        sqlmodel.select(via(sql.Artifact.project_key), sqlalchemy.func.count())
+        .where(via(sql.Artifact.project_key).in_(project_keys))
+        .group_by(via(sql.Artifact.project_key))
+    )
+    return {row[0]: int(row[1]) for row in result.all()}
+
+
+class CatalogMoveForm(form.Form):
+    destination: str = form.label(
+        "Destination committee", "The committee to move this project to.", widget=form.Widget.CUSTOM
+    )
+
+
+@admin.typed
+async def catalog_move_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _move: Literal["move"],
+    project_key: safe.ProjectKey,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/move/<project_key>
+
+    Confirm moving a project to another committee.
+    """
+    async with db.session() as data:
+        committees = await data.committee().order_by(sql.Committee.key).all()
+    destinations = [c for c in committees if str(c.key) != str(committee_key)]
+    rendered_form = await form.render(
+        model_cls=CatalogMoveForm,
+        submit_label="Move project",
+        submit_classes="btn-primary",
+        custom={
+            "destination": _catalog_select(
+                "destination",
+                [(str(c.key), c.name or str(c.key)) for c in destinations],
+                "Choose a committee",
+            )
+        },
+    )
+    intro = htpy.div[
+        htpy.p[f"Move {project_key} out of {committee_key} and into another committee."],
+        htpy.p(".text-muted")["Moving across a podling boundary changes the incubating badge."],
+    ]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Move {project_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def catalog_move_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _move: Literal["move"],
+    project_key: safe.ProjectKey,
+    move_form: CatalogMoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/move/<project_key>
+
+    Apply the move.
+    """
+    raw = move_form.destination.strip()
+    if not raw:
+        raise exceptions.BadRequest("Choose a destination committee.")
+    try:
+        destination = safe.CommitteeKey(raw)
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid committee key: {error}") from error
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.move_project(project_key, destination)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+class CatalogRenameForm(form.Form):
+    new_key: str = form.label("New project key", "The corrected project key, e.g. hbase-connectors.")
+    new_name: str = form.label("New display name (optional)", "Leave blank to keep the current name.")
+
+
+@admin.typed
+async def catalog_rename_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _rename: Literal["rename"],
+    project_key: safe.ProjectKey,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/rename/<project_key>
+
+    Confirm renaming or retargeting a project.
+    """
+    rendered_form = await form.render(
+        model_cls=CatalogRenameForm,
+        submit_label="Rename project",
+        submit_classes="btn-primary",
+    )
+    intro = htpy.div[htpy.p[f"Rename {project_key}. Every release, artifact, and lifecycle event moves with it."],]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Rename {project_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def catalog_rename_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _rename: Literal["rename"],
+    project_key: safe.ProjectKey,
+    rename_form: CatalogRenameForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/rename/<project_key>
+
+    Apply the rename.
+    """
+    raw = rename_form.new_key.strip()
+    if not raw:
+        raise exceptions.BadRequest("Enter a new project key.")
+    try:
+        new_key = safe.ProjectKey(raw)
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid project key: {error}") from error
+    new_name = rename_form.new_name.strip() or None
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.rename_project(project_key, new_key, new_name)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+class CatalogRemoveForm(form.Form):
+    disposition: Literal["delete", "rehome"] = form.label(
+        "What happens to this project's releases and artifacts",
+        "Delete them, or rehome them into another project.",
+    )
+    rehome_target: str = form.label(
+        "Rehome target (only for rehome)", "The project to merge into.", widget=form.Widget.CUSTOM, default=""
+    )
+
+
+@admin.typed
+async def catalog_remove_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _remove: Literal["remove"],
+    project_key: safe.ProjectKey,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/remove/<project_key>
+
+    Confirm deleting a project or rehoming its contents into another project.
+    """
+    async with db.session() as data:
+        projects = await data.project(committee_key=str(committee_key)).order_by(sql.Project.key).all()
+    targets = [p for p in projects if str(p.key) != str(project_key)]
+    rendered_form = await form.render(
+        model_cls=CatalogRemoveForm,
+        submit_label="Apply",
+        submit_classes="btn-danger",
+        custom={
+            "rehome_target": _catalog_select(
+                "rehome_target",
+                [(str(p.key), p.name or str(p.key)) for p in targets],
+                "Choose a project",
+            )
+        },
+    )
+    intro = htpy.div[
+        htpy.p[f"Remove {project_key}. Choose whether to delete its releases and artifacts or merge them elsewhere."],
+        htpy.p(".text-muted")["A rehome halts if any release version or artifact already exists on the target."],
+    ]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Delete or merge {project_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def catalog_remove_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _remove: Literal["remove"],
+    project_key: safe.ProjectKey,
+    remove_form: CatalogRemoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/remove/<project_key>
+
+    Apply the delete or the rehome.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        if remove_form.disposition == "rehome":
+            target = remove_form.rehome_target.strip()
+            if not target:
+                raise exceptions.BadRequest("A rehome needs a target project key.")
+            await wafa.catalogue.rehome_project(project_key, safe.ProjectKey(target))
+        else:
+            await wafa.catalogue.delete_project(project_key)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+@admin.typed
 async def configuration(_session: web.Committer, _configuration: Literal["configuration"]) -> web.QuartResponse:
     """
     URL: GET /configuration
