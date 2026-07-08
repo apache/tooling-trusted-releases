@@ -17,6 +17,7 @@
 
 import asyncio
 import collections
+import dataclasses
 import datetime
 import hashlib
 import ipaddress
@@ -36,6 +37,7 @@ import htpy
 import jwt
 import pydantic
 import quart
+import quart.datastructures as datastructures
 import sqlalchemy
 import sqlmodel
 import werkzeug.exceptions as exceptions
@@ -61,6 +63,9 @@ import atr.noisy as noisy
 import atr.paths as paths
 import atr.principal as principal
 import atr.shared as shared
+import atr.shared.catalogue_diff as catalogue_diff
+import atr.shared.catalogue_import as catalogue_import
+import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.tasks as tasks
@@ -678,6 +683,234 @@ async def catalog_remove_post(
         else:
             await wafa.catalogue.delete_project(project_key)
     return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+_CATALOG_PREVIEW_LIMIT: Final[int] = 50
+
+
+class CatalogImportForm(form.Form):
+    projects: form.File = form.label("Projects CSV", "Optional.")
+    releases: form.File = form.label("Releases CSV", "Optional.")
+    artifacts: form.File = form.label("Artifacts CSV", "Optional.")
+    overwrite: form.Bool = form.label(
+        "Overwrite everything for this PMC",
+        "Delete anything the files do not list, so the files become the whole catalogue for this PMC."
+        " Left unticked, rows are matched against what is already there and nothing is deleted",
+        default=False,
+    )
+
+
+class CatalogImportApplyForm(form.Form):
+    token: str = form.label("Token", widget=form.Widget.HIDDEN)
+
+
+@dataclasses.dataclass
+class CatalogExportArgs:
+    table: str = ""
+
+
+@admin.typed
+async def catalog_export_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _export: Literal["export"],
+    query_args: CatalogExportArgs,
+) -> web.QuartResponse:
+    """
+    URL: GET /catalog/<committee_key>/export
+
+    Download the committee's current entries for one table as a CSV.
+    """
+    table = query_args.table
+    async with db.session() as data:
+        try:
+            content = await catalogue_import.export_table(data, str(committee_key), table)
+        except KeyError as error:
+            raise exceptions.NotFound(f"Unknown table '{table}'.") from error
+    headers = {"Content-Disposition": f'attachment; filename="{committee_key}-{table}.csv"'}
+    return quart.Response(content, mimetype="text/csv", headers=headers)
+
+
+@admin.typed
+async def catalog_import_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _import: Literal["import"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/import
+
+    Upload catalogue CSVs to preview against the committee.
+    """
+    rendered_form = await form.render(
+        model_cls=CatalogImportForm,
+        submit_label="Preview import",
+        submit_classes="btn-primary",
+    )
+    return await template.render("catalog-import.html", committee_key=str(committee_key), form=rendered_form)
+
+
+@admin.typed
+async def catalog_import_post(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _import: Literal["import"],
+    import_form: CatalogImportForm,
+) -> str:
+    """
+    URL: POST /catalog/<committee_key>/import
+
+    Store the uploads and show the classified diff, grouped by table.
+    """
+    files = _catalog_import_files(import_form)
+    if not files:
+        raise exceptions.BadRequest("Upload at least one CSV.")
+    mode = catalogue_diff.Mode.REPLACE if import_form.overwrite else catalogue_diff.Mode.ADDITIVE
+    token = await catalogue_import.store_uploads(files, str(committee_key), mode)
+    rows = await asyncio.to_thread(catalogue_import.read_uploads, token)
+    async with db.session() as data:
+        diff = await _catalog_import_diff(data, str(committee_key), rows, mode)
+    # The apply recomputes the diff, and refuses if the catalogue has moved since this preview
+    await asyncio.to_thread(catalogue_import.record_fingerprint, token, catalogue_diff.fingerprint(diff))
+    apply_form = await form.render(
+        model_cls=CatalogImportApplyForm,
+        action=util.as_url(catalog_import_apply_post, committee_key=str(committee_key)),
+        submit_label="Apply import",
+        submit_classes="btn-danger",
+        defaults={"token": token},
+    )
+    return await template.render(
+        "catalog-import-preview.html",
+        committee_key=str(committee_key),
+        preview=_catalog_import_preview(diff),
+        form=apply_form,
+    )
+
+
+@admin.typed
+async def catalog_import_apply_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _import: Literal["import"],
+    _apply: Literal["apply"],
+    apply_form: CatalogImportApplyForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/import/apply
+
+    Re-read the stored uploads, recompute the diff under the write lock, and apply it.
+    """
+    token = apply_form.token.strip()
+    try:
+        rows = await asyncio.to_thread(catalogue_import.read_uploads, token)
+    except KeyError as error:
+        raise exceptions.BadRequest("The upload has expired; please upload again.") from error
+    if await asyncio.to_thread(catalogue_import.committee_of, token) != str(committee_key):
+        raise exceptions.BadRequest("That upload was previewed against a different committee.")
+    mode = await asyncio.to_thread(catalogue_import.mode_of, token)
+    previewed = await asyncio.to_thread(catalogue_import.fingerprint_of, token)
+    try:
+        async with storage.write(session) as write:
+            catalogue_writer = write.as_foundation_admin().catalogue
+            diff = await catalogue_writer.import_catalogue_csvs(rows, str(committee_key), mode, previewed)
+    except catalogue_import.StaleError as error:
+        raise exceptions.Conflict(
+            "The catalogue changed since this import was previewed, so nothing was written."
+            " Upload the files again to see what would happen now."
+        ) from error
+    finally:
+        await asyncio.to_thread(catalogue_import.discard, token)
+    counts = diff.counts
+    if diff.refused:
+        raise exceptions.BadRequest(f"Nothing was imported: {counts['conflict']} conflicts. Upload again to see them.")
+    return await session.redirect(
+        catalog_committee_get,
+        committee_key=str(committee_key),
+        success=f"Imported: {_catalog_import_summary(diff)}",
+    )
+
+
+def _catalog_import_files(import_form: CatalogImportForm) -> dict[str, datastructures.FileStorage]:
+    # Each table has its own optional picker, so which CSV is which comes from the field, not
+    # the uploaded file's name
+    files: dict[str, datastructures.FileStorage] = {}
+    for name in ("projects", "releases", "artifacts"):
+        upload = getattr(import_form, name)
+        if (upload is not None) and upload.filename:
+            files[name] = upload
+    return files
+
+
+async def _catalog_import_diff(
+    data: db.Session, committee_key: str, rows: dict[str, list[dict[str, str]]], mode: catalogue_diff.Mode
+) -> catalogue_diff.CatalogueDiff:
+    snapshot = await catalogue_import.build_snapshot(data, committee_key)
+    return catalogue_diff.classify(rows, snapshot, committee_key, mode)
+
+
+def _catalog_capped(items: list[str]) -> list[htm.Element]:
+    shown = [htpy.li[item] for item in items[:_CATALOG_PREVIEW_LIMIT]]
+    if len(items) > _CATALOG_PREVIEW_LIMIT:
+        shown.append(htpy.li[f"... and {len(items) - _CATALOG_PREVIEW_LIMIT} more"])
+    return shown
+
+
+def _catalog_import_summary(diff: catalogue_diff.CatalogueDiff) -> str:
+    counts = diff.counts
+    parts = [f"{counts['add']} adds", f"{counts['delete']} deletes"]
+    if counts["release_repoint"]:
+        parts.append(f"{counts['release_repoint']} release repoints")
+    if counts["artifact_repoint"]:
+        parts.append(f"{counts['artifact_repoint']} artifact repoints")
+    if counts["unchanged"]:
+        parts.append(f"{counts['unchanged']} unchanged")
+    parts.append(f"{counts['conflict']} conflicts")
+    return ", ".join(parts) + "."
+
+
+def _catalog_import_preview(diff: catalogue_diff.CatalogueDiff) -> htm.Element:
+    sections: list[htm.Element] = [htpy.p[_catalog_import_summary(diff)]]
+    for warning in diff.warnings:
+        sections.append(htm.div(".alert.alert-warning")[warning])
+    if diff.project_deletions or diff.release_deletions or diff.artifact_deletions:
+        sections.append(htpy.h2["Deletions"])
+        sections.append(
+            htm.div(".alert.alert-danger")[
+                "Your files replace this committee's catalogue, so these are removed. Check you have"
+                " all the data to import, or that you are happy for anything unspecified to be deleted."
+            ]
+        )
+        deletions = [f"project {key}, and its releases and artifacts" for key in diff.project_deletions]
+        deletions += [f"release {key}, and its artifacts" for key in diff.release_deletions]
+        deletions += [f"artifact {pk[2]} from {pk[0]} {pk[1]}" for pk in diff.artifact_deletions]
+        sections.append(htpy.ul[_catalog_capped(deletions)])
+    if diff.conflicts:
+        sections.append(htpy.h2["Conflicts"])
+        sections.append(htpy.ul[_catalog_capped([f"{c.table} {c.key}: {c.reason}" for c in diff.conflicts])])
+    project_adds = [add for add in diff.adds if isinstance(add, catalogue_rows.ProjectRow)]
+    release_adds = [add for add in diff.adds if isinstance(add, catalogue_rows.ReleaseRow)]
+    artifact_adds = [add for add in diff.adds if isinstance(add, catalogue_rows.ArtifactRow)]
+    if project_adds or release_adds:
+        sections.append(htpy.h2["Projects and releases to add"])
+        sections.append(htpy.ul[_catalog_capped([str(add.key) for add in project_adds + release_adds])])
+    if diff.release_repoints:
+        sections.append(htpy.h2["Releases to repoint"])
+        sections.append(
+            htpy.ul[_catalog_capped([f"{repoint.key} to {repoint.to_project}" for repoint in diff.release_repoints])]
+        )
+    if artifact_adds or diff.artifact_repoints:
+        sections.append(htpy.h2["Artifacts"])
+        rows = [htpy.li[f"add {add.artifact_path} to {add.project_key} {add.version}"] for add in artifact_adds]
+        rows += [
+            htpy.li[f"repoint {repoint.dist[1]} to {repoint.to_row.project_key} {repoint.to_row.version}"]
+            for repoint in diff.artifact_repoints
+        ]
+        sections.append(htpy.ul[rows])
+    return htpy.div[sections]
 
 
 @admin.typed

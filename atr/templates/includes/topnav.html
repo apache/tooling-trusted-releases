@@ -276,6 +276,11 @@
                    {% if request.endpoint == 'atr_admin_projects_update_get' %}class="active"{% endif %}><i class="bi bi-arrow-repeat"></i> Update projects</a>
               </li>
               <li>
+                <a class="dropdown-item"
+                   href="{{ as_url(admin.catalog_get) }}"
+                   {% if request.endpoint == 'atr_admin_catalog_get' %}class="active"{% endif %}><i class="bi bi-diagram-3"></i> Catalog admin</a>
+              </li>
+              <li>
                 <hr class="dropdown-divider" />
               </li>
               <li>

@@ -1,0 +1,12 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Import preview: {{ committee_key }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Review the catalogue import for {{ committee_key }}.{%- endblock description -%}
+
+{% block content %}
+    <h1>Import preview: {{ committee_key }}</h1>
+    <p><a href="/admin/catalog/{{ committee_key }}">Cancel</a></p>
+    {{ preview }}
+    {{ form }}
+{% endblock content %}

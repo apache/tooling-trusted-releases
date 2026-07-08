@@ -18,6 +18,8 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+from typing import Final
+
 import sqlalchemy
 import sqlmodel
 
@@ -25,8 +27,14 @@ import atr.cycles as cycles
 import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.shared.catalogue_diff as catalogue_diff
+import atr.shared.catalogue_import as catalogue_import
+import atr.shared.catalogue_rows as catalogue_rows
 import atr.shared.repoint as repoint
 import atr.storage as storage
+
+# SQLite allows 999 bound variables by default, and an artifact key is three of them
+_DELETE_CHUNK: Final[int] = 300
 
 
 class FoundationAdmin:
@@ -126,14 +134,13 @@ class FoundationAdmin:
 
     async def _rehome_rows(self, source: str, target: str, source_release_keys: list[str]) -> list[str]:
         via = sql.validate_instrumented_attribute
-        # A sub-project of the source hangs under the target once its parent is gone
+        # Sub-projects of the source reparent onto the target
         await self.__data.execute(
             sqlmodel.update(sql.Project)
             .where(via(sql.Project.super_project_key) == source)
             .values(super_project_key=target)
         )
-        # Each release moves under the target project; its cycle is resolved later, against
-        # the target's own version scheme rather than assumed to be the default
+        # Each release moves under the target project; its cycle is resolved later
         releases = await self.__data.release(project_key=source).all()
         moved_keys = [f"{target}-{release.version}" for release in releases]
         for release in releases:
@@ -142,8 +149,7 @@ class FoundationAdmin:
                 .where(via(sql.Release.key) == release.key)
                 .values(key=f"{target}-{release.version}", project_key=target)
             )
-        # Release-key children rewrite their prefix (Release itself moved above); project-key
-        # children point at the target. Both scoped to the source's own rows
+        # Release-key children rewrite their prefix; project-key children point at the target
         release_child_refs = [(model, attr) for model, attr in repoint.RELEASE_KEY_REFS if model is not sql.Release]
         await self._rewrite_prefix(release_child_refs, source_release_keys, source, target)
         for model, attr in repoint.PROJECT_KEY_REFS:
@@ -155,16 +161,13 @@ class FoundationAdmin:
 
     async def _rehome_cycles(self, target: str, moved_keys: list[str], source_cycle_keys: list[str]) -> None:
         via = sql.validate_instrumented_attribute
-        # Re-resolve cycle membership for the moved releases against the target's scheme,
-        # creating any cycle the target lacks. The raw updates bypassed the ORM, so expire
-        # first to re-read the moved rows fresh
+        # Re-resolve cycle membership for the moved releases against the target's scheme
         self.__data.expire_all()
         target_project = await self.__data.project(key=target).get()
         if target_project is None:
             raise storage.AccessError("The rehome target could not be reloaded.", status=500)
         await cycles.reassign_release_cycles(self.__data, target_project)
-        # A lifecycle event belongs in the same cycle as its release. version_key already
-        # points at the moved release key, so align each event with the cycle just resolved
+        # Align each moved release's lifecycle events with its resolved cycle
         for moved_key in moved_keys:
             moved_release = await self.__data.get(sql.Release, moved_key)
             if moved_release is None:
@@ -174,8 +177,7 @@ class FoundationAdmin:
                 .where(via(sql.LifecycleEvent.version_key) == moved_key)
                 .values(cycle_key=moved_release.cycle_key)
             )
-        # Project-level events with no release can't take a release's cycle, so the ones left
-        # on a source cycle fall back to the target default, which always exists
+        # Release-less events left on a source cycle fall back to the target default
         await self.__data.execute(
             sqlmodel.update(sql.LifecycleEvent)
             .where(via(sql.LifecycleEvent.cycle_key).in_(source_cycle_keys))
@@ -184,7 +186,6 @@ class FoundationAdmin:
 
     async def _drop_project(self, source: str) -> None:
         via = sql.validate_instrumented_attribute
-        # The source's own cycles and project row go; a rehome target keeps its cycles
         await self.__data.execute(sqlmodel.delete(sql.ProjectCycle).where(via(sql.ProjectCycle.project_key) == source))
         await self.__data.execute(sqlmodel.delete(sql.Project).where(via(sql.Project.key) == source))
 
@@ -197,35 +198,248 @@ class FoundationAdmin:
                 raise storage.AccessError(f"Project '{key}' not found.", status=404)
             await self._ensure_catalog_only(key)
             await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
-            via = sql.validate_instrumented_attribute
-            release_keys = await self._release_keys(key)
-            cycle_keys = await self._cycle_keys(key)
-
-            # A sub-project survives with its super pointer cleared; we delete this project,
-            # not the ones that hang beneath it
-            await self.__data.execute(
-                sqlmodel.update(sql.Project)
-                .where(via(sql.Project.super_project_key) == key)
-                .values(super_project_key=None)
-            )
-            for model, attr in repoint.RELEASE_KEY_REFS:
-                column = via(getattr(model, attr))
-                await self.__data.execute(sqlmodel.delete(model).where(column.in_(release_keys)))
-            for model, attr in repoint.CYCLE_KEY_REFS:
-                column = via(getattr(model, attr))
-                await self.__data.execute(sqlmodel.delete(model).where(column.in_(cycle_keys)))
-            for model, attr in repoint.PROJECT_KEY_REFS:
-                if (model, attr) == (sql.Project, "super_project_key"):
-                    continue
-                column = via(getattr(model, attr))
-                await self.__data.execute(sqlmodel.delete(model).where(column == key))
-            await self.__data.execute(sqlmodel.delete(sql.Project).where(via(sql.Project.key) == key))
+            await self._delete_project_rows(key)
             await self._assert_fk_integrity()
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()
             raise
         self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, deleted_project=key)
+
+    async def _delete_project_rows(self, key: str) -> None:
+        via = sql.validate_instrumented_attribute
+        release_keys = await self._release_keys(key)
+        cycle_keys = await self._cycle_keys(key)
+
+        # Sub-projects survive with their super pointer cleared
+        await self.__data.execute(
+            sqlmodel.update(sql.Project).where(via(sql.Project.super_project_key) == key).values(super_project_key=None)
+        )
+        for model, attr in repoint.RELEASE_KEY_REFS:
+            column = via(getattr(model, attr))
+            await self.__data.execute(sqlmodel.delete(model).where(column.in_(release_keys)))
+        for model, attr in repoint.CYCLE_KEY_REFS:
+            column = via(getattr(model, attr))
+            await self.__data.execute(sqlmodel.delete(model).where(column.in_(cycle_keys)))
+        for model, attr in repoint.PROJECT_KEY_REFS:
+            if (model, attr) == (sql.Project, "super_project_key"):
+                continue
+            column = via(getattr(model, attr))
+            await self.__data.execute(sqlmodel.delete(model).where(column == key))
+        await self.__data.execute(sqlmodel.delete(sql.Project).where(via(sql.Project.key) == key))
+
+    async def _delete_release_rows(self, release_keys: list[str]) -> None:
+        if not release_keys:
+            return
+        via = sql.validate_instrumented_attribute
+        for model, attr in repoint.RELEASE_KEY_REFS:
+            if model is sql.Release:
+                continue
+            column = via(getattr(model, attr))
+            await self.__data.execute(sqlmodel.delete(model).where(column.in_(release_keys)))
+        await self.__data.execute(sqlmodel.delete(sql.Release).where(via(sql.Release.key).in_(release_keys)))
+
+    async def _delete_artifact_rows(self, pks: list[tuple[str, str, str]]) -> None:
+        if not pks:
+            return
+        via = sql.validate_instrumented_attribute
+        identity = sqlalchemy.tuple_(
+            via(sql.Artifact.project_key), via(sql.Artifact.version), via(sql.Artifact.artifact_path)
+        )
+        # Chunked to stay inside SQLite's bound-variable limit
+        for start in range(0, len(pks), _DELETE_CHUNK):
+            chunk = pks[start : start + _DELETE_CHUNK]
+            await self.__data.execute(sqlmodel.delete(sql.Artifact).where(identity.in_(chunk)))
+
+    async def _resolve_super_projects(self, project_keys: list[str]) -> None:
+        # A sub-project hangs under the longest project key in its committee that prefixes its own,
+        # which is the rule the project creation path applies. The CSV does not carry the column
+        if not project_keys:
+            return
+        self.__data.expire_all()
+        candidates_by_committee: dict[str, list[str]] = {}
+        for project_key in project_keys:
+            project = await self.__data.project(key=project_key).get()
+            if project is None:
+                raise storage.AccessError(f"Project '{project_key}' could not be reloaded.", status=500)
+            committee_key = project.committee_key
+            if committee_key is None:
+                continue
+            if committee_key not in candidates_by_committee:
+                siblings = await self.__data.project(committee_key=committee_key).all()
+                candidates_by_committee[committee_key] = sorted(
+                    (str(sibling.key) for sibling in siblings), key=len, reverse=True
+                )
+            project.super_project_key = next(
+                (
+                    key
+                    for key in candidates_by_committee[committee_key]
+                    if (key != project_key) and project_key.startswith(f"{key}-")
+                ),
+                None,
+            )
+
+    async def _reassign_cycles_for_added_releases(self, diff: catalogue_diff.CatalogueDiff) -> None:
+        # An added release lands in the project's default cycle, so resolve it against the version
+        # scheme, which also creates any cycle the project lacks
+        project_keys = sorted({str(add.project_key) for add in diff.adds if isinstance(add, catalogue_rows.ReleaseRow)})
+        if not project_keys:
+            return
+        await self.__data.flush()
+        self.__data.expire_all()
+        for project_key in project_keys:
+            project = await self.__data.project(key=project_key).get()
+            if project is None:
+                raise storage.AccessError(f"Project '{project_key}' could not be reloaded.", status=500)
+            await cycles.reassign_release_cycles(self.__data, project)
+
+    async def _apply_deletions(self, diff: catalogue_diff.CatalogueDiff) -> list[str]:
+        # Children first: a release cascades its artifacts, a project needs its releases gone. Each
+        # level goes in one statement per table, the way _delete_project_rows already does it
+        await self._delete_artifact_rows(diff.artifact_deletions)
+        await self._delete_release_rows(diff.release_deletions)
+        orphaned = await self._surviving_sub_projects(diff.project_deletions)
+        for project_key in diff.project_deletions:
+            await self._delete_project_rows(project_key)
+        return orphaned
+
+    async def _surviving_sub_projects(self, project_keys: list[str]) -> list[str]:
+        # Deleting a project clears the super pointer of every project beneath it, including the
+        # ones that are not being deleted, so they have to be given a new one afterwards
+        if not project_keys:
+            return []
+        via = sql.validate_instrumented_attribute
+        rows = (
+            await self.__data.execute(
+                sqlmodel.select(via(sql.Project.key)).where(via(sql.Project.super_project_key).in_(project_keys))
+            )
+        ).all()
+        return [row[0] for row in rows if row[0] not in set(project_keys)]
+
+    async def import_catalogue_csvs(
+        self,
+        rows_by_table: dict[str, list[dict[str, str]]],
+        committee_key: str,
+        mode: catalogue_diff.Mode,
+        previewed: str | None = None,
+    ) -> catalogue_diff.CatalogueDiff:
+        # Recompute the diff against a snapshot taken inside this transaction, under the write lock
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            snapshot = await catalogue_import.build_snapshot(self.__data, committee_key)
+            diff = catalogue_diff.classify(rows_by_table, snapshot, committee_key, mode)
+            if (previewed is not None) and (catalogue_diff.fingerprint(diff) != previewed):
+                # The catalogue moved since the preview, so this would write something the admin
+                # has not seen. The watcher catalogues releases while the page is open
+                raise catalogue_import.StaleError(committee_key)
+            await self._apply_diff(diff)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self._audit_import(diff, committee_key, mode)
+        return diff
+
+    async def _apply_diff(self, diff: catalogue_diff.CatalogueDiff) -> None:
+        await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
+        # Deletions run first, so the committee is cleared before the files are re-added and a row
+        # can reuse a key it has just released. A deleted project leaves its surviving sub-projects
+        # with no super pointer, and they hang under whatever the files put back in its place
+        orphaned = await self._apply_deletions(diff)
+        # Adds in FK order: projects, then releases, then artifacts
+        for add in diff.adds:
+            if isinstance(add, catalogue_rows.ProjectRow):
+                self.__data.add(add.to_sql())
+        await self.__data.flush()
+        added = [str(add.key) for add in diff.adds if isinstance(add, catalogue_rows.ProjectRow)]
+        await self._resolve_super_projects(added + orphaned)
+        for add in diff.adds:
+            if isinstance(add, catalogue_rows.ReleaseRow):
+                self.__data.add(add.to_sql())
+        await self.__data.flush()
+        for add in diff.adds:
+            if isinstance(add, catalogue_rows.ArtifactRow):
+                self.__data.add(add.to_sql())
+        await self._reassign_cycles_for_added_releases(diff)
+        # Artifacts repoint first: a repointed release takes its artifacts by project and version,
+        # so an artifact the file sends elsewhere has to leave before the release takes it along
+        for artifact_repoint in diff.artifact_repoints:
+            await self._repoint_one_artifact(artifact_repoint)
+        for release_repoint in diff.release_repoints:
+            await self._repoint_one_release(release_repoint)
+        await self._assert_fk_integrity()
+
+    def _audit_import(self, diff: catalogue_diff.CatalogueDiff, committee_key: str, mode: catalogue_diff.Mode) -> None:
+        counts = diff.counts
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=committee_key,
+            mode=str(mode),
+            added=counts["add"],
+            releases_repointed=counts["release_repoint"],
+            artifacts_repointed=counts["artifact_repoint"],
+            deleted=counts["delete"],
+            conflicts=counts["conflict"],
+        )
+
+    async def _repoint_one_release(self, release_repoint: catalogue_diff.ReleaseRepoint) -> None:
+        via = sql.validate_instrumented_attribute
+        old_key = release_repoint.key
+        version = str(release_repoint.row.version)
+        new_key = f"{release_repoint.to_project}-{version}"
+        await self.__data.execute(
+            sqlmodel.update(sql.Artifact)
+            .where(via(sql.Artifact.project_key) == release_repoint.from_project)
+            .where(via(sql.Artifact.version) == version)
+            .values(release_key=new_key, project_key=release_repoint.to_project)
+        )
+        await self.__data.execute(
+            sqlmodel.update(sql.LifecycleEvent)
+            .where(via(sql.LifecycleEvent.version_key) == old_key)
+            .values(version_key=new_key, project_key=release_repoint.to_project)
+        )
+        # Other release-key children re-point to the new key
+        for model, attr in repoint.RELEASE_KEY_REFS:
+            if model in (sql.Release, sql.Artifact, sql.LifecycleEvent):
+                continue
+            column = via(getattr(model, attr))
+            await self.__data.execute(sqlmodel.update(model).where(column == old_key).values(**{attr: new_key}))
+        await self.__data.execute(
+            sqlmodel.update(sql.Release)
+            .where(via(sql.Release.key) == old_key)
+            .values(key=new_key, project_key=release_repoint.to_project)
+        )
+        # Resolve the repointed release's cycle against the target's scheme, then align its events
+        self.__data.expire_all()
+        target_project = await self.__data.project(key=release_repoint.to_project).get()
+        if target_project is None:
+            raise storage.AccessError("The repoint target could not be reloaded.", status=500)
+        await cycles.reassign_release_cycles(self.__data, target_project)
+        repointed_release = await self.__data.get(sql.Release, new_key)
+        if repointed_release is None:
+            raise storage.AccessError("The repointed release could not be reloaded.", status=500)
+        await self.__data.execute(
+            sqlmodel.update(sql.LifecycleEvent)
+            .where(via(sql.LifecycleEvent.version_key) == new_key)
+            .values(cycle_key=repointed_release.cycle_key)
+        )
+
+    async def _repoint_one_artifact(self, artifact_repoint: catalogue_diff.ArtifactRepoint) -> None:
+        via = sql.validate_instrumented_attribute
+        old_project, old_version, old_path = artifact_repoint.from_pk
+        row = artifact_repoint.to_row
+        await self.__data.execute(
+            sqlmodel.update(sql.Artifact)
+            .where(via(sql.Artifact.project_key) == old_project)
+            .where(via(sql.Artifact.version) == old_version)
+            .where(via(sql.Artifact.artifact_path) == old_path)
+            .values(
+                project_key=str(row.project_key),
+                version=str(row.version),
+                release_key=row.release_key,
+            )
+        )
 
     async def _collisions(self, source_key: str, target_key: str) -> list[repoint.Collision]:
         via = sql.validate_instrumented_attribute
@@ -251,8 +465,7 @@ class FoundationAdmin:
         return collisions
 
     async def _repoint(self, old_key: str, new_key: str) -> None:
-        # Defer foreign key checks to commit, so we can rewrite parent primary keys
-        # and their children in any order within this one transaction
+        # Foreign key checks deferred to commit while parent and child keys are rewritten
         await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
         via = sql.validate_instrumented_attribute
         release_keys = await self._release_keys(old_key)
@@ -266,8 +479,8 @@ class FoundationAdmin:
         for model, attr in repoint.PROJECT_KEY_REFS:
             column = via(getattr(model, attr))
             await self.__data.execute(sqlmodel.update(model).where(column == old_key).values(**{attr: new_key}))
-        # Columns that hold a release key; scoped to this project's own release keys, so a
-        # sibling project whose key shares this prefix is never swept in
+        # Columns that hold a release key, scoped to this project's own keys (never a sibling
+        # sharing the prefix)
         await self._rewrite_prefix(repoint.RELEASE_KEY_REFS, release_keys, old_key, new_key)
         # Columns that hold a cycle key
         await self._rewrite_prefix(repoint.CYCLE_KEY_REFS, cycle_keys, old_key, new_key)
@@ -300,9 +513,8 @@ class FoundationAdmin:
         return list(result.scalars().all())
 
     async def _ensure_catalog_only(self, project_key: str) -> None:
-        # A catalogued project carries only project, cycle, release, artifact and lifecycle
-        # rows. A live ATR project also has revisions and release file-state, whose keys this
-        # page does not yet re-point, so refuse those rather than corrupt them
+        # A live project also carries revisions and release file-state, whose keys this page
+        # does not re-point
         via = sql.validate_instrumented_attribute
         release_keys = await self._release_keys(project_key)
         if not release_keys:
@@ -320,8 +532,7 @@ class FoundationAdmin:
             )
 
     async def _assert_fk_integrity(self) -> None:
-        # Flush pending ORM work so the check sees the full picture, then refuse to commit if
-        # a correction has left any dangling reference behind
+        # Flush pending ORM work, then check for dangling references before commit
         await self.__data.flush()
         result = await self.__data.execute(sqlalchemy.text("PRAGMA foreign_key_check"))
         violations = result.fetchall()

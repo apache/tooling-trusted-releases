@@ -16,29 +16,40 @@
 # under the License.
 
 import atr.admin as admin_module
+import atr.shared.catalogue_diff as catalogue_diff
+import atr.shared.catalogue_rows as catalogue_rows
 
 
-def test_catalog_handlers_exist_and_import() -> None:
-    # Importing atr.admin registers the handlers via the @admin.typed decorator; if the
-    # type annotations are malformed the import itself raises, so this both smoke-tests
-    # import and confirms the two workspace handlers are present
-    assert hasattr(admin_module, "catalog_get")
-    assert hasattr(admin_module, "catalog_committee_get")
+def _release_row(key: str, project: str, version: str) -> catalogue_rows.ReleaseRow:
+    return catalogue_rows.ReleaseRow.model_validate(
+        {"key": key, "project_key": project, "version": version, "phase": "release", "created": "2020-01-01"}
+    )
 
 
-def test_move_handlers_exist() -> None:
-    assert hasattr(admin_module, "catalog_move_get")
-    assert hasattr(admin_module, "catalog_move_post")
-    assert hasattr(admin_module, "CatalogMoveForm")
+def test_import_preview_lists_conflicts_and_repoints() -> None:
+    diff = catalogue_diff.CatalogueDiff(
+        release_repoints=[
+            catalogue_diff.ReleaseRepoint(
+                key="alpha-one-4.0.0",
+                from_project="alpha-one",
+                to_project="alpha-two",
+                row=_release_row("alpha-one-4.0.0", "alpha-two", "4.0.0"),
+            )
+        ],
+        conflicts=[catalogue_diff.Conflict(table="artifacts", key="c.tar.gz", reason="unresolvable identity")],
+    )
+    html = str(admin_module._catalog_import_preview(diff))
+    assert "unresolvable identity" in html
+    assert "alpha-one-4.0.0 to alpha-two" in html
 
 
-def test_rename_handlers_exist() -> None:
-    assert hasattr(admin_module, "catalog_rename_get")
-    assert hasattr(admin_module, "catalog_rename_post")
-    assert hasattr(admin_module, "CatalogRenameForm")
-
-
-def test_remove_handlers_exist() -> None:
-    assert hasattr(admin_module, "catalog_remove_get")
-    assert hasattr(admin_module, "catalog_remove_post")
-    assert hasattr(admin_module, "CatalogRemoveForm")
+def test_import_preview_warns_about_deletions_and_empty_levels() -> None:
+    diff = catalogue_diff.CatalogueDiff(
+        release_deletions=["alpha-one-1.0.0"],
+        artifact_deletions=[("alpha-one", "1.0.0", "a.tar.gz")],
+        warnings=["artifacts.csv was not uploaded, so 1 artifacts will be deleted and not restored."],
+    )
+    html = str(admin_module._catalog_import_preview(diff))
+    assert "artifacts.csv was not uploaded" in html
+    assert "release alpha-one-1.0.0" in html
+    assert "anything unspecified to be deleted" in html
