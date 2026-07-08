@@ -7,5 +7,6 @@
 {% block content %}
     <h1>Catalogue: {{ committee_key }}</h1>
     <p><a href="/admin/catalog">Back to committees</a></p>
+    <p><a href="/admin/catalog/{{ committee_key }}/import" class="btn btn-primary">Import CSVs</a></p>
     {{ projects }}
 {% endblock content %}

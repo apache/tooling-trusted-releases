@@ -33,9 +33,8 @@ PROJECT_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.CheckResultIgnore, "project_key"),
 ]
 
-# Tables whose column holds a release key, "{project_key}-{version}". Task.version_key
-# is a logical reference, not a foreign key, but we rewrite it too so a moved project
-# leaves no stale check-task pointers
+# Tables whose column holds a release key, "{project_key}-{version}". Task.version_key holds
+# a bare version, not a release key, so it does not belong here
 RELEASE_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.Release, "key"),
     (sql.Artifact, "release_key"),
@@ -45,7 +44,6 @@ RELEASE_KEY_REFS: Final[list[tuple[type[sqlmodel.SQLModel], str]]] = [
     (sql.Distribution, "release_key"),
     (sql.Quarantined, "release_key"),
     (sql.Revision, "release_key"),
-    (sql.Task, "version_key"),
 ]
 
 # Tables whose column holds a cycle key, "{project_key}-{cycle}"

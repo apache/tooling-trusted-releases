@@ -1,0 +1,59 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Import catalogue: {{ committee_key }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Upload catalogue CSVs to correct {{ committee_key }}.{%- endblock description -%}
+
+{% block content %}
+    <h1>Import catalogue: {{ committee_key }}</h1>
+    <p><a href="/admin/catalog/{{ committee_key }}">Back to {{ committee_key }}</a></p>
+    <h2>Download current entries</h2>
+    <p>
+        Each file holds this committee's current entries, in the same columns the upload expects, so a
+        file you download can be edited and uploaded straight back.
+    </p>
+    <ul>
+        <li><a href="/admin/catalog/{{ committee_key }}/export?table=projects">projects.csv</a></li>
+        <li><a href="/admin/catalog/{{ committee_key }}/export?table=releases">releases.csv</a></li>
+        <li><a href="/admin/catalog/{{ committee_key }}/export?table=artifacts">artifacts.csv</a></li>
+    </ul>
+    <h2>Upload</h2>
+    <p>
+        Each file is optional, and nothing is written until you confirm the preview on the next page.
+    </p>
+    <p>
+        By default the rows are matched against what is already catalogued: a row that matches nothing
+        is added, one that names a different project moves there, and one that matches where it says it
+        is does nothing. Nothing is deleted, a row that cannot be applied is skipped and the rest still
+        go ahead, and columns other than the keys are not written back. Use this to top a committee up
+        rather than to correct it.
+    </p>
+    <p>
+        Tick <strong>Overwrite everything for this PMC</strong> and the files you upload
+        <strong>are</strong> this committee's catalogue instead. Download, edit, upload: what the files
+        list is what the committee ends up with, so an added row is an entry added, a removed row is an
+        entry deleted, and an edited row is an entry corrected.
+    </p>
+    <p>
+        On an overwrite, the deepest file you upload decides how far the replacement reaches.
+        artifacts.csv replaces the artifacts; releases.csv replaces the releases and their artifacts;
+        projects.csv replaces the projects, their releases and their artifacts. Upload the levels below
+        the one you are correcting, or the preview will warn you what is about to be left empty.
+    </p>
+    <p>
+        An overwrite applies as a whole or not at all. If any row cannot be applied it is reported as a
+        conflict, nothing is changed, and you can fix the file and upload again. This is deliberate: a
+        row that fell out would be deleted rather than corrected.
+    </p>
+    <p>
+        Because an overwrite rewrites the rows, columns the CSVs do not carry are reset. Run
+        <strong>Update projects</strong> afterwards to restore project metadata, and re-import
+        signatures and lifecycle events if you have them.
+    </p>
+    <p>
+        Projects carrying live release-workflow data are never changed or deleted by this page, in
+        either mode. To move a project to another committee, or to rename or merge one, use the actions
+        on the committee page instead.
+    </p>
+    {{ form }}
+{% endblock content %}
