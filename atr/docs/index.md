@@ -8,7 +8,7 @@ NOTE: This documentation is a work in progress.
 
 * `1.` [Introduction to ATR](introduction-to-atr)
 * `2.` [User guide](user-guide)
-  * `2.1.` [Components](components)
+  * `2.1.` [Terminology](terminology)
   * `2.2.` [Signing artifacts](signing-artifacts)
   * `2.3.` [Checks](checks)
   * `2.4.` [License checks](license-checks)

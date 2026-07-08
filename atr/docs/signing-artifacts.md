@@ -2,7 +2,7 @@
 
 **Up**: `2.` [User guide](user-guide)
 
-**Prev**: `2.1.` [Components](components)
+**Prev**: `2.1.` [Terminology](terminology)
 
 **Next**: `2.3.` [Checks](checks)
 

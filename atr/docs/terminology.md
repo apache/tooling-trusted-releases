@@ -1,4 +1,4 @@
-# 2.1. Components
+# 2.1. Terminology
 
 **Up**: `2.` [User guide](user-guide)
 
