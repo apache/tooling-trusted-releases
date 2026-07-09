@@ -1975,6 +1975,7 @@ async def vote_start(
                 data.subject,
                 data.body,
                 asf_uid,
+                permitted_recipients=permitted_recipients,
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
                 second_round_email_to=data.second_round_email_to,

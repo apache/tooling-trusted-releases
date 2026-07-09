@@ -1033,7 +1033,7 @@ class CommitteeParticipant(FoundationCommitter):
             raise storage.AccessError("An error occurred while promoting the release candidate", status=500)
         if result.rowcount != 1:
             raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
-        await self.__data.refresh(release_for_pre_checks)
+        await self.__data.refresh(release_for_pre_checks, attribute_names=list(values))
         return release_for_pre_checks, vote_seq, vote_mode, revision_number
 
     async def __required_concern_groups(self, release: sql.Release) -> list[util.ConcernGroup]:
