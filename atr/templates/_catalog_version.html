@@ -12,7 +12,7 @@
         <span>
           <span class="badge {{ status_classes[version.status] }}">{{ version.status | capitalize }}</span>
           {% if version.released %}
-            <a class="ms-2 small"
+            <a class="btn btn-sm btn-outline-secondary ms-2"
                href="{{ as_url(api.cle_release, project_key=project.key, version_key=version.version) }}">CLE</a>
           {% endif %}
         </span>
@@ -29,10 +29,10 @@
             </span>
             <span class="small text-nowrap">
               {% if artifact.downloadable %}
-                <a href="{{ artifact.artifact_url }}">Download</a>
-                {% if artifact.signature_url %}<a class="ms-2" href="{{ artifact.signature_url }}">.asc</a>{% endif %}
-                {% if artifact.checksum_url %}<a class="ms-2" href="{{ artifact.checksum_url }}">checksum</a>{% endif %}
-                {% if artifact.sbom_url %}<a class="ms-2" href="{{ artifact.sbom_url }}">SBOM</a>{% endif %}
+                <a class="btn btn-sm btn-primary" href="{{ artifact.artifact_url }}">Download</a>
+                {% if artifact.signature_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.signature_url }}">Signature</a>{% endif %}
+                {% if artifact.checksum_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.checksum_url }}">Checksum</a>{% endif %}
+                {% if artifact.sbom_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.sbom_url }}">SBOM</a>{% endif %}
               {% else %}
                 <span class="text-secondary">Metadata only</span>
               {% endif %}
