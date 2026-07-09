@@ -537,6 +537,32 @@ async def prior_release_for_archive(
     return cycles.prior_release_in_cycle(project, version, candidates)
 
 
+async def project_latest_releases(
+    data: db.Session, project_keys: Sequence[str] | None = None
+) -> dict[str, datetime.datetime]:
+    """Map project key to the released date of its most recent finished release."""
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(sql.Release.project_key, sqlalchemy.func.max(via(sql.Release.released)))
+        .where(sql.Release.phase == sql.ReleasePhase.RELEASE)
+        .group_by(via(sql.Release.project_key))
+    )
+    if project_keys is not None:
+        query = query.where(via(sql.Release.project_key).in_(project_keys))
+    result = await data.execute(query)
+    return {key: released for key, released in result.all() if released is not None}
+
+
+def project_order_key(project: sql.Project, latest_release: datetime.datetime | None) -> tuple[bool, float, str]:
+    """Order committee projects with the main project first, then by most recent release."""
+    # A project keyed after its committee is the main one; umbrella committees have none
+    # TODO: This could use a lack of "super_project_id" but we'd need a rule to encode these from history
+    is_main = (project.committee_key is not None) and (str(project.key) == str(project.committee_key))
+    # Negated so that recent releases sort first, with never-released projects last
+    recency = -latest_release.timestamp() if latest_release else float("inf")
+    return (not is_main, recency, project.display_name.lower())
+
+
 async def release_completed_svn_publish_task_for_revision(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

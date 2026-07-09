@@ -44,9 +44,18 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
     """
     async with db.session() as data:
         committees = await data.committee(_projects=True).order_by(sql.Committee.key).all()
+        latest_releases = await interaction.project_latest_releases(data)
+        projects_by_committee = {
+            committee.key: sorted(
+                committee.projects,
+                key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))),
+            )
+            for committee in committees
+        }
         return await template.render(
             "committee-directory.html",
             committees=committees,
+            projects_by_committee=projects_by_committee,
             committee_is_standing=util.committee_is_standing,
             plural_fn=util.plural,
         )
@@ -86,7 +95,14 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
 
         signing_committees = await interaction.automated_release_signing_committees(data)
 
-    project_list = list(committee.projects)
+        latest_releases = await interaction.project_latest_releases(
+            data, project_keys=[str(p.key) for p in committee.projects]
+        )
+
+    project_list = sorted(
+        committee.projects,
+        key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))),
+    )
     signing_keys = sorted(
         committee.public_signing_keys,
         key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
