@@ -94,6 +94,7 @@ def release_row() -> SimpleNamespace:
         project=project,
         project_key="example",
         release_policy=None,
+        safe_latest_revision_number=safe.RevisionNumber("00003"),
         unwrap_revision_number="00003",
         version="2.0.0",
     )

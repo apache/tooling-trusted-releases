@@ -114,7 +114,7 @@ class ReleaseManager(CommitteeParticipant):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-        preview_revision_number: safe.RevisionNumber,
+        preview_revision_number: safe.RevisionNumber | None,
         email_to: str,
         body: str,
         download_path_suffix: safe.RelPath | None,
@@ -132,7 +132,6 @@ class ReleaseManager(CommitteeParticipant):
             project_key=str(project_key),
             version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
-            latest_revision_number=str(preview_revision_number),
             _project_release_policy=True,
             _committee=True,
             _revisions=True,
@@ -140,7 +139,7 @@ class ReleaseManager(CommitteeParticipant):
             _release_policy=True,
         ).demand(
             storage.AccessError(
-                f"Release {project_key!s} {version_key!s} {preview_revision_number!s} does not exist",
+                f"Release {project_key!s} {version_key!s} does not exist",
                 status=404,
             )
         )
@@ -148,6 +147,13 @@ class ReleaseManager(CommitteeParticipant):
             raise storage.AccessError(f"Project {project_key} is not in committee {self.__committee_key}", status=403)
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)
+        latest_revision_number = release.safe_latest_revision_number
+        if (preview_revision_number is not None) and (preview_revision_number != latest_revision_number):
+            raise storage.AccessError(
+                f"Revision {preview_revision_number!s} is not the latest revision, {latest_revision_number!s}",
+                status=409,
+            )
+        preview_revision_number = latest_revision_number
 
         # Loaded the release first so a project's stored announce recipients can
         # be folded into the permitted set before we validate the addresses.

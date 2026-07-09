@@ -648,7 +648,7 @@ class PublisherReleaseAnnounceArgs(schema.Strict):
     publisher: str = schema.example("user")
     jwt: str = schema.example("eyJhbGciOiJIUzI1[...]mMjLiuyu5CSpyHI=")
     version: safe.VersionKey = schema.example("0.0.1")
-    revision: safe.RevisionNumber = schema.example("00005")
+    revision: safe.RevisionNumber | None = schema.default_example(None, "00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: safe.OptionalRelPath = schema.example("example/1.0.0")
@@ -687,7 +687,7 @@ class PublisherVoteResolveResults(schema.Strict):
 class ReleaseAnnounceArgs(schema.Strict):
     project: safe.ProjectKey = schema.example("example")
     version: safe.VersionKey = schema.example("1.0.0")
-    revision: safe.RevisionNumber = schema.example("00005")
+    revision: safe.RevisionNumber | None = schema.default_example(None, "00005")
     email_to: str = schema.example("dev@example.apache.org")
     body: str = schema.example("The Apache Example team is pleased to announce the release of Example 1.0.0...")
     path_suffix: safe.OptionalRelPath = schema.example("example/1.0.0")
