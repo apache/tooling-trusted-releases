@@ -449,6 +449,7 @@ def resolve_download_path_suffix(
 ) -> safe.RelPath | None:
     resolved = template.strip()
     if resolved:
+        resolved = resolved.replace("{{MAJOR_VERSION}}", version.partition(".")[0])
         resolved = resolved.replace("{{PROJECT_KEY}}", project_key).replace("{{VERSION}}", version)
         return safe.RelPath(resolved)
     if is_top_level:

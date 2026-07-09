@@ -404,7 +404,7 @@ class FinishPolicyForm(form.Form):
     )
     download_path_suffix: str = form.label(
         "Default download path suffix",
-        "Pre-fills the SVN publish path. May use {{PROJECT_KEY}} and {{VERSION}}."
+        "Pre-fills the SVN publish path. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}."
         " Leave empty for the default (project root for a top-level project,"
         " {{PROJECT_KEY}}-{{VERSION}} for a subproject).",
         default="",

@@ -101,7 +101,7 @@ def validate_download_path_suffix(template: str) -> None:
         return
     # The template is filled in per release, so probe with placeholder stand-ins
     # to check the result is a path we'd accept
-    probe = resolved.replace("{{PROJECT_KEY}}", "x").replace("{{VERSION}}", "x")
+    probe = resolved.replace("{{MAJOR_VERSION}}", "x").replace("{{PROJECT_KEY}}", "x").replace("{{VERSION}}", "x")
     try:
         safe.RelPath(probe)
     except ValueError as e:
