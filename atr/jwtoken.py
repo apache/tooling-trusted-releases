@@ -65,29 +65,6 @@ def activate_signing_key(key: str) -> None:
     app.extensions[_JWT_KEY_APP_EXTENSION] = key
 
 
-def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, system: bool = False) -> str:
-    # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
-    # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
-    # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
-    # deployments, which this is not
-    now = datetime.datetime.now(tz=datetime.UTC)
-    payload = {
-        "sub": uid,
-        "iss": _ATR_JWT_ISSUER,
-        "aud": _ATR_JWT_AUDIENCE,
-        "iat": now,
-        "nbf": now,
-        "exp": now + datetime.timedelta(seconds=ttl),
-        "jti": secrets.token_hex(128 // 8),
-    }
-    if pat_hash:
-        payload["atr_th"] = pat_hash
-    if system:
-        payload["atr_sys"] = True
-    log.auth_event("jwt_issuance", uid, pat_hash=pat_hash if pat_hash else None)
-    return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
-
-
 async def authenticate() -> dict[str, Any]:
     # Verify the request's Bearer JWT, stash the claims on quart.g, and return
     # them. Raises ASFQuartException(401) on any token problem.
@@ -110,6 +87,29 @@ async def authenticate() -> dict[str, Any]:
     quart.g.jwt_claims = claims
     log.auth_success("jwt_token")
     return claims
+
+
+def issue(uid: str, *, ttl: int = _ATR_JWT_TTL, pat_hash: str | None = None, system: bool = False) -> str:
+    # audit_guidance no explicit typ header or token_type claim is added: the aud claim (_ATR_JWT_AUDIENCE)
+    # already acts as an explicit token type discriminator, and ATR issues only one JWT type verified
+    # by a single internal verifier — the RFC 9068 typ header is relevant to multi-issuer OAuth2 RS
+    # deployments, which this is not
+    now = datetime.datetime.now(tz=datetime.UTC)
+    payload = {
+        "sub": uid,
+        "iss": _ATR_JWT_ISSUER,
+        "aud": _ATR_JWT_AUDIENCE,
+        "iat": now,
+        "nbf": now,
+        "exp": now + datetime.timedelta(seconds=ttl),
+        "jti": secrets.token_hex(128 // 8),
+    }
+    if pat_hash:
+        payload["atr_th"] = pat_hash
+    if system:
+        payload["atr_sys"] = True
+    log.auth_event("jwt_issuance", uid, pat_hash=pat_hash if pat_hash else None)
+    return jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
 
 
 def setup_signing_key(app: base.QuartApp) -> None:
@@ -153,6 +153,13 @@ async def verify(token: str) -> dict[str, Any]:
 
 
 async def verify_github_oidc(token: str) -> github.TrustedPublisherPayload:
+    """
+    Validate a github OIDC token. Note that the "jti" claim is parsed but is not consumed/rejected here
+    by design, as multiple calls are expected from a single workflow without re-generating a new token.
+
+    Where we *do* enforce single-use jti is in the SSH register - a single token can only be used to issue
+    a single SSH key.
+    """
     header = jwt.get_unverified_header(token)
     dangerous_headers = {"jku", "x5u", "jwk"}
     if dangerous_headers.intersection(header.keys()):

@@ -196,6 +196,8 @@ The workflow also carries the originating committer's ASF UID as a parameter. AT
 
 In both cases, the workflow calls ATR's SSH registration endpoint (`/publisher/ssh/register` for project TP, `/distribute/ssh/register` for distribution workflows), which generates a temporary SSH key bound to the specific project. The key cannot be used for any other project. The identity attached to the key differs: for project TP it is the committer resolved via LDAP from the OIDC `actor_id`; for distribution workflows it is the committer's ASF UID passed through the workflow, trusted because only the service account — which only ATR can trigger — could have put it there.
 
+**Single-use registration.** An OIDC token registers a key once. `storage.writers.ssh.add_workflow_key` records the token's `jti` in `workflowjti` before it inserts the key, so a token replayed within its validity window fails on the primary key and mints nothing. Rows are pruned once the token's own `exp` has passed. Tokens are not single-use across the other OIDC endpoints, because a workflow mints one token per job and presents it to several of them.
+
 ## SSH authentication
 
 ATR provides an SSH server for rsync file upload, and for automated release artifact uploads from GitHub Actions workflows. This is a distinct authentication pathway from the web and API mechanisms described above.

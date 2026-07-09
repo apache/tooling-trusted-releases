@@ -818,6 +818,15 @@ class SignatureHint(sqlmodel.SQLModel, table=True):
     hint: str = sqlmodel.Field(primary_key=True, **example("0123456789abcdef"))
 
 
+# WorkflowJti:
+class WorkflowJti(sqlmodel.SQLModel, table=True):
+    # The jti of a GitHub OIDC token that has already minted a workflow SSH key
+    jti: str = sqlmodel.Field(primary_key=True, **example("0123456789abcdef"))
+    # Unix time, taken from the token's own exp so that rows can be pruned once it can't be replayed
+    expires: int = sqlmodel.Field(index=True)
+    consumed: int = sqlmodel.Field()
+
+
 # WorkflowSSHKey:
 class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
     fingerprint: str = sqlmodel.Field(primary_key=True, index=True)

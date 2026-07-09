@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import time
 
+import sqlalchemy.exc
 import sqlmodel
 
 import atr.db as db
@@ -108,6 +109,8 @@ class CommitteeParticipant(FoundationCommitter):
         # Twenty minutes to upload all files
         ttl = 20 * 60
         expires = now + ttl
+        # A token mints one key only, so this rejects the replay before any key exists
+        await self.__consume_jti(github_payload, now, now + ttl)
         fingerprint = util.key_ssh_fingerprint(key)
         # Exclude nbf and exp as we've already validated this key - now protected by workflowkey "expires"
         json_payload = github_payload.model_dump(exclude={"exp", "nbf"})
@@ -132,6 +135,17 @@ class CommitteeParticipant(FoundationCommitter):
             expires=expires,
         )
         return fingerprint, expires
+
+    async def __consume_jti(self, github_payload: github.TrustedPublisherPayload, now: int, fallback: int) -> None:
+        # Fall back to the key's own lifetime if the token carried no exp, so the row outlives any replay
+        record = sql.WorkflowJti(jti=github_payload.jti, expires=github_payload.exp or fallback, consumed=now)
+        self.__data.add(record)
+        try:
+            # The primary key does the work; a second flush of the same jti cannot succeed
+            await self.__data.flush()
+        except sqlalchemy.exc.IntegrityError as e:
+            await self.__data.rollback()
+            raise storage.AccessError("Trusted Publisher token has already been used", status=409) from e
 
 
 class CommitteeMember(CommitteeParticipant):

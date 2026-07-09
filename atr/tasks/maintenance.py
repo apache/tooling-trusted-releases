@@ -56,7 +56,7 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         await _expired_pats_maintenance()
         await _session_data_maintenance()
         await _storage_maintenance()
-        await _workflow_ssh_keys_maintenance()
+        await _workflow_auth_maintenance()
         await _inactivity_maintenance()
         await _database_survey_maintenance()
         await _resources_log_maintenance()
@@ -145,13 +145,18 @@ async def _storage_maintenance():
     pass
 
 
-async def _workflow_ssh_keys_maintenance() -> None:
+async def _workflow_auth_maintenance() -> None:
     via = sql.validate_instrumented_attribute
     now = int(time.time())
     async with db.session() as data:
         statement = sqlmodel.delete(sql.WorkflowSSHKey).where(via(sql.WorkflowSSHKey.expires) < now)
         result = await data.execute(statement)
+        keys_deleted = getattr(result, "rowcount", 0) or 0
+        statement = sqlmodel.delete(sql.WorkflowJti).where(via(sql.WorkflowJti.expires) < now)
+        result = await data.execute(statement)
+        jtis_deleted = getattr(result, "rowcount", 0) or 0
         await data.commit()
-        deleted = getattr(result, "rowcount", 0) or 0
-        if deleted > 0:
-            log.info(f"Purged {deleted} expired workflow SSH keys")
+        if keys_deleted > 0:
+            log.info(f"Purged {keys_deleted} expired workflow SSH keys")
+        if jtis_deleted > 0:
+            log.info(f"Purged {jtis_deleted} expired workflow token identifiers")
