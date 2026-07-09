@@ -83,7 +83,7 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
 CHECK_VERSION_FILES: Final[str] = "6"
-CHECK_VERSION_HEADERS: Final[str] = "4"
+CHECK_VERSION_HEADERS: Final[str] = "5"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
@@ -543,6 +543,11 @@ def _headers_check_core_logic_process_file(
         # That may be shebangs, encoding declarations, etc.
         with open(file_path, "rb") as f:
             content = f.read(4096)
+        if (len(content) < 4096) and (not content.strip()):
+            return MemberSkippedResult(
+                path=rel_path,
+                reason="Empty file",
+            )
         is_valid, error = headers_validate(content, rel_path)
         if is_valid:
             return MemberResult(

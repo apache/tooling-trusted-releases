@@ -229,6 +229,22 @@ def test_headers_check_data_fields_match_model(tmp_path):
     assert actual_fields == expected_fields
 
 
+def test_headers_check_empty_source_files_skipped(tmp_path):
+    temp_dir = safe.StatePath(tmp_path)
+    cache_dir = temp_dir / "empty_cache"
+    cache_dir.path.mkdir()
+    root = cache_dir / "apache-test-0.2"
+    root.path.mkdir()
+    (root / "__init__.py").path.write_bytes(b"")
+    (root / "blank.py").path.write_bytes(b"\n")
+    results = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
+    member_results = [r for r in results if isinstance(r, license.MemberResult)]
+    assert member_results == []
+    final_result = [r for r in results if isinstance(r, license.ArtifactResult)][-1]
+    assert final_result.data["files_checked"] == 0
+    assert final_result.data["files_skipped"] == 2
+
+
 def test_headers_check_excludes_matching_files(tmp_path):
     cache_dir = _extract_test_archive(tmp_path)
     results_without_excludes = list(license._headers_check_core_logic(cache_dir, TEST_ARCHIVE_BASENAME, [], "none"))
