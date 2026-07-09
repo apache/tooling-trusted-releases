@@ -19,7 +19,7 @@ import collections
 import dataclasses
 import datetime
 from collections.abc import Sequence
-from typing import Literal
+from typing import Final, Literal
 
 import asfquart.base as base
 
@@ -32,6 +32,9 @@ import atr.template as template
 import atr.user as user
 import atr.util as util
 import atr.web as web
+
+# Sorts a project with no releases after every dated one
+_UNDATED: Final[float] = float("inf")
 
 
 @get.typed
@@ -153,8 +156,17 @@ def _project_entries(releases: list[sql.Release]) -> list[_ProjectReleaseEntry]:
                 latest_date=latest.released or None,
             )
         )
-    entries.sort(key=lambda entry: entry.project.display_name)
+    entries.sort(key=_project_entry_sort_key)
     return entries
+
+
+def _project_entry_sort_key(entry: _ProjectReleaseEntry) -> tuple[bool, float, str]:
+    project = entry.project
+    # A project keyed after its committee is the main one; umbrella committees have none
+    # TODO: This could use a lack of "super_project_id" but we'd need a rule to encode these from history
+    is_main = (project.committee_key is not None) and (str(project.key) == str(project.committee_key))
+    recency = -entry.latest_date.timestamp() if entry.latest_date else _UNDATED
+    return (not is_main, recency, project.display_name.lower())
 
 
 def _release_sort_key(release: sql.Release) -> datetime.datetime:
