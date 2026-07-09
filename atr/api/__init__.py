@@ -1953,6 +1953,16 @@ async def vote_start(
             scanned_revision = release.safe_latest_revision_number
             if (data.revision is not None) and (data.revision != scanned_revision):
                 raise exceptions.Conflict("A newer revision appeared, please refresh and try again.")
+            if data.revision is None:
+                latest_revision = await db_data.revision(
+                    release_key=release.key,
+                    number=str(scanned_revision),
+                ).demand(storage.AccessError("Latest revision not found - Invalid state", status=500))
+                if latest_revision.asfuid != asf_uid:
+                    raise exceptions.Conflict(
+                        f"The latest revision, {scanned_revision}, was created by somebody else. "
+                        "Specify a revision explicitly to start a vote on it."
+                    )
 
         permitted_recipients = util.permitted_podling_first_round_recipients(
             asf_uid,
