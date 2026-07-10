@@ -661,7 +661,7 @@ class CommitteeParticipant(FoundationCommitter):
             resolved.relative_to(await asyncio.to_thread(path.path.resolve))
 
             hash_path_rel_name = rel_path.name + ".sha512"
-            hash_path_in_new_revision = path / rel_path.parent / hash_path_rel_name
+            hash_path_in_new_revision = path / rel_path.with_name(hash_path_rel_name)
             signature_rel_path = rel_path.with_name(rel_path.name + ".asc")
             signature_path_in_new_revision = path / signature_rel_path
 

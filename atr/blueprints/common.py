@@ -422,10 +422,10 @@ def _param_to_segment(param_name: str, hint: Any, func_name: str) -> str:
     """Convert a single parameter's type hint into a URL path segment."""
     if get_origin(hint) is Literal:
         return str(get_args(hint)[0])
-    if hint in VALIDATED_TYPES:
-        return f"<{param_name}>"
     if hint in QUART_CONVERTERS:
         return f"<{QUART_CONVERTERS[hint]}:{param_name}>"
+    if hint in VALIDATED_TYPES:
+        return f"<{param_name}>"
     if hint is str:
         return f"<{param_name}>"
     raise TypeError(f"Parameter {param_name!r} in {func_name} has unsupported type {hint!r}")

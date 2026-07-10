@@ -19,6 +19,12 @@ import pytest
 import atr.models.safe as safe
 
 
+@pytest.mark.parametrize("value", [".", "./a", "a/./b", "a/."])
+def test_rel_path_rejects_dot_segments(value: str):
+    with pytest.raises(ValueError, match="directory traversal"):
+        safe.RelPath(value)
+
+
 @pytest.mark.parametrize("cls", [safe.Alphanumeric, safe.ProjectKey, safe.VersionKey, safe.ReleaseKey])
 @pytest.mark.parametrize(
     "bad",

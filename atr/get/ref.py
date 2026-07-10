@@ -26,6 +26,7 @@ import quart
 import atr.blueprints.get as get
 import atr.config as config
 import atr.models.safe as safe
+import atr.models.unsafe as unsafe
 import atr.web as web
 
 # Perhaps GitHub will get around to implementing symbol permalinks:
@@ -34,7 +35,7 @@ import atr.web as web
 
 
 @get.typed
-async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: safe.RelPath) -> web.WerkzeugResponse:
+async def resolve(_session: web.Public, _ref: Literal["ref"], ref_path: unsafe.Path) -> web.WerkzeugResponse:
     """
     URL: /ref/<ref_path>
     Resolve a code reference to a GitHub permalink.

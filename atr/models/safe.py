@@ -249,6 +249,9 @@ class RelPath(SafeType):
             raise ValueError("Absolute paths are not allowed")
         if "//" in value:
             raise ValueError("Path cannot contain empty segments")
+        # pathlib removes "." segments from Path.parts, so reject them before parsing.
+        if "." in value.split("/"):
+            raise ValueError("Path cannot contain directory traversal")
         for segment in pathlib.Path(value).parts:
             if segment in (".", ".."):
                 raise ValueError("Path cannot contain directory traversal")

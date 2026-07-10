@@ -339,6 +339,15 @@ def test_build_path_rejects_unannotated_param():
         common.build_path(route)
 
 
+def test_build_path_relpath_uses_path_converter():
+    async def route(_session: web.Committer, _file_path: safe.RelPath) -> str:
+        return ""
+
+    path, validated, _, _, _ = common.build_path(route)
+    assert path == "/<path:_file_path>"
+    assert validated == [("_file_path", safe.RelPath)]
+
+
 def test_build_path_safe_type():
     async def route(_session: web.Committer, _project_key: safe.ProjectKey) -> str:
         return ""

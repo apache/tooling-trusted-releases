@@ -101,7 +101,7 @@ async def path_empty(
     version_key: safe.VersionKey,
 ) -> web.Response:
     """
-    URL: /download/path/<project_key>/<version_key>/
+    URL: /download/path/<project_key>/<version_key>
     List files at the root of a release directory for download.
     """
     return await _download_or_list(project_key, version_key, None)
@@ -270,12 +270,15 @@ async def _list(
     # Add link to parent directory if not at root
     if file_path != ".":
         parent_path_str = str(original_path.parent)
-        parent_link_url = util.as_url(
-            path,
-            project_key=project_key,
-            version_key=version_key,
-            file_path=parent_path_str,
-        )
+        if parent_path_str == ".":
+            parent_link_url = util.as_url(path_empty, project_key=project_key, version_key=version_key)
+        else:
+            parent_link_url = util.as_url(
+                path,
+                project_key=project_key,
+                version_key=version_key,
+                file_path=parent_path_str,
+            )
         div.a(href=parent_link_url)["../"]
 
     # List files and directories

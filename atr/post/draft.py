@@ -273,7 +273,7 @@ async def sbomconvert(
             async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
                 sbom_path_rel = rel_path.with_suffix(".cdx.json").name
-                sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
+                sbom_path_in_new_revision = path / rel_path.with_name(sbom_path_rel)
 
                 # Check that the source file exists in the new revision
                 if not await aiofiles.os.path.exists(path_in_new_revision):
@@ -359,7 +359,7 @@ async def sbomgen(
             async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
                 sbom_path_rel = rel_path.with_suffix(rel_path.suffix + ".cdx.json").name
-                sbom_path_in_new_revision = path / rel_path.parent / sbom_path_rel
+                sbom_path_in_new_revision = path / rel_path.with_name(sbom_path_rel)
 
                 # Check that the source file exists in the new revision
                 if not await aiofiles.os.path.exists(path_in_new_revision):
