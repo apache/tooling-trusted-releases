@@ -93,13 +93,8 @@
                 Committees</a>
             </li>
             <li>
-              {% if is_test_mode %}
-                <a class="dropdown-item" href="/published/"><i class="bi bi-download"></i> Downloads</a>
-              {% else %}
-		{# This path is handled by the frontend proxy server #}
-		{# https://djlint.com/docs/ignoring-code/ #}
-		{# djlint:off J018 #} <a class="dropdown-item" href="/downloads/"><i class="bi bi-download"></i> Downloads</a> {# djlint:on #}
-              {% endif %}
+              <a class="dropdown-item" href="https:///downloads.apache.org/"><i class="bi bi-download"></i>
+                Downloads</a>
             </li>
           </ul>
         </li>
