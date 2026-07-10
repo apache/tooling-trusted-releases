@@ -17,6 +17,7 @@
 
 import enum
 import os
+import urllib.parse
 from typing import Final
 
 import decouple
@@ -68,6 +69,12 @@ def _config_secrets_get(
     return cast(value)
 
 
+def _validate_svn_dist_public_url(url: str) -> None:
+    public_path = urllib.parse.urlparse(url).path.rstrip("/")
+    if not public_path.endswith(("/atr", "/release")):
+        raise RuntimeError("SVN_DIST_PUBLIC_URL must be an atr or release dist URL")
+
+
 class AppConfig:
     ACCOUNT_CHECK_INTERVAL = decouple.config("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
     ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
@@ -91,6 +98,7 @@ class AppConfig:
     DIST_CATALOG_WRITE = decouple.config("DIST_CATALOG_WRITE", default=False, cast=bool)
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
+    SVN_DIST_PUBLIC_URL = decouple.config("SVN_DIST_PUBLIC_URL", default="https://dist.apache.org/repos/dist/atr")
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
     CAP_API_BASE_URL = decouple.config("CAP_API_BASE_URL", default="https://cap-test.apache.org")
     CAP_ROLE_ACCOUNT_TOKEN = _config_secrets("CAP_ROLE_ACCOUNT_TOKEN", STATE_DIR, default=None, cast=str)
@@ -270,6 +278,8 @@ def validate() -> None:
     for path, name in relative_paths:
         if path.startswith("/"):
             raise RuntimeError(f"{name} must be a relative path")
+
+    _validate_svn_dist_public_url(conf.SVN_DIST_PUBLIC_URL)
 
     if (not is_dev_environment()) and (get_mode() == Mode.Debug):
         raise RuntimeError("Debug mode can only be set in development environment")

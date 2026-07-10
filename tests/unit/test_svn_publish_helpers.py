@@ -73,12 +73,12 @@ async def test_check_propagation_test_target_url(monkeypatch: pytest.MonkeyPatch
 
     summary = await util.check_propagation(
         util.SvnPublishTarget.ATR,
-        f"{constants.SVN_DIST_PUBLIC_URL}/project",
+        f"{config.get().SVN_DIST_PUBLIC_URL}/project",
         ["artifact.tar.gz"],
     )
 
     assert summary.reachable == 1
-    assert summary.outcomes[0].public_url == f"{constants.SVN_DIST_PUBLIC_URL}/project/artifact.tar.gz"
+    assert summary.outcomes[0].public_url == f"{config.get().SVN_DIST_PUBLIC_URL}/project/artifact.tar.gz"
 
 
 def test_public_download_url_falls_back_to_self_host_without_svn(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,7 +122,7 @@ def test_download_url_for_path_self_hosts_without_svn(monkeypatch: pytest.Monkey
 
 def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
-    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
     url = util.public_download_url(
@@ -134,7 +134,7 @@ def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypat
 
 def test_public_download_url_uses_mirror_for_released_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
-    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
     url = util.public_download_url(
@@ -146,7 +146,7 @@ def test_public_download_url_uses_mirror_for_released_artifact(monkeypatch: pyte
 
 def test_public_download_url_uses_svn_dist_area_for_beta_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr")
-    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
     url = util.public_download_url(committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA)
@@ -193,13 +193,13 @@ def test_svn_publish_models_round_trip() -> None:
 
 
 def test_svn_publish_target_from_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
 
     assert util.svn_publish_target() == util.SvnPublishTarget.RELEASE
 
 
 def test_svn_publish_target_rejects_unknown_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(constants, "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/dev")
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/dev")
 
     with pytest.raises(ValueError):
         util.svn_publish_target()

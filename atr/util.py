@@ -57,7 +57,6 @@ import quart
 # NOTE: The atr.db module imports this module
 # Therefore, this module must not import atr.db
 import atr.config as config
-import atr.constants as constants
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.cap as cap
@@ -668,7 +667,7 @@ def download_url_for_path(
     match svn_publish_target():
         case SvnPublishTarget.ATR:
             # Beta: files are still in ATR's area of the distribution SVN, not yet mirrored
-            return f"{constants.SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
+            return f"{config.get().SVN_DIST_PUBLIC_URL.rstrip('/')}/{relpath}"
         case SvnPublishTarget.RELEASE:
             if kind is DownloadFile.ARTIFACT:
                 return paths.closer_download_url(relpath)
@@ -1334,7 +1333,7 @@ def svn_publish_internal_url(
 
 
 def svn_publish_target() -> SvnPublishTarget:
-    public_path = urllib.parse.urlparse(constants.SVN_DIST_PUBLIC_URL).path.rstrip("/")
+    public_path = urllib.parse.urlparse(config.get().SVN_DIST_PUBLIC_URL).path.rstrip("/")
     if public_path.endswith("/atr"):
         return SvnPublishTarget.ATR
     if public_path.endswith("/release"):

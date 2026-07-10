@@ -21,7 +21,6 @@ from typing import Final
 CLOSER_LUA_URL: Final[str] = "https://www.apache.org/dyn/closer.lua"
 DOWNLOADS_APACHE_URL: Final[str] = "https://downloads.apache.org"
 ARCHIVE_APACHE_URL: Final[str] = "https://archive.apache.org/dist"
-SVN_DIST_PUBLIC_URL: Final[str] = "https://dist.apache.org/repos/dist/atr"
 SVN_DIST_ROOT_URL: Final[str] = "https://dist.apache.org/repos/dist"
 
 CAP_VOTE_DURATION_MINUTES: Final[int] = 7 * 24 * 60
