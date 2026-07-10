@@ -597,6 +597,17 @@ class ApprovalRequest(sqlmodel.SQLModel, table=True):
     )
 
 
+# Banner:
+class Banner(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    markdown: str = sqlmodel.Field()
+    asf_uid: str = sqlmodel.Field()
+    set_at: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+
+
 # KeyLink:
 class KeyLink(sqlmodel.SQLModel, table=True):
     committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True)

@@ -93,6 +93,10 @@ class Query[T]:
         self.query = self.query.order_by(*args, **kwargs)
         return self
 
+    def limit(self, count: int) -> Query[T]:
+        self.query = self.query.limit(count)
+        return self
+
     def log_query(self, method_name: str, log_query: bool) -> None:
         if not (self.session.log_queries or global_log_query or log_query):
             return
@@ -223,6 +227,17 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         if _release:
             query = query.options(joined_load(sql.Artifact.release))
+
+        return Query(self, query)
+
+    def banner(
+        self,
+        id: Opt[int] = NOT_SET,
+    ) -> Query[sql.Banner]:
+        query = sqlmodel.select(sql.Banner)
+
+        if is_defined(id):
+            query = query.where(sql.Banner.id == id)
 
         return Query(self, query)
 

@@ -259,6 +259,7 @@ class WriteAsFoundationAdmin(WriteAsFoundationCommitter):
         # via MRO resolves to this class's property override, which reads
         # _WriteAsFoundationAdmin__asf_uid, which had not yet been assigned.
         super().__init__(write, data)
+        self.banner = writers.banner.FoundationAdmin(write, self, data)
         self.catalogue = writers.catalogue.FoundationAdmin(write, self, data)
         self.policy = writers.policy.FoundationAdmin(write, self, data)
         self.project = writers.project.FoundationAdmin(write, self, data)

@@ -250,6 +250,11 @@
                    href="{{ as_url(admin.toggle_view_get) }}"
                    {% if request.endpoint == 'atr_admin_toggle_view_get' %}class="active"{% endif %}><i class="bi bi-person-badge"></i> Toggle admin view</a>
               </li>
+              <li>
+                <a class="dropdown-item"
+                   href="{{ as_url(admin.banner_get) }}"
+                   {% if request.endpoint == 'atr_admin_banner_get' %}class="active"{% endif %}><i class="bi bi-megaphone"></i> Site banner</a>
+              </li>
               {% if is_test_mode %}
                 <li>
                   <a class="dropdown-item"

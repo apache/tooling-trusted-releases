@@ -28,6 +28,8 @@ from typing import Final
 import aiofiles
 import aiofiles.os
 import asfquart
+import cmarkgfm
+import markupsafe
 import pydantic
 
 import atr.config as config
@@ -132,6 +134,28 @@ async def admins_startup_load() -> None:
         log.info(f"Fetched {len(users)} admin users from LDAP")
     except Exception as e:
         log.warning(f"Failed to fetch admin users from LDAP at startup: {e}")
+
+
+def banner_html(markdown: str) -> markupsafe.Markup | None:
+    if not markdown.strip():
+        return None
+    return markupsafe.Markup(cmarkgfm.github_flavored_markdown_to_html(markdown))
+
+
+def banner_refresh(markdown: str) -> None:
+    app = asfquart.APP
+    if app is None:
+        return
+    app.jinja_env.globals["site_banner_html"] = banner_html(markdown)
+
+
+async def banner_startup_load() -> None:
+    try:
+        markdown = await _banner_fetch_from_db()
+    except Exception as e:
+        log.warning(f"Failed to load the banner at startup: {e}")
+        return
+    banner_refresh(markdown)
 
 
 def email_uid_apply_delta(uid: str, old_emails: Iterable[str], new_emails: Iterable[str]) -> bool:
@@ -351,6 +375,18 @@ def _admins_update_app_extensions(admins: frozenset[str]) -> None:
     app = asfquart.APP
     app.extensions["admins"] = admins
     app.extensions["admins_refreshed"] = datetime.datetime.now(datetime.UTC)
+
+
+async def _banner_fetch_from_db() -> str:
+    import atr.db as db
+    import atr.models.sql as sql
+
+    async with db.session() as data:
+        via = sql.validate_instrumented_attribute
+        latest = await data.banner().order_by(via(sql.Banner.id).desc()).limit(1).get()
+    if latest is None:
+        return ""
+    return latest.markdown
 
 
 def _email_uid_file_mtime_ns() -> int | None:

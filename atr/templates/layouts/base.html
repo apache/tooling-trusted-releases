@@ -48,10 +48,8 @@
 
         <div class="main-container {% block main_class %}{% endblock main_class %}">
           <main class="main-content">
-            {% if (not current_user) or (current_user.uid != "sbp") %}
-              <div class="warning-banner">
-                This is <strong>Alpha 3 Software</strong>. Finished releases must be moved to <a href="https://dist.apache.org/repos/dist/release/">svn:dist/release</a> following these <a href="/docs/promoting-to-release">promoting to release instructions.</a>
-              </div>
+            {% if site_banner_html %}
+              <div class="warning-banner">{{ site_banner_html }}</div>
             {% endif %}
             {% if current_user and current_user.admin_uid %}
               <div class="alert alert-warning atr-browse-as-banner" role="alert">

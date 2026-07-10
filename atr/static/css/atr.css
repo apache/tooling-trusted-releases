@@ -436,6 +436,10 @@ span.warning {
     border-radius: 4px;
 }
 
+.warning-banner > :last-child {
+    margin-bottom: 0;
+}
+
 .card[data-project-url]:hover {
     border-color: gray;
 }

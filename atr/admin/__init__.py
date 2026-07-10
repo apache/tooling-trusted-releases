@@ -95,6 +95,16 @@ class DeleteReleaseForm(form.Form):
         return v
 
 
+class EditBannerForm(form.Form):
+    banner_markdown: str = form.label(
+        "Banner Markdown",
+        "Markdown for the banner shown on every page. Raw HTML is stripped. Leave empty for no banner.",
+        default="",
+        widget=form.Widget.TEXTAREA,
+        max_length=4096,
+    )
+
+
 class LdapLookupForm(form.Form):
     uid: str = form.label("ASF UID (optional)", "Enter ASF UID, e.g. johnsmith, or * for all")
     email: form.OptionalEmail = form.label(
@@ -108,6 +118,10 @@ class ReleaseAgeRow(NamedTuple):
     age_bold: bool
     inactive_label: str
     inactive_bold: bool
+
+
+class RestoreBannerForm(form.Form):
+    banner_id: form.Int = form.label("Banner ID", widget=form.Widget.HIDDEN)
 
 
 class RevokeUserTokensForm(form.Form):
@@ -208,6 +222,92 @@ async def all_releases(_session: web.Committer, _all_releases: Literal["all/rele
     now = datetime.datetime.now(datetime.UTC)
     release_rows = [_release_age_row(release, now) for release in releases]
     return await template.render("all-releases.html", release_rows=release_rows, release_as_url=mapping.release_as_url)
+
+
+@admin.typed
+async def banner_get(session: web.Committer, _banner: Literal["banner"]) -> str:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        latest, history = await wafa.banner.latest_and_history()
+    current_markdown = latest.markdown if (latest is not None) else ""
+    edit_form = await form.render(
+        model_cls=EditBannerForm,
+        submit_label="Save banner",
+        defaults={"banner_markdown": current_markdown},
+        textarea_rows=4,
+    )
+    restore_rows = []
+    for row in history:
+        restore_form = await form.render(
+            model_cls=RestoreBannerForm,
+            action=util.as_url(banner_restore_post),
+            form_classes=".mb-0",
+            submit_classes="btn-sm btn-outline-secondary",
+            submit_label="Restore",
+            defaults={"banner_id": row.id},
+            empty=True,
+        )
+        restore_rows.append((row, restore_form))
+
+    page = htm.Block()
+    page.h1["Site banner"]
+    page.p["Set the banner shown at the top of every page. The content is Markdown, and raw HTML is stripped."]
+    if not current_markdown.strip():
+        page.p[htpy.em["There is currently no banner."]]
+    page.append(edit_form)
+    if restore_rows:
+        page.h2(".mt-4")["History"]
+        page.append(_banner_history_table(restore_rows))
+    return await template.blank(title="Site banner", content=page.collect())
+
+
+@admin.typed
+async def banner_post(
+    session: web.Committer, _banner: Literal["banner"], edit_form: EditBannerForm
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        row = await wafa.banner.set_current(edit_form.banner_markdown)
+    cache.banner_refresh(row.markdown)
+    message = "Updated the banner." if row.markdown else "Cleared the banner."
+    await quart.flash(message, "success")
+    return await session.redirect(banner_get)
+
+
+@admin.typed
+async def banner_restore_post(
+    session: web.Committer, _banner_restore: Literal["banner/restore"], restore_form: RestoreBannerForm
+) -> web.WerkzeugResponse:
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        row = await wafa.banner.restore(restore_form.banner_id)
+    cache.banner_refresh(row.markdown)
+    await quart.flash("Restored the banner.", "success")
+    return await session.redirect(banner_get)
+
+
+def _banner_history_table(restore_rows: list[tuple[sql.Banner, htm.Element]]) -> htpy.Element:
+    return htpy.table(".table")[
+        htpy.thead[
+            htpy.tr[
+                htpy.th["Set at"],
+                htpy.th["Set by"],
+                htpy.th["Markdown"],
+                htpy.th["Actions"],
+            ]
+        ],
+        htpy.tbody[
+            [
+                htpy.tr[
+                    htpy.td[util.format_datetime(row.set_at)],
+                    htpy.td[row.asf_uid],
+                    htpy.td[htpy.code(".text-break")[row.markdown]],
+                    htpy.td[restore_form],
+                ]
+                for row, restore_form in restore_rows
+            ]
+        ],
+    ]
 
 
 @admin.typed

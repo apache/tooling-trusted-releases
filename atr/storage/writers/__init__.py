@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import atr.storage.writers.announce as announce
+import atr.storage.writers.banner as banner
 import atr.storage.writers.cache as cache
 import atr.storage.writers.catalogue as catalogue
 import atr.storage.writers.checks as checks
@@ -39,6 +40,7 @@ import atr.storage.writers.workflowstatus as workflowstatus
 
 __all__ = [
     "announce",
+    "banner",
     "cache",
     "catalogue",
     "checks",

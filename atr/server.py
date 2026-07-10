@@ -344,6 +344,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
 
         await cache.email_uid_startup_load()
 
+        await cache.banner_startup_load()
+
         worker_manager = manager.get_worker_manager()
         await worker_manager.start()
 
