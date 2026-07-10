@@ -253,7 +253,10 @@ async def _render_page(
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release))
 
-    if config.get().SVN_PUBLISH_URL:
+    if config.get().SVN_PUBLISH_URL and (
+        user.is_committee_member(release.committee, session.uid)
+        or user.is_release_manager(release.committee, session.uid)
+    ):
         proj, ver, rev = release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
         in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
         completed = await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)

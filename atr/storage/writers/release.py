@@ -783,144 +783,6 @@ class CommitteeParticipant(FoundationCommitter):
             return str(e), moved_files_names, skipped_files_names
         return None, moved_files_names, skipped_files_names
 
-    async def publish_to_svn(
-        self,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-        expected_revision: safe.RevisionNumber,
-        download_path_suffix: safe.RelPath | None,
-        *,
-        publisher_asf_uid: str | None = None,
-    ) -> sql.Task:
-        release = await self.__data.release(
-            project_key=str(project_key),
-            version=str(version_key),
-            phase=sql.ReleasePhase.RELEASE_PREVIEW,
-            _project=True,
-            _committee=True,
-        ).demand(
-            storage.AccessError(
-                f"Release preview {project_key!s} {version_key!s} does not exist",
-                status=404,
-            )
-        )
-        storage.ensure_project_active(release.project)
-        self.__write.ensure_release_writable(release)
-        committee = release.project.committee
-        if committee is None:
-            raise storage.AccessError("Release has no committee - Invalid state", status=500)
-        task_asf_uid = publisher_asf_uid or self.__asf_uid
-        try:
-            util.svn_publish_target()
-            util.svn_publish_internal_url(committee, download_path_suffix)
-        except ValueError as exc:
-            raise storage.AccessError(f"SVN publish URL is not acceptable: {exc}", status=409) from exc
-        await self.__data.begin_immediate()
-        try:
-            via = sql.validate_instrumented_attribute
-            latest_stmt = (
-                sqlmodel.select(sql.Revision.number)
-                .where(via(sql.Revision.release_key) == release.key)
-                .order_by(via(sql.Revision.seq).desc())
-                .limit(1)
-            )
-            latest_revision_number = (await self.__data.execute(latest_stmt)).scalar_one_or_none()
-            if latest_revision_number is None:
-                raise storage.AccessError("Release has no revisions - Invalid state", status=500)
-            if latest_revision_number != str(expected_revision):
-                raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
-            existing_in_flight = await interaction.release_in_flight_svn_publish_task(
-                project_key, version_key, expected_revision, caller_data=self.__data
-            )
-            if existing_in_flight is not None:
-                raise storage.AccessError(
-                    "An SVN publish task is already queued or running for this revision", status=409
-                )
-            existing_completed_any_target = await interaction.release_completed_svn_publish_task_for_revision(
-                project_key, version_key, expected_revision, caller_data=self.__data
-            )
-            if existing_completed_any_target is not None:
-                raise storage.AccessError("An SVN publish task already completed for this revision", status=409)
-            task = sql.Task(
-                status=sql.TaskStatus.QUEUED,
-                task_type=sql.TaskType.SVN_PUBLISH,
-                task_args=args.SvnPublish(
-                    asf_uid=task_asf_uid,
-                    project_key=project_key,
-                    version_key=version_key,
-                    revision_number=expected_revision,
-                    download_path_suffix=download_path_suffix,
-                ).model_dump(),
-                asf_uid=task_asf_uid,
-                project_key=str(project_key),
-                version_key=str(version_key),
-                revision_number=str(expected_revision),
-            )
-            self.__data.add(task)
-            await self.__data.commit()
-        except storage.AccessError:
-            await self.__data.rollback()
-            raise
-        except Exception:
-            await self.__data.rollback()
-            raise
-        self.__write_as.append_to_audit_log(
-            asf_uid=task_asf_uid,
-            project_key=str(project_key),
-            version_key=str(version_key),
-            revision_number=str(expected_revision),
-        )
-        return task
-
-    async def publish_to_svn_execute(self, task_args: args.SvnPublish) -> results.SvnPublish:
-        release = await self.__data.release(
-            project_key=str(task_args.project_key),
-            version=str(task_args.version_key),
-            phase=sql.ReleasePhase.RELEASE_PREVIEW,
-            _project=True,
-            _committee=True,
-        ).demand(datatypes.FailedError("Release preview not found for publish"))
-        storage.ensure_project_active(release.project)
-        committee = release.project.committee
-        if committee is None:
-            raise datatypes.FailedError("Release has no committee - Invalid state")
-        latest_revision = release.safe_latest_revision_number
-        if latest_revision != task_args.revision_number:
-            raise datatypes.FailedError("A newer revision appeared after queuing this publish task")
-        try:
-            internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
-        except ValueError as exc:
-            raise datatypes.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
-        preview_path = paths.release_directory(release)
-        log_message = (
-            f"Publish {task_args.project_key!s}-{task_args.version_key!s}\n\n"
-            f"Committee: {committee.key}\n"
-            f"Project: {task_args.project_key!s}\n"
-            f"Version: {task_args.version_key!s}\n"
-            "Tool: ATR\n"
-            f"Released by {task_args.asf_uid} via ATR"
-        )
-
-        try:
-            revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
-        except svn.CommandExecutionError as exc:
-            log.error("SVN publish failed")
-            if "E160020" in exc.output:
-                message = "Release file already exists in SVN"
-                if (match := re.search(r"path '([^']+)'", exc.output)) is not None:
-                    message = f"{message}: {match.group(1)}"
-                    if svn_publish_url := config.get().SVN_PUBLISH_URL:
-                        message = message.replace(svn_publish_url, "")
-                raise datatypes.FailedError(message) from exc
-            raise datatypes.FailedError("SVN publish failed; see worker logs for details") from exc
-        if revision is None:
-            raise datatypes.FailedError("SVN publish did not return a Committed revision line")
-        return results.SvnPublish(
-            kind="svn_publish",
-            svn_revision=revision,
-            message=f"Published to SVN as r{revision}",
-        )
-
     async def start_vote_no_commit(  # noqa: C901
         self,
         release_key: safe.ReleaseKey,
@@ -1311,6 +1173,144 @@ class ReleaseManager(CommitteeParticipant):
             vote_mode=vote_mode.value,
         )
         return None
+
+    async def publish_to_svn(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        expected_revision: safe.RevisionNumber,
+        download_path_suffix: safe.RelPath | None,
+        *,
+        publisher_asf_uid: str | None = None,
+    ) -> sql.Task:
+        release = await self.__data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            _project=True,
+            _committee=True,
+        ).demand(
+            storage.AccessError(
+                f"Release preview {project_key!s} {version_key!s} does not exist",
+                status=404,
+            )
+        )
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
+        committee = release.project.committee
+        if committee is None:
+            raise storage.AccessError("Release has no committee - Invalid state", status=500)
+        task_asf_uid = publisher_asf_uid or self.__asf_uid
+        try:
+            util.svn_publish_target()
+            util.svn_publish_internal_url(committee, download_path_suffix)
+        except ValueError as exc:
+            raise storage.AccessError(f"SVN publish URL is not acceptable: {exc}", status=409) from exc
+        await self.__data.begin_immediate()
+        try:
+            via = sql.validate_instrumented_attribute
+            latest_stmt = (
+                sqlmodel.select(sql.Revision.number)
+                .where(via(sql.Revision.release_key) == release.key)
+                .order_by(via(sql.Revision.seq).desc())
+                .limit(1)
+            )
+            latest_revision_number = (await self.__data.execute(latest_stmt)).scalar_one_or_none()
+            if latest_revision_number is None:
+                raise storage.AccessError("Release has no revisions - Invalid state", status=500)
+            if latest_revision_number != str(expected_revision):
+                raise storage.AccessError("A newer revision appeared, please refresh and try again.", status=409)
+            existing_in_flight = await interaction.release_in_flight_svn_publish_task(
+                project_key, version_key, expected_revision, caller_data=self.__data
+            )
+            if existing_in_flight is not None:
+                raise storage.AccessError(
+                    "An SVN publish task is already queued or running for this revision", status=409
+                )
+            existing_completed_any_target = await interaction.release_completed_svn_publish_task_for_revision(
+                project_key, version_key, expected_revision, caller_data=self.__data
+            )
+            if existing_completed_any_target is not None:
+                raise storage.AccessError("An SVN publish task already completed for this revision", status=409)
+            task = sql.Task(
+                status=sql.TaskStatus.QUEUED,
+                task_type=sql.TaskType.SVN_PUBLISH,
+                task_args=args.SvnPublish(
+                    asf_uid=task_asf_uid,
+                    project_key=project_key,
+                    version_key=version_key,
+                    revision_number=expected_revision,
+                    download_path_suffix=download_path_suffix,
+                ).model_dump(),
+                asf_uid=task_asf_uid,
+                project_key=str(project_key),
+                version_key=str(version_key),
+                revision_number=str(expected_revision),
+            )
+            self.__data.add(task)
+            await self.__data.commit()
+        except storage.AccessError:
+            await self.__data.rollback()
+            raise
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=task_asf_uid,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(expected_revision),
+        )
+        return task
+
+    async def publish_to_svn_execute(self, task_args: args.SvnPublish) -> results.SvnPublish:
+        release = await self.__data.release(
+            project_key=str(task_args.project_key),
+            version=str(task_args.version_key),
+            phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            _project=True,
+            _committee=True,
+        ).demand(datatypes.FailedError("Release preview not found for publish"))
+        storage.ensure_project_active(release.project)
+        committee = release.project.committee
+        if committee is None:
+            raise datatypes.FailedError("Release has no committee - Invalid state")
+        latest_revision = release.safe_latest_revision_number
+        if latest_revision != task_args.revision_number:
+            raise datatypes.FailedError("A newer revision appeared after queuing this publish task")
+        try:
+            internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
+        except ValueError as exc:
+            raise datatypes.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
+        preview_path = paths.release_directory(release)
+        log_message = (
+            f"Publish {task_args.project_key!s}-{task_args.version_key!s}\n\n"
+            f"Committee: {committee.key}\n"
+            f"Project: {task_args.project_key!s}\n"
+            f"Version: {task_args.version_key!s}\n"
+            "Tool: ATR\n"
+            f"Released by {task_args.asf_uid} via ATR"
+        )
+
+        try:
+            revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
+        except svn.CommandExecutionError as exc:
+            log.error("SVN publish failed")
+            if "E160020" in exc.output:
+                message = "Release file already exists in SVN"
+                if (match := re.search(r"path '([^']+)'", exc.output)) is not None:
+                    message = f"{message}: {match.group(1)}"
+                    if svn_publish_url := config.get().SVN_PUBLISH_URL:
+                        message = message.replace(svn_publish_url, "")
+                raise datatypes.FailedError(message) from exc
+            raise datatypes.FailedError("SVN publish failed; see worker logs for details") from exc
+        if revision is None:
+            raise datatypes.FailedError("SVN publish did not return a Committed revision line")
+        return results.SvnPublish(
+            kind="svn_publish",
+            svn_revision=revision,
+            message=f"Published to SVN as r{revision}",
+        )
 
 
 class CommitteeMember(ReleaseManager):

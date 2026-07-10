@@ -40,8 +40,8 @@ async def selected(
     respond = _respond_helper(session, project_key, version_key)
     try:
         async with storage.write(session) as write:
-            wacp = await write.as_project_committee_participant(project_key)
-            await wacp.release.publish_to_svn(
+            warm = await write.as_project_release_manager(project_key)
+            await warm.release.publish_to_svn(
                 project_key, version_key, publish_form.revision_number, publish_form.download_path_suffix
             )
     except storage.AccessError as e:

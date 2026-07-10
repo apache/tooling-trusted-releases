@@ -24,5 +24,5 @@ import atr.tasks.checks as checks
 @checks.with_model(args.SvnPublish)
 async def publish(task_args: args.SvnPublish) -> results.Results | None:
     async with storage.write(task_args.asf_uid) as write:
-        wacp = await write.as_project_committee_participant(task_args.project_key)
-        return await wacp.release.publish_to_svn_execute(task_args)
+        warm = await write.as_project_release_manager(task_args.project_key)
+        return await warm.release.publish_to_svn_execute(task_args)

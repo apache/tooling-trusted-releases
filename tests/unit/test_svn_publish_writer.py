@@ -281,12 +281,12 @@ def _publish_task(*, status: sql.TaskStatus) -> sql.Task:
     )
 
 
-def _release_writer(data: db.Session) -> release_writer.CommitteeParticipant:
-    writer = object.__new__(release_writer.CommitteeParticipant)
-    writer._CommitteeParticipant__asf_uid = "alice"
-    writer._CommitteeParticipant__data = data
-    writer._CommitteeParticipant__write_as = SimpleNamespace(append_to_audit_log=mock.Mock())
-    writer._CommitteeParticipant__write = mock.MagicMock()
+def _release_writer(data: db.Session) -> release_writer.ReleaseManager:
+    writer = object.__new__(release_writer.ReleaseManager)
+    writer._ReleaseManager__asf_uid = "alice"
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = SimpleNamespace(append_to_audit_log=mock.Mock())
+    writer._ReleaseManager__write = mock.MagicMock()
     return writer
 
 
