@@ -78,13 +78,16 @@ async def catalogue_commit(commit: dict) -> None:
     # project lookups stay out of the storage writer
     async with db.session() as data:
         releases, archives = await _resolve_changes(data, added, removed)
-    # Report mode (the default) just logs what it would do; active mode hands
-    # the resolved work to the system actor
-    if not config.get().DIST_CATALOG_WRITE:
-        _report(releases, archives, date)
-        return
+    # Report mode (the default) just logs the cataloguing it would do; active mode hands
+    # the resolved work to the system actor. The releases list is told either way, since
+    # that only depends on having seen the release, not on having recorded it
     async with storage.write_as_system(storage.WriteAsDistCatalogService) as wadcs:
-        await _apply_changes(wadcs, releases, archives, date)
+        if config.get().DIST_CATALOG_WRITE:
+            seen = await _apply_changes(wadcs, releases, archives, date)
+        else:
+            _report(releases, archives, date)
+            seen = releases
+        await _notify(wadcs, seen, date)
 
 
 async def _apply_changes(
@@ -92,15 +95,19 @@ async def _apply_changes(
     releases: list[_ResolvedRelease],
     archives: list[_ResolvedArchive],
     date: datetime.datetime,
-) -> None:
+) -> list[_ResolvedRelease]:
+    catalogued: list[_ResolvedRelease] = []
     for project_key, version_key, artifacts in releases:
         error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
         if error is not None:
             log.warning(f"dist watcher could not catalogue {project_key!s} {version_key!s}: {error}")
+            continue
+        catalogued.append((project_key, version_key, artifacts))
     for project_key, version_key in archives:
         error = await wadcs.release_archive(project_key, version_key)
         if error is not None:
             log.info(f"dist watcher did not archive {project_key!s} {version_key!s}: {error}")
+    return catalogued
 
 
 def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
@@ -170,6 +177,17 @@ def _decompose_change(path: str) -> tuple[str, dist.Decomposed, bool, str | None
     if decomposed is None:
         return None
     return committee, decomposed, is_dir, filename
+
+
+async def _notify(
+    wadcs: storage.WriteAsDistCatalogService,
+    releases: list[_ResolvedRelease],
+    date: datetime.datetime,
+) -> None:
+    for project_key, version_key, _ in releases:
+        error = await wadcs.release_notify_seen(project_key, version_key, date)
+        if error is not None:
+            log.warning(f"dist watcher could not notify for {project_key!s} {version_key!s}: {error}")
 
 
 def _report(
