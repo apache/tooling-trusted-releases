@@ -33,6 +33,7 @@ import atr.blueprints.api_auth as api_auth
 import atr.cle as cle
 import atr.config as config
 import atr.constants as constants
+import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.hashes as hashes
@@ -1975,16 +1976,17 @@ async def vote_start(
         util.validate_email_recipients(data)
         util.validate_vote_duration(data.vote_duration)
 
+        subject, body, fullname = await _vote_start_subject_and_body(data, release, asf_uid, scanned_revision)
+
         async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
-            # TODO: Get fullname and use instead of asf_uid
             task = await warm.vote.start(
                 data.email_to,
                 data.project,
                 data.version,
                 data.vote_duration,
-                data.subject,
-                data.body,
-                asf_uid,
+                subject,
+                body,
+                fullname,
                 permitted_recipients=permitted_recipients,
                 email_cc=data.email_cc,
                 email_bcc=data.email_bcc,
@@ -2273,6 +2275,37 @@ async def _resolve_signing_key_from_signature(
         if matched_fingerprint is not None:
             return stored, matched_fingerprint
     raise exceptions.NotFound("No matching signing key found for signature")
+
+
+async def _vote_start_subject_and_body(
+    data: models.api.VoteStartArgs, release: sql.Release, asf_uid: str, revision_number: safe.RevisionNumber
+) -> tuple[str, str, str]:
+    fullname = await _ldap_fullname(asf_uid)
+    if (data.subject is not None) and (data.body is not None):
+        return data.subject, data.body, fullname
+    subject_template = ""
+    body_template = ""
+    if data.subject is None:
+        subject_template = release.project.policy_start_vote_subject
+    if data.body is None:
+        if release.expedited:
+            body_template = construct.START_VOTE_EXPEDITED_DEFAULT
+        else:
+            body_template = release.project.policy_start_vote_template
+    options = construct.StartVoteOptions(
+        asfuid=asf_uid,
+        fullname=fullname,
+        project_key=data.project,
+        version_key=data.version,
+        revision_number=revision_number,
+        vote_duration=(0 if release.expedited else data.vote_duration),
+    )
+    subject, body = await construct.start_vote_subject_and_body(subject_template, body_template, options)
+    if data.subject is not None:
+        subject = data.subject
+    if data.body is not None:
+        body = data.body
+    return subject, body, fullname
 
 
 async def _vote_tabulate_email_details(

@@ -900,8 +900,10 @@ class VoteStartArgs(schema.Strict):
     email_cc: list[str] = schema.default_example([], ["dev@example.apache.org"])
     email_bcc: list[str] = schema.default_example([], ["dev@example.apache.org"])
     vote_duration: int = schema.example(72)
-    subject: str = schema.example("[VOTE] Apache Example 0.0.1 release")
-    body: str = schema.example("The Apache Example team is pleased to announce the release of Example 0.0.1...")
+    subject: str | None = schema.default_example(None, "[VOTE] Apache Example 0.0.1 release")
+    body: str | None = schema.default_example(
+        None, "The Apache Example team is pleased to announce the release of Example 0.0.1..."
+    )
     second_round_email_to: str | None = schema.default_example(None, "general@incubator.apache.org")
     notify_when_finished: bool = schema.default_example(False, False)
     automatic_resolve_when_finished: bool = schema.default_example(False, False)
