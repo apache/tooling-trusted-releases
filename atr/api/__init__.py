@@ -1978,16 +1978,21 @@ async def vote_start(
         if data.email_to not in permitted_recipients:
             raise exceptions.Forbidden("Invalid mailing list choice")
         util.validate_email_recipients(data)
-        util.validate_vote_duration(data.vote_duration)
+        vote_duration = data.vote_duration
+        if vote_duration is None:
+            vote_duration = release.project.policy_min_hours
+        util.validate_vote_duration(vote_duration)
 
-        subject, body, fullname = await _vote_start_subject_and_body(data, release, asf_uid, scanned_revision)
+        subject, body, fullname = await _vote_start_subject_and_body(
+            data, release, asf_uid, scanned_revision, vote_duration
+        )
 
         async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
             task = await warm.vote.start(
                 data.email_to,
                 data.project,
                 data.version,
-                data.vote_duration,
+                vote_duration,
                 subject,
                 body,
                 fullname,
@@ -2311,7 +2316,11 @@ async def _resolve_signing_key_from_signature(
 
 
 async def _vote_start_subject_and_body(
-    data: models.api.VoteStartArgs, release: sql.Release, asf_uid: str, revision_number: safe.RevisionNumber
+    data: models.api.VoteStartArgs,
+    release: sql.Release,
+    asf_uid: str,
+    revision_number: safe.RevisionNumber,
+    vote_duration: int,
 ) -> tuple[str, str, str]:
     fullname = await _ldap_fullname(asf_uid)
     if (data.subject is not None) and (data.body is not None):
@@ -2331,7 +2340,7 @@ async def _vote_start_subject_and_body(
         project_key=data.project,
         version_key=data.version,
         revision_number=revision_number,
-        vote_duration=(0 if release.expedited else data.vote_duration),
+        vote_duration=(0 if release.expedited else vote_duration),
     )
     subject, body = await construct.start_vote_subject_and_body(subject_template, body_template, options)
     if data.subject is not None:

@@ -901,7 +901,7 @@ class VoteStartArgs(schema.Strict):
     email_to: str = schema.example("dev@example.apache.org")
     email_cc: list[str] = schema.default_example([], ["dev@example.apache.org"])
     email_bcc: list[str] = schema.default_example([], ["dev@example.apache.org"])
-    vote_duration: int = schema.example(72)
+    vote_duration: int | None = schema.default_example(None, 72)
     subject: str | None = schema.default_example(None, "[VOTE] Apache Example 0.0.1 release")
     body: str | None = schema.default_example(
         None, "The Apache Example team is pleased to announce the release of Example 0.0.1..."

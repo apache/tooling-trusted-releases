@@ -30,7 +30,7 @@ async def test_vote_start_expedited_release_uses_expedited_template(monkeypatch)
     calls = _patch_rendering(monkeypatch)
 
     subject, body, fullname = await api._vote_start_subject_and_body(
-        _args(subject="Custom subject"), _release(expedited=True), "user", safe.RevisionNumber("00001")
+        _args(subject="Custom subject"), _release(expedited=True), "user", safe.RevisionNumber("00001"), 72
     )
 
     assert (subject, body, fullname) == ("Custom subject", "RENDERED BODY", "Example User")
@@ -44,7 +44,7 @@ async def test_vote_start_omitted_subject_and_body_render_policy_templates(monke
     calls = _patch_rendering(monkeypatch)
 
     subject, body, fullname = await api._vote_start_subject_and_body(
-        _args(), _release(), "user", safe.RevisionNumber("00001")
+        _args(), _release(), "user", safe.RevisionNumber("00001"), 72
     )
 
     assert (subject, body, fullname) == ("RENDERED SUBJECT", "RENDERED BODY", "Example User")
@@ -60,7 +60,7 @@ async def test_vote_start_supplied_subject_and_body_pass_through(monkeypatch) ->
     calls = _patch_rendering(monkeypatch)
 
     subject, body, fullname = await api._vote_start_subject_and_body(
-        _args(subject="Custom subject", body="Custom body"), _release(), "user", safe.RevisionNumber("00001")
+        _args(subject="Custom subject", body="Custom body"), _release(), "user", safe.RevisionNumber("00001"), 72
     )
 
     assert (subject, body, fullname) == ("Custom subject", "Custom body", "Example User")
@@ -72,7 +72,6 @@ def _args(subject: str | None = None, body: str | None = None) -> models.api.Vot
         project=safe.ProjectKey("example"),
         version=safe.VersionKey("1.0.0"),
         email_to="dev@example.apache.org",
-        vote_duration=72,
         subject=subject,
         body=body,
     )
