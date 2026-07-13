@@ -51,14 +51,14 @@ boolean-py==5.0
     # via license-expression
 certifi==2026.6.17
     # via requests
-cffi==2.0.0
+cffi==2.1.0
     # via
     #   asfpy
     #   cmarkgfm
     #   cryptography
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.7
+charset-normalizer==3.4.9
     # via requests
 click==8.4.2
     # via
@@ -85,12 +85,12 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.40.0
+djlint==1.40.4
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.7
+dulwich==1.2.10
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -110,7 +110,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.29.4
+filelock==3.29.7
     # via
     #   python-discovery
     #   virtualenv
@@ -269,7 +269,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.4.2
+python-discovery==1.4.3
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -332,7 +332,7 @@ sqlalchemy==2.0.51
     #   sqlmodel
 sqlmodel==0.0.39
     # via tooling-trusted-releases
-ssh-audit==3.3.0
+ssh-audit==3.9.0
     # via tooling-trusted-releases
 standard-imghdr==3.13.0
     # via tooling-trusted-releases
@@ -342,7 +342,7 @@ structlog==26.1.0
     # via tooling-trusted-releases
 types-aiofiles==25.1.0.20260518
     # via quart-uploads
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   alembic
     #   asyncssh
@@ -364,7 +364,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.5.1
+virtualenv==21.6.0
     # via pre-commit
 watchfiles==1.2.0
     # via
