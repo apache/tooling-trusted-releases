@@ -1255,20 +1255,24 @@ async def release_announce(
     paths are correct, the release can be announced. This will send an email to
     the specified announcement address, and promote the release to the finished
     release phase. Once announced, a release is final and cannot be changed.
+
+    If the body is omitted, it is rendered from the project announce email
+    template.
     """
     asf_uid = _jwt_asf_uid()
 
     try:
+        body, fullname = await _release_announce_body(data, asf_uid)
+
         async with storage.write_as_project_release_manager(data.project, asf_uid) as warm:
-            # TODO: Get fullname and use it instead of asf_uid
             await warm.announce.release(
                 project_key=data.project,
                 version_key=data.version,
                 preview_revision_number=data.revision,
                 email_to=data.email_to,
-                body=data.body,
+                body=body,
                 download_path_suffix=data.path_suffix,
-                fullname=asf_uid,
+                fullname=fullname,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e
@@ -2249,6 +2253,35 @@ def _matched_issuer_fingerprint(
         if _issuer_matches_component(subkey_fingerprint, subkey.key_id.lower(), issuer_fingerprints, issuer_key_ids):
             return subkey_fingerprint
     return None
+
+
+async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: str) -> tuple[str, str]:
+    fullname = await _ldap_fullname(asf_uid)
+    if data.body is not None:
+        return data.body, fullname
+    async with db.session() as db_data:
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(
+            key=str(release_key),
+            phase=sql.ReleasePhase.RELEASE_PREVIEW,
+            _project=True,
+            _project_release_policy=True,
+        ).demand(storage.AccessError(f"Release not found: {release_key}", status=404))
+    revision_number = data.revision
+    if revision_number is None:
+        revision_number = release.safe_latest_revision_number
+    options = construct.AnnounceReleaseOptions(
+        asfuid=asf_uid,
+        fullname=fullname,
+        project_key=data.project,
+        version_key=data.version,
+        revision_number=revision_number,
+        download_path_suffix=data.path_suffix,
+    )
+    _, body = await construct.announce_release_subject_and_body(
+        "", release.project.policy_announce_release_template, options
+    )
+    return body, fullname
 
 
 async def _resolve_signing_key_from_signature(
