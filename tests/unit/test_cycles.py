@@ -194,6 +194,78 @@ def test_prior_release_semver_strips_v_prefix():
     assert prior.version == "v1.1.0"
 
 
+def test_latest_release_calver_picks_highest_within_the_target_cycle():
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=calver.cycle_regex("(YY.MM).N"),
+        calver_format="(YY.MM).N",
+        version_method=sql.VersionMethod.CALVER,
+    )
+    candidates = [
+        _release("09.04", _ts(1)),
+        _release("09.04.02", _ts(3)),
+        _release("09.04.01", _ts(2)),
+        _release("10.04", _ts(4)),
+    ]
+    latest = cycles.latest_release_in_cycle(project, "09.04", candidates)
+    assert latest is not None
+    assert latest.version == "09.04.02"
+
+
+def test_latest_release_returns_none_when_nothing_is_rankable():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    candidates = [_release("1.0.0", None), _release("1.1.0", None)]
+    assert cycles.latest_release_in_cycle(project, "1.0.0", candidates) is None
+
+
+def test_latest_release_returns_none_when_the_target_alone_cannot_be_ranked():
+    # Ranking it against siblings it can't be compared with would make it look superseded
+    project = SimpleNamespace(key="example", cycle_match=r"^(\d+)\..+", version_method=sql.VersionMethod.SEMVER)
+    candidates = [_release("1.1.0", _ts(1)), _release("1.2", _ts(2))]
+    assert cycles.latest_release_in_cycle(project, "1.2", candidates) is None
+
+
+def test_latest_release_falls_back_to_dates_when_the_whole_cycle_is_unrankable():
+    # A semver project whose versions are all two-part: none parse, so they order by date
+    # together, and exactly one of them must still come out as the latest
+    project = SimpleNamespace(key="example", cycle_match=r"^(\d+)\..+", version_method=sql.VersionMethod.SEMVER)
+    older, newer = _release("1.3", _ts(1)), _release("1.2", _ts(2))
+    latest = cycles.latest_release_in_cycle(project, "1.3", [older, newer])
+    assert latest is not None
+    assert latest.version == "1.2"
+
+
+def test_latest_release_undated_target_cannot_be_ranked_by_date():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    candidates = [_release("1.0.0", _ts(1)), _release("1.1.0", None)]
+    assert cycles.latest_release_in_cycle(project, "1.1.0", candidates) is None
+
+
+def test_latest_release_semver_ignores_release_dates():
+    # Released out of order; the version scheme decides, not the dates
+    project = SimpleNamespace(key="example", cycle_match=r"^(\d+)\.\d+\.\d+$", version_method=sql.VersionMethod.SEMVER)
+    candidates = [
+        _release("1.0.5", _ts(9)),
+        _release("1.1.0", _ts(5)),
+        _release("2.0.0", _ts(1)),
+    ]
+    latest = cycles.latest_release_in_cycle(project, "1.0.0", candidates)
+    assert latest is not None
+    assert latest.version == "1.1.0"
+
+
+def test_latest_release_simple_returns_most_recently_released():
+    project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
+    candidates = [
+        _release("1.0.0", _ts(1)),
+        _release("1.1.0", _ts(5)),
+        _release("1.0.1", _ts(3)),
+    ]
+    latest = cycles.latest_release_in_cycle(project, "1.0.0", candidates)
+    assert latest is not None
+    assert latest.version == "1.1.0"
+
+
 def test_prior_release_simple_returns_most_recently_released():
     project = SimpleNamespace(key="example", cycle_match=None, version_method=sql.VersionMethod.SIMPLE)
     candidates = [

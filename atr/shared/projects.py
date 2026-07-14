@@ -498,8 +498,19 @@ class ArchiveSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
 
 
+class ArchiveSelectedRelease(form.Form):
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    release_version: safe.VersionKey = form.label("Release version", widget=form.Widget.HIDDEN)
+
+
 class CompleteApprovalRequest(form.Form):
     approval_request_id: form.Int = form.label("Approval request ID", widget=form.Widget.HIDDEN)
+
+
+class ConfirmReleaseArchival(form.Form):
+    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    release_version: safe.VersionKey = form.label("Release version", widget=form.Widget.HIDDEN)
+    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.")
 
 
 class DeleteSelectedProject(form.Form):

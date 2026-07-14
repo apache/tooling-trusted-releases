@@ -24,6 +24,7 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.storage as storage
 import atr.storage.writers.release as release
 
 
@@ -61,61 +62,58 @@ async def test_admin_delete_allows_announced_release(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_archive_returns_error_when_release_already_archived():
-    fake_release = SimpleNamespace(
-        key="example-1.0.0",
-        phase=sql.ReleasePhase.RELEASE,
-        archived=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        project_key="example",
-        cycle_key="example-default",
-    )
-    member = _make_member(release_result=fake_release)
-    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-    assert error is not None
-    assert "already archived" in error
+async def test_archive_rejects_a_release_already_archived():
+    member = _make_member(release_result=_archive_candidate(is_archived=True))
+    with pytest.raises(storage.AccessError, match="already archived"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
 
 
 @pytest.mark.asyncio
-async def test_archive_returns_error_when_release_not_found():
+async def test_archive_rejects_a_release_not_found():
     member = _make_member(release_result=None)
-    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-    assert error is not None
-    assert "not found" in error
+    with pytest.raises(storage.AccessError, match="not found"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
 
 
 @pytest.mark.asyncio
-async def test_archive_returns_error_when_release_not_in_release_phase():
-    fake_release = SimpleNamespace(
-        key="example-1.0.0",
-        phase=sql.ReleasePhase.RELEASE_PREVIEW,
-        archived=None,
-        project_key="example",
-        cycle_key="example-default",
+async def test_archive_rejects_a_release_not_in_the_release_phase():
+    member = _make_member(release_result=_archive_candidate(phase=sql.ReleasePhase.RELEASE_PREVIEW))
+    with pytest.raises(storage.AccessError, match="not in the release phase"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_the_latest_release_in_the_cycle():
+    # The latest in a cycle may only be archived through a CAP approval vote
+    target = _archive_candidate(version="2.0.0")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="1.0.0")])
+    with pytest.raises(storage.AccessError, match="requires a CAP approval vote"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("2.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_a_release_with_an_archival_vote_in_progress():
+    target = _archive_candidate(version="1.0.0")
+    member = _make_member(
+        release_result=target,
+        siblings=[_archive_candidate(version="2.0.0")],
+        approval=SimpleNamespace(status=sql.ApprovalStatus.PENDING),
     )
-    member = _make_member(release_result=fake_release)
-    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-    assert error is not None
-    assert "not in the release phase" in error
+    with pytest.raises(storage.AccessError, match="already in progress"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
 
 
 @pytest.mark.asyncio
 async def test_archive_succeeds_and_writes_lifecycle_event(monkeypatch):
-    fake_release = SimpleNamespace(
-        key="example-1.0.0",
-        phase=sql.ReleasePhase.RELEASE,
-        archived=None,
-        project_key="example",
-        cycle_key="example-default",
-    )
-    member = _make_member(release_result=fake_release)
+    target = _archive_candidate(version="1.0.0")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
     mock_data.execute_query = mock.AsyncMock(return_value=update_result)
     monkeypatch.setattr(release, "_remove_from_downloads", mock.AsyncMock())
 
-    error = await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
-    assert error is None
+    await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
 
     # Lifecycle event added to the session
     added_args = [call.args[0] for call in mock_data.add.call_args_list]
@@ -172,10 +170,48 @@ def _fake_release() -> sql.Release:
     )
 
 
-def _make_member(release_result: object) -> release.CommitteeMember:
+def _archive_candidate(
+    version: str = "1.0.0",
+    phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE,
+    is_archived: bool = False,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        key=f"example-{version}",
+        version=version,
+        phase=phase,
+        archived=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC) if is_archived else None,
+        is_archived=is_archived,
+        released=datetime.datetime(2026, 1, int(version[0]) or 1, tzinfo=datetime.UTC),
+        project_key="example",
+        cycle_key="example-default",
+    )
+
+
+def _make_member(
+    release_result: object,
+    siblings: list[SimpleNamespace] | None = None,
+    approval: object = None,
+) -> release.CommitteeMember:
+    # A release is only archivable without a vote when a later sibling supersedes it
+    releases = list(siblings or [])
+    if isinstance(release_result, SimpleNamespace):
+        releases.append(release_result)
+    project = SimpleNamespace(
+        key="example",
+        cycle_match=None,
+        calver_format=None,
+        version_method=sql.VersionMethod.SIMPLE,
+        releases_including_embargoed=releases,
+    )
+
     mock_data = mock.MagicMock()
     mock_data.release = mock.MagicMock(return_value=ReleaseQuery(release_result))
+    mock_data.project = mock.MagicMock(return_value=ReleaseQuery(project))
+    mock_data.approval_request = mock.MagicMock(return_value=ReleaseQuery(approval))
     mock_data.execute_query = mock.AsyncMock()
+    mock_data.begin_immediate = mock.AsyncMock()
+    mock_data.expire_all = mock.MagicMock()
+    mock_data.rollback = mock.AsyncMock()
     mock_data.add = mock.MagicMock()
     mock_data.commit = mock.AsyncMock()
 

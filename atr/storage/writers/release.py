@@ -158,6 +158,27 @@ def _assert_can_start(asf_uid: str, project: sql.Project) -> None:
     )
 
 
+async def _claim_release_archive_approval(
+    data: db.Session,
+    approval_request_id: int,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    committee_key: str,
+) -> None:
+    approval = await data.approval_request(id=approval_request_id).get()
+    if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
+        raise storage.AccessError("This approval request is not ready to complete.", status=409)
+    if (
+        (approval.action != sql.ApprovalAction.ARCHIVE_RELEASE)
+        or (approval.project_key != str(project_key))
+        or (approval.release_version != str(version_key))
+    ):
+        raise storage.AccessError("This approval request does not match the requested action.", status=409)
+    if approval.committee_key != committee_key:
+        raise storage.AccessError("This approval request was filed for a different committee.", status=409)
+    approval.status = sql.ApprovalStatus.COMPLETED
+
+
 async def _assert_no_existing_release(
     data: db.Session, project: sql.Project, project_key: safe.ProjectKey, version: safe.VersionKey
 ) -> None:
@@ -1321,22 +1342,106 @@ class CommitteeMember(ReleaseManager):
         self,
         project_key: safe.ProjectKey,
         version_key: safe.VersionKey,
-    ) -> str | None:
-        """Archive a published release.
+    ) -> None:
+        """Archive a published release that no CAP vote covers.
 
-        Marks the release as archived, removes its hard-linked files from the
-        downloads area, and records an ARCHIVE lifecycle event. Returns an
-        error string if the release can't be archived, or None on success.
-        SVN-side handoff to archive.apache.org is not yet implemented.
+        Only a release which is not the latest in its cycle may be archived this
+        way. The write lock is taken before that is decided, so a release can't
+        become the latest, or gain an archival vote, in between.
         """
-        release = await self.__data.release(
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            project = await self.__data.project(key=str(project_key), _committee=True, _releases=True).get()
+            if project is None:
+                raise storage.AccessError(f"Project '{project_key}' not found.", status=404)
+            release = await self.__data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                _committee=True,
+            ).get()
+            if release is None:
+                raise storage.AccessError(f"Release {project_key!s} {version_key!s} not found", status=404)
+            await self.__assert_archivable_without_vote(project, release, project_key, version_key)
+            error = await _archive_release(
+                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
+            )
+            if error is not None:
+                raise storage.AccessError(error, status=409)
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+    async def __assert_archivable_without_vote(
+        self,
+        project: sql.Project,
+        release: sql.Release,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+    ) -> None:
+        if release.phase != sql.ReleasePhase.RELEASE:
+            raise storage.AccessError(
+                f"Release {project_key!s} {version_key!s} is not in the release phase", status=409
+            )
+        if release.is_archived:
+            raise storage.AccessError(f"Release {project_key!s} {version_key!s} is already archived.", status=409)
+        active = [
+            r
+            for r in project.releases_including_embargoed
+            if (r.phase == sql.ReleasePhase.RELEASE) and (not r.is_archived)
+        ]
+        latest = cycles.latest_release_in_cycle(project, release.version, active)
+        if (latest is None) or (latest.key == release.key):
+            raise storage.AccessError(
+                f"Release {project_key!s} {version_key!s} is the latest in its cycle,"
+                " so archiving it requires a CAP approval vote.",
+                status=409,
+            )
+        approval = await self.__data.approval_request(
             project_key=str(project_key),
-            version=str(version_key),
-            _committee=True,
+            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+            release_version=str(version_key),
         ).get()
-        if release is None:
-            return f"Release {project_key!s} {version_key!s} not found"
-        return await _archive_release(self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release)
+        if approval is not None:
+            raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
+
+    async def complete_archive(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        approval_request_id: int,
+    ) -> None:
+        """Archive a release whose CAP approval vote has passed.
+
+        The write lock is taken before the approval is read, so an approval can
+        only ever complete one archival.
+        """
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                _committee=True,
+            ).get()
+            if release is None:
+                raise storage.AccessError(f"Release {project_key!s} {version_key!s} not found", status=404)
+            await _claim_release_archive_approval(
+                self.__data, approval_request_id, project_key, version_key, self.__committee_key
+            )
+            if release.is_archived:
+                # The watcher or an auto-archive got there while the vote ran. The approval has
+                # nothing left to do, so complete it rather than leave it blocking the release
+                await self.__data.commit()
+                return
+            error = await _archive_release(
+                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
+            )
+            if error is not None:
+                raise storage.AccessError(error, status=409)
+        except Exception:
+            await self.__data.rollback()
+            raise
 
     async def start_expedited(
         self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool = False

@@ -23,6 +23,9 @@
              role="alert"
              data-notification-id="{{ notification.id }}">
           {{ notification.message }}
+          {% if notification.link and notification.link.startswith("/") and not notification.link.startswith("//") %}
+            <a href="{{ notification.link }}" class="alert-link ms-1">{{ notification.link_text or "Open" }}</a>
+          {% endif %}
           <button type="button"
                   class="btn-close atr-notification-dismiss"
                   aria-label="Dismiss"></button>

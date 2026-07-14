@@ -169,6 +169,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         status: Opt[sql.ApprovalStatus] = NOT_SET,
         status_in: Opt[Sequence[sql.ApprovalStatus]] = NOT_SET,
         project_key_in: Opt[Sequence[str]] = NOT_SET,
+        release_version: Opt[str | None] = NOT_SET,
     ) -> Query[sql.ApprovalRequest]:
         query = sqlmodel.select(sql.ApprovalRequest)
 
@@ -188,6 +189,12 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(via(sql.ApprovalRequest.status).in_(status_in))
         if is_defined(project_key_in):
             query = query.where(via(sql.ApprovalRequest.project_key).in_(project_key_in))
+        if is_defined(release_version):
+            # Passing None selects the project scoped requests, which carry no version
+            if release_version is None:
+                query = query.where(via(sql.ApprovalRequest.release_version).is_(None))
+            else:
+                query = query.where(sql.ApprovalRequest.release_version == release_version)
 
         return Query(self, query)
 

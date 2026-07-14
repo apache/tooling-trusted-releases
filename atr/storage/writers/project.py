@@ -402,12 +402,14 @@ class CommitteeMember(ReleaseManager):
         action: sql.ApprovalAction,
         cap_question_id: int,
         closes_at: datetime.datetime,
+        release_version: safe.VersionKey | None = None,
     ) -> sql.ApprovalRequest:
         await self.__validate_project_in_committee(project_key)
         approval = sql.ApprovalRequest(
             project_key=str(project_key),
             committee_key=self.__committee_key,
             action=action,
+            release_version=str(release_version) if release_version else None,
             cap_question_id=cap_question_id,
             requested_by=self.__asf_uid,
             closes_at=closes_at,
@@ -423,6 +425,8 @@ class CommitteeMember(ReleaseManager):
             await self.__data.commit()
         except sqlalchemy.exc.IntegrityError as error:
             await self.__data.rollback()
+            if "approvalrequest.release_version" in str(error):
+                raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
             if "approvalrequest.project_key" in str(error):
                 raise storage.AccessError("A CAP approval request for this project is already in progress.", status=409)
             raise storage.AccessError(

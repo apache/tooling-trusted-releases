@@ -71,6 +71,7 @@ class DistributionPlatformValue:
 
 class ApprovalAction(enum.StrEnum):
     ARCHIVE = "archive"
+    ARCHIVE_RELEASE = "archive_release"
     DELETE = "delete"
 
 
@@ -574,6 +575,8 @@ class ApprovalRequest(sqlmodel.SQLModel, table=True):
     project_key: str = sqlmodel.Field()
     committee_key: str = sqlmodel.Field()
     action: ApprovalAction = sqlmodel.Field()
+    # Only for release-scoped actions; project-scoped requests leave it null
+    release_version: str | None = sqlmodel.Field(default=None)
     cap_question_id: int = sqlmodel.Field(unique=True)
     status: ApprovalStatus = sqlmodel.Field(default=ApprovalStatus.PENDING, index=True)
     outcome: str | None = None
@@ -588,11 +591,19 @@ class ApprovalRequest(sqlmodel.SQLModel, table=True):
     error: str | None = None
 
     __table_args__ = (
+        # Project scoped actions stay one at a time; each release may carry its own vote
         sqlalchemy.Index(
             "ix_approvalrequest_active_project",
             "project_key",
             unique=True,
-            sqlite_where=sqlalchemy.text("status IN ('PENDING', 'APPROVED')"),
+            sqlite_where=sqlalchemy.text("status IN ('PENDING', 'APPROVED') AND release_version IS NULL"),
+        ),
+        sqlalchemy.Index(
+            "ix_approvalrequest_active_release",
+            "project_key",
+            "release_version",
+            unique=True,
+            sqlite_where=sqlalchemy.text("status IN ('PENDING', 'APPROVED') AND release_version IS NOT NULL"),
         ),
     )
 
@@ -624,6 +635,9 @@ class Notification(sqlmodel.SQLModel, table=True):
     )
     level: NotificationLevel = sqlmodel.Field(default=NotificationLevel.ERROR)
     message: str = sqlmodel.Field()
+    # An ATR path the notification acts on, built by the sender and never by a user
+    link: str | None = sqlmodel.Field(default=None)
+    link_text: str | None = sqlmodel.Field(default=None)
 
     __table_args__ = (sqlalchemy.Index("ix_notification_asf_uid_created", "asf_uid", "created"),)
 

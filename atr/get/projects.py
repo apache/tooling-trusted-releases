@@ -165,7 +165,8 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED]
         ).all()
 
-    approvals_by_project = {a.project_key: a for a in approvals}
+    # Release archival requests surface on the release's own file page, not here
+    approvals_by_project = {a.project_key: a for a in approvals if a.action != sql.ApprovalAction.ARCHIVE_RELEASE}
 
     committee_project_counts: Counter[str] = Counter(
         str(p.committee.key) for p in projects if p.committee and p.is_active
@@ -515,6 +516,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
         approval = await data.approval_request(
             project_key=str(project.key),
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+            release_version=None,
         ).get()
     if approval is not None:
         return await _approval_request_element(approval)
@@ -1298,10 +1300,15 @@ async def _render_releases_tab(
             cycle_previews = [
                 r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE_PREVIEW
             ]
-            cycle_full = [r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE]
+            cycle_released = [
+                r for r in releases if r.cycle_key == cycle.cycle_key and r.phase == sql.ReleasePhase.RELEASE
+            ]
+            cycle_full = [r for r in cycle_released if not r.is_archived]
 
             cycle_has_dates = _cycle_has_dates(cycle)
-            cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_full)
+            # Archived releases aren't listed, but they still count here, or a cycle whose
+            # releases have all been archived would vanish from the page along with its dates
+            cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_released)
             if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit_policy):
                 continue
 

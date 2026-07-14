@@ -15,10 +15,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Literal
+from typing import Final, Literal
 
 import atr.archives as archives
 import atr.blueprints.get as get
+import atr.cycles as cycles
+import atr.db as db
+import atr.form as form
 import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.vote as vote
@@ -26,12 +29,23 @@ import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.post as post
 import atr.render as render
+import atr.shared as shared
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
 type Phase = Literal["COMPOSE", "VOTE", "FINISH"]
+
+# The colour each phase already carries on its project page button
+_PHASE_BADGE_VARIANTS: Final[dict[sql.ReleasePhase, str]] = {
+    sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT: "secondary",
+    sql.ReleasePhase.RELEASE_CANDIDATE: "info",
+    sql.ReleasePhase.RELEASE_PREVIEW: "warning",
+    sql.ReleasePhase.RELEASE: "success",
+}
 
 
 @get.typed
@@ -47,6 +61,7 @@ async def selected(
     """
     release = await session.release(project_key, version_key, phase=None)
     file_stats = await _release_file_stats(release, project_key, version_key)
+    approval = await _archival_approval(release)
 
     block = htm.Block()
 
@@ -54,6 +69,12 @@ async def selected(
     if nav_info:
         back_url, back_label, phase_label = nav_info
         render.html_nav(block, back_url, back_label, phase_label)
+    elif release.phase == sql.ReleasePhase.RELEASE:
+        # Lazy import - projects imports this module, so a top level import would cycle
+        import atr.get.projects as projects
+
+        back_url = util.as_url(projects.view, project_key=release.project.key)
+        block.a(".atr-back-link", href=back_url)[f"← Back to {release.project.short_display_name}"]
 
     block.h1["Files in ", htm.strong[release.project.short_display_name], " ", htm.em[release.version]]
 
@@ -67,7 +88,10 @@ async def selected(
                     htm.p[htm.strong["Project:"], " ", release.project.display_name],
                     htm.p[htm.strong["Label:"], " ", release.key],
                 ],
-                htm.div(".col-md-6")[htm.p[htm.strong["Created:"], " ", release.created.strftime("%Y-%m-%d %H:%M:%S")]],
+                htm.div(".col-md-6")[
+                    htm.p[htm.strong["Created:"], " ", release.created.strftime("%Y-%m-%d %H:%M:%S")],
+                    htm.p[htm.strong["Status:"], " ", _release_status(release, approval)],
+                ],
             ]
         ],
     ]
@@ -116,6 +140,11 @@ async def selected(
         files_card.div(".card-body")[htm.div(".alert.alert-info")[f"This {phase_name} does not have any files."]]
 
     block.append(files_card.collect())
+
+    if release.phase == sql.ReleasePhase.RELEASE:
+        actions_card = await _render_release_actions(session, release, approval)
+        if actions_card is not None:
+            block.append(actions_card)
 
     return await template.blank(f"Files in {release.short_display_name}", content=block.collect())
 
@@ -175,6 +204,18 @@ async def selected_path(
     )
 
 
+async def _archival_approval(release: sql.Release) -> sql.ApprovalRequest | None:
+    # Only a full release can be under an archival vote
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return None
+    async with db.session() as data:
+        return await data.approval_request(
+            project_key=str(release.project.key),
+            status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+            release_version=release.version,
+        ).get()
+
+
 def _get_navigation_info(release: sql.Release) -> tuple[str, str, Phase] | None:
     """Get back URL, back label, and phase label based on release phase."""
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
@@ -226,6 +267,21 @@ async def _release_file_stats(
     return file_stats
 
 
+def _release_status(release: sql.Release, approval: sql.ApprovalRequest | None) -> htm.Element:
+    if release.is_archived:
+        archived_on = f" on {release.archived.strftime('%Y-%m-%d')}" if release.archived else ""
+        return htm.span(".badge.text-bg-secondary")[f"Archived{archived_on}"]
+    if approval is not None:
+        if approval.status == sql.ApprovalStatus.PENDING:
+            return htm.span(".badge.text-bg-secondary")["Archival vote in progress"]
+        return htm.span(".badge.text-bg-warning")["Archival approved"]
+    if release.phase == sql.ReleasePhase.RELEASE:
+        label = "Released"
+    else:
+        label = _phase_display_name(release.phase).capitalize()
+    return htm.span(f".badge.text-bg-{_PHASE_BADGE_VARIANTS[release.phase]}")[label]
+
+
 def _render_file_content(block: htm.Block, content: str, is_text: bool, is_truncated: bool, max_view_size: int) -> None:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header")[htm.h3(".mb-0")["File content" + (" (Hexdump)" if (not is_text) else "")]]
@@ -241,3 +297,83 @@ def _render_file_content(block: htm.Block, content: str, is_text: bool, is_trunc
         ]
 
     block.append(card.collect())
+
+
+async def _render_release_actions(
+    session: web.Committer, release: sql.Release, approval: sql.ApprovalRequest | None
+) -> htm.Element | None:
+    project = release.project
+    is_committee_member = bool(project.committee and user.is_committee_member(project.committee, session.uid))
+    if not (is_committee_member or session.is_admin):
+        return None
+
+    async with db.session() as data:
+        full_releases = await data.release(project_key=str(project.key), phase=sql.ReleasePhase.RELEASE).all()
+    active_releases = [r for r in full_releases if not r.is_archived]
+
+    card = htm.Block(htm.div, classes=".card.mb-4")
+    card.div(".card-header.bg-light")[htm.h3(".mb-0")["Release actions"]]
+    body = htm.Block(htm.div, classes=".card-body")
+
+    if release.is_archived:
+        archived_on = f" on {release.archived.strftime('%Y-%m-%d')}" if release.archived else ""
+        body.p(".text-muted.mb-0")[f"This release was archived{archived_on}."]
+    elif approval is not None:
+        if approval.status == sql.ApprovalStatus.PENDING:
+            body.p(".mb-0")[
+                f"An archival vote for this release is in progress (CAP #{approval.cap_question_id}, closes "
+                f"{approval.closes_at.strftime('%Y-%m-%d %H:%M UTC')})."
+            ]
+        else:
+            body.p[
+                f"The archival vote passed (CAP #{approval.cap_question_id})."
+                " Completing it archives this release and removes its files from the downloads area."
+            ]
+            body.append(
+                await form.render(
+                    model_cls=shared.projects.CompleteApprovalRequest,
+                    action=util.as_url(post.projects.complete_approval),
+                    form_classes=".d-inline-block.m-0",
+                    submit_classes="btn-sm btn-outline-danger",
+                    submit_label="Complete archival",
+                    empty=True,
+                    defaults={"approval_request_id": approval.id},
+                )
+            )
+    else:
+        latest = cycles.latest_release_in_cycle(project, release.version, active_releases)
+        if (latest is None) or (latest.key == release.key):
+            body.p[
+                "This is the latest full release in its cycle, so archiving it requires a CAP approval vote"
+                " by the committee PMC."
+            ]
+            body.append(
+                await form.render(
+                    model_cls=shared.projects.ArchiveSelectedRelease,
+                    action=util.as_url(post.projects.archive_release),
+                    form_classes=".d-inline-block.m-0",
+                    submit_classes="btn-sm btn-outline-danger",
+                    submit_label="Request archival vote",
+                    empty=True,
+                    defaults={"project_key": str(project.key), "release_version": release.version},
+                    confirm=(
+                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the"
+                        " release ready to archive once the vote passes."
+                    ),
+                )
+            )
+        else:
+            body.p["Archiving this release removes its files from the downloads area."]
+            body.append(
+                await form.render(
+                    model_cls=shared.projects.ConfirmReleaseArchival,
+                    action=util.as_url(post.projects.archive_release_confirm),
+                    submit_classes="btn-sm btn-outline-danger",
+                    submit_label="Archive release",
+                    empty=True,
+                    defaults={"project_key": str(project.key), "release_version": release.version},
+                )
+            )
+
+    card.append(body.collect())
+    return card.collect()

@@ -26,6 +26,7 @@ import sqlalchemy.exc
 import atr.blueprints.post as post
 import atr.config as config
 import atr.constants as constants
+import atr.cycles as cycles
 import atr.db as db
 import atr.get as get
 import atr.log as log
@@ -86,6 +87,46 @@ async def archive(
 
 
 @post.typed
+async def archive_release(
+    session: web.Committer,
+    _project_archive_release: Literal["project/archive-release"],
+    archive_selected_release_form: shared.projects.ArchiveSelectedRelease,
+) -> web.WerkzeugResponse:
+    """
+    URL: /project/archive-release
+    """
+    return await _request_release_archive_approval(
+        session, archive_selected_release_form.project_key, archive_selected_release_form.release_version
+    )
+
+
+@post.typed
+async def archive_release_confirm(
+    session: web.Committer,
+    _project_archive_release_confirm: Literal["project/archive-release-confirm"],
+    confirm_release_archival_form: shared.projects.ConfirmReleaseArchival,
+) -> web.WerkzeugResponse:
+    """
+    URL: /project/archive-release-confirm
+    """
+    project_key = confirm_release_archival_form.project_key
+    release_version = confirm_release_archival_form.release_version
+
+    # The writer decides eligibility under the write lock, so a release can't become the
+    # latest in its cycle, or gain an archival vote, between the check and the archival
+    async with storage.write(session) as write:
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            await wacm.release.archive(project_key, release_version)
+        except storage.AccessError as e:
+            return await _redirect_to_release(session, project_key, release_version, error=f"Error archiving: {e}")
+
+    return await _redirect_to_release(
+        session, project_key, release_version, success=f"Release {project_key} {release_version} archived."
+    )
+
+
+@post.typed
 async def complete_approval(
     session: web.Committer,
     _project_complete_approval: Literal["project/complete-approval"],
@@ -101,6 +142,8 @@ async def complete_approval(
         return await session.redirect(get.projects.projects, error="Approval request not found.")
     if approval.status != sql.ApprovalStatus.APPROVED:
         return await session.redirect(get.projects.projects, error="This approval request is not ready to complete.")
+    if approval.action == sql.ApprovalAction.ARCHIVE_RELEASE:
+        return await _complete_release_archival(session, approval)
 
     project_key = safe.ProjectKey(approval.project_key)
     async with db.session() as data:
@@ -216,6 +259,31 @@ async def _complete_action(
         await wacm.project.archive(project_key, approval_request_id)
 
 
+async def _complete_release_archival(session: web.Committer, approval: sql.ApprovalRequest) -> web.WerkzeugResponse:
+    project_key = safe.ProjectKey(approval.project_key)
+    if approval.release_version is None:
+        return await session.redirect(get.projects.projects, error="This approval request does not name a release.")
+    release_version = safe.VersionKey(approval.release_version)
+
+    async with storage.write(session) as write:
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+            await wacm.release.complete_archive(project_key, release_version, util.unwrap(approval.id))
+        except storage.AccessError as e:
+            return await _redirect_to_release(
+                session, project_key, release_version, error=f"Error completing the archival: {e}"
+            )
+
+    await cap.notify(
+        approval.requested_by,
+        f"Release {project_key} {release_version} was archived after CAP approval.",
+        sql.NotificationLevel.INFO,
+    )
+    return await _redirect_to_release(
+        session, project_key, release_version, success=f"Release {project_key} {release_version} archived."
+    )
+
+
 async def _create_cap_question(
     action: sql.ApprovalAction,
     project_key: safe.ProjectKey,
@@ -223,29 +291,51 @@ async def _create_cap_question(
     committee_key: str,
     requested_by: str,
     closes_at: datetime.datetime,
+    release_version: safe.VersionKey | None = None,
 ) -> atr.models.cap.Question:
     token = await util.cap_mint_token()
-    verb = action.value
-    if action == sql.ApprovalAction.ARCHIVE:
-        approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
-        consequence = "ATR will mark the project RETIRED"
-    else:
-        approval_type = constants.CAP_DELETE_APPROVAL_TYPE
-        consequence = "ATR will permanently delete the project and its metadata"
+    match action:
+        case sql.ApprovalAction.ARCHIVE:
+            verb = action.value
+            approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
+            consequence = "ATR will mark the project RETIRED"
+            subject = f"the project {project_key} ({display_name})"
+            title = f"[ATR] {verb.capitalize()} project {project_key}"
+        case sql.ApprovalAction.ARCHIVE_RELEASE:
+            verb = "archive"
+            approval_type = constants.CAP_ARCHIVE_APPROVAL_TYPE
+            consequence = "ATR will mark the release as archived and remove it from the downloads area"
+            subject = f"release {release_version} of project {project_key} ({display_name})"
+            title = f"[ATR] Archive release {project_key} {release_version}"
+        case sql.ApprovalAction.DELETE:
+            verb = action.value
+            approval_type = constants.CAP_DELETE_APPROVAL_TYPE
+            consequence = "ATR will permanently delete the project and its metadata"
+            subject = f"the project {project_key} ({display_name})"
+            title = f"[ATR] {verb.capitalize()} project {project_key}"
     description = (
-        f"{requested_by} has requested, through ATR, to {verb} the project {project_key} ({display_name}). "
+        f"{requested_by} has requested, through ATR, to {verb} {subject}. "
         f"If this vote passes, {consequence}, and an authorised {committee_key} PMC member may complete the {verb} "
         f"in ATR. This request was filed by Apache Trusted Releases on behalf of {requested_by}."
     )
     return await util.cap_create_question(
         token,
         project_id=committee_key,
-        title=f"[ATR] {verb.capitalize()} project {project_key}",
+        title=title,
         description=description,
         target_audience=f"Binding voters: {committee_key} PMC members",
         approval_type=approval_type,
         closes_at=closes_at,
     )
+
+
+def _is_latest_in_cycle(project: sql.Project, release: sql.Release) -> bool:
+    active_releases = [
+        r for r in project.releases_including_embargoed if (r.phase == sql.ReleasePhase.RELEASE) and (not r.is_archived)
+    ]
+    latest = cycles.latest_release_in_cycle(project, release.version, active_releases)
+    # With nothing rankable we can't rule the release out as the latest, so err towards CAP
+    return (latest is None) or (latest.key == release.key)
 
 
 async def _metadata_category_add(
@@ -310,6 +400,46 @@ async def _persist_approval(
 
     return await session.redirect(
         get.projects.projects,
+        success=(
+            f"Approval vote created for the {committee_key} PMC (CAP #{cap_question_id}, closes "
+            f"{closes_at.strftime('%Y-%m-%d %H:%M UTC')}). ATR will mark it ready to complete once it passes."
+        ),
+    )
+
+
+async def _persist_release_approval(
+    session: web.Committer,
+    wacm: storage.WriteAsCommitteeMember,
+    project_key: safe.ProjectKey,
+    release_version: safe.VersionKey,
+    committee_key: str,
+    cap_question_id: int,
+    closes_at: datetime.datetime,
+) -> web.WerkzeugResponse:
+    try:
+        await wacm.project.request_approval(
+            project_key,
+            sql.ApprovalAction.ARCHIVE_RELEASE,
+            cap_question_id,
+            closes_at,
+            release_version=release_version,
+        )
+    except storage.AccessError as e:
+        log.warning(f"Concurrent CAP request for {project_key} lost. CAP question {cap_question_id} abandoned")
+        return await _redirect_to_release(session, project_key, release_version, error=str(e))
+    except sqlalchemy.exc.SQLAlchemyError:
+        log.exception(f"Failed to record CAP approval for {project_key}. CAP question {cap_question_id} abandoned")
+        return await _redirect_to_release(
+            session,
+            project_key,
+            release_version,
+            error="Could not record the CAP approval vote. Please contact an administrator.",
+        )
+
+    return await _redirect_to_release(
+        session,
+        project_key,
+        release_version,
         success=(
             f"Approval vote created for the {committee_key} PMC (CAP #{cap_question_id}, closes "
             f"{closes_at.strftime('%Y-%m-%d %H:%M UTC')}). ATR will mark it ready to complete once it passes."
@@ -613,6 +743,29 @@ async def _process_vote_form(session: web.Committer, vote_form: shared.projects.
     )
 
 
+async def _redirect_to_release(
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    release_version: safe.VersionKey,
+    **kwargs: str,
+) -> web.WerkzeugResponse:
+    return await session.redirect(
+        get.file.selected, project_key=str(project_key), version_key=str(release_version), **kwargs
+    )
+
+
+def _release_archival_error(
+    project: sql.Project, release: sql.Release | None, release_version: safe.VersionKey
+) -> str | None:
+    if release is None:
+        return f"Release {project.key} {release_version} not found."
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return f"Release {project.key} {release_version} is not a full release."
+    if release.is_archived:
+        return f"Release {project.key} {release_version} is already archived."
+    return None
+
+
 async def _request_approval(
     session: web.Committer, project_key: safe.ProjectKey, action: sql.ApprovalAction
 ) -> web.WerkzeugResponse:
@@ -650,6 +803,7 @@ async def _request_approval(
             existing = await data.approval_request(
                 project_key=str(project_key),
                 status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+                release_version=None,
             ).get()
             if existing is not None:
                 return await session.redirect(
@@ -669,6 +823,76 @@ async def _request_approval(
 
         return await _persist_approval(
             session, wacm, project_key, committee_key, action, question.question_id, closes_at
+        )
+
+
+async def _request_release_archive_approval(
+    session: web.Committer, project_key: safe.ProjectKey, release_version: safe.VersionKey
+) -> web.WerkzeugResponse:
+    if not config.get().CAP_ROLE_ACCOUNT_TOKEN:
+        return await _redirect_to_release(
+            session,
+            project_key,
+            release_version,
+            error="CAP approval is not configured. Please contact an administrator.",
+        )
+
+    async with storage.write(session) as write:
+        try:
+            wacm = await write.as_project_committee_member(project_key)
+        except storage.AccessError as e:
+            return await _redirect_to_release(
+                session, project_key, release_version, error=f"Error requesting archival approval: {e}"
+            )
+
+        async with db.session() as data:
+            project = await data.project(key=str(project_key), _committee=True, _releases=True).get()
+            if (project is None) or (project.committee is None):
+                return await session.redirect(get.projects.projects, error=f"Project '{project_key}' not found.")
+            committee_key = project.committee.key
+            display_name = project.display_name
+            release = await data.release(project_key=str(project_key), version=str(release_version)).get()
+            error = _release_archival_error(project, release, release_version)
+            if (error is None) and (release is not None) and (not _is_latest_in_cycle(project, release)):
+                error = (
+                    f"Release {project_key} {release_version} is not the latest in its cycle,"
+                    " so it can be archived directly without a CAP approval vote."
+                )
+            if error is not None:
+                return await _redirect_to_release(session, project_key, release_version, error=error)
+            existing = await data.approval_request(
+                project_key=str(project_key),
+                status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
+                release_version=str(release_version),
+            ).get()
+            if existing is not None:
+                return await _redirect_to_release(
+                    session,
+                    project_key,
+                    release_version,
+                    error="A CAP approval request for this release is already in progress.",
+                )
+
+        closes_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+            minutes=constants.CAP_VOTE_DURATION_MINUTES
+        )
+        try:
+            question = await _create_cap_question(
+                sql.ApprovalAction.ARCHIVE_RELEASE,
+                project_key,
+                display_name,
+                committee_key,
+                session.uid,
+                closes_at,
+                release_version=release_version,
+            )
+        except util.FetchError as e:
+            return await _redirect_to_release(
+                session, project_key, release_version, error=f"Could not create CAP approval vote: {e}"
+            )
+
+        return await _persist_release_approval(
+            session, wacm, project_key, release_version, committee_key, question.question_id, closes_at
         )
 
 

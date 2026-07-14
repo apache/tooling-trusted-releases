@@ -30,12 +30,18 @@ import atr.tasks.checks as checks
 import atr.util as util
 
 
-async def notify(asf_uid: str, message: str, level: sql.NotificationLevel) -> None:
+async def notify(
+    asf_uid: str,
+    message: str,
+    level: sql.NotificationLevel,
+    link: str | None = None,
+    link_text: str | None = None,
+) -> None:
     if asf_uid == constants.SYSTEM_SERVICE_UID:
         return
     try:
         async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_create(message, level)
+            await waus.notifications_create(message, level, link=link, link_text=link_text)
     except Exception:
         log.exception("Failed to record CAP notification")
 
@@ -72,18 +78,31 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
         if await _record_outcome(request_id, sql.ApprovalStatus.APPROVED, vote_outcome, permalink):
             await notify(
                 row.requested_by,
-                f"The CAP approval vote to {row.action.value} project {row.project_key} passed. "
-                f"You can now complete the {row.action.value}.",
+                f"The CAP approval vote to {_describe_request(row)} passed. You can now complete this in ATR.",
                 sql.NotificationLevel.INFO,
+                link=_completion_link(row),
+                link_text="Complete it here",
             )
         return
     if await _record_outcome(request_id, sql.ApprovalStatus.REJECTED, vote_outcome, permalink):
         await notify(
             row.requested_by,
-            f"The CAP approval vote to {row.action.value} project {row.project_key} did not pass "
-            f"(outcome: {vote_outcome}).",
+            f"The CAP approval vote to {_describe_request(row)} did not pass (outcome: {vote_outcome}).",
             sql.NotificationLevel.WARNING,
         )
+
+
+def _completion_link(row: sql.ApprovalRequest) -> str:
+    # The page carrying the button that completes this approval
+    if (row.action == sql.ApprovalAction.ARCHIVE_RELEASE) and (row.release_version is not None):
+        return f"/file/{row.project_key}/{row.release_version}"
+    return "/projects"
+
+
+def _describe_request(row: sql.ApprovalRequest) -> str:
+    if row.action == sql.ApprovalAction.ARCHIVE_RELEASE:
+        return f"archive release {row.project_key} {row.release_version}"
+    return f"{row.action.value} project {row.project_key}"
 
 
 async def _record_outcome(
@@ -109,7 +128,7 @@ async def _reschedule_or_fail(task_args: args.CapApprovalResolveArgs, row: sql.A
     if await _record_outcome(task_args.approval_request_id, sql.ApprovalStatus.FAILED, None, None, error=error):
         await notify(
             row.requested_by,
-            f"ATR could not resolve the CAP approval vote to {row.action.value} project {row.project_key}: {error}.",
+            f"ATR could not resolve the CAP approval vote to {_describe_request(row)}: {error}.",
             sql.NotificationLevel.ERROR,
         )
 

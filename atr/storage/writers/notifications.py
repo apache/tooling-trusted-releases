@@ -39,11 +39,15 @@ class FoundationCommitter:
         self,
         message: str,
         level: sql.NotificationLevel = sql.NotificationLevel.ERROR,
+        link: str | None = None,
+        link_text: str | None = None,
     ) -> sql.Notification:
         notification = sql.Notification(
             asf_uid=self.__asf_uid,
             message=_normalised_message(message),
             level=level,
+            link=link,
+            link_text=link_text,
         )
         self.__data.add(notification)
         await self.__data.commit()
