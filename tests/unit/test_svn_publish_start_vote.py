@@ -19,12 +19,15 @@ import unittest.mock as mock
 from types import SimpleNamespace
 from typing import Final
 
+import pytest
+
 import atr.config as config
 import atr.models.args as args
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post.voting as voting_post
 import atr.shared.voting as voting_shared
+import atr.storage as storage
 import atr.storage.writers.vote as vote_writer
 
 INTERNAL_PUBLISH_URL: Final[str] = "https://internal.example.invalid/repos/dist/atr"
@@ -105,6 +108,53 @@ def test_initiate_args_carry_publish_fields() -> None:
     assert json_dump["download_path_suffix"] == "example-1.0"
     assert restored.automatic_publish_when_resolved is True
     assert str(restored.download_path_suffix) == "example-1.0"
+
+
+async def test_start_rejects_automatic_publish_for_expedited(monkeypatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.commit = mock.AsyncMock()
+    data.rollback = mock.AsyncMock()
+    committee = SimpleNamespace(key="example", is_podling=False, committee_members=["alice"])
+    release = SimpleNamespace(
+        key="example-1.0",
+        project_key="example",
+        project=SimpleNamespace(status=sql.ProjectStatus.ACTIVE, is_active=True),
+        committee=committee,
+        expedited=True,
+        podling_thread_id=None,
+    )
+    data.project = mock.MagicMock(
+        return_value=SimpleNamespace(get=mock.AsyncMock(return_value=SimpleNamespace(committee=committee)))
+    )
+    release_writer = SimpleNamespace(
+        start_vote_no_commit=mock.AsyncMock(
+            return_value=(release, 1, sql.VoteMode.TRUSTED, safe.RevisionNumber("00001"))
+        ),
+    )
+    write_as = SimpleNamespace(release=release_writer, append_to_audit_log=mock.MagicMock())
+    writer = object.__new__(vote_writer.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "alice"
+
+    with pytest.raises(storage.AccessError) as exc_info:
+        await writer.start(
+            "dev@example.apache.org",
+            safe.ProjectKey("example"),
+            safe.VersionKey("1.0"),
+            0,
+            "[VOTE] Release example 1.0",
+            "Please vote.",
+            "Alice",
+            release=release,
+            promote=True,
+            automatic_publish_when_resolved=True,
+        )
+
+    assert exc_info.value.status == 403
+    data.rollback.assert_awaited_once()
 
 
 def test_start_voting_form_publish_on() -> None:

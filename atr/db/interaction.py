@@ -563,6 +563,27 @@ def project_order_key(project: sql.Project, latest_release: datetime.datetime | 
     return (not is_main, recency, project.display_name.lower())
 
 
+async def release_completed_svn_publish_task(
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    caller_data: db.Session | None = None,
+) -> sql.Task | None:
+    via = sql.validate_instrumented_attribute
+    async with db.ensure_session(caller_data) as data:
+        query = (
+            sqlmodel.select(sql.Task)
+            .where(sql.Task.project_key == str(project_key))
+            .where(sql.Task.version_key == str(version_key))
+            .where(sql.Task.task_type == sql.TaskType.SVN_PUBLISH)
+            .where(sql.Task.status == sql.TaskStatus.COMPLETED)
+            .order_by(via(sql.Task.added).desc())
+        )
+        for task in (await data.execute(query)).scalars().all():
+            if _svn_publish_result(task) is not None:
+                return task
+        return None
+
+
 async def release_completed_svn_publish_task_for_revision(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

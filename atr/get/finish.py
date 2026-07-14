@@ -242,6 +242,12 @@ async def _render_page(
     page.append(_render_release_card(release, announce_disable_message))
 
     page.h2["Distribute on third party platforms"]
+    if release.is_embargoed:
+        page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
+            "This is an expedited security release, and is embargoed. Distributing on third party platforms"
+            " makes the release files public, which breaks the embargo. Please ensure that you have the"
+            " authority to lift the embargo before distributing. This action is not reversible."
+        ]
     page.p[
         "During this phase you should distribute release artifacts to your package distribution networks "
         "such as Maven Central, PyPI, or Docker Hub."
@@ -272,6 +278,13 @@ async def _render_page(
                 )
                 download_path_suffix = str(suffix) if suffix is not None else ""
             page.h2["Publish to SVN"]
+            if release.is_embargoed:
+                page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
+                    "This is an expedited security release, and is embargoed. Publishing to SVN copies the"
+                    " release files to the public distribution area, which breaks the embargo. Please ensure"
+                    " that you have the authority to lift the embargo before publishing. This action is not"
+                    " reversible."
+                ]
             await form.render_block(
                 page,
                 shared.finish.PublishToSvnForm,

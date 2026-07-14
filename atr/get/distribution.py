@@ -190,13 +190,16 @@ async def stage_record(
 
 async def _automate_form_page(project: safe.ProjectKey, version: safe.VersionKey, staging: bool) -> str:
     """Helper to render the distribution automation form page."""
-    await shared.distribution.release_validated(project, version, staging=staging)
+    release = await shared.distribution.release_validated(project, version, staging=staging)
 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
 
     title = "Create a staging distribution" if staging else "Create a distribution"
     block.h1[title]
+
+    if (not staging) and release.is_embargoed:
+        _render_embargo_banner(block)
 
     block.p[
         "Create a distribution of ",
@@ -266,13 +269,16 @@ async def _get_page_data(
 
 async def _record_form_page(project: safe.ProjectKey, version: safe.VersionKey, staging: bool) -> str:
     """Helper to render the distribution recording form page."""
-    await shared.distribution.release_validated(project, version, staging=staging)
+    release = await shared.distribution.release_validated(project, version, staging=staging)
 
     block = htm.Block()
     render.html_nav_phase(block, str(project), str(version), staging=staging)
 
     title = "Record a manual staging distribution" if staging else "Record a manual distribution"
     block.h1[title]
+
+    if (not staging) and release.is_embargoed:
+        _render_embargo_banner(block)
 
     block.p[
         "Record a manual distribution of ",
@@ -355,6 +361,14 @@ def _render_distribution_tasks(
                 )["Refresh"],
             ]
         )
+
+
+def _render_embargo_banner(block: htm.Block) -> None:
+    block.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
+        "This is an expedited security release, and is embargoed. Distributing on third party platforms"
+        " makes the release files public, which breaks the embargo. Please ensure that you have the"
+        " authority to lift the embargo before distributing. This action is not reversible."
+    ]
 
 
 def _render_task(task: sql.Task) -> htm.Element:

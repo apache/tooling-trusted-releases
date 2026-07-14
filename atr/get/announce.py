@@ -105,6 +105,10 @@ async def selected(
         session.uid, committee_key=util.unwrap(committee.key), project=release.project
     )
 
+    embargo_message = None
+    if release.is_embargoed:
+        embargo_message = await _embargo_message(release)
+
     content = await _render_page(
         release=release,
         permitted_recipients=permitted_recipients,
@@ -114,6 +118,7 @@ async def selected(
         default_download_path_value=default_download_path_value,
         download_path_description=f"The URL will be {description_download_prefix} plus this suffix",
         preview_url=preview_url,
+        embargo_message=embargo_message,
     )
 
     return await template.blank(
@@ -121,6 +126,44 @@ async def selected(
         description=f"Announce and publish {release.project.display_name} {release.version} as a release.",
         content=content,
         javascripts=["announce-confirm"],
+    )
+
+
+async def _embargo_message(release: sql.Release) -> str:
+    if any((not d.staging) and (not d.pending) for d in release.distributions):
+        return (
+            "This is an expedited security release. The embargo was already lifted when the release was"
+            " distributed on a third party platform. Submitting this form sends the public announcement."
+            " This action is not reversible."
+        )
+    if not config.get().SVN_PUBLISH_URL:
+        return (
+            "This is an expedited security release, and is embargoed. The embargo is broken when the release"
+            " is distributed on a third party platform, or when this form is submitted, whichever happens"
+            " first. Please ensure that you have the authority to lift the embargo before proceeding. This"
+            " action is not reversible."
+        )
+    completed = await interaction.release_completed_svn_publish_task(release.safe_project_key, release.safe_version_key)
+    if completed is not None:
+        return (
+            "This is an expedited security release. The embargo was already lifted when the release files"
+            " were published to the public SVN distribution area. Submitting this form sends the public"
+            " announcement. This action is not reversible."
+        )
+    in_flight = await interaction.release_in_flight_svn_publish_task(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if in_flight is not None:
+        return (
+            "This is an expedited security release. The release files are currently being published to the"
+            " public SVN distribution area, which breaks the embargo. Submitting this form sends the public"
+            " announcement. This action is not reversible."
+        )
+    return (
+        "This is an expedited security release, and is embargoed. The embargo is broken when the release"
+        " files are published to SVN, when the release is distributed on a third party platform, or when"
+        " this form is submitted, whichever happens first. Please ensure that you have the authority to"
+        " lift the embargo before proceeding. This action is not reversible."
     )
 
 
@@ -279,6 +322,7 @@ async def _render_page(
     default_download_path_value: str,
     download_path_description: str,
     preview_url: str,
+    embargo_message: str | None,
 ) -> htm.Element:
     """Render the announce page."""
     page = htm.Block()
@@ -315,12 +359,8 @@ async def _render_page(
         return page.collect()
 
     page.p["This form will send an announcement to the selected recipients."]
-    if release.is_embargoed:
-        page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
-            "This is an expedited security release, and is embargoed up until the point that this form is"
-            " submitted. Please ensure that you have the authority to lift the embargo before submitting the"
-            " form. This action is not reversible."
-        ]
+    if embargo_message is not None:
+        page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[embargo_message]
     await _render_announce_form(
         page,
         release,

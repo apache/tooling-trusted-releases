@@ -384,7 +384,6 @@ class ReleaseManager(CommitteeParticipant):
                 permitted_recipients = [email_to]
                 notify_when_finished = False
                 automatic_resolve_when_finished = False
-                automatic_publish_when_resolved = False
                 download_path_suffix = None
             if notify_when_finished and (vote_mode != sql.VoteMode.TRUSTED):
                 raise storage.AccessError("Vote end reminders are only available in Trusted Vote mode", status=403)
@@ -398,6 +397,10 @@ class ReleaseManager(CommitteeParticipant):
                     status=403,
                 )
             if automatic_publish_when_resolved:
+                if release.expedited:
+                    raise storage.AccessError(
+                        "Automatic SVN publish is not available for expedited releases", status=403
+                    )
                 if not config.get().SVN_PUBLISH_URL:
                     raise storage.AccessError("Automatic SVN publish is not available on this server", status=403)
                 if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
