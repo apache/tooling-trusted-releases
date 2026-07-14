@@ -49,6 +49,7 @@ import werkzeug.exceptions as exceptions
 import werkzeug.routing as routing
 
 import atr
+import atr.analysis as analysis
 import atr.blueprints as blueprints
 import atr.cache as cache
 import atr.config as config
@@ -310,6 +311,8 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "is_admin_fn": user.is_admin,
             "is_viewing_as_admin_fn": util.is_user_viewing_as_admin,
             "is_committee_member_fn": user.is_committee_member,
+            "is_cyclonedx_json_fn": analysis.is_cyclonedx_json,
+            "is_cyclonedx_xml_fn": analysis.is_cyclonedx_xml,
             "is_test_mode": config.is_test_mode(),
             "post": post,
             "static_url": util.static_url,

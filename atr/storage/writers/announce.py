@@ -642,7 +642,7 @@ class ReleaseManager(CommitteeParticipant):
                     checksum_path = candidate
                     break
             sbom_path: str | None = None
-            for suffix in (".cdx.json", ".cdx.xml"):
+            for suffix in analysis.SBOM_SUFFIXES:
                 candidate = f"{rel}{suffix}"
                 if candidate in rel_paths:
                     sbom_path = candidate

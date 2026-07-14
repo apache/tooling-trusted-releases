@@ -111,9 +111,9 @@ def test_matchers_from_policy_empty(tmp_path):
     assert binary_matcher is None
 
 
-async def test_maven_cyclonedx_sbom_classified_as_metadata():
+async def test_maven_cyclonedx_sbom_classified_as_sbom():
     path = safe.RelPath("atr-maven-plugin-1.0.0-alpha-1-cyclonedx.json")
-    assert (await classify.classify(path)) == classify.FileType.METADATA
+    assert (await classify.classify(path)) == classify.FileType.SBOM
 
 
 async def test_metadata_suffix_detected():
@@ -166,6 +166,47 @@ async def test_npm_content_marker_ignored_when_package_json_malformed(tmp_path):
     (package_dir / "package.json").write_text("{ not json")
     result = await classify.classify(path, archive_cache_dir=safe.StatePath(cache_dir))
     assert result == classify.FileType.SOURCE
+
+
+async def test_sbom_checksum_classified_as_metadata():
+    path = safe.RelPath("apache-widget-1.0.tar.gz.cdx.json.sha512")
+    assert (await classify.classify(path)) == classify.FileType.METADATA
+
+
+async def test_sbom_classified_as_sbom():
+    path = safe.RelPath("apache-widget-1.0.tar.gz.cdx.json")
+    assert (await classify.classify(path)) == classify.FileType.SBOM
+
+
+async def test_sbom_content_marker_classifies_unsuffixed_json_as_sbom(tmp_path):
+    path = safe.RelPath("bom.json")
+    (tmp_path / "bom.json").write_text(json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6"}))
+    result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
+    assert result == classify.FileType.SBOM
+
+
+async def test_sbom_content_marker_classifies_unsuffixed_xml_as_sbom(tmp_path):
+    path = safe.RelPath("bom.xml")
+    (tmp_path / "bom.xml").write_text('<?xml version="1.0"?><bom xmlns="http://cyclonedx.org/schema/bom/1.6" />')
+    result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
+    assert result == classify.FileType.SBOM
+
+
+async def test_sbom_content_marker_ignores_unrelated_json(tmp_path):
+    path = safe.RelPath("package.json")
+    (tmp_path / "package.json").write_text(json.dumps({"name": "widget", "version": "1.0.0"}))
+    result = await classify.classify(path, base_path=safe.StatePath(tmp_path))
+    assert result != classify.FileType.SBOM
+
+
+async def test_sbom_signature_classified_as_metadata():
+    path = safe.RelPath("apache-widget-1.0.tar.gz.cdx.json.asc")
+    assert (await classify.classify(path)) == classify.FileType.METADATA
+
+
+async def test_sbom_xml_classified_as_sbom():
+    path = safe.RelPath("apache-widget-1.0.tar.gz.cdx.xml")
+    assert (await classify.classify(path)) == classify.FileType.SBOM
 
 
 async def test_source_matcher_wins_over_npm_content_marker(tmp_path):

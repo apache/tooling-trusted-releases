@@ -23,6 +23,7 @@ import aiofiles.os
 import asfquart.base as base
 import quart
 
+import atr.analysis as analysis
 import atr.blueprints.post as post
 import atr.db.interaction as interaction
 import atr.form as form
@@ -261,9 +262,9 @@ async def sbomconvert(
     """
     rel_path = file_path.as_path()
 
-    # Check that the file is a .cdx.xml file before continuing
-    if not rel_path.name.endswith(".cdx.xml"):
-        raise base.ASFQuartException(f"SBOM converter requires .cdx.xml file. Received: {rel_path.name}", errorcode=400)
+    # Check that the file is an XML SBOM before continuing
+    if not analysis.is_cyclonedx_xml(rel_path.name):
+        raise base.ASFQuartException(f"SBOM converter requires an XML SBOM. Received: {rel_path.name}", errorcode=400)
 
     try:
         description = "SBOM conversion through web interface"
@@ -272,7 +273,8 @@ async def sbomconvert(
 
             async def modify(path: safe.StatePath, old_rev: sql.Revision | None) -> None:
                 path_in_new_revision = path / rel_path
-                sbom_path_rel = rel_path.with_suffix(".cdx.json").name
+                # Swap only the trailing .xml, so .cdx.xml becomes .cdx.json rather than .cdx.cdx.json
+                sbom_path_rel = rel_path.name.removesuffix(".xml") + ".json"
                 sbom_path_in_new_revision = path / rel_path.with_name(sbom_path_rel)
 
                 # Check that the source file exists in the new revision

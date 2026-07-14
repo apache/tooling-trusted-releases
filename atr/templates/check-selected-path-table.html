@@ -66,6 +66,8 @@
               <span class="atr-classification-badge" title="Source artifact">src</span>
             {% elif file_type == "metadata" %}
               <span class="atr-classification-badge" title="Metadata file">meta</span>
+            {% elif file_type == "sbom" %}
+              <span class="atr-classification-badge" title="SBOM">sbom</span>
               {# elif file_type == "binary" #}
             {% else %}
               <span class="atr-classification-badge" title="Binary artifact">bin</span>
@@ -114,7 +116,7 @@
                   <button type="submit" class="btn btn-sm btn-outline-primary">Import keys</button>
                 </form>
               {% endif %}
-              {% if path.as_path().suffixes[-2:] == [".cdx", ".json"] %}
+              {% if is_cyclonedx_json_fn(path.as_path().name) %}
                 <a href="{{ as_url(get.sbom.report, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">SBOM report</a>
               {% endif %}

@@ -116,6 +116,13 @@ _DEFAULT_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".jar", ".whl"})
 # so they never identify a release on their own
 _PACKAGE_BINARY_EXTENSIONS: Final[frozenset[str]] = frozenset({".rpm", ".deb", ".msi", ".dmg", ".exe", ".apk"})
 
+# An SBOM that doesn't carry one of the conventional suffixes still declares itself in
+# its first few bytes, so we sniff the head of anything that could plausibly be one
+_SBOM_CONTENT_SUFFIXES: Final[frozenset[str]] = frozenset({".json", ".xml"})
+_SBOM_CONTENT_READ_SIZE: Final[int] = 8192
+_SBOM_JSON_RE: Final[re.Pattern[bytes]] = re.compile(rb'"bomFormat"\s*:\s*"CycloneDX"')
+_SBOM_XML_RE: Final[re.Pattern[bytes]] = re.compile(rb"http://cyclonedx\.org/schema/bom")
+
 
 class FileType(enum.Enum):
     BINARY = "binary"
@@ -123,6 +130,7 @@ class FileType(enum.Enum):
     DOCS = "docs"
     METADATA = "metadata"
     SOURCE = "source"
+    SBOM = "sbom"
 
 
 def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, int]:
@@ -145,18 +153,21 @@ def archive_marker_counts(stem: str, path: pathlib.PurePath) -> tuple[int, int, 
 
 
 def classify_path(path: pathlib.PurePath) -> FileType:
-    # The path-only half of classify(): no policy matchers and no looking inside
-    # the archive, so it works when all we have is a path (a find-ls dump, or an
-    # SVN commit payload). The marker counts and tie-breaks are the same, so a
-    # path classified here lands the same as it would through the full classify().
+    # The path-only half of classify(): no policy matchers and no reading of file
+    # content, so it works when all we have is a path (a find-ls dump, or an SVN
+    # commit payload). The marker counts and tie-breaks are the same, so a path
+    # classified here lands the same as it would through the full classify(), give
+    # or take an SBOM that only its content would give away.
     name = path.name
     if (name in analysis.DISALLOWED_FILENAMES) or (path.suffix in analysis.DISALLOWED_SUFFIXES):
         return FileType.DISALLOWED
+    if analysis.is_cyclonedx(name):
+        return FileType.SBOM
+    if analysis.is_sbom_metadata(name):
+        return FileType.METADATA
     path_str = str(path)
     search = re.search(analysis.extension_pattern(), path_str)
     if search and search.group("metadata"):
-        return FileType.METADATA
-    if any(path_str.endswith(suffix) for suffix in analysis.STANDALONE_METADATA_SUFFIXES):
         return FileType.METADATA
     if (not search) or (not search.group("artifact")):
         return FileType.BINARY
@@ -172,18 +183,18 @@ async def classify(
     archive_cache_dir: safe.StatePath | None = None,
     _project_key: safe.ProjectKey | None = None,
 ) -> FileType:
-    if (path.as_path().name in analysis.DISALLOWED_FILENAMES) or (
-        path.as_path().suffix in analysis.DISALLOWED_SUFFIXES
-    ):
+    name = path.as_path().name
+    if (name in analysis.DISALLOWED_FILENAMES) or (path.as_path().suffix in analysis.DISALLOWED_SUFFIXES):
         return FileType.DISALLOWED
+
+    sbom_marker = await _sbom_markers(path, base_path)
+    if sbom_marker is not None:
+        return sbom_marker
 
     path_str = str(path)
 
     search = re.search(analysis.extension_pattern(), path_str)
     if search and search.group("metadata"):
-        return FileType.METADATA
-
-    if any(path_str.endswith(s) for s in analysis.STANDALONE_METADATA_SUFFIXES):
         return FileType.METADATA
 
     if (not search) or (not search.group("artifact")):
@@ -284,6 +295,18 @@ def _get_stem_tokens(name: str) -> frozenset[str]:
     return frozenset(token.lower() for token in _TOKEN_SPLIT_RE.split(name) if token)
 
 
+async def _is_sbom_content(path: safe.RelPath, base_path: safe.StatePath) -> bool:
+    if path.as_path().suffix.lower() not in _SBOM_CONTENT_SUFFIXES:
+        return False
+    full_path = (base_path / path).path
+    try:
+        async with aiofiles.open(full_path, "rb") as f:
+            head = await f.read(_SBOM_CONTENT_READ_SIZE)
+    except OSError:
+        return False
+    return bool(_SBOM_JSON_RE.search(head) or _SBOM_XML_RE.search(head))
+
+
 async def _npm_content_marker(archive_cache_dir: safe.StatePath) -> FileType | None:
     try:
         entries = [name for name in await aiofiles.os.listdir(archive_cache_dir) if not name.startswith("._")]
@@ -315,6 +338,17 @@ async def _npm_content_marker(archive_cache_dir: safe.StatePath) -> FileType | N
     if npm_info is None:
         return None
     return FileType.BINARY
+
+
+async def _sbom_markers(path: safe.RelPath, base_path: safe.StatePath | None) -> FileType | None:
+    name = path.as_path().name
+    if analysis.is_cyclonedx(name):
+        return FileType.SBOM
+    if analysis.is_sbom_metadata(name):
+        return FileType.METADATA
+    if (base_path is not None) and await _is_sbom_content(path, base_path):
+        return FileType.SBOM
+    return None
 
 
 def _src_path_source(ptokens: frozenset[str]) -> bool:

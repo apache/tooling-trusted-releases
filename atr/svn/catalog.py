@@ -43,7 +43,6 @@ _RELEASE_PREFIX: Final[str] = "release/"
 # Companion files paired to an artifact by basename, strongest first
 _SIGNATURE_SUFFIXES: Final[tuple[str, ...]] = (".asc", ".sig")
 _CHECKSUM_SUFFIXES: Final[tuple[str, ...]] = (".sha512", ".sha256", ".sha1", ".sha", ".mds", ".md5")
-_SBOM_SUFFIXES: Final[tuple[str, ...]] = (".cdx.json", ".cdx.xml")
 
 # A release resolved against ATR's projects, ready to hand to the system actor
 type _ResolvedRelease = tuple[safe.ProjectKey, safe.VersionKey, list[release.ArtifactInput]]
@@ -132,7 +131,7 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
                 download_path_suffix=dirpath,
                 signature_path=_companion(siblings, name, _SIGNATURE_SUFFIXES),
                 checksum_path=_companion(siblings, name, _CHECKSUM_SUFFIXES),
-                sbom_path=_companion(siblings, name, _SBOM_SUFFIXES),
+                sbom_path=_companion(siblings, name, analysis.SBOM_SUFFIXES),
             )
         )
     return artifacts

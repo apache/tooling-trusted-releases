@@ -113,6 +113,10 @@ METADATA_SUFFIXES: Final[list[str]] = [
     "sig",
 ]
 
+# Every SBOM extension we detect, JSON before XML, so this doubles as the preference
+# order when we pair an SBOM to the artifact it describes
+SBOM_SUFFIXES: Final[tuple[str, ...]] = CYCLONEDX_JSON_SUFFIXES + CYCLONEDX_XML_SUFFIXES
+
 # .license is used in high volume in netbeans
 SKIPPABLE_SUFFIXES: Final[list[str]] = [
     ".bak",
@@ -131,7 +135,10 @@ SKIPPABLE_SUFFIXES: Final[list[str]] = [
     ".yaml",
 ]
 
-STANDALONE_METADATA_SUFFIXES: Final[frozenset[str]] = frozenset(CYCLONEDX_JSON_SUFFIXES + CYCLONEDX_XML_SUFFIXES)
+# Metadata that arrives without an artifact suffix in front of it, so extension_pattern()
+# can't see it. Every SBOM is shaped this way, but not everything shaped this way need be
+# an SBOM
+STANDALONE_METADATA_SUFFIXES: Final[frozenset[str]] = frozenset(SBOM_SUFFIXES)
 
 # Should perhaps not include javadoc
 # app
@@ -356,6 +363,17 @@ def is_cyclonedx_json(name: str) -> bool:
 
 def is_cyclonedx_xml(name: str) -> bool:
     return name.endswith(CYCLONEDX_XML_SUFFIXES)
+
+
+def is_sbom_metadata(name: str) -> bool:
+    # A signature or checksum belonging to an SBOM, e.g. apache-example-1.0.tar.gz.cdx.json.asc.
+    # These are invisible to extension_pattern(), which wants an artifact suffix immediately
+    # before the metadata one, and .json is not an artifact suffix
+    for suffix in METADATA_SUFFIXES:
+        base = name.removesuffix("." + suffix)
+        if (base != name) and is_cyclonedx(base):
+            return True
+    return False
 
 
 def is_skippable(path: pathlib.Path) -> bool:
