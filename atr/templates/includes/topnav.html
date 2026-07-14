@@ -295,11 +295,6 @@
               </li>
               <li>
                 <a class="dropdown-item"
-                   href="{{ as_url(admin.keys_regenerate_all_get) }}"
-                   {% if request.endpoint == 'atr_admin_keys_regenerate_all_get' %}class="active"{% endif %}><i class="bi bi-key"></i> Regenerate all keys</a>
-              </li>
-              <li>
-                <a class="dropdown-item"
                    href="{{ as_url(admin.keys_update_get) }}"
                    {% if request.endpoint == 'atr_admin_keys_update_get' %}class="active"{% endif %}><i class="bi bi-key"></i> Update keys</a>
               </li>

@@ -67,7 +67,6 @@ import atr.shared.catalogue_diff as catalogue_diff
 import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.storage as storage
-import atr.storage.outcome as outcome
 import atr.tasks as tasks
 import atr.template as template
 import atr.util as util
@@ -1226,53 +1225,6 @@ async def keys_check_post(
         description="Check public signing key details",
         content=page.collect(),
     )
-
-
-@admin.typed
-async def keys_regenerate_all_get(
-    _session: web.Committer, _keys_regenerate_all: Literal["keys/regenerate-all"]
-) -> str | web.WerkzeugResponse:
-    """
-    URL: GET /keys/regenerate-all
-
-    Display the form to regenerate KEYS files.
-    """
-    rendered_form = await form.render(
-        model_cls=form.Empty,
-        submit_label="Re-generate",
-        empty=True,
-    )
-    return await template.render(
-        "admin-form.html",
-        title="Regenerate KEYS files",
-        description="Regenerate KEYS files",
-        header="Regenerate all KEYS files",
-        form=rendered_form,
-    )
-
-
-@admin.typed
-async def keys_regenerate_all_post(
-    _session: web.Committer, _keys_regenerate_all: Literal["keys/regenerate-all"], _form: form.Empty
-) -> web.QuartResponse:
-    """Regenerate the KEYS file for all committees."""
-    async with db.session() as data:
-        committee_keys = [c.key for c in await data.committee().all()]
-
-    outcomes = outcome.List[str]()
-    async with storage.write() as write:
-        for committee_key in committee_keys:
-            waca = write.as_committee_admin(committee_key)
-            keys_file_outcome, _ = await waca.keys.autogenerate_keys_file()
-            outcomes.append(keys_file_outcome)
-
-    response_lines = []
-    for ocr in outcomes.results():
-        response_lines.append(f"Regenerated: {ocr}")
-    for oce in outcomes.errors():
-        response_lines.append(f"Error regenerating: {type(oce).__name__} {oce}")
-
-    return web.TextResponse("\n".join(response_lines))
 
 
 @admin.typed
