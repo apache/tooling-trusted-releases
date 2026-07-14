@@ -313,13 +313,22 @@ def release_notification(
     project: sql.Project,
     version: str,
     released: datetime.datetime,
+    detected: bool = False,
 ) -> args.Send:
+    # A detected release is one the watcher found published in the dist area rather than
+    # one ATR made itself, so it's named as such and the body says where it came from
     host = config.get().APP_HOST
     catalogue_url = f"https://{host}/catalog/{project.key}"
 
-    subject = f"{committee.display_name} Released {project.short_display_name} {version}"
+    if detected:
+        subject = f"Detected release: {project.short_display_name} {version}"
+        provenance = "This release was detected in the distribution area; it was not published through ATR.\n\n"
+    else:
+        subject = f"{committee.display_name} Released {project.short_display_name} {version}"
+        provenance = ""
     body = (
         f"{committee.display_name} has released {project.short_display_name} {version}.\n\n"
+        f"{provenance}"
         f"Committee: {committee.display_name}\n"
         f"Project: {project.short_display_name}\n"
         f"Version: {version}\n"

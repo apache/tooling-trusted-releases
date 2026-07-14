@@ -1535,7 +1535,7 @@ class FoundationAdmin(FoundationCommitter):
             return f"Project {project_key!s} not found"
         if project.committee is None:
             return f"Project {project_key!s} has no committee"
-        notification = construct.release_notification(project.committee, project, str(version), released)
+        notification = construct.release_notification(project.committee, project, str(version), released, detected=True)
         self.__data.add(
             sql.Task(
                 status=sql.TaskStatus.QUEUED,

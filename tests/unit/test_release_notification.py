@@ -23,11 +23,11 @@ import atr.models.args as args
 import atr.models.sql as sql
 
 
-def _notification() -> args.Send:
+def _notification(detected: bool = False) -> args.Send:
     committee = sql.Committee(name="Apache Example", key="example")
     project = sql.Project(name="Apache Example", key="example")
     released = datetime.datetime(2026, 7, 3, 12, 0, 0, tzinfo=datetime.UTC)
-    return construct.release_notification(committee, project, "1.2.3", released)
+    return construct.release_notification(committee, project, "1.2.3", released, detected=detected)
 
 
 def test_release_notification_goes_to_the_releases_list_from_noreply():
@@ -49,3 +49,21 @@ def test_release_notification_body_carries_the_version_and_a_catalogue_link():
 
     assert "1.2.3" in send.body
     assert "/catalog/example" in send.body
+
+
+def test_detected_release_is_named_in_the_subject():
+    send = _notification(detected=True)
+
+    assert send.subject == "Detected release: Example 1.2.3"
+
+
+def test_a_detected_release_states_not_managed():
+    send = _notification(detected=True)
+
+    assert "it was not published through ATR" in send.body
+
+
+def test_managed_release_not_detected_text():
+    send = _notification()
+
+    assert "detected" not in send.body.lower()
