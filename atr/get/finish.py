@@ -31,6 +31,7 @@ import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.announce as announce
 import atr.get.distribution as distribution
+import atr.get.docs as docs
 import atr.get.download as download
 import atr.get.file as file
 import atr.get.root as root
@@ -240,6 +241,22 @@ async def _render_page(
 
     # Release info card
     page.append(_render_release_card(release, announce_disable_message))
+
+    page.p[
+        "On this page you should do three things: 1. publish to SVN ",
+        htm.code["dist/atr"],
+        " if you did not already, and then ",
+        htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
+            "manually ",
+            htm.code["svn mv"],
+            " the results",
+        ],
+        " to ",
+        htm.code["dist/release"],
+        "; 2. optionally record third party distributions that you made; and then, when ready, 3. use ",
+        htm.strong["Publish and announce"],
+        " above to complete the process.",
+    ]
 
     page.h2["Distribute on third party platforms"]
     if release.is_embargoed:
