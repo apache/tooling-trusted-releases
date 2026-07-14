@@ -25,7 +25,6 @@ import pytest
 import atr.models.attestable as attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage.datatypes as datatypes
 import atr.storage.writers.release as release
 
 
@@ -129,11 +128,12 @@ async def test_generate_hash_file_creates_hash_file_and_returns_provenance(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_generate_hash_file_requires_signature_file(tmp_path: pathlib.Path):
+async def test_generate_hash_file_without_signature_file(tmp_path: pathlib.Path):
     rel_path = pathlib.Path("artifact.tar.gz")
     (tmp_path / rel_path).write_bytes(b"payload")
     state_path = safe.StatePath(tmp_path)
     old_revision = SimpleNamespace(safe_number=safe.RevisionNumber("00001"))
+    captured: dict[str, object] = {}
 
     async def create_revision_with_quarantine(
         project_key: safe.ProjectKey,
@@ -146,23 +146,40 @@ async def test_generate_hash_file_requires_signature_file(tmp_path: pathlib.Path
     ) -> None:
         if modify is None:
             raise RuntimeError("Expected modify callback")
-        await modify(state_path, old_revision)
+        captured["path_provenance"] = await modify(state_path, old_revision)
 
     participant = _make_participant(create_revision_with_quarantine)
 
-    with mock.patch.object(
-        release,
-        "_signature_provenance_metadata_for",
-        new=mock.AsyncMock(),
-    ) as signature_metadata_mock:
-        with pytest.raises(datatypes.FailedError, match=r"requires a detached OpenPGP signature"):
-            await participant.generate_hash_file(
-                safe.ProjectKey("proj"),
-                safe.VersionKey("1.0"),
-                rel_path,
-            )
+    with (
+        mock.patch.object(
+            release,
+            "_signature_provenance_metadata_for",
+            new=mock.AsyncMock(),
+        ) as signature_metadata_mock,
+        mock.patch.object(
+            release.hashes,
+            "compute_sha512_and_content_hash",
+            new=mock.AsyncMock(return_value=("sha512hex", "blake3:source")),
+        ),
+    ):
+        await participant.generate_hash_file(
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            rel_path,
+        )
 
     assert signature_metadata_mock.await_count == 0
+    assert (tmp_path / "artifact.tar.gz.sha512").read_text() == "sha512hex  artifact.tar.gz\n"
+    assert captured["path_provenance"] == {
+        safe.RelPath("artifact.tar.gz.sha512"): attestable.ProvenanceV2(
+            generator=attestable.GeneratorV2.SHA512_FROM_CONTENT,
+            metadata={
+                "initiated_by": "alice",
+                "source_content_hashes": {"artifact.tar.gz": "blake3:source"},
+                "source_paths": ["artifact.tar.gz"],
+            },
+        )
+    }
 
 
 @pytest.mark.asyncio
@@ -203,7 +220,7 @@ async def test_signature_provenance_metadata_for_filters_unknown_fields():
 
 
 @pytest.mark.asyncio
-async def test_signature_provenance_metadata_for_requires_completed_check():
+async def test_signature_provenance_metadata_for_without_completed_check():
     parent_revision = SimpleNamespace(safe_number=safe.RevisionNumber("00005"))
     session = CheckResultSession([])
 
@@ -211,30 +228,30 @@ async def test_signature_provenance_metadata_for_requires_completed_check():
         mock.patch.object(release.db, "session", return_value=session),
         mock.patch.object(release.log, "info") as log_info_mock,
     ):
-        with pytest.raises(datatypes.FailedError, match=r"has not completed yet"):
-            await release._signature_provenance_metadata_for(
-                project_key=safe.ProjectKey("proj"),
-                version_key=safe.VersionKey("1.0"),
-                parent_revision=parent_revision,
-                signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
-            )
-    assert log_info_mock.call_count == 1
-    assert "waiting for signature verification" in log_info_mock.call_args.args[0]
-
-
-@pytest.mark.asyncio
-async def test_signature_provenance_metadata_for_requires_parent_revision():
-    with pytest.raises(datatypes.FailedError, match=r"requires a parent revision"):
-        await release._signature_provenance_metadata_for(
+        metadata = await release._signature_provenance_metadata_for(
             project_key=safe.ProjectKey("proj"),
             version_key=safe.VersionKey("1.0"),
-            parent_revision=None,
+            parent_revision=parent_revision,
             signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
         )
+    assert metadata is None
+    assert log_info_mock.call_count == 1
+    assert "proceeding without signature provenance" in log_info_mock.call_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_signature_provenance_metadata_for_requires_successful_check():
+async def test_signature_provenance_metadata_for_without_parent_revision():
+    metadata = await release._signature_provenance_metadata_for(
+        project_key=safe.ProjectKey("proj"),
+        version_key=safe.VersionKey("1.0"),
+        parent_revision=None,
+        signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
+    )
+    assert metadata is None
+
+
+@pytest.mark.asyncio
+async def test_signature_provenance_metadata_for_without_successful_check():
     parent_revision = SimpleNamespace(safe_number=safe.RevisionNumber("00005"))
     result = SimpleNamespace(
         message="No valid signature found",
@@ -248,13 +265,13 @@ async def test_signature_provenance_metadata_for_requires_successful_check():
         mock.patch.object(release.db, "session", return_value=session),
         mock.patch.object(release.log, "info") as log_info_mock,
     ):
-        with pytest.raises(datatypes.FailedError, match=r"failed: No valid signature found"):
-            await release._signature_provenance_metadata_for(
-                project_key=safe.ProjectKey("proj"),
-                version_key=safe.VersionKey("1.0"),
-                parent_revision=parent_revision,
-                signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
-            )
+        metadata = await release._signature_provenance_metadata_for(
+            project_key=safe.ProjectKey("proj"),
+            version_key=safe.VersionKey("1.0"),
+            parent_revision=parent_revision,
+            signature_rel_path=pathlib.Path("artifact.tar.gz.asc"),
+        )
+    assert metadata is None
     assert log_info_mock.call_count == 1
     assert "status=concern" in log_info_mock.call_args.args[0]
 

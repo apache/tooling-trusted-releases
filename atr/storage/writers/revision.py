@@ -334,8 +334,6 @@ async def _verify_provenance_sources_unchanged(
     # This function checks input file inodes to ensure that they match
     # If they don't match, we raise an error
     for generated_rel, provenance_entry in path_provenance.items():
-        if provenance_entry.generator != atr.models.attestable.GeneratorV2.SHA512_FROM_SIGNATURE:
-            continue
         dependency_paths = [path for path in provenance_entry.metadata.get("source_paths", []) if isinstance(path, str)]
         if (signature_path := provenance_entry.metadata.get("signature_path")) is not None:
             if isinstance(signature_path, str) and (signature_path not in dependency_paths):

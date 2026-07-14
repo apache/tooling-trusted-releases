@@ -24,9 +24,9 @@
   <h2>Tools</h2>
   <h3>Generate hash files</h3>
   <p>
-    Generate an SHA512 hash file for this file. ATR requires a detached OpenPGP
-    signature (<code>.asc</code>) alongside the file, and the signature check must
-    have completed successfully, before the SHA512 can be generated.
+    Generate an SHA512 hash file for this file. If a detached OpenPGP signature
+    (<code>.asc</code>) is present alongside the file and its check has completed
+    successfully, the signature is recorded in the provenance of the SHA512 file.
   </p>
   <div class="d-flex gap-2 mb-4">
     {{ sha512_form|safe }}

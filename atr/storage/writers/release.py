@@ -246,9 +246,9 @@ async def _signature_provenance_metadata_for(
     version_key: safe.VersionKey,
     parent_revision: sql.Revision | None,
     signature_rel_path: pathlib.Path,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     if parent_revision is None:
-        raise datatypes.FailedError("SHA512 generation requires a parent revision with a verified signature.")
+        return None
     release_key = sql.release_key(str(project_key), str(version_key))
     parent_revision_number = parent_revision.safe_number
     parent_number = str(parent_revision_number)
@@ -263,13 +263,10 @@ async def _signature_provenance_metadata_for(
     )
     if not check_results:
         log.info(
-            "SHA512 generation is waiting for signature verification"
+            "SHA512 generation proceeding without signature provenance"
             f" release={release_key} revision={parent_number} path={signature_rel_str}"
         )
-        raise datatypes.FailedError(
-            "Signature verification has not completed yet for"
-            f" {signature_rel_path.name}. Please wait for checks to finish and try again."
-        )
+        return None
     latest = check_results[0]
     latest_message = latest.message.strip() if isinstance(getattr(latest, "message", None), str) else None
     log.info(
@@ -279,14 +276,7 @@ async def _signature_provenance_metadata_for(
         f" status={latest.status.value} message={latest_message!r}"
     )
     if latest.status != sql.CheckResultStatus.NOTE:
-        if latest_message:
-            raise datatypes.FailedError(
-                f"Signature verification for {signature_rel_path.name} failed: {latest_message}"
-            )
-        raise datatypes.FailedError(
-            "Signature verification for"
-            f" {signature_rel_path.name} is {latest.status.value}; cannot generate the SHA512 yet."
-        )
+        return None
     payload = latest.data if isinstance(latest.data, dict) else {}
     metadata = {"signature_path": signature_rel_str}
     for key in ("fingerprint", "key_id", "timestamp", "username"):
@@ -674,18 +664,14 @@ class CommitteeParticipant(FoundationCommitter):
             if await aiofiles.os.path.exists(hash_path_in_new_revision):
                 raise storage.AccessError("SHA512 file already exists", status=409)
 
-            if not await aiofiles.os.path.exists(signature_path_in_new_revision):
-                raise datatypes.FailedError(
-                    "SHA512 generation requires a detached OpenPGP signature at"
-                    f" {signature_rel_path!s}. Please upload the signature first."
+            signature_metadata = None
+            if await aiofiles.os.path.exists(signature_path_in_new_revision):
+                signature_metadata = await _signature_provenance_metadata_for(
+                    project_key=project_key,
+                    version_key=version_key,
+                    parent_revision=old_rev,
+                    signature_rel_path=signature_rel_path,
                 )
-
-            signature_metadata = await _signature_provenance_metadata_for(
-                project_key=project_key,
-                version_key=version_key,
-                parent_revision=old_rev,
-                signature_rel_path=signature_rel_path,
-            )
 
             hash_value, source_content_hash = await hashes.compute_sha512_and_content_hash(path_in_new_revision.path)
 
@@ -693,16 +679,16 @@ class CommitteeParticipant(FoundationCommitter):
                 await f.write(f"{hash_value}  {rel_path.name}\n")
 
             generated_rel = safe.RelPath(str(rel_path.parent / hash_path_rel_name))
-            provenance = attestable.ProvenanceV2(
-                generator=attestable.GeneratorV2.SHA512_FROM_SIGNATURE,
-                metadata={
-                    "initiated_by": self.__asf_uid,
-                    "signature_path": signature_metadata["signature_path"],
-                    "source_content_hashes": {str(rel_path): source_content_hash},
-                    "source_paths": [str(rel_path)],
-                    **{key: value for key, value in signature_metadata.items() if (key != "signature_path")},
-                },
-            )
+            generator = attestable.GeneratorV2.SHA512_FROM_CONTENT
+            metadata: dict[str, Any] = {
+                "initiated_by": self.__asf_uid,
+                "source_content_hashes": {str(rel_path): source_content_hash},
+                "source_paths": [str(rel_path)],
+            }
+            if signature_metadata is not None:
+                generator = attestable.GeneratorV2.SHA512_FROM_SIGNATURE
+                metadata.update(signature_metadata)
+            provenance = attestable.ProvenanceV2(generator=generator, metadata=metadata)
             return {generated_rel: provenance}
 
         await self.__write_as.revision.create_revision_with_quarantine(
