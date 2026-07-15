@@ -7,6 +7,10 @@ updates:
       day: "tuesday"
     cooldown:
       default-days: 7
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
