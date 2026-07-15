@@ -238,7 +238,7 @@ class ReleaseManager(CommitteeParticipant):
                     )
             try:
                 target = util.svn_publish_target()
-                public_url = util.public_download_url(
+                public_url = util.publication_check_url(
                     committee, effective_download_path_suffix, util.DownloadFile.METADATA
                 )
             except ValueError as exc:

@@ -29,6 +29,7 @@ import atr.get.projects as projects
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -93,7 +94,7 @@ async def selected(
         default_subject_template, default_body_template, options
     )
 
-    description_download_prefix = util.public_download_url(committee, None, util.DownloadFile.METADATA)
+    description_download_prefix = paths.downloads_url(paths.committee_dist_relpath(committee))
     preview_url = util.as_url(
         post.announce.preview,
         project_key=release.project.key,

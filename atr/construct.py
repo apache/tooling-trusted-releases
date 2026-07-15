@@ -199,8 +199,6 @@ async def announce_release_default(project_key: safe.ProjectKey) -> str:
 async def announce_release_subject_and_body(
     subject: str, body: str, options: AnnounceReleaseOptions
 ) -> tuple[str, str]:
-    host = config.get().APP_HOST
-
     async with db.session() as data:
         release = await data.release(
             project_key=str(options.project_key),
@@ -219,10 +217,8 @@ async def announce_release_subject_and_body(
 
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
-    download_url = util.public_download_url(committee, None, util.DownloadFile.METADATA, host=host)
-    if options.download_path_suffix is not None:
-        download_url += f"/{options.download_path_suffix!s}"
-    download_url += "/"
+    download_relpath = paths.committee_dist_relpath(committee, options.download_path_suffix)
+    download_url = f"{paths.downloads_url(download_relpath)}/"
 
     values: _AnnounceValues = {
         "BUG_DATABASE": project.bug_database or "",
@@ -242,7 +238,6 @@ async def announce_release_subject_and_body(
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
-    values["DOWNLOAD_URL"] = util.released_dist_url(values["DOWNLOAD_URL"])
     subject = _substitute(subject, values, "announce_subject")
     body = _substitute(body, values, "announce")
     return subject, body

@@ -36,14 +36,6 @@ class CatalogProject:
     grouped: bool
 
 
-def cle_project_url(atr_host: str, project_key: str) -> str:
-    return f"https://{atr_host}/api/cle/project/{project_key}"
-
-
-def cle_release_url(atr_host: str, project_key: str, version: str) -> str:
-    return f"https://{atr_host}/api/cle/release/{project_key}/{version}"
-
-
 def assemble(
     version_method: sql.VersionMethod,
     artifacts: Sequence[sql.Artifact],
@@ -65,6 +57,14 @@ def assemble(
     return CatalogProject(versions=versions, cycles=cycles, grouped=grouped)
 
 
+def cle_project_url(atr_host: str, project_key: str) -> str:
+    return f"https://{atr_host}/api/cle/project/{project_key}"
+
+
+def cle_release_url(atr_host: str, project_key: str, version: str) -> str:
+    return f"https://{atr_host}/api/cle/release/{project_key}/{version}"
+
+
 def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.api.CatalogArtifact:
     artifact_url: str | None = None
     signature_url: str | None = None
@@ -79,7 +79,7 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
 
         def _dist_url(rel_path: str, kind: util.DownloadFile) -> str:
             relpath = directory.append(rel_path) if (directory is not None) else safe.RelPath(rel_path)
-            return util.released_dist_url(util.download_url_for_path(relpath, kind, archived=archived))
+            return util.download_url_for_path(relpath, kind, archived=archived)
 
         artifact_url = _dist_url(row.artifact_path, util.DownloadFile.ARTIFACT)
         if row.signature_path:
@@ -106,9 +106,9 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
     )
 
 
-def _grouped_layout(version_method: sql.VersionMethod) -> bool:
-    # Simple projects have only the default cycle, so they skip cycle grouping.
-    return version_method in _GROUPED_METHODS
+def _cycle_sort_key(cycle: sql.ProjectCycle) -> datetime.datetime:
+    # Most recently active cycle first.
+    return cycle.latest or datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
 
 def _cycles(
@@ -130,9 +130,9 @@ def _cycles(
     return catalog
 
 
-def _cycle_sort_key(cycle: sql.ProjectCycle) -> datetime.datetime:
-    # Most recently active cycle first.
-    return cycle.latest or datetime.datetime.min.replace(tzinfo=datetime.UTC)
+def _grouped_layout(version_method: sql.VersionMethod) -> bool:
+    # Simple projects have only the default cycle, so they skip cycle grouping.
+    return version_method in _GROUPED_METHODS
 
 
 def _lifecycle_badge(cycle: sql.ProjectCycle, now: datetime.datetime) -> str:
