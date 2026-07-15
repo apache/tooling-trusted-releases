@@ -78,6 +78,7 @@ class PathInfo(schema.Strict):
     release_level_blockers: list[sql.CheckResult] = schema.factory(list)
     release_level_concerns: list[sql.CheckResult] = schema.factory(list)
     release_level_exceptions: list[sql.CheckResult] = schema.factory(list)
+    release_level_suggestions: list[sql.CheckResult] = schema.factory(list)
     suggestions: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
 
 

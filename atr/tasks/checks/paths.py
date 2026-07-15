@@ -25,6 +25,7 @@ import aiofiles.os
 import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.classify as classify
+import atr.construct as construct
 import atr.db as db
 import atr.log as log
 import atr.models.results as results
@@ -41,9 +42,9 @@ _ALLOWED_TOP_LEVEL: Final = frozenset(
 )
 _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
-INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths"]
+INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "5"
+CHECK_VERSION: Final[str] = "6"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -115,6 +116,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     await _check_source_artifact_present(args, recorder_problems, relative_paths, base_path)
     await _check_documentation_tree(recorder_problems, relative_paths)
+    await _check_download_suffix_duplication(args, recorder_suggestions, relative_paths)
 
     return None
 
@@ -168,6 +170,58 @@ async def _check_documentation_tree(
         },
         primary_rel_path=None,
     )
+
+
+async def _check_download_suffix_duplication(
+    args: checks.FunctionArguments,
+    recorder_suggestions: checks.Recorder,
+    relative_paths: list[safe.RelPath],
+) -> None:
+    # A file whose first path component repeats a component of the policy's resolved download path
+    # suffix doubles that component in the published path - the suffix maven-3/3.10.0-rc-1 plus a
+    # 3.10.0-rc-1/... rel path lands at .../3.10.0-rc-1/3.10.0-rc-1/... Warn so the redundant top
+    # directory (or the {{VERSION}} in the template) gets dropped before the release ships
+    async with db.session() as data:
+        release = await data.release(
+            key=str(sql.release_key(args.project_key, args.version_key)),
+            _committee=True,
+            _project_release_policy=True,
+        ).demand(RuntimeError(f"Release {args.project_key} {args.version_key} not found"))
+
+    committee = release.committee
+    suffix = construct.resolve_download_path_suffix(
+        template=release.project.policy_download_path_suffix,
+        project_key=release.project.key,
+        version=str(release.version),
+        is_top_level=(committee is not None) and (release.project.key == committee.key),
+    )
+    if suffix is None:
+        return
+
+    suffix_components = frozenset(suffix.as_path().parts)
+    clashes: dict[str, int] = {}
+    for relative_path in relative_paths:
+        parts = relative_path.as_path().parts
+        if parts and (parts[0] in suffix_components):
+            clashes[parts[0]] = clashes.get(parts[0], 0) + 1
+
+    for component in sorted(clashes):
+        await recorder_suggestions.suggestion(
+            f"{clashes[component]} file(s) start with '{component}/', which the download path suffix"
+            " already contains. Consider removing this prefix.",
+            {
+                "component": component,
+                "suffix": str(suffix),
+                "count": clashes[component],
+                "details": (
+                    f"The published path would repeat '{component}': the suffix '{suffix}' plus a "
+                    f"'{component}/...' file lands at '.../{component}/{component}/...'. Consider dropping the "
+                    f"top-level '{component}/' directory from the release, or remove that component from the download "
+                    "path suffix when publishing."
+                ),
+            },
+            primary_rel_path=None,
+        )
 
 
 async def _check_metadata_rules(

@@ -324,6 +324,7 @@ def render_checks_summary(
         and (not info.release_level_concerns)
         and (not info.release_level_exceptions)
         and (not info.release_level_blockers)
+        and (not info.release_level_suggestions)
     ):
         return None
 
@@ -338,6 +339,8 @@ def render_checks_summary(
     for result in info.release_level_exceptions:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
     for result in info.release_level_blockers:
+        release_problems_by_checker.setdefault(result.checker, []).append(result)
+    for result in info.release_level_suggestions:
         release_problems_by_checker.setdefault(result.checker, []).append(result)
 
     stats_by_checker = {stat.checker: stat for stat in info.checker_stats}

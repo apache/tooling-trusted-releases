@@ -185,3 +185,5 @@ class GeneralPublic:
                 continue
             if path := suggestion.safe_primary_rel_path:
                 cs.info.suggestions.setdefault(path, []).append(suggestion)
+            else:
+                cs.info.release_level_suggestions.append(suggestion)
