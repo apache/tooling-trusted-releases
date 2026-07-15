@@ -24,11 +24,17 @@ from typing import Final
 
 _DEPLOY_BRANCHES: Final = ("main", "tertia")
 _MIGRATIONS_PREFIX: Final = "migrations/versions"
-_REMOTE_BRANCHES: Final = ("altera", "arm", "main", "sbp", "tertia")
 
 
 def main() -> None:
     sys.exit(_run())
+
+
+def _entry_immutable(entry: str, immutable: set[str]) -> bool:
+    # A name-status entry is "STATUS\tpath" (or "R100\told\tnew" for a rename), so the second field
+    # is the path being changed. Interleaved commit-hash lines from git log have no tab and fall out
+    parts = entry.split("\t")
+    return (len(parts) > 1) and (parts[1] in immutable)
 
 
 def _git_lines(*arguments: str) -> list[str]:
@@ -56,6 +62,19 @@ def _github_base() -> str | None:
     return _git_lines("merge-base", "HEAD", remote_ref)[0]
 
 
+def _immutable_paths() -> set[str]:
+    # main and tertia are the only sources of immutability: a migration is frozen once it lands on
+    # one of them. Other branches may add and remove their own migrations freely, but must never
+    # remove or alter one that already exists here
+    paths: set[str] = set()
+    for branch in _DEPLOY_BRANCHES:
+        ref = f"origin/{branch}"
+        if not _git_ok("rev-parse", "--verify", "--quiet", ref):
+            continue
+        paths.update(_git_lines("ls-tree", "-r", "--name-only", ref, "--", _MIGRATIONS_PREFIX))
+    return paths
+
+
 def _push_base() -> str | None:
     if os.environ.get("GITHUB_EVENT_NAME") != "push":
         return None
@@ -75,11 +94,14 @@ def _push_base() -> str | None:
 
 def _range_violations(base: str) -> list[str]:
     filters = ["--name-status", "--diff-filter=DMRT", "--", _MIGRATIONS_PREFIX]
-    violations = _git_lines("log", "--format=%h", base + "..HEAD", *filters)
+    entries = _git_lines("log", "--format=%h", base + "..HEAD", *filters)
     for entry in _git_lines("diff", base, "HEAD", *filters):
-        if entry not in violations:
-            violations.append(entry)
-    return violations
+        if entry not in entries:
+            entries.append(entry)
+    if not entries:
+        return []
+    immutable = _immutable_paths()
+    return [entry for entry in entries if _entry_immutable(entry, immutable)]
 
 
 def _run() -> int:
@@ -91,29 +113,19 @@ def _run() -> int:
         violations.extend(_range_violations(base))
     if not violations:
         return 0
-    print("Migrations are append only once pushed, and can never be modified, renamed, or deleted")
+    print("Migrations are append only once shipped, and can never be modified, renamed, or deleted")
     print("To correct a migration which has already shipped, add a new migration on top instead")
     for violation in violations:
         print(f"  {violation}")
     return 1
 
 
-def _shipped_paths() -> set[str]:
-    paths: set[str] = set()
-    for branch in _REMOTE_BRANCHES:
-        ref = f"origin/{branch}"
-        if not _git_ok("rev-parse", "--verify", "--quiet", ref):
-            continue
-        paths.update(_git_lines("ls-tree", "-r", "--name-only", ref, "--", _MIGRATIONS_PREFIX))
-    return paths
-
-
 def _staged_violations() -> list[str]:
     entries = _git_lines("diff", "--cached", "--name-status", "--diff-filter=DMRT", "--", _MIGRATIONS_PREFIX)
     if not entries:
         return []
-    shipped = _shipped_paths()
-    return [entry for entry in entries if entry.split("\t")[1] in shipped]
+    immutable = _immutable_paths()
+    return [entry for entry in entries if _entry_immutable(entry, immutable)]
 
 
 if __name__ == "__main__":
