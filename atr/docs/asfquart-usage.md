@@ -4,7 +4,7 @@
 
 **Prev**: `3.16.` [API documentation policy](api-documentation-policy)
 
-**Next**: (none)
+**Next**: `3.18.` [Resource management](resource-management)
 
 **Sections**:
 

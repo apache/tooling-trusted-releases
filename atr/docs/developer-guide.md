@@ -25,6 +25,7 @@
 * `3.15.` [TLS security configuration](tls-security-configuration)
 * `3.16.` [API documentation policy](api-documentation-policy)
 * `3.17.` [ASFQuart usage](asfquart-usage)
+* `3.18.` [Resource management](resource-management)
 
 **Sections**:
 
