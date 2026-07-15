@@ -15,7 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
 import datetime
+from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
@@ -38,6 +41,33 @@ def test_openpgp_key_uid_warning_flags_other_asf_uid(monkeypatch: pytest.MonkeyP
     warning_html = str(warning)
     assert "appears to belong to ASF UID bob, not alice" in warning_html
     assert "/keys/details/fp" in warning_html
+
+
+@pytest.mark.asyncio
+async def test_upload_remote_keys_uses_canonical_committee_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    committee = SimpleNamespace(key="example", is_podling=True)
+    query = SimpleNamespace(get=mock.AsyncMock(return_value=committee))
+    data = SimpleNamespace(committee=mock.Mock(return_value=query))
+
+    @contextlib.asynccontextmanager
+    async def db_session():
+        yield data
+
+    canonical_url = "https://downloads.apache.org/incubator/example/KEYS"
+    committee_keys_url = mock.Mock(return_value=canonical_url)
+    fetch = mock.AsyncMock(return_value="public keys")
+    process = mock.AsyncMock(return_value="rendered")
+    monkeypatch.setattr(keys.db, "session", db_session)
+    monkeypatch.setattr(keys.paths, "committee_keys_url", committee_keys_url)
+    monkeypatch.setattr(keys, "_fetch_keys_from_url", fetch)
+    monkeypatch.setattr(keys, "_process_keys", process)
+    monkeypatch.setattr(keys.util, "contains_private_key_text", lambda _text: False)
+
+    result = await keys._upload_remote_keys(SimpleNamespace(committee="example"))
+
+    assert result == "rendered"
+    committee_keys_url.assert_called_once_with(committee)
+    fetch.assert_awaited_once_with(canonical_url)
 
 
 def _public_key(apache_uid: str | None) -> sql.PublicSigningKey:

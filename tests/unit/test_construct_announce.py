@@ -170,6 +170,60 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
     assert body == "https://downloads.apache.org/downloads/myproject/"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("is_podling", "expected_url"),
+    [
+        (False, "https://downloads.apache.org/myproject/KEYS"),
+        (True, "https://downloads.apache.org/incubator/myproject/KEYS"),
+    ],
+)
+async def test_start_vote_subject_and_body_uses_canonical_keys_url(
+    monkeypatch, is_podling: bool, expected_url: str
+) -> None:
+    committee = SimpleNamespace(key="myproject", is_podling=is_podling, display_name="Apache MyProject")
+    project = SimpleNamespace(
+        short_display_name="Apache MyProject",
+        key="myproject",
+        bug_database=None,
+        homepage=None,
+        repositories=[],
+    )
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
+    revision = SimpleNamespace(number="1", tag=None)
+
+    async def no_release_policy(_data, _project_key):
+        return None
+
+    monkeypatch.setattr(
+        construct.config,
+        "get",
+        lambda: SimpleNamespace(
+            APP_HOST="atr.example.invalid",
+            SVN_PUBLISH_URL="https://svn.example.invalid/repos/dist/atr",
+            SVN_DIST_PUBLIC_URL="https://dist.example.invalid/repos/dist/atr",
+        ),
+    )
+    monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
+    monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
+    monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
+
+    _subject, body = await construct.start_vote_subject_and_body(
+        "",
+        "{{KEYS_FILE}}",
+        construct.StartVoteOptions(
+            asfuid="sbp",
+            fullname="Some Body",
+            project_key=safe.ProjectKey("myproject"),
+            version_key=safe.VersionKey("1.0.0"),
+            revision_number=safe.RevisionNumber("1"),
+            vote_duration=72,
+        ),
+    )
+
+    assert body == expected_url
+
+
 def test_substitute_does_not_rescan_replacement_values() -> None:
     result = construct._substitute(
         "{{PROJECT_NAME}} {{VERSION}} {{UNKNOWN}}",

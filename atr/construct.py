@@ -22,8 +22,6 @@ import re
 from collections.abc import Mapping
 from typing import Final, Literal, TypedDict, overload
 
-import aiofiles.os
-
 import atr.config as config
 import atr.db as db
 import atr.mail as mail
@@ -389,13 +387,6 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=options.vote_duration)
     vote_end_str = f"{vote_end.day} {vote_end.strftime('%b %H:%M')} UTC"
 
-    # NOTE: The /downloads/ directory is served by the proxy front end, not by ATR
-    # Therefore there is no route handler, so we have to construct the URL manually
-    keys_file = None
-    keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
-    if await aiofiles.os.path.isfile(keys_file_path):
-        keys_file = util.public_download_url(committee, None, util.DownloadFile.METADATA, filename="KEYS", host=host)
-
     checklist_content = ""
     async with db.session() as data:
         release_policy = await db.get_project_release_policy(data, options.project_key)
@@ -425,7 +416,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "COMMITTEE": committee.display_name,
         "DURATION": str(options.vote_duration or "an unlimited number of"),
         "HOMEPAGE": project.homepage or "",
-        "KEYS_FILE": keys_file or "(Sorry, the KEYS file is missing!)",
+        "KEYS_FILE": paths.committee_keys_url(committee),
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
         "RELEASE_CHECKLIST": checklist_content,
@@ -437,7 +428,6 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
-    body_values["KEYS_FILE"] = util.released_dist_url(body_values["KEYS_FILE"])
     subject = _substitute(subject, subject_values, "vote_subject")
     body = _substitute(body, body_values, "vote")
     return subject, body

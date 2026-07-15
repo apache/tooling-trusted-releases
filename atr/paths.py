@@ -23,6 +23,12 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 
 
+def archive_download_url(relpath: safe.RelPath) -> str:
+    # archive.apache.org keeps every release ever published, including those pruned from the
+    # live mirror, so an archived release's files are served from here regardless of host.
+    return f"{constants.ARCHIVE_APACHE_URL}/{relpath}"
+
+
 def base_path_for_revision(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> safe.StatePath:
@@ -65,10 +71,9 @@ def committee_downloads_url(host: str, committee: sql.Committee) -> str:
     return f"https://{host}/downloads/{committee.key}"
 
 
-def archive_download_url(relpath: safe.RelPath) -> str:
-    # archive.apache.org keeps every release ever published, including those pruned from the
-    # live mirror, so an archived release's files are served from here regardless of host.
-    return f"{constants.ARCHIVE_APACHE_URL}/{relpath}"
+def committee_keys_url(committee: sql.Committee) -> str:
+    prefix = "incubator/" if committee.is_podling else ""
+    return downloads_url(safe.RelPath(f"{prefix}{committee.key}/KEYS"))
 
 
 def downloads_url(relpath: safe.RelPath) -> str:

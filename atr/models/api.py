@@ -793,8 +793,6 @@ class SignatureProvenanceArgs(schema.Strict):
 
 class SignatureProvenanceKey(schema.Strict):
     committee: str = schema.example("example")
-    keys_file_url: str = schema.example("https://example.apache.org/example/KEYS")
-    keys_file_sha3_256: str = schema.example("0123456789abcdef0123456789abcdef01234567")
 
 
 class SignatureProvenanceResults(schema.Strict):

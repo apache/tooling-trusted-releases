@@ -17,6 +17,7 @@
 
 import contextlib
 import hashlib
+import inspect
 import pathlib
 import unittest.mock as mock
 from collections.abc import AsyncGenerator
@@ -331,6 +332,21 @@ async def test_scoped_returns_empty_when_version_not_found() -> None:
 
 
 @pytest.mark.asyncio
+async def test_signature_provenance_requires_matched_committee(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(atr.api.exceptions.NotFound, match="No signing keys found"):
+        await _call_signature_provenance(monkeypatch, matched=False)
+
+
+@pytest.mark.asyncio
+async def test_signature_provenance_returns_database_committees(monkeypatch: pytest.MonkeyPatch) -> None:
+    result, status = await _call_signature_provenance(monkeypatch, matched=True)
+
+    assert status == 200
+    assert result["committees_with_artifact"] == [{"committee": "example"}]
+    assert result["key_asc_text"] == _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC
+
+
+@pytest.mark.asyncio
 async def test_unscoped_finds_matching_committee(tmp_path: pathlib.Path) -> None:
     committee = SimpleNamespace(key="example-pmc", is_podling=False)
     project = SimpleNamespace(key="example", committee_key="example-pmc")
@@ -385,6 +401,41 @@ async def test_unscoped_returns_empty_when_no_match(tmp_path: pathlib.Path) -> N
         result = await atr.api._match_committees([committee], args, "tester")
 
     assert result == []
+
+
+async def _call_signature_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+    matched: bool,
+) -> tuple[dict, int]:
+    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    committee = SimpleNamespace(key="example", is_podling=False)
+    stored = SimpleNamespace(
+        fingerprint=parsed_key.fingerprint.lower(),
+        ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
+        committees=[committee],
+    )
+    signature = SimpleNamespace(
+        signature_info=lambda: SimpleNamespace(
+            issuer_fingerprints={parsed_key.fingerprint.lower()},
+            issuer_key_ids=set(),
+        )
+    )
+    matched_committees = [committee] if matched else []
+
+    monkeypatch.setattr(atr.api.db, "session", _mock_session_factory(MockKeyDBSession([stored])))
+    monkeypatch.setattr(
+        atr.api.openpgp,
+        "DetachedSignature",
+        SimpleNamespace(from_armor=lambda _text: (signature, "")),
+    )
+    monkeypatch.setattr(atr.api, "_match_committees", mock.AsyncMock(return_value=matched_committees))
+    monkeypatch.setattr(atr.api, "_jwt_asf_uid", lambda: "tester")
+
+    signature_provenance = inspect.unwrap(atr.api.signature_provenance)
+    return await signature_provenance(
+        "signature/provenance",
+        _make_args("example.tar.gz.asc", "abc123"),
+    )
 
 
 def _make_args(

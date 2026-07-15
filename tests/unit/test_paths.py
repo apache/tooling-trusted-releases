@@ -54,6 +54,33 @@ def test_committee_downloads_url_for_top_level_committee() -> None:
     )
 
 
+def test_committee_keys_url_for_podling() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=True)
+
+    assert paths.committee_keys_url(committee) == "https://downloads.apache.org/incubator/myproject/KEYS"
+
+
+def test_committee_keys_url_for_top_level_committee() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=False)
+
+    assert paths.committee_keys_url(committee) == "https://downloads.apache.org/myproject/KEYS"
+
+
+def test_committee_keys_url_ignores_application_and_svn_hosts(monkeypatch) -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=False)
+    monkeypatch.setattr(
+        paths.config,
+        "get",
+        lambda: types.SimpleNamespace(
+            APP_HOST="atr.example.invalid",
+            SVN_PUBLISH_URL="https://svn.example.invalid/repos/dist/atr",
+            SVN_DIST_PUBLIC_URL="https://dist.example.invalid/repos/dist/atr",
+        ),
+    )
+
+    assert paths.committee_keys_url(committee) == "https://downloads.apache.org/myproject/KEYS"
+
+
 def test_get_quarantined_dir_uses_state_dir(monkeypatch, tmp_path: pathlib.Path):
     mock_config = types.SimpleNamespace(STATE_DIR=str(tmp_path))
     monkeypatch.setattr("atr.config.get", lambda: mock_config)

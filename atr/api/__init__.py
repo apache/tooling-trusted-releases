@@ -36,7 +36,6 @@ import atr.constants as constants
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
-import atr.hashes as hashes
 import atr.ldap as ldap
 import atr.log as log
 import atr.models as models
@@ -1580,9 +1579,6 @@ async def signature_provenance(
         raise exceptions.BadRequest("version_key requires project_key")
 
     signing_keys: list[models.api.SignatureProvenanceKey] = []
-    conf = config.get()
-    host = conf.APP_HOST
-
     signature_asc_data = data.signature_asc_text
     sig, _ = openpgp.DetachedSignature.from_armor(signature_asc_data)
     signature_info = sig.signature_info()
@@ -1601,25 +1597,7 @@ async def signature_provenance(
         matched_committees = await _match_committees(key.committees, data, _jwt_asf_uid())
 
     for committee in matched_committees:
-        keys_file_path = paths.committee_downloads_dir(committee) / "KEYS"
-        try:
-            async with aiofiles.open(keys_file_path, "rb") as f:
-                keys_file_data = await f.read()
-        except FileNotFoundError:
-            continue
-        except OSError:
-            log.exception(f"Failed to read KEYS file for committee {committee.key}")
-            continue
-        keys_file_sha3_256 = hashes.compute_sha3_256(keys_file_data)
-        signing_keys.append(
-            models.api.SignatureProvenanceKey(
-                committee=committee.key,
-                keys_file_url=util.public_download_url(
-                    committee, None, util.DownloadFile.METADATA, filename="KEYS", host=host
-                ),
-                keys_file_sha3_256=keys_file_sha3_256,
-            )
-        )
+        signing_keys.append(models.api.SignatureProvenanceKey(committee=committee.key))
 
     if not signing_keys:
         raise exceptions.NotFound("No signing keys found")
@@ -2132,19 +2110,6 @@ async def test_archive_project(
         project.status = sql.ProjectStatus.RETIRED
         await session.commit()
     return {"ok": True, "project_key": str(data.project_key)}, 200
-
-
-def _committee_keys_path(committee: sql.Committee) -> safe.StatePath:
-    downloads_dir = paths.get_downloads_dir()
-    if committee.is_podling:
-        return downloads_dir / "incubator" / committee.key / "KEYS"
-    return downloads_dir / committee.key / "KEYS"
-
-
-def _committee_keys_url(host: str, committee: sql.Committee) -> str:
-    if committee.is_podling:
-        return f"https://{host}/downloads/incubator/{committee.key}/KEYS"
-    return f"https://{host}/downloads/{committee.key}/KEYS"
 
 
 def _jwt_asf_uid() -> str:

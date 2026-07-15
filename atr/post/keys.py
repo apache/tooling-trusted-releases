@@ -268,12 +268,6 @@ async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.Ad
     return key_text
 
 
-def _construct_keys_url(committee_key: str, *, is_podling: bool) -> str:
-    # KEYS comes from downloads.apache.org, not a mirror.
-    prefix = "incubator/" if is_podling else ""
-    return paths.downloads_url(safe.RelPath(f"{prefix}{committee_key}/KEYS"))
-
-
 async def _delete_openpgp_key(
     session: web.Committer, delete_form: shared.keys.DeleteOpenPGPKeyForm
 ) -> web.WerkzeugResponse:
@@ -454,9 +448,7 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
             if not committee:
                 await quart.flash(f"Committee '{selected_committee}' not found", "error")
                 return await shared.keys.render_upload_page(error=True)
-            is_podling = committee.is_podling
-
-        keys_url = _construct_keys_url(selected_committee, is_podling=is_podling)
+        keys_url = paths.committee_keys_url(committee)
         keys_text = await _fetch_keys_from_url(keys_url)
 
         if util.contains_private_key_text(keys_text):
