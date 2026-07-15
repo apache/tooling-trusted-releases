@@ -1280,6 +1280,15 @@ async def read_file_for_viewer(full_path: safe.StatePath, max_size: int) -> tupl
     return content, is_text, is_truncated, error_message
 
 
+def released_dist_url(url: str) -> str:
+    # Temporary fix for alpha: a released artifact's files are assumed to have been moved out of
+    # ATR's beta dist area into the release area, so point downloads there rather than at /dist/atr
+    # TODO: Remove this once ATR performs the SVN move to the release area itself
+    if "dist/atr" in url:
+        return url.replace("dist/atr", "dist/release")
+    return url
+
+
 async def session_cache_read() -> dict[str, dict]:
     cache_path = pathlib.Path(config.get().STATE_DIR) / "cache" / "user_session_cache.json"
     try:

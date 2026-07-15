@@ -244,6 +244,7 @@ async def announce_release_subject_and_body(
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
+    values["DOWNLOAD_URL"] = util.released_dist_url(values["DOWNLOAD_URL"])
     subject = _substitute(subject, values, "announce_subject")
     body = _substitute(body, values, "announce")
     return subject, body
@@ -436,9 +437,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
-    # Temporary fix for alpha:
-    if "dist/atr" in body_values["KEYS_FILE"]:
-        body_values["KEYS_FILE"] = body_values["KEYS_FILE"].replace("dist/atr", "dist/release")
+    body_values["KEYS_FILE"] = util.released_dist_url(body_values["KEYS_FILE"])
     subject = _substitute(subject, subject_values, "vote_subject")
     body = _substitute(body, body_values, "vote")
     return subject, body

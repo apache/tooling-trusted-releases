@@ -75,20 +75,28 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
         # (graduated from an umbrella, or shifted to the Attic) resolve where they actually live. The
         # signature, checksum and SBOM share the directory
         directory = safe.RelPath(row.download_path_suffix)
-        artifact_url = util.download_url_for_path(
-            directory.append(row.artifact_path), util.DownloadFile.ARTIFACT, archived=archived
+        artifact_url = util.released_dist_url(
+            util.download_url_for_path(
+                directory.append(row.artifact_path), util.DownloadFile.ARTIFACT, archived=archived
+            )
         )
         if row.signature_path:
-            signature_url = util.download_url_for_path(
-                directory.append(row.signature_path), util.DownloadFile.METADATA, archived=archived
+            signature_url = util.released_dist_url(
+                util.download_url_for_path(
+                    directory.append(row.signature_path), util.DownloadFile.METADATA, archived=archived
+                )
             )
         if row.checksum_path:
-            checksum_url = util.download_url_for_path(
-                directory.append(row.checksum_path), util.DownloadFile.METADATA, archived=archived
+            checksum_url = util.released_dist_url(
+                util.download_url_for_path(
+                    directory.append(row.checksum_path), util.DownloadFile.METADATA, archived=archived
+                )
             )
         if row.sbom_path:
-            sbom_url = util.download_url_for_path(
-                directory.append(row.sbom_path), util.DownloadFile.METADATA, archived=archived
+            sbom_url = util.released_dist_url(
+                util.download_url_for_path(
+                    directory.append(row.sbom_path), util.DownloadFile.METADATA, archived=archived
+                )
             )
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
