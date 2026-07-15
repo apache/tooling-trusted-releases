@@ -24,6 +24,22 @@ import atr.models.safe as safe
 import atr.paths as paths
 
 
+def test_committee_dist_relpath_for_podling() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=True)
+
+    assert paths.committee_dist_relpath(
+        committee,
+        safe.RelPath("myproject-1.0"),
+        "apache-myproject-1.0.tar.gz",
+    ) == safe.RelPath("incubator/myproject/myproject-1.0/apache-myproject-1.0.tar.gz")
+
+
+def test_committee_dist_relpath_for_top_level_committee() -> None:
+    committee = types.SimpleNamespace(key="myproject", is_podling=False)
+
+    assert paths.committee_dist_relpath(committee) == safe.RelPath("myproject")
+
+
 def test_committee_downloads_dir_for_podling(monkeypatch, tmp_path: pathlib.Path):
     committee = types.SimpleNamespace(key="myproject", is_podling=True)
     monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
@@ -36,22 +52,6 @@ def test_committee_downloads_dir_for_top_level_committee(monkeypatch, tmp_path: 
     monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
 
     assert paths.committee_downloads_dir(committee).path == tmp_path / "myproject"
-
-
-def test_committee_downloads_url_for_podling() -> None:
-    committee = types.SimpleNamespace(key="myproject", is_podling=True)
-
-    assert paths.committee_downloads_url("downloads.apache.org", committee) == (
-        "https://downloads.apache.org/downloads/incubator/myproject"
-    )
-
-
-def test_committee_downloads_url_for_top_level_committee() -> None:
-    committee = types.SimpleNamespace(key="myproject", is_podling=False)
-
-    assert paths.committee_downloads_url("downloads.apache.org", committee) == (
-        "https://downloads.apache.org/downloads/myproject"
-    )
 
 
 def test_committee_keys_url_for_podling() -> None:

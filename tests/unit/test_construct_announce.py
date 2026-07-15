@@ -66,11 +66,6 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag="{{YOUR_FULL_NAME}}")
 
-    monkeypatch.setattr(
-        construct.config,
-        "get",
-        lambda: SimpleNamespace(APP_HOST="downloads.apache.org", SVN_PUBLISH_URL=None),
-    )
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     _subject, body = await construct.announce_release_subject_and_body(
@@ -91,7 +86,7 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
 
 
 @pytest.mark.asyncio
-async def test_announce_release_subject_and_body_uses_podling_downloads_url(monkeypatch) -> None:
+async def test_announce_release_subject_and_body_uses_podling_canonical_downloads_url(monkeypatch) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=True, display_name="Apache MyProject (podling)")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
@@ -107,11 +102,6 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
-    monkeypatch.setattr(
-        construct.config,
-        "get",
-        lambda: SimpleNamespace(APP_HOST="downloads.apache.org", SVN_PUBLISH_URL=None),
-    )
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     subject, body = await construct.announce_release_subject_and_body(
@@ -128,11 +118,11 @@ async def test_announce_release_subject_and_body_uses_podling_downloads_url(monk
     )
 
     assert subject == "Apache MyProject 1.0.0"
-    assert body == "https://downloads.apache.org/downloads/incubator/myproject/apache-myproject-1.0.0/"
+    assert body == "https://downloads.apache.org/incubator/myproject/apache-myproject-1.0.0/"
 
 
 @pytest.mark.asyncio
-async def test_announce_release_subject_and_body_uses_top_level_downloads_url(monkeypatch) -> None:
+async def test_announce_release_subject_and_body_uses_top_level_canonical_downloads_url(monkeypatch) -> None:
     committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
     project = SimpleNamespace(
         short_display_name="Apache MyProject",
@@ -148,11 +138,6 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
     release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
     revision = SimpleNamespace(number="1", tag=None)
 
-    monkeypatch.setattr(
-        construct.config,
-        "get",
-        lambda: SimpleNamespace(APP_HOST="downloads.apache.org", SVN_PUBLISH_URL=None),
-    )
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
 
     _subject, body = await construct.announce_release_subject_and_body(
@@ -167,7 +152,7 @@ async def test_announce_release_subject_and_body_uses_top_level_downloads_url(mo
         ),
     )
 
-    assert body == "https://downloads.apache.org/downloads/myproject/"
+    assert body == "https://downloads.apache.org/myproject/"
 
 
 @pytest.mark.asyncio
@@ -195,15 +180,9 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
     async def no_release_policy(_data, _project_key):
         return None
 
-    monkeypatch.setattr(
-        construct.config,
-        "get",
-        lambda: SimpleNamespace(
-            APP_HOST="atr.example.invalid",
-            SVN_PUBLISH_URL="https://svn.example.invalid/repos/dist/atr",
-            SVN_DIST_PUBLIC_URL="https://dist.example.invalid/repos/dist/atr",
-        ),
-    )
+    monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
+    monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
     monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
     monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")

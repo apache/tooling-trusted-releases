@@ -81,25 +81,9 @@ async def test_check_propagation_test_target_url(monkeypatch: pytest.MonkeyPatch
     assert summary.outcomes[0].public_url == f"{config.get().SVN_DIST_PUBLIC_URL}/project/artifact.tar.gz"
 
 
-def test_public_download_url_falls_back_to_self_host_without_svn(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
-    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
-
-    url = util.public_download_url(
-        committee,
-        safe.RelPath("apple-1.0"),
-        util.DownloadFile.ARTIFACT,
-        filename="apple-1.0.tar.gz",
-        host="atr.example",
-    )
-
-    assert url == "https://atr.example/downloads/apple/apple-1.0/apple-1.0.tar.gz"
-
-
 def test_download_url_for_path_uses_archive_when_archived(monkeypatch: pytest.MonkeyPatch) -> None:
-    # An archived release lives on archive.apache.org on every host, so even with no SVN publishing
-    # configured (dev) it comes off the archive rather than the self-hosted fallback. The catalogue
-    # passes the artifact's stored full path, so a retired project resolves under its original dir
+    # The catalogue passes the artifact's stored full path, so a retired project resolves under its
+    # original directory on archive.apache.org regardless of the configured live distribution target.
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
 
     url = util.download_url_for_path(
@@ -109,47 +93,69 @@ def test_download_url_for_path_uses_archive_when_archived(monkeypatch: pytest.Mo
     assert url == f"{constants.ARCHIVE_APACHE_URL}/abdera/1.0/apache-abdera-1.0.tar.gz"
 
 
-def test_download_url_for_path_self_hosts_without_svn(monkeypatch: pytest.MonkeyPatch) -> None:
-    # With no SVN publishing (dev), a stored full path is served from ATR's own host
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+def test_download_url_for_path_uses_canonical_host_for_released_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
 
     url = util.download_url_for_path(
-        safe.RelPath("abdera/1.0/apache-abdera-1.0.tar.gz"), util.DownloadFile.ARTIFACT, host="atr.example"
+        safe.RelPath("abdera/1.0/apache-abdera-1.0.tar.gz.asc"), util.DownloadFile.METADATA
     )
 
-    assert url == "https://atr.example/downloads/abdera/1.0/apache-abdera-1.0.tar.gz"
+    assert url == f"{constants.DOWNLOADS_APACHE_URL}/abdera/1.0/apache-abdera-1.0.tar.gz.asc"
 
 
-def test_public_download_url_uses_canonical_host_for_released_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
+def test_download_url_for_path_uses_mirror_for_released_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None)
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
+
+    url = util.download_url_for_path(safe.RelPath("abdera/1.0/apache-abdera-1.0.tar.gz"), util.DownloadFile.ARTIFACT)
+
+    assert url == f"{constants.CLOSER_LUA_URL}/abdera/1.0/apache-abdera-1.0.tar.gz?action=download"
+
+
+def test_publication_check_url_uses_beta_dist_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
+    committee = sql.Committee(key="apple", name="Apple", is_podling=False)
+
+    url = util.publication_check_url(
+        committee,
+        safe.RelPath("apple-1.0"),
+        util.DownloadFile.ARTIFACT,
+        filename="apple-1.0.tar.gz",
+    )
+
+    assert url == "https://dist.apache.org/repos/dist/atr/apple/apple-1.0/apple-1.0.tar.gz"
+
+
+def test_publication_check_url_uses_canonical_host_for_release_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    url = util.public_download_url(
+    url = util.publication_check_url(
         committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA, filename="apple-1.0.tar.gz.asc"
     )
 
     assert url == f"{constants.DOWNLOADS_APACHE_URL}/apple/apple-1.0/apple-1.0.tar.gz.asc"
 
 
-def test_public_download_url_uses_mirror_for_released_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/release")
+def test_publication_check_url_uses_mirror_for_release_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    url = util.public_download_url(
+    url = util.publication_check_url(
         committee, safe.RelPath("apple-1.0"), util.DownloadFile.ARTIFACT, filename="apple-1.0.tar.gz"
     )
 
     assert url == f"{constants.CLOSER_LUA_URL}/apple/apple-1.0/apple-1.0.tar.gz?action=download"
 
 
-def test_public_download_url_uses_svn_dist_area_for_beta_target(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publication_check_url_uses_svn_dist_area_for_beta_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr")
     monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/atr")
     committee = sql.Committee(key="apple", name="Apple", is_podling=False)
 
-    url = util.public_download_url(committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA)
+    url = util.publication_check_url(committee, safe.RelPath("apple-1.0"), util.DownloadFile.METADATA)
 
     assert url == "https://dist.apache.org/repos/dist/atr/apple/apple-1.0"
 

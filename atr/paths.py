@@ -48,7 +48,8 @@ def committee_dist_relpath(
     # The committee's path relative to the downloads root, ie the shared prefix that
     # the download hosts and the distribution SVN area both hang a release off.
     # Optionally extended with the per-release download suffix and a file name.
-    relpath = safe.RelPath.from_path(committee_downloads_dir(committee).path.relative_to(get_downloads_dir().path))
+    prefix = "incubator/" if committee.is_podling else ""
+    relpath = safe.RelPath(f"{prefix}{committee.key}")
     if suffix is not None:
         relpath = relpath.append(suffix.as_path())
     if filename is not None:
@@ -63,17 +64,8 @@ def committee_downloads_dir(committee: sql.Committee) -> safe.StatePath:
     return downloads_dir / committee.key
 
 
-def committee_downloads_url(host: str, committee: sql.Committee) -> str:
-    # This is a slight extension of the intended paths concept
-    # But URLs contain paths, so atr.paths does not have to be limited to filesystem paths
-    if committee.is_podling:
-        return f"https://{host}/downloads/incubator/{committee.key}"
-    return f"https://{host}/downloads/{committee.key}"
-
-
 def committee_keys_url(committee: sql.Committee) -> str:
-    prefix = "incubator/" if committee.is_podling else ""
-    return downloads_url(safe.RelPath(f"{prefix}{committee.key}/KEYS"))
+    return downloads_url(committee_dist_relpath(committee, filename="KEYS"))
 
 
 def downloads_url(relpath: safe.RelPath) -> str:

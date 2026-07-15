@@ -17,6 +17,7 @@
 
 import datetime
 
+import atr.constants as constants
 import atr.models.api as api
 import atr.models.sql as sql
 import atr.shared.catalog as catalog
@@ -35,6 +36,19 @@ class _CatalogVersionStub:
             cycle=cycle.cycle if cycle is not None else None,
             artifacts=[],
         )
+
+
+def test_archived_status_holds_without_an_archive_date() -> None:
+    # A release known to be archived but with no date (a catalogued historical release) carries
+    # is_archived alone; it still reads as archived, and stays downloadable off archive.apache.org
+    project = _project()
+    undated = _release(project, "3.11.0", cycle_key="cassandra-default", released=_NOW, is_archived=True)
+    artifacts = [_artifact(project, "3.11.0", "a-3.11.0.tar.gz", release=undated)]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
+
+    assert versions["3.11.0"].status == "archived"
+    assert versions["3.11.0"].artifacts[0].downloadable is True
 
 
 def test_cle_url_is_omitted_for_versions_without_a_backing_release() -> None:
@@ -88,6 +102,18 @@ def test_lifecycle_badge_prefers_lts_then_eol_then_active() -> None:
     assert catalog._lifecycle_badge(_cycle("5.0"), _NOW) == "Active"
 
 
+def test_paired_sbom_shown_on_catalog_artifact() -> None:
+    project = _project()
+    released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
+    artifacts = [
+        _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released, sbom_path="a-5.0.2.tar.gz.cdx.json"),
+    ]
+
+    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
+
+    assert versions["5.0.2"].artifacts[0].sbom_path == "a-5.0.2.tar.gz.cdx.json"
+
+
 def test_released_and_archived_versions_are_downloadable() -> None:
     project = _project()
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
@@ -105,16 +131,26 @@ def test_released_and_archived_versions_are_downloadable() -> None:
     assert versions["4.1.7"].svn_revision == 28114
 
 
-def test_paired_sbom_shown_on_catalog_artifact() -> None:
+def test_released_catalog_urls_use_mirrors_and_canonical_metadata() -> None:
     project = _project()
     released = _release(project, "5.0.2", cycle_key="cassandra-default", released=_NOW)
-    artifacts = [
-        _artifact(project, "5.0.2", "a-5.0.2.tar.gz", release=released, sbom_path="a-5.0.2.tar.gz.cdx.json"),
-    ]
+    artifact = _artifact(
+        project,
+        "5.0.2",
+        "a-5.0.2.tar.gz",
+        release=released,
+        signature_path="a-5.0.2.tar.gz.asc",
+        checksum_path="a-5.0.2.tar.gz.sha512",
+        sbom_path="a-5.0.2.tar.gz.cdx.json",
+    )
 
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
+    result = catalog._artifact(artifact, downloadable=True, archived=False)
 
-    assert versions["5.0.2"].artifacts[0].sbom_path == "a-5.0.2.tar.gz.cdx.json"
+    base = "cassandra/5.0.2/a-5.0.2.tar.gz"
+    assert result.artifact_url == f"{constants.CLOSER_LUA_URL}/{base}?action=download"
+    assert result.signature_url == f"{constants.DOWNLOADS_APACHE_URL}/{base}.asc"
+    assert result.checksum_url == f"{constants.DOWNLOADS_APACHE_URL}/{base}.sha512"
+    assert result.sbom_url == f"{constants.DOWNLOADS_APACHE_URL}/{base}.cdx.json"
 
 
 def test_simple_projects_use_the_flat_layout() -> None:
@@ -134,19 +170,6 @@ def test_status_reflects_release_and_archive_state() -> None:
 
     assert versions["5.0.2"].status == "released"
     assert versions["4.1.7"].status == "archived"
-
-
-def test_archived_status_holds_without_an_archive_date() -> None:
-    # A release known to be archived but with no date (a catalogued historical release) carries
-    # is_archived alone; it still reads as archived, and stays downloadable off archive.apache.org
-    project = _project()
-    undated = _release(project, "3.11.0", cycle_key="cassandra-default", released=_NOW, is_archived=True)
-    artifacts = [_artifact(project, "3.11.0", "a-3.11.0.tar.gz", release=undated)]
-
-    versions = {str(v.version): v for v in catalog._versions(artifacts, {})}
-
-    assert versions["3.11.0"].status == "archived"
-    assert versions["3.11.0"].artifacts[0].downloadable is True
 
 
 def test_svn_revision_alone_does_not_make_a_version_managed() -> None:
@@ -215,6 +238,8 @@ def _artifact(
     *,
     release: sql.Release | None = None,
     svn_revision: int | None = None,
+    signature_path: str | None = None,
+    checksum_path: str | None = None,
     sbom_path: str | None = None,
     managed: bool = False,
     dated: datetime.datetime | None = None,
@@ -226,6 +251,8 @@ def _artifact(
         release_key=(release.key if release is not None else None),
         release=release,
         svn_revision=svn_revision,
+        signature_path=signature_path,
+        checksum_path=checksum_path,
         sbom_path=sbom_path,
         download_path_suffix=f"{project.key}/{version}",
         managed=managed,

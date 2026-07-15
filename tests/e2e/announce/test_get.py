@@ -23,7 +23,7 @@ from playwright.sync_api import Page, expect
 
 def test_body_contains_public_downloads_url_by_default(page_announce: Page) -> None:
     body = page_announce.locator("#body")
-    expect(body).to_have_value(re.compile(r"https://[^/\s]+(?::\d+)?/downloads/test/"))
+    expect(body).to_have_value(re.compile(r"https://downloads\.apache\.org/test/"))
 
 
 def test_body_stops_syncing_after_customization(page_announce: Page) -> None:
@@ -35,18 +35,19 @@ def test_body_stops_syncing_after_customization(page_announce: Page) -> None:
     expect(body).to_have_value("Custom body")
 
     page_announce.locator("#discard-announce-body-changes").click()
-    expect(body).to_have_value(re.compile(r"https://[^/\s]+(?::\d+)?/downloads/test/apple/banana/"))
+    expect(body).to_have_value(re.compile(r"https://downloads\.apache\.org/test/apple/banana/"))
 
 
 def test_body_updates_download_url_while_pristine(page_announce: Page) -> None:
     body = page_announce.locator("#body")
     page_announce.locator("#download_path_suffix").fill("apple/banana")
-    expect(body).to_have_value(re.compile(r"https://[^/\s]+(?::\d+)?/downloads/test/apple/banana/"))
+    expect(body).to_have_value(re.compile(r"https://downloads\.apache\.org/test/apple/banana/"))
 
 
 def test_path_adds_leading_slash(page_announce: Page) -> None:
     """Paths without a leading '/' should have one added."""
     help_text = helpers.fill_path_suffix(page_announce, "apple/banana")
+    expect(help_text).to_contain_text("https://downloads.apache.org/test")
     expect(help_text).to_contain_text("/apple/banana/")
 
 
