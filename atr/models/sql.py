@@ -880,6 +880,7 @@ class Committee(sqlmodel.SQLModel, table=True):
     charter: str | None = sqlmodel.Field(default=None, **example("Example"))
     # True only if this is an incubator podling with a PPMC
     is_podling: bool = sqlmodel.Field(default=False)
+    automated_keys_file: bool = sqlmodel.Field(default=True)
 
     # 1-M: Committee -> [Committee]
     # M-1: Committee -> Committee

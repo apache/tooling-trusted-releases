@@ -338,6 +338,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         key: Opt[str] = NOT_SET,
         name: Opt[str] = NOT_SET,
         is_podling: Opt[bool] = NOT_SET,
+        automated_keys_file: Opt[bool] = NOT_SET,
         parent_committee_key: Opt[str] = NOT_SET,
         committee_members: Opt[list[str]] = NOT_SET,
         committers: Opt[list[str]] = NOT_SET,
@@ -359,6 +360,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Committee.name == name)
         if is_defined(is_podling):
             query = query.where(sql.Committee.is_podling == is_podling)
+        if is_defined(automated_keys_file):
+            query = query.where(sql.Committee.automated_keys_file == automated_keys_file)
         if is_defined(parent_committee_key):
             query = query.where(sql.Committee.parent_committee_key == parent_committee_key)
         if is_defined(committee_members):
