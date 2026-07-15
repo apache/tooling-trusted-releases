@@ -444,7 +444,7 @@ async def check_propagation(
 
 
 def checker_display_name(checker: str) -> str:
-    return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title()
+    return checker.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ").title().replace("Sbom", "SBOM")
 
 
 def chmod_directories(path: os.PathLike, permissions: int = DIRECTORY_PERMISSIONS) -> None:

@@ -28,6 +28,7 @@ import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.constants as constants
 import atr.db as db
+import atr.detection as detection
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.args as args
@@ -43,6 +44,7 @@ import atr.tasks.checks.license as license
 import atr.tasks.checks.parity as parity
 import atr.tasks.checks.paths as paths
 import atr.tasks.checks.rat as rat
+import atr.tasks.checks.sbom as sbom_check
 import atr.tasks.checks.signature as signature
 import atr.tasks.checks.targz as targz
 import atr.tasks.checks.zipformat as zipformat
@@ -353,6 +355,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return distribution.status_check
         case sql.TaskType.DISTRIBUTION_WORKFLOW:
             return gha.trigger_workflow
+        case sql.TaskType.HAS_SBOM:
+            return sbom_check.check
         case sql.TaskType.HASHING_CHECK:
             return hashing.check
         case sql.TaskType.KEYS_IMPORT_FILE:
@@ -669,6 +673,30 @@ async def _add_task(data: db.Session, task: sql.Task) -> None:
         raise
 
 
+async def _archive_comparison_task(
+    asf_uid: str, release: sql.Release, revision_number: safe.RevisionNumber, path: safe.RelPath
+) -> sql.Task | None:
+    if util.archive_format_stem(path.as_path().name) is None:
+        return None
+    path_str = str(path)
+    return await queued(
+        asf_uid,
+        sql.TaskType.ARCHIVE_COMPARISON,
+        release,
+        revision_number,
+        path_str,
+        check_cache_key=await checks.resolve_cache_key(
+            resolve(sql.TaskType.ARCHIVE_COMPARISON),
+            parity.CHECK_VERSION,
+            parity.INPUT_POLICY_KEYS,
+            release,
+            revision_number,
+            await checks.resolve_extra_args(parity.INPUT_EXTRA_ARGS, release, path_str),
+            file=path_str,
+        ),
+    )
+
+
 async def _clear_existing_scheduled(
     data: db.Session,
     task_type: sql.TaskType,
@@ -689,6 +717,36 @@ async def _clear_existing_scheduled(
         sqlmodel.delete(sql.Task).where(
             *conditions,
         )
+    )
+
+
+async def _cyclonedx_score_task(
+    asf_uid: str,
+    release: sql.Release,
+    revision_number: safe.RevisionNumber,
+    path: safe.RelPath,
+    project_key: safe.ProjectKey,
+    release_version: safe.VersionKey,
+    previous_version: sql.Release | None,
+) -> sql.Task | None:
+    # TODO: Should we check .json files for their content?
+    # Ideally we would not have to do that
+    if not analysis.is_cyclonedx_json(path.as_path().name):
+        return None
+    return await queued(
+        asf_uid,
+        sql.TaskType.SBOM_TOOL_SCORE,
+        release,
+        revision_number,
+        str(path),
+        extra_args={
+            "project_key": str(project_key),
+            "version_key": str(release_version),
+            "revision_number": str(revision_number),
+            "previous_release_version": previous_version.version if previous_version else None,
+            "file_path": str(path),
+            "asf_uid": asf_uid,
+        },
     )
 
 
@@ -714,45 +772,43 @@ async def _draft_file_checks(
             if task:
                 task.revision_number = str(revision_number)
                 await _add_task(data, task)
-    if util.archive_format_stem(path.as_path().name) is not None:
-        archive_comparison_task = await queued(
-            asf_uid,
-            sql.TaskType.ARCHIVE_COMPARISON,
+    # Each path may qualify for a handful of standalone checks - archive parity, an
+    # SBOM presence check, and CycloneDX scoring. The helpers guard their own
+    # applicability and hand back a task only when one is warranted.
+    for maybe_task in (
+        await _archive_comparison_task(asf_uid, release, revision_number, path),
+        await _has_sbom_task(asf_uid, release, revision_number, path),
+        await _cyclonedx_score_task(
+            asf_uid, release, revision_number, path, project_key, release_version, previous_version
+        ),
+    ):
+        if maybe_task:
+            await _add_task(data, maybe_task)
+
+
+async def _has_sbom_task(
+    asf_uid: str, release: sql.Release, revision_number: safe.RevisionNumber, path: safe.RelPath
+) -> sql.Task | None:
+    name = path.as_path().name.lower()
+    if not any(name.endswith(suffix) for suffix in detection.QUARANTINE_ARCHIVE_SUFFIXES):
+        return None
+    path_str = str(path)
+    return await queued(
+        asf_uid,
+        sql.TaskType.HAS_SBOM,
+        release,
+        revision_number,
+        path_str,
+        check_cache_key=await checks.resolve_cache_key(
+            resolve(sql.TaskType.HAS_SBOM),
+            sbom_check.CHECK_VERSION,
+            sbom_check.INPUT_POLICY_KEYS,
             release,
             revision_number,
-            path_str,
-            check_cache_key=await checks.resolve_cache_key(
-                resolve(sql.TaskType.ARCHIVE_COMPARISON),
-                parity.CHECK_VERSION,
-                parity.INPUT_POLICY_KEYS,
-                release,
-                revision_number,
-                await checks.resolve_extra_args(parity.INPUT_EXTRA_ARGS, release, path_str),
-                file=path_str,
-            ),
-        )
-        if archive_comparison_task:
-            await _add_task(data, archive_comparison_task)
-    # TODO: Should we check .json files for their content?
-    # Ideally we would not have to do that
-    if analysis.is_cyclonedx_json(path.as_path().name):
-        cdx_task = await queued(
-            asf_uid,
-            sql.TaskType.SBOM_TOOL_SCORE,
-            release,
-            revision_number,
-            path_str,
-            extra_args={
-                "project_key": str(project_key),
-                "version_key": str(release_version),
-                "revision_number": str(revision_number),
-                "previous_release_version": previous_version.version if previous_version else None,
-                "file_path": path_str,
-                "asf_uid": asf_uid,
-            },
-        )
-        if cdx_task:
-            await _add_task(data, cdx_task)
+            await checks.resolve_extra_args(sbom_check.INPUT_EXTRA_ARGS, release, path_str),
+            file=path_str,
+        ),
+    )
 
 
 TASK_FUNCTIONS: Final[dict[str, Callable[..., Coroutine[Any, Any, list[sql.Task | None]]]]] = {

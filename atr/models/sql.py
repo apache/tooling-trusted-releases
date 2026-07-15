@@ -235,6 +235,7 @@ class TaskType(enum.StrEnum):
     COMPARE_SOURCE_TREES = "compare_source_trees"
     DISTRIBUTION_STATUS = "distribution_status"
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
+    HAS_SBOM = "has_sbom"
     HASHING_CHECK = "hashing_check"
     KEYS_IMPORT_FILE = "keys_import_file"
     LICENSE_FILES = "license_files"
@@ -276,6 +277,8 @@ class TaskType(enum.StrEnum):
                 return "Distribution status"
             case TaskType.DISTRIBUTION_WORKFLOW:
                 return "Distribution workflow"
+            case TaskType.HAS_SBOM:
+                return "SBOM check"
             case TaskType.HASHING_CHECK:
                 return "Hashing check"
             case TaskType.KEYS_IMPORT_FILE:
