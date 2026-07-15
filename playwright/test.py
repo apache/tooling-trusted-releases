@@ -728,25 +728,15 @@ def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
     project_key = TEST_PROJECT
     version_key = "0.2"
     filename_targz = f"apache-{project_key}-{version_key}.tar.gz"
-    compose_path = f"/compose/{project_key}/{version_key}"
     report_file_path = f"/report/{project_key}/{version_key}/{filename_targz}"
 
     logging.info(f"Starting License Files check test for {filename_targz}")
 
-    logging.info(f"Navigating to compose page {compose_path}")
-    go_to_path(page, compose_path)
-
-    logging.info(f"Locating 'Show report' link for {filename_targz}")
-    row_locator = page.locator(f"tr:has(:text('{filename_targz}'))")
-    evaluate_link_title = f"Show report for {filename_targz}"
-    evaluate_link_locator = row_locator.locator(f'a[title="{evaluate_link_title}"]')
-    expect(evaluate_link_locator).to_be_visible()
-
-    logging.info(f"Clicking 'Show report' link for {filename_targz}")
-    evaluate_link_locator.click()
-
-    logging.info(f"Waiting for navigation to {report_file_path}")
-    wait_for_path(page, report_file_path)
+    # The tarball is an artifact, so the SBOM check flags the missing SBOM as a
+    # suggestion - that puts a "Show details" button on its compose row rather than
+    # a "Show report" link, so we go straight to the report page
+    logging.info(f"Navigating to report page {report_file_path}")
+    go_to_path(page, report_file_path)
     logging.info(f"Successfully navigated to {report_file_path}")
 
     ensure_note_results_are_visible(page, "primary")
@@ -759,6 +749,13 @@ def test_checks_02_license_files(page: Page, credentials: Credentials) -> None:
     note_badge_locator = check_row_locator.locator("td span.badge.bg-success:text-is('Note')")
     expect(note_badge_locator).to_have_count(2)
     logging.info("License Files check status verified as Note for 2 rows")
+
+    logging.info("Verifying the missing-SBOM suggestion for the artifact")
+    sbom_row_locator = page.locator("tr.atr-result-primary.atr-result-status-suggestion:has(th:has-text('Sbom Check'))")
+    expect(sbom_row_locator).to_have_count(1)
+    sbom_badge_locator = sbom_row_locator.locator("td span.badge.atr-bg-suggestion:text-is('Suggestion')")
+    expect(sbom_badge_locator).to_be_visible()
+    logging.info("Missing-SBOM suggestion verified for the artifact")
 
 
 def test_checks_03_license_headers(page: Page, credentials: Credentials) -> None:

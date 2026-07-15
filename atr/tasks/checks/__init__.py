@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     import atr.models.schema as schema
 
+import atr.analysis as analysis
 import atr.attestable as attestable
 import atr.classify as classify
 import atr.db as db
@@ -518,6 +519,19 @@ async def _resolve_is_podling(release: sql.Release, rel_path: str | None = None)
     return (release.committee is not None) and release.committee.is_podling
 
 
+async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str | None = None) -> list[str]:
+    if (not rel_path) or (not release.latest_revision_number):
+        return []
+    entries = []
+    for suffix in analysis.SBOM_SUFFIXES:
+        candidate = rel_path + suffix
+        abs_path = file_paths.revision_path_for_file(
+            release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, candidate
+        )
+        entries.append(f"{candidate}={await aiofiles.os.path.exists(abs_path.path)}")
+    return sorted(entries)
+
+
 async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | None = None) -> str:
     if (not rel_path) or (not release.latest_revision_number):
         return ""
@@ -538,5 +552,6 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "cross_format_sibling_swhids": _resolve_cross_format_sibling_swhids,
     "github_tp_sha": _resolve_github_tp_sha,
     "is_podling": _resolve_is_podling,
+    "suffixed_file_existence": _resolve_suffixed_file_existence,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
 }

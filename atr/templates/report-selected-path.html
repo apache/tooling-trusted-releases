@@ -366,5 +366,5 @@
 {% endblock javascripts %}
 
 {% macro function_name_from_key(key) -%}
-  {{- key.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ") | title -}}
+  {{- key.removeprefix("atr.tasks.checks.").replace("_", " ").replace(".", " ") | title | replace("Sbom", "SBOM") -}}
 {%- endmacro %}
