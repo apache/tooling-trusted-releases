@@ -70,34 +70,24 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
     signature_url: str | None = None
     checksum_url: str | None = None
     sbom_url: str | None = None
-    if downloadable and row.download_path_suffix:
+    if downloadable:
         # The stored directory is the file's real dist location, so a moved project's artifacts
         # (graduated from an umbrella, or shifted to the Attic) resolve where they actually live. The
-        # signature, checksum and SBOM share the directory
-        directory = safe.RelPath(row.download_path_suffix)
-        artifact_url = util.released_dist_url(
-            util.download_url_for_path(
-                directory.append(row.artifact_path), util.DownloadFile.ARTIFACT, archived=archived
-            )
-        )
+        # signature, checksum and SBOM share the directory. A row with no recorded suffix roots at
+        # the bare file path, so the link is empty-suffixed rather than the literal "None"
+        directory = safe.RelPath(row.download_path_suffix) if row.download_path_suffix else None
+
+        def _dist_url(rel_path: str, kind: util.DownloadFile) -> str:
+            relpath = directory.append(rel_path) if (directory is not None) else safe.RelPath(rel_path)
+            return util.released_dist_url(util.download_url_for_path(relpath, kind, archived=archived))
+
+        artifact_url = _dist_url(row.artifact_path, util.DownloadFile.ARTIFACT)
         if row.signature_path:
-            signature_url = util.released_dist_url(
-                util.download_url_for_path(
-                    directory.append(row.signature_path), util.DownloadFile.METADATA, archived=archived
-                )
-            )
+            signature_url = _dist_url(row.signature_path, util.DownloadFile.METADATA)
         if row.checksum_path:
-            checksum_url = util.released_dist_url(
-                util.download_url_for_path(
-                    directory.append(row.checksum_path), util.DownloadFile.METADATA, archived=archived
-                )
-            )
+            checksum_url = _dist_url(row.checksum_path, util.DownloadFile.METADATA)
         if row.sbom_path:
-            sbom_url = util.released_dist_url(
-                util.download_url_for_path(
-                    directory.append(row.sbom_path), util.DownloadFile.METADATA, archived=archived
-                )
-            )
+            sbom_url = _dist_url(row.sbom_path, util.DownloadFile.METADATA)
     return models.api.CatalogArtifact(
         artifact_path=row.artifact_path,
         classification=row.classification,
