@@ -352,6 +352,8 @@ class FoundationCommitter(GeneralPublic):
     async def _publish_keys_to_svn(
         self, committee: sql.Committee, source: pathlib.Path
     ) -> outcome.Outcome[datatypes.KeysPublish]:
+        if not committee.automated_keys_file:
+            return outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)
         if not config.get().SVN_PUBLISH_URL:
             return outcome.Result(datatypes.KeysPublish.SVN_NOT_CONFIGURED)
         target_url = util.svn_publish_internal_url(committee, None) + "/KEYS"

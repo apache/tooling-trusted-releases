@@ -509,6 +509,22 @@ async def test_publish_keys_to_svn_puts_keys_url() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publish_keys_to_svn_skips_when_automation_disabled() -> None:
+    writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
+    committee = _committee("alpha", [], automated_keys_file=False)
+    with (
+        mock.patch.object(
+            keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
+        ),
+        mock.patch.object(keys_writer.svn, "publish_file", new_callable=mock.AsyncMock) as publish_file,
+    ):
+        result = await writer._publish_keys_to_svn(committee, pathlib.Path("/dev/null"))
+
+    publish_file.assert_not_awaited()
+    assert result.result_or_raise() is keys_writer.datatypes.KeysPublish.AUTOMATION_DISABLED
+
+
+@pytest.mark.asyncio
 async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp_path):
     owned_key = SimpleNamespace(fingerprint="fp1", committees=[SimpleNamespace(key="alpha")])
     data = MockData(
@@ -572,11 +588,14 @@ async def test_update_committee_associations_removal_rewrites_keys_file_with_rem
     assert write.as_committee_participant.call_count == 0
 
 
-def _committee(key: str, public_signing_keys: list[object], *, is_podling: bool = False):
+def _committee(
+    key: str, public_signing_keys: list[object], *, is_podling: bool = False, automated_keys_file: bool = True
+):
     return SimpleNamespace(
         key=key,
         is_podling=is_podling,
         public_signing_keys=public_signing_keys,
+        automated_keys_file=automated_keys_file,
     )
 
 
