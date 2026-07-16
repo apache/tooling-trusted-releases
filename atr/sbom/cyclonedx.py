@@ -21,8 +21,6 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-from .utilities import get_pointer
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -38,6 +36,8 @@ def validate_cli(bundle_value: models.bundle.Bundle) -> list[str] | None:
         "--fail-on-errors",
         "--input-format",
         bundle_value.source_type,
+        "--input-version",
+        bundle_value.spec_version.name.lower(),
         "--input-file",
         bundle_value.path.as_posix(),
     ]
@@ -62,15 +62,10 @@ def validate_py(
     bundle_value: models.bundle.Bundle,
 ) -> Iterable[cyclonedx.validation.json.JsonValidationError] | None:
     import cyclonedx.exception
-    import cyclonedx.schema
     import cyclonedx.validation.json
 
-    json_sv = get_pointer(bundle_value.doc, "/specVersion")
-    schema_version = cyclonedx.schema.SchemaVersion.V1_6
-    if isinstance(json_sv, str):
-        schema_version = cyclonedx.schema.SchemaVersion.from_version(json_sv)
     try:
-        validator = cyclonedx.validation.json.JsonStrictValidator(schema_version)
+        validator = cyclonedx.validation.json.JsonStrictValidator(bundle_value.spec_version)
         errors = validator.validate_str(bundle_value.text, all_errors=True)
     except cyclonedx.exception.MissingOptionalDependencyException:
         # Placeholder, just in case we want to handle this somehow
