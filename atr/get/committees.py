@@ -99,10 +99,10 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
             data, project_keys=[str(p.key) for p in committee.projects]
         )
 
-    project_list = sorted(
-        committee.projects,
-        key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))),
-    )
+    project_list = list(committee.projects)
+    for project in project_list:
+        project.committee = committee
+    project_list.sort(key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))))
     signing_keys = sorted(
         committee.public_signing_keys,
         key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
@@ -110,9 +110,6 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
     committee_member = False
     if isinstance(session, web.Committer):
         committee_member = await session.prevent_confusing_ui_display_committee(name, False)
-    for project in project_list:
-        # Workaround for the usual loading problem
-        project.committee = committee
 
     is_standing = util.committee_is_standing(committee.key)
     release_managers = sorted(committee.release_managers)
