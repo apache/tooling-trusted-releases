@@ -1120,6 +1120,21 @@ class CommitteeMember(CommitteeParticipant):
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
 
+    async def set_automated_keys_file(self, enabled: bool) -> bool:
+        committee = await self.__data.committee(key=self.__committee_key).demand(
+            storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+        )
+        if committee.automated_keys_file == enabled:
+            return False
+        committee.automated_keys_file = enabled
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            automated_keys_file=enabled,
+        )
+        return True
+
 
 class FoundationAdmin(CommitteeMember):
     def __init__(

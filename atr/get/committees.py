@@ -140,8 +140,18 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
                 defaults={"committee_key": committee.key, "asf_uid": uid},
             )
 
+    keys_automated = committee.automated_keys_file
+    automated_keys_file_form = await form.render(
+        model_cls=shared.keys.SetAutomatedKeysFileForm,
+        action=util.as_url(post.keys.keys),
+        submit_label="Disable automated publication" if keys_automated else "Enable automated publication",
+        defaults={"committee_key": committee.key, "enabled": "false" if keys_automated else "true"},
+        empty=True,
+    )
+
     return await template.render(
         "committee-view.html",
+        automated_keys_file_form=automated_keys_file_form,
         committee=committee,
         projects=project_list,
         roster=roster,

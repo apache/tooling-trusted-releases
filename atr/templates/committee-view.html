@@ -232,6 +232,16 @@
               The <code>KEYS</code> file is automatically generated when you add or remove a key, but you can also use the form below to manually regenerate it.
             </p>
             {{ update_committee_keys_form }}
+            {% if committee.automated_keys_file %}
+              <p class="text-muted mt-3">
+                Automated publication of the <code>KEYS</code> file to SVN is <strong>enabled</strong> for this committee.
+              </p>
+            {% else %}
+              <p class="text-muted mt-3">
+                Automated publication of the <code>KEYS</code> file to SVN is <strong>disabled</strong> for this committee. Key changes are not published until it is enabled or the file is updated manually.
+              </p>
+            {% endif %}
+            {{ automated_keys_file_form }}
           {% endif %}
         {% else %}
           <p class="mb-4">No keys uploaded for this committee yet.</p>

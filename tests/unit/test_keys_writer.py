@@ -525,6 +525,32 @@ async def test_publish_keys_to_svn_skips_when_automation_disabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_set_automated_keys_file_persists_and_audits(sqlite_data):
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    await sqlite_data.commit()
+    writer, write_as = _make_committee_member(sqlite_data, "alpha")
+
+    changed = await writer.set_automated_keys_file(False)
+    unchanged = await writer.set_automated_keys_file(False)
+
+    committee = await sqlite_data.committee(key="alpha").get()
+    assert (changed, unchanged) == (True, False)
+    assert (committee is not None) and (committee.automated_keys_file is False)
+    write_as.append_to_audit_log.assert_called_once()
+
+
+def test_set_automated_keys_file_requires_membership() -> None:
+    authorisation = SimpleNamespace(asf_uid="alice", is_member_of=lambda _key: False)
+    write = storage.Write(authorisation, mock.MagicMock())
+
+    oc = write.as_committee_member_outcome("alpha")
+
+    error = oc.error_or_none()
+    assert isinstance(error, storage.AccessError)
+    assert error.status == 403
+
+
+@pytest.mark.asyncio
 async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp_path):
     owned_key = SimpleNamespace(fingerprint="fp1", committees=[SimpleNamespace(key="alpha")])
     data = MockData(
@@ -597,6 +623,13 @@ def _committee(
         public_signing_keys=public_signing_keys,
         automated_keys_file=automated_keys_file,
     )
+
+
+def _make_committee_member(data, committee_key: str):
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "alice"
+    write_as = mock.MagicMock()
+    return keys_writer.CommitteeMember(write, write_as, data, committee_key), write_as
 
 
 def _make_foundation_admin(data: MockData, committee_key: str):

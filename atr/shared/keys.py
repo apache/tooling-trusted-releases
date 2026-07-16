@@ -32,6 +32,7 @@ import atr.util as util
 
 type DELETE_OPENPGP_KEY = Literal["delete_openpgp_key"]
 type DELETE_SSH_KEY = Literal["delete_ssh_key"]
+type SET_AUTOMATED_KEYS_FILE = Literal["set_automated_keys_file"]
 type UPLOAD_REMOTE_KEYS = Literal["upload_remote_keys"]
 type UPDATE_COMMITTEE_KEYS = Literal["update_committee_keys"]
 type UPLOAD_FILE_KEYS = Literal["upload_file_keys"]
@@ -93,13 +94,19 @@ class DeleteSSHKeyForm(form.Form):
     fingerprint: str = form.label("Fingerprint", widget=form.Widget.HIDDEN)
 
 
+class SetAutomatedKeysFileForm(form.Empty):
+    variant: SET_AUTOMATED_KEYS_FILE = form.value(SET_AUTOMATED_KEYS_FILE)
+    committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
+    enabled: Literal["true", "false"] = form.label("Enabled", widget=form.Widget.HIDDEN)
+
+
 class UpdateCommitteeKeysForm(form.Empty):
     variant: UPDATE_COMMITTEE_KEYS = form.value(UPDATE_COMMITTEE_KEYS)
     committee_key: str = form.label("Committee name", widget=form.Widget.HIDDEN)
 
 
 type KeysForm = Annotated[
-    DeleteOpenPGPKeyForm | DeleteSSHKeyForm | UpdateCommitteeKeysForm,
+    DeleteOpenPGPKeyForm | DeleteSSHKeyForm | SetAutomatedKeysFileForm | UpdateCommitteeKeysForm,
     form.DISCRIMINATOR,
 ]
 

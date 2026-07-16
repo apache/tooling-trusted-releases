@@ -26,6 +26,7 @@ import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
+import atr.config as config
 import atr.db as db
 import atr.form as form
 import atr.get as get
@@ -197,6 +198,9 @@ async def keys(
 
         case shared.keys.DeleteSSHKeyForm() as delete_ssh_form:
             return await _delete_ssh_key(session, delete_ssh_form)
+
+        case shared.keys.SetAutomatedKeysFileForm() as set_automated_form:
+            return await _set_automated_keys_file(session, set_automated_form)
 
         case shared.keys.UpdateCommitteeKeysForm() as update_committee_form:
             return await _update_committee_keys(session, update_committee_form)
@@ -399,6 +403,24 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
         await quart.flash(notice, "info")
 
     return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee])
+
+
+async def _set_automated_keys_file(
+    session: web.Committer, set_form: shared.keys.SetAutomatedKeysFileForm
+) -> web.WerkzeugResponse:
+    committee_key = set_form.committee_key
+    enabled = set_form.enabled == "true"
+
+    async with storage.write() as write:
+        wacm = write.as_committee_member(committee_key)
+        changed = await wacm.keys.set_automated_keys_file(enabled)
+
+    state = "enabled" if enabled else "disabled"
+    already = "now" if changed else "already"
+    message = f'Automated KEYS publication is {already} {state} for the "{committee_key}" committee.'
+    if enabled and (not config.get().SVN_PUBLISH_URL):
+        message += " Note that SVN publication is not configured on this server."
+    return await session.redirect(get.committees.view, success=message, name=committee_key)
 
 
 async def _update_committee_keys(
