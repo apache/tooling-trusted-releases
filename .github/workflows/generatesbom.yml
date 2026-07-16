@@ -32,6 +32,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Check SBOM toolchain spec parity
+        run: |
+          docker run --rm tooling-trusted-release:latest \
+            .venv/bin/python scripts/ci/check_sbom_spec_parity.py --require-tools
+
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:

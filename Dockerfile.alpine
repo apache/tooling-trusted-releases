@@ -40,7 +40,8 @@ FROM python:3.14.5-alpine3.22 AS depbuilder
 RUN apk update && \
     apk add --no-cache \
       curl \
-      go
+      go \
+      icu-libs
 
 # install additional tools
 ENV RAT_VERSION=0.18
@@ -58,25 +59,31 @@ RUN set -eux; \
     rm -rf /tmp/apache-rat
 
 # WORKDIR /var/run
-ENV SYFT_VERSION=1.38.2
-ENV SYFT_INSTALL_SHA256=01d0d15aff461f1bc54d1716feb4824341918c4f37e1b6a5a0c0caee2251be67
+ENV SYFT_VERSION=1.46.0
+ENV SYFT_INSTALL_SHA256=8a277b4b4dc21809ecd9a0e4926f4d7319affc6451a607fdeb3e5e1fbd9bc573
+ENV SYFT_SHA256=574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
-# TODO: This is much faster than the above, but we should figure out how to pin the binaries
+# Faster than a go-install; the resulting binary is pinned by SHA after install
 RUN curl -fsSL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh -o /tmp/syft-install.sh && \
     echo "${SYFT_INSTALL_SHA256}  /tmp/syft-install.sh" | sha256sum -c - && \
-    sh /tmp/syft-install.sh -b /usr/local/bin && \
+    sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
+    echo "${SYFT_SHA256}  /usr/local/bin/syft" | sha256sum -c - && \
     rm -f /tmp/syft-install.sh
 ENV PARLAY_VERSION=0.9.0
 RUN GOPATH=/usr/local go install github.com/snyk/parlay@v${PARLAY_VERSION}
 ENV SBOMQS_VERSION=1.1.0
 RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v${SBOMQS_VERSION}
 
-ENV CDXCLI_VERSION=0.29.1
-ENV CDXCLI_SHA256=526d55f67ac53744f45525f30f0f210d3a95e044b5073904cb3eacb8f8e52135
+ENV CDXCLI_VERSION=0.32.0
+ENV CDXCLI_SHA256=29138e6068e6cf2dc60e776d078c2b17cbf45750c485aa12c28e1fef5556a15f
 RUN curl -fsSL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
     -o /usr/local/bin/cyclonedx && \
     echo "${CDXCLI_SHA256}  /usr/local/bin/cyclonedx" | sha256sum -c - && \
     chmod +x /usr/local/bin/cyclonedx
+
+# Refuse to build a stage whose syft emits a spec the CLI cannot validate
+COPY scripts/ci/check_syft_cli_spec.sh /tmp/check_syft_cli_spec.sh
+RUN sh /tmp/check_syft_cli_spec.sh
 
 # final image
 FROM python:3.14.5-alpine3.22

@@ -107,6 +107,11 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "${api}/issues" -d "$data" >/dev/null
 
+      - name: Build image and check SBOM spec parity
+        run: |
+          docker build -f Dockerfile.alpine -t atr:ci .
+          docker run --rm atr:ci .venv/bin/python scripts/ci/check_sbom_spec_parity.py --require-tools
+
       - name: Run Playwright end-to-end tests
         run: |
           sh tests/run-playwright.sh
