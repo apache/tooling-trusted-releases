@@ -169,7 +169,8 @@ async def import_selected_revision(
     publications = {wacm.committee_key: publication} if (publication is not None) else {}
     if notice := shared.keys.publication_added_notice(publications):
         await quart.flash(
-            f"{notice} Make sure that it contains the imported keys before the release is announced.",
+            f"{notice} Make sure that the published KEYS file contains the imported keys before the release"
+            " is announced.",
             "warning",
         )
     return await session.redirect(

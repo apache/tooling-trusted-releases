@@ -153,7 +153,7 @@ def publication_added_notice(publications: dict[str, storage.outcome.Outcome[dat
     if not committees:
         return None
     return (
-        f"The KEYS file for {util.conjunction(committees)} was not published to SVN"
+        f"KEYS publication to SVN was skipped for {util.conjunction(committees)}"
         " because automated publication is disabled."
     )
 
@@ -171,8 +171,8 @@ def publication_removed_warning(publications: dict[str, storage.outcome.Outcome[
     if not committees:
         return None
     return (
-        f"The published KEYS file for {util.conjunction(committees)} still contains this key"
-        " because automated publication is disabled."
+        f"KEYS publication to SVN was skipped for {util.conjunction(committees)}"
+        " because automated publication is disabled. Remove the key manually if necessary."
     )
 
 

@@ -45,6 +45,7 @@ import atr.models.unsafe as unsafe
 import atr.models.validation as validation
 import atr.paths as paths
 import atr.principal as principal
+import atr.shared as shared
 import atr.shared.catalog as catalog
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -724,16 +725,20 @@ async def key_add(
         except datatypes.UnknownApacheUidError as e:
             raise exceptions.BadRequest(str(e)) from e
 
+        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         for selected_committee_key in selected_committee_keys:
             wacm = write.as_committee_member(selected_committee_key)
             oc: outcome.Outcome[datatypes.LinkedCommittee] = await wacm.keys.associate_fingerprint(
                 key.key_model.fingerprint
             )
-            oc.result_or_raise()
+            linked = oc.result_or_raise()
+            publications[linked.name] = linked.publication
 
+    notice = shared.keys.publication_added_notice(publications)
     return models.api.KeyAddResults(
         endpoint="/key/add",
         fingerprint=key.key_model.fingerprint.upper(),
+        warnings=[notice] if notice else [],
     ).model_dump(mode="json"), 200
 
 
@@ -760,11 +765,13 @@ async def key_delete(
         wafc = write.as_foundation_committer()
         # audit_guidance fingerprint ownership verified in storage layer via authenticated user's asfuid
         oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint)
-        oc.result_or_raise()
+        deletion = oc.result_or_raise()
 
+    warning = shared.keys.publication_removed_warning(deletion.publications)
     return models.api.KeyDeleteResults(
         endpoint="/key/delete",
         success=True,
+        warnings=[warning] if warning else [],
     ).model_dump(mode="json"), 200
 
 
@@ -818,7 +825,7 @@ async def keys_upload(
     selected_committee_key = safe.CommitteeKey(data.committee)
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(str(selected_committee_key))
-        outcomes, _ = await wacm.keys.ensure_associated(filetext)
+        outcomes, publication = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
         # Or, perhaps better yet, to have a standard datatype mapping
@@ -852,12 +859,15 @@ async def keys_upload(
                             )
             # Type checker is sure that it can no longer be None
             api_outcomes.append(api_outcome)
+    publications = {str(selected_committee_key): publication} if (publication is not None) else {}
+    notice = shared.keys.publication_added_notice(publications)
     return models.api.KeysUploadResults(
         endpoint="/keys/upload",
         results=api_outcomes,
         success_count=outcomes.result_count,
         error_count=outcomes.error_count,
         submitted_committee=selected_committee_key,
+        warnings=[notice] if notice else [],
     ).model_dump(mode="json"), 200
 
 

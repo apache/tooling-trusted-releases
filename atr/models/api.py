@@ -316,6 +316,7 @@ class KeyAddArgs(schema.Strict):
 class KeyAddResults(schema.Strict):
     endpoint: Literal["/key/add"] = schema.alias("endpoint")
     fingerprint: str = schema.example("0123456789abcdef0123456789abcdef01234567")
+    warnings: list[str] = schema.factory(list)
 
 
 class KeyDeleteArgs(schema.Strict):
@@ -325,6 +326,7 @@ class KeyDeleteArgs(schema.Strict):
 class KeyDeleteResults(schema.Strict):
     endpoint: Literal["/key/delete"] = schema.alias("endpoint")
     success: Literal[True] = schema.example(True)
+    warnings: list[str] = schema.factory(list)
 
 
 class KeyGetResults(schema.Strict):
@@ -363,6 +365,7 @@ class KeysUploadResults(schema.Strict):
     success_count: int = schema.example(1)
     error_count: int = schema.example(0)
     submitted_committee: safe.CommitteeKey = schema.example("example")
+    warnings: list[str] = schema.factory(list)
 
 
 class KeysUserResults(schema.Strict):
