@@ -182,7 +182,8 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
     with mock.patch.object(writer, "_sync_committee_keys_file", new_callable=mock.AsyncMock) as mock_sync:
-        num_unlinked, num_deleted = await writer.delete_committee_keys()
+        mock_sync.return_value = (None, outcome.Result(keys_writer.datatypes.KeysPublish.SVN_NOT_CONFIGURED))
+        num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
 
     assert num_unlinked == 2
     assert num_deleted == 1
@@ -209,7 +210,7 @@ async def test_delete_committee_keys_returns_zero_when_no_keys(sqlite_data):
     await sqlite_data.commit()
     writer, write_as = _make_foundation_admin(sqlite_data, "alpha")
 
-    num_unlinked, num_deleted = await writer.delete_committee_keys()
+    num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
 
     assert num_unlinked == 0
     assert num_deleted == 0
@@ -466,6 +467,28 @@ def test_public_key_model_stores_latest_self_signature_separately_from_expiry() 
 
 
 @pytest.mark.asyncio
+async def test_publish_keys_to_svn_distinguishes_publication_states() -> None:
+    writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
+    committee = _committee("alpha", [])
+
+    with mock.patch.object(keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL=None)):
+        unconfigured = await writer._publish_keys_to_svn(committee, pathlib.Path("/dev/null"))
+    with (
+        mock.patch.object(
+            keys_writer.config, "get", return_value=SimpleNamespace(SVN_PUBLISH_URL="https://svn.example/dist/dev/atr")
+        ),
+        mock.patch.object(
+            keys_writer.util, "svn_publish_internal_url", return_value="https://svn.example/dist/dev/atr/alpha"
+        ),
+        mock.patch.object(keys_writer.svn, "publish_file", new_callable=mock.AsyncMock),
+    ):
+        published = await writer._publish_keys_to_svn(committee, pathlib.Path("/dev/null"))
+
+    assert unconfigured.result_or_raise() is keys_writer.datatypes.KeysPublish.SVN_NOT_CONFIGURED
+    assert published.result_or_raise() is keys_writer.datatypes.KeysPublish.PUBLISHED
+
+
+@pytest.mark.asyncio
 async def test_publish_keys_to_svn_puts_keys_url() -> None:
     writer, _write, _write_as = _make_foundation_committer_with_audit(MockData(None, committees_after_commit={}))
     committee = _committee("alpha", [])
@@ -502,9 +525,10 @@ async def test_update_committee_associations_removal_deletes_empty_keys_file(tmp
         mock.patch.object(keys_writer.paths, "get_downloads_dir", return_value=tmp_path),
         mock.patch.object(keys_writer.util, "chmod_directories"),
     ):
-        affected = await writer.update_committee_associations("fp1", [])
+        update = await writer.update_committee_associations("fp1", [])
 
-    assert affected == {"alpha"}
+    assert update.added == set()
+    assert update.removed == {"alpha"}
     assert not keys_path.exists()
     assert write.as_committee_participant.call_count == 0
     data.begin_immediate.assert_awaited_once()
@@ -536,9 +560,10 @@ async def test_update_committee_associations_removal_rewrites_keys_file_with_rem
         mock.patch.object(keys_writer.paths, "get_downloads_dir", return_value=temp_dir),
         mock.patch.object(keys_writer.util, "chmod_directories"),
     ):
-        affected = await writer.update_committee_associations("fp1", [])
+        update = await writer.update_committee_associations("fp1", [])
 
-    assert affected == {"alpha"}
+    assert update.added == set()
+    assert update.removed == {"alpha"}
     assert keys_path.path.exists()
     content = keys_path.path.read_text(encoding="utf-8")
     assert "stale content" not in content

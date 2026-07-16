@@ -26,7 +26,6 @@ import asfquart.base as base
 import quart
 
 import atr.blueprints.post as post
-import atr.config as config
 import atr.db as db
 import atr.form as form
 import atr.get as get
@@ -152,7 +151,7 @@ async def import_selected_revision(
     await session.release(project_key, version_key, with_committee=False, with_project=False)
     async with storage.write() as write:
         wacm = await write.as_project_committee_member(project_key)
-        outcomes: outcome.List[datatypes.Key] = await wacm.keys.import_keys_file(project_key, version_key)
+        outcomes, _ = await wacm.keys.import_keys_file(project_key, version_key)
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
@@ -276,7 +275,7 @@ async def _delete_openpgp_key(
 
     async with storage.write() as write:
         wafc = write.as_foundation_committer()
-        oc: outcome.Outcome[sql.PublicSigningKey] = await wafc.keys.delete_key(fingerprint)
+        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint)
 
     match oc:
         case outcome.Result():
@@ -365,7 +364,7 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
 
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
-        outcomes = await wacp.keys.ensure_associated(keys_text)
+        outcomes, _ = await wacp.keys.ensure_associated(keys_text)
 
     success_count = outcomes.result_count
     error_count = outcomes.error_count
@@ -388,17 +387,23 @@ async def _update_committee_keys(
 
     async with storage.write() as write:
         wacm = write.as_committee_member(committee_key)
-        keys_outcome, svn_outcome = await wacm.keys.autogenerate_keys_file()
+        keys_outcome, publication = await wacm.keys.autogenerate_keys_file()
         match keys_outcome:
             case outcome.Result():
-                svn_error = svn_outcome.error_or_none()
                 base = f'Regenerated the KEYS file for the "{committee_key}" committee'
-                if not config.get().SVN_PUBLISH_URL:
-                    await quart.flash(f"{base}.", "success")
-                elif svn_error is None:
-                    await quart.flash(f"{base} and published it to SVN.", "success")
-                else:
-                    await quart.flash(f"{base}, but publishing to SVN failed: {svn_error}", "warning")
+                match publication:
+                    case outcome.Result(datatypes.KeysPublish.PUBLISHED):
+                        await quart.flash(f"{base} and published it to SVN.", "success")
+                    case outcome.Result(datatypes.KeysPublish.SVN_NOT_CONFIGURED):
+                        await quart.flash(f"{base}.", "success")
+                    case outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED):
+                        await quart.flash(
+                            f"{base}, but it was not published to SVN"
+                            " because publication is disabled for this committee.",
+                            "warning",
+                        )
+                    case outcome.Error(error):
+                        await quart.flash(f"{base}, but publishing to SVN failed: {error}", "warning")
             case outcome.Error():
                 await quart.flash(f"Error regenerating the KEYS file for the {committee_key} committee.", "error")
 

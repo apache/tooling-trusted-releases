@@ -756,20 +756,11 @@ async def key_delete(
     asf_uid = _jwt_asf_uid()
     fingerprint = data.fingerprint.lower()
 
-    outcomes = outcome.List[str]()
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
         # audit_guidance fingerprint ownership verified in storage layer via authenticated user's asfuid
-        oc: outcome.Outcome[sql.PublicSigningKey] = await wafc.keys.delete_key(fingerprint)
-        key = oc.result_or_raise()
-
-        for committee in key.committees:
-            wacm = write.as_committee_member_outcome(committee.key).result_or_none()
-            if wacm is None:
-                continue
-            keys_file_outcome, _ = await wacm.keys.autogenerate_keys_file()
-            outcomes.append(keys_file_outcome)
-    # TODO: Add error outcomes as warnings to the response
+        oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint)
+        oc.result_or_raise()
 
     return models.api.KeyDeleteResults(
         endpoint="/key/delete",
@@ -827,7 +818,7 @@ async def keys_upload(
     selected_committee_key = safe.CommitteeKey(data.committee)
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(str(selected_committee_key))
-        outcomes: outcome.List[datatypes.Key] = await wacm.keys.ensure_associated(filetext)
+        outcomes, _ = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
         # Or, perhaps better yet, to have a standard datatype mapping

@@ -72,7 +72,7 @@ async def test_delete_committee_keys_deletes_orphans(sqlite_sessionmaker) -> Non
         await data.commit()
         writer = _admin_writer(data)
 
-        num_unlinked, num_deleted = await writer.delete_committee_keys()
+        num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
 
         assert (num_unlinked, num_deleted) == (2, 1)
         alpha = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT, deleted=db.NOT_SET).get()

@@ -184,7 +184,7 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
         async with storage.write(asf_uid) as write:
             waca = write.as_committee_admin(committee_key)
             keys_file_text = content.decode("utf-8", errors="replace")
-            outcomes = await waca.keys.ensure_associated(keys_file_text)
+            outcomes, _ = await waca.keys.ensure_associated(keys_file_text)
             log_outcome_errors(outcomes, committee_key)
             yes = outcomes.result_count
             no = outcomes.error_count
