@@ -16,6 +16,7 @@
 # under the License.
 
 import asyncio
+import datetime
 import time
 from typing import Any, Final
 
@@ -32,7 +33,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION: Final[str] = "4"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -97,11 +98,13 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         db_public_keys = result.scalars().all()
     log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
+    key_expires_map: dict[str, datetime.datetime | None] = {}
     for key in db_public_keys:
         if not key.fingerprint:
             continue
         automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key)
         apache_uid_map[key.fingerprint.lower()] = bool(key.apache_uid) or automated
+        key_expires_map[key.fingerprint.lower()] = key.expires
 
     public_keys = [key.ascii_armored_key for key in db_public_keys]
     for i, key in enumerate(public_keys):
@@ -114,11 +117,16 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         artifact_path=artifact_path,
         ascii_armored_keys=public_keys,
         apache_uid_map=apache_uid_map,
+        key_expires_map=key_expires_map,
     )
 
 
 def _check_core_logic_verify_signature(
-    signature_path: str, artifact_path: str, ascii_armored_keys: list[str], apache_uid_map: dict[str, bool]
+    signature_path: str,
+    artifact_path: str,
+    ascii_armored_keys: list[str],
+    apache_uid_map: dict[str, bool],
+    key_expires_map: dict[str, datetime.datetime | None],
 ) -> dict[str, Any]:
     """Verify an OpenPGP signature for a file."""
     start = time.perf_counter_ns()
@@ -201,6 +209,17 @@ def _check_core_logic_verify_signature(
         }
 
     apache_uid_ok = apache_uid_map.get(matched_key.fingerprint.lower(), False)
+
+    expires = key_expires_map.get(matched_key.fingerprint.lower())
+    if (expires is not None) and (expires <= datetime.datetime.now(datetime.UTC)):
+        return _expired_key_result(
+            matched_key=matched_key,
+            signature_info=verified_signature_info,
+            expires=expires,
+            num_committee_keys=len(ascii_armored_keys),
+            key_has_apache_uid=apache_uid_ok,
+        )
+
     debug_info = _debug_info(
         key=matched_key,
         signature_info=verified_signature_info,
@@ -265,6 +284,33 @@ def _debug_info(
         "public_key_algorithm": (
             signature_info.public_key_algorithm if (signature_info is not None) else "Not available"
         ),
+    }
+
+
+def _expired_key_result(
+    *,
+    matched_key: openpgp.PublicKey,
+    signature_info: openpgp.SignatureInfo,
+    expires: datetime.datetime,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=signature_info,
+        status="Invalid: Key expired",
+        valid=False,
+        num_committee_keys=num_committee_keys,
+        key_has_apache_uid=key_has_apache_uid,
+    )
+    return {
+        "verified": False,
+        "error": "Signing key has expired",
+        "error_kind": "key_expired",
+        "hint": f"The signing key expired on {expires.date().isoformat()}. Renew it, re-sign, and",
+        "hint_link_text": "update your key",
+        "hint_link": "/keys",
+        "debug_info": debug_info,
     }
 
 
