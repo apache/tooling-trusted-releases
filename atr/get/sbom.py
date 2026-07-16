@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,18 +31,75 @@ import atr.form as form
 import atr.get.compose as compose
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.paths as paths
+import atr.post as post
 import atr.render as render
 import atr.sbom as sbom
 import atr.shared as shared
 import atr.template as template
+import atr.user as user
 import atr.util as util
 import atr.web as web
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+@get.typed
+async def components(
+    session: web.Committer,
+    _sbom_components: Literal["sbom/components"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    file_path: safe.RelPath,
+) -> str:
+    """
+    URL: /sbom/components/<project_key>/<version_key>/<file_path>
+    """
+    release = await shared.sbom.release_in_phase(session, project_key, version_key, with_committee=True)
+
+    base_path = paths.release_directory(release)
+    sbom_rel_path = await shared.sbom.sbom_for_artifact(base_path, file_path)
+    if sbom_rel_path is None:
+        raise base.ASFQuartException("This file has no CycloneDX JSON SBOM", errorcode=404)
+
+    block = htm.Block()
+    _phase_nav(block, release)
+    block.h1["SBOM contents"]
+    block.p[
+        "The contents of ",
+        htm.code[str(sbom_rel_path)],
+        ", the SBOM for ",
+        htm.code[str(file_path)],
+        ".",
+    ]
+
+    breakdown = await _breakdown(base_path, sbom_rel_path)
+    block.h2["Components"]
+    if breakdown is None:
+        block.p["This SBOM could not be read, so its components cannot be shown."]
+    else:
+        _components_section(block, breakdown)
+
+    task, _augment_tasks, osv_tasks = await _fetch_tasks(str(sbom_rel_path), project_key, release, version_key)
+
+    _license_section(block, task)
+    await _vulnerability_scan_section(
+        block,
+        task,
+        osv_tasks,
+        util.as_url(
+            post.sbom.components, project_key=str(project_key), version_key=str(version_key), file_path=str(file_path)
+        ),
+        can_scan=(release.phase != sql.ReleasePhase.RELEASE_CANDIDATE)
+        and user.is_committee_member(release.committee, session.uid),
+    )
+
+    return await template.blank("SBOM contents", content=block.collect())
 
 
 @get.typed
@@ -55,43 +113,18 @@ async def report(
     """
     URL: /sbom/report/<project_key>/<version_key>/<file_path>
     """
-    # If the draft is not found, we try to get the release candidate
-    try:
-        release = await session.release(project_key, version_key, with_committee=True)
-    except base.ASFQuartException:
-        release = await session.release(
-            project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=True
-        )
+    release = await shared.sbom.release_in_phase(session, project_key, version_key, with_committee=True)
 
     block = htm.Block()
 
-    is_release_candidate = False
-    back_url = ""
-    back_anchor = ""
-    phase: Literal["COMPOSE", "VOTE"] = "COMPOSE"
-    match release.phase:
-        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            back_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
-            back_anchor = f"Compose {release.project.short_display_name} {release.version}"
-            phase = "COMPOSE"
-        case sql.ReleasePhase.RELEASE_CANDIDATE:
-            is_release_candidate = True
-            back_url = util.as_url(vote.selected, project_key=release.project.key, version_key=release.version)
-            back_anchor = f"Vote on {release.project.short_display_name} {release.version}"
-            phase = "VOTE"
-
-    render.html_nav(
-        block,
-        back_url=back_url,
-        back_anchor=back_anchor,
-        phase=phase,
-    )
+    is_release_candidate = release.phase == sql.ReleasePhase.RELEASE_CANDIDATE
+    _phase_nav(block, release)
 
     block.h1["SBOM report"]
 
     validated_path_str = str(file_path)
 
-    task, augment_tasks, osv_tasks = await _fetch_tasks(validated_path_str, project_key, release, version_key)
+    task, augment_tasks, _osv_tasks = await _fetch_tasks(validated_path_str, project_key, release, version_key)
 
     task_status = await _report_task_results(block, task)
     if task_status:
@@ -114,14 +147,16 @@ async def report(
             ]
             if len(augmented_bom_versions) > 0:
                 last_augmented_bom = max(augmented_bom_versions)
-        await _augment_section(block, release, task_result, latest_augment, last_augmented_bom)
+        await _augment_section(
+            block,
+            release,
+            task_result,
+            latest_augment,
+            last_augmented_bom,
+            can_augment=user.is_committee_member(release.committee, session.uid),
+        )
 
     _conformance_section(block, task_result)
-    _license_section(block, task_result)
-
-    await _vulnerability_scan_section(
-        block, str(project_key), str(version_key), str(file_path), task_result, osv_tasks, is_release_candidate
-    )
 
     _outdated_tool_section(block, task_result)
 
@@ -136,6 +171,7 @@ async def _augment_section(
     task_result: results.SBOMToolScore,
     latest_task: sql.Task | None,
     last_bom: int | None,
+    can_augment: bool,
 ):
     augments = []
     if task_result.atr_props is not None:
@@ -153,6 +189,9 @@ async def _augment_section(
             return
 
     if len(augments) == 0:
+        if not can_augment:
+            block.p["This SBOM has not been augmented by ATR."]
+            return
         block.p["We can attempt to augment this SBOM with additional data."]
         await form.render_block(
             block,
@@ -167,6 +206,8 @@ async def _augment_section(
             block.p["This SBOM was augmented by ATR."]
         else:
             block.p["This SBOM was augmented by ATR at revision ", htm.code[augments[-1]], "."]
+            if not can_augment:
+                return
             block.p["We can perform augmentation again to check for additional new data."]
             await form.render_block(
                 block,
@@ -174,6 +215,18 @@ async def _augment_section(
                 submit_label="Re-augment SBOM",
                 empty=True,
             )
+
+
+async def _breakdown(base_path: safe.StatePath, sbom_rel_path: safe.RelPath) -> sbom.models.components.Breakdown | None:
+    abs_path = (base_path / sbom_rel_path).path
+    try:
+        bundle = await asyncio.to_thread(sbom.utilities.path_to_bundle, abs_path)
+    except Exception:
+        # A malformed SBOM is the author's to fix, so say so on the page rather than erroring out.
+        # The parser gives no single error to catch, and anything it throws means the same thing here
+        log.exception(f"Could not read SBOM at {sbom_rel_path}")
+        return None
+    return sbom.components.breakdown(bundle.bom)
 
 
 def _cdx_to_osv(cdx: results.CdxVulnerabilityDetail) -> results.VulnerabilityDetails:
@@ -193,6 +246,50 @@ def _cdx_to_osv(cdx: results.CdxVulnerabilityDetail) -> results.VulnerabilityDet
         if (cdx.advisories is not None)
         else [],
     )
+
+
+def _component_label(item: sbom.models.components.Item) -> str:
+    return item.name if (item.version is None) else f"{item.name} {item.version}"
+
+
+def _components_section(block: htm.Block, breakdown: sbom.models.components.Breakdown) -> None:
+    if breakdown.subject is not None:
+        block.p["This SBOM describes ", htm.strong[_component_label(breakdown.subject)], "."]
+
+    if breakdown.total == 0:
+        block.p["This SBOM does not declare any components."]
+        return
+
+    component_word = "component" if (breakdown.total == 1) else "components"
+    type_word = "type" if (len(breakdown.groups) == 1) else "types"
+    block.p[f"{breakdown.total} {component_word} of {len(breakdown.groups)} {type_word}:"]
+
+    for group in breakdown.groups:
+        block.append(
+            htm.details(".mb-3.rounded")[
+                htm.summary[
+                    htm.span(".badge.bg-secondary.me-2.font-monospace")[str(len(group.items))],
+                    htm.strong[group.component_type.capitalize()],
+                ],
+                _components_table(group.items),
+            ]
+        )
+
+
+def _components_table(items: list[sbom.models.components.Item]) -> htm.Element:
+    rows = [
+        htm.tr[
+            htm.td[item.name],
+            htm.td[item.version or "-"],
+            htm.td[", ".join(item.licenses) if item.licenses else "-"],
+            htm.td[htm.code[item.purl] if item.purl else "-"],
+        ]
+        for item in items
+    ]
+    return htm.table(".table.table-sm.table-bordered.table-striped")[
+        htm.thead[htm.tr[htm.th["Name"], htm.th["Version"], htm.th["Licenses"], htm.th["PURL"]]],
+        htm.tbody[*rows],
+    ]
 
 
 def _conformance_section(block: htm.Block, task_result: results.SBOMToolScore) -> None:
@@ -282,8 +379,13 @@ async def _fetch_tasks(
         return (tasks[0] if (len(tasks) > 0) else None), augment_tasks, osv_tasks
 
 
-def _license_section(block: htm.Block, task_result: results.SBOMToolScore) -> None:
+def _license_section(block: htm.Block, task: sql.Task | None) -> None:
     block.h2["Licenses"]
+    # The licence issues come from the score, so without one there is nothing to list
+    task_result = _score_result(task)
+    if task_result is None:
+        block.p[_score_unavailable(task)]
+        return
     warnings = []
     errors = []
     prev_licenses = None
@@ -453,6 +555,28 @@ def _outdated_tool_section(block: htm.Block, task_result: results.SBOMToolScore)
         block.p["No outdated tools found."]
 
 
+def _phase_nav(block: htm.Block, release: sql.Release) -> None:
+    back_url = ""
+    back_anchor = ""
+    phase: Literal["COMPOSE", "VOTE"] = "COMPOSE"
+    match release.phase:
+        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            back_url = util.as_url(compose.selected, project_key=release.project.key, version_key=release.version)
+            back_anchor = f"Compose {release.project.short_display_name} {release.version}"
+            phase = "COMPOSE"
+        case sql.ReleasePhase.RELEASE_CANDIDATE:
+            back_url = util.as_url(vote.selected, project_key=release.project.key, version_key=release.version)
+            back_anchor = f"Vote on {release.project.short_display_name} {release.version}"
+            phase = "VOTE"
+
+    render.html_nav(
+        block,
+        back_url=back_url,
+        back_anchor=back_anchor,
+        phase=phase,
+    )
+
+
 def _report_header(
     block: htm.Block, is_release_candidate: bool, release: sql.Release, task_result: results.SBOMToolScore
 ) -> None:
@@ -469,19 +593,27 @@ def _report_header(
 
 
 async def _report_task_results(block: htm.Block, task: sql.Task | None):
+    if _score_result(task) is not None:
+        return None
+    block.p[_score_unavailable(task)]
+    return await template.blank("SBOM report", content=block.collect())
+
+
+def _score_result(task: sql.Task | None) -> results.SBOMToolScore | None:
     if task is None:
-        block.p["No SBOM score found."]
-        return await template.blank("SBOM report", content=block.collect())
+        return None
+    return task.result if isinstance(task.result, results.SBOMToolScore) else None
 
-    task_status = task.status
-    task_error = task.error
-    if (task_status == sql.TaskStatus.QUEUED) or (task_status == sql.TaskStatus.ACTIVE):
-        block.p["SBOM score is being computed."]
-        return await template.blank("SBOM report", content=block.collect())
 
-    if task_status == sql.TaskStatus.FAILED:
-        block.p[f"SBOM score task failed: {task_error}"]
-        return await template.blank("SBOM report", content=block.collect())
+def _score_unavailable(task: sql.Task | None) -> str:
+    # Why there is no score to read. Says something only where _score_result found nothing
+    if task is None:
+        return "No SBOM score found."
+    if (task.status == sql.TaskStatus.QUEUED) or (task.status == sql.TaskStatus.ACTIVE):
+        return "SBOM score is being computed."
+    if task.status == sql.TaskStatus.FAILED:
+        return f"SBOM score task failed: {task.error}"
+    return "No SBOM score found."
 
 
 def _severity_to_style(severity: str) -> str:
@@ -660,12 +792,13 @@ def _vulnerability_results_from_scan(
     block.append(new_block)
 
 
-async def _vulnerability_scan_button(block: htm.Block) -> None:
+async def _vulnerability_scan_button(block: htm.Block, action: str) -> None:
     block.p["You can perform a new vulnerability scan."]
 
     await form.render_block(
         block,
         model_cls=shared.sbom.ScanSBOMForm,
+        action=action,
         submit_label="Scan file",
         empty=True,
     )
@@ -715,19 +848,26 @@ def _vulnerability_scan_results(
 
 async def _vulnerability_scan_section(
     block: htm.Block,
-    project: str,
-    version: str,
-    file_path: str,
-    task_result: results.SBOMToolScore,
+    task: sql.Task | None,
     osv_tasks: Sequence[sql.Task],
-    is_release_candidate: bool,
+    scan_action: str,
+    can_scan: bool,
 ) -> None:
     """Display the vulnerability scan section based on task status."""
+    block.h2["Vulnerabilities"]
+
+    # The vulnerabilities come from the score, so without one there is nothing to list. Scanning is
+    # still worth offering, since it is what produces a score in the first place
+    task_result = _score_result(task)
+    if task_result is None:
+        block.p[_score_unavailable(task)]
+        if can_scan:
+            await _vulnerability_scan_button(block, scan_action)
+        return
+
     completed_task = _vulnerability_scan_find_completed_task(osv_tasks, task_result.revision_number)
 
     in_progress_task = _vulnerability_scan_find_in_progress_task(osv_tasks, task_result.revision_number)
-
-    block.h2["Vulnerabilities"]
 
     scans = []
     if task_result.vulnerabilities is not None:
@@ -744,16 +884,14 @@ async def _vulnerability_scan_section(
         scans = [t.get("value", "") for t in task_result.atr_props if t.get("name", "") == "asf:atr:osv-scan"]
     _vulnerability_scan_results(block, vulnerabilities, scans, completed_task, prev_vulnerabilities)
 
-    if not is_release_candidate:
-        if in_progress_task is not None:
-            await _vulnerability_scan_status(block, in_progress_task, project, version, file_path)
-        else:
-            await _vulnerability_scan_button(block)
+    # A scan in progress is worth reporting to anyone reading, but only a committee member can act
+    if in_progress_task is not None:
+        await _vulnerability_scan_status(block, in_progress_task, scan_action, can_scan)
+    elif can_scan:
+        await _vulnerability_scan_button(block, scan_action)
 
 
-async def _vulnerability_scan_status(
-    block: htm.Block, task: sql.Task, project: str, version: str, file_path: str
-) -> None:
+async def _vulnerability_scan_status(block: htm.Block, task: sql.Task, scan_action: str, can_scan: bool) -> None:
     status_text = task.status.value.replace("_", " ").capitalize()
     block.p[f"Vulnerability scan is currently {status_text.lower()}."]
     block.p["Task ID: ", htm.code[str(task.id)]]
@@ -763,4 +901,5 @@ async def _vulnerability_scan_status(
             htm.code[task.error],
             ". Additional details are unavailable from ATR.",
         ]
-        await _vulnerability_scan_button(block)
+        if can_scan:
+            await _vulnerability_scan_button(block, scan_action)

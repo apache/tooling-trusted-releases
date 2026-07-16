@@ -15,8 +15,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from __future__ import annotations
+from typing import Any
 
-from . import base, bundle, components, conformance, licenses, osv, patch, sbomqs, tool
+import cyclonedx.model.bom as cdx_bom
 
-__all__ = ["base", "bundle", "components", "conformance", "licenses", "osv", "patch", "sbomqs", "tool"]
+_BASE: dict[str, Any] = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.6",
+    "version": 1,
+}
+
+
+def build(payload: dict[str, Any]) -> cdx_bom.Bom:
+    """Build a CycloneDX BOM from the given document fields."""
+    built = cdx_bom.Bom.from_json(data=_BASE | payload)
+    if built is None:
+        raise ValueError("Could not build the BOM under test")
+    return built
+
+
+def with_components(*components: dict[str, Any]) -> cdx_bom.Bom:
+    """Build a CycloneDX BOM declaring the given components."""
+    return build({"components": list(components)})

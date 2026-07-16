@@ -21,6 +21,7 @@ from __future__ import annotations
 import collections
 import dataclasses
 
+import atr.analysis as analysis
 import atr.classify as classify
 import atr.db as db
 import atr.db.interaction as interaction
@@ -74,6 +75,7 @@ class GeneralPublic:
                 info.file_types[path] = await classify.classify(
                     path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
                 )
+        self.__pair_sboms(info, all_paths)
         self.__compute_checker_stats(info, all_paths)
         return info
 
@@ -118,6 +120,15 @@ class GeneralPublic:
                     files=acc.files,
                 )
             )
+
+    def __pair_sboms(self, info: datatypes.PathInfo, paths: list[safe.RelPath]) -> None:
+        # Only the JSON suffixes pair here, because the SBOM tooling reads JSON alone
+        path_strs = {str(path) for path in paths}
+        for path in paths:
+            for candidate in analysis.sbom_candidates(str(path), analysis.CYCLONEDX_JSON_SUFFIXES):
+                if candidate in path_strs:
+                    info.sbom_paths[path] = safe.RelPath(candidate)
+                    break
 
     async def __notes_suggestions_concerns(
         self, release: sql.Release, latest_revision_number: safe.RevisionNumber, info: datatypes.PathInfo

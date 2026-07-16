@@ -58,7 +58,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 async def _check_core_logic(artifact_path: str) -> dict[str, Any]:
     """Verify an SBOM exists for the specified artifact."""
 
-    sbom_expected_paths = [artifact_path + suffix for suffix in analysis.SBOM_SUFFIXES]
+    sbom_expected_paths = analysis.sbom_candidates(artifact_path, analysis.SBOM_SUFFIXES)
     log.info(f"Attempting to find one of: '{','.join(sbom_expected_paths)}'")
 
     return await _check_core_logic_find_sboms(

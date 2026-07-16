@@ -386,6 +386,14 @@ def _render_file_row(
     sbom_btn = None
     if analysis.is_cyclonedx_json(path.as_path().name):
         sbom_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=sbom_url)["SBOM report"]
+
+    components_btn = None
+    if (info is not None) and (path in info.sbom_paths):
+        components_url = util.as_url(
+            sbom.components, project_key=release.project.key, version_key=release.version, file_path=path_str
+        )
+        components_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=components_url)["View SBOM"]
+
     download_btn = htpy.a(".btn.btn-sm.btn-outline-secondary", href=download_url)["Download"]
 
     tbody.tr[
@@ -396,6 +404,7 @@ def _render_file_row(
             htpy.div(".d-flex.justify-content-end.align-items-center.gap-2")[
                 report_btn,
                 sbom_btn,
+                components_btn,
                 download_btn,
             ],
         ],

@@ -129,7 +129,7 @@ def vulns_from_bundle(bundle: models.bundle.Bundle) -> list[models.osv.CdxVulner
 def _assemble_component_vulnerability(
     doc: dict[str, Any], patch_ops: models.patch.Patch, ref: str, vuln: models.osv.VulnerabilityDetails, index: int
 ) -> None:
-    vulnerability = {
+    vulnerability: dict[str, Any] = {
         "bom-ref": f"vuln:{ref}/{vuln.id}",
         "id": vuln.id,
         "source": _get_source(vuln),
@@ -142,17 +142,20 @@ def _assemble_component_vulnerability(
         "ratings": osv_severity_to_cdx(vuln.severity, vuln.database_specific.get("severity", "")),
     }
     if vuln.references is not None:
+        # An advisory reference is only worth recording when it says where the advisory is
         vulnerability["advisories"] = [
-            {"url": r["url"]}
+            {"url": url}
             for r in vuln.references
-            if ((r.get("type", "") == "WEB") and ("advisories" in r.get("url", "")))
-            or (r.get("type", "") == "ADVISORY")
+            if (url := r.get("url", ""))
+            and (((r.get("type", "") == "WEB") and ("advisories" in url)) or (r.get("type", "") == "ADVISORY"))
         ]
     patch_ops.append(
         models.patch.AddOp(
             op="add",
             path=f"/vulnerabilities/{index!s}",
-            value=vulnerability,
+            # OSV omits whatever it has nothing to say about, and CycloneDX wants those keys absent
+            # rather than null. A null lands as a BOM that no longer parses at all
+            value={key: value for key, value in vulnerability.items() if value is not None},
         )
     )
 

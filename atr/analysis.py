@@ -211,6 +211,16 @@ def architecture_pattern() -> str:
     return "(" + "|".join(architectures) + ")(?=[_.-])"
 
 
+def artifact_stem(name: str) -> str | None:
+    # The name with its artifact extension taken off, e.g. apache-example-1.0 from
+    # apache-example-1.0.tar.gz, or None where the name carries no artifact extension. Wider than
+    # util.archive_format_stem, which knows only the archive formats
+    search = re.search(extension_pattern(), name)
+    if (not search) or (not search.group("artifact")):
+        return None
+    return name[: search.start()]
+
+
 def candidate_match(segment: str) -> re.Match[str] | None:
     return _CANDIDATE_WHOLE.match(segment) or _CANDIDATE_PARTIAL.search(segment)
 
@@ -468,6 +478,17 @@ def print_data(analysis: Analysis) -> None:
         print()
         print()
     sys.stdout.flush()
+
+
+def sbom_candidates(name: str, suffixes: tuple[str, ...]) -> list[str]:
+    # An SBOM either takes the whole file name and adds a suffix, e.g.
+    # apache-example-1.0.tar.gz.cdx.json, or stands in place of the artifact extension in the style
+    # of a Java classifier, e.g. apache-example-1.0-cyclonedx.json. Whole name first, as it names
+    # only ever one file, whereas a stem is shared by every format of the same artifact
+    candidates = [name + suffix for suffix in suffixes]
+    if (stem := artifact_stem(name)) is not None:
+        candidates.extend(stem + suffix for suffix in suffixes)
+    return candidates
 
 
 def substitutions_format(substitutions: dict[str, list[str]]) -> str:

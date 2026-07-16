@@ -44,3 +44,19 @@ def test_sbom_generate(page_release_with_file: Page) -> None:
         "cell", name=f"{sbom_helpers.FILE_NAME}.cdx.json"
     )
     expect(sbom_cell).to_be_visible()
+
+    # The file the SBOM describes offers a view of that SBOM's components
+    view_sbom = page_release_with_file.locator("#files-table-container").get_by_role("link", name="View SBOM")
+    expect(view_sbom).to_be_visible()
+    view_sbom.click()
+
+    expect(page_release_with_file.get_by_role("heading", name="SBOM contents")).to_be_visible()
+    expect(page_release_with_file.get_by_text(f"{sbom_helpers.FILE_NAME}.cdx.json")).to_be_visible()
+
+    # What the SBOM says about itself lives here, and scanning returns to this same page
+    expect(page_release_with_file.get_by_role("heading", name="Components")).to_be_visible()
+    expect(page_release_with_file.get_by_role("heading", name="Licenses")).to_be_visible()
+    expect(page_release_with_file.get_by_role("heading", name="Vulnerabilities")).to_be_visible()
+    page_release_with_file.get_by_role("button", name="Scan file").click()
+    page_release_with_file.wait_for_url("**/sbom/components/**")
+    expect(page_release_with_file.get_by_role("heading", name="SBOM contents")).to_be_visible()

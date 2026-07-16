@@ -99,6 +99,8 @@ class PathInfo(schema.Strict):
     release_level_concerns: list[sql.CheckResult] = schema.factory(list)
     release_level_exceptions: list[sql.CheckResult] = schema.factory(list)
     release_level_suggestions: list[sql.CheckResult] = schema.factory(list)
+    # Each file that has a CycloneDX JSON SBOM riding alongside it, mapped to that SBOM
+    sbom_paths: dict[safe.RelPath, safe.RelPath] = schema.factory(dict)
     suggestions: dict[safe.RelPath, list[sql.CheckResult]] = schema.factory(dict)
 
 

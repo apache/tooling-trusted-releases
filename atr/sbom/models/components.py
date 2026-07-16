@@ -17,6 +17,29 @@
 
 from __future__ import annotations
 
-from . import base, bundle, components, conformance, licenses, osv, patch, sbomqs, tool
+import pydantic
 
-__all__ = ["base", "bundle", "components", "conformance", "licenses", "osv", "patch", "sbomqs", "tool"]
+from .base import Strict
+
+
+class Item(Strict):
+    name: str
+    version: str | None = None
+    licenses: list[str] = pydantic.Field(default_factory=list)
+    purl: str | None = None
+
+
+class Group(Strict):
+    component_type: str
+    items: list[Item] = pydantic.Field(default_factory=list)
+
+
+class Breakdown(Strict):
+    # The component the BOM is about, from metadata.component. Absent in a BOM that omits it,
+    # and it is not counted in the groups
+    subject: Item | None = None
+    groups: list[Group] = pydantic.Field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return sum(len(group.items) for group in self.groups)

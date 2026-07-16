@@ -27,10 +27,32 @@ import atr.blueprints.post as post
 import atr.get as get
 import atr.log as log
 import atr.models.safe as safe
+import atr.models.sql as sql
+import atr.paths as paths
 import atr.shared as shared
 import atr.storage as storage
 import atr.util as util
 import atr.web as web
+
+
+@post.typed
+async def components(
+    session: web.Committer,
+    _sbom_components: Literal["sbom/components"],
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    file_path: safe.RelPath,
+    _sbom_form: shared.sbom.ScanSBOMForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: /sbom/components/<project_key>/<version_key>/<path:file_path>
+    """
+    # The page is keyed on the file the SBOM describes, so find the SBOM before scanning it
+    release = await shared.sbom.release_in_phase(session, project_key, version_key)
+    sbom_path = await shared.sbom.sbom_for_artifact(paths.release_directory(release), file_path)
+    if sbom_path is None:
+        raise base.ASFQuartException("This file has no CycloneDX JSON SBOM", errorcode=404)
+    return await _scan(session, release, project_key, version_key, sbom_path, file_path)
 
 
 @post.typed
@@ -40,18 +62,12 @@ async def report(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     file_path: safe.RelPath,
-    sbom_form: shared.sbom.SBOMForm,
+    _sbom_form: shared.sbom.AugmentSBOMForm,
 ) -> web.WerkzeugResponse:
     """
     URL: /sbom/report/<project_key>/<version_key>/<path:file_path>
     """
-
-    match sbom_form:
-        case shared.sbom.AugmentSBOMForm():
-            return await _augment(session, project_key, version_key, file_path)
-
-        case shared.sbom.ScanSBOMForm():
-            return await _scan(session, project_key, version_key, file_path)
+    return await _augment(session, project_key, version_key, file_path)
 
 
 async def _augment(
@@ -95,14 +111,18 @@ async def _augment(
 
 
 async def _scan(
-    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: safe.RelPath
+    session: web.Committer,
+    release: sql.Release,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    rel_path: safe.RelPath,
+    artifact_path: safe.RelPath,
 ) -> web.WerkzeugResponse:
-    """Scan a CycloneDX SBOM file for vulnerabilities using OSV."""
+    """Scan a CycloneDX SBOM file for vulnerabilities using OSV, returning to the artifact's page."""
     if not analysis.is_cyclonedx_json(rel_path.as_path().name):
         raise base.ASFQuartException("OSV scanning is only supported for CycloneDX JSON files", errorcode=400)
 
     try:
-        release = await session.release(project_key, version_key, with_committee=False, with_project=False)
         revision_number = release.safe_latest_revision_number
         log.info(f"Starting OSV scan for {project_key!s} {version_key!s} {revision_number!s} {rel_path!s}")
         async with storage.write_as_project_committee_member(project_key) as wacm:
@@ -117,16 +137,16 @@ async def _scan(
         log.exception("Error starting OSV scan:")
         await quart.flash(f"Error starting OSV scan: {e!s}", "error")
         return await session.redirect(
-            get.sbom.report,
+            get.sbom.components,
             project_key=str(project_key),
             version_key=str(version_key),
-            file_path=str(rel_path),
+            file_path=str(artifact_path),
         )
 
     return await session.redirect(
-        get.sbom.report,
+        get.sbom.components,
         success=f"OSV vulnerability scan queued for {rel_path!s} (task ID: {util.unwrap(sbom_task.id)})",
         project_key=str(project_key),
         version_key=str(version_key),
-        file_path=str(rel_path),
+        file_path=str(artifact_path),
     )

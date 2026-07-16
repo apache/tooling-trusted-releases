@@ -120,6 +120,10 @@
                 <a href="{{ as_url(get.sbom.report, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">SBOM report</a>
               {% endif %}
+              {% if info and (path in info.sbom_paths) %}
+                <a href="{{ as_url(get.sbom.components, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
+                   class="btn btn-sm btn-outline-secondary">View SBOM</a>
+              {% endif %}
               {% if has_blockers %}
                 <a href="{{ as_url(get.report.selected_path, project_key=project_key|string, version_key=version_key|string, rel_path=path) }}"
                    class="btn btn-sm atr-btn-outline-blocker">Show details</a>

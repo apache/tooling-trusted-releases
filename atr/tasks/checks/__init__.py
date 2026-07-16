@@ -523,8 +523,7 @@ async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str |
     if (not rel_path) or (not release.latest_revision_number):
         return []
     entries = []
-    for suffix in analysis.SBOM_SUFFIXES:
-        candidate = rel_path + suffix
+    for candidate in analysis.sbom_candidates(rel_path, analysis.SBOM_SUFFIXES):
         abs_path = file_paths.revision_path_for_file(
             release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, candidate
         )

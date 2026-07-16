@@ -15,12 +15,40 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Annotated, Literal
+from typing import Literal
 
+import aiofiles.os
+import asfquart.base as base
+
+import atr.analysis as analysis
 import atr.form as form
+import atr.models.safe as safe
+import atr.models.sql as sql
+import atr.web as web
 
 type AUGMENT = Literal["augment"]
 type SCAN = Literal["scan"]
+
+
+async def release_in_phase(
+    session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey, with_committee: bool = False
+) -> sql.Release:
+    # If the draft is not found, we try to get the release candidate
+    try:
+        return await session.release(project_key, version_key, with_committee=with_committee)
+    except base.ASFQuartException:
+        return await session.release(
+            project_key, version_key, phase=sql.ReleasePhase.RELEASE_CANDIDATE, with_committee=with_committee
+        )
+
+
+async def sbom_for_artifact(base_path: safe.StatePath, file_path: safe.RelPath) -> safe.RelPath | None:
+    # Only the JSON suffixes pair here, because the SBOM tooling reads JSON alone
+    for candidate in analysis.sbom_candidates(str(file_path), analysis.CYCLONEDX_JSON_SUFFIXES):
+        rel_path = safe.RelPath(candidate)
+        if await aiofiles.os.path.isfile((base_path / rel_path).path):
+            return rel_path
+    return None
 
 
 class AugmentSBOMForm(form.Empty):
@@ -29,9 +57,3 @@ class AugmentSBOMForm(form.Empty):
 
 class ScanSBOMForm(form.Empty):
     variant: SCAN = form.value(SCAN)
-
-
-type SBOMForm = Annotated[
-    AugmentSBOMForm | ScanSBOMForm,
-    form.DISCRIMINATOR,
-]

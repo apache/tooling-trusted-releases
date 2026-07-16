@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cyclonedx.model.license import DisjunctiveLicense, LicenseExpression
+from cyclonedx.model.license import DisjunctiveLicense, License, LicenseExpression
 
 if TYPE_CHECKING:
     from cyclonedx.model.bom import Bom
@@ -51,13 +51,7 @@ def check(
             continue
 
         for license_choice in component.licenses:
-            license_expr = None
-
-            if isinstance(license_choice, LicenseExpression):
-                license_expr = license_choice.value
-            elif isinstance(license_choice, DisjunctiveLicense):
-                license_expr = license_choice.id
-
+            license_expr = expression(license_choice)
             if not license_expr:
                 continue
 
@@ -123,3 +117,13 @@ def check(
                 )
 
     return good, warnings, errors
+
+
+def expression(license_choice: License) -> str | None:
+    # A licence is either an SPDX expression or a single licence, and a single licence carries a
+    # name of its own where it has no SPDX identifier to give
+    if isinstance(license_choice, LicenseExpression):
+        return license_choice.value
+    if isinstance(license_choice, DisjunctiveLicense):
+        return license_choice.id or license_choice.name
+    return None

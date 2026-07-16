@@ -131,7 +131,7 @@ def _artifacts(rel_files: _ReleaseFiles) -> list[release.ArtifactInput]:
                 download_path_suffix=dirpath,
                 signature_path=_companion(siblings, name, _SIGNATURE_SUFFIXES),
                 checksum_path=_companion(siblings, name, _CHECKSUM_SUFFIXES),
-                sbom_path=_companion(siblings, name, analysis.SBOM_SUFFIXES),
+                sbom_path=_sbom_companion(siblings, name),
             )
         )
     return artifacts
@@ -269,6 +269,15 @@ def _safe_keys(project_key: str, version: str) -> tuple[safe.ProjectKey, safe.Ve
     except ValueError:
         log.warning(f"dist commit version {version!r} for {project_key} is not a valid version key; skipping")
         return None
+
+
+def _sbom_companion(siblings: set[str], artifact: str) -> str | None:
+    # Unlike a signature or a checksum, an SBOM can stand in place of the artifact extension rather
+    # than sit on the end of the whole name
+    for candidate in analysis.sbom_candidates(artifact, analysis.SBOM_SUFFIXES):
+        if candidate in siblings:
+            return candidate
+    return None
 
 
 def _structural_changes(

@@ -642,8 +642,7 @@ class ReleaseManager(CommitteeParticipant):
                     checksum_path = candidate
                     break
             sbom_path: str | None = None
-            for suffix in analysis.SBOM_SUFFIXES:
-                candidate = f"{rel}{suffix}"
+            for candidate in analysis.sbom_candidates(rel, analysis.SBOM_SUFFIXES):
                 if candidate in rel_paths:
                     sbom_path = candidate
                     break
