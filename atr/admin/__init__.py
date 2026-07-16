@@ -1054,7 +1054,7 @@ async def delete_committee_keys_post(
     try:
         async with storage.write(session) as write:
             waca = write.as_committee_admin(committee_key)
-            num_unlinked, num_deleted, _ = await waca.keys.delete_committee_keys()
+            num_unlinked, num_deleted, publication = await waca.keys.delete_committee_keys()
     except storage.AccessError as e:
         await quart.flash(str(e), "error")
         return await session.redirect(delete_committee_keys_get)
@@ -1067,6 +1067,13 @@ async def delete_committee_keys_post(
             f"Deleted {util.plural(num_deleted, 'unused key')}.",
             "success",
         )
+        publications = {committee_key: publication} if (publication is not None) else {}
+        if shared.keys.publication_disabled(publications):
+            await quart.flash(
+                f"The published KEYS file for '{committee_key}' was not updated"
+                " because automated publication is disabled.",
+                "warning",
+            )
 
     return await session.redirect(delete_committee_keys_get)
 

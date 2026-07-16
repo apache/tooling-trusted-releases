@@ -72,12 +72,14 @@ async def add(
             ocr: outcome.Outcome[datatypes.Key] = await wafc.keys.ensure_stored_one(key_text)
             key = ocr.result_or_raise()
 
+            publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
             for selected_committee_key in selected_committee_keys:
                 wacp = write.as_committee_participant(selected_committee_key)
                 oc: outcome.Outcome[datatypes.LinkedCommittee] = await wacp.keys.associate_fingerprint(
                     key.key_model.fingerprint
                 )
-                oc.result_or_raise()
+                linked = oc.result_or_raise()
+                publications[linked.name] = linked.publication
 
             fingerprint_upper = key.key_model.fingerprint.upper()
             if key.status == datatypes.KeyStatus.PARSED:
@@ -91,6 +93,8 @@ async def add(
             else:
                 await quart.flash(f"OpenPGP key {fingerprint_upper} added successfully.", "success")
             await _flash_openpgp_key_uid_warning(key.key_model, session.asf_uid)
+            if notice := shared.keys.publication_added_notice(publications):
+                await quart.flash(notice, "info")
 
     except PrivateKeyUploadError:
         await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
@@ -122,12 +126,18 @@ async def details(
     try:
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
-            await wafc.keys.update_committee_associations(
+            update = await wafc.keys.update_committee_associations(
                 key_fingerprint,
                 update_form.selected_committees,
             )
 
         await quart.flash("Key committee associations updated successfully.", "success")
+        added = {c: p for c, p in update.publications.items() if c in update.added}
+        removed = {c: p for c, p in update.publications.items() if c in update.removed}
+        if notice := shared.keys.publication_added_notice(added):
+            await quart.flash(notice, "info")
+        if warning := shared.keys.publication_removed_warning(removed):
+            await quart.flash(warning, "warning")
     except storage.AccessError as e:
         await quart.flash(str(e), "error")
     except Exception as e:
@@ -151,11 +161,17 @@ async def import_selected_revision(
     await session.release(project_key, version_key, with_committee=False, with_project=False)
     async with storage.write() as write:
         wacm = await write.as_project_committee_member(project_key)
-        outcomes, _ = await wacm.keys.import_keys_file(project_key, version_key)
+        outcomes, publication = await wacm.keys.import_keys_file(project_key, version_key)
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
         message += f", failed to upload {util.plural(outcomes.error_count, 'key')} for {wacm.committee_key}"
+    publications = {wacm.committee_key: publication} if (publication is not None) else {}
+    if notice := shared.keys.publication_added_notice(publications):
+        await quart.flash(
+            f"{notice} Make sure that it contains the imported keys before the release is announced.",
+            "warning",
+        )
     return await session.redirect(
         get.compose.selected,
         success=message,
@@ -278,7 +294,9 @@ async def _delete_openpgp_key(
         oc: outcome.Outcome[datatypes.KeyDeletion] = await wafc.keys.delete_key(fingerprint)
 
     match oc:
-        case outcome.Result():
+        case outcome.Result(deletion):
+            if warning := shared.keys.publication_removed_warning(deletion.publications):
+                await quart.flash(warning, "warning")
             return await session.redirect(get.keys.keys, success="OpenPGP key deleted successfully")
         case outcome.Error(error):
             return await session.redirect(get.keys.keys, error=f"Error deleting OpenPGP key: {error}")
@@ -364,7 +382,7 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
 
     async with storage.write() as write:
         wacp = write.as_committee_participant(selected_committee)
-        outcomes, _ = await wacp.keys.ensure_associated(keys_text)
+        outcomes, publication = await wacp.keys.ensure_associated(keys_text)
 
     success_count = outcomes.result_count
     error_count = outcomes.error_count
@@ -375,6 +393,9 @@ async def _process_keys(keys_text: str, selected_committee: str) -> str:
         message += f", {error_count} failed"
 
     await quart.flash(message, "success" if (success_count > 0) else "error")
+    publications = {selected_committee: publication} if (publication is not None) else {}
+    if notice := shared.keys.publication_added_notice(publications):
+        await quart.flash(notice, "info")
 
     return await shared.keys.render_upload_page(results=outcomes, submitted_committees=[selected_committee])
 

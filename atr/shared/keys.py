@@ -148,6 +148,34 @@ type UploadKeysForm = Annotated[
 ]
 
 
+def publication_added_notice(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> str | None:
+    committees = publication_disabled(publications)
+    if not committees:
+        return None
+    return (
+        f"The KEYS file for {util.conjunction(committees)} was not published to SVN"
+        " because automated publication is disabled."
+    )
+
+
+def publication_disabled(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> list[str]:
+    return [
+        committee
+        for committee, publication in sorted(publications.items())
+        if publication.result_or_none() is datatypes.KeysPublish.AUTOMATION_DISABLED
+    ]
+
+
+def publication_removed_warning(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> str | None:
+    committees = publication_disabled(publications)
+    if not committees:
+        return None
+    return (
+        f"The published KEYS file for {util.conjunction(committees)} still contains this key"
+        " because automated publication is disabled."
+    )
+
+
 async def render_upload_page(
     results: storage.outcome.List | None = None,
     submitted_committees: list[str] | None = None,
