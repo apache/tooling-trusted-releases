@@ -4,7 +4,14 @@ set -eu
 # shellcheck source=/dev/null
 source .venv/bin/activate
 
-test -d /opt/atr/state || mkdir -p /opt/atr/state
+mkdir -p /opt/atr/state 2>/dev/null || true
+if [ ! -w /opt/atr/state ]
+then
+  echo "ERROR: /opt/atr/state is missing or not writable" >&2
+  echo "Process user $(id -u):$(id -g); state directory $(stat -c 'uid %u gid %g mode %a' /opt/atr/state 2>/dev/null || echo missing)" >&2
+  echo "Run the container as a user that can write to the state directory, or change its ownership to match" >&2
+  exit 1
+fi
 
 if [ ! -f state/hypercorn/secrets/cert.pem ] || [ ! -f state/hypercorn/secrets/key.pem ]
 then
