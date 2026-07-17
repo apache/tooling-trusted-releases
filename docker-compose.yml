@@ -19,6 +19,7 @@ services:
       - ./start-dev.sh:/opt/atr/start-atr.sh
     ports:
       - 8080:8080
+    init: true
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8080/"]
       interval: 30s

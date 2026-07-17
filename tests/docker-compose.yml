@@ -10,6 +10,7 @@ services:
       - SSH_HOST=0.0.0.0
     networks:
       - test-network
+    init: true
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8080/"]
       interval: 2s
@@ -32,6 +33,7 @@ services:
       - ../atr:/opt/atr/atr
       - ../start-dev.sh:/opt/atr/start-atr.sh
       - atr-dev-state:/opt/atr/state
+    init: true
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8080/"]
       interval: 2s
