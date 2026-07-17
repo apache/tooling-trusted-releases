@@ -112,6 +112,50 @@ jobs:
           docker build -f Dockerfile.alpine -t atr:ci .
           docker run --rm atr:ci .venv/bin/python scripts/ci/check_sbom_spec_parity.py --require-tools
 
+      - name: Check that the server runs as a non-root user
+        env:
+          NRSRV: atr-ci-nonroot-${{ github.run_id }}
+          NRVOL: atr-ci-nonroot-state-${{ github.run_id }}
+          NRNEG: atr-ci-nonroot-denied-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cleanup() {
+            status=$?
+            if [ "$status" != "0" ]
+            then
+              docker logs "$NRSRV" --tail 100 || true
+            fi
+            docker rm -f "$NRSRV" "$NRNEG" >/dev/null 2>&1 || true
+            docker volume rm -f "$NRVOL" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker volume create "$NRVOL"
+          docker run --rm --user 0:0 -v "$NRVOL:/opt/atr/state" atr:ci chown 1000:1000 /opt/atr/state
+          docker run -d --name "$NRSRV" --user 1000:1000 \
+            -v "$NRVOL:/opt/atr/state" \
+            -e TESTS=1 \
+            -e APP_HOST=localhost.apache.org:8080 \
+            -e BIND=0.0.0.0:8080 \
+            -e SSH_HOST=0.0.0.0 \
+            atr:ci
+          for _ in $(seq 1 60); do
+            docker exec "$NRSRV" curl -ksf https://127.0.0.1:8080/ >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec "$NRSRV" curl -ksf https://127.0.0.1:8080/ >/dev/null
+          test "$(docker exec "$NRSRV" stat -c '%u' /proc/1)" = "1000"
+          if timeout 60 docker run --rm --name "$NRNEG" --user 12321:12321 \
+            -e TESTS=1 \
+            -e APP_HOST=localhost.apache.org:8080 \
+            -e BIND=0.0.0.0:8080 \
+            -e SSH_HOST=0.0.0.0 \
+            atr:ci > denied.txt 2>&1
+          then
+            echo "Expected startup to fail without a writable state directory"
+            exit 1
+          fi
+          grep -q "not writable" denied.txt
+
       - name: Run Playwright end-to-end tests
         run: |
           sh tests/run-playwright.sh
