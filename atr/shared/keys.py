@@ -173,6 +173,17 @@ def publication_disabled(publications: dict[str, storage.outcome.Outcome[datatyp
     ]
 
 
+def publication_failed_warning(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> str | None:
+    failures = [
+        f"{committee} ({error})"
+        for committee, publication in sorted(publications.items())
+        if (error := publication.error_or_none()) is not None
+    ]
+    if not failures:
+        return None
+    return f"KEYS publication to SVN failed for {util.conjunction(failures)}."
+
+
 def publication_removed_warning(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> str | None:
     committees = publication_disabled(publications)
     if not committees:

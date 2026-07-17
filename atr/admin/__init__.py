@@ -1074,6 +1074,8 @@ async def delete_committee_keys_post(
                 " because automated publication is disabled.",
                 "warning",
             )
+        if failure := shared.keys.publication_failed_warning(publications):
+            await quart.flash(failure, "error")
 
     return await session.redirect(delete_committee_keys_get)
 

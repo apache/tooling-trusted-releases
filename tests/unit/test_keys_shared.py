@@ -20,7 +20,7 @@ import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
 
 
-def test_publication_notices_report_only_disabled_committees() -> None:
+def test_publication_notices_report_disabled_and_failed_committees() -> None:
     publications = {
         "delta": outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED),
         "alpha": outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED),
@@ -31,9 +31,12 @@ def test_publication_notices_report_only_disabled_committees() -> None:
 
     notice = keys.publication_added_notice(publications)
     warning = keys.publication_removed_warning(publications)
+    failure = keys.publication_failed_warning(publications)
 
     assert keys.publication_disabled(publications) == ["alpha", "delta"]
     assert (notice is not None) and ("alpha and delta" in notice)
     assert (warning is not None) and ("alpha and delta" in warning)
+    assert (failure is not None) and ("epsilon (publish failed)" in failure)
     assert keys.publication_added_notice({"beta": outcome.Result(datatypes.KeysPublish.PUBLISHED)}) is None
     assert keys.publication_removed_warning({}) is None
+    assert keys.publication_failed_warning({"beta": outcome.Result(datatypes.KeysPublish.PUBLISHED)}) is None

@@ -719,13 +719,12 @@ async def key_add(
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
-        ocr: outcome.Outcome[datatypes.Key] = await wafc.keys.ensure_stored_one(data.key)
+        ocr, publications = await wafc.keys.ensure_stored_one(data.key)
         try:
             key = ocr.result_or_raise()
         except datatypes.UnknownApacheUidError as e:
             raise exceptions.BadRequest(str(e)) from e
 
-        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         for selected_committee_key in selected_committee_keys:
             wacm = write.as_committee_member(selected_committee_key)
             oc: outcome.Outcome[datatypes.LinkedCommittee] = await wacm.keys.associate_fingerprint(
@@ -735,10 +734,11 @@ async def key_add(
             publications[linked.name] = linked.publication
 
     notice = shared.keys.publication_added_notice(publications)
+    failure = shared.keys.publication_failed_warning(publications)
     return models.api.KeyAddResults(
         endpoint="/key/add",
         fingerprint=key.key_model.fingerprint.upper(),
-        warnings=[notice] if notice else [],
+        warnings=[w for w in (notice, failure) if w is not None],
     ).model_dump(mode="json"), 200
 
 
@@ -768,10 +768,11 @@ async def key_delete(
         deletion = oc.result_or_raise()
 
     warning = shared.keys.publication_removed_warning(deletion.publications)
+    failure = shared.keys.publication_failed_warning(deletion.publications)
     return models.api.KeyDeleteResults(
         endpoint="/key/delete",
         success=True,
-        warnings=[warning] if warning else [],
+        warnings=[w for w in (warning, failure) if w is not None],
     ).model_dump(mode="json"), 200
 
 
@@ -825,7 +826,7 @@ async def keys_upload(
     selected_committee_key = safe.CommitteeKey(data.committee)
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(str(selected_committee_key))
-        outcomes, publication = await wacm.keys.ensure_associated(filetext)
+        outcomes, publications = await wacm.keys.ensure_associated(filetext)
 
         # TODO: It would be nice to serialise the actual outcomes
         # Or, perhaps better yet, to have a standard datatype mapping
@@ -859,15 +860,15 @@ async def keys_upload(
                             )
             # Type checker is sure that it can no longer be None
             api_outcomes.append(api_outcome)
-    publications = {str(selected_committee_key): publication} if (publication is not None) else {}
     notice = shared.keys.publication_added_notice(publications)
+    failure = shared.keys.publication_failed_warning(publications)
     return models.api.KeysUploadResults(
         endpoint="/keys/upload",
         results=api_outcomes,
         success_count=outcomes.result_count,
         error_count=outcomes.error_count,
         submitted_committee=selected_committee_key,
-        warnings=[notice] if notice else [],
+        warnings=[w for w in (notice, failure) if w is not None],
     ).model_dump(mode="json"), 200
 
 

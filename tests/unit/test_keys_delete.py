@@ -176,9 +176,10 @@ async def test_reupload_undeletes_and_restores_associations(sqlite_sessionmaker)
             key_model=_key(ALPHA_FINGERPRINT, "alice", "armored alpha"),
         )
 
-        oc = await writer._FoundationCommitter__database_add_model(key)
+        oc, publications = await writer._FoundationCommitter__database_add_model(key)
 
         assert oc.result_or_raise().status == datatypes.KeyStatus.INSERTED
+        assert set(publications) == {"tooling"}
         row = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
         assert row is not None
         assert row.deleted is None

@@ -184,11 +184,12 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
         async with storage.write(asf_uid) as write:
             waca = write.as_committee_admin(committee_key)
             keys_file_text = content.decode("utf-8", errors="replace")
-            outcomes, publication = await waca.keys.ensure_associated(keys_file_text)
+            outcomes, publications = await waca.keys.ensure_associated(keys_file_text)
             log_outcome_errors(outcomes, committee_key)
             disabled = datatypes.KeysPublish.AUTOMATION_DISABLED
-            if (publication is not None) and (publication.result_or_none() is disabled):
-                print_and_flush(f"{committee_key} KEYS file not published: automated publication disabled")
+            for name, publication in sorted(publications.items()):
+                if publication.result_or_none() is disabled:
+                    print_and_flush(f"{name} KEYS file not published: automated publication disabled")
             yes = outcomes.result_count
             no = outcomes.error_count
 

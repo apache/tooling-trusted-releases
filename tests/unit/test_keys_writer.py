@@ -126,9 +126,10 @@ async def test_database_add_model_audits_inserted_key():
     )
     key = SimpleNamespace(key_model=key_model, member_ids=[])
 
-    result = await writer._FoundationCommitter__database_add_model(key)
+    result, publications = await writer._FoundationCommitter__database_add_model(key)
 
     assert isinstance(result, outcome.Result)
+    assert publications == {}
     data.begin_immediate.assert_awaited_once()
     data.commit.assert_awaited_once()
     write_as.append_to_audit_log.assert_called_once()
@@ -272,12 +273,13 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
         mock.patch.object(
             writer,
             "_CommitteeParticipant__database_add_models",
-            new=mock.AsyncMock(return_value=database_outcomes),
+            new=mock.AsyncMock(return_value=(database_outcomes, {})),
         ) as database_add_models,
     ):
-        result = await writer._CommitteeParticipant__ensure("keys text")
+        result, publications = await writer._CommitteeParticipant__ensure("keys text")
 
     assert result is database_outcomes
+    assert publications == {}
     email_uid_view.assert_awaited_once()
     block_models.assert_called_once_with("block-one", lookup)
     database_add_models.assert_awaited_once()
@@ -303,12 +305,13 @@ async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
         mock.patch.object(
             writer,
             "_FoundationCommitter__database_add_model",
-            new=mock.AsyncMock(return_value=database_outcome),
+            new=mock.AsyncMock(return_value=(database_outcome, {})),
         ) as database_add_model,
     ):
-        result = await writer.ensure_stored_one("keys text")
+        result, publications = await writer.ensure_stored_one("keys text")
 
     assert result is database_outcome
+    assert publications == {}
     email_uid_view.assert_not_awaited()
     block_model_create.assert_called_once()
     assert block_model_create.call_args.args[0] == "block-one"
@@ -333,10 +336,10 @@ async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
         mock.patch.object(
             writer,
             "_FoundationCommitter__database_add_model",
-            new=mock.AsyncMock(side_effect=lambda key: outcome.Result(key)),
+            new=mock.AsyncMock(side_effect=lambda key: (outcome.Result(key), {})),
         ) as database_add_model,
     ):
-        result = await writer.ensure_stored_one(key_text)
+        result, _publications = await writer.ensure_stored_one(key_text)
 
     key = result.result_or_raise()
     assert key.key_model.apache_uid == "test"
@@ -369,9 +372,10 @@ async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
             new=mock.AsyncMock(),
         ) as database_add_model,
     ):
-        result = await writer.ensure_stored_one("keys text")
+        result, publications = await writer.ensure_stored_one("keys text")
 
     assert isinstance(result, outcome.Error)
+    assert publications == {}
     error = result.error_or_none()
     assert isinstance(error, keys_writer.datatypes.UnknownApacheUidError)
     assert str(error) == "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
@@ -406,10 +410,10 @@ async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
         mock.patch.object(
             writer,
             "_CommitteeParticipant__database_add_models",
-            new=mock.AsyncMock(return_value=database_outcomes),
+            new=mock.AsyncMock(return_value=(database_outcomes, {})),
         ) as database_add_models,
     ):
-        result = await writer._CommitteeParticipant__ensure("keys text")
+        result, _publications = await writer._CommitteeParticipant__ensure("keys text")
 
     assert result is database_outcomes
     email_uid_view.assert_awaited_once()
@@ -549,6 +553,31 @@ def test_set_automated_keys_file_requires_membership() -> None:
     error = oc.error_or_none()
     assert isinstance(error, storage.AccessError)
     assert error.status == 403
+
+
+@pytest.mark.asyncio
+async def test_sync_committees_for_keys_returns_publications():
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
+    link_rows = mock.MagicMock()
+    link_rows.scalars.return_value.all.return_value = ["beta", "alpha"]
+    data.execute.return_value = link_rows
+    disabled = outcome.Result(keys_writer.datatypes.KeysPublish.AUTOMATION_DISABLED)
+    published = outcome.Result(keys_writer.datatypes.KeysPublish.PUBLISHED)
+
+    with (
+        mock.patch.object(
+            writer,
+            "_sync_committee_keys_file",
+            new=mock.AsyncMock(side_effect=[(None, disabled), ("alpha/KEYS", published)]),
+        ) as sync_file,
+        mock.patch.object(writer, "_recheck_committee_drafts", new=mock.AsyncMock()) as recheck,
+    ):
+        publications = await writer._FoundationCommitter__sync_committees_for_keys(["fp1"])
+
+    assert publications == {"alpha": disabled, "beta": published}
+    assert sync_file.await_args_list == [mock.call("alpha"), mock.call("beta")]
+    recheck.assert_awaited_once_with("alpha", "beta")
 
 
 @pytest.mark.asyncio

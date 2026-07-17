@@ -177,7 +177,9 @@ class FoundationCommitter(GeneralPublic):
         except Exception as e:
             return outcome.Error(e)
 
-    async def ensure_stored_one(self, key_file_text: str) -> outcome.Outcome[datatypes.Key]:
+    async def ensure_stored_one(
+        self, key_file_text: str
+    ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         return await self.__ensure_one(key_file_text, associate=False)
 
     def public_key_model(
@@ -463,7 +465,7 @@ class FoundationCommitter(GeneralPublic):
     async def __database_add_model(
         self,
         key: datatypes.Key,
-    ) -> outcome.Outcome[datatypes.Key]:
+    ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         via = sql.validate_instrumented_attribute
 
         await self.__data.begin_immediate()
@@ -495,13 +497,14 @@ class FoundationCommitter(GeneralPublic):
                 asf_uid=self.__asf_uid,
                 fingerprints=[f for f in undeleted],
             )
-            await self.__sync_committees_for_keys(undeleted)
+            publications = await self.__sync_committees_for_keys(undeleted)
             log.info(f"Undeleted key {key.key_model.fingerprint}")
-            return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model))
+            undeleted_key = datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model)
+            return outcome.Result(undeleted_key), publications
 
         if not inserted:
             log.info(f"Key {key.key_model.fingerprint} already exists in database")
-            return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key.key_model))
+            return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.PARSED, key_model=key.key_model)), {}
 
         log.info(f"Inserted key {key.key_model.fingerprint}")
         self.__write_as.append_to_audit_log(
@@ -512,15 +515,17 @@ class FoundationCommitter(GeneralPublic):
         )
 
         # TODO: PARSED now acts as "ALREADY_ADDED"
-        return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model))
+        return outcome.Result(datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model)), {}
 
-    async def __ensure_one(self, key_file_text: str, associate: bool = True) -> outcome.Outcome[datatypes.Key]:
+    async def __ensure_one(
+        self, key_file_text: str, associate: bool = True
+    ) -> tuple[outcome.Outcome[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         try:
             key_blocks = util.parse_key_blocks(key_file_text)
         except Exception as e:
-            return outcome.Error(e)
+            return outcome.Error(e), {}
         if len(key_blocks) != 1:
-            return outcome.Error(ValueError("Expected one key block, got none or multiple"))
+            return outcome.Error(ValueError("Expected one key block, got none or multiple")), {}
         key_block = key_blocks[0]
         try:
             key = await asyncio.to_thread(self.__block_model_create, key_block, cache.EmailUidLookup({}))
@@ -530,15 +535,14 @@ class FoundationCommitter(GeneralPublic):
             else:
                 self.__key_block_models_cache[key_block] = [key]
         except Exception as e:
-            return outcome.Error(e)
+            return outcome.Error(e), {}
         if key.key_model.apache_uid is None:
             return outcome.Error(
                 datatypes.UnknownApacheUidError(
                     "OpenPGP key could not be associated with an ASF UID. Import it through a KEYS file instead."
                 )
-            )
-        oc = await self.__database_add_model(key)
-        return oc
+            ), {}
+        return await self.__database_add_model(key)
 
     async def __keys_file_format(
         self,
@@ -610,9 +614,11 @@ and was published by the committee.\
         )
         return flagged
 
-    async def __sync_committees_for_keys(self, fingerprints: list[str]) -> None:
+    async def __sync_committees_for_keys(
+        self, fingerprints: list[str]
+    ) -> dict[str, outcome.Outcome[datatypes.KeysPublish]]:
         if not fingerprints:
-            return
+            return {}
         via = sql.validate_instrumented_attribute
         link_rows = await self.__data.execute(
             sqlmodel.select(via(sql.KeyLink.committee_key))
@@ -620,9 +626,12 @@ and was published by the committee.\
             .distinct()
         )
         committee_keys = sorted(set(link_rows.scalars().all()))
+        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         for committee_key in committee_keys:
-            await self._sync_committee_keys_file(committee_key)
+            _, publication = await self._sync_committee_keys_file(committee_key)
+            publications[committee_key] = publication
         await self._recheck_committee_drafts(*committee_keys)
+        return publications
 
     def __uids_asf_uid(self, uids: list[str], ldap_data: cache.EmailUidLookup) -> str | None:
         # Test data
@@ -758,25 +767,27 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def ensure_associated(
         self, keys_file_text: str
-    ) -> tuple[outcome.List[datatypes.Key], outcome.Outcome[datatypes.KeysPublish] | None]:
-        outcomes: outcome.List[datatypes.Key] = await self.__ensure(keys_file_text, associate=True)
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
+        outcomes, publications = await self.__ensure(keys_file_text, associate=True)
         if not outcomes.any_result:
-            return outcomes, None
+            return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
-        return outcomes, publication
+        publications[self.__committee_key] = publication
+        return outcomes, publications
 
     async def ensure_stored(
         self, keys_file_text: str
-    ) -> tuple[outcome.List[datatypes.Key], outcome.Outcome[datatypes.KeysPublish] | None]:
-        outcomes: outcome.List[datatypes.Key] = await self.__ensure(keys_file_text, associate=False)
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
+        outcomes, publications = await self.__ensure(keys_file_text, associate=False)
         if not outcomes.any_result:
-            return outcomes, None
+            return outcomes, publications
         _, publication = await self.autogenerate_keys_file()
-        return outcomes, publication
+        publications[self.__committee_key] = publication
+        return outcomes, publications
 
     async def import_keys_file(
         self, project_key: safe.ProjectKey, version_key: safe.VersionKey
-    ) -> tuple[outcome.List[datatypes.Key], outcome.Outcome[datatypes.KeysPublish] | None]:
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
@@ -793,7 +804,7 @@ class CommitteeParticipant(FoundationCommitter):
                 status=403,
             )
 
-        outcomes, publication = await self.ensure_associated(keys_file_text)
+        outcomes, publications = await self.ensure_associated(keys_file_text)
         release_keys_removed = False
         # Remove the KEYS file if 100% imported
         if (outcomes.result_count > 0) and (outcomes.error_count == 0):
@@ -822,7 +833,7 @@ class CommitteeParticipant(FoundationCommitter):
             failed_keys=outcomes.error_count,
             release_keys_removed=release_keys_removed,
         )
-        return outcomes, publication
+        return outcomes, publications
 
     def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
         try:
@@ -845,10 +856,11 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def __database_add_models(
         self, outcomes: outcome.List[datatypes.Key], associate: bool = True
-    ) -> outcome.List[datatypes.Key]:
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         # Try to upsert all models and link to the committee in one transaction
+        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         try:
-            outcomes = await self.__database_add_models_core(outcomes, associate=associate)
+            outcomes, publications = await self.__database_add_models_core(outcomes, associate=associate)
         except Exception as e:
             # This logging is just so that ruff does not erase e
             log.info(f"Post-parse error: {e}")
@@ -860,13 +872,13 @@ class CommitteeParticipant(FoundationCommitter):
                 raise datatypes.PublicKeyError(key, e)
 
             outcomes.update_roes(Exception, raise_post_parse_error)
-        return outcomes
+        return outcomes, publications
 
     async def __database_add_models_core(  # noqa: C901
         self,
         outcomes: outcome.List[datatypes.Key],
         associate: bool = True,
-    ) -> outcome.List[datatypes.Key]:
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         via = sql.validate_instrumented_attribute
         key_list = outcomes.results()
 
@@ -940,29 +952,30 @@ class CommitteeParticipant(FoundationCommitter):
                 inserted_fingerprints=sorted(key_inserts),
                 linked_fingerprints=sorted(link_inserts),
             )
+        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         if undeleted:
             self.__write_as.append_to_audit_log(
                 action="key_undelete",
                 asf_uid=self.__asf_uid,
                 fingerprints=[f for f in undeleted],
             )
-            await self.__sync_committees_for_keys(undeleted)
+            publications = await self.__sync_committees_for_keys(undeleted)
         if link_inserts:
             await self._recheck_committee_drafts(self.__committee_key)
-        return outcomes
+        return outcomes, publications
 
     async def __ensure(
         self,
         keys_file_text: str,
         associate: bool = True,
-    ) -> outcome.List[datatypes.Key]:
+    ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         outcomes = outcome.List[datatypes.Key]()
         try:
             ldap_data = await cache.email_uid_view_or_live()
             key_blocks = util.parse_key_blocks(keys_file_text)
         except Exception as e:
             outcomes.append_error(e)
-            return outcomes
+            return outcomes, {}
         # TODO: Change self.__block_models to return outcomes
         tasks = [
             asyncio.create_task(asyncio.to_thread(self.__block_models, key_block, ldap_data))
@@ -1003,9 +1016,11 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return flagged
 
-    async def __sync_committees_for_keys(self, fingerprints: list[str]) -> None:
+    async def __sync_committees_for_keys(
+        self, fingerprints: list[str]
+    ) -> dict[str, outcome.Outcome[datatypes.KeysPublish]]:
         if not fingerprints:
-            return
+            return {}
         via = sql.validate_instrumented_attribute
         link_rows = await self.__data.execute(
             sqlmodel.select(via(sql.KeyLink.committee_key))
@@ -1013,9 +1028,12 @@ class CommitteeParticipant(FoundationCommitter):
             .distinct()
         )
         committee_keys = sorted(set(link_rows.scalars().all()))
+        publications: dict[str, outcome.Outcome[datatypes.KeysPublish]] = {}
         for committee_key in committee_keys:
-            await self._sync_committee_keys_file(committee_key)
+            _, publication = await self._sync_committee_keys_file(committee_key)
+            publications[committee_key] = publication
         await self._recheck_committee_drafts(*committee_keys)
+        return publications
 
     async def __undelete_keys(self, fingerprints: list[str]) -> list[str]:
         if not fingerprints:
