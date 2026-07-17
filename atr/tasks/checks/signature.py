@@ -34,7 +34,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "5"
+CHECK_VERSION: Final[str] = "6"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -342,6 +342,13 @@ def _key_refusal_result(
             num_committee_keys=num_committee_keys,
             key_has_apache_uid=key_has_apache_uid,
         )
+    if status.revoked:
+        return _revoked_key_result(
+            matched_key=matched_key,
+            signature_info=signature_info,
+            num_committee_keys=num_committee_keys,
+            key_has_apache_uid=key_has_apache_uid,
+        )
     if (status.expires is not None) and (status.expires <= datetime.datetime.now(datetime.UTC)):
         return _expired_key_result(
             matched_key=matched_key,
@@ -396,6 +403,32 @@ def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.PublicKey]
             continue
         public_keys.append(public_key)
     return public_keys
+
+
+def _revoked_key_result(
+    *,
+    matched_key: openpgp.PublicKey,
+    signature_info: openpgp.SignatureInfo,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=signature_info,
+        status="Invalid: Signing key revoked",
+        valid=False,
+        num_committee_keys=num_committee_keys,
+        key_has_apache_uid=key_has_apache_uid,
+    )
+    return {
+        "verified": False,
+        "error": "Signature was made by a revoked key",
+        "error_kind": "revoked_key",
+        "hint": "Sign the artifact with a key which has not been revoked, then",
+        "hint_link_text": "check your keys",
+        "hint_link": "/keys",
+        "debug_info": debug_info,
+    }
 
 
 def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureInfo) -> str | None:

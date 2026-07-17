@@ -22,10 +22,14 @@ from typing import Final
 import openpgp
 
 _CERTIFICATION_REVOCATION_SIGNATURE_TYPE: Final[str] = "cert-revocation"
+# The self-certifications which carry key expiry and capabilities. A revocation sits alongside these
+# on a user binding, but declares neither, so it can't stand in for one
 _CERTIFICATION_SIGNATURE_TYPES: Final[frozenset[str]] = frozenset(
     {"cert-generic", "cert-persona", "cert-casual", "cert-positive"}
 )
+_KEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "key-revocation"
 _SUBKEY_BINDING_SIGNATURE_TYPE: Final[str] = "subkey-binding"
+_SUBKEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "subkey-revocation"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,6 +40,8 @@ class SigningKeyStatus:
     expires: datetime.datetime | None
     # False only when the issuing key declares capabilities which exclude signing
     can_sign: bool
+    # True where the issuing key carries a revocation, or hangs beneath a primary which does
+    revoked: bool
 
 
 def key_expires_at(key: openpgp.PublicKey) -> datetime.datetime | None:
@@ -67,6 +73,7 @@ def signing_key_status(
     issuer_key_ids: set[str],
 ) -> SigningKeyStatus:
     """Validity of the key which issued a signature, be that the primary key or one of its subkeys."""
+    primary_revoked = _primary_is_revoked(key)
     binding = _issuing_subkey_binding(key, issuer_fingerprints, issuer_key_ids)
     if binding is not None:
         # A subkey is only usable while its own binding and the primary above it both hold
@@ -80,6 +87,8 @@ def signing_key_status(
             identified=True,
             expires=min(expirations) if expirations else None,
             can_sign=_declares_signing(binding_signature),
+            # Revoking the primary revokes everything beneath it, so a live subkey binding isn't enough
+            revoked=primary_revoked or _subkey_is_revoked(binding),
         )
 
     if _issuer_is_primary(key, issuer_fingerprints, issuer_key_ids):
@@ -87,11 +96,12 @@ def signing_key_status(
             identified=True,
             expires=key_expires_at(key),
             can_sign=_declares_signing(_effective_self_signature(key)),
+            revoked=primary_revoked,
         )
 
     # Naming no key we hold is not the same as naming the primary, and a signature we can't attribute
     # is one we can't judge, so report it as such rather than borrowing the primary's answer
-    return SigningKeyStatus(identified=False, expires=None, can_sign=False)
+    return SigningKeyStatus(identified=False, expires=None, can_sign=False, revoked=False)
 
 
 def _binding_revoked(binding: openpgp.UserBindingInfo, fingerprint: str, key_id: str) -> bool:
@@ -122,6 +132,8 @@ def _binding_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureIn
             signature
             for signature in binding.signatures
             if _signature_is_self(signature, self_fingerprint, self_key_id)
+            # A cert-revocation is self-issued too, but carries no expiry or key flags, so admitting it
+            # here lets a revoked user id erase both for the whole key
             and (signature.signature_type in _CERTIFICATION_SIGNATURE_TYPES)
         )
     return binding_sigs
@@ -212,6 +224,12 @@ def _signature_expired(signature: openpgp.SignatureInfo, now: float) -> bool:
     return (creation + expiration) <= now
 
 
+def _primary_is_revoked(key: openpgp.PublicKey) -> bool:
+    return any(
+        signature.signature_type == _KEY_REVOCATION_SIGNATURE_TYPE for signature in key.revocation_signature_infos()
+    )
+
+
 def _signature_is_self(signature: openpgp.SignatureInfo, self_fingerprint: str, self_key_id: str) -> bool:
     fingerprints = {fingerprint.lower() for fingerprint in signature.issuer_fingerprints}
     key_ids = {key_id.lower() for key_id in signature.issuer_key_ids}
@@ -229,3 +247,9 @@ def _subkey_expires_at(
         return None
     # Subkey expiration counts from the subkey's own creation, not the primary's
     return datetime.datetime.fromtimestamp(binding.created_at + key_expiration_seconds, tz=datetime.UTC)
+
+
+def _subkey_is_revoked(binding: openpgp.SubkeyBindingInfo) -> bool:
+    # The revocation can share a timestamp with the binding it kills, so this asks whether one exists
+    # at all rather than which of the two is more recent
+    return any(signature.signature_type == _SUBKEY_REVOCATION_SIGNATURE_TYPE for signature in binding.signatures)

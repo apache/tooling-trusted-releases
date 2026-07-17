@@ -90,6 +90,10 @@ async def add(
                     ".",
                 ]
                 await quart.flash(str(p), "warning")
+            elif key.status == datatypes.KeyStatus.REFRESHED:
+                await quart.flash(
+                    f"OpenPGP key {fingerprint_upper} was updated to the version you uploaded.", "success"
+                )
             else:
                 await quart.flash(f"OpenPGP key {fingerprint_upper} added successfully.", "success")
             await _flash_openpgp_key_uid_warning(key.key_model, session.asf_uid)

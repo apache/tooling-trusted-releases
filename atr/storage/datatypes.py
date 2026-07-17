@@ -46,6 +46,8 @@ class KeyStatus(enum.Flag):
     PARSED = 0
     INSERTED = enum.auto()
     LINKED = enum.auto()
+    # The fingerprint was already stored, but its key block was replaced with a newer one
+    REFRESHED = enum.auto()
     INSERTED_AND_LINKED = INSERTED | LINKED
 
 

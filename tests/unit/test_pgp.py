@@ -124,3 +124,57 @@ def test_declares_signing_permits_a_key_declaring_no_capabilities() -> None:
 
 def test_declares_signing_refuses_a_key_whose_self_signature_cannot_be_read() -> None:
     assert pgp._declares_signing(None) is False
+
+
+def test_signing_key_status_flags_a_revoked_signing_subkey() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC)
+
+    status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_SUBKEY_SIGNING_FINGERPRINT}, set())
+
+    assert status.revoked is True
+
+
+def test_signing_key_status_flags_a_subkey_beneath_a_revoked_primary() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC)
+
+    # The subkey binding is intact, so only the primary's revocation cascading down can reject it
+    status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_PRIMARY_SIGNING_FINGERPRINT}, set())
+
+    assert status.revoked is True
+
+
+def test_signing_key_status_flags_a_revoked_primary() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC)
+
+    status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_PRIMARY_FINGERPRINT}, set())
+
+    assert status.revoked is True
+
+
+def test_signing_key_status_does_not_treat_a_revoked_user_id_as_a_revoked_key() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+
+    status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_UID_FINGERPRINT}, set())
+
+    assert status.revoked is False
+
+
+def test_key_expires_at_ignores_a_revoked_user_id_self_signature() -> None:
+    # A revocation is self-issued but declares no expiry, so reading it as the effective self-signature
+    # would erase the expiry the certification actually carries
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+
+    expires = pgp.key_expires_at(key)
+
+    assert expires is not None
+    assert expires.year == pgp_fixtures.REVOKED_UID_PRIMARY_EXPIRES_YEAR
+
+
+def test_signing_key_status_reads_capabilities_past_a_revoked_user_id() -> None:
+    # The same revocation carries no key flags, so admitting it would flip a certify-only primary to
+    # can_sign purely because a secondary address was revoked
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+
+    status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_UID_FINGERPRINT}, set())
+
+    assert status.can_sign is False

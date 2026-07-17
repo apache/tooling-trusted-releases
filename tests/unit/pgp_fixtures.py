@@ -108,3 +108,108 @@ def write_expired_subkey_fixture(tmp_path: pathlib.Path) -> tuple[str, str]:
     artifact_path.write_bytes(EXPIRED_SUBKEY_ARTIFACT_BYTES)
     signature_path.write_text(EXPIRED_SUBKEY_DETACHED_SIGNATURE_ASC, encoding="utf-8")
     return str(signature_path), str(artifact_path)
+
+
+# A certificate whose signing subkey was revoked after it had signed. The signature below was made
+# while the subkey was still good, so only a check which reads the revocation will reject it
+REVOKED_SUBKEY_PRIMARY_FINGERPRINT: Final[str] = "627e587f1f3f8cd99cc8c6781e02faf30b9b2d9d"
+REVOKED_SUBKEY_SIGNING_FINGERPRINT: Final[str] = "5b024ae4e7690e808c1c3a18c13114edca77d92f"
+
+REVOKED_SUBKEY_ARTIFACT_BYTES: Final[bytes] = b"atr revocation fixture\n"
+
+REVOKED_SUBKEY_PUBLIC_KEY_ASC: Final[str] = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEalpBFhYJKwYBBAHaRw8BAQdAjDlZ6Lr4uf3ylu8ozNd5ZeyG9dPPeG/vHH6l
+QVRSW+q0R0FUUiBSZXZva2VkIFN1YmtleSAoRm9yIHRlc3QgdXNlIG9ubHkpIDxy
+ZXZva2VkLXN1YmtleUBleGFtcGxlLmludmFsaWQ+iJMEExYKADsWIQRiflh/Hz+M
+2ZzIxngeAvrzC5stnQUCalpBFgIbAQULCQgHAgIiAgYVCgkICwIEFgIDAQIeBwIX
+gAAKCRAeAvrzC5stnfdAAQCDqDG6MbixdM9Vxsouxg3IeM3xSPH00uv8zs7ds9je
+NgD+OuBJ81xTQF2Nud+aZO9QPbr8JVRebjDi517pMiE+kA64MwRqWkEWFgkrBgEE
+AdpHDwEBB0DYrVxiE6+rIZt5WhehU+Y1ZgjSUmS4LUjQBeBxcs78u4h4BCgWCgAg
+FiEEYn5Yfx8/jNmcyMZ4HgL68wubLZ0FAmpaQRYCHQIACgkQHgL68wubLZ21oQEA
+2POrR1Ff0xJik+0M17V8nu8zCagAauhiM9S7nKD/5bgBAI/pD0d08UMLGqDFzIO7
+GlxonRgJsv+LcRh0Mw5yyVUEiO8EGBYKACAWIQRiflh/Hz+M2ZzIxngeAvrzC5st
+nQUCalpBFgIbAgCBCRAeAvrzC5stnXYgBBkWCgAdFiEEWwJK5OdpDoCMHDoYwTEU
+7cp32S8FAmpaQRYACgkQwTEU7cp32S8PsQD+P1bArcgoslNBVjKS1WvxmO7LQv+1
+/xymuXAvvVyIARsA/2bv6hKQMYhqrGERZ7ptUh9z6x15tgLGiS3UMr5FSW0LepYB
+AJOv44nvZhSS7FEFKEVUDA8wFXMkN8b0vONjttnOSVqQAP9aONCFDVFZHDwxhXe2
+Ai4vJkztXwDtM9aamALxT+OrDw==
+=2c/y
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
+REVOKED_SUBKEY_DETACHED_SIGNATURE_ASC: Final[str] = """-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQRbAkrk52kOgIwcOhjBMRTtynfZLwUCalpBFgAKCRDBMRTtynfZ
+L96xAP9O/POM9QlwStFscv/Ylj2AcGmnRIipcdYtG63grTTgWwD8C0d+wPULT/oY
+9gkQVkwcs5X4x8x+qKKvLLQHAgX3jgg=
+=wOC7
+-----END PGP SIGNATURE-----
+"""
+
+
+# A certificate whose primary key is revoked. Revoking the primary revokes everything beneath it, so
+# its still-bound signing subkey is unusable too
+REVOKED_PRIMARY_FINGERPRINT: Final[str] = "894e4b57dca9772b6b692b6a1d725675acbdb724"
+REVOKED_PRIMARY_SIGNING_FINGERPRINT: Final[str] = "d52d750d3e80bede5553b2edaf0a1d93538cd91e"
+
+REVOKED_PRIMARY_PUBLIC_KEY_ASC: Final[str] = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEalpBFhYJKwYBBAHaRw8BAQdAKUdQxIFXyT1Nn153YCA/poF2sSjombcngmqF
+0z8FAxyIeAQgFgoAIBYhBIlOS1fcqXcra2krah1yVnWsvbckBQJqWkEWAh0AAAoJ
+EB1yVnWsvbck1/sBAJPxFkfg+Cz8+RLXieMId3W7z1ySbAY0ZXdW0+zIXTs6AP0V
+lbtW9cFIu8fpMPQxw7ghJAiT/NcLewQTSdc1QfZ8DbRJQVRSIFJldm9rZWQgUHJp
+bWFyeSAoRm9yIHRlc3QgdXNlIG9ubHkpIDxyZXZva2VkLXByaW1hcnlAZXhhbXBs
+ZS5pbnZhbGlkPoiTBBMWCgA7FiEEiU5LV9ypdytraStqHXJWday9tyQFAmpaQRYC
+GwEFCwkIBwICIgIGFQoJCAsCBBYCAwECHgcCF4AACgkQHXJWday9tyRzUAEA8dxQ
+eXeLraUvbKmTwArK4EBez/kfb/iAw3SjhcNzlQgBAK7rYpI/2O7lCEJ/Ibhom9cI
+CcY0CEWd4CB148F+bEQMuDMEalpBFhYJKwYBBAHaRw8BAQdAWTKqGwULwFLUhP2f
+plzat/55UCABJStYrUeeCwbbXYGI7wQYFgoAIBYhBIlOS1fcqXcra2krah1yVnWs
+vbckBQJqWkEWAhsCAIEJEB1yVnWsvbckdiAEGRYKAB0WIQTVLXUNPoC+3lVTsu2v
+Ch2TU4zZHgUCalpBFgAKCRCvCh2TU4zZHovHAP46C9cmUu4ep4HuMhsdALUH7V2F
+i0zZxlh06TsoCyjqegD/Wc+lxUjExmc6Nwth8iib5BqB8NUxYNO42AHQRW1y6Aq6
+9wD+NEFQrTDnM7165KMXcprJwmixQAS8sVKsTuuQRo642hABAOoifUNE9r4/6Bzm
+ixdipMf9A5HgGyWO0mNWIGk+ZRIH
+=Sivq
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
+
+# A certificate with a revoked secondary user id. The key itself stays entirely valid: reading the
+# uid revocation as a key-level self-signature would erase its expiry and its declared capabilities
+REVOKED_UID_FINGERPRINT: Final[str] = "346c2e8cd37b4f7c0bde03d9fdefe91a648ddd76"
+REVOKED_UID_SIGNING_FINGERPRINT: Final[str] = "5aec39f36f29b0d02ac67eb6dd6e33ceb5d275a6"
+REVOKED_UID_PRIMARY_EXPIRES_YEAR: Final[int] = 2030
+
+REVOKED_UID_PUBLIC_KEY_ASC: Final[str] = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEalpBFhYJKwYBBAHaRw8BAQdAo/CQbE40pWaoJHDJ+zqNttN6+Op4Nb/7cFFw
+xev24XO0QUFUUiBSZXZva2VkIFVpZCAoRm9yIHRlc3QgdXNlIG9ubHkpIDxyZXZv
+a2VkLXVpZEBleGFtcGxlLmludmFsaWQ+iJkEExYKAEEWIQQ0bC6M03tPfAveA9n9
+7+kaZI3ddgUCalpBFgIbAQUJCGIiKgULCQgHAgIiAgYVCgkICwIEFgIDAQIeBwIX
+gAAKCRD97+kaZI3ddoKJAP0Qj4S7sl729rTc0UxbGeQur/GyuY/38H9LOCZUqsQ3
+UQEA+fneJoJtrT/TCCe9F+3xKDGLRrFzXbM5j6jwRTaILgK0NkFUUiBSZXZva2Vk
+IFVpZCBTZWNvbmQgPHJldm9rZWQtdWlkLTJAZXhhbXBsZS5pbnZhbGlkPoh4BDAW
+CgAgFiEENGwujNN7T3wL3gPZ/e/pGmSN3XYFAmpaQRcCHSAACgkQ/e/pGmSN3XYT
+EQD/UjqNftLvxzE8ah+nHWZZ3SRTSCcdZC6B/Hak4dd92gkA/3HPMo3BNSky+mml
+KSFbjOCembdIL9cWhsk/60T70ZADiJkEExYKAEEWIQQ0bC6M03tPfAveA9n97+ka
+ZI3ddgUCalpBFgIbAQUJCGIiKgULCQgHAgIiAgYVCgkICwIEFgIDAQIeBwIXgAAK
+CRD97+kaZI3ddv1AAP9nXCJtCPupIhiFj8MJmf5zs1iB8mvB8EExA62MEHFLMgD/
+Rfj3KhAGm8D6+e+T11dtP4RSeAev6OA8smDj1WBldQO4MwRqWkEWFgkrBgEEAdpH
+DwEBB0DfkeUI+ub7ARbR7L1mpf7IWypAnCO5dOzjcnJ6dwlSQ4jvBBgWCgAgFiEE
+NGwujNN7T3wL3gPZ/e/pGmSN3XYFAmpaQRYCGwIAgQkQ/e/pGmSN3XZ2IAQZFgoA
+HRYhBFrsOfNvKbDQKsZ+tt1uM8610nWmBQJqWkEWAAoJEN1uM8610nWmYHwA/1ng
+VdOTntQA+bbo+vHhqEGdpDvw/a1r6M2lxtBT87+2AQC1UhAkMxN0vdAZczqlBMFC
+i05PRe7RtkmV0875EUYpAz1fAP4yeSCHoNNOtOZKj3+uZuUeoDFyC6afH/LAmU+w
+rkJ3LQEA8l4Luk7tZdHZyq+w5q+hbbkRz4X5RJh3091rYGqBtAQ=
+=P9R1
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+
+
+def write_revoked_subkey_fixture(tmp_path: pathlib.Path) -> tuple[str, str]:
+    artifact_path = tmp_path / "apache-test-1.0.txt"
+    signature_path = tmp_path / "apache-test-1.0.txt.asc"
+    artifact_path.write_bytes(REVOKED_SUBKEY_ARTIFACT_BYTES)
+    signature_path.write_text(REVOKED_SUBKEY_DETACHED_SIGNATURE_ASC, encoding="utf-8")
+    return str(signature_path), str(artifact_path)

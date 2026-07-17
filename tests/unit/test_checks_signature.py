@@ -288,6 +288,22 @@ def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pat
     assert result["error_kind"] == "key_expired"
 
 
+def test_check_core_logic_rejects_signature_from_a_revoked_subkey(tmp_path: pathlib.Path) -> None:
+    # The signature was made while the subkey was still good, so it verifies cryptographically and
+    # only a revocation check can reject it
+    signature_path, artifact_path = pgp_fixtures.write_revoked_subkey_fixture(tmp_path)
+
+    result = signature_check._check_core_logic_verify_signature(
+        signature_path=signature_path,
+        artifact_path=artifact_path,
+        ascii_armored_keys=[pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC],
+        apache_uid_map={pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT: True},
+    )
+
+    assert result["verified"] is False
+    assert result["error_kind"] == "revoked_key"
+
+
 def test_key_matches_signature_accepts_subkey_issuer_metadata() -> None:
     public_key, _ = openpgp.PublicKey.from_armor(_EMBEDDED_PUBLIC_KEY_ASC)
     signature, _ = openpgp.DetachedSignature.from_armor(_EMBEDDED_DETACHED_SIGNATURE_ASC)

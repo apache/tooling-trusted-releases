@@ -480,7 +480,10 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
     committee_key = release.committee.key
     async with db.session() as data:
         statement = (
-            sqlmodel.select(via(sql.KeyLink.key_fingerprint))
+            sqlmodel.select(
+                via(sql.KeyLink.key_fingerprint),
+                via(sql.PublicSigningKey.ascii_armored_key),
+            )
             .join(sql.PublicSigningKey)
             .where(
                 via(sql.KeyLink.committee_key) == committee_key,
@@ -488,8 +491,17 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
             )
         )
         result = await data.execute(statement)
-        fingerprints = result.scalars().all()
-    return sorted(fp for fp in fingerprints if fp)
+        rows = result.all()
+
+    # A revocation or expiry change leaves the fingerprint alone but rewrites the key block, so the
+    # block content is what the cache has to track to know the check needs re-running
+    entries = []
+    for fingerprint, block in rows:
+        if not fingerprint:
+            continue
+        text = block if isinstance(block, str) else block.decode("utf-8", errors="replace")
+        entries.append(f"{fingerprint}:{text}")
+    return sorted(entries)
 
 
 async def _resolve_cross_format_sibling_swhids(release: sql.Release, rel_path: str | None = None) -> list[str]:

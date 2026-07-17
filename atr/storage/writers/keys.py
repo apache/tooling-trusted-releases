@@ -479,11 +479,16 @@ class FoundationCommitter(GeneralPublic):
         )
         inserted = key_insert_result.one_or_none() is not None
         undeleted = []
+        refreshed = False
         if inserted:
             await self.__signature_hints_consume([key])
         else:
+            # The fingerprint only covers the primary packet, so an existing row can hold a stale
+            # block - a since-revoked, re-signed, or re-subkeyed export of the same key. Bring it up
+            # to date, which also carries the apache_uid the undelete below would otherwise set
+            refreshed = await self.__refresh_stored_key(key.key_model)
             undeleted = await self.__undelete_keys([key.key_model.fingerprint])
-            if undeleted:
+            if undeleted and not refreshed:
                 await self.__data.execute(
                     sqlmodel.update(sql.PublicSigningKey)
                     .where(via(sql.PublicSigningKey.fingerprint) == key.key_model.fingerprint)
@@ -501,6 +506,19 @@ class FoundationCommitter(GeneralPublic):
             log.info(f"Undeleted key {key.key_model.fingerprint}")
             undeleted_key = datatypes.Key(status=datatypes.KeyStatus.INSERTED, key_model=key.key_model)
             return outcome.Result(undeleted_key), publications
+
+        if refreshed:
+            self.__write_as.append_to_audit_log(
+                action="key_refresh",
+                asf_uid=self.__asf_uid,
+                fingerprint=key.key_model.fingerprint,
+                key_apache_uid=key.key_model.apache_uid,
+            )
+            # A changed block can flip an existing signature check, so let its committees catch up
+            publications = await self.__sync_committees_for_keys([key.key_model.fingerprint])
+            log.info(f"Refreshed stored key {key.key_model.fingerprint}")
+            refreshed_key = datatypes.Key(status=datatypes.KeyStatus.REFRESHED, key_model=key.key_model)
+            return outcome.Result(refreshed_key), publications
 
         if not inserted:
             log.info(f"Key {key.key_model.fingerprint} already exists in database")
@@ -590,6 +608,21 @@ and was published by the committee.\
 
         full_keys_file_content = header_content + key_blocks_str
         return full_keys_file_content
+
+    async def __refresh_stored_key(self, model: sql.PublicSigningKey) -> bool:
+        existing = await self.__data.public_signing_key(fingerprint=model.fingerprint, deleted=db.NOT_SET).get()
+        if (existing is None) or (existing.ascii_armored_key == model.ascii_armored_key):
+            return False
+        existing.ascii_armored_key = model.ascii_armored_key
+        existing.algorithm = model.algorithm
+        existing.length = model.length
+        existing.latest_self_signature = model.latest_self_signature
+        existing.expires = model.expires
+        existing.primary_declared_uid = model.primary_declared_uid
+        existing.secondary_declared_uids = model.secondary_declared_uids
+        existing.apache_uid = model.apache_uid
+        self.__data.add(existing)
+        return True
 
     async def __signature_hints_consume(self, keys: list[datatypes.Key]) -> list[str]:
         via = sql.validate_instrumented_attribute
@@ -886,11 +919,40 @@ class CommitteeParticipant(FoundationCommitter):
         committee = await self.committee()
 
         key_values = [key.key_model.model_dump(exclude={"committees"}) for key in key_list]
+        incoming_blocks = {v["fingerprint"]: v["ascii_armored_key"] for v in key_values}
+        stored_blocks: dict[str, str] = {}
+        if incoming_blocks:
+            stored_result = await self.__data.execute(
+                sqlmodel.select(
+                    via(sql.PublicSigningKey.fingerprint),
+                    via(sql.PublicSigningKey.ascii_armored_key),
+                ).where(via(sql.PublicSigningKey.fingerprint).in_(sorted(incoming_blocks)))
+            )
+            stored_blocks = {fingerprint: block for fingerprint, block in stored_result.all()}
+        # A key we already hold whose incoming block differs has been re-imported with a newer state,
+        # which can flip an existing signature check even when nothing about the association changed
+        refreshed_fingerprints = {
+            fingerprint
+            for fingerprint, block in incoming_blocks.items()
+            if (fingerprint in stored_blocks) and (stored_blocks[fingerprint] != block)
+        }
         if key_values:
             stmt = sqlite.insert(sql.PublicSigningKey).values(key_values)
+            # The fingerprint only covers the primary packet, so a re-import can carry a newer block
+            # for a key we already hold - a revocation, an extended expiry, a fresh subkey. Refresh
+            # the whole derived row, not just the apache_uid
             stmt = stmt.on_conflict_do_update(
                 index_elements=["fingerprint"],
-                set_={"apache_uid": stmt.excluded.apache_uid},
+                set_={
+                    "apache_uid": stmt.excluded.apache_uid,
+                    "ascii_armored_key": stmt.excluded.ascii_armored_key,
+                    "algorithm": stmt.excluded.algorithm,
+                    "length": stmt.excluded.length,
+                    "latest_self_signature": stmt.excluded.latest_self_signature,
+                    "expires": stmt.excluded.expires,
+                    "primary_declared_uid": stmt.excluded.primary_declared_uid,
+                    "secondary_declared_uids": stmt.excluded.secondary_declared_uids,
+                },
             )
             key_insert_result = await self.__data.execute(
                 stmt.returning(via(sql.PublicSigningKey.fingerprint)),
@@ -960,7 +1022,7 @@ class CommitteeParticipant(FoundationCommitter):
                 fingerprints=[f for f in undeleted],
             )
             publications = await self.__sync_committees_for_keys(undeleted)
-        if link_inserts:
+        if link_inserts or refreshed_fingerprints:
             await self._recheck_committee_drafts(self.__committee_key)
         return outcomes, publications
 

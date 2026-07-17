@@ -59,9 +59,9 @@ async def test_committee_signing_keys_exclude_deleted(sqlite_sessionmaker, monke
     monkeypatch.setattr(checks.db, "session", lambda: sqlite_sessionmaker())
     release = SimpleNamespace(committee=SimpleNamespace(key="tooling"))
 
-    fingerprints = await checks._resolve_committee_signing_keys(release)
+    signing_keys = await checks._resolve_committee_signing_keys(release)
 
-    assert fingerprints == [BETA_FINGERPRINT]
+    assert signing_keys == [f"{BETA_FINGERPRINT}:armored beta"]
 
 
 async def test_delete_committee_keys_deletes_orphans(sqlite_sessionmaker) -> None:
@@ -186,6 +186,40 @@ async def test_reupload_undeletes_and_restores_associations(sqlite_sessionmaker)
         committee = await data.committee(key="tooling", _public_signing_keys=True).get()
         assert committee is not None
         assert sorted(k.fingerprint for k in committee.public_signing_keys) == [ALPHA_FINGERPRINT, BETA_FINGERPRINT]
+
+
+async def test_reupload_with_a_changed_block_refreshes_it(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_keys(data)
+        writer = _committer_writer(data)
+        key = datatypes.Key(
+            status=datatypes.KeyStatus.PARSED,
+            key_model=_key(ALPHA_FINGERPRINT, "alice", "armored alpha revoked"),
+        )
+
+        oc, _publications = await writer._FoundationCommitter__database_add_model(key)
+
+        assert oc.result_or_raise().status == datatypes.KeyStatus.REFRESHED
+        row = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        assert row is not None
+        assert row.ascii_armored_key == "armored alpha revoked"
+        # A changed block can flip a signature check, so the key's committees must be rechecked
+        writer._recheck_committee_drafts.assert_awaited()
+
+
+async def test_reupload_with_an_unchanged_block_is_a_noop(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        await _seed_keys(data)
+        writer = _committer_writer(data)
+        key = datatypes.Key(
+            status=datatypes.KeyStatus.PARSED,
+            key_model=_key(ALPHA_FINGERPRINT, "alice", "armored alpha"),
+        )
+
+        oc, _publications = await writer._FoundationCommitter__database_add_model(key)
+
+        assert oc.result_or_raise().status == datatypes.KeyStatus.PARSED
+        writer._recheck_committee_drafts.assert_not_awaited()
 
 
 async def test_signature_hints_consume_flags_and_deletes(sqlite_sessionmaker) -> None:
