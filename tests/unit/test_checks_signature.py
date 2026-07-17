@@ -16,7 +16,6 @@
 # under the License.
 
 import base64
-import datetime
 import pathlib
 
 import openpgp
@@ -26,6 +25,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature_check
+import tests.unit.pgp_fixtures as pgp_fixtures
 import tests.unit.recorders as recorders
 
 
@@ -267,7 +267,6 @@ def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: 
         artifact_path=artifact_path,
         ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
         apache_uid_map={_PRIMARY_FINGERPRINT: True},
-        key_expires_map={},
     )
 
     assert result["verified"] is True
@@ -275,35 +274,18 @@ def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: 
     assert result["key_id"] == _SIGNING_SUBKEY_ID
 
 
-def test_check_core_logic_rejects_expired_signing_key(tmp_path: pathlib.Path) -> None:
-    signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
-    expired = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
+def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pathlib.Path) -> None:
+    signature_path, artifact_path = pgp_fixtures.write_expired_subkey_fixture(tmp_path)
 
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
-        apache_uid_map={_PRIMARY_FINGERPRINT: True},
-        key_expires_map={_PRIMARY_FINGERPRINT: expired},
+        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+        apache_uid_map={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT: True},
     )
 
     assert result["verified"] is False
     assert result["error_kind"] == "key_expired"
-
-
-def test_check_core_logic_accepts_key_valid_at_verification_time(tmp_path: pathlib.Path) -> None:
-    signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
-    future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
-
-    result = signature_check._check_core_logic_verify_signature(
-        signature_path=signature_path,
-        artifact_path=artifact_path,
-        ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
-        apache_uid_map={_PRIMARY_FINGERPRINT: True},
-        key_expires_map={_PRIMARY_FINGERPRINT: future},
-    )
-
-    assert result["verified"] is True
 
 
 def test_key_matches_signature_accepts_subkey_issuer_metadata() -> None:

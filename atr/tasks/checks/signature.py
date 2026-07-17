@@ -27,13 +27,14 @@ import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.sql as sql
+import atr.pgp as pgp
 import atr.tasks.checks as checks
 import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "4"
+CHECK_VERSION: Final[str] = "5"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -98,13 +99,11 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         db_public_keys = result.scalars().all()
     log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
-    key_expires_map: dict[str, datetime.datetime | None] = {}
     for key in db_public_keys:
         if not key.fingerprint:
             continue
         automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key)
         apache_uid_map[key.fingerprint.lower()] = bool(key.apache_uid) or automated
-        key_expires_map[key.fingerprint.lower()] = key.expires
 
     public_keys = [key.ascii_armored_key for key in db_public_keys]
     for i, key in enumerate(public_keys):
@@ -117,27 +116,15 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         artifact_path=artifact_path,
         ascii_armored_keys=public_keys,
         apache_uid_map=apache_uid_map,
-        key_expires_map=key_expires_map,
     )
 
 
 def _check_core_logic_verify_signature(
-    signature_path: str,
-    artifact_path: str,
-    ascii_armored_keys: list[str],
-    apache_uid_map: dict[str, bool],
-    key_expires_map: dict[str, datetime.datetime | None],
+    signature_path: str, artifact_path: str, ascii_armored_keys: list[str], apache_uid_map: dict[str, bool]
 ) -> dict[str, Any]:
     """Verify an OpenPGP signature for a file."""
     start = time.perf_counter_ns()
-    public_keys: list[openpgp.PublicKey] = []
-    for ascii_armored_key in ascii_armored_keys:
-        try:
-            public_key, _ = openpgp.PublicKey.from_armor(ascii_armored_key)
-        except Exception as e:
-            log.warning(f"Failed to parse committee public key: {e}")
-            continue
-        public_keys.append(public_key)
+    public_keys = _parse_public_keys(ascii_armored_keys)
     if not public_keys:
         log.warning("No fingerprints found after parsing keys")
         return {
@@ -181,19 +168,8 @@ def _check_core_logic_verify_signature(
     issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
     candidate_keys = [key for key in public_keys if _key_matches_signature(key, issuer_fingerprints, issuer_key_ids)]
 
-    matched_key: openpgp.PublicKey | None = None
-    verified_signature_info: openpgp.SignatureInfo | None = None
-    for candidate_key in candidate_keys:
-        try:
-            signature.verify_file(candidate_key, artifact_path)
-            verified_signature_info = signature_info
-            matched_key = candidate_key
-            break
-        except Exception as e:
-            log.debug(f"Signature verification failed for key {candidate_key.fingerprint}: {e}")
-            continue
-
-    if (matched_key is None) or (verified_signature_info is None):
+    matched_key = _first_verifying_key(signature, candidate_keys, artifact_path)
+    if matched_key is None:
         return {
             "verified": False,
             "error": "No valid signature found",
@@ -210,19 +186,20 @@ def _check_core_logic_verify_signature(
 
     apache_uid_ok = apache_uid_map.get(matched_key.fingerprint.lower(), False)
 
-    expires = key_expires_map.get(matched_key.fingerprint.lower())
-    if (expires is not None) and (expires <= datetime.datetime.now(datetime.UTC)):
-        return _expired_key_result(
-            matched_key=matched_key,
-            signature_info=verified_signature_info,
-            expires=expires,
-            num_committee_keys=len(ascii_armored_keys),
-            key_has_apache_uid=apache_uid_ok,
-        )
+    refusal = _key_refusal_result(
+        matched_key=matched_key,
+        signature_info=signature_info,
+        issuer_fingerprints=issuer_fingerprints,
+        issuer_key_ids=issuer_key_ids,
+        num_committee_keys=len(ascii_armored_keys),
+        key_has_apache_uid=apache_uid_ok,
+    )
+    if refusal is not None:
+        return refusal
 
     debug_info = _debug_info(
         key=matched_key,
-        signature_info=verified_signature_info,
+        signature_info=signature_info,
         status="Valid signature",
         valid=True,
         num_committee_keys=len(ascii_armored_keys),
@@ -238,9 +215,9 @@ def _check_core_logic_verify_signature(
             "debug_info": debug_info,
         }
 
-    key_id = verified_signature_info.issuer_key_ids[0] if verified_signature_info.issuer_key_ids else matched_key.key_id
-    username = _signer_username(matched_key, verified_signature_info) or "Unknown"
-    timestamp = verified_signature_info.creation_time
+    key_id = signature_info.issuer_key_ids[0] if signature_info.issuer_key_ids else matched_key.key_id
+    username = _signer_username(matched_key, signature_info) or "Unknown"
+    timestamp = signature_info.creation_time
     return {
         "verified": True,
         "key_id": key_id,
@@ -314,6 +291,21 @@ def _expired_key_result(
     }
 
 
+def _first_verifying_key(
+    signature: openpgp.DetachedSignature,
+    candidate_keys: list[openpgp.PublicKey],
+    artifact_path: str,
+) -> openpgp.PublicKey | None:
+    for candidate_key in candidate_keys:
+        try:
+            signature.verify_file(candidate_key, artifact_path)
+            return candidate_key
+        except Exception as e:
+            log.debug(f"Signature verification failed for key {candidate_key.fingerprint}: {e}")
+            continue
+    return None
+
+
 def _key_matches_signature(
     key: openpgp.PublicKey,
     issuer_fingerprints: set[str],
@@ -332,6 +324,80 @@ def _key_matches_signature(
     return bool(key_ids.intersection(issuer_key_ids))
 
 
+def _key_refusal_result(
+    *,
+    matched_key: openpgp.PublicKey,
+    signature_info: openpgp.SignatureInfo,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any] | None:
+    """The blocker for a key we won't accept as the signer, or None where the key is acceptable."""
+    status = pgp.signing_key_status(matched_key, issuer_fingerprints, issuer_key_ids)
+    if not status.identified:
+        return _unidentified_key_result(
+            matched_key=matched_key,
+            signature_info=signature_info,
+            num_committee_keys=num_committee_keys,
+            key_has_apache_uid=key_has_apache_uid,
+        )
+    if (status.expires is not None) and (status.expires <= datetime.datetime.now(datetime.UTC)):
+        return _expired_key_result(
+            matched_key=matched_key,
+            signature_info=signature_info,
+            expires=status.expires,
+            num_committee_keys=num_committee_keys,
+            key_has_apache_uid=key_has_apache_uid,
+        )
+    if not status.can_sign:
+        return _not_signing_key_result(
+            matched_key=matched_key,
+            signature_info=signature_info,
+            num_committee_keys=num_committee_keys,
+            key_has_apache_uid=key_has_apache_uid,
+        )
+    return None
+
+
+def _not_signing_key_result(
+    *,
+    matched_key: openpgp.PublicKey,
+    signature_info: openpgp.SignatureInfo,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=signature_info,
+        status="Invalid: Key not permitted to sign",
+        valid=False,
+        num_committee_keys=num_committee_keys,
+        key_has_apache_uid=key_has_apache_uid,
+    )
+    return {
+        "verified": False,
+        "error": "Signature was made by a key which is not permitted to sign",
+        "error_kind": "not_signing_key",
+        "hint": "Sign the artifact with a signing key, then",
+        "hint_link_text": "check your keys",
+        "hint_link": "/keys",
+        "debug_info": debug_info,
+    }
+
+
+def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.PublicKey]:
+    public_keys: list[openpgp.PublicKey] = []
+    for ascii_armored_key in ascii_armored_keys:
+        try:
+            public_key, _ = openpgp.PublicKey.from_armor(ascii_armored_key)
+        except Exception as e:
+            log.warning(f"Failed to parse committee public key: {e}")
+            continue
+        public_keys.append(public_key)
+    return public_keys
+
+
 def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureInfo) -> str | None:
     if signature_info.signer_user_id:
         return signature_info.signer_user_id
@@ -341,3 +407,29 @@ def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureIn
     if key.user_ids:
         return key.user_ids[0]
     return None
+
+
+def _unidentified_key_result(
+    *,
+    matched_key: openpgp.PublicKey,
+    signature_info: openpgp.SignatureInfo,
+    num_committee_keys: int,
+    key_has_apache_uid: bool,
+) -> dict[str, Any]:
+    debug_info = _debug_info(
+        key=matched_key,
+        signature_info=signature_info,
+        status="Invalid: Signing key not identified",
+        valid=False,
+        num_committee_keys=num_committee_keys,
+        key_has_apache_uid=key_has_apache_uid,
+    )
+    return {
+        "verified": False,
+        "error": "Signature does not identify the key which made it",
+        "error_kind": "unidentified_key",
+        "hint": "Sign the artifact with a key which records its own identity in the signature, then",
+        "hint_link_text": "check your keys",
+        "hint_link": "/keys",
+        "debug_info": debug_info,
+    }

@@ -40,6 +40,7 @@ import atr.models.basic as basic
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.pgp as pgp
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
@@ -96,41 +97,6 @@ def _algorithm_name(algorithm: int) -> str:
     return _ALGORITHM_NAMES.get(algorithm, str(algorithm))
 
 
-def _binding_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureInfo]:
-    self_fingerprint = key.fingerprint.lower()
-    self_key_id = key.key_id.lower()
-    primary_bindings = [binding for binding in key.user_bindings() if binding.is_primary]
-    chosen_bindings = primary_bindings or list(key.user_bindings())
-    binding_sigs: list[openpgp.SignatureInfo] = []
-    for binding in chosen_bindings:
-        binding_sigs.extend(
-            signature
-            for signature in binding.signatures
-            if _signature_is_self(signature, self_fingerprint, self_key_id)
-        )
-    return binding_sigs
-
-
-def _direct_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureInfo]:
-    self_fingerprint = key.fingerprint.lower()
-    self_key_id = key.key_id.lower()
-    return [
-        signature
-        for signature in key.direct_signature_infos()
-        if _signature_is_self(signature, self_fingerprint, self_key_id)
-    ]
-
-
-def _effective_key_expiration_self_signature(key: openpgp.PublicKey) -> openpgp.SignatureInfo | None:
-    direct_sigs = _direct_self_signatures(key)
-    binding_sigs = _binding_self_signatures(key)
-    if key.version >= 6:
-        return _latest_signature(direct_sigs)
-    if binding_sigs:
-        return _latest_signature(binding_sigs)
-    return _latest_signature(direct_sigs)
-
-
 def _key_length(key: openpgp.PublicKey) -> int:
     public_params = key.public_params
     rsa_bits = public_params.rsa_bits
@@ -146,41 +112,6 @@ def _key_length(key: openpgp.PublicKey) -> int:
         f"Key size is not available for algorithm {key.public_key_algorithm}:"
         f" rsa_bits={rsa_bits!r}, dsa_bits={dsa_bits!r}, curve_bits={curve_bits!r}"
     )
-
-
-def _key_expires_at(key: openpgp.PublicKey) -> datetime.datetime | None:
-    effective = _effective_key_expiration_self_signature(key)
-    if effective is None:
-        return None
-    key_expiration_seconds = effective.key_expiration_seconds
-    if key_expiration_seconds is None:
-        return None
-    return datetime.datetime.fromtimestamp(key.created_at + key_expiration_seconds, tz=datetime.UTC)
-
-
-def _latest_self_signature(key: openpgp.PublicKey) -> openpgp.SignatureInfo | None:
-    signatures = _direct_self_signatures(key)
-    signatures.extend(_binding_self_signatures(key))
-    return _latest_signature(signatures)
-
-
-def _latest_self_signature_created_at(key: openpgp.PublicKey) -> datetime.datetime | None:
-    signature = _latest_self_signature(key)
-    if signature is None or signature.creation_time is None:
-        return None
-    return datetime.datetime.fromtimestamp(signature.creation_time, tz=datetime.UTC)
-
-
-def _latest_signature(signatures: list[openpgp.SignatureInfo]) -> openpgp.SignatureInfo | None:
-    if not signatures:
-        return None
-    return max(signatures, key=lambda signature: signature.creation_time or 0)
-
-
-def _signature_is_self(signature: openpgp.SignatureInfo, self_fingerprint: str, self_key_id: str) -> bool:
-    fingerprints = {fingerprint.lower() for fingerprint in signature.issuer_fingerprints}
-    key_ids = {key_id.lower() for key_id in signature.issuer_key_ids}
-    return (self_fingerprint in fingerprints) or (self_key_id in key_ids)
 
 
 class GeneralPublic:
@@ -262,14 +193,14 @@ class FoundationCommitter(GeneralPublic):
 
         # Use the original key block if available
         ascii_armored = original_key_block if original_key_block else key.to_armored()
-        expires_at = _key_expires_at(key)
+        expires_at = pgp.key_expires_at(key)
 
         return sql.PublicSigningKey(
             fingerprint=key.fingerprint.lower(),
             algorithm=_algorithm_id(key.public_key_algorithm),
             length=_key_length(key),
             created=datetime.datetime.fromtimestamp(key.created_at, tz=datetime.UTC),
-            latest_self_signature=_latest_self_signature_created_at(key),
+            latest_self_signature=pgp.latest_self_signature_created_at(key),
             expires=expires_at,
             primary_declared_uid=uids[0],
             secondary_declared_uids=uids[1:],
