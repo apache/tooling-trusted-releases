@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.alpine
+    user: "${ATR_UID:-0}:${ATR_GID:-0}"
     environment:
       - TESTS=1
       - APP_HOST=atr:8080

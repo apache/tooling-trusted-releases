@@ -72,6 +72,20 @@ The container:
 LDAP_BIND_DN=dn LDAP_BIND_PASSWORD=pass docker compose up --build
 ```
 
+**Optional container user**, on Linux: the container runs as root by default, which leaves files in `state/` owned by root on the host. To run it as your own user instead:
+
+```shell
+ATR_UID="$(id -u)" ATR_GID="$(id -g)" docker compose up --build
+```
+
+If an earlier root run left files in `state/` owned by root, fix them once first:
+
+```shell
+sudo chown -R "$(id -u):$(id -g)" state
+```
+
+This should not be used on macOS, where the file sharing backends do not present bind mount ownership consistently, or with rootless Podman, which already maps container root to your host account.
+
 **Useful container commands:**
 
 ```shell
@@ -212,6 +226,8 @@ docker compose down -v
 docker compose build --no-cache
 docker compose up
 ```
+
+If the server exits immediately with `ERROR: /opt/atr/state is missing or not writable`, the container user cannot write to the mounted `state/` directory. Either run the container as the user that owns `state/`, using `ATR_UID` and `ATR_GID` as described in the quick start, or change the ownership of `state/` to match the container user.
 
 ### Session caching (local development)
 
