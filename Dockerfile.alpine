@@ -110,6 +110,9 @@ RUN apk update && \
       rsync \
       subversion
 
+RUN addgroup -g 1000 atr && \
+    adduser -u 1000 -G atr -D atr
+
 COPY --from=depbuilder /usr/local/bin/syft /usr/local/bin/syft
 COPY --from=depbuilder /usr/local/bin/parlay /usr/local/bin/parlay
 COPY --from=depbuilder /usr/local/bin/sbomqs /usr/local/bin/sbomqs
