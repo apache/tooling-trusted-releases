@@ -27,6 +27,7 @@ import sqlmodel
 
 import atr.db as db
 import atr.models.safe as safe
+import atr.pgp as pgp
 import atr.storage as storage
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
@@ -425,7 +426,7 @@ def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
     binding = next(iter(key.user_bindings()))
     binding_signature = binding.signatures[0]
 
-    expires = keys_writer._key_expires_at(key)
+    expires = pgp.key_expires_at(key)
 
     assert expires == datetime.datetime.fromtimestamp(
         key.created_at + binding_signature.key_expiration_seconds,
@@ -454,7 +455,7 @@ def test_public_key_model_stores_latest_self_signature_separately_from_expiry() 
     key_model = writer.public_key_model(
         key, keys_writer.cache.EmailUidLookup({}), original_key_block=_EMBEDDED_V4_EXPIRING_KEY_ASC
     )
-    latest_self_signature = keys_writer._latest_self_signature(key)
+    latest_self_signature = pgp.latest_self_signature(key)
 
     assert latest_self_signature is not None
     assert key_model.latest_self_signature == datetime.datetime.fromtimestamp(
