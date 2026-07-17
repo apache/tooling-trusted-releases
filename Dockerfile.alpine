@@ -142,4 +142,6 @@ EXPOSE 8080
 
 WORKDIR /opt/atr
 
+USER 1000:1000
+
 CMD ["./start-atr.sh"]

@@ -129,6 +129,8 @@ jobs:
             docker volume rm -f "$NRVOL" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
+          test "$(docker image inspect atr:ci --format '{{.Config.User}}')" = "1000:1000"
+          test "$(docker run --rm atr:ci id -u)" = "1000"
           docker volume create "$NRVOL"
           docker run --rm --user 0:0 -v "$NRVOL:/opt/atr/state" atr:ci chown 1000:1000 /opt/atr/state
           docker run -d --name "$NRSRV" --user 1000:1000 \
