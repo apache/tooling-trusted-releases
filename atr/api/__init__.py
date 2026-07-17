@@ -1559,6 +1559,44 @@ async def releases_list(
 
 @api.typed(
     auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.SbomGenerateResults, 202),
+    rate_limit=(10, datetime.timedelta(hours=1)),
+)
+async def sbom_generate(
+    _sbom_generate: Literal["sbom/generate"],
+    data: models.api.SbomGenerateArgs,
+) -> DictResponse:
+    asf_uid = _jwt_asf_uid()
+    if not str(data.relpath).endswith((".tar.gz", ".tgz", ".zip", ".jar")):
+        raise exceptions.BadRequest("SBOM generation requires .tar.gz, .tgz, .zip or .jar files")
+    async with db.session() as db_data:
+        release_key = sql.release_key(data.project, data.version)
+        release = await db_data.release(key=str(release_key), _committee=True).get()
+    if (release is None) or user.embargo_hides_release(release, asf_uid, is_member=False):
+        raise exceptions.NotFound(f"Release {release_key} not found")
+    if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+        raise exceptions.Conflict(f"Release {release_key} is not a candidate draft")
+
+    try:
+        async with storage.write(asf_uid) as write:
+            wacp = await write.as_project_committee_participant(data.project)
+            task = await wacp.sbom.generate_cyclonedx_revision(
+                data.project,
+                data.version,
+                release.safe_latest_revision_number,
+                data.relpath,
+            )
+    except storage.AccessError as e:
+        raise _http_exception_from_storage_access_error(e) from e
+
+    return models.api.SbomGenerateResults(
+        endpoint="/sbom/generate",
+        task=task,
+    ).model_dump(mode="json"), 202
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
     response=(models.api.SignatureProvenanceResults, 200),
     rate_limit=(10, datetime.timedelta(hours=1)),
 )
@@ -1704,6 +1742,31 @@ async def ssh_keys_list(
         endpoint="/ssh-keys/list",
         data=paged_keys,
         count=count,
+    ).model_dump(mode="json"), 200
+
+
+@api.typed(
+    auth_scheme=api_auth.Auth.BEARER,
+    response=(models.api.TaskGetResults, 200),
+)
+async def task_get(
+    _task_get: Literal["task/get"],
+    task_id: int,
+) -> DictResponse:
+    asf_uid = _jwt_asf_uid()
+    async with db.session() as data:
+        task = await data.task(id=task_id).get()
+        release = None
+        if (task is not None) and (task.project_key is not None) and (task.version_key is not None):
+            release_key = sql.release_key(task.project_key, task.version_key)
+            release = await data.release(key=str(release_key), _committee=True).get()
+    if (task is None) or (task.asf_uid != asf_uid):
+        raise exceptions.NotFound(f"Task {task_id} not found")
+    if (release is not None) and user.embargo_hides_release(release, asf_uid, is_member=False):
+        raise exceptions.NotFound(f"Task {task_id} not found")
+    return models.api.TaskGetResults(
+        endpoint="/task/get",
+        task=task,
     ).model_dump(mode="json"), 200
 
 

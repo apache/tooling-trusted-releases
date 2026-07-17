@@ -28,8 +28,10 @@ import orjson
 import atr.analysis as analysis
 import atr.archives as archives
 import atr.config as config
+import atr.hashes as hashes
 import atr.log as log
 import atr.models.args as args
+import atr.models.attestable as attestable
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -139,6 +141,68 @@ async def convert_cyclonedx(args: args.ConvertCycloneDX) -> results.Results | No
     except (archives.ExtractionError, SBOMGenerationError) as e:
         log.error(f"SBOM conversion failed for {args.artifact_path}: {e}")
         raise
+
+
+@checks.with_model(args.FileArgs)
+async def generate(args: args.FileArgs) -> results.Results | None:
+    revision_str = str(args.revision_number)
+    path_str = str(args.file_path)
+
+    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    if not await aiofiles.os.path.isdir(base_dir):
+        raise SBOMGenerationError("Revision directory does not exist", {"base_dir": str(base_dir)})
+    if not await aiofiles.os.path.isfile(base_dir / path_str):
+        raise SBOMGenerationError("Artifact file does not exist", {"file_path": path_str})
+    sbom_rel_path = path_str + ".cdx.json"
+    bom_version: int | None = None
+    description = "SBOM generation through the API"
+    async with storage.write(args.asf_uid) as write:
+        wacp = await write.as_project_committee_participant(args.project_key)
+
+        async def modify(
+            path: safe.StatePath, _old_rev: sql.Revision | None
+        ) -> dict[safe.RelPath, attestable.ProvenanceV2] | None:
+            nonlocal bom_version
+            artifact_path = path / path_str
+            output_path = path / sbom_rel_path
+            if await aiofiles.os.path.exists(output_path):
+                raise SBOMGenerationError("SBOM file already exists", {"file_path": sbom_rel_path})
+            source_content_hash = await hashes.compute_file_hash(artifact_path)
+            await _generate_cyclonedx_core(artifact_path, output_path)
+            bundle = sbom.utilities.path_to_bundle(output_path.path)
+            if not bundle:
+                raise SBOMGenerationError("Could not load bundle")
+            patch_ops = await sbom.utilities.bundle_to_ntia_patch(bundle)
+            if patch_ops:
+                bom_version, merged = sbom.utilities.apply_patch("augment", revision_str, bundle, patch_ops)
+                await aiofiles.os.remove(output_path)
+                async with aiofiles.open(output_path, "w", encoding="utf-8") as f:
+                    await f.write(orjson.dumps(merged).decode())
+            provenance = attestable.ProvenanceV2(
+                generator=attestable.GeneratorV2.SBOM_FROM_ARTIFACT,
+                metadata={
+                    "initiated_by": args.asf_uid,
+                    "source_content_hashes": {path_str: source_content_hash},
+                    "source_paths": [path_str],
+                },
+            )
+            return {safe.RelPath(sbom_rel_path): provenance}
+
+        result = await wacp.revision.create_revision_with_quarantine(
+            args.project_key,
+            args.version_key,
+            args.asf_uid or "unknown",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            description=description,
+            modify=modify,
+        )
+
+    return results.SBOMGenerate(
+        kind="sbom_generate",
+        path=sbom_rel_path,
+        bom_version=bom_version,
+        revision_number=(result.number if isinstance(result, sql.Revision) else None),
+    )
 
 
 @checks.with_model(args.GenerateCycloneDX)

@@ -54,6 +54,7 @@ class HashEntryV2(schema.Strict):
 
 
 class GeneratorV2(enum.Enum):
+    SBOM_FROM_ARTIFACT = "SBOM_from_artifact"
     SHA512_FROM_CONTENT = "SHA512_from_content"
     SHA512_FROM_SIGNATURE = "SHA512_from_signature"
 

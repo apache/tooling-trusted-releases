@@ -176,6 +176,56 @@ class CommitteeParticipant(FoundationCommitter):
         await self.__data.refresh(sbom_task)
         return sbom_task
 
+    async def generate_cyclonedx_revision(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        revision_number: safe.RevisionNumber,
+        rel_path: safe.RelPath,
+    ) -> sql.Task:
+        await self.__data.begin_immediate()
+        release_key = sql.release_key(str(project_key), str(version_key))
+        release = await self.__data.release(key=str(release_key)).demand(
+            storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
+        )
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
+        if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            raise storage.AccessError(
+                f"Release '{project_key!s} {version_key!s}' is not a candidate draft.", status=409
+            )
+        ongoing = await self.__data.task(
+            status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+            task_type=sql.TaskType.SBOM_GENERATE,
+            asf_uid=util.unwrap(self.__asf_uid),
+            project_key=str(project_key),
+            version_key=str(version_key),
+            primary_rel_path=str(rel_path),
+        ).all()
+        if ongoing:
+            return ongoing[0]
+        sbom_task = sql.Task(
+            task_type=sql.TaskType.SBOM_GENERATE,
+            task_args=args.FileArgs(
+                project_key=project_key,
+                version_key=version_key,
+                revision_number=revision_number,
+                file_path=rel_path,
+                asf_uid=util.unwrap(self.__asf_uid),
+            ).model_dump(),
+            asf_uid=util.unwrap(self.__asf_uid),
+            added=datetime.datetime.now(datetime.UTC),
+            status=sql.TaskStatus.QUEUED,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(revision_number),
+            primary_rel_path=str(rel_path),
+        )
+        self.__data.add(sbom_task)
+        await self.__data.commit()
+        await self.__data.refresh(sbom_task)
+        return sbom_task
+
     async def osv_scan_cyclonedx(
         self,
         project_key: safe.ProjectKey,

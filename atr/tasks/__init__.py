@@ -381,6 +381,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return sbom.augment
         case sql.TaskType.SBOM_CONVERT:
             return sbom.convert_cyclonedx
+        case sql.TaskType.SBOM_GENERATE:
+            return sbom.generate
         case sql.TaskType.SBOM_GENERATE_CYCLONEDX:
             return sbom.generate_cyclonedx
         case sql.TaskType.SBOM_OSV_SCAN:

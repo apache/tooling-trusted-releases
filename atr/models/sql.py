@@ -248,6 +248,7 @@ class TaskType(enum.StrEnum):
     RAT_CHECK = "rat_check"
     SBOM_AUGMENT = "sbom_augment"
     SBOM_CONVERT = "sbom_convert"
+    SBOM_GENERATE = "sbom_generate"
     SBOM_GENERATE_CYCLONEDX = "sbom_generate_cyclonedx"
     SBOM_OSV_SCAN = "sbom_osv_scan"
     SBOM_QS_SCORE = "sbom_qs_score"
@@ -303,6 +304,8 @@ class TaskType(enum.StrEnum):
                 return "SBOM augmentation"
             case TaskType.SBOM_CONVERT:
                 return "SBOM conversion"
+            case TaskType.SBOM_GENERATE:
+                return "SBOM generation and augmentation"
             case TaskType.SBOM_GENERATE_CYCLONEDX:
                 return "SBOM generation"
             case TaskType.SBOM_OSV_SCAN:
@@ -762,6 +765,9 @@ class Task(sqlmodel.SQLModel, table=True):
 
         if isinstance(self.completed, str):
             self.completed = datetime.datetime.fromisoformat(self.completed.rstrip("Z"))
+
+        if isinstance(self.result, dict):
+            self.result = results.ResultsAdapter.validate_python(self.result)
 
     @property
     def safe_primary_rel_path(self) -> safe.RelPath | None:

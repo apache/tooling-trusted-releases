@@ -522,6 +522,26 @@ async def test_sbom_augment_blocks_retired() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sbom_generate_revision_blocks_retired() -> None:
+    data = mock.MagicMock()
+    data.begin_immediate = mock.AsyncMock()
+    data.release = mock.MagicMock(return_value=_query_returning(_retired_release()))
+    writer = object.__new__(sbom.CommitteeParticipant)
+    writer._CommitteeParticipant__data = data
+    writer._CommitteeParticipant__asf_uid = "tester"
+    writer._CommitteeParticipant__committee_key = "project"
+    writer._CommitteeParticipant__write = mock.MagicMock()
+
+    with pytest.raises(storage.AccessError, match="archived"):
+        await writer.generate_cyclonedx_revision(
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            safe.RevisionNumber("00001"),
+            safe.RelPath("artifact.tar.gz"),
+        )
+
+
+@pytest.mark.asyncio
 async def test_vote_resolve_release_blocks_retired_after_merge() -> None:
     data = mock.MagicMock()
     merged = _retired_release()

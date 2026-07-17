@@ -786,6 +786,17 @@ class ReleasesListResults(schema.Strict):
     count: int
 
 
+class SbomGenerateArgs(schema.Strict):
+    project: safe.ProjectKey = schema.example("example")
+    version: safe.VersionKey = schema.example("0.0.1")
+    relpath: safe.RelPath = schema.example("example-0.0.1-bin.tar.gz")
+
+
+class SbomGenerateResults(schema.Strict):
+    endpoint: Literal["/sbom/generate"] = schema.alias("endpoint")
+    task: sql.Task
+
+
 class SignatureProvenanceArgs(schema.Strict):
     signature_file_name: str = schema.example("example-0.0.1-bin.tar.gz.asc")
     signature_asc_text: str = schema.example("-----BEGIN PGP SIGNATURE-----\n\n...\n-----END PGP SIGNATURE-----\n")
@@ -835,6 +846,11 @@ class SshKeysListResults(schema.Strict):
     endpoint: Literal["/ssh-keys/list"] = schema.alias("endpoint")
     data: Sequence[sql.SSHKey]
     count: int = schema.example(10)
+
+
+class TaskGetResults(schema.Strict):
+    endpoint: Literal["/task/get"] = schema.alias("endpoint")
+    task: sql.Task
 
 
 @dataclasses.dataclass
@@ -993,10 +1009,12 @@ type Results = Annotated[
     | ReleaseRevisionsResults
     | ReleaseUploadResults
     | ReleasesListResults
+    | SbomGenerateResults
     | SignatureProvenanceResults
     | SshKeyAddResults
     | SshKeyDeleteResults
     | SshKeysListResults
+    | TaskGetResults
     | TasksListResults
     | UserInfoResults
     | UsersListResults
@@ -1054,10 +1072,12 @@ validate_release_paths = validator(ReleasePathsResults)
 validate_release_revisions = validator(ReleaseRevisionsResults)
 validate_release_upload = validator(ReleaseUploadResults)
 validate_releases_list = validator(ReleasesListResults)
+validate_sbom_generate = validator(SbomGenerateResults)
 validate_signature_provenance = validator(SignatureProvenanceResults)
 validate_ssh_key_add = validator(SshKeyAddResults)
 validate_ssh_key_delete = validator(SshKeyDeleteResults)
 validate_ssh_keys_list = validator(SshKeysListResults)
+validate_task_get = validator(TaskGetResults)
 validate_tasks_list = validator(TasksListResults)
 validate_user_info = validator(UserInfoResults)
 validate_users_list = validator(UsersListResults)
