@@ -11,6 +11,8 @@ services:
     networks:
       - test-network
     init: true
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8080/"]
       interval: 2s
@@ -34,6 +36,8 @@ services:
       - ../start-dev.sh:/opt/atr/start-atr.sh
       - atr-dev-state:/opt/atr/state
     init: true
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-k", "-f", "https://127.0.0.1:8080/"]
       interval: 2s
