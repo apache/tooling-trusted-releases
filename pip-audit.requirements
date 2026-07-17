@@ -85,7 +85,7 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.40.4
+djlint==1.40.5
 dnspython==2.8.0
     # via
     #   email-validator
@@ -239,7 +239,7 @@ puremagic==2.2.0
     # via tooling-trusted-releases
 py-serializable==2.1.0
     # via cyclonedx-python-lib
-pyasn1==0.6.3
+pyasn1==0.6.4
     # via ldap3
 pycparser==3.0 ; implementation_name != 'PyPy'
     # via cffi
@@ -269,7 +269,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.4.3
+python-discovery==1.4.4
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -297,7 +297,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.6.28
+regex==2026.7.10
     # via djlint
 requests==2.34.2
     # via
@@ -317,7 +317,7 @@ rpds-py==2026.6.3
     #   referencing
 rpgp-py==0.19.7
     # via tooling-trusted-releases
-ruff==0.15.20
+ruff==0.15.21
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -354,7 +354,7 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via pydantic
-tzdata==2026.2
+tzdata==2026.3
     # via arrow
 uri-template==1.3.0
     # via jsonschema
@@ -364,7 +364,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.6.0
+virtualenv==21.6.1
     # via pre-commit
 watchfiles==1.2.0
     # via
