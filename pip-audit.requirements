@@ -315,7 +315,7 @@ rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
-rpgp-py==0.19.7
+rpgp-py==0.19.8
     # via tooling-trusted-releases
 ruff==0.15.21
 semver==3.0.4

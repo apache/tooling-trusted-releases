@@ -50,7 +50,7 @@ dependencies = [
   "quart-wtforms>=1.0.3,<2.0.0",
   "requests>=2.33.0",
   "rich>=14.0.0",
-  "rpgp-py==0.19.7",
+  "rpgp-py==0.19.8",
   "semver>=3.0.4",
   "sqlmodel>=0.0.24,<0.1.0",
   "ssh-audit>=3.3.0",
