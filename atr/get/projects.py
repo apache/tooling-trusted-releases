@@ -29,6 +29,7 @@ import atr.blueprints.get as get
 import atr.config as config
 import atr.construct as construct
 import atr.db as db
+import atr.db.interaction as interaction
 import atr.form as form
 import atr.get.committees as committees
 import atr.get.compose as compose
@@ -160,10 +161,13 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
     Main project directory page.
     """
     async with db.session() as data:
-        projects = await data.project(_committee=True, _releases=True).order_by(sql.Project.name).all()
+        projects = await data.project(_committee=True).order_by(sql.Project.name).all()
         approvals = await data.approval_request(
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED]
         ).all()
+        release_counts: dict[str, tuple[int, int]] = {}
+        if session is not None:
+            release_counts = await interaction.project_release_counts(data)
 
     # Release archival requests surface on the release's own file page, not here
     approvals_by_project = {a.project_key: a for a in approvals if a.action != sql.ApprovalAction.ARCHIVE_RELEASE}
@@ -185,8 +189,8 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                 continue
             if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
                 continue
-            project_releases = project.releases_including_embargoed
-            if not project_releases:
+            total_releases, non_draft_releases = release_counts.get(str(project.key), (0, 0))
+            if total_releases == 0:
                 action_forms[str(project.key)] = await form.render(
                     model_cls=shared.projects.DeleteSelectedProject,
                     action=util.as_url(post.projects.delete),
@@ -200,7 +204,7 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
                         " ready to delete only if the vote passes, and you must then return to complete it."
                     ),
                 )
-            elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in project_releases):
+            elif non_draft_releases == 0:
                 action_forms[str(project.key)] = await form.render(
                     model_cls=shared.projects.ArchiveSelectedProject,
                     action=util.as_url(post.projects.archive),
