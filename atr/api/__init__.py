@@ -1491,7 +1491,7 @@ async def release_upload(
         async with storage.write(asf_uid) as write:
             wacp = await write.as_project_committee_participant(data.project)
             result = await wacp.release.upload_file(data)
-    except datatypes.PhaseMismatchError as e:
+    except (datatypes.PhaseMismatchError, datatypes.RevisionMismatchError) as e:
         raise exceptions.Conflict(str(e))
     if isinstance(result, sql.Quarantined):
         return {

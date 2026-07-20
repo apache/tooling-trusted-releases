@@ -766,6 +766,7 @@ class ReleaseUploadArgs(schema.Strict):
     version: safe.VersionKey = schema.example("0.0.1")
     relpath: safe.RelPath = schema.example("example/0.0.1/example-0.0.1-bin.tar.gz")
     content: str = schema.example("This is the content of the file.")
+    expected_revision: safe.RevisionNumber | None = schema.default_example(None, "00003")
 
 
 class ReleaseUploadResults(schema.Strict):

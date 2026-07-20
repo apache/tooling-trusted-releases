@@ -202,6 +202,138 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
 
 
 @pytest.mark.asyncio
+async def test_expected_revision_match_proceeds(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
+    release.project.release_policy = None
+    release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    release_key = sql.release_key("proj", "1.0")
+
+    old_revision = mock.MagicMock()
+    old_revision.key = f"{release_key} 00005"
+    old_revision.number = "00005"
+    old_revision.safe_number = safe.RevisionNumber("00005")
+
+    first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_key=f"{release_key} 00005", new_number="00006")
+    merge_mock = mock.AsyncMock()
+
+    with (
+        mock.patch.object(revision.aiofiles.os, "makedirs", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.aiofiles.os, "rename", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.attestable, "load", new_callable=mock.AsyncMock, return_value=first_attestable),
+        mock.patch.object(
+            revision.attestable, "paths_to_hashes_and_sizes", new_callable=mock.AsyncMock, return_value=({}, {})
+        ),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "detect_archives_requiring_quarantine", return_value=[]),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(
+            revision.interaction,
+            "latest_revision",
+            new_callable=mock.AsyncMock,
+            side_effect=[old_revision, old_revision],
+        ),
+        mock.patch.object(revision.merge, "merge", new=merge_mock),
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision.tasks, "draft_checks", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00006"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
+    ):
+        created_revision = await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            expected_revision=safe.RevisionNumber("00005"),
+        )
+
+    assert isinstance(created_revision, FakeRevision)
+    assert merge_mock.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_expected_revision_mismatch_rejected(tmp_path: pathlib.Path):
+    temp_dir = safe.StatePath(tmp_path)
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
+    release.project = mock.MagicMock()
+    release.project.status = sql.ProjectStatus.ACTIVE
+    release.project.release_policy = None
+    release.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    release_key = sql.release_key("proj", "1.0")
+
+    old_revision = mock.MagicMock()
+    old_revision.key = f"{release_key} 00005"
+    old_revision.number = "00005"
+    old_revision.safe_number = safe.RevisionNumber("00005")
+
+    intervening_revision = mock.MagicMock()
+    intervening_revision.key = f"{release_key} 00006"
+    intervening_revision.number = "00006"
+    intervening_revision.seq = 6
+    intervening_revision.safe_number = safe.RevisionNumber("00006")
+
+    first_attestable = mock.MagicMock(paths={"dist/a.tar.gz": "h1"})
+    second_attestable = mock.MagicMock(paths={"dist/b.tar.gz": "h2"})
+
+    mock_session = _mock_db_session(release)
+    participant = _make_participant()
+    safe_data = MockSafeData(parent_key=f"{release_key} 00006", new_number="00007")
+    merge_mock = mock.AsyncMock()
+    load_mock = mock.AsyncMock(side_effect=[first_attestable, second_attestable])
+
+    with (
+        mock.patch.object(revision.attestable, "load", new=load_mock),
+        mock.patch.object(
+            revision.attestable, "paths_to_hashes_and_sizes", new_callable=mock.AsyncMock, return_value=({}, {})
+        ),
+        mock.patch.object(revision.db, "session", return_value=mock_session),
+        mock.patch.object(revision.detection, "validate_directory", return_value=[]),
+        mock.patch.object(
+            revision.interaction,
+            "latest_revision",
+            new_callable=mock.AsyncMock,
+            side_effect=[old_revision, intervening_revision],
+        ),
+        mock.patch.object(revision.merge, "merge", new=merge_mock),
+        mock.patch.object(revision, "SafeSession", return_value=MockSafeSession(safe_data)),
+        mock.patch.object(revision.util, "chmod_directories"),
+        mock.patch.object(revision.util, "chmod_files"),
+        mock.patch.object(revision.util, "create_hard_link_clone", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_tmp_dir", return_value=temp_dir),
+        mock.patch.object(revision.util, "paths_to_inodes", return_value={}),
+        mock.patch.object(revision.paths, "release_directory", return_value=temp_dir / "releases" / "00007"),
+        mock.patch.object(revision.paths, "release_directory_base", return_value=temp_dir / "releases"),
+        pytest.raises(datatypes.RevisionMismatchError, match="no longer the latest"),
+    ):
+        await participant.create_revision_with_quarantine(
+            safe.ProjectKey("proj"),
+            safe.VersionKey("1.0"),
+            "test",
+            allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
+            expected_revision=safe.RevisionNumber("00005"),
+        )
+
+    assert not (tmp_path / "releases" / "00007").exists()
+
+
+@pytest.mark.asyncio
 async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_path: pathlib.Path):
     temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()

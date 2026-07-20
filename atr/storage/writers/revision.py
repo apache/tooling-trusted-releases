@@ -437,6 +437,7 @@ class CommitteeParticipant(FoundationCommitter):
         ]
         | None = None,
         clone_from: safe.RevisionNumber | None = None,
+        expected_revision: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
         release_key = sql.release_key(str(project_key), str(version_key))
@@ -556,6 +557,14 @@ class CommitteeParticipant(FoundationCommitter):
                     f"Cannot create revision: release phase is {merged_release.phase.value}, "
                     f"allowed: {', '.join(sorted(p.value for p in allowed_phases))}"
                 )
+
+            if expected_revision is not None:
+                expected_key = sql.revision_key(release_key, str(expected_revision))
+                if prior_revision_key != expected_key:
+                    await aioshutil.rmtree(temp_dir)
+                    raise datatypes.RevisionMismatchError(
+                        f"Cannot create revision: revision {expected_revision} is no longer the latest"
+                    )
 
             if (merge_base_revision_key is not None) and path_provenance:
                 try:

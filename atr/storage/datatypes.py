@@ -162,3 +162,7 @@ class FailedError(Exception):
 
 class PhaseMismatchError(FailedError):
     pass
+
+
+class RevisionMismatchError(FailedError):
+    pass

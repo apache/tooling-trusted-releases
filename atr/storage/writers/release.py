@@ -962,6 +962,7 @@ class CommitteeParticipant(FoundationCommitter):
             allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
             description=description,
             modify=modify,
+            expected_revision=upload_args.expected_revision,
         )
         if isinstance(result, sql.Quarantined):
             return result
