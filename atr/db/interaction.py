@@ -946,38 +946,6 @@ def trusted_vote_round(release: sql.Release) -> int | None:
     return None
 
 
-async def unfinished_releases(asfuid: str, is_member: bool) -> list[tuple[str, str, list[sql.Release]]]:
-    releases: list[tuple[str, str, list[sql.Release]]] = []
-    async with db.session() as data:
-        user_projects = await user.projects(asfuid)
-        user_projects.sort(key=lambda p: p.display_name)
-
-        active_phases = [
-            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-            sql.ReleasePhase.RELEASE_CANDIDATE,
-            sql.ReleasePhase.RELEASE_PREVIEW,
-        ]
-        for project in user_projects:
-            stmt = (
-                sqlmodel.select(sql.Release)
-                .where(
-                    sql.Release.project_key == project.key,
-                    sql.validate_instrumented_attribute(sql.Release.phase).in_(active_phases),
-                )
-                .options(db.select_in_load(sql.Release.project))
-                .order_by(sql.validate_instrumented_attribute(sql.Release.created).desc())
-            )
-            result = await data.execute(stmt)
-            active_releases = list(result.scalars().all())
-            if not user.can_view_embargoed_release(project.committee, asfuid, is_member=is_member):
-                active_releases = [r for r in active_releases if (not r.is_embargoed)]
-            if active_releases:
-                active_releases.sort(key=lambda r: r.created, reverse=True)
-                releases.append((project.short_display_name, project.key, active_releases))
-
-    return releases
-
-
 async def user_committees(asf_uid: str) -> list[tuple[str, str]]:
     results = []
     for committee in await user_committees_participant(asf_uid):
@@ -1003,9 +971,42 @@ async def user_committees_participant(asf_uid: str, caller_data: db.Session | No
         return await data.committee(has_participant=asf_uid).all()
 
 
-async def user_projects(asf_uid: str, caller_data: db.Session | None = None) -> list[tuple[str, str]]:
-    projects = await user.projects(asf_uid)
-    return [(p.key, p.display_name) for p in projects]
+async def user_topnav(
+    asf_uid: str, is_member: bool
+) -> tuple[list[tuple[str, str, list[sql.Release]]], list[tuple[str, str]]]:
+    via = sql.validate_instrumented_attribute
+    user_projects = await user.projects(asf_uid)
+    user_projects.sort(key=lambda p: p.display_name)
+
+    active_phases = [
+        sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+        sql.ReleasePhase.RELEASE_CANDIDATE,
+        sql.ReleasePhase.RELEASE_PREVIEW,
+    ]
+    async with db.session() as data:
+        stmt = (
+            sqlmodel.select(sql.Release)
+            .where(
+                via(sql.Release.project_key).in_([p.key for p in user_projects]),
+                via(sql.Release.phase).in_(active_phases),
+            )
+            .order_by(via(sql.Release.created).desc())
+        )
+        result = await data.execute(stmt)
+        releases_by_project: dict[str, list[sql.Release]] = {}
+        for release in result.scalars().all():
+            releases_by_project.setdefault(release.project_key, []).append(release)
+
+    unfinished: list[tuple[str, str, list[sql.Release]]] = []
+    for project in user_projects:
+        active_releases = releases_by_project.get(project.key, [])
+        for release in active_releases:
+            release.project = project
+        if not user.can_view_embargoed_release(project.committee, asf_uid, is_member=is_member):
+            active_releases = [r for r in active_releases if (not r.is_embargoed)]
+        if active_releases:
+            unfinished.append((project.short_display_name, project.key, active_releases))
+    return unfinished, [(p.key, p.display_name) for p in user_projects]
 
 
 async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.TrustedPublisherPayload, str | None]:
