@@ -141,9 +141,8 @@ def is_release_manager(committee: sql.Committee | None, uid: str) -> bool:
 async def projects(uid: str, committee_only: bool = False, super_project: bool = False) -> list[sql.Project]:
     user_projects: list[sql.Project] = []
     async with db.session() as data:
-        # Must have releases, because this is used in candidate_drafts
         projects = await data.project(
-            status=sql.ProjectStatus.ACTIVE, _committee=True, _releases=True, _super_project=super_project
+            status=sql.ProjectStatus.ACTIVE, _committee=True, _super_project=super_project
         ).all()
         for p in projects:
             if p.committee is None:

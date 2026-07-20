@@ -16,13 +16,18 @@
 # under the License.
 
 import contextlib
+import datetime
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 import pytest
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlmodel
 
 import atr.config as config
+import atr.db as db
 import atr.models.sql as sql
 import atr.user as user
 
@@ -45,6 +50,23 @@ def mock_app(monkeypatch: "MonkeyPatch") -> MockApp:
     app = MockApp()
     monkeypatch.setattr("asfquart.APP", app)
     return app
+
+
+@pytest.fixture
+async def sqlite_global_db() -> AsyncIterator[None]:
+    engine = sqlalchemy.ext.asyncio.create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=sqlalchemy.pool.StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(sqlmodel.SQLModel.metadata.create_all)
+    db._global_atr_sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(
+        bind=engine, class_=db.Session, expire_on_commit=False
+    )
+    yield
+    await engine.dispose()
+    db._global_atr_sessionmaker = None
 
 
 @pytest.mark.asyncio
@@ -153,6 +175,31 @@ def test_is_release_manager_requires_designation_and_committer_membership() -> N
     assert user.is_release_manager(committee, "bob") is False
     assert user.is_release_manager(committee, "carol") is False
     assert user.is_release_manager(None, "alice") is False
+
+
+@pytest.mark.asyncio
+async def test_projects_does_not_load_releases(sqlite_global_db: None) -> None:
+    async with db.session() as data:
+        data.add(sql.Committee(key="example", name="Example", committee_members=["alice"], committers=["bob"]))
+        data.add(sql.Project(key="example", committee_key="example", status=sql.ProjectStatus.ACTIVE))
+        data.add(
+            sql.Release(
+                key="example-1.0.0",
+                phase=sql.ReleasePhase.RELEASE,
+                project_key="example",
+                version="1.0.0",
+                created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+            )
+        )
+        await data.commit()
+
+    projects = await user.projects("alice")
+
+    assert [str(p.key) for p in projects] == ["example"]
+    assert projects[0].committee is not None
+    state = sqlalchemy.inspect(projects[0])
+    assert state is not None
+    assert "releases_including_embargoed" in state.unloaded
 
 
 @contextlib.asynccontextmanager
