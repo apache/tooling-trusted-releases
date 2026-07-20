@@ -139,28 +139,27 @@ def is_release_manager(committee: sql.Committee | None, uid: str) -> bool:
 
 
 async def projects(uid: str, committee_only: bool = False, super_project: bool = False) -> list[sql.Project]:
-    user_projects: list[sql.Project] = []
     async with db.session() as data:
-        projects = await data.project(
-            status=sql.ProjectStatus.ACTIVE, _committee=True, _super_project=super_project
-        ).all()
-        for p in projects:
-            if p.committee is None:
-                continue
-
+        committees = await data.committee().all()
+        committee_keys: list[str] = []
+        for committee in committees:
             # Allow access to test project in Test mode
             # This means that the Test project will show in the user interface for everyone
-            if config.is_test_mode() and (p.committee.key == "test"):
-                user_projects.append(p)
+            if config.is_test_mode() and (committee.key == "test"):
+                committee_keys.append(committee.key)
                 continue
-
-            if committee_only:
-                if uid in p.committee.committee_members:
-                    user_projects.append(p)
-            else:
-                if (uid in p.committee.committee_members) or (uid in p.committee.committers):
-                    user_projects.append(p)
-    return user_projects
+            if uid in committee.committee_members:
+                committee_keys.append(committee.key)
+                continue
+            if (not committee_only) and (uid in committee.committers):
+                committee_keys.append(committee.key)
+        projects = await data.project(
+            status=sql.ProjectStatus.ACTIVE,
+            committee_key_in=committee_keys,
+            _committee=True,
+            _super_project=super_project,
+        ).all()
+    return list(projects)
 
 
 @functools.cache

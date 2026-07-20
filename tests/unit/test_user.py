@@ -202,6 +202,22 @@ async def test_projects_does_not_load_releases(sqlite_global_db: None) -> None:
     assert "releases_including_embargoed" in state.unloaded
 
 
+@pytest.mark.asyncio
+async def test_projects_membership_filtering(sqlite_global_db: None) -> None:
+    async with db.session() as data:
+        data.add(sql.Committee(key="example", name="Example", committee_members=["alice"], committers=["bob"]))
+        data.add(sql.Project(key="example", committee_key="example", status=sql.ProjectStatus.ACTIVE))
+        data.add(sql.Project(key="example-old", committee_key="example", status=sql.ProjectStatus.RETIRED))
+        data.add(sql.Committee(key="other", name="Other", committee_members=["carol"], committers=["carol"]))
+        data.add(sql.Project(key="other", committee_key="other", status=sql.ProjectStatus.ACTIVE))
+        await data.commit()
+
+    assert [str(p.key) for p in await user.projects("alice")] == ["example"]
+    assert [str(p.key) for p in await user.projects("bob")] == ["example"]
+    assert await user.projects("bob", committee_only=True) == []
+    assert await user.projects("ali") == []
+
+
 @contextlib.asynccontextmanager
 async def _mock_db_session(data: mock.MagicMock) -> AsyncIterator[mock.MagicMock]:
     yield data

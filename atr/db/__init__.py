@@ -500,6 +500,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         key: Opt[str] = NOT_SET,
         name: Opt[str] = NOT_SET,
         committee_key: Opt[str] = NOT_SET,
+        committee_key_in: Opt[Sequence[str]] = NOT_SET,
         release_policy_id: Opt[int] = NOT_SET,
         status: Opt[sql.ProjectStatus] = NOT_SET,
         _committee: bool = True,
@@ -517,6 +518,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Project.name == name)
         if is_defined(committee_key):
             query = query.where(sql.Project.committee_key == committee_key)
+        if is_defined(committee_key_in):
+            query = query.where(sql.validate_instrumented_attribute(sql.Project.committee_key).in_(committee_key_in))
         if is_defined(release_policy_id):
             query = query.where(sql.Project.release_policy_id == release_policy_id)
         if is_defined(status):
