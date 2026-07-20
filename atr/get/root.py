@@ -20,7 +20,6 @@ from typing import Final, Literal
 
 import aiofiles
 import quart.wrappers.response as quart_response
-import sqlalchemy.orm as orm
 import sqlmodel
 
 import atr.blueprints.get as get
@@ -85,54 +84,49 @@ async def index(_session: web.Public, _root: Literal[""]) -> quart_response.Resp
             sql.ReleasePhase.RELEASE_PREVIEW: 2,
         }
 
+        via = sql.validate_instrumented_attribute
+        user_projects = await user.projects(uid)
+        user_projects.sort(key=lambda p: p.display_name.lower())
+        project_keys = [p.key for p in user_projects]
+
+        active_phases = list(phase_index_map.keys())
         async with db.session() as data:
-            user_projects = await user.projects(uid)
-            user_projects.sort(key=lambda p: p.display_name.lower())
-
-            projects_with_releases = []
-            projects_without_releases = []
-
-            active_phases = list(phase_index_map.keys())
-            for project in user_projects:
-                stmt = (
-                    sqlmodel.select(sql.Release)
-                    .where(
-                        sql.Release.project_key == project.key,
-                        sql.validate_instrumented_attribute(sql.Release.phase).in_(active_phases),
-                    )
-                    .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Release.project)))
-                    .order_by(sql.validate_instrumented_attribute(sql.Release.created).desc())
+            stmt = (
+                sqlmodel.select(sql.Release)
+                .where(
+                    via(sql.Release.project_key).in_(project_keys),
+                    via(sql.Release.phase).in_(active_phases),
                 )
-                result = await data.execute(stmt)
-                active_releases = list(result.scalars().all())
-                if not user.can_view_embargoed_release(project.committee, uid, is_member=session_data.is_member):
-                    active_releases = [r for r in active_releases if (not r.is_embargoed)]
-                completed_releases = (
-                    len(await data.release(phase=sql.ReleasePhase.RELEASE, project_key=project.key).all()) > 0
+                .order_by(via(sql.Release.created).desc())
+            )
+            result = await data.execute(stmt)
+            releases_by_project: dict[str, list[sql.Release]] = {}
+            for release in result.scalars().all():
+                releases_by_project.setdefault(release.project_key, []).append(release)
+            completed_stmt = (
+                sqlmodel.select(sql.Release.project_key)
+                .distinct()
+                .where(
+                    via(sql.Release.project_key).in_(project_keys),
+                    sql.Release.phase == sql.ReleasePhase.RELEASE,
                 )
+            )
+            completed_keys = set((await data.execute(completed_stmt)).scalars().all())
 
-                if active_releases:
-                    projects_with_releases.append(
-                        {
-                            "project": project,
-                            "active_releases": active_releases,
-                            "completed_releases": completed_releases,
-                        }
-                    )
-                else:
-                    projects_without_releases.append(
-                        {"project": project, "active_releases": [], "completed_releases": completed_releases}
-                    )
-
-        all_projects = projects_with_releases + projects_without_releases
-
-        def sort_key(item: dict) -> str:
-            project = item["project"]
-            if not isinstance(project, sql.Project):
-                return ""
-            return project.display_name.lower()
-
-        all_projects.sort(key=sort_key)
+        all_projects = []
+        for project in user_projects:
+            active_releases = releases_by_project.get(project.key, [])
+            for release in active_releases:
+                release.project = project
+            if not user.can_view_embargoed_release(project.committee, uid, is_member=session_data.is_member):
+                active_releases = [r for r in active_releases if (not r.is_embargoed)]
+            all_projects.append(
+                {
+                    "project": project,
+                    "active_releases": active_releases,
+                    "completed_releases": project.key in completed_keys,
+                }
+            )
 
         return await template.render(
             "index-committer.html",
