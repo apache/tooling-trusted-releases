@@ -23,6 +23,24 @@ import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 
+def test_latest_self_signature_skips_uid_revocations() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+
+    latest = pgp.latest_self_signature(key)
+
+    assert latest is not None
+    assert latest.signature_type == "cert-positive"
+
+
+def test_latest_self_signature_survives_a_revoked_primary_uid() -> None:
+    key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_PRIMARY_UID_PUBLIC_KEY_ASC)
+
+    latest = pgp.latest_self_signature(key)
+
+    assert latest is not None
+    assert latest.signature_type == "cert-positive"
+
+
 def test_signing_key_status_expiry_follows_the_issuing_subkey() -> None:
     key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
 

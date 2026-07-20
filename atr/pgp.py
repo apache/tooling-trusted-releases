@@ -21,6 +21,10 @@ from typing import Final
 
 import openpgp
 
+_CERTIFICATION_REVOCATION_SIGNATURE_TYPE: Final[str] = "cert-revocation"
+_CERTIFICATION_SIGNATURE_TYPES: Final[frozenset[str]] = frozenset(
+    {"cert-generic", "cert-persona", "cert-casual", "cert-positive"}
+)
 _SUBKEY_BINDING_SIGNATURE_TYPE: Final[str] = "subkey-binding"
 
 
@@ -39,7 +43,7 @@ def key_expires_at(key: openpgp.PublicKey) -> datetime.datetime | None:
     if effective is None:
         return None
     key_expiration_seconds = effective.key_expiration_seconds
-    if key_expiration_seconds is None:
+    if not key_expiration_seconds:
         return None
     return datetime.datetime.fromtimestamp(key.created_at + key_expiration_seconds, tz=datetime.UTC)
 
@@ -90,17 +94,35 @@ def signing_key_status(
     return SigningKeyStatus(identified=False, expires=None, can_sign=False)
 
 
+def _binding_revoked(binding: openpgp.UserBindingInfo, fingerprint: str, key_id: str) -> bool:
+    candidates = [
+        signature
+        for signature in binding.signatures
+        if _signature_is_self(signature, fingerprint, key_id)
+        and (
+            (signature.signature_type in _CERTIFICATION_SIGNATURE_TYPES)
+            or (signature.signature_type == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE)
+        )
+    ]
+    latest = _latest_signature(candidates)
+    return (latest is not None) and (latest.signature_type == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE)
+
+
 def _binding_self_signatures(key: openpgp.PublicKey) -> list[openpgp.SignatureInfo]:
     self_fingerprint = key.fingerprint.lower()
     self_key_id = key.key_id.lower()
-    primary_bindings = [binding for binding in key.user_bindings() if binding.is_primary]
-    chosen_bindings = primary_bindings or list(key.user_bindings())
+    active_bindings = [
+        binding for binding in key.user_bindings() if not _binding_revoked(binding, self_fingerprint, self_key_id)
+    ]
+    primary_bindings = [binding for binding in active_bindings if binding.is_primary]
+    chosen_bindings = primary_bindings or active_bindings
     binding_sigs: list[openpgp.SignatureInfo] = []
     for binding in chosen_bindings:
         binding_sigs.extend(
             signature
             for signature in binding.signatures
             if _signature_is_self(signature, self_fingerprint, self_key_id)
+            and (signature.signature_type in _CERTIFICATION_SIGNATURE_TYPES)
         )
     return binding_sigs
 
@@ -175,9 +197,19 @@ def _latest_binding_signature(binding: openpgp.SubkeyBindingInfo) -> openpgp.Sig
 
 
 def _latest_signature(signatures: list[openpgp.SignatureInfo]) -> openpgp.SignatureInfo | None:
-    if not signatures:
+    now = datetime.datetime.now(datetime.UTC).timestamp()
+    valid = [signature for signature in signatures if not _signature_expired(signature, now)]
+    if not valid:
         return None
-    return max(signatures, key=lambda signature: signature.creation_time or 0)
+    return max(valid, key=lambda signature: signature.creation_time or 0)
+
+
+def _signature_expired(signature: openpgp.SignatureInfo, now: float) -> bool:
+    expiration = signature.signature_expiration_seconds
+    if not expiration:
+        return False
+    creation = signature.creation_time or 0
+    return (creation + expiration) <= now
 
 
 def _signature_is_self(signature: openpgp.SignatureInfo, self_fingerprint: str, self_key_id: str) -> bool:
@@ -193,7 +225,7 @@ def _subkey_expires_at(
     if signature is None:
         return None
     key_expiration_seconds = signature.key_expiration_seconds
-    if key_expiration_seconds is None:
+    if not key_expiration_seconds:
         return None
     # Subkey expiration counts from the subkey's own creation, not the primary's
     return datetime.datetime.fromtimestamp(binding.created_at + key_expiration_seconds, tz=datetime.UTC)
