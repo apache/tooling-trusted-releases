@@ -311,11 +311,11 @@ async def load_checks(
     if await aiofiles.os.path.isfile(file_path):
         try:
             async with aiofiles.open(file_path, encoding="utf-8") as f:
-                data = json.loads(await f.read())
-                if data.get("version") == 1:
-                    log.warning(f"Found old checks file format in {file_path}, ignoring old checks")
-                    return {}
-            return models.AttestableChecksV2.model_validate(data).checks
+                content = await f.read()
+            if json.loads(content).get("version") == 1:
+                log.warning(f"Found old checks file format in {file_path}, ignoring old checks")
+                return {}
+            return models.AttestableChecksV2.model_validate_json(content).checks
         except (json.JSONDecodeError, pydantic.ValidationError) as e:
             log.warning(f"Could not parse {file_path}: {e}")
             return {}
