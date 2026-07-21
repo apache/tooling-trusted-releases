@@ -13,6 +13,13 @@
 * [LDAP integration](#ldap-integration)
 * [Access control for releases](#access-control-for-releases)
 * [Access control for tokens](#access-control-for-tokens)
+* [Access control for distribution management](#access-control-for-distribution-management)
+* [Access control for SSH and rsync access](#access-control-for-ssh-and-rsync-access)
+* [Access control for key management](#access-control-for-key-management)
+* [Access control for policy management](#access-control-for-policy-management)
+* [Access control for project management](#access-control-for-project-management)
+* [Access control for admin operations](#access-control-for-admin-operations)
+* [Phase-based access control](#phase-based-access-control)
 * [Implementation patterns](#implementation-patterns)
 * [Caching behavior](#caching-behavior)
 * [Implementation references](#implementation-references)
@@ -152,6 +159,262 @@ Token operations apply to the authenticated user:
 
 * Allowed for: Foundation administrators only (not committer self-service)
 * Note: System tokens are PATs for a service identity rather than a person. Endpoints that accept them (via `auth_scheme=api_auth.Auth.SYSTEM_BEARER`) apply no committee membership check, so the calling service must establish any committee authorisation upstream. See [System tokens](authentication-security#system-tokens) in the authentication guide for the mechanism.
+
+## Access control for distribution management
+
+Distribution records track where a release's artifacts have been published (for example to Maven Central, PyPI, or npm). These operations live in the [`distributions`](/ref/atr/storage/writers/distributions.py) storage writer, and are all release manager tier.
+
+**Automate a distribution publish** (queue a background task that publishes and records a distribution):
+
+* Allowed for: Release managers (PMC members and designated release managers)
+* Obtained via: `write.as_project_release_manager(project_key)` or a higher tier such as `write.as_committee_member(committee_key)`
+* Constraint: The release must belong to the writer's committee, and `write.ensure_release_writable(release)` rejects the call if the release is embargoed and the actor is not a committee member
+
+**Record a distribution** (record that a release has been published, including upgrading a staging record to a final one):
+
+* Allowed for: Release managers
+* Same committee and embargo constraints as `automate`
+
+**Delete a distribution record**:
+
+* Allowed for: Release managers
+* Same committee and embargo constraints as above
+
+Each of these operations validates the release's committee via `__validate_release_in_committee` before acting, so a caller cannot record or delete a distribution for a release outside their own committee even if they somehow obtain a matching release key. All three operations are audited (`distribution_automate`, `distribution_record` or `distribution_upgrade`, and `distribution_delete`).
+
+## Access control for SSH and rsync access
+
+ATR runs an SSH server (see [`ssh.py`](/ref/atr/ssh.py)) that accepts `rsync` commands for uploading and downloading release artifacts outside the web UI. Authentication is by SSH public key (see [SSH authentication](authentication-security#ssh-authentication) in the authentication guide); the following rules apply once a connection is authenticated, and are enforced independently of the web-based [access control for releases](#access-control-for-releases).
+
+**Read a release over rsync** (`rsync --server --sender ...`):
+
+* Allowed for: Committers on the release's project
+* Checked via: `_step_06a_validate_read_permissions`, using `user.is_committer`
+* Constraint: The release's phase must be `RELEASE_CANDIDATE_DRAFT`, `RELEASE_CANDIDATE`, or `RELEASE_PREVIEW`; reads of the `RELEASE` phase are refused over SSH (use the public download endpoints instead)
+* Constraint: If the release is embargoed, the reader must additionally satisfy `user.can_view_embargoed_release` (committee member, or admin)
+* Constraint: An optional path tag segment (for example a "source" or "convenience" tag) is only accepted if it appears in the project's `file_tag_mappings` policy
+
+**Write (upload) to an existing release over rsync**:
+
+* Allowed for: Committers on the release's project
+* Checked via: `_step_06b_validate_write_permissions`, using `user.is_committer`
+* Constraint: The release must be in the `RELEASE_CANDIDATE_DRAFT` phase; uploads are refused once voting has started
+
+**Create a new release over rsync** (the target project/version does not exist yet):
+
+* Allowed for: Committee members only, which is a stricter requirement than uploading to an existing draft
+* Checked via: `_step_06b_validate_write_permissions`, using `user.is_committee_member`
+
+**Path and command validation** (applies to every rsync command, read or write):
+
+* The command must be exactly `rsync --server [--sender] -Dgloprtv [--dirs] [--delete] . PATH`; any other flag combination is refused
+* `PATH` must resolve to a `/PROJECT/VERSION/` directory (write), or a `/PROJECT/VERSION/` or `/PROJECT/VERSION/TAG/` directory (read), where `PROJECT` and `VERSION` are validated against the same `safe.ProjectKey` and `safe.VersionKey` types used elsewhere in ATR
+* Uploads are capped at 2,000,000,000 bytes per rsync invocation (`--max-size` is injected server side and cannot be overridden by the client)
+* Connections are rate limited per IP address (100 per 60 seconds, applied even to failed authentication) and per authenticated user (10 per 60 seconds)
+
+Uploads are funnelled through [`create_revision_with_quarantine`](/ref/atr/storage/writers/revision.py), the same quarantine and revisioning path used by web uploads, so the same file-level checks apply regardless of whether the upload arrived over rsync or HTTP.
+
+## Access control for key management
+
+Key management covers both OpenPGP signing keys ([`storage/writers/keys.py`](/ref/atr/storage/writers/keys.py)) and SSH keys ([`storage/writers/ssh.py`](/ref/atr/storage/writers/ssh.py)).
+
+### OpenPGP keys
+
+**Upload or parse an OpenPGP key not yet linked to a committee**:
+
+* Allowed for: Any authenticated committer
+* Note: The key is stored once its ASF UID can be determined (from a `name@apache.org` user ID, or from an LDAP email match), but it is not yet published in any committee's KEYS file until it is associated with one
+
+**Delete an OpenPGP key**:
+
+* Allowed for: The key's owner (matched by `apache_uid`) only
+* Constraint: Deletion is a soft delete (sets `deleted`); an upload of the same key later automatically undeletes it
+
+**Associate a key with a committee, or import a committee's `KEYS` file**:
+
+* Allowed for: Participants of the target committee
+* Constraint: `associate_fingerprint` links a key that already exists in the database, regardless of who owns it; the caller does not need to own the key, only to participate in the committee they are linking it to
+
+**Update which committees a key is associated with**:
+
+* Allowed for: The key's owner
+* Constraint: Adding a new committee association additionally requires that the owner be a participant of that committee (`write.as_committee_participant(committee_key)`); removing an association has no such check, since it only reduces exposure
+
+**Enable or disable automated KEYS file publication for a committee**:
+
+* Allowed for: PMC members
+* Checked via: `WriteAsCommitteeMember` tier (`set_automated_keys_file`)
+
+**Delete all keys linked to a committee**:
+
+* Allowed for: Foundation administrators, obtained via `write.as_committee_admin(committee_key)`
+* Note: This check only requires foundation admin rights; unlike other committee-scoped writers, it does not additionally require the admin to be a member of that specific committee
+
+Minimum key strength (RSA, ECDSA, or EdDSA only, with minimum key sizes) is enforced for any key created after 2026-04-01, regardless of who uploads it; see `_validate_key_strength`.
+
+### SSH keys
+
+**Add or delete your own SSH key**:
+
+* Allowed for: Any authenticated committer, for their own keys only
+* Note: Deleting a key sends a notification email to the owner so that an unexpected deletion is noticed
+
+**Issue a workflow (GitHub Actions trusted publisher) SSH key**:
+
+* Allowed for: Participants of the target committee
+* Constraint: The key is time-limited (20 minutes) and single-use; the GitHub Actions OIDC token's `jti` claim is consumed on first use, so a replayed token is rejected
+
+**Revoke all SSH keys for a user**:
+
+* Allowed for: Foundation administrators only
+* Interface: Admin "Revoke user SSH keys" page (see [Access control for tokens](#access-control-for-tokens))
+
+## Access control for policy management
+
+Release policy (`ReleasePolicy`) governs how a project composes, votes on, and finishes its releases. All policy edits in [`storage/writers/policy.py`](/ref/atr/storage/writers/policy.py) are release manager tier, obtained through the project's committee.
+
+**Edit compose policy** (license check mode, source excludes, file tag mappings):
+
+* Allowed for: Release managers (PMC members and designated release managers)
+
+**Edit vote policy** (vote mode, minimum voting hours, recipients, vote templates):
+
+* Allowed for: Release managers
+* Constraint: Manual voting (`VoteMode.MANUAL`) cannot be selected for podling projects
+
+**Edit finish policy** (announcement subject/template, recipients, download retention):
+
+* Allowed for: Release managers
+
+**Edit trusted publishing configuration** (GitHub repository, branch, and workflow paths used for OIDC-based publishing):
+
+* Allowed for: Release managers
+
+**Edit version scheme** (version method, version pattern, calendar-versioning format, cycle match):
+
+* Allowed for: Release managers
+* Note: Changing the scheme reassigns release cycles for the project via `cycles.reassign_release_cycles`
+
+**Edit project lifecycle cycle dates** (end of development, end of support, end of life):
+
+* Allowed for: Release managers
+* Constraint: Dates can only be moved forward once set, not cleared; each change is recorded as a `LifecycleEvent` for audit purposes
+
+**Apply a policy update without an interactive session** (`edit_no_commit`):
+
+* Allowed for: Foundation admin tier only
+* Note: This is used by system services such as the `.asf.yaml` ingestion pipeline, which establish their own authorization upstream (see [System tokens](authentication-security#system-tokens)) before reaching this method; it performs no additional committee check itself
+
+## Access control for project management
+
+Project metadata, categorisation, and lifecycle are managed in [`storage/writers/project.py`](/ref/atr/storage/writers/project.py), split across two tiers.
+
+**Edit project metadata** (display name, description, homepage, links, repositories, standards):
+
+* Allowed for: Release managers
+* Constraint: Refused once the project's status is `RETIRED`
+
+**Edit security metadata** (security contact, threat model links):
+
+* Allowed for: Release managers
+* Constraint: The security contact address is validated against the committee via `validation.validate_security_contact`
+
+**Set a project's download page**:
+
+* Allowed for: Release managers
+* Constraint: This is set-once; if a download page is already recorded, the call is a no-op rather than an overwrite
+
+**Add or remove a project category or programming language**:
+
+* Allowed for: PMC members
+* Constraint: A fixed set of categories in `registry.FORBIDDEN_PROJECT_CATEGORIES` can never be added or removed this way
+
+**Create a project**:
+
+* Allowed for: PMC members
+* Note: A new project may derive defaults (description, categories, version scheme, release policy) from an existing "super-project" if its key is a dash-separated prefix of the new key
+
+**Archive (retire) a project**:
+
+* Allowed for: PMC members
+* Constraint: Requires an already-approved Community Approval Process (CAP) request for the `ARCHIVE` action; refused if the project has any non-draft releases, any draft releases, or is the only active project left in its committee
+
+**Delete a project**:
+
+* Allowed for: PMC members
+* Constraint: Requires an already-approved CAP request for the `DELETE` action; refused if the project has any releases at all, or is the only active project left in its committee
+
+**Request CAP approval for archiving or deleting a project**:
+
+* Allowed for: PMC members
+* Note: Creates an `ApprovalRequest` row and schedules an automatic resolution task; duplicate in-flight requests for the same project or release are rejected
+
+**Record a CAP approval outcome, or upsert a project's configuration from `.asf.yaml`**:
+
+* Allowed for: Foundation admin tier only
+* Note: As with policy's `edit_no_commit`, these methods have no committee gate of their own. The caller's right to act for the committee is established upstream, by the CAP resolution service or the `.asf.yaml` ingestion feature respectively, both of which use the fixed system service identity rather than a human session
+
+## Access control for admin operations
+
+The entire `/admin` web interface is gated by one check: the [`_check_admin_access`](/ref/atr/blueprints/admin.py) `before_request` hook on the admin blueprint, which requires a valid session and `user.is_admin`. Individual routes under `/admin` do not repeat this check; the blueprint-level gate is the sole enforcement point for the web UI.
+
+Admin-only operations include, in addition to token and SSH key revocation (see [Access control for tokens](#access-control-for-tokens)):
+
+* Site banner management (set, view history, restore a previous banner)
+* Catalogue correction: move, rename, or delete/rehome a project between committees, and bulk CSV import/export of projects, releases, and artifacts
+* Deleting releases, deleting a committee's OpenPGP keys, or deleting test-mode OpenPGP keys
+* Checking or updating public signing keys from remote data
+* LDAP lookups by ASF UID or email
+* Viewing application configuration (secrets are redacted by name pattern), performance statistics, recent logs, and database/filesystem consistency checks
+* Rotating the JWT signing key, and creating or revoking system tokens
+* In test mode only: managing the synthetic "test" committee roster
+
+**Admin impersonation ("browse as")**:
+
+* Allowed for: Foundation administrators only
+* Mechanism: The admin's session is rewritten to carry the target user's identity (committees, projects, full name), but the session's `admin_uid` field retains the *original* admin's ASF UID, so impersonated actions remain traceable back to the admin who initiated them
+* Audit: Logged via `log.auth_event("impersonate", admin_id, as_user=...)` at the moment impersonation begins
+
+**Defense in depth for non-web callers**:
+
+* Storage-layer entry points that grant admin tier, `write.as_foundation_admin()` and `write.as_committee_admin(committee_key)`, each independently check `user.is_admin` inside the storage layer. This matters for callers that do not go through the `/admin` blueprint at all, such as background tasks
+* This is distinct from the system-service writers (`WriteAsAsfYamlService`, `WriteAsCapResolveService`, `WriteAsDistCatalogService`, `WriteAsInactivitySweepService`, `WriteAsJwtMintService`, `WriteAsAutomatedMailService`), which reach admin-tier methods internally but are themselves gated by requiring the fixed `constants.SYSTEM_SERVICE_UID` identity rather than by `user.is_admin`. A system service identity is not a human admin account
+
+## Phase-based access control
+
+Release lifecycle phases gate many operations at once, and the rules are enforced in several different modules. This section consolidates them into a single reference; each rule links back to the section or module that enforces it.
+
+### Phase definitions
+
+| Phase | Description |
+| ------- | ------------- |
+| `RELEASE_CANDIDATE_DRAFT` | Candidate files are being added and checked; not yet under vote |
+| `RELEASE_CANDIDATE` | The committee is voting on the candidate |
+| `RELEASE_PREVIEW` | The vote passed; files are staged for announcement |
+| `RELEASE` | The release has been announced and is publicly distributed |
+
+### Operation access by phase
+
+| Operation | DRAFT | CANDIDATE | PREVIEW | RELEASE | Authorization | Enforced in |
+| ----------- | :-----: | :---------: | :-------: | :-------: | ---------------- | ------------- |
+| Upload artifacts (web or rsync) | yes | no | no | no | Project participants | [`storage/writers/revision.py`](/ref/atr/storage/writers/revision.py) (`create_revision_with_quarantine`, `allowed_phases`) |
+| SSH/rsync write | yes | no | no | no | Committers (committee members to create a new release) | [`ssh.py`](/ref/atr/ssh.py) (`_step_06b_validate_write_permissions`) |
+| SSH/rsync read | yes | yes | yes | no | Committers; committee members (or admins) if embargoed | [`ssh.py`](/ref/atr/ssh.py) (`_step_06a_validate_read_permissions`) |
+| Download over HTTP | yes | yes | yes | yes | Public, subject to embargo | [`get/download.py`](/ref/atr/get/download.py) |
+| Start a vote (DRAFT to CANDIDATE) | yes | — | — | — | Release managers | [`storage/writers/release.py`](/ref/atr/storage/writers/release.py) (`start_vote_no_commit`) |
+| Cast or change a vote | — | yes | — | — | Project participants | See [Access control for releases](#access-control-for-releases) |
+| Resolve a vote: pass moves to PREVIEW, fail or cancel returns to DRAFT | — | yes | — | — | Release managers | [`storage/writers/vote.py`](/ref/atr/storage/writers/vote.py) (`resolve`) |
+| Announce a release (PREVIEW to RELEASE) | — | — | yes | — | Release managers | [`storage/writers/announce.py`](/ref/atr/storage/writers/announce.py) (`release`) |
+| Record or automate a distribution | — | — | — | — | Release managers, any phase once the release exists | [Access control for distribution management](#access-control-for-distribution-management) |
+
+### Starting a vote: preconditions
+
+Moving a release from `RELEASE_CANDIDATE_DRAFT` to `RELEASE_CANDIDATE` additionally requires, all checked in `start_vote_no_commit`:
+
+* No ongoing tasks (checks still running) and no pending quarantine for the release's latest revision
+* No unresolved blocker checks (`interaction.has_blocker_checks`)
+* At least one file present in the draft
+* Any required concern acknowledgements (for example license or provenance concerns) have been acknowledged
 
 ## Implementation patterns
 
