@@ -342,6 +342,8 @@ async def _check_path_process_single(  # noqa: C901
                 ext_metadata = suffix
                 is_standalone_metadata = True
                 break
+    if (not ext_artifact) and (not ext_metadata) and analysis.is_sbom_metadata(path.name):
+        ext_metadata = path.suffix
 
     if ext_artifact:
         log.info(f"Checking artifact rules for {full_path}")
