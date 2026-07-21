@@ -51,6 +51,10 @@ DISCRIMINATOR: Final[Any] = schema.discriminator(DISCRIMINATOR_NAME)
 
 _CONFIRM_PATTERN = re.compile(r"^[A-Za-z0-9 _.,!?-]+$")
 
+_URI_LIST_ALLOWED_SCHEMES: Final[frozenset[str]] = frozenset(
+    {"http", "https", "git", "git+ssh", "git+https", "ssh", "svn", "mailto"}
+)
+
 
 class Form(schema.Form):
     pass
@@ -510,10 +514,10 @@ def to_uri_list(v: Any) -> list[str]:
     else:
         raise ValueError(f"Expected a string or list of URIs, got {type(v).__name__}")
 
-    # We accept any URI scheme here rather than leaning on pydantic's AnyUrl,
-    # which rejects VCS locators like git+ssh://git@host:path. urlsplit just needs a scheme to
-    # be present, and we keep each entry exactly as given.
-    invalid = [item for item in items if not parse.urlsplit(item).scheme]
+    # We check against an allowlist of schemes here rather than leaning on pydantic's AnyUrl,
+    # which rejects VCS locators like git+ssh://git@host:path. We keep each entry exactly as
+    # given, but reject dangerous schemes such as javascript: and data:.
+    invalid = [item for item in items if parse.urlsplit(item).scheme.lower() not in _URI_LIST_ALLOWED_SCHEMES]
     if invalid:
         raise ValueError(f"Invalid URI{'s' if len(invalid) > 1 else ''}: {', '.join(invalid)}")
     return items
