@@ -75,8 +75,8 @@ async def test_delete_committee_keys_deletes_orphans(sqlite_sessionmaker) -> Non
         num_unlinked, num_deleted, _ = await writer.delete_committee_keys()
 
         assert (num_unlinked, num_deleted) == (2, 1)
-        alpha = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT, deleted=db.NOT_SET).get()
-        beta = await data.public_signing_key(fingerprint=BETA_FINGERPRINT).get()
+        alpha = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT, deleted=db.NOT_SET).get()
+        beta = await data.signing_certificate(fingerprint=BETA_FINGERPRINT).get()
         assert alpha is not None
         assert alpha.deleted is not None
         assert beta is not None
@@ -91,8 +91,8 @@ async def test_delete_key_retains_row_and_links(sqlite_sessionmaker) -> None:
         oc = await writer.delete_key(ALPHA_FINGERPRINT)
 
         oc.result_or_raise()
-        assert await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get() is None
-        key = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT, deleted=True).get()
+        assert await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get() is None
+        key = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT, deleted=True).get()
         assert key is not None
         assert key.ascii_armored_key == "armored alpha"
         links = await data.execute(sqlmodel.select(sql.KeyLink).where(sql.KeyLink.key_fingerprint == ALPHA_FINGERPRINT))
@@ -120,7 +120,7 @@ async def test_deleted_key_hidden_from_committee_relationship(sqlite_sessionmake
             (
                 await data.execute(
                     sqlmodel.select(sql.Committee)
-                    .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Committee.public_signing_keys)))
+                    .options(orm.selectinload(sql.validate_instrumented_attribute(sql.Committee.signing_certificates)))
                     .where(sql.validate_instrumented_attribute(sql.Committee.key) == "tooling")
                 )
             )
@@ -128,7 +128,7 @@ async def test_deleted_key_hidden_from_committee_relationship(sqlite_sessionmake
             .one()
         )
 
-        assert [k.fingerprint for k in committee.public_signing_keys] == [BETA_FINGERPRINT]
+        assert [k.fingerprint for k in committee.signing_certificates] == [BETA_FINGERPRINT]
 
 
 async def test_keys_file_text_excludes_deleted(sqlite_sessionmaker) -> None:
@@ -158,7 +158,7 @@ async def test_restrict_prevents_hard_delete_of_referenced_key(sqlite_sessionmak
             )
         )
         await data.commit()
-        key = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        key = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert key is not None
 
         await data.delete(key)
@@ -180,12 +180,12 @@ async def test_reupload_undeletes_and_restores_associations(sqlite_sessionmaker)
 
         assert oc.result_or_raise().status == datatypes.KeyStatus.INSERTED
         assert set(publications) == {"tooling"}
-        row = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        row = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert row is not None
         assert row.deleted is None
-        committee = await data.committee(key="tooling", _public_signing_keys=True).get()
+        committee = await data.committee(key="tooling", _signing_certificates=True).get()
         assert committee is not None
-        assert sorted(k.fingerprint for k in committee.public_signing_keys) == [ALPHA_FINGERPRINT, BETA_FINGERPRINT]
+        assert sorted(k.fingerprint for k in committee.signing_certificates) == [ALPHA_FINGERPRINT, BETA_FINGERPRINT]
 
 
 async def test_reupload_with_a_changed_block_refreshes_it(sqlite_sessionmaker) -> None:
@@ -200,7 +200,7 @@ async def test_reupload_with_a_changed_block_refreshes_it(sqlite_sessionmaker) -
         oc, _publications = await writer._FoundationCommitter__database_add_model(key)
 
         assert oc.result_or_raise().status == datatypes.KeyStatus.REFRESHED
-        row = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        row = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert row is not None
         assert row.ascii_armored_key == "armored alpha revoked"
         # A changed block can flip a signature check, so the key's committees must be rechecked
@@ -229,7 +229,7 @@ async def test_signature_hints_consume_flags_and_deletes(sqlite_sessionmaker) ->
         data.add(sql.SignatureHint(hint="feedfacefeedface"))
         await data.commit()
         writer = _committer_writer(data)
-        key_model = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        key_model = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert key_model is not None
         key = datatypes.Key(
             status=datatypes.KeyStatus.PARSED,
@@ -241,7 +241,7 @@ async def test_signature_hints_consume_flags_and_deletes(sqlite_sessionmaker) ->
         await data.commit()
 
         assert flagged == [ALPHA_FINGERPRINT]
-        refreshed = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        refreshed = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert refreshed is not None
         assert refreshed.historic_use is True
         assert await data.signature_hint(hint="1234567890abcdef").get() is None
@@ -258,7 +258,7 @@ async def test_undelete_keys_clears_deleted(sqlite_sessionmaker) -> None:
         await data.commit()
 
         assert undeleted == [ALPHA_FINGERPRINT]
-        key = await data.public_signing_key(fingerprint=ALPHA_FINGERPRINT).get()
+        key = await data.signing_certificate(fingerprint=ALPHA_FINGERPRINT).get()
         assert key is not None
         assert key.deleted is None
 
@@ -281,8 +281,20 @@ def _committer_writer(data: db.Session) -> keys_writer.FoundationCommitter:
     return writer
 
 
-def _key(fingerprint: str, apache_uid: str, armored: str) -> sql.PublicSigningKey:
-    return sql.PublicSigningKey(
+def _signing_key(fingerprint: str) -> sql.SigningKey:
+    return sql.SigningKey(
+        fingerprint=fingerprint,
+        certificate_fingerprint=fingerprint,
+        is_primary=True,
+        key_id=fingerprint[-16:],
+        algorithm=1,
+        length=4096,
+        created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+    )
+
+
+def _key(fingerprint: str, apache_uid: str, armored: str) -> sql.SigningCertificate:
+    return sql.SigningCertificate(
         fingerprint=fingerprint,
         algorithm=1,
         length=4096,
@@ -297,6 +309,10 @@ async def _seed_keys(data: db.Session) -> None:
     data.add(sql.Committee(key="tooling"))
     data.add(_key(ALPHA_FINGERPRINT, "alice", "armored alpha"))
     data.add(_key(BETA_FINGERPRINT, "bob", "armored beta"))
+    await data.commit()
+    # An artifact is attributed to a signing key rather than to the certificate carrying it
+    data.add(_signing_key(ALPHA_FINGERPRINT))
+    data.add(_signing_key(BETA_FINGERPRINT))
     await data.commit()
     data.add(sql.KeyLink(committee_key="tooling", key_fingerprint=ALPHA_FINGERPRINT))
     data.add(sql.KeyLink(committee_key="tooling", key_fingerprint=BETA_FINGERPRINT))

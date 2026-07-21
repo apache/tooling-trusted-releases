@@ -365,13 +365,13 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
         raise base.ASFQuartException(f"Network error while fetching keys: {e}", errorcode=503)
 
 
-async def _flash_openpgp_key_uid_warning(key_model: sql.PublicSigningKey, current_asf_uid: str) -> None:
+async def _flash_openpgp_key_uid_warning(key_model: sql.SigningCertificate, current_asf_uid: str) -> None:
     warning = _openpgp_key_uid_warning(key_model, current_asf_uid)
     if warning is not None:
         await quart.flash(str(warning), "warning")
 
 
-def _openpgp_key_uid_warning(key_model: sql.PublicSigningKey, current_asf_uid: str) -> htm.Element | None:
+def _openpgp_key_uid_warning(key_model: sql.SigningCertificate, current_asf_uid: str) -> htm.Element | None:
     fingerprint_upper = key_model.fingerprint.upper()
     if key_model.apache_uid is None:
         return None

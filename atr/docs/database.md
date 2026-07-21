@@ -86,7 +86,7 @@ The following diagram shows the main entity relationships and their cascade beha
 erDiagram
     Committee ||--o{ Project : "has projects"
     Committee ||--o{ Committee : "has children"
-    Committee }o--o{ PublicSigningKey : "linked via KeyLink"
+    Committee }o--o{ SigningCertificate : "linked via KeyLink"
     Project ||--o{ Release : "has releases"
     Project ||--o| ReleasePolicy : "ORM cascade + reverse DB cascade"
     Release ||--o{ Revision : "ORM cascade only"
@@ -160,7 +160,7 @@ Some related records are deleted explicitly in application code rather than thro
 
 **When announcing a Release** ([`storage/writers/announce.py`](/ref/atr/storage/writers/announce.py)): All **Revision** records for the release are deleted with a bulk SQL DELETE during the announce process, as part of cleaning up draft history after a release is published.
 
-**When deleting a PublicSigningKey** ([`storage/writers/keys.py`](/ref/atr/storage/writers/keys.py)): **KeyLink** records associating the key with committees are explicitly cleared and deleted before the key itself is deleted. KeyLink has no cascade configuration, so this cleanup is mandatory.
+**When deleting a SigningCertificate** ([`storage/writers/keys.py`](/ref/atr/storage/writers/keys.py)): **KeyLink** records associating the key with committees are explicitly cleared and deleted before the key itself is deleted. KeyLink has no cascade configuration, so this cleanup is mandatory.
 
 ### Blocked deletions
 
@@ -209,7 +209,7 @@ flowchart LR
 | ReleasePolicy | Project | — | `CASCADE` ⚠️ | — |
 | Task | WorkflowStatus | — | `SET NULL` | — |
 | Release | Task | — | — | Bulk delete before release deletion |
-| PublicSigningKey | KeyLink | — | — | Explicit clear before key deletion |
+| SigningCertificate | KeyLink | — | — | Explicit clear before key deletion |
 
 The ⚠️ on **ReleasePolicy → Project** indicates a reverse cascade: if a ReleasePolicy were deleted directly at the DB level, the referencing Project would also be deleted. This is a consequence of `ondelete="CASCADE"` on `Project.release_policy_id`.
 

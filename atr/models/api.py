@@ -118,7 +118,7 @@ class CommitteeGetResults(schema.Strict):
 
 class CommitteeKeysResults(schema.Strict):
     endpoint: Literal["/committee/keys"] = schema.alias("endpoint")
-    keys: Sequence[sql.PublicSigningKey]
+    keys: Sequence[sql.SigningCertificate]
 
 
 class CommitteeProjectsResults(schema.Strict):
@@ -331,7 +331,7 @@ class KeyDeleteResults(schema.Strict):
 
 class KeyGetResults(schema.Strict):
     endpoint: Literal["/key/get"] = schema.alias("endpoint")
-    key: sql.PublicSigningKey
+    key: sql.SigningCertificate
 
 
 class KeysUploadArgs(schema.Strict):
@@ -341,14 +341,14 @@ class KeysUploadArgs(schema.Strict):
 
 class KeysUploadException(schema.Strict):
     status: Literal["error"] = schema.alias("status")
-    key: sql.PublicSigningKey | None
+    key: sql.SigningCertificate | None
     error: str = schema.example("Error message")
     error_type: str = schema.example("KeysUploadError")
 
 
 class KeysUploadResult(schema.Strict):
     status: Literal["success"] = schema.alias("status")
-    key: sql.PublicSigningKey
+    key: sql.SigningCertificate
 
 
 type KeysUploadOutcome = Annotated[
@@ -370,7 +370,7 @@ class KeysUploadResults(schema.Strict):
 
 class KeysUserResults(schema.Strict):
     endpoint: Literal["/keys/user"] = schema.alias("endpoint")
-    keys: Sequence[sql.PublicSigningKey]
+    keys: Sequence[sql.SigningCertificate]
 
 
 class ProjectGetResults(schema.Strict):

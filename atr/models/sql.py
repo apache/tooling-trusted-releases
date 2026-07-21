@@ -628,7 +628,8 @@ class Banner(sqlmodel.SQLModel, table=True):
 # KeyLink:
 class KeyLink(sqlmodel.SQLModel, table=True):
     committee_key: str = sqlmodel.Field(foreign_key="committee.key", primary_key=True)
-    key_fingerprint: str = sqlmodel.Field(foreign_key="publicsigningkey.fingerprint", primary_key=True)
+    # Authorisation is granted to the certificate as a whole, never to an individual signing key
+    key_fingerprint: str = sqlmodel.Field(foreign_key="signingcertificate.fingerprint", primary_key=True)
 
 
 # Notification:
@@ -879,7 +880,7 @@ class WorkflowSSHKey(sqlmodel.SQLModel, table=True):
 # SQL core models
 
 
-# Committee: Committee Project PublicSigningKey
+# Committee: Committee Project SigningCertificate
 class Committee(sqlmodel.SQLModel, table=True):
     key: str = sqlmodel.Field(unique=True, primary_key=True, **example("example"))
     name: str | None = sqlmodel.Field(default=None, **example("Example"))
@@ -919,14 +920,14 @@ class Committee(sqlmodel.SQLModel, table=True):
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False), **example(["wave"])
     )
 
-    # M-M: Committee -> [PublicSigningKey]
-    # M-M: PublicSigningKey -> [Committee]
-    public_signing_keys: list["PublicSigningKey"] = sqlmodel.Relationship(
+    # M-M: Committee -> [SigningCertificate]
+    # M-M: SigningCertificate -> [Committee]
+    signing_certificates: list["SigningCertificate"] = sqlmodel.Relationship(
         back_populates="committees",
         link_model=KeyLink,
         sa_relationship_kwargs={
-            "secondaryjoin": "and_(PublicSigningKey.fingerprint == KeyLink.key_fingerprint,"
-            " PublicSigningKey.deleted.is_(None))",
+            "secondaryjoin": "and_(SigningCertificate.fingerprint == KeyLink.key_fingerprint,"
+            " SigningCertificate.deleted.is_(None))",
         },
     )
 
@@ -1867,27 +1868,17 @@ class Distribution(sqlmodel.SQLModel, table=True):
 #     see_also(Project.distribution_channels)
 
 
-# PublicSigningKey: Committee
-class PublicSigningKey(sqlmodel.SQLModel, table=True):
-    # The fingerprint must be stored as lowercase hex
+# SigningCertificate: Committee SigningKey
+class SigningCertificate(sqlmodel.SQLModel, table=True):
+    # The fingerprint of the certificate's primary key, stored as lowercase hex. The keys which can
+    # actually sign, this primary among them, are the SigningKey rows hanging off this row
     fingerprint: str = sqlmodel.Field(
         primary_key=True, unique=True, **example("0123456789abcdef0123456789abcdef01234567")
-    )
-    # The algorithm is an RFC 4880 algorithm ID
-    algorithm: int = sqlmodel.Field(**example(1))
-    # Key length in bits
-    length: int = sqlmodel.Field(**example(4096))
-    # Creation date
-    created: datetime.datetime = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
-        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     # Latest self signature
     latest_self_signature: datetime.datetime | None = sqlmodel.Field(
         default=None, sa_column=sqlalchemy.Column(UTCDateTime)
     )
-    # Expiration date
-    expires: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     # The primary UID declared in the key
     primary_declared_uid: str | None = sqlmodel.Field(**example("User <user@example.org>"))
     # The secondary UIDs declared in the key
@@ -1905,16 +1896,56 @@ class PublicSigningKey(sqlmodel.SQLModel, table=True):
     deleted: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
     historic_use: bool = sqlmodel.Field(default=False)
 
-    # M-M: PublicSigningKey -> [Committee]
-    # M-M: Committee -> [PublicSigningKey]
-    committees: list[Committee] = sqlmodel.Relationship(back_populates="public_signing_keys", link_model=KeyLink)
+    # M-M: SigningCertificate -> [Committee]
+    # M-M: Committee -> [SigningCertificate]
+    committees: list[Committee] = sqlmodel.Relationship(back_populates="signing_certificates", link_model=KeyLink)
+
+    # 1-M: SigningCertificate -> [SigningKey]
+    signing_keys: list["SigningKey"] = sqlmodel.Relationship(back_populates="certificate")
+
+    def model_post_init(self, _context):
+        if isinstance(self.latest_self_signature, str):
+            self.latest_self_signature = datetime.datetime.fromisoformat(self.latest_self_signature.rstrip("Z"))
+
+
+# SigningKey: SigningCertificate
+class SigningKey(sqlmodel.SQLModel, table=True):
+    # A key which can carry a signature, being either a certificate's primary key or one of its
+    # subkeys. Its expiry, revocation and signing capability are its own, distinct from the primary's
+    fingerprint: str = sqlmodel.Field(
+        primary_key=True, unique=True, **example("0123456789abcdef0123456789abcdef01234567")
+    )
+    certificate_fingerprint: str = sqlmodel.Field(
+        foreign_key="signingcertificate.fingerprint",
+        ondelete="CASCADE",
+        index=True,
+        **example("0123456789abcdef0123456789abcdef01234567"),
+    )
+    # True for the certificate's own primary key, of which there is exactly one per certificate
+    is_primary: bool = sqlmodel.Field(default=False, index=True)
+    # The legacy 16 hex digit key identifier, which signatures may cite instead of a fingerprint
+    key_id: str = sqlmodel.Field(index=True, **example("0123456789abcdef"))
+    # The algorithm is an RFC 4880 algorithm ID
+    algorithm: int = sqlmodel.Field(**example(1))
+    # Key length in bits
+    length: int = sqlmodel.Field(**example(4096))
+    created: datetime.datetime = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+        **example(datetime.datetime(2025, 5, 1, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    # This key's own expiry, counted from its own creation
+    expires: datetime.datetime | None = sqlmodel.Field(default=None, sa_column=sqlalchemy.Column(UTCDateTime))
+    # True where this key carries a revocation, or hangs beneath a primary which does
+    revoked: bool = sqlmodel.Field(default=False)
+    # False only where the key declares capabilities which exclude signing
+    can_sign: bool = sqlmodel.Field(default=True)
+
+    # M-1: SigningKey -> SigningCertificate
+    certificate: SigningCertificate = sqlmodel.Relationship(back_populates="signing_keys")
 
     def model_post_init(self, _context):
         if isinstance(self.created, str):
             self.created = datetime.datetime.fromisoformat(self.created.rstrip("Z"))
-
-        if isinstance(self.latest_self_signature, str):
-            self.latest_self_signature = datetime.datetime.fromisoformat(self.latest_self_signature.rstrip("Z"))
 
         if isinstance(self.expires, str):
             self.expires = datetime.datetime.fromisoformat(self.expires.rstrip("Z"))
@@ -2009,10 +2040,10 @@ class Artifact(sqlmodel.SQLModel, table=True):
     release_key: str | None = sqlmodel.Field(
         default=None, foreign_key="release.key", ondelete="CASCADE", index=True, **example("example-0.0.1")
     )
-    # Fingerprint of the GPG public key used to sign the artifact
+    # Fingerprint of the key which signed the artifact, which is a subkey wherever one was used
     key_fingerprint: str | None = sqlmodel.Field(
         default=None,
-        foreign_key="publicsigningkey.fingerprint",
+        foreign_key="signingkey.fingerprint",
         ondelete="RESTRICT",
         index=True,
         **example("0123456789abcdef0123456789abcdef01234567"),

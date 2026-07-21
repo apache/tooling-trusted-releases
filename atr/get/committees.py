@@ -70,7 +70,7 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         committee = await data.committee(
             key=str(name),
             _projects=True,
-            _public_signing_keys=True,
+            _signing_certificates=True,
         ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
 
         roster = sorted(set(committee.committee_members + committee.committers))
@@ -79,19 +79,23 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         )
         names: dict[str, str | None] = {u.asfuid: u.name for u in user_rows.scalars().all()}
 
-        fingerprints = [k.fingerprint for k in committee.public_signing_keys]
+        fingerprints = [k.fingerprint for k in committee.signing_certificates]
         artifact_counts: dict[str, int] = {}
         if fingerprints:
             via = sql.validate_instrumented_attribute
+            # An artifact is attributed to the key which signed it, so counting per certificate has
+            # to go through SigningKey or everything signed by a subkey is left out
             count_rows = await data.execute(
                 sqlalchemy.select(
-                    via(sql.Artifact.key_fingerprint),
+                    via(sql.SigningKey.certificate_fingerprint),
                     sqlalchemy.func.count(),
                 )
-                .where(via(sql.Artifact.key_fingerprint).in_(fingerprints))
-                .group_by(via(sql.Artifact.key_fingerprint))
+                .select_from(sql.Artifact)
+                .join(sql.SigningKey, via(sql.SigningKey.fingerprint) == via(sql.Artifact.key_fingerprint))
+                .where(via(sql.SigningKey.certificate_fingerprint).in_(fingerprints))
+                .group_by(via(sql.SigningKey.certificate_fingerprint))
             )
-            artifact_counts = {fp: n for fp, n in count_rows.all() if fp is not None}
+            artifact_counts = {fp: n for fp, n in count_rows.all()}
 
         signing_committees = await interaction.automated_release_signing_committees(data)
 
@@ -104,7 +108,7 @@ async def view(session: web.Public, _committees: Literal["committees"], name: sa
         project.committee = committee
     project_list.sort(key=lambda p: interaction.project_order_key(p, latest_releases.get(str(p.key))))
     signing_keys = sorted(
-        committee.public_signing_keys,
+        committee.signing_certificates,
         key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
     )
     committee_member = False

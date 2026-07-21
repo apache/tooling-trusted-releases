@@ -100,19 +100,90 @@ def _algorithm_name(algorithm: int) -> str:
 
 
 def _key_length(key: openpgp.PublicKey) -> int:
-    public_params = key.public_params
-    rsa_bits = public_params.rsa_bits
-    if isinstance(rsa_bits, int):
-        return rsa_bits
-    dsa_bits = public_params.dsa_bits
-    if isinstance(dsa_bits, int):
-        return dsa_bits
-    curve_bits = public_params.curve_bits
-    if isinstance(curve_bits, int):
-        return curve_bits
-    raise ValueError(
-        f"Key size is not available for algorithm {key.public_key_algorithm}:"
-        f" rsa_bits={rsa_bits!r}, dsa_bits={dsa_bits!r}, curve_bits={curve_bits!r}"
+    bits = pgp.public_params_bits(key.public_params)
+    if bits is None:
+        raise ValueError(f"Key size is not available for algorithm {key.public_key_algorithm}")
+    return bits
+
+
+def _block_downgrade_reason(stored_block: str, incoming_block: str) -> str | None:
+    # Self-signatures are append-only, so a re-upload may add declarations but must not roll the
+    # effective state back: no revocation dropped, no regression to an older self-signature. A minimised
+    # re-export keeps both and passes. A block we can't parse can't be judged, so allow it through
+    try:
+        stored_key, _ = openpgp.PublicKey.from_armor(stored_block)
+        incoming_key, _ = openpgp.PublicKey.from_armor(incoming_block)
+    except Exception:
+        return None
+    dropped = pgp.revocations_dropped(stored_key, incoming_key)
+    if dropped:
+        return f"drops the revocation on {', '.join(sorted(dropped))}"
+    stored_latest = pgp.latest_self_signature_created_at(stored_key)
+    incoming_latest = pgp.latest_self_signature_created_at(incoming_key)
+    if (stored_latest is not None) and ((incoming_latest is None) or (incoming_latest < stored_latest)):
+        return "predates the latest stored self-signature"
+    return None
+
+
+def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[dict] | None:
+    """The SigningKey rows a certificate's block describes, or None if the block is for another key."""
+    if isinstance(block, bytes):
+        block = block.decode("utf-8", errors="replace")
+    key, _ = openpgp.PublicKey.from_armor(block)
+    if key.fingerprint.lower() != certificate_fingerprint.lower():
+        return None
+    return [
+        {
+            "fingerprint": facts.fingerprint,
+            "certificate_fingerprint": certificate_fingerprint.lower(),
+            "is_primary": facts.is_primary,
+            "key_id": facts.key_id,
+            "algorithm": _algorithm_id(facts.algorithm),
+            "length": facts.length_bits or 0,
+            "created": facts.created,
+            "expires": facts.expires,
+            "revoked": facts.revoked,
+            "can_sign": facts.can_sign,
+        }
+        for facts in pgp.signing_key_facts(key)
+    ]
+
+
+async def _sync_signing_keys(data: db.Session, certificates: list[sql.SigningCertificate]) -> None:
+    """Bring each certificate's SigningKey rows into line with the block it holds"""
+    rows = []
+    for certificate in certificates:
+        try:
+            derived = _signing_key_rows(certificate.fingerprint, certificate.ascii_armored_key)
+        except Exception as e:
+            log.warning(f"Could not derive signing keys for {certificate.fingerprint}: {e}")
+            continue
+        if derived is None:
+            # The block belongs to another key, so anything derived from it would describe that one
+            log.warning(f"Stored block for {certificate.fingerprint} holds another key, skipping")
+            continue
+        rows.extend(derived)
+    if not rows:
+        return
+    statement = sqlite.insert(sql.SigningKey)
+    # A refreshed block can move expiry, revoke a subkey, or add one, so every column is rewritten.
+    # Subkeys which have disappeared keep their row, since an artifact may still be attributed to one
+    await data.execute(
+        statement.on_conflict_do_update(
+            index_elements=["fingerprint"],
+            set_={
+                "certificate_fingerprint": statement.excluded.certificate_fingerprint,
+                "is_primary": statement.excluded.is_primary,
+                "key_id": statement.excluded.key_id,
+                "algorithm": statement.excluded.algorithm,
+                "length": statement.excluded.length,
+                "created": statement.excluded.created,
+                "expires": statement.excluded.expires,
+                "revoked": statement.excluded.revoked,
+                "can_sign": statement.excluded.can_sign,
+            },
+        ),
+        rows,
     )
 
 
@@ -146,18 +217,18 @@ class FoundationCommitter(GeneralPublic):
     async def delete_key(self, fingerprint: str) -> outcome.Outcome[datatypes.KeyDeletion]:
         try:
             via = sql.validate_instrumented_attribute
-            key = await self.__data.public_signing_key(
+            key = await self.__data.signing_certificate(
                 fingerprint=fingerprint,
                 apache_uid=self.__asf_uid,
                 _committees=True,
             ).demand(storage.AccessError(f"Key not found: {fingerprint}", status=404))
             affected_committee_keys = {committee.key for committee in key.committees}
             update_result = await self.__data.execute(
-                sqlmodel.update(sql.PublicSigningKey)
+                sqlmodel.update(sql.SigningCertificate)
                 .where(
-                    via(sql.PublicSigningKey.fingerprint) == key.fingerprint,
-                    via(sql.PublicSigningKey.apache_uid) == self.__asf_uid,
-                    via(sql.PublicSigningKey.deleted).is_(None),
+                    via(sql.SigningCertificate.fingerprint) == key.fingerprint,
+                    via(sql.SigningCertificate.apache_uid) == self.__asf_uid,
+                    via(sql.SigningCertificate.deleted).is_(None),
                 )
                 .values(deleted=datetime.datetime.now(datetime.UTC))
             )
@@ -189,7 +260,7 @@ class FoundationCommitter(GeneralPublic):
         key: openpgp.PublicKey,
         ldap_data: cache.EmailUidLookup,
         original_key_block: str | None = None,
-    ) -> sql.PublicSigningKey:
+    ) -> sql.SigningCertificate:
         uids = list(key.user_ids)
         asf_uid = self.__uids_asf_uid(uids, ldap_data)
         if not uids:
@@ -197,15 +268,10 @@ class FoundationCommitter(GeneralPublic):
 
         # Use the original key block if available
         ascii_armored = original_key_block if original_key_block else key.to_armored()
-        expires_at = pgp.key_expires_at(key)
 
-        return sql.PublicSigningKey(
+        return sql.SigningCertificate(
             fingerprint=key.fingerprint.lower(),
-            algorithm=_algorithm_id(key.public_key_algorithm),
-            length=_key_length(key),
-            created=datetime.datetime.fromtimestamp(key.created_at, tz=datetime.UTC),
             latest_self_signature=pgp.latest_self_signature_created_at(key),
-            expires=expires_at,
             primary_declared_uid=uids[0],
             secondary_declared_uids=uids[1:],
             apache_uid=asf_uid,
@@ -213,16 +279,16 @@ class FoundationCommitter(GeneralPublic):
         )
 
     async def keys_file_text(self, committee_key: str) -> str:
-        committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
+        committee = await self.__data.committee(key=committee_key, _signing_certificates=True).demand(
             storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
         return await self._keys_file_text(committee)
 
     async def _keys_file_text(self, committee: sql.Committee) -> str:
-        if not committee.public_signing_keys:
+        if not committee.signing_certificates:
             raise storage.AccessError(f"No keys found for committee {committee.key} to generate KEYS file.", status=404)
 
-        sorted_keys = sorted(committee.public_signing_keys, key=lambda k: k.fingerprint)
+        sorted_keys = sorted(committee.signing_certificates, key=lambda k: k.fingerprint)
 
         keys_content_list = []
         for key in sorted_keys:
@@ -250,7 +316,7 @@ class FoundationCommitter(GeneralPublic):
             keys_content_list.append(armored_key)
 
         key_blocks_str = "\n\n\n".join(keys_content_list) + "\n"
-        key_count_for_header = len(committee.public_signing_keys)
+        key_count_for_header = len(committee.signing_certificates)
 
         return await self.__keys_file_format(
             committee_key=committee.key,
@@ -306,18 +372,18 @@ class FoundationCommitter(GeneralPublic):
         return outcome.Result(datatypes.KeysPublish.PUBLISHED)
 
     async def _sync_committee_keys_file(self, committee_key: str) -> tuple[int, outcome.Outcome[datatypes.KeysPublish]]:
-        committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
+        committee = await self.__data.committee(key=committee_key, _signing_certificates=True).demand(
             storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
 
-        if not committee.public_signing_keys:
+        if not committee.signing_certificates:
             # We use an empty file for no KEYS in SVN
             svn_outcome = await self._publish_keys_to_svn(committee, None)
             return 0, svn_outcome
 
         full_keys_file_content = await self._keys_file_text(committee)
         svn_outcome = await self._publish_keys_to_svn(committee, full_keys_file_content)
-        return len(committee.public_signing_keys), svn_outcome
+        return len(committee.signing_certificates), svn_outcome
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
         """Delete all OpenPGP keys and their links for a test user."""
@@ -325,7 +391,7 @@ class FoundationCommitter(GeneralPublic):
             return outcome.Error(storage.AccessError("Test key deletion not enabled", status=403))
 
         try:
-            test_user_keys = await self.__data.public_signing_key(
+            test_user_keys = await self.__data.signing_certificate(
                 apache_uid=test_uid, deleted=db.NOT_SET, _committees=True
             ).all()
 
@@ -366,7 +432,7 @@ class FoundationCommitter(GeneralPublic):
     ) -> datatypes.KeyAssociationUpdate:
         via = sql.validate_instrumented_attribute
 
-        key = await self.__data.public_signing_key(
+        key = await self.__data.signing_certificate(
             fingerprint=fingerprint,
             apache_uid=self.__asf_uid,
             _committees=True,
@@ -438,7 +504,7 @@ class FoundationCommitter(GeneralPublic):
     def __block_model_create(self, key_block: str, ldap_data: cache.EmailUidLookup) -> datatypes.Key:
         public_key, _ = openpgp.PublicKey.from_armor(key_block)
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
-        _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
+        _validate_key_strength(public_key)
         return datatypes.Key(
             status=datatypes.KeyStatus.PARSED,
             key_model=key_model,
@@ -455,10 +521,10 @@ class FoundationCommitter(GeneralPublic):
 
         key_values = [key.key_model.model_dump(exclude={"committees"})]
         key_insert_result = await self.__data.execute(
-            sqlite.insert(sql.PublicSigningKey)
+            sqlite.insert(sql.SigningCertificate)
             .values(key_values)
             .on_conflict_do_nothing(index_elements=["fingerprint"])
-            .returning(via(sql.PublicSigningKey.fingerprint))
+            .returning(via(sql.SigningCertificate.fingerprint))
         )
         inserted = key_insert_result.one_or_none() is not None
         undeleted = []
@@ -473,10 +539,14 @@ class FoundationCommitter(GeneralPublic):
             undeleted = await self.__undelete_keys([key.key_model.fingerprint])
             if undeleted and not refreshed:
                 await self.__data.execute(
-                    sqlmodel.update(sql.PublicSigningKey)
-                    .where(via(sql.PublicSigningKey.fingerprint) == key.key_model.fingerprint)
+                    sqlmodel.update(sql.SigningCertificate)
+                    .where(via(sql.SigningCertificate.fingerprint) == key.key_model.fingerprint)
                     .values(apache_uid=key.key_model.apache_uid)
                 )
+        # A refused downgrade kept the stored block, so its rows must not be rebuilt from the block we
+        # declined; only sync when the block actually changed
+        if inserted or refreshed:
+            await _sync_signing_keys(self.__data, [key.key_model])
         await self.__data.commit()
 
         if undeleted:
@@ -592,15 +662,16 @@ and was published by the committee.\
         full_keys_file_content = header_content + key_blocks_str
         return full_keys_file_content
 
-    async def __refresh_stored_key(self, model: sql.PublicSigningKey) -> bool:
-        existing = await self.__data.public_signing_key(fingerprint=model.fingerprint, deleted=db.NOT_SET).get()
+    async def __refresh_stored_key(self, model: sql.SigningCertificate) -> bool:
+        existing = await self.__data.signing_certificate(fingerprint=model.fingerprint, deleted=db.NOT_SET).get()
         if (existing is None) or (existing.ascii_armored_key == model.ascii_armored_key):
             return False
+        downgrade = _block_downgrade_reason(existing.ascii_armored_key, model.ascii_armored_key)
+        if downgrade is not None:
+            log.warning(f"Not refreshing {model.fingerprint}: the uploaded block {downgrade}")
+            return False
         existing.ascii_armored_key = model.ascii_armored_key
-        existing.algorithm = model.algorithm
-        existing.length = model.length
         existing.latest_self_signature = model.latest_self_signature
-        existing.expires = model.expires
         existing.primary_declared_uid = model.primary_declared_uid
         existing.secondary_declared_uids = model.secondary_declared_uids
         existing.apache_uid = model.apache_uid
@@ -621,8 +692,8 @@ and was published by the committee.\
             return []
         flagged = sorted(fingerprint for fingerprint, member_ids in member_map.items() if member_ids & matched)
         await self.__data.execute(
-            sqlmodel.update(sql.PublicSigningKey)
-            .where(via(sql.PublicSigningKey.fingerprint).in_(flagged))
+            sqlmodel.update(sql.SigningCertificate)
+            .where(via(sql.SigningCertificate.fingerprint).in_(flagged))
             .values(historic_use=True)
         )
         await self.__data.execute(
@@ -685,13 +756,13 @@ and was published by the committee.\
             return []
         via = sql.validate_instrumented_attribute
         result = await self.__data.execute(
-            sqlmodel.update(sql.PublicSigningKey)
+            sqlmodel.update(sql.SigningCertificate)
             .where(
-                via(sql.PublicSigningKey.fingerprint).in_(sorted(fingerprints)),
-                via(sql.PublicSigningKey.deleted).is_not(None),
+                via(sql.SigningCertificate.fingerprint).in_(sorted(fingerprints)),
+                via(sql.SigningCertificate.deleted).is_not(None),
             )
             .values(deleted=None)
-            .returning(via(sql.PublicSigningKey.fingerprint))
+            .returning(via(sql.SigningCertificate.fingerprint))
         )
         return sorted(result.scalars().all())
 
@@ -718,7 +789,7 @@ class CommitteeParticipant(FoundationCommitter):
         via = sql.validate_instrumented_attribute
         link_values = [{"committee_key": self.__committee_key, "key_fingerprint": fingerprint}]
         try:
-            await self.__data.public_signing_key(fingerprint=fingerprint).demand(
+            await self.__data.signing_certificate(fingerprint=fingerprint).demand(
                 storage.AccessError(f"Key not found: {fingerprint}", status=404)
             )
             link_insert_result = await self.__data.execute(
@@ -763,7 +834,7 @@ class CommitteeParticipant(FoundationCommitter):
         )
         try:
             committee = await self.committee()
-            if not committee.public_signing_keys:
+            if not committee.signing_certificates:
                 return outcome.Error(no_keys), outcome.Error(no_keys)
             key_count, svn_outcome = await self._sync_committee_keys_file(self.__committee_key)
         except Exception as e:
@@ -773,7 +844,7 @@ class CommitteeParticipant(FoundationCommitter):
         return outcome.Result(key_count), svn_outcome
 
     async def committee(self) -> sql.Committee:
-        return await self.__data.committee(key=self.__committee_key, _public_signing_keys=True).demand(
+        return await self.__data.committee(key=self.__committee_key, _signing_certificates=True).demand(
             storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
         )
 
@@ -859,7 +930,7 @@ class CommitteeParticipant(FoundationCommitter):
         key_list = []
         try:
             key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
-            _validate_key_strength(key_model.algorithm, key_model.length, key_model.created)
+            _validate_key_strength(public_key)
             key = datatypes.Key(
                 status=datatypes.KeyStatus.PARSED,
                 key_model=key_model,
@@ -907,9 +978,9 @@ class CommitteeParticipant(FoundationCommitter):
         if incoming_blocks:
             stored_result = await self.__data.execute(
                 sqlmodel.select(
-                    via(sql.PublicSigningKey.fingerprint),
-                    via(sql.PublicSigningKey.ascii_armored_key),
-                ).where(via(sql.PublicSigningKey.fingerprint).in_(sorted(incoming_blocks)))
+                    via(sql.SigningCertificate.fingerprint),
+                    via(sql.SigningCertificate.ascii_armored_key),
+                ).where(via(sql.SigningCertificate.fingerprint).in_(sorted(incoming_blocks)))
             )
             stored_blocks = {fingerprint: block for fingerprint, block in stored_result.all()}
         # A key we already hold whose incoming block differs has been re-imported with a newer state,
@@ -919,8 +990,20 @@ class CommitteeParticipant(FoundationCommitter):
             for fingerprint, block in incoming_blocks.items()
             if (fingerprint in stored_blocks) and (stored_blocks[fingerprint] != block)
         }
+        # A re-import must not roll a held key's effective state back, so leave any block which would do
+        # so untouched rather than overwrite the stored one
+        downgraded = {
+            fingerprint
+            for fingerprint in refreshed_fingerprints
+            if _block_downgrade_reason(stored_blocks[fingerprint], incoming_blocks[fingerprint]) is not None
+        }
+        if downgraded:
+            kept = ", ".join(sorted(downgraded))
+            log.warning(f"Keeping the stored block for {util.plural(len(downgraded), 'key')}: {kept}")
+            key_list = [key for key in key_list if key.key_model.fingerprint not in downgraded]
+            key_values = [values for values in key_values if values["fingerprint"] not in downgraded]
         if key_values:
-            stmt = sqlite.insert(sql.PublicSigningKey).values(key_values)
+            stmt = sqlite.insert(sql.SigningCertificate).values(key_values)
             # The fingerprint only covers the primary packet, so a re-import can carry a newer block
             # for a key we already hold - a revocation, an extended expiry, a fresh subkey. Refresh
             # the whole derived row, not just the apache_uid
@@ -929,16 +1012,13 @@ class CommitteeParticipant(FoundationCommitter):
                 set_={
                     "apache_uid": stmt.excluded.apache_uid,
                     "ascii_armored_key": stmt.excluded.ascii_armored_key,
-                    "algorithm": stmt.excluded.algorithm,
-                    "length": stmt.excluded.length,
                     "latest_self_signature": stmt.excluded.latest_self_signature,
-                    "expires": stmt.excluded.expires,
                     "primary_declared_uid": stmt.excluded.primary_declared_uid,
                     "secondary_declared_uids": stmt.excluded.secondary_declared_uids,
                 },
             )
             key_insert_result = await self.__data.execute(
-                stmt.returning(via(sql.PublicSigningKey.fingerprint)),
+                stmt.returning(via(sql.SigningCertificate.fingerprint)),
             )
             key_inserts = {row.fingerprint for row in key_insert_result}
             log.info(f"Inserted or updated {util.plural(len(key_inserts), 'key')}")
@@ -955,11 +1035,14 @@ class CommitteeParticipant(FoundationCommitter):
         outcomes.update_roes(Exception, replace_with_inserted)
 
         persisted_fingerprints = {v["fingerprint"] for v in key_values}
+        # An artifact points at the SigningKey which signed it, so these rows must exist before an
+        # artifact can be attributed
+        await _sync_signing_keys(self.__data, [key.key_model for key in key_list])
         undeleted = await self.__undelete_keys(sorted(persisted_fingerprints))
         await self.__signature_hints_consume(key_list)
         await self.__data.flush()
 
-        existing_fingerprints = {k.fingerprint for k in committee.public_signing_keys}
+        existing_fingerprints = {k.fingerprint for k in committee.signing_certificates}
         new_fingerprints = persisted_fingerprints - existing_fingerprints
         link_inserts = set()
         if new_fingerprints and associate:
@@ -1005,7 +1088,7 @@ class CommitteeParticipant(FoundationCommitter):
                 fingerprints=[f for f in undeleted],
             )
             publications = await self.__sync_committees_for_keys(undeleted)
-        if link_inserts or refreshed_fingerprints:
+        if link_inserts or (refreshed_fingerprints - downgraded):
             await self._recheck_committee_drafts(self.__committee_key)
         return outcomes, publications
 
@@ -1052,8 +1135,8 @@ class CommitteeParticipant(FoundationCommitter):
             return []
         flagged = sorted(fingerprint for fingerprint, member_ids in member_map.items() if member_ids & matched)
         await self.__data.execute(
-            sqlmodel.update(sql.PublicSigningKey)
-            .where(via(sql.PublicSigningKey.fingerprint).in_(flagged))
+            sqlmodel.update(sql.SigningCertificate)
+            .where(via(sql.SigningCertificate.fingerprint).in_(flagged))
             .values(historic_use=True)
         )
         await self.__data.execute(
@@ -1085,13 +1168,13 @@ class CommitteeParticipant(FoundationCommitter):
             return []
         via = sql.validate_instrumented_attribute
         result = await self.__data.execute(
-            sqlmodel.update(sql.PublicSigningKey)
+            sqlmodel.update(sql.SigningCertificate)
             .where(
-                via(sql.PublicSigningKey.fingerprint).in_(sorted(fingerprints)),
-                via(sql.PublicSigningKey.deleted).is_not(None),
+                via(sql.SigningCertificate.fingerprint).in_(sorted(fingerprints)),
+                via(sql.SigningCertificate.deleted).is_not(None),
             )
             .values(deleted=None)
-            .returning(via(sql.PublicSigningKey.fingerprint))
+            .returning(via(sql.SigningCertificate.fingerprint))
         )
         return sorted(result.scalars().all())
 
@@ -1183,10 +1266,10 @@ class FoundationAdmin(CommitteeMember):
         num_deleted = 0
         if orphaned:
             update_result = await self.__data.execute(
-                sqlmodel.update(sql.PublicSigningKey)
+                sqlmodel.update(sql.SigningCertificate)
                 .where(
-                    via(sql.PublicSigningKey.fingerprint).in_(orphaned),
-                    via(sql.PublicSigningKey.deleted).is_(None),
+                    via(sql.SigningCertificate.fingerprint).in_(orphaned),
+                    via(sql.SigningCertificate.deleted).is_(None),
                 )
                 .values(deleted=datetime.datetime.now(datetime.UTC))
             )
@@ -1218,8 +1301,11 @@ class FoundationAdmin(CommitteeMember):
         return (num_unlinked, num_deleted, publication)
 
 
-def _validate_key_strength(algorithm: int, length: int, created: datetime.datetime) -> None:
+def _validate_key_strength(key: openpgp.PublicKey) -> None:
     """Raise ValueError if the key is recently-generated and does not meet the minimum cryptographic strength."""
+    algorithm = _algorithm_id(key.public_key_algorithm)
+    length = _key_length(key)
+    created = datetime.datetime.fromtimestamp(key.created_at, tz=datetime.UTC)
     if created > datetime.datetime(2026, 4, 1, 0, 0, 0, tzinfo=datetime.UTC):
         if algorithm not in _APPROVED_KEY_ALGORITHMS:
             raise ValueError(

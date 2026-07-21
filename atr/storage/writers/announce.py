@@ -539,7 +539,20 @@ class ReleaseManager(CommitteeParticipant):
             payload = result.data if isinstance(result.data, dict) else {}
             candidate = payload.get("fingerprint")
             if isinstance(candidate, str) and (stripped := candidate.strip()):
-                return stripped.lower()
+                fingerprint = stripped.lower()
+                # A signer's SigningKey rows are derived when its key is imported, so this is not
+                # expected to be reached; it only stops a key we somehow cannot model from failing the
+                # whole announce
+                via = sql.validate_instrumented_attribute
+                modelled = await self.__data.execute(
+                    sqlmodel.select(via(sql.SigningKey.fingerprint)).where(
+                        via(sql.SigningKey.fingerprint) == fingerprint
+                    )
+                )
+                if modelled.scalar_one_or_none() is not None:
+                    return fingerprint
+                log.warning(f"{fingerprint} verified but has no SigningKey row; recording the artifact unattributed")
+                return None
         return None
 
     async def __write_artifact_rows(

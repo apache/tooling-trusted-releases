@@ -482,12 +482,12 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
         statement = (
             sqlmodel.select(
                 via(sql.KeyLink.key_fingerprint),
-                via(sql.PublicSigningKey.ascii_armored_key),
+                via(sql.SigningCertificate.ascii_armored_key),
             )
-            .join(sql.PublicSigningKey)
+            .join(sql.SigningCertificate)
             .where(
                 via(sql.KeyLink.committee_key) == committee_key,
-                via(sql.PublicSigningKey.deleted).is_(None),
+                via(sql.SigningCertificate.deleted).is_(None),
             )
         )
         result = await data.execute(statement)
@@ -495,7 +495,7 @@ async def _resolve_committee_signing_keys(release: sql.Release, rel_path: str | 
 
     # A revocation or expiry change leaves the fingerprint alone but rewrites the key block, so the
     # block content is what the cache has to track to know the check needs re-running
-    entries = []
+    entries: list[str] = []
     for fingerprint, block in rows:
         if not fingerprint:
             continue

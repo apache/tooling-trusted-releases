@@ -22,6 +22,7 @@ from typing import Literal
 import htpy
 import quart
 import sqlalchemy
+import sqlmodel
 
 import atr.blueprints.get as get
 import atr.db as db
@@ -110,6 +111,18 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
         if is_owner:
             project_list = session.member_committees + session.participant_committees
             user_committees = await data.committee(name_in=project_list).all()
+        via = sql.validate_instrumented_attribute
+        signing_keys = list(
+            (
+                await data.execute(
+                    sqlmodel.select(sql.SigningKey)
+                    .where(via(sql.SigningKey.certificate_fingerprint) == key.fingerprint)
+                    .order_by(via(sql.SigningKey.is_primary).desc(), via(sql.SigningKey.created))
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     if isinstance(key.ascii_armored_key, bytes):
         key.ascii_armored_key = key.ascii_armored_key.decode("utf-8", errors="replace")
@@ -125,35 +138,13 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
     _add_row("Fingerprint", key.fingerprint.upper())
 
-    algorithm_name = shared.algorithms[key.algorithm]
-    _add_row("Type", f"{algorithm_name} ({key.length} bits)")
-
-    _add_row("Created", key.created.strftime("%Y-%m-%d %H:%M:%S"))
+    primary_key = next((signing_key for signing_key in signing_keys if signing_key.is_primary), None)
+    if primary_key is not None:
+        _add_row("Type", f"{shared.algorithms[primary_key.algorithm]} ({primary_key.length} bits)")
+        _add_row("Created", primary_key.created.strftime("%Y-%m-%d %H:%M:%S"))
 
     latest_sig = key.latest_self_signature.strftime("%Y-%m-%d %H:%M:%S") if key.latest_self_signature else "Never"
     _add_row("Latest self signature", latest_sig)
-
-    if key.expires:
-        now = datetime.datetime.now(datetime.UTC)
-        days_until_expiry = (key.expires - now).days
-        expires_str = key.expires.strftime("%Y-%m-%d %H:%M:%S")
-        if days_until_expiry < 0:
-            expires_content = htm.span(".text-danger.fw-bold")[
-                expires_str,
-                " ",
-                htm.span(".badge.bg-danger.text-white.ms-2")["Expired"],
-            ]
-        elif days_until_expiry <= 30:
-            expires_content = htm.span(".text-warning.fw-bold")[
-                expires_str,
-                " ",
-                htm.span(".badge.bg-warning.text-dark.ms-2")[f"Expires in {util.plural(days_until_expiry, 'day')}"],
-            ]
-        else:
-            expires_content = expires_str
-    else:
-        expires_content = "Never"
-    _add_row("Expires", expires_content)
 
     _add_row("Primary UID", key.primary_declared_uid or "-")
     secondary_uids = ", ".join(key.secondary_declared_uids) if key.secondary_declared_uids else "-"
@@ -201,6 +192,8 @@ async def details(session: web.Committer, _keys_details: Literal["keys/details"]
 
     page.table(".mb-0.table.border.border-2.table-striped.table-sm")[tbody.collect()]
 
+    _add_signing_keys(page, signing_keys)
+
     page.h2["ASCII armored key"]
     page.pre(".mt-3.border.border-2.p-3")[key.ascii_armored_key]
 
@@ -235,23 +228,27 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
     committees_to_query = list(set(session.member_committees + session.participant_committees))
 
     async with db.session() as data:
-        user_keys = await data.public_signing_key(apache_uid=session.uid.lower(), _committees=True).all()
+        user_keys = await data.signing_certificate(apache_uid=session.uid.lower(), _committees=True).all()
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
-        user_committees_with_keys = await data.committee(name_in=committees_to_query, _public_signing_keys=True).all()
+        user_committees_with_keys = await data.committee(name_in=committees_to_query, _signing_certificates=True).all()
 
-        all_fingerprints = [k.fingerprint for c in user_committees_with_keys for k in c.public_signing_keys]
+        all_fingerprints = [k.fingerprint for c in user_committees_with_keys for k in c.signing_certificates]
         artifact_counts: dict[str, int] = {}
         if all_fingerprints:
             via = sql.validate_instrumented_attribute
+            # An artifact is attributed to the key which signed it, so counting per certificate has
+            # to go through SigningKey or everything signed by a subkey is left out
             count_rows = await data.execute(
                 sqlalchemy.select(
-                    via(sql.Artifact.key_fingerprint),
+                    via(sql.SigningKey.certificate_fingerprint),
                     sqlalchemy.func.count(),
                 )
-                .where(via(sql.Artifact.key_fingerprint).in_(all_fingerprints))
-                .group_by(via(sql.Artifact.key_fingerprint))
+                .select_from(sql.Artifact)
+                .join(sql.SigningKey, via(sql.SigningKey.fingerprint) == via(sql.Artifact.key_fingerprint))
+                .where(via(sql.SigningKey.certificate_fingerprint).in_(all_fingerprints))
+                .group_by(via(sql.SigningKey.certificate_fingerprint))
             )
-            artifact_counts = {fp: n for fp, n in count_rows.all() if fp is not None}
+            artifact_counts = {fp: n for fp, n in count_rows.all()}
 
     for key in user_keys:
         key.committees.sort(key=lambda c: c.key)
@@ -322,6 +319,34 @@ async def upload(_session: web.Committer, _keys_upload: Literal["keys/upload"]) 
     return await shared.keys.render_upload_page()
 
 
+def _add_signing_keys(page: htm.Block, signing_keys: list[sql.SigningKey]) -> None:
+    if not signing_keys:
+        return
+    page.h2(".h5.mt-4")["Signing keys"]
+
+    thead = htm.thead[
+        htm.tr[
+            htm.th(".px-2", scope="col")["Key ID"],
+            htm.th(".px-2", scope="col")["Role"],
+            htm.th(".px-2", scope="col")["Created"],
+            htm.th(".px-2", scope="col")["Expires"],
+            htm.th(".px-2", scope="col")["Status"],
+        ]
+    ]
+    tbody = htm.Block(htm.tbody)
+    for signing_key in signing_keys:
+        tbody.append(
+            htm.tr[
+                htm.td(".px-2.text-break")[signing_key.key_id.upper()],
+                htm.td(".px-2")["Primary" if signing_key.is_primary else "Subkey"],
+                htm.td(".px-2")[signing_key.created.strftime("%Y-%m-%d")],
+                htm.td(".px-2")[_signing_key_expiry(signing_key)],
+                htm.td(".px-2")[_signing_key_status(signing_key)],
+            ]
+        )
+    page.div(".table-responsive.mb-4")[htm.table(".table.border.table-striped.table-sm")[thead, tbody.collect()]]
+
+
 async def _committee_keys(
     page: htm.Block,
     user_committees_with_keys: list[sql.Committee],
@@ -334,9 +359,9 @@ async def _committee_keys(
         if not util.committee_is_standing(committee.key):
             page.h3(f"#committee-{committee.key}.mt-3")[committee.display_name or committee.key]
 
-            if committee.public_signing_keys:
+            if committee.signing_certificates:
                 sorted_keys = sorted(
-                    committee.public_signing_keys,
+                    committee.signing_certificates,
                     key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
                 )
                 thead = htm.thead[
@@ -395,8 +420,8 @@ async def _committee_keys(
 
 async def _key_and_is_owner(
     data: db.Session, session: web.Committer, fingerprint: str
-) -> tuple[sql.PublicSigningKey, bool]:
-    key = await data.public_signing_key(fingerprint=fingerprint, _committees=True).get()
+) -> tuple[sql.SigningCertificate, bool]:
+    key = await data.signing_certificate(fingerprint=fingerprint, _committees=True).get()
     if not key:
         quart.abort(404, description="OpenPGP key not found")
     key.committees.sort(key=lambda c: c.key)
@@ -422,7 +447,7 @@ async def _key_and_is_owner(
     return key, is_owner
 
 
-async def _openpgp_keys(page: htm.Block, user_keys: list[sql.PublicSigningKey]) -> None:
+async def _openpgp_keys(page: htm.Block, user_keys: list[sql.SigningCertificate]) -> None:
     page.h3["Your OpenPGP keys"]
     if user_keys:
         thead = htm.thead[
@@ -488,6 +513,32 @@ def _render_committee_checkboxes(
         row_div.append(col_div)
 
     return row_div.collect()
+
+
+def _signing_key_expiry(signing_key: sql.SigningKey) -> str | htm.Element:
+    if signing_key.expires is None:
+        return "Never"
+    expires_str = signing_key.expires.strftime("%Y-%m-%d")
+    days_until_expiry = (signing_key.expires - datetime.datetime.now(datetime.UTC)).days
+    if days_until_expiry < 0:
+        return htm.span(".text-danger.fw-bold")[expires_str]
+    if days_until_expiry <= 30:
+        return htm.span(".text-warning.fw-bold")[
+            expires_str,
+            " ",
+            htm.span(".badge.bg-warning.text-dark.ms-2")[f"in {util.plural(days_until_expiry, 'day')}"],
+        ]
+    return expires_str
+
+
+def _signing_key_status(signing_key: sql.SigningKey) -> str | htm.Element:
+    if signing_key.revoked:
+        return htm.span(".badge.bg-danger.text-white")["Revoked"]
+    if signing_key.expires is not None and (signing_key.expires <= datetime.datetime.now(datetime.UTC)):
+        return htm.span(".badge.bg-danger.text-white")["Expired"]
+    if not signing_key.can_sign:
+        return htm.span(".badge.bg-secondary.text-white")["Cannot sign"]
+    return htm.span(".badge.bg-success.text-white")["Good"]
 
 
 async def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:

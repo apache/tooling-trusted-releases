@@ -342,12 +342,12 @@ async def committee_keys(
     "simple-example".
     """
     async with db.session() as data:
-        committee = await data.committee(key=str(name), _public_signing_keys=True).demand(
+        committee = await data.committee(key=str(name), _signing_certificates=True).demand(
             exceptions.NotFound(f"Committee '{name!s}' was not found")
         )
     return models.api.CommitteeKeysResults(
         endpoint="/committee/keys",
-        keys=committee.public_signing_keys,
+        keys=committee.signing_certificates,
     ).model_dump(mode="json"), 200
 
 
@@ -793,7 +793,7 @@ async def key_get(
     All public OpenPGP keys stored within the database are accessible.
     """
     async with db.session() as data:
-        key = await data.public_signing_key(fingerprint=str(fingerprint).lower()).demand(
+        key = await data.signing_certificate(fingerprint=str(fingerprint).lower()).demand(
             exceptions.NotFound(f"Key '{fingerprint!s}' not found")
         )
     return models.api.KeyGetResults(
@@ -887,7 +887,7 @@ async def keys_user(
     List public OpenPGP keys by the ASF UID of a user.
     """
     async with db.session() as data:
-        keys = await data.public_signing_key(apache_uid=str(asf_uid)).all()
+        keys = await data.signing_certificate(apache_uid=str(asf_uid)).all()
     return models.api.KeysUserResults(
         endpoint="/keys/user",
         keys=keys,
@@ -1843,7 +1843,7 @@ async def users_list(
     # PersonalAccessToken.asfuid
     # PersonalAccessToken.created_by
     # SSHKey.asf_uid
-    # PublicSigningKey.apache_uid
+    # SigningCertificate.apache_uid
     # Revision.asfuid
     async with db.session() as data:
         # TODO: Combine these queries
@@ -1858,8 +1858,8 @@ async def users_list(
         ssh_uids = set(result.scalars().all())
 
         result = await data.execute(
-            sqlalchemy.select(via(sql.PublicSigningKey.apache_uid))
-            .where(via(sql.PublicSigningKey.deleted).is_(None))
+            sqlalchemy.select(via(sql.SigningCertificate.apache_uid))
+            .where(via(sql.SigningCertificate.deleted).is_(None))
             .distinct()
         )
         public_signing_uids = set(result.scalars().all())
@@ -2322,13 +2322,13 @@ async def _resolve_signing_key_from_signature(
     db_data: db.Session,
     issuer_fingerprints: set[str],
     issuer_key_ids: set[str],
-) -> tuple[sql.PublicSigningKey, str]:
+) -> tuple[sql.SigningCertificate, str]:
     if not issuer_key_ids:
         for fingerprint in issuer_fingerprints:
-            stored = await db_data.public_signing_key(fingerprint=fingerprint, _committees=True).get()
+            stored = await db_data.signing_certificate(fingerprint=fingerprint, _committees=True).get()
             if stored is not None:
                 return stored, fingerprint
-    candidates = await db_data.public_signing_key(_committees=True).all()
+    candidates = await db_data.signing_certificate(_committees=True).all()
     for stored in candidates:
         armored = stored.ascii_armored_key
         if isinstance(armored, bytes):

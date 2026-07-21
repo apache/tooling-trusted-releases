@@ -23,6 +23,42 @@ import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
 
 
+def _block_without_signature_type(block: str, signature_type: int) -> str:
+    # Re-armour a certificate with every self-signature of a given type removed, which is what a
+    # stripped re-upload looks like at the packet level
+    key, _ = openpgp.PublicKey.from_armor(block)
+    data = key.to_bytes()
+    kept = bytearray()
+    index = 0
+    while index < len(data):
+        start = index
+        header = data[index]
+        index += 1
+        if header & 0x40:
+            tag = header & 0x3F
+            first = data[index]
+            index += 1
+            if first < 192:
+                length = first
+            elif first < 224:
+                length = ((first - 192) << 8) + data[index] + 192
+                index += 1
+            else:
+                length = int.from_bytes(data[index : index + 4], "big")
+                index += 4
+        else:
+            tag = (header >> 2) & 0x0F
+            width = (1, 2, 4)[header & 0x03]
+            length = int.from_bytes(data[index : index + width], "big")
+            index += width
+        body = index
+        index += length
+        if not ((tag == 2) and (data[body] == 4) and (data[body + 1] == signature_type)):
+            kept += data[start:index]
+    stripped = openpgp.PublicKey.from_bytes(bytes(kept))
+    return (stripped[0] if isinstance(stripped, tuple) else stripped).to_armored()
+
+
 def test_latest_self_signature_skips_uid_revocations() -> None:
     key, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
 
@@ -178,3 +214,35 @@ def test_signing_key_status_reads_capabilities_past_a_revoked_user_id() -> None:
     status = pgp.signing_key_status(key, {pgp_fixtures.REVOKED_UID_FINGERPRINT}, set())
 
     assert status.can_sign is False
+
+
+def test_revocations_dropped_detects_a_revocation_removed_on_re_upload() -> None:
+    stored, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC)
+    incoming, _ = openpgp.PublicKey.from_armor(
+        _block_without_signature_type(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC, 0x20)
+    )
+
+    dropped = pgp.revocations_dropped(stored, incoming)
+
+    assert pgp_fixtures.REVOKED_PRIMARY_FINGERPRINT in dropped
+
+
+def test_revocations_dropped_permits_a_revocation_added_on_re_upload() -> None:
+    # Gap A relies on a genuine new revocation still being able to arrive, so growth is never a drop
+    stored, _ = openpgp.PublicKey.from_armor(
+        _block_without_signature_type(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC, 0x20)
+    )
+    incoming, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_PRIMARY_PUBLIC_KEY_ASC)
+
+    assert pgp.revocations_dropped(stored, incoming) == set()
+
+
+def test_revocations_dropped_detects_a_subkey_revocation_removed_on_re_upload() -> None:
+    stored, _ = openpgp.PublicKey.from_armor(pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC)
+    incoming, _ = openpgp.PublicKey.from_armor(
+        _block_without_signature_type(pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC, 0x28)
+    )
+
+    dropped = pgp.revocations_dropped(stored, incoming)
+
+    assert pgp_fixtures.REVOKED_SUBKEY_SIGNING_FINGERPRINT in dropped

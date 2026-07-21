@@ -1019,8 +1019,8 @@ async def delete_committee_keys_get(
     Display the form to delete committee keys.
     """
     async with db.session() as data:
-        all_committees = await data.committee(_public_signing_keys=True).order_by(sql.Committee.key).all()
-        committees_with_keys = [c for c in all_committees if c.public_signing_keys]
+        all_committees = await data.committee(_signing_certificates=True).order_by(sql.Committee.key).all()
+        committees_with_keys = [c for c in all_committees if c.signing_certificates]
 
     committee_choices = [(c.key, c.display_name) for c in committees_with_keys]
 
@@ -2146,7 +2146,7 @@ async def _check_keys(fix: bool = False) -> str:
     email_uid_lookup = await cache.email_uid_view_or_live()
     bad_keys = []
     async with db.session() as data:
-        keys = await data.public_signing_key().all()
+        keys = await data.signing_certificate().all()
         for key in keys:
             uids = []
             if key.primary_declared_uid:
@@ -2175,7 +2175,7 @@ async def _data_browse(_session: web.Committer, model: str = "Committee") -> str
             "CheckResultIgnore": data.check_result_ignore,
             "Committee": data.committee,
             "Project": data.project,
-            "PublicSigningKey": lambda: data.public_signing_key(deleted=db.NOT_SET),
+            "SigningCertificate": lambda: data.signing_certificate(deleted=db.NOT_SET),
             "Release": data.release,
             "ReleasePolicy": data.release_policy,
             "Revision": data.revision,

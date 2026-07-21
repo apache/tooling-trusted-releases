@@ -53,7 +53,7 @@ class KeyStatus(enum.Flag):
 
 class Key(schema.Strict):
     status: KeyStatus
-    key_model: sql.PublicSigningKey
+    key_model: sql.SigningCertificate
     member_ids: list[str] = schema.factory(list)
 
 
@@ -72,7 +72,7 @@ class KeyAssociationUpdate:
 
 @dataclasses.dataclass
 class KeyDeletion:
-    key: sql.PublicSigningKey
+    key: sql.SigningCertificate
     publications: dict[str, outcome.Outcome[KeysPublish]]
 
 

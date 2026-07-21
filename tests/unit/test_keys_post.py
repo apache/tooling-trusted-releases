@@ -70,8 +70,8 @@ async def test_upload_remote_keys_uses_canonical_committee_url(monkeypatch: pyte
     fetch.assert_awaited_once_with(canonical_url)
 
 
-def _public_key(apache_uid: str | None) -> sql.PublicSigningKey:
-    return sql.PublicSigningKey(
+def _public_key(apache_uid: str | None) -> sql.SigningCertificate:
+    return sql.SigningCertificate(
         fingerprint="fp",
         algorithm=1,
         length=4096,

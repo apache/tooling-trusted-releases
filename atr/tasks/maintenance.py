@@ -81,14 +81,14 @@ async def _database_survey_maintenance() -> None:
             page_size = (await data.execute(sqlalchemy.text("PRAGMA page_size"))).scalar_one()
             freelist = (await data.execute(sqlalchemy.text("PRAGMA freelist_count"))).scalar_one()
             counts = {}
-            for table in ("task", "checkresult", "publicsigningkey"):
+            for table in ("task", "checkresult", "signingcertificate"):
                 counts[table] = (await data.execute(sqlalchemy.text(f"SELECT COUNT(*) FROM {table}"))).scalar_one()
     except Exception:
         log.exception("Database survey failed")
         return
     log.resources(
         f"db pages={pages} page_size={page_size} freelist={freelist} task={counts['task']}"
-        f" checkresult={counts['checkresult']} keys={counts['publicsigningkey']}"
+        f" checkresult={counts['checkresult']} keys={counts['signingcertificate']}"
     )
 
 

@@ -26,6 +26,7 @@ import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.models.sql as sql
 import atr.pgp as pgp
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -95,10 +96,10 @@ class MockData:
         self.execute = mock.AsyncMock()
         self.flush = mock.AsyncMock()
 
-    def public_signing_key(self, **_kwargs):
+    def signing_certificate(self, **_kwargs):
         return Query(self._key)
 
-    def committee(self, *, key: str, _public_signing_keys: bool = False):
+    def committee(self, *, key: str, _signing_certificates: bool = False):
         return Query(self._committees_after_commit[key])
 
     def release(self, *_args, **_kwargs):
@@ -112,13 +113,9 @@ async def test_database_add_model_audits_inserted_key():
     insert_result = mock.MagicMock()
     insert_result.one_or_none.return_value = object()
     data.execute.return_value = insert_result
-    key_model = keys_writer.sql.PublicSigningKey(
+    key_model = keys_writer.sql.SigningCertificate(
         fingerprint="fp1",
-        algorithm=1,
-        length=4096,
-        created=datetime.datetime.now(datetime.UTC),
         latest_self_signature=None,
-        expires=None,
         primary_declared_uid="Alice <alice@example.org>",
         secondary_declared_uids=[],
         apache_uid="alice",
@@ -168,7 +165,7 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sql
     assert sync_failure_audit["committee_key"] == "alpha"
     assert sync_failure_audit["error"] == error_message
 
-    key = await sqlite_data.public_signing_key(fingerprint="fp1", deleted=True).get()
+    key = await sqlite_data.signing_certificate(fingerprint="fp1", deleted=True).get()
     assert key is not None
 
 
@@ -176,7 +173,7 @@ async def test_delete_committee_keys_audits_committed_delete_when_sync_fails(sql
 async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data):
     await _seed_committee_key(sqlite_data, "alpha", "fp1")
     sqlite_data.add(keys_writer.sql.Committee(key="beta"))
-    sqlite_data.add(_public_signing_key("fp2", apache_uid="bob"))
+    sqlite_data.add(_signing_certificate("fp2", apache_uid="bob"))
     await sqlite_data.commit()
     sqlite_data.add(keys_writer.sql.KeyLink(committee_key="alpha", key_fingerprint="fp2"))
     sqlite_data.add(keys_writer.sql.KeyLink(committee_key="beta", key_fingerprint="fp2"))
@@ -189,9 +186,9 @@ async def test_delete_committee_keys_removes_links_and_orphaned_keys(sqlite_data
 
     assert num_unlinked == 2
     assert num_deleted == 1
-    orphaned = await sqlite_data.public_signing_key(fingerprint="fp1", deleted=True).get()
+    orphaned = await sqlite_data.signing_certificate(fingerprint="fp1", deleted=True).get()
     assert orphaned is not None
-    shared = await sqlite_data.public_signing_key(fingerprint="fp2").get()
+    shared = await sqlite_data.signing_certificate(fingerprint="fp2").get()
     assert shared is not None
     assert shared.deleted is None
     links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
@@ -254,7 +251,7 @@ async def test_ensure_allows_key_without_apache_uid_for_bulk_import() -> None:
     writer, _write_as = _make_foundation_admin(data, "alpha")
     key = keys_writer.datatypes.Key(
         status=keys_writer.datatypes.KeyStatus.PARSED,
-        key_model=_public_signing_key("fp1", apache_uid=None),
+        key_model=_signing_certificate("fp1", apache_uid=None),
     )
     database_outcomes = outcome.List(outcome.Result(key))
     lookup = keys_writer.cache.EmailUidLookup({})
@@ -288,7 +285,7 @@ async def test_ensure_stored_one_accepts_key_with_apache_uid() -> None:
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
     key = keys_writer.datatypes.Key(
         status=keys_writer.datatypes.KeyStatus.PARSED,
-        key_model=_public_signing_key("fp1", apache_uid="alice"),
+        key_model=_signing_certificate("fp1", apache_uid="alice"),
     )
     database_outcome = outcome.Result(key)
 
@@ -349,7 +346,7 @@ async def test_ensure_stored_one_rejects_key_without_apache_uid() -> None:
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
     key = keys_writer.datatypes.Key(
         status=keys_writer.datatypes.KeyStatus.PARSED,
-        key_model=_public_signing_key("fp1", apache_uid=None),
+        key_model=_signing_certificate("fp1", apache_uid=None),
     )
     lookup = keys_writer.cache.EmailUidLookup({})
 
@@ -444,10 +441,8 @@ def test_key_length_returns_dsa_bits() -> None:
     assert length == 3072
 
 
-def test_public_key_model_stores_latest_self_signature_separately_from_expiry() -> None:
+def test_certificate_records_its_latest_self_signature() -> None:
     key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
-    binding = next(iter(key.user_bindings()))
-    binding_signature = binding.signatures[0]
     data = MockData(None, committees_after_commit={})
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
 
@@ -460,10 +455,20 @@ def test_public_key_model_stores_latest_self_signature_separately_from_expiry() 
     assert key_model.latest_self_signature == datetime.datetime.fromtimestamp(
         latest_self_signature.creation_time, datetime.UTC
     )
-    assert key_model.expires == datetime.datetime.fromtimestamp(
+
+
+def test_expiry_is_recorded_against_the_signing_key_not_the_certificate() -> None:
+    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    binding = next(iter(key.user_bindings()))
+    binding_signature = binding.signatures[0]
+
+    # Expiry is per key, so it belongs to the SigningKey rows and not to the certificate above them
+    assert not hasattr(sql.SigningCertificate, "expires")
+    primary = next(facts for facts in pgp.signing_key_facts(key) if facts.is_primary)
+
+    assert primary.expires == datetime.datetime.fromtimestamp(
         key.created_at + binding_signature.key_expiration_seconds, datetime.UTC
     )
-    assert key_model.latest_self_signature != key_model.expires
 
 
 @pytest.mark.asyncio
@@ -627,12 +632,12 @@ async def test_update_committee_associations_removal_republishes_remaining_keys(
 
 
 def _committee(
-    key: str, public_signing_keys: list[object], *, is_podling: bool = False, automated_keys_file: bool = True
+    key: str, signing_certificates: list[object], *, is_podling: bool = False, automated_keys_file: bool = True
 ):
     return SimpleNamespace(
         key=key,
         is_podling=is_podling,
-        public_signing_keys=public_signing_keys,
+        signing_certificates=signing_certificates,
         automated_keys_file=automated_keys_file,
     )
 
@@ -690,20 +695,16 @@ def _public_key(
 
 async def _seed_committee_key(data: db.Session, committee_key: str, fingerprint: str) -> None:
     data.add(keys_writer.sql.Committee(key=committee_key))
-    data.add(_public_signing_key(fingerprint, apache_uid="alice"))
+    data.add(_signing_certificate(fingerprint, apache_uid="alice"))
     await data.commit()
     data.add(keys_writer.sql.KeyLink(committee_key=committee_key, key_fingerprint=fingerprint))
     await data.commit()
 
 
-def _public_signing_key(fingerprint: str, apache_uid: str | None) -> keys_writer.sql.PublicSigningKey:
-    return keys_writer.sql.PublicSigningKey(
+def _signing_certificate(fingerprint: str, apache_uid: str | None) -> keys_writer.sql.SigningCertificate:
+    return keys_writer.sql.SigningCertificate(
         fingerprint=fingerprint,
-        algorithm=1,
-        length=4096,
-        created=datetime.datetime.now(datetime.UTC),
         latest_self_signature=None,
-        expires=None,
         primary_declared_uid="Alice <alice@example.org>",
         secondary_declared_uids=[],
         apache_uid=apache_uid,

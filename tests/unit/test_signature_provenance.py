@@ -85,18 +85,18 @@ class MockDBSession:
 
 
 class MockKeyDBSession:
-    def __init__(self, public_signing_keys: list[object]) -> None:
-        self._public_signing_keys = public_signing_keys
+    def __init__(self, signing_certificates: list[object]) -> None:
+        self._signing_certificates = signing_certificates
 
-    def public_signing_key(self, **kwargs: object) -> MockQuery:
+    def signing_certificate(self, **kwargs: object) -> MockQuery:
         fingerprint = kwargs.get("fingerprint")
         if fingerprint is not None:
             match = next(
-                (key for key in self._public_signing_keys if getattr(key, "fingerprint", None) == str(fingerprint)),
+                (key for key in self._signing_certificates if getattr(key, "fingerprint", None) == str(fingerprint)),
                 None,
             )
             return MockQuery(match)
-        return MockQuery(self._public_signing_keys)
+        return MockQuery(self._signing_certificates)
 
 
 def test_args_accepts_scoping_fields() -> None:

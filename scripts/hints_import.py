@@ -157,7 +157,7 @@ def read_old_format_body(data: bytes, off: int, length_type: int) -> tuple[bytes
 async def seed(hints: set[str]) -> None:
     via = sql.validate_instrumented_attribute
     async with db.session() as data:
-        keys = await data.public_signing_key(deleted=db.NOT_SET).all()
+        keys = await data.signing_certificate(deleted=db.NOT_SET).all()
         covered: set[str] = set()
         flagged: list[str] = []
         failed = 0
@@ -179,8 +179,8 @@ async def seed(hints: set[str]) -> None:
                 flagged.append(key.fingerprint)
         for batch in itertools.batched(sorted(flagged), BATCH_SIZE):
             await data.execute(
-                sqlmodel.update(sql.PublicSigningKey)
-                .where(via(sql.PublicSigningKey.fingerprint).in_(batch))
+                sqlmodel.update(sql.SigningCertificate)
+                .where(via(sql.SigningCertificate.fingerprint).in_(batch))
                 .values(historic_use=True)
             )
         existing = {row.hint for row in await data.signature_hint().all()}

@@ -34,7 +34,7 @@ import atr.util as util
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "6"
+CHECK_VERSION: Final[str] = "7"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -87,12 +87,12 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
     log.info(f"Attempting to fetch keys for committee_key: '{committee_key}'")
     async with db.session() as session:
         statement = (
-            sqlmodel.select(sql.PublicSigningKey)
+            sqlmodel.select(sql.SigningCertificate)
             .join(sql.KeyLink)
             .join(sql.Committee)
             .where(
                 sql.validate_instrumented_attribute(sql.Committee.key) == committee_key,
-                sql.validate_instrumented_attribute(sql.PublicSigningKey.deleted).is_(None),
+                sql.validate_instrumented_attribute(sql.SigningCertificate.deleted).is_(None),
             )
         )
         result = await session.execute(statement)
@@ -186,11 +186,11 @@ def _check_core_logic_verify_signature(
 
     apache_uid_ok = apache_uid_map.get(matched_key.fingerprint.lower(), False)
 
+    status = pgp.signing_key_status(matched_key, issuer_fingerprints, issuer_key_ids)
     refusal = _key_refusal_result(
+        status=status,
         matched_key=matched_key,
         signature_info=signature_info,
-        issuer_fingerprints=issuer_fingerprints,
-        issuer_key_ids=issuer_key_ids,
         num_committee_keys=len(ascii_armored_keys),
         key_has_apache_uid=apache_uid_ok,
     )
@@ -204,6 +204,7 @@ def _check_core_logic_verify_signature(
         valid=True,
         num_committee_keys=len(ascii_armored_keys),
         key_has_apache_uid=apache_uid_ok,
+        signing_key_fingerprint=status.fingerprint,
     )
 
     if not apache_uid_ok:
@@ -223,7 +224,10 @@ def _check_core_logic_verify_signature(
         "key_id": key_id,
         "timestamp": timestamp,
         "username": username,
-        "fingerprint": matched_key.fingerprint.lower(),
+        # The key which actually signed, which is a subkey wherever one was used. Artifact
+        # provenance is recorded from this, so it must not be widened to the certificate
+        "fingerprint": status.fingerprint,
+        "certificate_fingerprint": matched_key.fingerprint.lower(),
         "status": "Valid signature",
         "debug_info": debug_info,
     }
@@ -237,15 +241,18 @@ def _debug_info(
     valid: bool,
     num_committee_keys: int,
     key_has_apache_uid: bool,
+    signing_key_fingerprint: str | None = None,
 ) -> dict[str, Any]:
-    fingerprint = key.fingerprint.lower() if (key is not None) else "Not available"
+    certificate_fingerprint = key.fingerprint.lower() if (key is not None) else "Not available"
+    # key_id below names the issuing key, so the fingerprint beside it has to name the same one
+    fingerprint = signing_key_fingerprint or certificate_fingerprint
     key_id = key.key_id if (key is not None) else "Not available"
     creation_time = signature_info.creation_time if (signature_info is not None) else None
     username = _signer_username(key, signature_info) if ((key is not None) and (signature_info is not None)) else None
     return {
         "key_id": (signature_info.issuer_key_ids[0] if (signature_info and signature_info.issuer_key_ids) else key_id),
         "fingerprint": fingerprint,
-        "pubkey_fingerprint": fingerprint,
+        "pubkey_fingerprint": certificate_fingerprint,
         "creation_date": creation_time if (creation_time is not None) else "Not available",
         "timestamp": creation_time if (creation_time is not None) else "Not available",
         "username": username or "Not available",
@@ -326,15 +333,13 @@ def _key_matches_signature(
 
 def _key_refusal_result(
     *,
+    status: pgp.SigningKeyStatus,
     matched_key: openpgp.PublicKey,
     signature_info: openpgp.SignatureInfo,
-    issuer_fingerprints: set[str],
-    issuer_key_ids: set[str],
     num_committee_keys: int,
     key_has_apache_uid: bool,
 ) -> dict[str, Any] | None:
     """The blocker for a key we won't accept as the signer, or None where the key is acceptable."""
-    status = pgp.signing_key_status(matched_key, issuer_fingerprints, issuer_key_ids)
     if not status.identified:
         return _unidentified_key_result(
             matched_key=matched_key,

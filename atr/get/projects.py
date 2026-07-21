@@ -264,7 +264,7 @@ async def view(
         project = await data.project(
             key=str(project_key),
             _committee=True,
-            _committee_public_signing_keys=True,
+            _committee_signing_certificates=True,
             _release_policy=True,
             _releases=True,
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))

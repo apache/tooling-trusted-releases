@@ -349,7 +349,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         has_participant: Opt[str] = NOT_SET,
         _child_committees: bool = False,
         _projects: bool = False,
-        _public_signing_keys: bool = False,
+        _signing_certificates: bool = False,
     ) -> Query[sql.Committee]:
         via = sql.validate_instrumented_attribute
         query = sqlmodel.select(sql.Committee)
@@ -387,8 +387,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.options(select_in_load(sql.Committee.child_committees))
         if _projects:
             query = query.options(select_in_load(sql.Committee.projects))
-        if _public_signing_keys:
-            query = query.options(select_in_load(sql.Committee.public_signing_keys))
+        if _signing_certificates:
+            query = query.options(select_in_load(sql.Committee.signing_certificates))
 
         return Query(self, query)
 
@@ -508,7 +508,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         _distribution_channels: bool = False,
         _super_project: bool = False,
         _release_policy: bool = False,
-        _committee_public_signing_keys: bool = False,
+        _committee_signing_certificates: bool = False,
     ) -> Query[sql.Project]:
         query = sqlmodel.select(sql.Project)
 
@@ -526,10 +526,10 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Project.status == status)
 
         # Avoid multiple loaders for Project.committee on the same path
-        if _committee_public_signing_keys:
+        if _committee_signing_certificates:
             query = query.options(
                 joined_load(sql.Project.committee).selectinload(
-                    sql.validate_instrumented_attribute(sql.Committee.public_signing_keys)
+                    sql.validate_instrumented_attribute(sql.Committee.signing_certificates)
                 )
             )
         elif _committee:
@@ -568,13 +568,9 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
-    def public_signing_key(
+    def signing_certificate(
         self,
         fingerprint: Opt[str] = NOT_SET,
-        algorithm: Opt[str] = NOT_SET,
-        length: Opt[int] = NOT_SET,
-        created: Opt[datetime.datetime] = NOT_SET,
-        expires: Opt[datetime.datetime | None] = NOT_SET,
         primary_declared_uid: Opt[str | None] = NOT_SET,
         secondary_declared_uids: Opt[list[str]] = NOT_SET,
         apache_uid: Opt[str | None] = NOT_SET,
@@ -582,38 +578,30 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         deleted: Opt[bool] = False,
         historic_use: Opt[bool] = NOT_SET,
         _committees: bool = False,
-    ) -> Query[sql.PublicSigningKey]:
+    ) -> Query[sql.SigningCertificate]:
         via = sql.validate_instrumented_attribute
-        query = sqlmodel.select(sql.PublicSigningKey)
+        query = sqlmodel.select(sql.SigningCertificate)
 
         if is_defined(fingerprint):
-            query = query.where(via(sql.PublicSigningKey.fingerprint) == fingerprint)
-        if is_defined(algorithm):
-            query = query.where(via(sql.PublicSigningKey.algorithm) == algorithm)
-        if is_defined(length):
-            query = query.where(via(sql.PublicSigningKey.length) == length)
-        if is_defined(created):
-            query = query.where(via(sql.PublicSigningKey.created) == created)
-        if is_defined(expires):
-            query = query.where(via(sql.PublicSigningKey.expires) == expires)
+            query = query.where(via(sql.SigningCertificate.fingerprint) == fingerprint)
         if is_defined(primary_declared_uid):
-            query = query.where(via(sql.PublicSigningKey.primary_declared_uid) == primary_declared_uid)
+            query = query.where(via(sql.SigningCertificate.primary_declared_uid) == primary_declared_uid)
         if is_defined(secondary_declared_uids):
-            query = query.where(via(sql.PublicSigningKey.secondary_declared_uids) == secondary_declared_uids)
+            query = query.where(via(sql.SigningCertificate.secondary_declared_uids) == secondary_declared_uids)
         if is_defined(apache_uid):
-            query = query.where(via(sql.PublicSigningKey.apache_uid) == apache_uid)
+            query = query.where(via(sql.SigningCertificate.apache_uid) == apache_uid)
         if is_defined(ascii_armored_key):
-            query = query.where(via(sql.PublicSigningKey.ascii_armored_key) == ascii_armored_key)
+            query = query.where(via(sql.SigningCertificate.ascii_armored_key) == ascii_armored_key)
         if is_defined(deleted):
             if deleted:
-                query = query.where(via(sql.PublicSigningKey.deleted).is_not(None))
+                query = query.where(via(sql.SigningCertificate.deleted).is_not(None))
             else:
-                query = query.where(via(sql.PublicSigningKey.deleted).is_(None))
+                query = query.where(via(sql.SigningCertificate.deleted).is_(None))
         if is_defined(historic_use):
-            query = query.where(via(sql.PublicSigningKey.historic_use) == historic_use)
+            query = query.where(via(sql.SigningCertificate.historic_use) == historic_use)
 
         if _committees:
-            query = query.options(select_in_load(sql.PublicSigningKey.committees))
+            query = query.options(select_in_load(sql.SigningCertificate.committees))
 
         return Query(self, query)
 
