@@ -239,6 +239,25 @@ def _get_navigation_info(release: sql.Release) -> tuple[str, str, Phase] | None:
     return None
 
 
+async def _last_archival_failure(release: sql.Release) -> sql.ApprovalRequest | None:
+    # The most recent archival vote that passed but whose auto-archival then failed
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return None
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        return await (
+            data.approval_request(
+                project_key=str(release.project.key),
+                release_version=release.version,
+                action=sql.ApprovalAction.ARCHIVE_RELEASE,
+                status=sql.ApprovalStatus.FAILED,
+            )
+            .order_by(via(sql.ApprovalRequest.resolved_at).desc())
+            .limit(1)
+            .get()
+        )
+
+
 def _phase_display_name(phase: sql.ReleasePhase) -> str:
     """Get a display name for the phase."""
     if phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
@@ -325,22 +344,16 @@ async def _render_release_actions(
                 f"{approval.closes_at.strftime('%Y-%m-%d %H:%M UTC')})."
             ]
         else:
-            body.p[
+            body.p(".mb-0")[
                 f"The archival vote passed (CAP #{approval.cap_question_id})."
-                " Completing it archives this release and removes its files from the downloads area."
+                " ATR is archiving this release and removing its files from the downloads area."
             ]
-            body.append(
-                await form.render(
-                    model_cls=shared.projects.CompleteApprovalRequest,
-                    action=util.as_url(post.projects.complete_approval),
-                    form_classes=".d-inline-block.m-0",
-                    submit_classes="btn-sm btn-outline-danger",
-                    submit_label="Complete archival",
-                    empty=True,
-                    defaults={"approval_request_id": approval.id},
-                )
-            )
     else:
+        failure = await _last_archival_failure(release)
+        if (failure is not None) and failure.error:
+            body.div(".alert.alert-warning.py-2.px-3")[
+                f"The last archival attempt failed after the vote passed: {failure.error}. You can try again below."
+            ]
         latest = cycles.latest_release_in_cycle(project, release.version, active_releases)
         if (latest is None) or (latest.key == release.key):
             body.p[

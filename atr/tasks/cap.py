@@ -23,6 +23,7 @@ import atr.log as log
 import atr.models.args as args
 import atr.models.cap
 import atr.models.results as results
+import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.tasks as tasks
@@ -75,14 +76,19 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
     vote_outcome = resolution.outcome
     permalink = resolution.permalink
     if vote_outcome == "approved":
-        if await _record_outcome(request_id, sql.ApprovalStatus.APPROVED, vote_outcome, permalink):
-            await notify(
-                row.requested_by,
-                f"The CAP approval vote to {_describe_request(row)} passed. You can now complete this in ATR.",
-                sql.NotificationLevel.INFO,
-                link=_completion_link(row),
-                link_text="Complete it here",
-            )
+        if not await _record_outcome(request_id, sql.ApprovalStatus.APPROVED, vote_outcome, permalink):
+            return
+        if row.action == sql.ApprovalAction.ARCHIVE_RELEASE:
+            # A passed archival vote completes itself, so there's no button left to press
+            await _complete_release_archival(row)
+            return
+        await notify(
+            row.requested_by,
+            f"The CAP approval vote to {_describe_request(row)} passed. You can now complete this in ATR.",
+            sql.NotificationLevel.INFO,
+            link=_completion_link(row),
+            link_text="Complete it here",
+        )
         return
     if await _record_outcome(request_id, sql.ApprovalStatus.REJECTED, vote_outcome, permalink):
         await notify(
@@ -90,6 +96,45 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
             f"The CAP approval vote to {_describe_request(row)} did not pass (outcome: {vote_outcome}).",
             sql.NotificationLevel.WARNING,
         )
+
+
+async def _complete_release_archival(row: sql.ApprovalRequest) -> None:
+    if (row.id is None) or (row.release_version is None):
+        log.error(f"CAP approval request {row.id} cannot be auto-archived: it names no release")
+        return
+    project_key = safe.ProjectKey(row.project_key)
+    release_version = safe.VersionKey(row.release_version)
+    error: str | None
+    try:
+        async with storage.write_as_system(storage.WriteAsCapResolveService) as wacrs:
+            error = await wacrs.release_complete_archive(project_key, release_version, row.id)
+    except Exception:
+        log.exception(f"CAP auto-archival failed for request {row.id}")
+        error = "an unexpected error occurred"
+
+    if error is not None:
+        # The vote passed but the archival didn't, so fail the approval and record why.
+        # That drops it out of the active-approval filter, so the release page offers the
+        # request-a-vote form again with this reason shown beside it
+        try:
+            async with storage.write_as_system(storage.WriteAsCapResolveService) as wacrs:
+                await wacrs.project_record_approval_failure(row.id, error)
+        except Exception:
+            log.exception(f"Could not mark CAP request {row.id} as failed")
+        await notify(
+            row.requested_by,
+            f"The CAP approval vote to {_describe_request(row)} passed, but ATR could not archive the"
+            f" release automatically: {error}.",
+            sql.NotificationLevel.ERROR,
+        )
+        return
+
+    # Same confirmation the by-hand completion posts
+    await notify(
+        row.requested_by,
+        f"Release {project_key} {release_version} was archived after CAP approval.",
+        sql.NotificationLevel.INFO,
+    )
 
 
 def _completion_link(row: sql.ApprovalRequest) -> str:

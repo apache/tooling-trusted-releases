@@ -143,7 +143,12 @@ async def complete_approval(
     if approval.status != sql.ApprovalStatus.APPROVED:
         return await session.redirect(get.projects.projects, error="This approval request is not ready to complete.")
     if approval.action == sql.ApprovalAction.ARCHIVE_RELEASE:
-        return await _complete_release_archival(session, approval)
+        # Release archival completes on its own once the vote passes, so there's
+        # nothing to do here by hand
+        return await session.redirect(
+            get.projects.projects,
+            error="Release archival completes automatically once the CAP vote passes.",
+        )
 
     project_key = safe.ProjectKey(approval.project_key)
     async with db.session() as data:
@@ -259,31 +264,6 @@ async def _complete_action(
         await wacm.project.archive(project_key, approval_request_id)
 
 
-async def _complete_release_archival(session: web.Committer, approval: sql.ApprovalRequest) -> web.WerkzeugResponse:
-    project_key = safe.ProjectKey(approval.project_key)
-    if approval.release_version is None:
-        return await session.redirect(get.projects.projects, error="This approval request does not name a release.")
-    release_version = safe.VersionKey(approval.release_version)
-
-    async with storage.write(session) as write:
-        try:
-            wacm = await write.as_project_committee_member(project_key)
-            await wacm.release.complete_archive(project_key, release_version, util.unwrap(approval.id))
-        except storage.AccessError as e:
-            return await _redirect_to_release(
-                session, project_key, release_version, error=f"Error completing the archival: {e}"
-            )
-
-    await cap.notify(
-        approval.requested_by,
-        f"Release {project_key} {release_version} was archived after CAP approval.",
-        sql.NotificationLevel.INFO,
-    )
-    return await _redirect_to_release(
-        session, project_key, release_version, success=f"Release {project_key} {release_version} archived."
-    )
-
-
 async def _create_cap_question(
     action: sql.ApprovalAction,
     project_key: safe.ProjectKey,
@@ -313,10 +293,14 @@ async def _create_cap_question(
             consequence = "ATR will permanently delete the project and its metadata"
             subject = f"the project {project_key} ({display_name})"
             title = f"[ATR] {verb.capitalize()} project {project_key}"
+    if action == sql.ApprovalAction.ARCHIVE_RELEASE:
+        completion = "ATR will complete this automatically once the vote passes"
+    else:
+        completion = f"an authorised {committee_key} PMC member may complete the {verb} in ATR"
     description = (
         f"{requested_by} has requested, through ATR, to {verb} {subject}. "
-        f"If this vote passes, {consequence}, and an authorised {committee_key} PMC member may complete the {verb} "
-        f"in ATR. This request was filed by Apache Trusted Releases on behalf of {requested_by}."
+        f"If this vote passes, {consequence}, and {completion}. "
+        f"This request was filed by Apache Trusted Releases on behalf of {requested_by}."
     )
     return await util.cap_create_question(
         token,

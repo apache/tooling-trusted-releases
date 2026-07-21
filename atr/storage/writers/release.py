@@ -1337,7 +1337,6 @@ class CommitteeMember(ReleaseManager):
         if asf_uid is None:
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
-        self.__committee_key = committee_key
 
     async def archive(
         self,
@@ -1406,44 +1405,6 @@ class CommitteeMember(ReleaseManager):
         if approval is not None:
             raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
 
-    async def complete_archive(
-        self,
-        project_key: safe.ProjectKey,
-        version_key: safe.VersionKey,
-        approval_request_id: int,
-    ) -> None:
-        """Archive a release whose CAP approval vote has passed.
-
-        The write lock is taken before the approval is read, so an approval can
-        only ever complete one archival.
-        """
-        await self.__data.begin_immediate()
-        self.__data.expire_all()
-        try:
-            release = await self.__data.release(
-                project_key=str(project_key),
-                version=str(version_key),
-                _committee=True,
-            ).get()
-            if release is None:
-                raise storage.AccessError(f"Release {project_key!s} {version_key!s} not found", status=404)
-            await _claim_release_archive_approval(
-                self.__data, approval_request_id, project_key, version_key, self.__committee_key
-            )
-            if release.is_archived:
-                # The watcher or an auto-archive got there while the vote ran. The approval has
-                # nothing left to do, so complete it rather than leave it blocking the release
-                await self.__data.commit()
-                return
-            error = await _archive_release(
-                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
-            )
-            if error is not None:
-                raise storage.AccessError(error, status=409)
-        except Exception:
-            await self.__data.rollback()
-            raise
-
     async def start_expedited(
         self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool = False
     ) -> tuple[sql.Release, sql.Project]:
@@ -1501,6 +1462,52 @@ class FoundationAdmin(FoundationCommitter):
         if release is None:
             return f"Release {project_key!s} {version_key!s} not found"
         return await _archive_release(self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release)
+
+    async def complete_archive(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        approval_request_id: int,
+    ) -> str | None:
+        """Archive a release whose CAP approval vote has passed, as the system.
+
+        The CAP resolve task runs this once a vote passes, so there's no
+        committer in the loop to press the button. It mirrors the by-hand
+        committee-member path: take the write lock, claim the approval, then
+        archive. The lock is taken before the approval is read, so an approval
+        can only ever complete one archival.
+        """
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                _committee=True,
+            ).get()
+            if release is None:
+                return f"Release {project_key!s} {version_key!s} not found"
+            committee = release.committee
+            if committee is None:
+                return f"Release {project_key!s} {version_key!s} has no committee"
+            await _claim_release_archive_approval(
+                self.__data, approval_request_id, project_key, version_key, committee.key
+            )
+            if release.is_archived:
+                # The watcher or a by-hand archive got there while the vote ran. The
+                # approval has nothing left to do, so complete it rather than leave it
+                # blocking the release
+                await self.__data.commit()
+                return None
+            return await _archive_release(
+                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
+            )
+        except storage.AccessError as e:
+            await self.__data.rollback()
+            return str(e)
+        except Exception:
+            await self.__data.rollback()
+            raise
 
     async def catalogue_release(
         self,

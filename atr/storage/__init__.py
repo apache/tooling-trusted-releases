@@ -311,7 +311,9 @@ class WriteAsCapResolveService(WriteAsSystemService):
     def __init__(self, write: Write, data: db.Session):
         super().__init__(write, data)
         admin = WriteAsFoundationAdmin(write, data)
+        self.project_record_approval_failure = admin.project.record_approval_failure
         self.project_record_approval_outcome = admin.project.record_approval_outcome
+        self.release_complete_archive = admin.release.complete_archive
 
 
 class WriteAsDistCatalogService(WriteAsSystemService):

@@ -493,6 +493,34 @@ class FoundationAdmin(FoundationCommitter):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
 
+    async def record_approval_failure(self, approval_request_id: int, error: str) -> bool:
+        """Mark an approved request FAILED because its completion could not be carried out.
+
+        The vote itself passed, so `outcome` is left as it was - `error` carries
+        why the follow-on action (e.g. auto-archival) could not complete.
+        """
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            approval = await self.__data.approval_request(id=approval_request_id).get()
+            if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
+                await self.__data.rollback()
+                return False
+            approval.status = sql.ApprovalStatus.FAILED
+            approval.error = error
+            approval.resolved_at = datetime.datetime.now(datetime.UTC)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            approval_request_id=approval_request_id,
+            approval_status=sql.ApprovalStatus.FAILED.value,
+            error=error,
+        )
+        return True
+
     async def record_approval_outcome(
         self,
         approval_request_id: int,

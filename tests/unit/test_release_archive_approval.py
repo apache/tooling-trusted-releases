@@ -22,7 +22,6 @@ import pytest
 
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage as storage
 import atr.storage.writers.release as release_writer
 
 
@@ -32,11 +31,12 @@ async def test_complete_archive_rejects_an_unapproved_request() -> None:
     data = _data(approval=approval)
     writer = _writer(data)
 
-    with pytest.raises(storage.AccessError, match="not ready to complete"):
-        await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
 
+    assert (error is not None) and ("not ready to complete" in error)
     data.execute_query.assert_not_awaited()
     data.commit.assert_not_awaited()
+    data.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -45,9 +45,9 @@ async def test_complete_archive_rejects_a_request_for_a_different_release() -> N
     data = _data(approval=approval)
     writer = _writer(data)
 
-    with pytest.raises(storage.AccessError, match="does not match"):
-        await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
 
+    assert (error is not None) and ("does not match" in error)
     data.execute_query.assert_not_awaited()
     assert approval.status == sql.ApprovalStatus.APPROVED
 
@@ -58,8 +58,9 @@ async def test_complete_archive_rejects_a_project_scoped_approval() -> None:
     data = _data(approval=approval)
     writer = _writer(data)
 
-    with pytest.raises(storage.AccessError, match="does not match"):
-        await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+
+    assert (error is not None) and ("does not match" in error)
 
 
 @pytest.mark.asyncio
@@ -69,8 +70,9 @@ async def test_complete_archive_claims_and_archives_in_one_transaction(monkeypat
     data = _data(approval=approval)
     writer = _writer(data)
 
-    await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
 
+    assert error is None
     assert approval.status == sql.ApprovalStatus.COMPLETED
     data.commit.assert_awaited_once()
     data.rollback.assert_not_awaited()
@@ -83,9 +85,9 @@ async def test_complete_archive_takes_the_write_lock_before_reading_the_approval
     data = _data(approval=approval)
     writer = _writer(data)
 
-    with pytest.raises(storage.AccessError):
-        await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
 
+    assert error is not None
     data.begin_immediate.assert_awaited_once()
     assert data.begin_immediate.await_count == 1
     data.expire_all.assert_called_once()
@@ -99,8 +101,9 @@ async def test_complete_archive_completes_an_approval_whose_release_is_already_a
     data = _data(approval=approval, is_archived=True)
     writer = _writer(data)
 
-    await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+    error = await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
 
+    assert error is None
     assert approval.status == sql.ApprovalStatus.COMPLETED
     data.commit.assert_awaited_once()
     data.rollback.assert_not_awaited()
@@ -129,6 +132,7 @@ def _data(approval: SimpleNamespace, update_rowcount: int = 1, is_archived: bool
         cycle_key="alpha-one-default",
         phase=sql.ReleasePhase.RELEASE,
         is_archived=is_archived,
+        committee=SimpleNamespace(key="alpha"),
     )
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query(get=release))
@@ -148,7 +152,7 @@ def _query(get: object = None) -> mock.MagicMock:
     return query
 
 
-def _writer(data: mock.MagicMock) -> release_writer.CommitteeMember:
+def _writer(data: mock.MagicMock) -> release_writer.FoundationAdmin:
     write = mock.MagicMock()
     write.authorisation.asf_uid = "tester"
-    return release_writer.CommitteeMember(write, mock.MagicMock(), data, "alpha")
+    return release_writer.FoundationAdmin(write, mock.MagicMock(), data)
