@@ -223,6 +223,10 @@ class ReleaseManager(CommitteeParticipant):
                 return existing, False
             else:
                 existing.pending = False
+                existing.staging = staging
+                existing.upload_date = upload_date
+                existing.api_url = api_url
+                existing.web_url = web_url
                 await self.__data.commit()
                 return existing, False
         return dist, False

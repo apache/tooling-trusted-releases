@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -50,6 +51,7 @@ def active_project(committee_key: str = "alpha") -> SimpleNamespace:
         status=sql.ProjectStatus.ACTIVE,
         committee_key=committee_key,
         release_policy=None,
+        is_active=True,
     )
 
 
@@ -148,6 +150,49 @@ async def test_distribution_record_rejects_foreign_committee() -> None:
             False,
             None,
         )
+
+
+@pytest.mark.asyncio
+async def test_distribution_record_confirms_pending_and_updates_metadata() -> None:
+    upload_date = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
+    existing = SimpleNamespace(
+        pending=True,
+        staging=False,
+        retries=0,
+        upload_date=None,
+        api_url=None,
+        web_url=None,
+        created_by=None,
+    )
+    data = mock.MagicMock()
+    data.release = mock.MagicMock(return_value=Query(release_row("alpha")))
+    data.distribution = mock.MagicMock(return_value=Query(existing))
+    data.commit = mock.AsyncMock()
+    writer = object.__new__(distributions.ReleaseManager)
+    writer._ReleaseManager__write = mock.MagicMock()
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__asf_uid = "alice"
+    writer._ReleaseManager__committee_key = "alpha"
+
+    updated, added = await writer.record(
+        safe.ReleaseKey("example-1.0.0"),
+        sql.DistributionPlatform.MAVEN,
+        None,
+        safe.Alphanumeric("pkg"),
+        safe.VersionKey("1.0.0"),
+        False,
+        False,
+        upload_date,
+        api_url="https://example.test/api",
+        web_url="https://example.test/web",
+    )
+
+    assert added is False
+    assert updated is existing
+    assert existing.pending is False
+    assert existing.upload_date == upload_date
+    assert existing.api_url == "https://example.test/api"
+    assert existing.web_url == "https://example.test/web"
 
 
 @pytest.mark.asyncio
