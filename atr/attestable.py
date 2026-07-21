@@ -293,8 +293,8 @@ async def load(
         return None
     try:
         async with aiofiles.open(file_path, encoding="utf-8") as f:
-            data = json.loads(await f.read())
-        return _parse_attestable(data)
+            content = await f.read()
+        return _parse_attestable(content)
     except (json.JSONDecodeError, pydantic.ValidationError) as e:
         log.warning(f"Could not parse {file_path}, starting fresh: {e}")
         return None
@@ -524,10 +524,11 @@ async def _generate_files_data(
     )
 
 
-def _parse_attestable(data: dict[str, object]) -> models.Attestable:
+def _parse_attestable(content: str) -> models.Attestable:
+    data = json.loads(content)
     if data.get("version") == 2:
-        return models.AttestableV2.model_validate(data)
-    return models.AttestableV1.model_validate(data)
+        return models.AttestableV2.model_validate_json(content)
+    return models.AttestableV1.model_validate_json(content)
 
 
 def _path_basename(path_key: str) -> str:

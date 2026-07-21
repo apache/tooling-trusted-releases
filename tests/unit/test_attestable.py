@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 import pathlib
 
 import atr.attestable as attestable
@@ -284,7 +285,7 @@ async def test_hash_metadata_basenames_are_cumulative_and_unique():
 def test_parse_attestable_v1():
     data = {"version": 1, "paths": {"a.tar.gz": "h1"}, "hashes": {}, "policy": {}}
 
-    result = attestable._parse_attestable(data)
+    result = attestable._parse_attestable(json.dumps(data))
 
     assert isinstance(result, models.AttestableV1)
     assert result.version == 1
@@ -296,17 +297,25 @@ def test_parse_attestable_v2():
         "version": 2,
         "paths": {
             "a.tar.gz": {"content_hash": "h1", "classification": "source"},
+            "a.tar.gz.sha512": {
+                "content_hash": "h2",
+                "classification": "metadata",
+                "provenance": {"generator": "SHA512_from_signature", "metadata": {}},
+            },
         },
         "hashes": {},
         "policy": {},
     }
 
-    result = attestable._parse_attestable(data)
+    result = attestable._parse_attestable(json.dumps(data))
 
     assert isinstance(result, models.AttestableV2)
     assert result.version == 2
     assert result.paths["a.tar.gz"].content_hash == "h1"
     assert result.paths["a.tar.gz"].classification == "source"
+    provenance = result.paths["a.tar.gz.sha512"].provenance
+    assert provenance is not None
+    assert provenance.generator == models.GeneratorV2.SHA512_FROM_SIGNATURE
 
 
 def test_path_hashes_support_v1_and_v2():
