@@ -245,9 +245,6 @@ class ReleaseManager(CommitteeParticipant):
                 log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
             else:
                 await self.__warn_publication_artifacts(unfinished_path, target, public_url)
-        preserve = release.project.policy_preserve_download_files
-        if preserve is True:
-            await self.__hard_link_downloads(committee, unfinished_path, effective_download_path_suffix, dry_run=True)
 
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
@@ -270,16 +267,6 @@ class ReleaseManager(CommitteeParticipant):
             )
         except Exception as e:
             raise storage.AccessError(f"Error moving files: {e!s}", status=500)
-
-        # TODO: Add an audit log entry here
-        # TODO: We should consider copying the files instead of hard linking
-        # That way, we can write protect the pristine ATR files
-        await self.__hard_link_downloads(
-            committee,
-            finished_path,
-            effective_download_path_suffix,
-            preserve=preserve,
-        )
 
         try:
             task = sql.Task(
@@ -415,8 +402,6 @@ class ReleaseManager(CommitteeParticipant):
         if getattr(update_result, "rowcount", 0) != 1:
             return f"Release {project_key!s} {version_key!s} is already archived"
 
-        await self.__remove_from_downloads(release_row)
-
         self.__data.add(
             sql.LifecycleEvent(
                 project_key=release_row.project_key,
@@ -435,38 +420,6 @@ class ReleaseManager(CommitteeParticipant):
             archived=archive_date.isoformat(),
         )
         return None
-
-    async def __remove_from_downloads(self, release_row: sql.Release) -> None:
-        try:
-            await self.__release_download_links_delete(release_row)
-        except Exception:
-            log.exception(
-                f"Error removing download hard links for release {release_row.key!r}; continuing with archive"
-            )
-
-    async def __release_download_links_delete(self, release_row: sql.Release) -> None:
-        finished_dir = paths.release_directory(release_row)
-        if not await aiofiles.os.path.isdir(finished_dir):
-            return
-        release_inodes: set[int] = set()
-        async for file_path in util.paths_recursive_all(finished_dir):
-            try:
-                stat_result = await aiofiles.os.stat(finished_dir / file_path)
-            except OSError:
-                continue
-            release_inodes.add(stat_result.st_ino)
-        if not release_inodes:
-            return
-        downloads_dir = paths.get_downloads_dir()
-        async for link_path in util.paths_recursive_all(downloads_dir):
-            full_link_path = downloads_dir / link_path
-            try:
-                link_stat = await aiofiles.os.stat(full_link_path)
-            except OSError:
-                continue
-            if link_stat.st_ino in release_inodes:
-                await aiofiles.os.remove(full_link_path)
-                log.info(f"Deleted download hard link: {full_link_path}")
 
     async def __warn_publication_artifacts(
         self,
@@ -500,29 +453,6 @@ class ReleaseManager(CommitteeParticipant):
         if isinstance(candidate, str) and candidate:
             return safe.RelPath(candidate)
         return None
-
-    async def __hard_link_downloads(
-        self,
-        committee: sql.Committee,
-        unfinished_path: safe.StatePath,
-        download_path_suffix: safe.RelPath | None,
-        dry_run: bool = False,
-        preserve: bool = False,
-    ) -> None:
-        """Hard link the release files to the downloads directory."""
-        downloads_path = paths.committee_downloads_dir(committee)
-        if download_path_suffix is not None:
-            downloads_path = downloads_path / download_path_suffix.as_path()
-        # The "exist_ok" parameter means to overwrite files if True
-        # We only overwrite if we're not preserving, so we supply "not preserve"
-        # TODO: Add a test for this
-        await util.create_hard_link_clone(
-            unfinished_path,
-            downloads_path,
-            do_not_create_dest_dir=dry_run,
-            exist_ok=not preserve,
-            dry_run=dry_run,
-        )
 
     def __publish_revision_from_task(self, task: sql.Task) -> int | None:
         result = task.result

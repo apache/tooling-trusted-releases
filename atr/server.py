@@ -192,7 +192,6 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
         pathlib.Path(paths.get_archives_dir()),
-        pathlib.Path(paths.get_downloads_dir()),
         pathlib.Path(paths.get_finished_dir()),
         pathlib.Path(paths.get_quarantined_dir()),
         pathlib.Path(paths.get_tmp_dir()),
@@ -1307,6 +1306,13 @@ def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> No
         print("ATR now uses secrets/generated/jwt_secret_key.txt", file=sys.stderr)
         print("!!!", file=sys.stderr)
         # sys.exit(1)
+
+    if pathlib.Path(paths.get_downloads_dir()).is_dir() and (hot_reload is False):
+        print("!!!", file=sys.stderr)
+        print("WARNING: The downloads directory is no longer supported", file=sys.stderr)
+        print("Please remove downloads from the state directory", file=sys.stderr)
+        print("Announced release files are now published to SVN", file=sys.stderr)
+        print("!!!", file=sys.stderr)
 
 
 def _validate_secrets_permissions(state_dir: pathlib.Path) -> None:

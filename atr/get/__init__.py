@@ -36,7 +36,6 @@ import atr.get.keys as keys
 import atr.get.manual as manual
 import atr.get.preview as preview
 import atr.get.projects as projects
-import atr.get.published as published
 import atr.get.ref as ref
 import atr.get.release as release
 import atr.get.report as report
@@ -73,7 +72,6 @@ __all__ = [
     "manual",
     "preview",
     "projects",
-    "published",
     "ref",
     "release",
     "report",

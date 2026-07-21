@@ -1370,7 +1370,6 @@ async def release_draft_delete(
                 data.project,
                 data.version,
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-                include_downloads=False,
             )
     except storage.AccessError as e:
         raise _http_exception_from_storage_access_error(e) from e

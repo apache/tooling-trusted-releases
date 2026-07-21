@@ -64,8 +64,7 @@ async def test_complete_archive_rejects_a_project_scoped_approval() -> None:
 
 
 @pytest.mark.asyncio
-async def test_complete_archive_claims_and_archives_in_one_transaction(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(release_writer, "_remove_from_downloads", mock.AsyncMock())
+async def test_complete_archive_claims_and_archives_in_one_transaction() -> None:
     approval = _approval()
     data = _data(approval=approval)
     writer = _writer(data)

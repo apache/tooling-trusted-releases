@@ -103,7 +103,6 @@ async def delete(
             project_key,
             version_key,
             phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
-            include_downloads=False,
         )
         # Ensure that deletion errors are reported to the user
         if error is not None:

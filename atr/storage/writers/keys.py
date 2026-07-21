@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import datetime
 import pathlib
+import shutil
+import tempfile
 import textwrap
 from typing import Final, NoReturn
 
@@ -256,9 +258,6 @@ class FoundationCommitter(GeneralPublic):
             key_blocks_str=key_blocks_str,
         )
 
-    def _committee_keys_path(self, committee: sql.Committee) -> safe.StatePath:
-        return paths.committee_downloads_dir(committee) / "KEYS"
-
     async def _recheck_committee_drafts(self, *committee_keys: str) -> None:
         # A KEYS change only invalidates signature checks, so we limit the re-queue to .asc files
         affected = {committee_key for committee_key in committee_keys if committee_key}
@@ -283,58 +282,42 @@ class FoundationCommitter(GeneralPublic):
             )
 
     async def _publish_keys_to_svn(
-        self, committee: sql.Committee, source: pathlib.Path
+        self, committee: sql.Committee, content: str | None
     ) -> outcome.Outcome[datatypes.KeysPublish]:
         if not committee.automated_keys_file:
             return outcome.Result(datatypes.KeysPublish.AUTOMATION_DISABLED)
         if not config.get().SVN_PUBLISH_URL:
             return outcome.Result(datatypes.KeysPublish.SVN_NOT_CONFIGURED)
         target_url = util.svn_publish_internal_url(committee, None) + "/KEYS"
+        temp_dir: str | None = None
+        source = pathlib.Path("/dev/null")
         try:
+            if content is not None:
+                temp_dir = await asyncio.to_thread(tempfile.mkdtemp, dir=paths.get_tmp_dir())
+                source = pathlib.Path(temp_dir) / "KEYS"
+                await asyncio.to_thread(source.write_text, content, encoding="utf-8")
             await svn.publish_file(source, target_url, self.__asf_uid, f"Publish KEYS for {committee.key} via ATR")
         except Exception as e:
             log.warning(f"Failed to publish KEYS to SVN for committee {committee.key}: {e}")
             return outcome.Error(e)
+        finally:
+            if temp_dir is not None:
+                await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
         return outcome.Result(datatypes.KeysPublish.PUBLISHED)
 
-    async def _sync_committee_keys_file(
-        self, committee_key: str
-    ) -> tuple[str | None, outcome.Outcome[datatypes.KeysPublish]]:
+    async def _sync_committee_keys_file(self, committee_key: str) -> tuple[int, outcome.Outcome[datatypes.KeysPublish]]:
         committee = await self.__data.committee(key=committee_key, _public_signing_keys=True).demand(
             storage.AccessError(f"Committee not found: {committee_key}", status=404)
         )
-        committee_keys_path = self._committee_keys_path(committee)
-        committee_keys_dir = committee_keys_path.parent
 
         if not committee.public_signing_keys:
-            try:
-                if await aiofiles.os.path.exists(committee_keys_path):
-                    await aiofiles.os.remove(committee_keys_path)
-            except OSError as e:
-                raise storage.AccessError(
-                    f"Failed to remove KEYS file for committee {committee_key}: {e}", status=500
-                ) from e
             # We use an empty file for no KEYS in SVN
-            svn_outcome = await self._publish_keys_to_svn(committee, pathlib.Path("/dev/null"))
-            return None, svn_outcome
+            svn_outcome = await self._publish_keys_to_svn(committee, None)
+            return 0, svn_outcome
 
         full_keys_file_content = await self._keys_file_text(committee)
-        try:
-            await aiofiles.os.makedirs(committee_keys_dir, exist_ok=True)
-            await asyncio.to_thread(util.chmod_directories, committee_keys_dir, permissions=0o755)
-            await asyncio.to_thread(committee_keys_path.path.write_text, full_keys_file_content, encoding="utf-8")
-        except OSError as e:
-            raise storage.AccessError(
-                f"Failed to write KEYS file for committee {committee_key}: {e}", status=500
-            ) from e
-        except Exception as e:
-            log.exception(f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}")
-            raise storage.AccessError(
-                f"An unexpected error occurred writing KEYS for committee {committee_key}: {e}",
-                status=500,
-            ) from e
-        svn_outcome = await self._publish_keys_to_svn(committee, committee_keys_path.path)
-        return str(committee_keys_path), svn_outcome
+        svn_outcome = await self._publish_keys_to_svn(committee, full_keys_file_content)
+        return len(committee.public_signing_keys), svn_outcome
 
     async def test_user_delete_all(self, test_uid: str) -> outcome.Outcome[int]:
         """Delete all OpenPGP keys and their links for a test user."""
@@ -774,7 +757,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def autogenerate_keys_file(
         self,
-    ) -> tuple[outcome.Outcome[str], outcome.Outcome[datatypes.KeysPublish]]:
+    ) -> tuple[outcome.Outcome[int], outcome.Outcome[datatypes.KeysPublish]]:
         no_keys = storage.AccessError(
             f"No keys found for committee {self.__committee_key} to generate KEYS file.", status=404
         )
@@ -782,12 +765,12 @@ class CommitteeParticipant(FoundationCommitter):
             committee = await self.committee()
             if not committee.public_signing_keys:
                 return outcome.Error(no_keys), outcome.Error(no_keys)
-            synced_path, svn_outcome = await self._sync_committee_keys_file(self.__committee_key)
+            key_count, svn_outcome = await self._sync_committee_keys_file(self.__committee_key)
         except Exception as e:
             return outcome.Error(e), outcome.Error(e)
-        if synced_path is None:
+        if key_count == 0:
             return outcome.Error(no_keys), svn_outcome
-        return outcome.Result(synced_path), svn_outcome
+        return outcome.Result(key_count), svn_outcome
 
     async def committee(self) -> sql.Committee:
         return await self.__data.committee(key=self.__committee_key, _public_signing_keys=True).demand(

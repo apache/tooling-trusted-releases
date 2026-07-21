@@ -16,7 +16,6 @@
 # under the License.
 
 import datetime
-import os
 import unittest.mock as mock
 from types import SimpleNamespace
 
@@ -83,15 +82,6 @@ async def test_archive_rejects_a_release_not_in_the_release_phase():
 
 
 @pytest.mark.asyncio
-async def test_archive_rejects_the_latest_release_in_the_cycle():
-    # The latest in a cycle may only be archived through a CAP approval vote
-    target = _archive_candidate(version="2.0.0")
-    member = _make_member(release_result=target, siblings=[_archive_candidate(version="1.0.0")])
-    with pytest.raises(storage.AccessError, match="requires a CAP approval vote"):
-        await member.archive(safe.ProjectKey("example"), safe.VersionKey("2.0.0"))
-
-
-@pytest.mark.asyncio
 async def test_archive_rejects_a_release_with_an_archival_vote_in_progress():
     target = _archive_candidate(version="1.0.0")
     member = _make_member(
@@ -104,14 +94,22 @@ async def test_archive_rejects_a_release_with_an_archival_vote_in_progress():
 
 
 @pytest.mark.asyncio
-async def test_archive_succeeds_and_writes_lifecycle_event(monkeypatch):
+async def test_archive_rejects_the_latest_release_in_the_cycle():
+    # The latest in a cycle may only be archived through a CAP approval vote
+    target = _archive_candidate(version="2.0.0")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="1.0.0")])
+    with pytest.raises(storage.AccessError, match="requires a CAP approval vote"):
+        await member.archive(safe.ProjectKey("example"), safe.VersionKey("2.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_archive_succeeds_and_writes_lifecycle_event():
     target = _archive_candidate(version="1.0.0")
     member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
     mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
     update_result = mock.MagicMock()
     update_result.rowcount = 1
     mock_data.execute_query = mock.AsyncMock(return_value=update_result)
-    monkeypatch.setattr(release, "_remove_from_downloads", mock.AsyncMock())
 
     await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
 
@@ -129,45 +127,6 @@ async def test_archive_succeeds_and_writes_lifecycle_event(monkeypatch):
     assert mock_data.execute_query.await_count == 1
     # Commit happened
     assert mock_data.commit.await_count == 1
-
-
-@pytest.mark.asyncio
-async def test_download_links_delete_tolerates_unsafe_filenames(tmp_path, monkeypatch):
-    finished_dir = tmp_path / "finished"
-    finished_dir.mkdir()
-    bad_file = finished_dir / "ELC Admin Guide.pdf"
-    bad_file.write_text("data")
-
-    downloads_dir = tmp_path / "downloads"
-    downloads_dir.mkdir()
-    link_path = downloads_dir / "ELC Admin Guide.pdf"
-    os.link(bad_file, link_path)
-
-    monkeypatch.setattr(release.paths, "release_directory", lambda _release: finished_dir)
-    monkeypatch.setattr(release.paths, "get_downloads_dir", lambda: downloads_dir)
-
-    await release._release_download_links_delete(_fake_release())
-
-    assert not link_path.exists()
-    assert bad_file.exists()
-
-
-@pytest.mark.asyncio
-async def test_remove_from_downloads_swallows_errors(monkeypatch):
-    boom = mock.AsyncMock(side_effect=RuntimeError("boom"))
-    monkeypatch.setattr(release, "_release_download_links_delete", boom)
-    await release._remove_from_downloads(_fake_release())
-    boom.assert_awaited_once()
-
-
-def _fake_release() -> sql.Release:
-    return sql.Release(
-        key="example-1.0.0",
-        phase=sql.ReleasePhase.RELEASE,
-        created=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        project_key="example",
-        version="1.0.0",
-    )
 
 
 def _archive_candidate(

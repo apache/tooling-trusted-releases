@@ -61,7 +61,6 @@ def announcing_writer(
     release_manager._ReleaseManager__write_as = mock.MagicMock()
     release_manager._ReleaseManager__asf_uid = "alice"
     release_manager._ReleaseManager__committee_key = "alpha"
-    release_manager._ReleaseManager__hard_link_downloads = mock.AsyncMock()
     release_manager._ReleaseManager__promote_in_database = mock.AsyncMock()
     release_manager._ReleaseManager__write_artifact_rows = mock.AsyncMock()
     return release_manager
@@ -85,7 +84,6 @@ def release_row() -> SimpleNamespace:
         committee=SimpleNamespace(key="alpha"),
         is_active=True,
         key="example",
-        policy_preserve_download_files=False,
         release_policy=None,
     )
     return SimpleNamespace(

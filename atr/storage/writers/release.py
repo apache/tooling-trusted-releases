@@ -117,7 +117,6 @@ async def _archive_release(
     if getattr(update_result, "rowcount", 0) != 1:
         return f"Release {project_key!s} {version_key!s} is already archived"
 
-    await _remove_from_downloads(release)
     # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
 
     data.add(
@@ -158,6 +157,25 @@ def _assert_can_start(asf_uid: str, project: sql.Project) -> None:
     )
 
 
+async def _assert_no_existing_release(
+    data: db.Session, project: sql.Project, project_key: safe.ProjectKey, version: safe.VersionKey
+) -> None:
+    # TODO: Consider using Release.revision instead of ./latest
+    release = await data.release(project_key=project.key, version=str(version)).get()
+    if release is None:
+        return
+    match release.phase:
+        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            phase_desc = "A draft release (being composed)"
+        case sql.ReleasePhase.RELEASE_CANDIDATE:
+            phase_desc = "A release candidate (being voted on)"
+        case sql.ReleasePhase.RELEASE_PREVIEW:
+            phase_desc = "A release preview (being finished)"
+        case sql.ReleasePhase.RELEASE:
+            phase_desc = "A finished release"
+    raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
+
+
 async def _claim_release_archive_approval(
     data: db.Session,
     approval_request_id: int,
@@ -177,25 +195,6 @@ async def _claim_release_archive_approval(
     if approval.committee_key != committee_key:
         raise storage.AccessError("This approval request was filed for a different committee.", status=409)
     approval.status = sql.ApprovalStatus.COMPLETED
-
-
-async def _assert_no_existing_release(
-    data: db.Session, project: sql.Project, project_key: safe.ProjectKey, version: safe.VersionKey
-) -> None:
-    # TODO: Consider using Release.revision instead of ./latest
-    release = await data.release(project_key=project.key, version=str(version)).get()
-    if release is None:
-        return
-    match release.phase:
-        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            phase_desc = "A draft release (being composed)"
-        case sql.ReleasePhase.RELEASE_CANDIDATE:
-            phase_desc = "A release candidate (being voted on)"
-        case sql.ReleasePhase.RELEASE_PREVIEW:
-            phase_desc = "A release preview (being finished)"
-        case sql.ReleasePhase.RELEASE:
-            phase_desc = "A finished release"
-    raise storage.AccessError(f"{phase_desc} for {project_key!s} {version} already exists.", status=409)
 
 
 async def _ensure_project_cycle(data: db.Session, project: sql.Project, version: safe.VersionKey) -> str:
@@ -225,41 +224,6 @@ def _normalise_signature_field(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
-
-
-async def _release_download_links_delete(release: sql.Release) -> None:
-    # Hard-linked downloads share an inode with the finished files, so we
-    # find them by inode rather than path - that way an unknown
-    # download_path_suffix isn't a blocker.
-    finished_dir = paths.release_directory(release)
-    if not await aiofiles.os.path.isdir(finished_dir):
-        return
-    release_inodes: set[int] = set()
-    async for file_path in util.paths_recursive_all(finished_dir):
-        try:
-            stat_result = await aiofiles.os.stat(finished_dir / file_path)
-        except OSError:
-            continue
-        release_inodes.add(stat_result.st_ino)
-    if not release_inodes:
-        return
-    downloads_dir = paths.get_downloads_dir()
-    async for link_path in util.paths_recursive_all(downloads_dir):
-        full_link_path = downloads_dir / link_path
-        try:
-            link_stat = await aiofiles.os.stat(full_link_path)
-        except OSError:
-            continue
-        if link_stat.st_ino in release_inodes:
-            await aiofiles.os.remove(full_link_path)
-            log.info(f"Deleted download hard link: {full_link_path}")
-
-
-async def _remove_from_downloads(release: sql.Release) -> None:
-    try:
-        await _release_download_links_delete(release)
-    except Exception:
-        log.exception(f"Error removing download hard links for release {release.key!r}; continuing with archive")
 
 
 async def _signature_provenance_metadata_for(
@@ -464,7 +428,6 @@ class CommitteeParticipant(FoundationCommitter):
         project_key: safe.ProjectKey,
         version: safe.VersionKey,
         phase: db.Opt[sql.ReleasePhase] = db.NOT_SET,
-        include_downloads: bool = True,
     ) -> str | None:
         """Handle the deletion of database records and filesystem data for a release."""
         await self.__data.begin_immediate()
@@ -482,14 +445,13 @@ class CommitteeParticipant(FoundationCommitter):
         if release.phase == sql.ReleasePhase.RELEASE:
             await self.__data.rollback()
             return f"Release '{project_key!s} {version!s}' has been announced; it can only be archived, not deleted."
-        return await self.__delete_body(release, project_key, version, include_downloads)
+        return await self.__delete_body(release, project_key, version)
 
     async def __delete_body(
         self,
         release: sql.Release,
         project_key: safe.ProjectKey,
         version: safe.VersionKey,
-        include_downloads: bool,
     ) -> str | None:
         release_dirs = [
             paths.release_directory_base(release),
@@ -543,8 +505,6 @@ class CommitteeParticipant(FoundationCommitter):
 
         # Filesystem deletions are more likely to have permission errors than database deletions
         # Therefore we do filesystem deletions first
-        if include_downloads:
-            await self.__delete_release_data_downloads(release)
         error = await self.__delete_release_data_filesystem(release_dirs, project_key, version)
 
         await self.__data.commit()
@@ -556,36 +516,6 @@ class CommitteeParticipant(FoundationCommitter):
             error=error,
         )
         return error
-
-    async def __delete_release_data_downloads(self, release: sql.Release) -> None:
-        try:
-            await self.__release_download_links_delete(release)
-        except Exception:
-            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with deletion")
-
-    async def __release_download_links_delete(self, release: sql.Release) -> None:
-        finished_dir = paths.release_directory(release)
-        if not await aiofiles.os.path.isdir(finished_dir):
-            return
-        release_inodes: set[int] = set()
-        async for file_path in util.paths_recursive_all(finished_dir):
-            try:
-                stat_result = await aiofiles.os.stat(finished_dir / file_path)
-            except OSError:
-                continue
-            release_inodes.add(stat_result.st_ino)
-        if not release_inodes:
-            return
-        downloads_dir = paths.get_downloads_dir()
-        async for link_path in util.paths_recursive_all(downloads_dir):
-            full_link_path = downloads_dir / link_path
-            try:
-                link_stat = await aiofiles.os.stat(full_link_path)
-            except OSError:
-                continue
-            if link_stat.st_ino in release_inodes:
-                await aiofiles.os.remove(full_link_path)
-                log.info(f"Deleted hard link: {full_link_path}")
 
     async def __delete_release_data_filesystem(
         self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
@@ -1590,13 +1520,12 @@ class FoundationAdmin(FoundationCommitter):
         self,
         project_key: safe.ProjectKey,
         version: safe.VersionKey,
-        include_downloads: bool = True,
     ) -> str | None:
         release = await self.__data.release(project_key=str(project_key), version=str(version), _committee=True).demand(
             storage.AccessError(f"Release '{project_key!s} {version!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
-        return await self.__delete_body(release, project_key, version, include_downloads)
+        return await self.__delete_body(release, project_key, version)
 
     async def delete_inactive(
         self,
@@ -1653,7 +1582,6 @@ class FoundationAdmin(FoundationCommitter):
         release: sql.Release,
         project_key: safe.ProjectKey,
         version: safe.VersionKey,
-        include_downloads: bool,
     ) -> str | None:
         release_dirs = [
             paths.release_directory_base(release),
@@ -1707,8 +1635,6 @@ class FoundationAdmin(FoundationCommitter):
 
         # Filesystem deletions are more likely to have permission errors than database deletions
         # Therefore we do filesystem deletions first
-        if include_downloads:
-            await self.__delete_release_data_downloads(release)
         error = await self.__delete_release_data_filesystem(release_dirs, project_key, version)
 
         await self.__data.commit()
@@ -1720,36 +1646,6 @@ class FoundationAdmin(FoundationCommitter):
             error=error,
         )
         return error
-
-    async def __delete_release_data_downloads(self, release: sql.Release) -> None:
-        try:
-            await self.__release_download_links_delete(release)
-        except Exception:
-            log.exception(f"Error removing download hard links for release {release.key!r}; continuing with deletion")
-
-    async def __release_download_links_delete(self, release: sql.Release) -> None:
-        finished_dir = paths.release_directory(release)
-        if not await aiofiles.os.path.isdir(finished_dir):
-            return
-        release_inodes: set[int] = set()
-        async for file_path in util.paths_recursive_all(finished_dir):
-            try:
-                stat_result = await aiofiles.os.stat(finished_dir / file_path)
-            except OSError:
-                continue
-            release_inodes.add(stat_result.st_ino)
-        if not release_inodes:
-            return
-        downloads_dir = paths.get_downloads_dir()
-        async for link_path in util.paths_recursive_all(downloads_dir):
-            full_link_path = downloads_dir / link_path
-            try:
-                link_stat = await aiofiles.os.stat(full_link_path)
-            except OSError:
-                continue
-            if link_stat.st_ino in release_inodes:
-                await aiofiles.os.remove(full_link_path)
-                log.info(f"Deleted hard link: {full_link_path}")
 
     async def __delete_release_data_filesystem(
         self, release_dirs: Sequence[safe.StatePath], project_key: safe.ProjectKey, version: safe.VersionKey
