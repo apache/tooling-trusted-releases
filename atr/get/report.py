@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import collections
 import datetime
 from typing import Literal
 
@@ -106,7 +107,27 @@ async def selected_path(
         rel_path=str(rel_path),
         package=file_data,
         release=release,
+        reconciliation=_reconciliation(check_results.primary_results_list, check_results.member_results_list),
         primary_results=check_results.primary_results_list,
         member_results=check_results.member_results_list,
         format_file_size=util.format_file_size,
     )
+
+
+def _reconciliation(primary_results: list[sql.CheckResult], member_results: dict[str, list[sql.CheckResult]]) -> str:
+    primary_counts = collections.Counter(result.status for result in primary_results)
+    member_counts = collections.Counter(result.status for results in member_results.values() for result in results)
+    sentences: list[str] = []
+    for status in (
+        sql.CheckResultStatus.BLOCKER,
+        sql.CheckResultStatus.EXCEPTION,
+        sql.CheckResultStatus.CONCERN,
+        sql.CheckResultStatus.SUGGESTION,
+    ):
+        member_count = member_counts[status]
+        if member_count == 0:
+            continue
+        primary_count = primary_counts[status]
+        total = util.plural(primary_count + member_count, status.value)
+        sentences.append(f"{total}: {primary_count} on this file, {member_count} on files inside this archive.")
+    return " ".join(sentences)

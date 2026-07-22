@@ -82,6 +82,10 @@
 
   <h2>Report results</h2>
 
+  {% if reconciliation %}
+    <p>{{ reconciliation }}</p>
+  {% endif %}
+
   <div class="d-flex flex-wrap gap-3 mb-4">
     {% if primary_results and (status_counts.note > 0 or status_counts.concern > 0 or status_counts.blocker > 0 or status_counts.suggestion > 0 or status_counts.exception > 0) %}
       {% set all_primary_are_notes = (status_counts.concern == 0) and (status_counts.blocker == 0) and (status_counts.suggestion == 0) and (status_counts.exception == 0) %}
