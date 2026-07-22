@@ -433,7 +433,12 @@ def _render_summary(
     paths: list[safe.RelPath],
     per_file_stats: dict[safe.RelPath, FileStats],
 ) -> None:
-    files_with_issues = sum(1 for s in per_file_stats.values() if _issue_count_after(s) > 0)
+    files_with_blockers = sum(1 for s in per_file_stats.values() if s.total_after(sql.CheckResultStatus.BLOCKER) > 0)
+    files_with_concerns = sum(
+        1
+        for s in per_file_stats.values()
+        if (s.total_after(sql.CheckResultStatus.CONCERN) > 0) and (s.total_after(sql.CheckResultStatus.BLOCKER) == 0)
+    )
     files_with_suggestions = sum(
         1
         for s in per_file_stats.values()
@@ -460,29 +465,33 @@ def _render_summary(
     file_word = "file" if (len(paths) == 1) else "files"
     note_file_word = "file has" if (files_with_notes == 1) else "files have"
     suggestion_file_word = "file has" if (files_with_suggestions == 1) else "files have"
-    issue_file_word = "file has" if (files_with_issues == 1) else "files have"
+    concern_file_word = "file has" if (files_with_concerns == 1) else "files have"
+    blocker_file_word = "file has" if (files_with_blockers == 1) else "files have"
     exception_file_word = "file has" if (files_with_exceptions == 1) else "files have"
     skipped_word = "file did not require checking" if (files_skipped == 1) else "files did not require checking"
-    no_issues_word = "no" if ((files_with_notes > 0) or (files_with_suggestions > 0)) else "No"
+    no_concerns_word = "no" if ((files_with_notes > 0) or (files_with_suggestions > 0)) else "No"
 
     page.p[
         f"Showing check results for {len(paths)} {file_word}. ",
         f"{files_with_notes} {note_file_word} only notes, " if (files_with_notes > 0) else "",
         f"{files_with_suggestions} {suggestion_file_word} suggestions, " if (files_with_suggestions > 0) else "",
-        f"{files_with_issues} {issue_file_word} issues."
-        if (files_with_issues > 0)
-        else f"{no_issues_word} files have issues.",
+        f"{files_with_concerns} {concern_file_word} concerns."
+        if (files_with_concerns > 0)
+        else f"{no_concerns_word} files have concerns.",
+        f" {files_with_blockers} {blocker_file_word} blockers." if (files_with_blockers > 0) else "",
         f" {files_with_exceptions} {exception_file_word} tooling exceptions." if (files_with_exceptions > 0) else "",
         f" {files_skipped} {skipped_word}." if (files_skipped > 0) else "",
     ]
 
     note_count = totals.total_after(sql.CheckResultStatus.NOTE)
     suggestion_count = totals.total_after(sql.CheckResultStatus.SUGGESTION)
-    issue_count = _issue_count_after(totals)
+    concern_count = totals.total_after(sql.CheckResultStatus.CONCERN)
+    blocker_count = totals.total_after(sql.CheckResultStatus.BLOCKER)
     exception_count = totals.total_after(sql.CheckResultStatus.EXCEPTION)
     note_word = util.plural(note_count, "note", include_count=False)
     suggestion_word = util.plural(suggestion_count, "suggestion", include_count=False)
-    issue_word = util.plural(issue_count, "issue", include_count=False)
+    concern_word = util.plural(concern_count, "concern", include_count=False)
+    blocker_word = util.plural(blocker_count, "blocker", include_count=False)
     exception_word = util.plural(exception_count, "exception", include_count=False)
 
     summary_div = htm.Block(htm.div, classes=".d-flex.flex-wrap.gap-4.mb-3")
@@ -500,15 +509,20 @@ def _render_summary(
             htpy.i(".bi.bi-exclamation-triangle.me-2"),
             "0 suggestions",
         ]
-    if issue_count > 0:
+    if concern_count > 0:
         summary_div.span(".text-danger")[
             htpy.i(".bi.bi-x-circle-fill.me-2"),
-            f"{issue_count} {issue_word}",
+            f"{concern_count} {concern_word}",
         ]
     else:
         summary_div.span(".text-muted")[
             htpy.i(".bi.bi-x-circle.me-2"),
-            "0 issues",
+            "0 concerns",
+        ]
+    if blocker_count > 0:
+        summary_div.span(".atr-text-blocker")[
+            htpy.i(".bi.bi-x-octagon-fill.me-2"),
+            f"{blocker_count} {blocker_word}",
         ]
     if exception_count > 0:
         summary_div.span(".atr-text-exception")[
