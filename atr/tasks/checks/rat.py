@@ -68,7 +68,7 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION: Final[str] = "4"
 
 
 class RatError(RuntimeError):
@@ -179,9 +179,10 @@ async def _check_core(
     # Convert to dict for storage, excluding the file lists, which are already recorded
     result_data = result.model_dump(exclude={"unapproved_files", "unknown_license_files"})
 
+    members_recorded = bool(result.unknown_license_files) or bool(result.unapproved_files)
     if result.errors:
         await recorder.exception(result.message, result_data)
-    elif not result.valid:
+    elif (not result.valid) and (not members_recorded):
         await recorder.concern(result.message, result_data)
     else:
         await recorder.note(result.message, result_data)

@@ -103,7 +103,7 @@ async def test_check_routes_errors_to_exception(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_check_routes_invalid_without_errors_to_concern(tmp_path: pathlib.Path) -> None:
+async def test_check_routes_member_failures_to_concern_and_rollup_to_note(tmp_path: pathlib.Path) -> None:
     recorder, args = await _rat_check_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
     project = types.SimpleNamespace(
         policy_license_check_mode=sql.LicenseCheckMode.BOTH,
@@ -125,10 +125,11 @@ async def test_check_routes_invalid_without_errors_to_concern(tmp_path: pathlib.
 
     statuses = [status for status, _, _ in recorder.messages]
     concerns = [message for status, message, _ in recorder.messages if status == sql.CheckResultStatus.CONCERN.value]
+    notes = [message for status, message, _ in recorder.messages if status == sql.CheckResultStatus.NOTE.value]
 
-    assert statuses == [sql.CheckResultStatus.CONCERN.value, sql.CheckResultStatus.CONCERN.value]
+    assert statuses == [sql.CheckResultStatus.CONCERN.value, sql.CheckResultStatus.NOTE.value]
     assert "Unapproved license" in concerns
-    assert "Found 1 file with unapproved licenses" in concerns
+    assert "Found 1 file with unapproved licenses" in notes
 
 
 def test_excludes_archive_ignores_policy_when_file_exists(rat_available: tuple[bool, bool], tmp_path: pathlib.Path):
