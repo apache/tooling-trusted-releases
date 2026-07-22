@@ -69,6 +69,11 @@ _NON_NOTE_STATUSES: Final[tuple[sql.CheckResultStatus, ...]] = (
     sql.CheckResultStatus.EXCEPTION,
 )
 
+_PROMINENT_CHECKERS: Final[dict[str, str | None]] = {
+    "atr.tasks.checks.paths.check_source": None,
+    "atr.tasks.checks.sbom.check": "Consider creating an SBOM.",
+}
+
 _SEVERITY_ORDER: Final[tuple[sql.CheckResultStatus, ...]] = (
     sql.CheckResultStatus.BLOCKER,
     sql.CheckResultStatus.EXCEPTION,
@@ -344,7 +349,10 @@ def render_checks_summary(
         release_problems_by_checker.setdefault(result.checker, []).append(result)
 
     stats_by_checker = {stat.checker: stat for stat in info.checker_stats}
-    all_checkers = sorted(set(release_problems_by_checker) | {stat.checker for stat in info.checker_stats})
+    all_checkers = sorted(
+        set(release_problems_by_checker) | {stat.checker for stat in info.checker_stats},
+        key=lambda checker: (checker not in _PROMINENT_CHECKERS, checker),
+    )
 
     for index, checker in enumerate(all_checkers):
         stat = stats_by_checker.get(checker)
@@ -390,10 +398,11 @@ def _render_checker_entry(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> htm.Element:
-    stripe_class = ".atr-stripe-odd" if ((index % 2) == 0) else ".atr-stripe-even"
-    details = htm.Block(htm.details, classes=f".mb-0.p-2{stripe_class}")
-
     checker = stat.checker if (stat is not None) else release_problems[0].checker
+    prominent = checker in _PROMINENT_CHECKERS
+    stripe_class = ".atr-stripe-odd" if ((index % 2) == 0) else ".atr-stripe-even"
+    entry = htm.Block(htm.div if prominent else htm.details, classes=f".mb-0.p-2{stripe_class}")
+
     counts: collections.Counter[sql.CheckResultStatus] = stat.counts if (stat is not None) else collections.Counter()
     release_counts = collections.Counter(p.status for p in release_problems)
 
@@ -403,7 +412,12 @@ def _render_checker_entry(
         if total > 0:
             summary_content.append(htpy.span(f".badge{_STATUS_BADGE_CLASSES[status]}.me-2")[str(total)])
     summary_content.append(htpy.strong[util.checker_display_name(checker)])
-    details.summary[*summary_content]
+    if prominent:
+        if cta := _PROMINENT_CHECKERS[checker]:
+            summary_content.append(f" - {cta}")
+        entry.div[*summary_content]
+    else:
+        entry.summary[*summary_content]
 
     files_div = htm.Block(htm.div, classes=".mt-2.atr-checks-files")
     for result in release_problems:
@@ -412,8 +426,8 @@ def _render_checker_entry(
     if stat is not None:
         _render_stat_files(files_div, stat, project_key, version_key)
 
-    details.append(files_div.collect())
-    return details.collect()
+    entry.append(files_div.collect())
+    return entry.collect()
 
 
 def _render_release_problem(result: sql.CheckResult) -> list[htm.Element | str]:

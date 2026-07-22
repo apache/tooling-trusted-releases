@@ -44,7 +44,7 @@ _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "6"
+CHECK_VERSION: Final[str] = "7"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -88,6 +88,16 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         primary_rel_path=None,
         afresh=True,
     )
+    recorder_source = await checks.Recorder.create(
+        checker=checks.function_key(check) + "_source",
+        checker_version=CHECK_VERSION,
+        inputs_hash=base_recorder.input_hash or "",
+        project_key=args.project_key,
+        version_key=args.version_key,
+        revision_number=args.revision_number,
+        primary_rel_path=None,
+        afresh=True,
+    )
 
     # As primary_rel_path is None, the base path is the release candidate draft directory
     if not (base_path := await recorder_notes.abs_path()):
@@ -114,7 +124,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             is_podling,
         )
 
-    await _check_source_artifact_present(args, recorder_problems, relative_paths, base_path)
+    await _check_source_artifact_present(args, recorder_source, relative_paths, base_path)
     await _check_documentation_tree(recorder_problems, relative_paths)
     await _check_download_suffix_duplication(args, recorder_suggestions, relative_paths)
 
@@ -378,7 +388,7 @@ async def _check_path_process_single(  # noqa: C901
 
 async def _check_source_artifact_present(
     args: checks.FunctionArguments,
-    recorder_problems: checks.Recorder,
+    recorder_source: checks.Recorder,
     relative_paths: list[safe.RelPath],
     base_path: safe.StatePath,
 ) -> None:
@@ -430,7 +440,7 @@ async def _check_source_artifact_present(
     )
 
     if not source_artifacts:
-        await recorder_problems.blocker(
+        await recorder_source.blocker(
             "Release must contain at least one source release artifact",
             {},
             primary_rel_path=None,

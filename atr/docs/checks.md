@@ -40,7 +40,7 @@ Each check section below names the exact checker key that ATR records for that c
 
 ATR validates the file layout of the revision against ASF release rules. For each artifact it expects a matching signature file with the `.asc` suffix and at least one checksum file with the `.sha256` or `.sha512` suffix. It verifies that metadata files correspond to an existing artifact and warns when a metadata suffix is recommended against by policy. It rejects `.md5` checksums and `.sig` signature files and warns about `.sha1` and `.sha`. It rejects dotfiles except for those under the `.atr` directory, and it rejects a `KEYS` file inside the artifact bundle because keys are managed through the keys section. If the project is a podling, it requires the word "incubating" in artifact filenames.
 
-This check records separate checker keys for concerns, suggestions, and notes. It uses `atr.tasks.checks.paths.check_errors` for concerns, `atr.tasks.checks.paths.check_warnings` for suggestions, and `atr.tasks.checks.paths.check_success` for notes.
+This check records separate checker keys for concerns, suggestions, and notes. It uses `atr.tasks.checks.paths.check_errors` for concerns, `atr.tasks.checks.paths.check_warnings` for suggestions, and `atr.tasks.checks.paths.check_success` for notes. The requirement that a release contains at least one source artifact is recorded under `atr.tasks.checks.paths.check_source`.
 
 ### Hash verification
 

@@ -34,7 +34,7 @@ from tests.unit.recorders import RecorderStub
 
 @pytest.mark.asyncio
 async def test_binary_only_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-bin.tar.gz": "binary",
@@ -88,7 +88,7 @@ async def test_concern_without_path_goes_to_release_level_concerns():
 
 @pytest.mark.asyncio
 async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-source.tar.gz.sha512": "metadata",
@@ -105,7 +105,7 @@ async def test_fallback_for_partial_db_classifications(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     attestable_data = mock.MagicMock()
@@ -124,7 +124,7 @@ async def test_fallback_to_attestable_when_db_empty(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
@@ -140,7 +140,7 @@ async def test_fallback_to_classify_binary_only_records_failure(monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     attestable_data = mock.MagicMock()
@@ -157,7 +157,7 @@ async def test_fallback_to_classify_uses_attestable_policy_matchers(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr(
         "atr.db.session",
@@ -174,7 +174,7 @@ async def test_fallback_to_classify_uses_project_policy_matchers(monkeypatch: py
 
 @pytest.mark.asyncio
 async def test_fallback_to_classify_when_no_attestable(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     monkeypatch.setattr("atr.db.session", lambda: _mock_db_session({}))
     monkeypatch.setattr("atr.attestable.load", mock.AsyncMock(return_value=None))
@@ -247,7 +247,7 @@ async def test_maven_cyclonedx_sbom_not_flagged_as_unknown(
 
 @pytest.mark.asyncio
 async def test_no_artifacts_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     classifications = {
         "README.md": "docs",
@@ -281,10 +281,44 @@ def test_render_checks_summary_emits_new_badge_classes():
     assert "atr-bg-concern" in rendered
 
 
+def test_render_checks_summary_prominent_entries_first_and_expanded():
+    info = datatypes.PathInfo()
+    stat = datatypes.CheckerStats(
+        checker="atr.tasks.checks.license.files",
+        counts=collections.Counter({sql.CheckResultStatus.CONCERN: 1}),
+        files={},
+    )
+    info.checker_stats.append(stat)
+    result = _make_check_result(
+        sql.CheckResultStatus.BLOCKER,
+        "Release must contain at least one source release artifact",
+        checker="atr.tasks.checks.paths.check_source",
+    )
+    info.release_level_blockers.append(result)
+    element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    assert element is not None
+    rendered = str(element)
+    assert rendered.index("Paths Check Source") < rendered.index("License Files")
+    assert rendered.count("<details") == 1
+
+
 def test_render_checks_summary_returns_none_when_no_errors():
     info = datatypes.PathInfo()
     element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
     assert element is None
+
+
+def test_render_checks_summary_sbom_entry_includes_cta():
+    info = datatypes.PathInfo()
+    stat = datatypes.CheckerStats(
+        checker="atr.tasks.checks.sbom.check",
+        counts=collections.Counter({sql.CheckResultStatus.SUGGESTION: 1}),
+        files={},
+    )
+    info.checker_stats.append(stat)
+    element = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
+    assert element is not None
+    assert "Consider creating an SBOM." in str(element)
 
 
 def test_render_checks_summary_shows_release_level_errors():
@@ -325,7 +359,7 @@ async def test_sbom_signature_not_flagged_as_unknown(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.asyncio
 async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     classifications = {
         "apache-test-1.0-source.tar.gz": "source",
@@ -339,7 +373,7 @@ async def test_source_artifact_present_no_failure(monkeypatch: pytest.MonkeyPatc
 
 @pytest.mark.asyncio
 async def test_source_classified_non_artifact_still_records_failure(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_errors", "4")
+    recorder = RecorderStub(safe.StatePath(tmp_path), "atr.tasks.checks.paths.check_source", "4")
     args = _make_function_args(recorder)
     classifications = {
         "README.md": "source",
@@ -356,12 +390,13 @@ def _make_check_result(
     status: sql.CheckResultStatus,
     message: str,
     primary_rel_path: str | None = None,
+    checker: str = "atr.tasks.checks.paths.check_errors",
 ) -> sql.CheckResult:
     return sql.CheckResult(
         id=0,
         release_key="test-1.0",
         revision_number="00001",
-        checker="atr.tasks.checks.paths.check_errors",
+        checker=checker,
         checker_version="4",
         primary_rel_path=primary_rel_path,
         member_rel_path=None,
