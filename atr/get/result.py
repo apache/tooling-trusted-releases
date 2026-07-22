@@ -29,7 +29,7 @@ import atr.web as web
 
 @get.typed
 async def data(
-    session: web.Committer,
+    _session: web.Public,
     _result_data: Literal["result/data"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -39,7 +39,6 @@ async def data(
     URL: /result/data/<project_key>/<version_key>/<check_id>
     Show a check result as formatted JSON.
     """
-    await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         release = await data.release(
             project_key=str(project_key),
@@ -49,7 +48,12 @@ async def data(
         ).get()
 
         if release is None:
-            release = await session.release(project_key, version_key, with_committee=True)
+            release = await data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                _committee=True,
+            ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
         if release.committee is None:
             raise base.ASFQuartException("Release has no committee", errorcode=500)
@@ -58,6 +62,7 @@ async def data(
 
         check_result = await data.check_result(
             id=check_id,
+            release_key=release.key,
         ).demand(base.ASFQuartException("Check result not found", errorcode=404))
 
     payload = check_result.model_dump(mode="json", exclude={"release"})

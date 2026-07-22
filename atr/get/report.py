@@ -23,6 +23,7 @@ import asfquart.base as base
 
 import atr.attestable as attestable
 import atr.blueprints.get as get
+import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -34,7 +35,7 @@ import atr.web as web
 
 @get.typed
 async def selected_path(
-    session: web.Committer,
+    _session: web.Public,
     _report: Literal["report"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
@@ -47,23 +48,24 @@ async def selected_path(
     validated_path = rel_path.as_path()
 
     # If the draft is not found, we try to get the release candidate
-    try:
-        release = await session.release(
-            project_key,
-            version_key,
-            with_committee=True,
-            with_release_policy=True,
-            with_project_release_policy=True,
-        )
-    except base.ASFQuartException:
-        release = await session.release(
-            project_key,
-            version_key,
-            phase=sql.ReleasePhase.RELEASE_CANDIDATE,
-            with_committee=True,
-            with_release_policy=True,
-            with_project_release_policy=True,
-        )
+    async with db.session() as data:
+        release = await data.release(
+            project_key=str(project_key),
+            version=str(version_key),
+            phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            _committee=True,
+            _release_policy=True,
+            _project_release_policy=True,
+        ).get()
+        if release is None:
+            release = await data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE,
+                _committee=True,
+                _release_policy=True,
+                _project_release_policy=True,
+            ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
 
     if release.committee is None:
         raise base.ASFQuartException("Release has no committee", errorcode=500)
