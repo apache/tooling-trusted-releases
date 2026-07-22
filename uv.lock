@@ -206,7 +206,7 @@ wheels = [
 [[package]]
 name = "asfquart"
 version = "0.1.13"
-source = { git = "https://github.com/apache/infrastructure-asfquart.git?rev=sbp-atr-pin#cb9b3fe9bbd6a6065f77cee595b617a8e4906013" }
+source = { git = "https://github.com/apache/infrastructure-asfquart.git?rev=main#912de85c7b621453f87ecc14700e7d3862d1aaba" }
 dependencies = [
     { name = "aiohttp" },
     { name = "asfpy" },
@@ -2149,7 +2149,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21.0,<0.23.0" },
     { name = "aiozipstream", specifier = ">=0.4,<0.5" },
     { name = "alembic", specifier = ">=1.14,<2.0.0" },
-    { name = "asfquart", git = "https://github.com/apache/infrastructure-asfquart.git?rev=sbp-atr-pin" },
+    { name = "asfquart", git = "https://github.com/apache/infrastructure-asfquart.git?rev=main" },
     { name = "asyncssh", specifier = ">=2.20.0,<3.0.0" },
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "blockbuster", specifier = ">=1.5.23,<2.0.0" },
