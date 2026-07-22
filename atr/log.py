@@ -29,7 +29,6 @@ from typing import Any, Final
 import structlog
 
 PERFORMANCE: logging.Logger | None = None
-RESOURCES: logging.Logger | None = None
 
 _global_recent_logs: collections.deque[str] | None = None
 _global_recent_logs_lock = threading.Lock()
@@ -222,18 +221,6 @@ def request_context_fields() -> dict[str, str]:
     if request_id is None:
         return {}
     return {"request_id": request_id}
-
-
-def resources(msg: str) -> None:
-    if RESOURCES is not None:
-        RESOURCES.info(msg)
-
-
-def resources_init() -> None:
-    import atr.config as config
-
-    global RESOURCES
-    RESOURCES = _line_logger("log.resources", config.get().RESOURCES_LOG_FILE)
 
 
 def set_asf_uid(asfuid: str | None) -> None:

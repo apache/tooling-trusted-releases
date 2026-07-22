@@ -25,10 +25,10 @@ import pathlib
 import shutil
 import time
 import uuid
-from typing import TYPE_CHECKING
 
 import aiofiles.os
 import aioshutil
+import exarch
 
 import atr.archives as archives
 import atr.attestable as attestable
@@ -48,9 +48,6 @@ import atr.storage.writers.revision as revision
 import atr.swhid as swhid
 import atr.tasks.checks as checks
 import atr.util as util
-
-if TYPE_CHECKING:
-    import exarch
 
 
 def backfill_archive_cache() -> list[tuple[str, safe.StatePath, float]]:
@@ -230,7 +227,7 @@ def _extract_archive_to_dir(
     try:
         staging_dir_path.mkdir(parents=False, exist_ok=False)
         start = time.monotonic()
-        archives.extract_measured(archive_path, str(staging_dir), extraction_cfg)
+        exarch.extract_archive(str(archive_path), str(staging_dir), extraction_cfg)
         if compute_swhid:
             try:
                 root = archives.single_root_dir(staging_dir)

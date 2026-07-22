@@ -125,7 +125,6 @@ class AppConfig:
     AUTH_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "auth-audit.log")
     PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
     REQUEST_LOG_FILE = os.path.join(STATE_DIR, "logs", "requests.log")
-    RESOURCES_LOG_FILE = os.path.join(STATE_DIR, "logs", "resources.log")
     TASK_LOG_FILE = os.path.join(STATE_DIR, "logs", "tasks.log")
 
     # Apache RAT configuration
@@ -265,7 +264,6 @@ def validate() -> None:
         (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
         (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
-        (conf.RESOURCES_LOG_FILE, "RESOURCES_LOG_FILE"),
         (conf.TASK_LOG_FILE, "TASK_LOG_FILE"),
     ]
     relative_paths = [

@@ -26,7 +26,6 @@ import multiprocessing
 import os
 import pathlib
 import queue
-import resource
 import stat
 import sys
 import time
@@ -80,8 +79,6 @@ import atr.web as web
 # TODO: Technically this is a global variable
 # We should probably find a cleaner way to do this
 app: base.QuartApp | None = None
-
-_RESOURCES_GAUGE_INTERVAL_SECONDS: Final = 300
 
 # The order of these migrations must be checked carefully to avoid conflicts
 _MIGRATIONS: Final[list[tuple[str, str]]] = [
@@ -366,9 +363,6 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         ssh_rate_limit_task = asyncio.create_task(ssh.rate_limit_cleanup_loop())
         app.extensions["ssh_rate_limit_task"] = ssh_rate_limit_task
 
-        resources_gauge_task = asyncio.create_task(_resources_gauge_loop())
-        app.extensions["resources_gauge_task"] = resources_gauge_task
-
     @app.after_serving
     async def shutdown() -> None:
         """Clean up services after the app stops serving requests."""
@@ -388,11 +382,6 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
             ssh_cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await ssh_cleanup_task
-
-        if resources_gauge_task := app.extensions.get("resources_gauge_task"):
-            resources_gauge_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await resources_gauge_task
 
         ssh_server = app.extensions.get("ssh_server")
         if ssh_server:
@@ -706,7 +695,6 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     _app_dirs_setup(app_config.STATE_DIR, hot_reload)
     _validate_secrets_permissions(pathlib.Path(app_config.STATE_DIR))
     log.performance_init()
-    log.resources_init()
     app = _app_create_base(app_config)
     app.sessions = sessions.Store()
     jwtoken.setup_signing_key(app)
@@ -1219,27 +1207,6 @@ async def _reset_request_log_context():
         claims = getattr(quart.g, "jwt_claims", {})
         asf_uid = claims.get("sub")
         log.add_context(user_id=asf_uid)
-
-
-async def _resources_gauge_loop() -> None:
-    while True:
-        await asyncio.sleep(_RESOURCES_GAUGE_INTERVAL_SECONDS)
-        try:
-            rss, hwm = await asyncio.to_thread(util.proc_memory_kb, os.getpid())
-            fds: int | str
-            try:
-                fds = len(await asyncio.to_thread(os.listdir, "/proc/self/fd"))
-            except OSError:
-                fds = "?"
-            children = resource.getrusage(resource.RUSAGE_CHILDREN)
-            log.resources(
-                f"app rss={'?' if (rss is None) else rss} hwm={'?' if (hwm is None) else hwm} fds={fds}"
-                f" cutime={children.ru_utime:.3f} cstime={children.ru_stime:.3f}"
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("Failed to log app resources gauge")
 
 
 def _set_file_permissions_to_read_only() -> None:

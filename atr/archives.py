@@ -17,7 +17,6 @@
 import asyncio
 import contextlib
 import os
-import time
 from typing import Final
 
 import aiofiles.os
@@ -58,23 +57,13 @@ def extract(
                 extracted_paths.append(entry.path)
 
     try:
-        bytes_written = extract_measured(archive_path, extract_dir, cfg)
+        report = exarch.extract_archive(str(archive_path), extract_dir, cfg)
     except exarch.QuotaExceededError as exc:
         raise ExtractionError(f"Extraction exceeded size limit of {max_size} bytes: {exc}") from exc
     except Exception as exc:
         raise ExtractionError(f"Failed to extract archive: {exc}") from exc
 
-    return bytes_written, extracted_paths
-
-
-def extract_measured(archive_path: safe.StatePath, extract_dir: str, cfg: exarch.SecurityConfig) -> int:
-    size = os.path.getsize(archive_path)
-    started = time.monotonic()
-    report = exarch.extract_archive(str(archive_path), extract_dir, cfg)
-    log.resources(
-        f"extract {archive_path} in={size} out={report.bytes_written} seconds={time.monotonic() - started:.1f}"
-    )
-    return report.bytes_written
+    return report.bytes_written, extracted_paths
 
 
 def extraction_config() -> exarch.SecurityConfig:

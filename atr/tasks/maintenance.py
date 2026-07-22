@@ -15,16 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import asyncio
 import datetime
-import os
 import time
 from typing import Final
 
-import sqlalchemy
 import sqlmodel
 
-import atr.config as config
 import atr.db as db
 import atr.log as log
 import atr.models.args as args
@@ -36,7 +32,6 @@ import atr.tasks.inactivity as inactivity
 
 _EXPIRED_TOKEN_RETENTION_DAYS: Final[int] = 30
 _FORM_ERROR_TTL_SECONDS: Final[int] = 24 * 60 * 60
-_RESOURCES_LOG_MAX_BYTES: Final[int] = 64 * 1024 * 1024
 
 
 class MaintenanceError(Exception):
@@ -58,8 +53,6 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         await _storage_maintenance()
         await _workflow_auth_maintenance()
         await _inactivity_maintenance()
-        await _database_survey_maintenance()
-        await _resources_log_maintenance()
 
         log.info(
             "Storage maintenance completed successfully",
@@ -72,24 +65,6 @@ async def run(task_args: args.MaintenanceArgs) -> results.Results | None:
         error_msg = f"Unexpected error during maintenance: {e!s}"
         log.exception("Maintenance failed with unexpected error")
         raise MaintenanceError(error_msg) from e
-
-
-async def _database_survey_maintenance() -> None:
-    try:
-        async with db.session() as data:
-            pages = (await data.execute(sqlalchemy.text("PRAGMA page_count"))).scalar_one()
-            page_size = (await data.execute(sqlalchemy.text("PRAGMA page_size"))).scalar_one()
-            freelist = (await data.execute(sqlalchemy.text("PRAGMA freelist_count"))).scalar_one()
-            counts = {}
-            for table in ("task", "checkresult", "signingcertificate"):
-                counts[table] = (await data.execute(sqlalchemy.text(f"SELECT COUNT(*) FROM {table}"))).scalar_one()
-    except Exception:
-        log.exception("Database survey failed")
-        return
-    log.resources(
-        f"db pages={pages} page_size={page_size} freelist={freelist} task={counts['task']}"
-        f" checkresult={counts['checkresult']} keys={counts['signingcertificate']}"
-    )
 
 
 async def _expired_pats_maintenance() -> None:
@@ -117,19 +92,6 @@ async def _inactivity_maintenance() -> None:
             await inactivity.apply_plan(plan)
         except Exception:
             log.exception(f"Inactivity action failed for release {plan.release_key!r}")
-
-
-async def _resources_log_maintenance() -> None:
-    path = config.get().RESOURCES_LOG_FILE
-    try:
-        size = await asyncio.to_thread(os.path.getsize, path)
-        if size < _RESOURCES_LOG_MAX_BYTES:
-            return
-        await asyncio.to_thread(os.replace, path, path + ".1")
-    except OSError:
-        log.exception("Resources log rotation failed")
-        return
-    log.info(f"Rotated resources log at {size} bytes")
 
 
 async def _session_data_maintenance() -> None:

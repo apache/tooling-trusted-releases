@@ -30,8 +30,6 @@ import logging
 import os
 import resource
 import signal
-import sys
-import time
 import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
@@ -54,9 +52,6 @@ import atr.tasks.task as task
 _CPU_LIMIT_SECONDS: Final = 300
 _MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
 
-# The ru_maxrss unit is bytes on macOS, and kilobytes on Linux
-_MAXRSS_KILOBYTES_DIVISOR: Final = 1024 if (sys.platform == "darwin") else 1
-
 # Successful recurring tasks are appended here as JSON lines instead of kept in the database
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
 
@@ -73,7 +68,6 @@ def main() -> None:
         os.chdir(conf.STATE_DIR)
 
     _setup_logging()
-    log.resources_init()
     log.add_context(worker_pid=os.getpid())
     log.info(f"Starting worker process with pid {os.getpid()}")
 
@@ -106,7 +100,6 @@ def main() -> None:
     # If the worker decides to stop running (see #230 in _worker_loop_run()), shutdown the database gracefully
     asyncio.run(db.shutdown_database())
     log.info("Exiting worker process")
-    log.listeners_stop()
 
 
 async def _execute_check_task(
@@ -321,10 +314,6 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         await _task_result_process(task_id, None, task.FAILED, str(e))
         return
 
-    wall_started = time.monotonic()
-    rusage_self_before = resource.getrusage(resource.RUSAGE_SELF)
-    rusage_children_before = resource.getrusage(resource.RUSAGE_CHILDREN)
-
     task_results: results.Results | None
     try:
         if (
@@ -362,34 +351,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         error_details = traceback.format_exc()
         log.error(f"Task {task_id} failed processing: {error_details}")
         error = str(e)
-    _task_resources_log(
-        task_id, task_type, status, time.monotonic() - wall_started, rusage_self_before, rusage_children_before
-    )
     await _task_result_process(task_id, task_results, status, error)
-
-
-def _task_resources_log(
-    task_id: int,
-    task_type: str,
-    status: sql.TaskStatus,
-    wall: float,
-    rusage_self_before: resource.struct_rusage,
-    rusage_children_before: resource.struct_rusage,
-) -> None:
-    rusage_self = resource.getrusage(resource.RUSAGE_SELF)
-    rusage_children = resource.getrusage(resource.RUSAGE_CHILDREN)
-    maxrss = rusage_self.ru_maxrss // _MAXRSS_KILOBYTES_DIVISOR
-    cmaxrss = rusage_children.ru_maxrss // _MAXRSS_KILOBYTES_DIVISOR
-    rose_self = int(rusage_self.ru_maxrss > rusage_self_before.ru_maxrss)
-    rose_children = int(rusage_children.ru_maxrss > rusage_children_before.ru_maxrss)
-    log.resources(
-        f"task {task_id} {task_type} {status} wall={wall:.3f}"
-        f" utime={rusage_self.ru_utime - rusage_self_before.ru_utime:.3f}"
-        f" stime={rusage_self.ru_stime - rusage_self_before.ru_stime:.3f}"
-        f" cutime={rusage_children.ru_utime - rusage_children_before.ru_utime:.3f}"
-        f" cstime={rusage_children.ru_stime - rusage_children_before.ru_stime:.3f}"
-        f" maxrss={maxrss} cmaxrss={cmaxrss} rose={rose_self}{rose_children}"
-    )
 
 
 async def _task_result_process(
