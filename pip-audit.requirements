@@ -85,12 +85,12 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.40.7
+djlint==1.40.8
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.10
+dulwich==1.2.11
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -110,7 +110,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.30.0
+filelock==3.30.3
     # via
     #   python-discovery
     #   virtualenv
@@ -317,7 +317,7 @@ rpds-py==2026.6.3
     #   referencing
 rpgp-py==0.19.8
     # via tooling-trusted-releases
-ruff==0.15.21
+ruff==0.15.22
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
