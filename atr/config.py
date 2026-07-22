@@ -127,6 +127,7 @@ class AppConfig:
     PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
     REQUEST_LOG_FILE = os.path.join(STATE_DIR, "logs", "requests.log")
     RESOURCES_LOG_FILE = os.path.join(STATE_DIR, "logs", "resources.log")
+    TASK_LOG_FILE = os.path.join(STATE_DIR, "logs", "tasks.log")
 
     # Apache RAT configuration
     APACHE_RAT_JAR_PATH = decouple.config("APACHE_RAT_JAR_PATH", default=f"/opt/tools/apache-rat-{_RAT_VERSION}.jar")
@@ -267,6 +268,7 @@ def validate() -> None:
         (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
         (conf.RESOURCES_LOG_FILE, "RESOURCES_LOG_FILE"),
+        (conf.TASK_LOG_FILE, "TASK_LOG_FILE"),
     ]
     relative_paths = [
         (conf.SQLITE_DB_PATH, "SQLITE_DB_PATH"),

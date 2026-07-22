@@ -25,6 +25,8 @@
 import asyncio
 import datetime
 import inspect
+import json
+import logging
 import os
 import resource
 import signal
@@ -54,6 +56,9 @@ _MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
 
 # The ru_maxrss unit is bytes on macOS, and kilobytes on Linux
 _MAXRSS_KILOBYTES_DIVISOR: Final = 1024 if (sys.platform == "darwin") else 1
+
+# Successful recurring tasks are appended here as JSON lines instead of kept in the database
+_TASK_LOG_LOGGER: Final = "atr.tasks.log"
 
 # # Create tables if they don't exist
 # SQLModel.metadata.create_all(engine)
@@ -176,8 +181,6 @@ async def _notify_task_failure(
 
 
 def _setup_logging() -> None:
-    import logging
-
     import atr.config as config
     import atr.loggers as loggers
 
@@ -185,6 +188,7 @@ def _setup_logging() -> None:
 
     os.makedirs("logs", exist_ok=True)
     os.makedirs(os.path.dirname(conf.STORAGE_AUDIT_LOG_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(conf.TASK_LOG_FILE), exist_ok=True)
 
     shared_processors = loggers.shared_processors()
     output_handler = logging.FileHandler("logs/atr-worker.log")
@@ -200,6 +204,34 @@ def _setup_logging() -> None:
         conf.STORAGE_AUDIT_LOG_FILE,
         shared_processors,
     )
+
+    # Completed recurring tasks
+    loggers.setup_dedicated_file_logger(
+        _TASK_LOG_LOGGER,
+        conf.TASK_LOG_FILE,
+        shared_processors,
+    )
+
+
+def _task_completed_log(record: dict[str, Any]) -> None:
+    logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
+
+
+def _task_completed_record(
+    task_obj: sql.Task, result: results.Results | None, completed: datetime.datetime
+) -> dict[str, Any]:
+    return {
+        "id": task_obj.id,
+        "task_type": task_obj.task_type.value,
+        "status": task.COMPLETED.value,
+        "asf_uid": task_obj.asf_uid,
+        "added": task_obj.added.isoformat() if task_obj.added else None,
+        "started": task_obj.started.isoformat() if task_obj.started else None,
+        "completed": completed.isoformat(),
+        "task_args": task_obj.task_args,
+        "result": result.model_dump(mode="json") if (result is not None) else None,
+        "pid": task_obj.pid,
+    }
 
 
 def _task_failure_message(
@@ -365,29 +397,38 @@ async def _task_result_process(
 ) -> None:
     """Process and store task results in the database."""
     notify_args: tuple[str | None, sql.TaskType, str | None, str | None, str | None, str | None, str] | None = None
+    log_record: dict[str, Any] | None = None
+    completed = datetime.datetime.now(datetime.UTC)
     async with db.session() as data:
         async with data.begin():
             # Find the task by ID
             task_obj = await data.task(id=task_id).get()
             if task_obj:
-                # Update task properties
-                task_obj.status = status
-                task_obj.completed = datetime.datetime.now(datetime.UTC)
-                task_obj.result = task_results
+                if (status == task.COMPLETED) and (task_obj.task_type in sql.RECURRING_TASK_TYPES):
+                    # A successful recurring run leaves only a log line behind
+                    log_record = _task_completed_record(task_obj, task_results, completed)
+                    await data.delete(task_obj)
+                else:
+                    # Update task properties
+                    task_obj.status = status
+                    task_obj.completed = completed
+                    task_obj.result = task_results
 
-                if status == task.FAILED:
-                    normalised_error = ((error or "").strip()) or "unknown error"
-                    task_obj.error = normalised_error
-                    notify_args = (
-                        task_obj.asf_uid,
-                        task_obj.task_type,
-                        task_obj.project_key,
-                        task_obj.version_key,
-                        task_obj.revision_number,
-                        task_obj.primary_rel_path,
-                        normalised_error,
-                    )
+                    if status == task.FAILED:
+                        normalised_error = ((error or "").strip()) or "unknown error"
+                        task_obj.error = normalised_error
+                        notify_args = (
+                            task_obj.asf_uid,
+                            task_obj.task_type,
+                            task_obj.project_key,
+                            task_obj.version_key,
+                            task_obj.revision_number,
+                            task_obj.primary_rel_path,
+                            normalised_error,
+                        )
 
+    if log_record is not None:
+        _task_completed_log(log_record)
     if notify_args is not None:
         await _notify_task_failure(*notify_args)
 

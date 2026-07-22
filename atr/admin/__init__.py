@@ -1915,7 +1915,7 @@ async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/re
     page.h2["Scheduled tasks"]
     page.p[f"Found {util.plural(len(scheduled_tasks), 'task')}"]
 
-    if recent_tasks:
+    if scheduled_tasks:
         table = htm.Block(htpy.table, classes=".table.table-sm")
         table.thead(".table-dark")[
             htpy.tr[
