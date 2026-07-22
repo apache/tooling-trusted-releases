@@ -935,7 +935,6 @@ async def policy_get(
         policy_manual_vote=project.policy_manual_vote,
         policy_min_hours=project.policy_min_hours,
         policy_vote_mode=project.policy_vote_mode,
-        policy_preserve_download_files=project.policy_preserve_download_files,
         policy_release_checklist=project.policy_release_checklist,
         policy_source_artifact_paths=project.policy_source_artifact_paths,
         policy_start_vote_subject=project.policy_start_vote_subject,

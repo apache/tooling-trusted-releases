@@ -1328,12 +1328,6 @@ Sincerely,
         return policy.github_finish_workflow_path or []
 
     @property
-    def policy_preserve_download_files(self) -> bool:
-        if (policy := self.release_policy) is None:
-            return False
-        return policy.preserve_download_files
-
-    @property
     def policy_auto_archive_prior_release(self) -> bool:
         if (policy := self.release_policy) is None:
             return False
@@ -2139,7 +2133,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
         default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
     )
     auto_archive_prior_release: bool = sqlmodel.Field(default=False)
-    preserve_download_files: bool = sqlmodel.Field(default=False)
     download_path_suffix: str = sqlmodel.Field(default="")
 
     # 1-1: ReleasePolicy -> Project
@@ -2171,7 +2164,6 @@ class ReleasePolicy(sqlmodel.SQLModel, table=True):
             github_vote_workflow_path=list(self.github_vote_workflow_path),
             github_finish_workflow_path=list(self.github_finish_workflow_path),
             auto_archive_prior_release=self.auto_archive_prior_release,
-            preserve_download_files=self.preserve_download_files,
             download_path_suffix=self.download_path_suffix,
         )
 

@@ -448,8 +448,6 @@ def _asf_yaml_policy_extras(release_policy: sql.ReleasePolicy) -> dict[str, obje
         extras["vote_mode"] = release_policy.vote_mode.value
     if release_policy.min_hours is not None:
         extras["min_hours"] = str(release_policy.min_hours)
-    if release_policy.preserve_download_files:
-        extras["preserve_download_files"] = "true"
     return extras
 
 
@@ -944,7 +942,6 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
                 "project_key": project.key,
                 "announce_release_subject": project.policy_announce_release_subject or "",
                 "announce_release_template": project.policy_announce_release_template or "",
-                "preserve_download_files": project.policy_preserve_download_files,
                 "archive_prior_release": project.policy_auto_archive_prior_release,
                 "download_path_suffix": project.policy_download_path_suffix,
             },

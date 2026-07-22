@@ -72,7 +72,6 @@ class _FakePolicy:
             "finish_vote_template": "",
             "announce_release_subject": "",
             "announce_release_template": "",
-            "preserve_download_files": False,
             "github_repository_name": "",
             "github_repository_branch": "",
             "github_compose_workflow_path": [],
@@ -83,6 +82,19 @@ class _FakePolicy:
         defaults.update(fields)
         for key, value in defaults.items():
             setattr(self, key, value)
+
+
+def test_export_includes_download_path_suffix_when_set() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        release_policy=_FakePolicy(download_path_suffix="{{PROJECT_KEY}}-{{VERSION}}"),
+    )
+
+    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
+
+    assert policy["download_path_suffix"] == "{{PROJECT_KEY}}-{{VERSION}}"
 
 
 def test_export_includes_only_recipient_keys_that_are_set() -> None:
@@ -116,7 +128,6 @@ def test_export_includes_set_policy_fields() -> None:
             min_hours=48,
             start_vote_subject="[VOTE] Custom {{VERSION}}",
             announce_release_subject="[ANNOUNCE] Custom {{VERSION}}",
-            preserve_download_files=True,
             github_repository_name="apache/example",
             github_compose_workflow_path=[".github/workflows/compose.yml"],
         ),
@@ -135,7 +146,6 @@ def test_export_includes_set_policy_fields() -> None:
         "start_vote_subject": "[VOTE] Custom {{VERSION}}",
         "announce_recipients": {"to": "announce@example.apache.org"},
         "announce_release_subject": "[ANNOUNCE] Custom {{VERSION}}",
-        "preserve_download_files": "true",
         "github_repository_name": "apache/example",
         "github_compose_workflow_path": [".github/workflows/compose.yml"],
     }
@@ -237,16 +247,3 @@ def test_export_splits_comma_joined_columns_into_sequences() -> None:
 
     assert metadata["categories"] == ["data", "storage"]
     assert metadata["programming_languages"] == ["c", "python"]
-
-
-def test_export_includes_download_path_suffix_when_set() -> None:
-    project = _FakeProject(
-        key="example",
-        committee_key="tooling",
-        name="Apache Example",
-        release_policy=_FakePolicy(download_path_suffix="{{PROJECT_KEY}}-{{VERSION}}"),
-    )
-
-    policy = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["policy"]
-
-    assert policy["download_path_suffix"] == "{{PROJECT_KEY}}-{{VERSION}}"

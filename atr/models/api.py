@@ -418,7 +418,6 @@ class PolicyGetResults(schema.Strict):
     policy_manual_vote: bool
     policy_min_hours: int
     policy_vote_mode: sql.VoteMode = schema.example(sql.VoteMode.EMAIL)
-    policy_preserve_download_files: bool
     policy_release_checklist: str
     policy_source_artifact_paths: list[str]
     policy_start_vote_subject: str
@@ -447,7 +446,6 @@ class PolicyArgsBase(schema.Strict):
     download_path_suffix: str | None = None
     manual_vote: bool | None = None
     min_hours: int | None = None
-    preserve_download_files: bool | None = None
     release_checklist: str | None = None
     source_artifact_paths: list[str] | None = None
     source_excludes_lightweight: list[str] | None = None

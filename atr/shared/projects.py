@@ -398,10 +398,6 @@ class FinishPolicyForm(form.Form):
     )
     email_cc: form.StrList = form.label("Default CC")
     email_bcc: form.StrList = form.label("Default BCC")
-    preserve_download_files: form.Bool = form.label(
-        "Preserve download files",
-        "If enabled, existing download files will not be overwritten.",
-    )
     download_path_suffix: str = form.label(
         "Default download path suffix",
         "Pre-fills the SVN publish path. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}."
