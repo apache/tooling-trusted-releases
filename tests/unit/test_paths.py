@@ -40,20 +40,6 @@ def test_committee_dist_relpath_for_top_level_committee() -> None:
     assert paths.committee_dist_relpath(committee) == safe.RelPath("myproject")
 
 
-def test_committee_downloads_dir_for_podling(monkeypatch, tmp_path: pathlib.Path):
-    committee = types.SimpleNamespace(key="myproject", is_podling=True)
-    monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
-
-    assert paths.committee_downloads_dir(committee).path == tmp_path / "incubator" / "myproject"
-
-
-def test_committee_downloads_dir_for_top_level_committee(monkeypatch, tmp_path: pathlib.Path):
-    committee = types.SimpleNamespace(key="myproject", is_podling=False)
-    monkeypatch.setattr(paths, "get_downloads_dir", lambda: safe.StatePath(tmp_path))
-
-    assert paths.committee_downloads_dir(committee).path == tmp_path / "myproject"
-
-
 def test_committee_keys_url_for_podling() -> None:
     committee = types.SimpleNamespace(key="myproject", is_podling=True)
 

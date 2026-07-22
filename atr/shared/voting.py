@@ -61,7 +61,7 @@ class StartVotingForm(form.Form):
     )
     download_path_suffix: safe.OptionalRelPath = form.label(
         "Download path suffix",
-        "Optional path under the committee downloads area.",
+        "Optional path under the committee distribution area.",
         default=None,
     )
     concerns_noted: form.StrList = form.label("Concerns noted", widget=form.Widget.CUSTOM)

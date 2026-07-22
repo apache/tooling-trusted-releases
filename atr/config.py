@@ -113,7 +113,6 @@ class AppConfig:
     # ASFQuart generates it using secrets.token_hex()
     SECRET_KEY = _config_secrets("SECRET_KEY", STATE_DIR, default=None, cast=str)
     JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str)
-    DOWNLOADS_STORAGE_DIR = os.path.join(STATE_DIR, "downloads")
     FINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "finished")
     UNFINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "unfinished")
     # TODO: By convention this is at /x1/, but we can symlink it here perhaps?
@@ -258,7 +257,6 @@ def validate() -> None:
     absolute_paths = [
         (conf.PROJECT_ROOT, "PROJECT_ROOT"),
         (conf.STATE_DIR, "STATE_DIR"),
-        (conf.DOWNLOADS_STORAGE_DIR, "DOWNLOADS_STORAGE_DIR"),
         (conf.FINISHED_STORAGE_DIR, "FINISHED_STORAGE_DIR"),
         (conf.UNFINISHED_STORAGE_DIR, "UNFINISHED_STORAGE_DIR"),
         (conf.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),

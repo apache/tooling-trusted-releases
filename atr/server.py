@@ -1307,7 +1307,7 @@ def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> No
         print("!!!", file=sys.stderr)
         # sys.exit(1)
 
-    if pathlib.Path(paths.get_downloads_dir()).is_dir() and (hot_reload is False):
+    if (pathlib.Path(app_config.STATE_DIR) / "downloads").is_dir() and (hot_reload is False):
         print("!!!", file=sys.stderr)
         print("WARNING: The downloads directory is no longer supported", file=sys.stderr)
         print("Please remove downloads from the state directory", file=sys.stderr)

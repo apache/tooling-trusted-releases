@@ -45,7 +45,7 @@ def closer_download_url(relpath: safe.RelPath) -> str:
 def committee_dist_relpath(
     committee: sql.Committee, suffix: safe.RelPath | None = None, filename: str | None = None
 ) -> safe.RelPath:
-    # The committee's path relative to the downloads root, ie the shared prefix that
+    # The committee's path relative to the distribution root, ie the shared prefix that
     # the download hosts and the distribution SVN area both hang a release off.
     # Optionally extended with the per-release download suffix and a file name.
     prefix = "incubator/" if committee.is_podling else ""
@@ -55,13 +55,6 @@ def committee_dist_relpath(
     if filename is not None:
         relpath = relpath.append(filename)
     return relpath
-
-
-def committee_downloads_dir(committee: sql.Committee) -> safe.StatePath:
-    downloads_dir = get_downloads_dir()
-    if committee.is_podling:
-        return downloads_dir / "incubator" / committee.key
-    return downloads_dir / committee.key
 
 
 def committee_keys_url(committee: sql.Committee) -> str:
@@ -81,10 +74,6 @@ def get_archives_dir() -> safe.StatePath:
 
 def get_attestable_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR))
-
-
-def get_downloads_dir() -> safe.StatePath:
-    return safe.StatePath(pathlib.Path(config.get().DOWNLOADS_STORAGE_DIR))
 
 
 def get_finished_dir() -> safe.StatePath:

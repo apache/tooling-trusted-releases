@@ -209,7 +209,7 @@ class SvnPublish(schema.Strict):
     revision_number: safe.RevisionNumber = schema.description("Preview revision number to publish")
     download_path_suffix: safe.OptionalRelPath = pydantic.Field(
         default=None,
-        description="Optional path suffix appended under the committee downloads directory",
+        description="Optional path suffix appended under the committee distribution path",
     )
 
 
