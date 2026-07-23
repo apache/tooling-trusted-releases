@@ -26,18 +26,14 @@
                   </span>
                 {% endif %}
               </div>
-              <p class="card-text text-muted mb-1">Released on {{ format_datetime(release.released or release.created) }}</p>
+              <p class="card-text text-muted mb-1">Released on {{ (release.released or release.created).strftime("%Y-%m-%d") }}</p>
               <p class="card-text text-muted small mb-2{% if not release.is_archived %} invisible{% endif %}">
-                {% if release.archived %}Archived on {{ format_datetime(release.archived) }}{% elif release.is_archived %}Archived{% else %}&nbsp;{% endif %}
+                {% if release.archived %}Archived on {{ release.archived.strftime("%Y-%m-%d") }}{% elif release.is_archived %}Archived{% else %}&nbsp;{% endif %}
               </p>
               <div class="mt-auto">
-                <a href="{{ as_url(get.download.all_selected, project_key=release.project.key, version_key=release.version) }}"
-                   class="btn btn-outline-primary w-100 mb-2">
-                  <i class="bi bi-download me-1"></i> Download files
-                </a>
                 <a href="{{ as_url(get.file.selected, project_key=release.project.key, version_key=release.version) }}"
-                   class="btn btn-outline-secondary w-100">
-                  <i class="bi bi-folder2-open me-1"></i> View files
+                   class="btn btn-outline-primary w-100">
+                  View details
                 </a>
               </div>
             </div>

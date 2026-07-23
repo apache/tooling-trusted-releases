@@ -58,9 +58,7 @@ async def finished(
 
     releases = sorted(releases, key=sort_releases, reverse=True)
 
-    return await template.render(
-        "releases-finished.html", project=project, releases=releases, format_datetime=util.format_datetime
-    )
+    return await template.render("releases-finished.html", project=project, releases=releases)
 
 
 @get.typed
