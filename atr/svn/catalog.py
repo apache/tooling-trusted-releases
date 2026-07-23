@@ -97,13 +97,21 @@ async def _apply_changes(
 ) -> list[_ResolvedRelease]:
     catalogued: list[_ResolvedRelease] = []
     for project_key, version_key, artifacts in releases:
-        error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
+        try:
+            error = await wadcs.release_catalogue_release(project_key, version_key, date, artifacts)
+        except Exception:
+            log.exception(f"dist watcher failed to catalogue {project_key!s} {version_key!s}")
+            continue
         if error is not None:
             log.warning(f"dist watcher could not catalogue {project_key!s} {version_key!s}: {error}")
             continue
         catalogued.append((project_key, version_key, artifacts))
     for project_key, version_key in archives:
-        error = await wadcs.release_archive(project_key, version_key)
+        try:
+            error = await wadcs.release_archive(project_key, version_key)
+        except Exception:
+            log.exception(f"dist watcher failed to archive {project_key!s} {version_key!s}")
+            continue
         if error is not None:
             log.info(f"dist watcher did not archive {project_key!s} {version_key!s}: {error}")
     return catalogued

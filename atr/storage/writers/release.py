@@ -1464,52 +1464,60 @@ class FoundationAdmin(FoundationCommitter):
         except ValueError:
             cycle_name = _CATALOGUE_DEFAULT_CYCLE
         cycle_key = f"{project.key}-{cycle_name}"
-        if not await self.__data.project_cycle(cycle_key=cycle_key).get():
-            self.__data.add(sql.ProjectCycle(cycle_key=cycle_key, cycle=cycle_name, project_key=project.key, lts=False))
+        try:
+            if not await self.__data.project_cycle(cycle_key=cycle_key).get():
+                self.__data.add(
+                    sql.ProjectCycle(cycle_key=cycle_key, cycle=cycle_name, project_key=project.key, lts=False)
+                )
 
-        self.__data.add(
-            sql.Release(
-                key=release_key,
-                phase=sql.ReleasePhase.RELEASE,
-                created=released,
-                released=released,
-                project_key=project.key,
-                cycle_key=cycle_key,
-                version=str(version),
-            )
-        )
-        # Nothing relates LifecycleEvent to Release, so there's no
-        # dependency to order these inserts by. The release row has to save
-        # before the event's foreign key is checked
-        await self.__data.flush()
-        # effective is the commit date we observed, but published stays at the
-        # default now - that's when we recorded it, not a backdated claim
-        self.__data.add(
-            sql.LifecycleEvent(
-                project_key=project.key,
-                cycle_key=cycle_key,
-                version_key=release_key,
-                event=sql.LifecycleEventType.RELEASE,
-                effective=released,
-            )
-        )
-        for artifact in artifacts:
             self.__data.add(
-                sql.Artifact(
+                sql.Release(
+                    key=release_key,
+                    phase=sql.ReleasePhase.RELEASE,
+                    created=released,
+                    released=released,
                     project_key=project.key,
+                    cycle_key=cycle_key,
                     version=str(version),
-                    release_key=release_key,
-                    artifact_path=artifact.artifact_path,
-                    classification=artifact.classification,
-                    signature_path=artifact.signature_path,
-                    checksum_path=artifact.checksum_path,
-                    sbom_path=artifact.sbom_path,
-                    download_path_suffix=artifact.download_path_suffix,
-                    managed=False,
-                    dated=released,
                 )
             )
-        await self.__data.commit()
+            # Nothing relates LifecycleEvent to Release, so there's no
+            # dependency to order these inserts by. The release row has to save
+            # before the event's foreign key is checked
+            await self.__data.flush()
+            # effective is the commit date we observed, but published stays at the
+            # default now - that's when we recorded it, not a backdated claim
+            self.__data.add(
+                sql.LifecycleEvent(
+                    project_key=project.key,
+                    cycle_key=cycle_key,
+                    version_key=release_key,
+                    event=sql.LifecycleEventType.RELEASE,
+                    effective=released,
+                )
+            )
+            for artifact in artifacts:
+                self.__data.add(
+                    sql.Artifact(
+                        project_key=project.key,
+                        version=str(version),
+                        release_key=release_key,
+                        artifact_path=artifact.artifact_path,
+                        classification=artifact.classification,
+                        signature_path=artifact.signature_path,
+                        checksum_path=artifact.checksum_path,
+                        sbom_path=artifact.sbom_path,
+                        download_path_suffix=artifact.download_path_suffix,
+                        managed=False,
+                        dated=released,
+                    )
+                )
+            await self.__data.commit()
+        except Exception:
+            # The caller catalogues each release in turn on one session, so a failure
+            # here has to leave it clean enough for the next release to use
+            await self.__data.rollback()
+            raise
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             project_key=str(project_key),
