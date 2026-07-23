@@ -123,6 +123,8 @@ class Committer:
                 raise CommitterError("Authentication failed")
         except CommitterError:
             raise
+        except ldap.UnavailableError:
+            raise
         except Exception as ex:
             log.exception(f"An unknown error occurred while fetching user details: {ex!s}")
             raise CommitterError("An unknown error occurred while fetching user details.") from ex
@@ -151,6 +153,8 @@ class Committer:
                 raise CommitterError("Common backend assertions failed, LDAP corruption?")
         except CommitterError:
             raise
+        except ldap.UnavailableError:
+            raise
         except Exception as ex:
             log.exception(f"An unknown error occurred while fetching group memberships from {ldap_base}: {ex!s}")
             raise CommitterError(
@@ -170,6 +174,8 @@ class Committer:
                 ldap_query=ldap_filter % (self.user,),
                 ldap_attrs=["cn"],
             )
+        except ldap.UnavailableError:
+            raise
         except Exception as ex:
             log.exception(f"An unknown error occurred while fetching project memberships: {ex!s}")
             raise CommitterError("An unknown error occurred while fetching project memberships.") from ex

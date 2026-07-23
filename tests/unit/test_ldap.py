@@ -19,6 +19,7 @@ import pathlib
 import unittest.mock as mock
 from typing import TYPE_CHECKING
 
+import ldap3.core.exceptions
 import pytest
 
 import atr.cache as cache
@@ -45,9 +46,35 @@ class MockConfig:
         self.LDAP_BIND_PASSWORD = ldap_bind_password
 
 
+class MockRaisingConnection:
+    def search(self, **kwargs: object) -> bool:
+        raise ldap3.core.exceptions.LDAPSocketReceiveError("connection reset")
+
+
+class MockResultConnection:
+    def __init__(self, result_code: int):
+        self.result = {"result": result_code}
+        self.entries: list[object] = []
+
+    def search(self, search_base: str, search_filter: str, attributes: list[str]) -> bool:
+        return self.result["result"] == 0
+
+
 @pytest.fixture
 def ldap_configured() -> bool:
     return ldap.get_bind_credentials() is not None
+
+
+@pytest.mark.asyncio
+async def test_account_lookup_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+    def failed_search(params: ldap.SearchParameters) -> None:
+        params.failed = True
+        params.err_msg = "An unexpected error occurred: connection refused"
+
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.ldap.search", failed_search)
+    with pytest.raises(ldap.UnavailableError):
+        await ldap.account_lookup("alice")
 
 
 @pytest.mark.asyncio
@@ -145,6 +172,17 @@ async def test_fetch_admin_users_returns_reasonable_count(ldap_configured: bool)
 
 
 @pytest.mark.asyncio
+async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+    def failed_search(params: ldap.SearchParameters) -> None:
+        params.failed = True
+        params.err_msg = "An unexpected error occurred: connection refused"
+
+    monkeypatch.setattr("atr.ldap.search", failed_search)
+    with pytest.raises(ldap.UnavailableError):
+        await ldap.github_to_apache(12345)
+
+
+@pytest.mark.asyncio
 async def test_handle_update_handles_invalid_payload(monkeypatch: "MonkeyPatch"):
     warnings: list[str] = []
     monkeypatch.setattr("atr.log.warning", lambda msg: warnings.append(msg))
@@ -221,6 +259,15 @@ async def test_handle_update_skips_revoke_logs_when_nothing_to_revoke(monkeypatc
     assert "sessions_revoked" not in auth_events
     assert "tokens_revoked" not in auth_events
     assert "ssh_keys_revoked" not in auth_events
+
+
+@pytest.mark.asyncio
+async def test_is_active_raises_when_ldap_unavailable(monkeypatch: "MonkeyPatch"):
+    monkeypatch.setattr("atr.ldap.get_bind_credentials", lambda: ("dn", "pw"))
+    monkeypatch.setattr("atr.config.is_test_mode", lambda: True)
+    monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(side_effect=ldap.UnavailableError("down")))
+    with pytest.raises(ldap.UnavailableError):
+        await ldap.is_active("alice")
 
 
 @pytest.mark.asyncio
@@ -319,6 +366,46 @@ def test_pubsub_payload_parses_valid_event():
     assert parsed.change_type == "modify"
     assert parsed.new_attributes.uid == ["alice"]
     assert parsed.old_attributes.asf_banned == []
+
+
+def test_search_class_wraps_transport_errors():
+    ldap_search = ldap.Search("dn", "pw")
+    ldap_search._conn = MockRaisingConnection()
+    with pytest.raises(ldap.UnavailableError):
+        ldap_search.search(ldap_base="ou=people,dc=apache,dc=org", ldap_scope="BASE")
+
+
+def test_search_core_2_reports_no_results_on_empty_success():
+    params = ldap.SearchParameters(uid_query="alice")
+    params.connection = MockResultConnection(0)
+    ldap._search_core_2(params, ["(uid=alice)"])
+    assert params.failed is False
+    assert params.err_msg == "No results found for the given criteria."
+
+
+def test_search_core_2_sets_failed_on_error_result():
+    params = ldap.SearchParameters(uid_query="alice")
+    params.connection = MockResultConnection(52)
+    ldap._search_core_2(params, ["(uid=alice)"])
+    assert params.failed is True
+
+
+def test_search_core_2_sets_failed_on_no_such_object():
+    params = ldap.SearchParameters(uid_query="alice")
+    params.connection = MockResultConnection(32)
+    ldap._search_core_2(params, ["(uid=alice)"])
+    assert params.failed is True
+
+
+def test_search_sets_failed_on_exception(monkeypatch: "MonkeyPatch"):
+    def broken_search_core(params: ldap.SearchParameters) -> None:
+        raise ConnectionRefusedError("connection refused")
+
+    monkeypatch.setattr("atr.ldap._search_core", broken_search_core)
+    params = ldap.SearchParameters(uid_query="alice")
+    ldap.search(params)
+    assert params.failed is True
+    assert params.err_msg is not None
 
 
 def _make_pubsub_payload(

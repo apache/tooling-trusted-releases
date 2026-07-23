@@ -22,6 +22,8 @@ import ssl
 from typing import Final, Literal
 
 import ldap3
+import ldap3.core.exceptions
+import ldap3.core.results
 import ldap3.utils.conv as conv
 import ldap3.utils.dn as dn
 
@@ -42,6 +44,11 @@ RESULT_ATTRIBUTES: Final[list[str]] = [
     "memberUid",
     "uid",
 ]
+
+SEARCH_OK_RESULT_CODES: Final[tuple[int, int]] = (
+    ldap3.core.results.RESULT_SUCCESS,
+    ldap3.core.results.RESULT_NO_SUCH_OBJECT,
+)
 
 
 class PubSubAttributes(schema.Subset):
@@ -92,13 +99,16 @@ class Search:
 
     def __enter__(self):
         server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config)
-        self._conn = ldap3.Connection(
-            server,
-            user=self._bind_dn,
-            password=self._bind_password,
-            auto_bind=True,
-            check_names=False,
-        )
+        try:
+            self._conn = ldap3.Connection(
+                server,
+                user=self._bind_dn,
+                password=self._bind_password,
+                auto_bind=True,
+                check_names=False,
+            )
+        except ldap3.core.exceptions.LDAPException as e:
+            raise UnavailableError(str(e)) from e
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -116,12 +126,17 @@ class Search:
             raise RuntimeError("LDAP connection not available")
 
         attributes = ldap_attrs if ldap_attrs else RESULT_ATTRIBUTES
-        self._conn.search(
-            search_base=ldap_base,
-            search_filter=ldap_query,
-            search_scope=ldap_scope,
-            attributes=attributes,
-        )
+        try:
+            self._conn.search(
+                search_base=ldap_base,
+                search_filter=ldap_query,
+                search_scope=ldap_scope,
+                attributes=attributes,
+            )
+        except ldap3.core.exceptions.LDAPException as e:
+            raise UnavailableError(str(e)) from e
+        if self._conn.result["result"] not in SEARCH_OK_RESULT_CODES:
+            raise UnavailableError(f"LDAP search failed: {self._conn.result}")
         results: list[Result] = []
         for entry in self._conn.entries:
             results.append(Result.model_validate({"dn": entry.entry_dn, **entry.entry_attributes_as_dict}))
@@ -129,6 +144,10 @@ class Search:
 
 
 class LookupError(Exception):
+    pass
+
+
+class UnavailableError(Exception):
     pass
 
 
@@ -145,6 +164,7 @@ class SearchParameters:
     err_msg: str | None = None
     srv_info: str | None = None
     detail_err: str | None = None
+    failed: bool = False
     connection: ldap3.Connection | None = None
 
 
@@ -167,6 +187,8 @@ async def account_lookup(asf_uid: str) -> Result | None:
     )
     await asyncio.to_thread(search, params)
 
+    if params.failed:
+        raise UnavailableError(params.err_msg or "LDAP search failed")
     if not params.results_list:
         return None
 
@@ -225,6 +247,8 @@ async def github_to_apache(github_numeric_uid: int) -> str:
         github_nid_query=github_numeric_uid,
     )
     await asyncio.to_thread(search, ldap_params)
+    if ldap_params.failed:
+        raise UnavailableError(ldap_params.err_msg or "LDAP search failed")
     if not (ldap_params.results_list and ldap_params.results_list[0].uid):
         raise LookupError(f"GitHub NID {github_numeric_uid} not registered with the ATR")
     return ldap_params.results_list[0].uid[0]
@@ -304,6 +328,7 @@ def search(params: SearchParameters) -> None:
     try:
         _search_core(params)
     except Exception as e:
+        params.failed = True
         params.err_msg = f"An unexpected error occurred: {e!s}"
         params.detail_err = f"Details: {e.args}"
     finally:
@@ -386,6 +411,7 @@ def _search_core(params: SearchParameters) -> None:
     params.err_msg = None
     params.srv_info = None
     params.detail_err = None
+    params.failed = False
     params.connection = None
 
     server = ldap3.Server(LDAP_SERVER_HOST, use_ssl=True, tls=_tls_config, get_info=ldap3.ALL)
@@ -441,6 +467,10 @@ def _search_core_2(params: SearchParameters, filters: list[str]) -> None:
         search_filter=search_filter,
         attributes=RESULT_ATTRIBUTES,
     )
+    if params.connection.result["result"] != ldap3.core.results.RESULT_SUCCESS:
+        params.failed = True
+        params.err_msg = f"LDAP search failed: {params.connection.result}"
+        return
     for entry in params.connection.entries:
         params.results_list.append(Result.model_validate({"dn": entry.entry_dn, **entry.entry_attributes_as_dict}))
 

@@ -52,6 +52,8 @@ import atr.tasks.task as task
 _CPU_LIMIT_SECONDS: Final = 300
 _MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
 
+_DEFER_SECONDS: Final = 120
+
 # Successful recurring tasks are appended here as JSON lines instead of kept in the database
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
 
@@ -227,6 +229,28 @@ def _task_completed_record(
     }
 
 
+async def _task_defer(task_id: int) -> None:
+    via = sql.validate_instrumented_attribute
+    scheduled = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=_DEFER_SECONDS)
+    async with db.session() as data:
+        async with data.begin():
+            update_stmt = (
+                sqlmodel.update(sql.Task)
+                .where(
+                    sqlmodel.and_(
+                        via(sql.Task.id) == task_id,
+                        sql.Task.status == task.ACTIVE,
+                        via(sql.Task.pid) == os.getpid(),
+                    )
+                )
+                .values(status=task.QUEUED, started=None, pid=None, scheduled=scheduled)
+                .returning(via(sql.Task.id))
+            )
+            result = await data.execute(update_stmt)
+            if result.first() is None:
+                log.warning(f"Task {task_id} was not deferred because it is no longer active")
+
+
 def _task_failure_message(
     task_type: sql.TaskType,
     project_key: str | None,
@@ -321,7 +345,12 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
             and not (config.is_test_mode() and asf_uid == "test")
             and (config.is_production_mode() or config.is_ldap_configured())
         ):
-            user_account = await ldap.account_lookup(asf_uid)
+            try:
+                user_account = await ldap.account_lookup(asf_uid)
+            except ldap.UnavailableError as e:
+                log.warning(f"Deferring task {task_id} ({task_type}) because LDAP is unavailable: {e}")
+                await _task_defer(task_id)
+                return
             # We check here to see if the account is banned - in the case of running tasks,
             # we don't really need to worry about admin/membership status as that wouldn't
             # materially affect outstanding worker tasks and is rare anyway.

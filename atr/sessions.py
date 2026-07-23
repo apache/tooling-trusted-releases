@@ -15,9 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
 import time
 from typing import Any, Final, Literal, get_args
 
+import asfquart.base as base
 import asfquart.session
 import quart
 import sqlalchemy.dialects.sqlite
@@ -25,6 +27,7 @@ import sqlmodel
 
 import atr.config as config
 import atr.db as db
+import atr.ldap as ldap
 import atr.log as log
 import atr.models.sql as sql
 
@@ -38,6 +41,24 @@ if not _MUTABLE_SESSION_FIELDS.issubset(sql.UserSession.model_fields):
     raise RuntimeError(
         f"MutableSessionField contains unknown fields: {_MUTABLE_SESSION_FIELDS - set(sql.UserSession.model_fields)}"
     )
+
+
+async def account_check(session: sql.UserSession, current_time: float) -> None:
+    uid = session.uid
+    admin_uid = session.admin_uid
+    if isinstance(admin_uid, str) and bool(admin_uid):
+        user_result, admin_result = await asyncio.gather(_account_active(uid), _account_active(admin_uid))
+        if admin_result is False:
+            await deleted_or_banned(admin_uid)
+            raise base.ASFQuartException("Account is disabled", errorcode=401)
+    else:
+        user_result = await _account_active(uid)
+    if user_result is False:
+        await deleted_or_banned(uid)
+        raise base.ASFQuartException("Account is disabled", errorcode=401)
+
+    session.last_account_check = current_time
+    await asfquart.APP.sessions.save(session, {"last_account_check"})
 
 
 async def deleted_or_banned(uid: str) -> None:
@@ -104,6 +125,14 @@ async def terminate_current_users_sessions(uid: str) -> int:
     return count
 
 
+async def _account_active(uid: str) -> bool | ldap.UnavailableError:
+    try:
+        return await ldap.is_active(uid)
+    except ldap.UnavailableError as e:
+        log.warning(f"Skipping the account check for {uid} because LDAP is unavailable: {e}")
+        return e
+
+
 async def _form_error_lookup(data: db.Session, sid_hash: str, path: str) -> sql.SessionFormError | None:
     statement = sqlmodel.select(sql.SessionFormError).where(
         sql.SessionFormError.sid_hash == sid_hash,
@@ -150,6 +179,7 @@ class Store:
         async with db.session() as data:
             data.add(user_session)
             await data.commit()
+        log.auth_success("oauth", user_session.uid)
 
     async def destroy(self, hsid: str) -> None:
         async with db.session() as data:

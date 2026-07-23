@@ -18,11 +18,13 @@
 import types
 import unittest.mock as mock
 
+import asfquart.base as base
 import pytest
 import sqlalchemy.ext.asyncio
 import sqlmodel
 
 import atr.db as db
+import atr.ldap as ldap
 import atr.models.sql as sql
 import atr.sessions as sessions
 
@@ -54,6 +56,60 @@ async def store(monkeypatch):
 
     await engine.dispose()
     db._global_atr_sessionmaker = None
+
+
+async def test_account_check_fails_open_when_ldap_unavailable(monkeypatch):
+    user_session = sql.UserSession(uid="alice")
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(side_effect=ldap.UnavailableError("down")))
+    deleted = mock.AsyncMock()
+    monkeypatch.setattr("atr.sessions.deleted_or_banned", deleted)
+    save = mock.AsyncMock()
+    monkeypatch.setattr("asfquart.APP", types.SimpleNamespace(sessions=types.SimpleNamespace(save=save)))
+
+    await sessions.account_check(user_session, 123.0)
+
+    deleted.assert_not_awaited()
+    save.assert_awaited_once()
+    assert user_session.last_account_check == 123.0
+
+
+async def test_account_check_revokes_user_when_admin_check_unavailable(monkeypatch):
+    user_session = sql.UserSession(uid="alice", admin_uid="admin")
+
+    async def is_active(uid: str) -> bool:
+        if uid == "admin":
+            raise ldap.UnavailableError("down")
+        return False
+
+    monkeypatch.setattr("atr.ldap.is_active", is_active)
+    deleted = mock.AsyncMock()
+    monkeypatch.setattr("atr.sessions.deleted_or_banned", deleted)
+
+    with pytest.raises(base.ASFQuartException):
+        await sessions.account_check(user_session, 123.0)
+
+    deleted.assert_awaited_once_with("alice")
+
+
+async def test_account_check_saves_timestamp_when_active(monkeypatch):
+    user_session = sql.UserSession(uid="alice")
+    monkeypatch.setattr("atr.ldap.is_active", mock.AsyncMock(return_value=True))
+    save = mock.AsyncMock()
+    monkeypatch.setattr("asfquart.APP", types.SimpleNamespace(sessions=types.SimpleNamespace(save=save)))
+
+    await sessions.account_check(user_session, 123.0)
+
+    save.assert_awaited_once()
+    assert user_session.last_account_check == 123.0
+
+
+async def test_create_logs_auth_success(store, monkeypatch):
+    events: list[tuple[str, str | None]] = []
+    monkeypatch.setattr("atr.log.auth_success", lambda type, asfuid=None: events.append((type, asfuid)))
+
+    await store.create(_hsid(), {"uid": "alice"})
+
+    assert events == [("oauth", "alice")]
 
 
 async def test_create_maps_pmcs_to_member_committees(store):

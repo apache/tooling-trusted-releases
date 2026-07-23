@@ -59,7 +59,6 @@ import atr.errors as errors
 import atr.filters as filters
 import atr.form as form
 import atr.jwtoken as jwtoken
-import atr.ldap as ldap
 import atr.log as log
 import atr.manager as manager
 import atr.models.sql as sql
@@ -539,30 +538,9 @@ def _app_setup_request_lifecycle(app: base.QuartApp) -> None:
         # Check if session has a check timestamp
         last_check = session.last_account_check
         current_time = time.time()
-        uid = session.uid
 
         if last_check is None or (current_time - last_check > account_check_interval):
-            admin_uid = session.admin_uid
-
-            if isinstance(admin_uid, str) and bool(admin_uid):
-                user_active, admin_active = await asyncio.gather(
-                    ldap.is_active(uid),
-                    ldap.is_active(admin_uid),
-                )
-                if not admin_active:
-                    await sessions.deleted_or_banned(admin_uid)
-                    raise base.ASFQuartException("Account is disabled", errorcode=401)
-            else:
-                user_active = await ldap.is_active(uid)
-            if not user_active:
-                await sessions.deleted_or_banned(uid)
-                raise base.ASFQuartException("Account is disabled", errorcode=401)
-
-            session.last_account_check = current_time
-            await asfquart.APP.sessions.save(session, {"last_account_check"})
-
-        if last_check is None:
-            log.auth_success("oauth", uid)
+            await sessions.account_check(session, current_time)
 
     @app.after_request
     async def log_request(response: quart.Response) -> quart.Response:
