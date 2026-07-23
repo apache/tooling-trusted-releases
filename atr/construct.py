@@ -111,6 +111,13 @@ class _VoteValues(TypedDict):
     YOUR_FULL_NAME: str
 
 
+ANNOUNCE_SUBJECT_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_AnnounceSubjectValues.__required_keys__)
+ANNOUNCE_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_AnnounceValues.__required_keys__)
+CHECKLIST_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_ChecklistValues.__required_keys__)
+FINISH_VOTE_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_FinishVoteValues.__required_keys__)
+VOTE_SUBJECT_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_VoteSubjectValues.__required_keys__)
+VOTE_VARIABLE_NAMES: Final[frozenset[str]] = frozenset(_VoteValues.__required_keys__)
+
 TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "ATR_TALLY": "Vote tally block - URL, ballots, counts",
     "BUG_DATABASE": "Bug database URL",
@@ -238,7 +245,11 @@ async def announce_release_subject_and_body(
         "YOUR_ASF_ID": options.asfuid,
         "YOUR_FULL_NAME": options.fullname,
     }
-    subject = _substitute(subject, values, "announce_subject")
+    subject_values: _AnnounceSubjectValues = {
+        "PROJECT_NAME": project_display_name,
+        "VERSION": str(options.version_key),
+    }
+    subject = _substitute(subject, subject_values, "announce_subject")
     body = _substitute(body, values, "announce")
     return subject, body
 
@@ -253,11 +264,11 @@ async def announce_release_subject_default(project_key: safe.ProjectKey) -> str:
 
 
 def announce_subject_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_AnnounceSubjectValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(ANNOUNCE_SUBJECT_VARIABLE_NAMES)]
 
 
 def announce_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_AnnounceValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(ANNOUNCE_VARIABLE_NAMES)]
 
 
 def checklist_body(
@@ -291,7 +302,7 @@ def checklist_body(
 
 
 def checklist_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_ChecklistValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(CHECKLIST_VARIABLE_NAMES)]
 
 
 def finish_vote_body(body: str, values: _FinishVoteValues) -> str:
@@ -299,7 +310,7 @@ def finish_vote_body(body: str, values: _FinishVoteValues) -> str:
 
 
 def finish_vote_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_FinishVoteValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(FINISH_VOTE_VARIABLE_NAMES)]
 
 
 def release_notification(
@@ -455,12 +466,17 @@ def template_hash(template: str) -> str:
     return hashlib.sha256(template.encode()).hexdigest()
 
 
+def unknown_template_variables(text: str, names: frozenset[str]) -> list[str]:
+    found = re.findall(r"\{\{([A-Za-z0-9_]+)\}\}", text)
+    return sorted({name for name in found if name not in names})
+
+
 def vote_subject_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_VoteSubjectValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(VOTE_SUBJECT_VARIABLE_NAMES)]
 
 
 def vote_template_variables() -> list[tuple[str, str]]:
-    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(_VoteValues.__required_keys__)]
+    return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(VOTE_VARIABLE_NAMES)]
 
 
 def _podling_disclaimer(project: sql.Project, committee: sql.Committee) -> str:

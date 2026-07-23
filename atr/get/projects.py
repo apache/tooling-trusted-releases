@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Literal
+from typing import Any, Literal
 
 import asfquart.base as base
 import htpy
@@ -44,6 +44,7 @@ import atr.models.sql as sql
 import atr.post as post
 import atr.registry as registry
 import atr.render as render
+import atr.sessions as sessions
 import atr.shared as shared
 import atr.template as template
 import atr.user as user
@@ -562,6 +563,15 @@ def _embargoed_button_badges(release: sql.Release) -> list[htm.Element]:
     return [htm.span(".badge.text-bg-danger.ms-2")["Embargoed"]]
 
 
+def _flash_or_stored(flash_error_data: dict[str, Any], field_name: str, stored: str) -> str:
+    for key in (field_name, f"!{field_name}"):
+        datum = flash_error_data.get(key)
+        if datum is not None:
+            original = datum.get("original")
+            return original if isinstance(original, str) else stored
+    return stored
+
+
 async def _generate_tabs(
     can_edit_metadata: bool,
     can_edit_policy: bool,
@@ -633,7 +643,7 @@ async def _generate_tabs(
 
 def _input_with_variables(
     field_name: str,
-    default_value: str,
+    value: str,
     template_variables: list[tuple[str, str]],
     documentation: str | None = None,
 ) -> htm.Element:
@@ -641,7 +651,7 @@ def _input_with_variables(
         f"#{field_name}.form-control.font-monospace",
         type="text",
         name=field_name,
-        value=default_value,
+        value=value,
     )
 
     variable_rows = []
@@ -917,16 +927,22 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
         htm.h3(".mb-0")["Release policy - Finish options"]
     ]
 
+    flash_error_data = await sessions.form_error_pop(quart.request.path)
+
     announce_release_subject_widget = _input_with_variables(
         field_name="announce_release_subject",
-        default_value=project.policy_announce_release_subject or "",
+        value=_flash_or_stored(
+            flash_error_data, "announce_release_subject", project.policy_announce_release_subject or ""
+        ),
         template_variables=construct.announce_subject_template_variables(),
         documentation="Subject line template for announcement emails.",
     )
 
     announce_release_template_widget = _textarea_with_variables(
         field_name="announce_release_template",
-        default_value=project.policy_announce_release_template or "",
+        value=_flash_or_stored(
+            flash_error_data, "announce_release_template", project.policy_announce_release_template or ""
+        ),
         template_variables=construct.announce_template_variables(),
         rows=18,
         documentation="Email template for messages to announce a finished release.",
@@ -955,6 +971,7 @@ async def _render_finish_form(project: sql.Project) -> htm.Element:
                 "email_to": _recipient_grid_widget(project, sql.RecipientAction.ANNOUNCE),
             },
             skip=["email_cc", "email_bcc", *(["archive_prior_release"] if not project.cycle_match else [])],
+            flash_error_data=flash_error_data,
         )
     return card.collect()
 
@@ -1451,6 +1468,8 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
         htm.h3(".mb-0")["Release policy - Vote options"]
     ]
 
+    flash_error_data = await sessions.form_error_pop(quart.request.path)
+
     defaults_dict = {
         "project_key": str(project.key),
         "vote_mode": project.policy_vote_mode,
@@ -1464,7 +1483,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
 
     release_checklist_widget = _textarea_with_variables(
         field_name="release_checklist",
-        default_value=project.policy_release_checklist or "",
+        value=_flash_or_stored(flash_error_data, "release_checklist", project.policy_release_checklist or ""),
         template_variables=construct.checklist_template_variables(),
         rows=3,
         documentation="Markdown text describing how to test release candidates.",
@@ -1472,21 +1491,21 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
 
     start_vote_subject_widget = _input_with_variables(
         field_name="start_vote_subject",
-        default_value=project.policy_start_vote_subject or "",
+        value=_flash_or_stored(flash_error_data, "start_vote_subject", project.policy_start_vote_subject or ""),
         template_variables=construct.vote_subject_template_variables(),
         documentation="Subject line template for vote emails.",
     )
 
     start_vote_template_widget = _textarea_with_variables(
         field_name="start_vote_template",
-        default_value=project.policy_start_vote_template or "",
+        value=_flash_or_stored(flash_error_data, "start_vote_template", project.policy_start_vote_template or ""),
         template_variables=construct.vote_template_variables(),
         rows=18,
         documentation="Email template for messages to start a vote on a release.",
     )
     finish_vote_template_widget = _textarea_with_variables(
         field_name="finish_vote_template",
-        default_value=project.policy_finish_vote_template or "",
+        value=_flash_or_stored(flash_error_data, "finish_vote_template", project.policy_finish_vote_template or ""),
         template_variables=construct.finish_vote_template_variables(),
         rows=18,
         documentation="Email template for vote resolution messages.",
@@ -1513,6 +1532,7 @@ async def _render_vote_form(project: sql.Project) -> htm.Element:
                 "vote_mode": vote_mode_widget,
             },
             skip=["email_cc", "email_bcc"],
+            flash_error_data=flash_error_data,
         )
     return card.collect()
 
@@ -1547,7 +1567,7 @@ def _security_contact_radios(project: sql.Project) -> htm.Element:
 
 def _textarea_with_variables(
     field_name: str,
-    default_value: str,
+    value: str,
     template_variables: list[tuple[str, str]],
     rows: int = 10,
     documentation: str | None = None,
@@ -1556,7 +1576,7 @@ def _textarea_with_variables(
         f"#{field_name}.form-control.font-monospace",
         name=field_name,
         rows=str(rows),
-    )[default_value]
+    )[value]
 
     variable_rows = []
     for name, description in template_variables:

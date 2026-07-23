@@ -141,18 +141,18 @@ def flash_error_data(
 def flash_error_summary(errors: list[pydantic_core.ErrorDetails], flash_data: dict[str, Any]) -> markupsafe.Markup:
     div = htm.Block(htm.div, classes=".atr-initial")
     div.text(f"Please fix the following {util.plural(len(errors), 'issue', include_count=False)}:")
+    error_data = [(name, datum) for name, datum in flash_data.items() if "msg" in datum]
     with div.block(htm.ul, classes=".mt-2.mb-0") as ul:
-        for i, (field_name, flash_datum) in enumerate(flash_data.items()):
+        for i, (field_name, flash_datum) in enumerate(error_data):
             if i > 9:
                 ul.li["And more, not shown here..."]
                 break
-            if "msg" in flash_datum:
-                label = flash_datum["label"]
-                jump = htm.a(href=f"#{field_name}", class_="ms-1 text-decoration-none small")["\u2193"]
-                if label == "*":
-                    ul.li[flash_datum["msg"], " ", jump]
-                else:
-                    ul.li[htm.strong[label], ": ", flash_datum["msg"], " ", jump]
+            label = flash_datum["label"]
+            jump = htm.a(href=f"#{field_name}", class_="ms-1 text-decoration-none small")["\u2193"]
+            if label == "*":
+                ul.li[flash_datum["msg"], " ", jump]
+            else:
+                ul.li[htm.strong[label], ": ", flash_datum["msg"], " ", jump]
     summary = div.collect()
     return markupsafe.Markup(summary)
 

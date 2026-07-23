@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.calver as calver
+import atr.construct as construct
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -107,6 +108,14 @@ def _validate_display_name(val: str) -> str:
             raise ValueError(f"Name word {display_name_word!r} must be in PascalCase, camelCase, or mod_ case.")
 
     return display_name
+
+
+def _validate_template_variables(value: str, names: frozenset[str]) -> str:
+    unknown = construct.unknown_template_variables(value, names)
+    if unknown:
+        noun = util.plural(len(unknown), "variable", include_count=False)
+        raise ValueError(f"Unknown template {noun}: {', '.join(unknown)}")
+    return value
 
 
 class AddProjectForm(form.Form):
@@ -213,6 +222,26 @@ class VotePolicyForm(form.Form):
         "Finish vote template",
         widget=form.Widget.CUSTOM,
     )
+
+    @pydantic.field_validator("finish_vote_template")
+    @classmethod
+    def validate_finish_vote_template(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.FINISH_VOTE_VARIABLE_NAMES)
+
+    @pydantic.field_validator("release_checklist")
+    @classmethod
+    def validate_release_checklist(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.CHECKLIST_VARIABLE_NAMES)
+
+    @pydantic.field_validator("start_vote_subject")
+    @classmethod
+    def validate_start_vote_subject(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.VOTE_SUBJECT_VARIABLE_NAMES)
+
+    @pydantic.field_validator("start_vote_template")
+    @classmethod
+    def validate_start_vote_template(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.VOTE_VARIABLE_NAMES)
 
     @pydantic.model_validator(mode="after")
     def validate_vote_fields(self) -> VotePolicyForm:
@@ -413,6 +442,16 @@ class FinishPolicyForm(form.Form):
     def validate_download_path_suffix(cls, val: str) -> str:
         validation.validate_download_path_suffix(val)
         return val
+
+    @pydantic.field_validator("announce_release_subject")
+    @classmethod
+    def validate_announce_release_subject(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES)
+
+    @pydantic.field_validator("announce_release_template")
+    @classmethod
+    def validate_announce_release_template(cls, val: str) -> str:
+        return _validate_template_variables(val, construct.ANNOUNCE_VARIABLE_NAMES)
 
 
 class TrustedPublishingPolicyForm(form.Form):
