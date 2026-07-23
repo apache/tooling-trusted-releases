@@ -378,6 +378,13 @@ class EditVersionSchemeForm(form.Form):
 class FinishPolicyForm(form.Form):
     variant: FINISH = form.value(FINISH)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+    download_path_suffix: str = form.label(
+        "Default download path suffix",
+        "Pre-fills the SVN publish path. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}."
+        " Leave empty for the default (project root for a top-level project,"
+        " {{PROJECT_KEY}}-{{VERSION}} for a subproject).",
+        default="",
+    )
     archive_prior_release: form.Bool = form.label(
         "Allow auto-archive",
         "If enabled, allows a new release to auto archive the prior release in the cycle",
@@ -400,13 +407,6 @@ class FinishPolicyForm(form.Form):
     )
     email_cc: form.StrList = form.label("Default CC")
     email_bcc: form.StrList = form.label("Default BCC")
-    download_path_suffix: str = form.label(
-        "Default download path suffix",
-        "Pre-fills the SVN publish path. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}."
-        " Leave empty for the default (project root for a top-level project,"
-        " {{PROJECT_KEY}}-{{VERSION}} for a subproject).",
-        default="",
-    )
 
     @pydantic.field_validator("download_path_suffix", mode="before")
     @classmethod
