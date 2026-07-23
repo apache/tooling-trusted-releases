@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import urllib.parse
 from typing import Final, Literal
 
@@ -39,8 +40,9 @@ _DOWNLOAD_PAGE_KEPT: Final = (
     "The project already received a different download page URL, {url}, before this form was submitted."
     " The existing URL has been kept."
 )
-_DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 5
-_DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=30)
+_DOWNLOAD_PAGE_OVERALL_TIMEOUT: Final = 30
+_DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 3
+_DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=10, connect=5)
 _REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
 
 
@@ -131,8 +133,17 @@ async def selected(
                 subject_template_hash=announce_form.subject_template_hash,
                 email_cc=announce_form.email_cc,
                 email_bcc=announce_form.email_bcc,
+                acknowledge_unreachable=announce_form.announce_unreachable,
                 auto_archive_prior=announce_form.auto_archive,
             )
+    except storage.PropagationUnreachableError as e:
+        return await session.redirect(
+            get.announce.selected,
+            error=f"{e} To announce anyway, tick the confirmation checkbox now shown in the form and submit it again.",
+            project_key=str(project_key),
+            version_key=str(version_key),
+            unreachable="true",
+        )
     except storage.AccessError as e:
         return await session.redirect(
             get.announce.selected, error=str(e), project_key=str(project_key), version_key=str(version_key)
@@ -150,8 +161,9 @@ async def _download_page_error(url: str) -> str | None:
     if config.is_dev_environment():
         return None
     try:
-        async with util.create_secure_session(timeout=_DOWNLOAD_PAGE_TIMEOUT, public=True) as http_session:
-            return await _download_page_fetch_error(http_session, url)
+        async with asyncio.timeout(_DOWNLOAD_PAGE_OVERALL_TIMEOUT):
+            async with util.create_secure_session(timeout=_DOWNLOAD_PAGE_TIMEOUT, public=True) as http_session:
+                return await _download_page_fetch_error(http_session, url)
     except (aiohttp.ClientError, TimeoutError) as e:
         return f"The download page URL could not be checked: {e}"
 

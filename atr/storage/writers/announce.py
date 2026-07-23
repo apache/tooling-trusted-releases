@@ -123,6 +123,7 @@ class ReleaseManager(CommitteeParticipant):
         email_cc: list[str] | None = None,
         email_bcc: list[str] | None = None,
         *,
+        acknowledge_unreachable: bool = False,
         auto_archive_prior: bool = False,
     ) -> None:
         unfinished_dir: str = ""
@@ -243,7 +244,7 @@ class ReleaseManager(CommitteeParticipant):
             except ValueError as exc:
                 log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
             else:
-                await self.__warn_publication_artifacts(unfinished_path, target, public_url)
+                await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
 
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
@@ -420,23 +421,49 @@ class ReleaseManager(CommitteeParticipant):
         )
         return None
 
-    async def __warn_publication_artifacts(
+    async def __check_publication_artifacts(
         self,
         unfinished_path: safe.StatePath,
         target: util.SvnPublishTarget,
         public_url: str,
+        acknowledge_unreachable: bool,
     ) -> None:
         rel_paths = await self.__artifact_rel_paths(unfinished_path)
         if not rel_paths:
             return
         summary = await util.check_propagation(target, public_url, rel_paths)
-        if summary.reachable != summary.total:
-            first = summary.first_failure
-            detail = first.rel_path if (first is not None) else "unknown"
-            url = first.public_url if (first is not None) else public_url
+        if summary.unprobed:
             log.warning(
-                f"SVN publication artifact check incomplete for {public_url}; first failing path: {detail}; URL: {url}"
+                f"Propagation check for {public_url} probed {summary.total} of {len(rel_paths)} artifacts;"
+                f" {summary.unprobed} were not checked"
             )
+        if missing := summary.missing:
+            raise storage.AccessError(
+                f"This release cannot be announced yet, because only {summary.reachable} of {summary.total}"
+                f" checked artifacts are available on the download server; the first missing artifact is"
+                f" {missing[0].public_url}. Publication may still be propagating, so please try again later.",
+                status=409,
+            )
+        if blocked := summary.blocked:
+            raise storage.AccessError(
+                f"This release cannot be announced, because {len(blocked)} of {summary.total} checked artifacts"
+                f" are not publicly accessible; the first is {blocked[0].public_url} ({blocked[0].error}).",
+                status=409,
+            )
+        unreachable = summary.unreachable
+        if not unreachable:
+            return
+        first = unreachable[0]
+        if acknowledge_unreachable:
+            log.warning(
+                f"Announcing despite an unreachable download server; first failure: {first.public_url} ({first.error})"
+            )
+            return
+        raise storage.PropagationUnreachableError(
+            f"The download server could not be checked ({first.error}). It may be experiencing an outage;"
+            " see https://status.apache.org/ for its status.",
+            status=503,
+        )
 
     async def __artifact_rel_paths(self, preview_path: safe.StatePath) -> list[str]:
         rel_paths: list[str] = []
@@ -445,7 +472,7 @@ class ReleaseManager(CommitteeParticipant):
             if analysis.is_artifact(rel_str):
                 rel_paths.append(rel_str)
         rel_paths.sort()
-        return rel_paths[: util.MAX_PROPAGATION_ARTIFACTS]
+        return rel_paths
 
     def __download_path_suffix_from_task(self, task: sql.Task) -> safe.RelPath | None:
         candidate = task.task_args.get("download_path_suffix")

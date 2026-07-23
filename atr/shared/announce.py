@@ -47,6 +47,12 @@ class AnnounceForm(form.Form):
         default=False,
     )
     auto_archive_release: str = form.label("Version to archive", widget=form.Widget.STATIC, default="")
+    announce_unreachable: form.Bool = form.label(
+        "Announce despite an unreachable download server",
+        "If set, the announcement proceeds even though the download server could not be checked.",
+        widget=form.Widget.CHECKBOX,
+        default=False,
+    )
     confirm_announce: Literal["CONFIRM"] = form.label(
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",

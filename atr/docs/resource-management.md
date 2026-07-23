@@ -53,7 +53,7 @@ From [`config`](/ref/atr/config.py): `MAX_CONTENT_LENGTH` (512 MB) caps declared
 
 As enforced, the defaults (100 a minute, 1000 an hour) apply per endpoint, keyed by web session user or client address, in process memory, and reset by restarts. Announce and vote start get five an hour, vote cast 60, and key, token, and similar endpoints ten. API wide 500 an hour and website token route limits are declared but appear to be unenforced. Sessions last 72 hours.
 
-Cached checks deduplicate on inputs hashes, and recurring tasks replace queued scheduled instances. Other caps include pagination at 1000 rows, offset at 1,000,000, file viewer at 512 KB, RAT reports at 100 per category, propagation probes at 24 artifacts, notifications at 1024 characters, ignore patterns at 128 characters without backtracking, and npm descriptors at 512 KB.
+Cached checks deduplicate on inputs hashes, and recurring tasks replace queued scheduled instances. Other caps include pagination at 1000 rows, offset at 1,000,000, file viewer at 512 KB, RAT reports at 100 per category, propagation probes at 50 artifacts, notifications at 1024 characters, ignore patterns at 128 characters without backtracking, and npm descriptors at 512 KB.
 
 ## Capacity
 

@@ -18,6 +18,7 @@ from typing import Literal
 
 import htpy
 import markupsafe
+import quart
 
 # TODO: Improve upon the routes_release pattern
 import atr.blueprints.get as get
@@ -270,6 +271,8 @@ async def _render_announce_form(
     skip = ["email_cc", "email_bcc"]
     if release.project.download_page:
         skip.append("download_page")
+    if not quart.request.args.get("unreachable"):
+        skip.append("announce_unreachable")
     if not prior_release_version:
         # Prior release version will only be set if the options for archival are True *and* we found a release
         skip.extend(["auto_archive", "auto_archive_release"])

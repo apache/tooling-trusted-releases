@@ -19,12 +19,14 @@ import contextlib
 from types import SimpleNamespace
 
 import pytest
+import werkzeug.exceptions as exceptions
 
 import atr.api as api
 import atr.construct as construct
 import atr.db as db
 import atr.models as models
 import atr.models.safe as safe
+import atr.storage as storage
 
 
 class MockQuery:
@@ -77,6 +79,14 @@ async def test_release_announce_supplied_body_passes_through(monkeypatch) -> Non
 
     assert (body, fullname) == ("Custom body", "Example User")
     assert calls == {}
+
+
+def test_release_announce_unreachable_translates_to_service_unavailable() -> None:
+    error = storage.PropagationUnreachableError("The download server could not be checked", status=503)
+
+    exc = api._http_exception_from_storage_access_error(error)
+
+    assert isinstance(exc, exceptions.ServiceUnavailable)
 
 
 def _args(body: str | None = None, revision: safe.RevisionNumber | None = None) -> models.api.ReleaseAnnounceArgs:

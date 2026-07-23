@@ -113,7 +113,9 @@ PRIVATE_KEY_UPLOAD_WARNING: Final[str] = (
 USER_TESTS_ADDRESS: Final[str] = "user-tests@tooling.apache.org"
 LISTS_APACHE_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
 CAP_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30, connect=10)
-MAX_PROPAGATION_ARTIFACTS: Final[int] = 24
+PROPAGATION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=10, connect=5)
+PROPAGATION_PROBE_DEADLINE: Final[int] = 15
+MAX_PROPAGATION_ARTIFACTS: Final[int] = 50
 EXPECTED_DEFAULT_TLS_CHECK_HOSTNAME: Final[bool] = True
 EXPECTED_DEFAULT_TLS_MINIMUM_VERSION: Final[ssl.TLSVersion] = ssl.TLSVersion.TLSv1_2
 EXPECTED_DEFAULT_TLS_VERIFY_MODE: Final[ssl.VerifyMode] = ssl.CERT_REQUIRED
@@ -166,6 +168,14 @@ class PropagationOutcome:
     status: int | None
     error: str | None
 
+    @property
+    def missing(self) -> bool:
+        return self.status in {404, 410}
+
+    @property
+    def transient(self) -> bool:
+        return (self.status is None) or (self.status == 429) or (500 <= self.status < 600)
+
 
 @dataclasses.dataclass(frozen=True)
 class PropagationSummary:
@@ -173,13 +183,19 @@ class PropagationSummary:
     total: int
     reachable: int
     outcomes: list[PropagationOutcome]
+    unprobed: int = 0
 
     @property
-    def first_failure(self) -> PropagationOutcome | None:
-        for outcome in self.outcomes:
-            if not outcome.ok:
-                return outcome
-        return None
+    def blocked(self) -> list[PropagationOutcome]:
+        return [outcome for outcome in self.outcomes if not (outcome.ok or outcome.missing or outcome.transient)]
+
+    @property
+    def missing(self) -> list[PropagationOutcome]:
+        return [outcome for outcome in self.outcomes if outcome.missing]
+
+    @property
+    def unreachable(self) -> list[PropagationOutcome]:
+        return [outcome for outcome in self.outcomes if (not outcome.ok) and outcome.transient]
 
 
 class SvnPublishTarget(enum.Enum):
@@ -480,9 +496,10 @@ async def check_propagation(
     rel_paths: Sequence[str],
 ) -> PropagationSummary:
     capped = list(rel_paths[:MAX_PROPAGATION_ARTIFACTS])
+    unprobed = len(rel_paths) - len(capped)
     if not capped:
         return PropagationSummary(target=target, total=0, reachable=0, outcomes=[])
-    async with create_secure_session(timeout=LISTS_APACHE_TIMEOUT) as http_session:
+    async with create_secure_session(timeout=PROPAGATION_TIMEOUT) as http_session:
         outcomes = await asyncio.gather(
             *[
                 _propagation_probe(http_session, rel_path, _propagation_public_url(public_base_url, rel_path))
@@ -490,7 +507,9 @@ async def check_propagation(
             ]
         )
     reachable = sum(1 for outcome in outcomes if outcome.ok)
-    return PropagationSummary(target=target, total=len(outcomes), reachable=reachable, outcomes=outcomes)
+    return PropagationSummary(
+        target=target, total=len(outcomes), reachable=reachable, outcomes=outcomes, unprobed=unprobed
+    )
 
 
 def checker_display_name(checker: str) -> str:
@@ -1808,16 +1827,17 @@ async def _propagation_probe(
     public_url: str,
 ) -> PropagationOutcome:
     try:
-        async with http_session.head(public_url, allow_redirects=True) as resp:
-            status = resp.status
-            ok = 200 <= status < 300
-            return PropagationOutcome(
-                rel_path=rel_path,
-                public_url=public_url,
-                ok=ok,
-                status=status,
-                error=None if ok else f"HTTP {status}",
-            )
+        async with asyncio.timeout(PROPAGATION_PROBE_DEADLINE):
+            async with http_session.head(public_url, allow_redirects=True) as resp:
+                status = resp.status
+                ok = 200 <= status < 300
+                return PropagationOutcome(
+                    rel_path=rel_path,
+                    public_url=public_url,
+                    ok=ok,
+                    status=status,
+                    error=None if ok else f"HTTP {status}",
+                )
     except aiohttp.ClientError as exc:
         return PropagationOutcome(rel_path=rel_path, public_url=public_url, ok=False, status=None, error=str(exc))
     except TimeoutError as exc:

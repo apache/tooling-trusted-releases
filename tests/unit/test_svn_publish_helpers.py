@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import asyncio
+
 import pytest
 
 import atr.config as config
@@ -51,6 +53,57 @@ class FakeSession:
     def head(self, url: str, **kwargs: object) -> FakeResponse:
         self.head_urls.append(url)
         return FakeResponse(self.head_status)
+
+
+class HangingResponse:
+    async def __aenter__(self) -> "HangingResponse":
+        await asyncio.sleep(60)
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
+
+
+class MixedSession:
+    async def __aenter__(self) -> "MixedSession":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
+
+    def head(self, url: str, **kwargs: object) -> FakeResponse | HangingResponse:
+        if "hang" in url:
+            return HangingResponse()
+        return FakeResponse(404)
+
+
+async def test_check_propagation_caps_probes(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FakeSession(200)
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: session)
+
+    summary = await util.check_propagation(
+        util.SvnPublishTarget.RELEASE,
+        f"{constants.DOWNLOADS_APACHE_URL}/project",
+        [f"artifact-{i}.tar.gz" for i in range(util.MAX_PROPAGATION_ARTIFACTS + 1)],
+    )
+
+    assert summary.total == util.MAX_PROPAGATION_ARTIFACTS
+    assert summary.unprobed == 1
+    assert summary.reachable == util.MAX_PROPAGATION_ARTIFACTS
+
+
+async def test_check_propagation_preserves_results_past_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(util, "create_secure_session", lambda timeout=None: MixedSession())
+    monkeypatch.setattr(util, "PROPAGATION_PROBE_DEADLINE", 0.05)
+
+    summary = await util.check_propagation(
+        util.SvnPublishTarget.RELEASE,
+        f"{constants.DOWNLOADS_APACHE_URL}/project",
+        ["hang.tar.gz", "miss.tar.gz"],
+    )
+
+    assert [outcome.rel_path for outcome in summary.missing] == ["miss.tar.gz"]
+    assert [outcome.rel_path for outcome in summary.unreachable] == ["hang.tar.gz"]
 
 
 async def test_check_propagation_production_public_url(monkeypatch: pytest.MonkeyPatch) -> None:

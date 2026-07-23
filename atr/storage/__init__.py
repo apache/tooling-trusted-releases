@@ -74,6 +74,9 @@ class AccessError(RuntimeError):
         super().__init__(message)
 
 
+class PropagationUnreachableError(AccessError): ...
+
+
 # Read
 
 

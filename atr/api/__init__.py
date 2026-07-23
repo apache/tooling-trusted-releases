@@ -2113,6 +2113,8 @@ def _http_exception_from_storage_access_error(error: storage.AccessError) -> exc
         return exceptions.Conflict(message)
     if status == 502:
         return exceptions.BadGateway(message)
+    if status == 503:
+        return exceptions.ServiceUnavailable(message)
     return exceptions.InternalServerError(message)
 
 
