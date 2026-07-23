@@ -117,6 +117,72 @@ async def test_publish_to_svn_enqueues_task(sqlite_sessionmaker, monkeypatch: py
         assert "target_url" not in task.task_args
 
 
+async def test_publish_to_svn_execute_heals_existing_path_published_by_same_user(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    publish_release = mock.AsyncMock(
+        side_effect=release_writer.svn.CommandExecutionError(1, "svn: E160020: path '/project/file' already exists")
+    )
+    monkeypatch.setattr(release_writer.svn, "publish_release", publish_release)
+    info = release_writer.svn.SvnInfo(
+        path="project",
+        name="project",
+        url=f"{INTERNAL_PUBLISH_URL}/project",
+        relative_url="^/project",
+        repository_root=INTERNAL_PUBLISH_URL,
+        revision="43",
+        last_changed_author="alice",
+        last_changed_rev="42",
+        last_changed_date="2026-05-01 00:00:00 +0000",
+    )
+    monkeypatch.setattr(release_writer.svn.SvnInfo, "from_url", mock.AsyncMock(return_value=info))
+    provenance = mock.AsyncMock(return_value=True)
+    monkeypatch.setattr(release_writer.svn, "publish_revision_matches", provenance)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data)
+        writer = _release_writer(data)
+
+        result = await writer.publish_to_svn_execute(
+            args.SvnPublish(
+                asf_uid="alice",
+                project_key="project",
+                version_key="1.0.0",
+                revision_number="00001",
+            )
+        )
+
+        assert isinstance(result, results.SvnPublish)
+        assert result.svn_revision == 42
+        assert provenance.await_args.args[1] == "alice"
+        assert "Project: project" in provenance.await_args.args[2]
+
+
+async def test_publish_to_svn_execute_maps_connection_error(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    publish_release = mock.AsyncMock(
+        side_effect=release_writer.svn.CommandExecutionError(
+            1, f"svn: E170013: Unable to connect to a repository at URL '{INTERNAL_PUBLISH_URL}/project'"
+        )
+    )
+    monkeypatch.setattr(release_writer.svn, "publish_release", publish_release)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data)
+        writer = _release_writer(data)
+
+        with pytest.raises(datatypes.FailedError, match="could not be reached"):
+            await writer.publish_to_svn_execute(
+                args.SvnPublish(
+                    asf_uid="alice",
+                    project_key="project",
+                    version_key="1.0.0",
+                    revision_number="00001",
+                )
+            )
+
+
 async def test_publish_to_svn_execute_maps_existing_svn_path(
     sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -125,6 +191,8 @@ async def test_publish_to_svn_execute_maps_existing_svn_path(
         side_effect=release_writer.svn.CommandExecutionError(1, "svn: E160020: path '/project/file' already exists")
     )
     monkeypatch.setattr(release_writer.svn, "publish_release", publish_release)
+    from_url = mock.AsyncMock(side_effect=release_writer.svn.CommandExecutionError(1, "svn: E170000: not found"))
+    monkeypatch.setattr(release_writer.svn.SvnInfo, "from_url", from_url)
     async with sqlite_sessionmaker() as data:
         await _seed_preview_release(data)
         writer = _release_writer(data)

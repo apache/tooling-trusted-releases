@@ -224,18 +224,17 @@ class ReleaseManager(CommitteeParticipant):
                 caller_data=self.__data,
             )
             if completed_publish is None:
-                log.warning(
-                    f"SVN publication has not completed for {project_key!s} {version_key!s} "
-                    f"{preview_revision_number!s}; checking configured target"
+                raise storage.AccessError(
+                    "This release cannot be announced until it has been published to SVN",
+                    status=409,
                 )
-            else:
-                effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
-                published_revision = self.__publish_revision_from_task(completed_publish)
-                if published_revision is None:
-                    log.warning(
-                        f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
-                        "is recorded but has no revision number"
-                    )
+            effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
+            published_revision = self.__publish_revision_from_task(completed_publish)
+            if published_revision is None:
+                log.warning(
+                    f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
+                    "is recorded but has no revision number"
+                )
             try:
                 target = util.svn_publish_target()
                 public_url = util.publication_check_url(

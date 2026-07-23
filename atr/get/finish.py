@@ -38,6 +38,7 @@ import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
 import atr.models.args as args
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -89,6 +90,13 @@ async def selected(
             announce_msg = f"This release cannot be announced until the following distributions have been recorded: {
                 ', '.join(missing)
             }"
+
+    if (not announce_msg) and config.get().SVN_PUBLISH_URL and (release.latest_revision_number is not None):
+        completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
+            project_key, version_key, release.safe_latest_revision_number
+        )
+        if completed_publish is None:
+            announce_msg = "This release cannot be announced until it has been published to SVN."
 
     return await _render_page(
         session=session,
@@ -280,37 +288,7 @@ async def _render_page(
         user.is_committee_member(release.committee, session.uid)
         or user.is_release_manager(release.committee, session.uid)
     ):
-        proj, ver, rev = release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
-        in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
-        completed = await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)
-        if (in_flight is None) and (completed is None):
-            download_path_suffix = ""
-            committee = release.project.committee
-            if committee is not None:
-                suffix = construct.resolve_download_path_suffix(
-                    template=release.project.policy_download_path_suffix,
-                    project_key=release.project.key,
-                    version=release.version,
-                    is_top_level=(release.project.key == util.unwrap(committee.key)),
-                )
-                download_path_suffix = str(suffix) if suffix is not None else ""
-            page.h2["Publish to SVN"]
-            if release.is_embargoed:
-                page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
-                    "This is an expedited security release, and is embargoed. Publishing to SVN copies the"
-                    " release files to the public distribution area, which breaks the embargo. Please ensure"
-                    " that you have the authority to lift the embargo before publishing. This action is not"
-                    " reversible."
-                ]
-            await form.render_block(
-                page,
-                shared.finish.PublishToSvnForm,
-                defaults={
-                    "download_path_suffix": download_path_suffix,
-                    "revision_number": release.latest_revision_number,
-                },
-                submit_label="Publish to SVN",
-            )
+        await _render_svn_publish(page, release)
 
     if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]
@@ -401,6 +379,58 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
     return card
 
 
+async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
+    proj = release.safe_project_key
+    ver = release.safe_version_key
+    rev = release.safe_latest_revision_number
+    page.h2["Publish to SVN"]
+    completed = await interaction.release_completed_svn_publish_task_for_revision(proj, ver, rev)
+    if completed is not None:
+        _render_svn_publish_completed(page, release, completed)
+        return
+    in_flight = await interaction.release_in_flight_svn_publish_task(proj, ver, rev)
+    if in_flight is not None:
+        page.div(".alert.alert-info.mb-4")[
+            htm.p["The release files are being published to SVN."],
+            htm.a(
+                ".btn.btn-primary",
+                href=util.as_url(selected, project_key=release.project.key, version_key=release.version),
+            )["Refresh"],
+        ]
+        return
+    failed = await interaction.release_latest_failed_svn_publish_task(proj, ver, rev)
+    if failed is not None:
+        page.div(".alert.alert-danger.mb-4")[
+            f"The most recent attempt to publish to SVN failed: {failed.error or 'unknown error'}"
+        ]
+    if release.is_embargoed:
+        page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
+            "This is an expedited security release, and is embargoed. Publishing to SVN copies the"
+            " release files to the public distribution area, which breaks the embargo. Please ensure"
+            " that you have the authority to lift the embargo before publishing. This action is not"
+            " reversible."
+        ]
+    await form.render_block(
+        page,
+        shared.finish.PublishToSvnForm,
+        defaults={
+            "download_path_suffix": _svn_download_path_default(release),
+            "revision_number": release.latest_revision_number,
+        },
+        submit_label="Publish to SVN",
+    )
+
+
+def _render_svn_publish_completed(page: htm.Block, release: sql.Release, completed: sql.Task) -> None:
+    revision = _svn_publish_revision(completed)
+    text = f"Published to SVN as r{revision}" if (revision is not None) else "Published to SVN"
+    url = _svn_publish_url(release, completed)
+    if url is None:
+        page.div(".alert.alert-success.mb-4")[text]
+        return
+    page.div(".alert.alert-success.mb-4")[text, " at ", htm.a(href=url)[url]]
+
+
 def _render_task(task: sql.Task) -> htm.Element:
     """Render a distribution task's details."""
     workflow_args: args.DistributionWorkflow = args.DistributionWorkflow.model_validate(task.task_args)
@@ -420,3 +450,44 @@ def _render_task(task: sql.Task) -> htm.Element:
             htm.summary[f"{task_date} {workflow_args.platform} ({workflow_args.package} {workflow_args.version})"],
             *[htm.p(".ms-4")[w] for w in workflow_message.split("\n")],
         ]
+
+
+def _svn_download_path_default(release: sql.Release) -> str:
+    committee = release.project.committee
+    if committee is None:
+        return ""
+    suffix = construct.resolve_download_path_suffix(
+        template=release.project.policy_download_path_suffix,
+        project_key=release.project.key,
+        version=release.version,
+        is_top_level=(release.project.key == util.unwrap(committee.key)),
+    )
+    return str(suffix) if suffix is not None else ""
+
+
+def _svn_publish_revision(completed: sql.Task) -> int | None:
+    result = completed.result
+    if isinstance(result, results.SvnPublish):
+        return result.svn_revision
+    if isinstance(result, dict):
+        candidate = result.get("svn_revision")
+        if isinstance(candidate, int):
+            return candidate
+    return None
+
+
+def _svn_publish_suffix(completed: sql.Task) -> safe.RelPath | None:
+    candidate = completed.task_args.get("download_path_suffix")
+    if isinstance(candidate, str) and candidate:
+        return safe.RelPath(candidate)
+    return None
+
+
+def _svn_publish_url(release: sql.Release, completed: sql.Task) -> str | None:
+    committee = release.project.committee
+    if committee is None:
+        return None
+    try:
+        return util.publication_check_url(committee, _svn_publish_suffix(completed), util.DownloadFile.METADATA)
+    except ValueError:
+        return None

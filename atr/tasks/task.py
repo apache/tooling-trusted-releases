@@ -19,8 +19,11 @@ from __future__ import annotations
 
 from typing import Final
 
+import atr.constants as constants
+import atr.log as log
 import atr.models.results as results
 import atr.models.sql as sql
+import atr.storage as storage
 
 QUEUED: Final = sql.TaskStatus.QUEUED
 ACTIVE: Final = sql.TaskStatus.ACTIVE
@@ -34,3 +37,56 @@ class Error(Exception):
     def __init__(self, message: str, *result: results.Results | None) -> None:
         self.message = message
         self.result = result
+
+
+def failure_message(
+    task_type: sql.TaskType,
+    project_key: str | None,
+    version_key: str | None,
+    revision_number: str | None,
+    primary_rel_path: str | None,
+    error: str,
+) -> str:
+    location_parts = []
+    if project_key:
+        location_parts.append(project_key)
+    if version_key:
+        location_parts.append(version_key)
+    if revision_number:
+        location_parts.append(f"r{revision_number}")
+    path_text = _truncate_single_line(primary_rel_path, 180)
+    parts = [f"{task_type.label} failed"]
+    if location_parts:
+        parts.append(f"for {' '.join(location_parts)}")
+    if path_text:
+        parts.append(f"({path_text})")
+    return f"{' '.join(parts)}: {_truncate_single_line(error, 500)}"
+
+
+async def notify_failure(
+    asf_uid: str | None,
+    task_type: sql.TaskType,
+    project_key: str | None,
+    version_key: str | None,
+    revision_number: str | None,
+    primary_rel_path: str | None,
+    error: str,
+) -> None:
+    if (not asf_uid) or (asf_uid == constants.SYSTEM_SERVICE_UID):
+        return
+    message = failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
+    try:
+        async with storage.write_as_user_service(asf_uid) as waus:
+            await waus.notifications_create(message, sql.NotificationLevel.ERROR)
+    except Exception:
+        log.exception("Failed to record failure notification for task")
+
+
+def _truncate_single_line(text: str | None, max_length: int) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    text = text.splitlines()[0]
+    if len(text) > max_length:
+        return text[: max_length - 3] + "..."
+    return text

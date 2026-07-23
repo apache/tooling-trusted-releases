@@ -43,7 +43,6 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.tasks.task as task
@@ -156,25 +155,6 @@ async def _execute_check_task(
     return handler_result
 
 
-async def _notify_task_failure(
-    asf_uid: str | None,
-    task_type: sql.TaskType,
-    project_key: str | None,
-    version_key: str | None,
-    revision_number: str | None,
-    primary_rel_path: str | None,
-    error: str,
-) -> None:
-    if (not asf_uid) or (asf_uid == constants.SYSTEM_SERVICE_UID):
-        return
-    message = _task_failure_message(task_type, project_key, version_key, revision_number, primary_rel_path, error)
-    try:
-        async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_create(message, sql.NotificationLevel.ERROR)
-    except Exception:
-        log.exception("Failed to record failure notification for task")
-
-
 def _setup_logging() -> None:
     import atr.config as config
     import atr.loggers as loggers
@@ -249,30 +229,6 @@ async def _task_defer(task_id: int) -> None:
             result = await data.execute(update_stmt)
             if result.first() is None:
                 log.warning(f"Task {task_id} was not deferred because it is no longer active")
-
-
-def _task_failure_message(
-    task_type: sql.TaskType,
-    project_key: str | None,
-    version_key: str | None,
-    revision_number: str | None,
-    primary_rel_path: str | None,
-    error: str,
-) -> str:
-    location_parts = []
-    if project_key:
-        location_parts.append(project_key)
-    if version_key:
-        location_parts.append(version_key)
-    if revision_number:
-        location_parts.append(f"r{revision_number}")
-    path_text = _truncate_single_line(primary_rel_path, 180)
-    parts = [f"{task_type.label} failed"]
-    if location_parts:
-        parts.append(f"for {' '.join(location_parts)}")
-    if path_text:
-        parts.append(f"({path_text})")
-    return f"{' '.join(parts)}: {_truncate_single_line(error, 500)}"
 
 
 async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str] | None:
@@ -421,17 +377,7 @@ async def _task_result_process(
     if log_record is not None:
         _task_completed_log(log_record)
     if notify_args is not None:
-        await _notify_task_failure(*notify_args)
-
-
-def _truncate_single_line(text: str | None, max_length: int) -> str:
-    text = (text or "").strip()
-    if not text:
-        return ""
-    text = text.splitlines()[0]
-    if len(text) > max_length:
-        return text[: max_length - 3] + "..."
-    return text
+        await task.notify_failure(*notify_args)
 
 
 async def _worker_loop_run() -> None:

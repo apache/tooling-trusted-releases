@@ -196,6 +196,17 @@ def _missing_distributions_message(release: sql.Release) -> str:
     )
 
 
+async def _publication_pending_message(release: sql.Release) -> str:
+    if not config.get().SVN_PUBLISH_URL:
+        return ""
+    completed = await interaction.release_completed_svn_publish_task_for_revision(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if completed is not None:
+        return ""
+    return "This release cannot be announced until it has been published to SVN."
+
+
 def _recipients_documentation() -> str | None:
     if config.get().ATR_STATUS != "ALPHA":
         return None
@@ -355,6 +366,8 @@ async def _render_page(
         page.append(banner)
 
     announce_msg = _missing_distributions_message(release)
+    if not announce_msg:
+        announce_msg = await _publication_pending_message(release)
     if announce_msg:
         page.p[htm.strong[announce_msg]]
         return page.collect()

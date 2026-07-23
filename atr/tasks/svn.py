@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import asyncio
 from typing import Any
 
 import aiofiles.os
@@ -28,6 +27,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
+import atr.svn as svn
 import atr.tasks.checks as checks
 
 
@@ -98,7 +98,7 @@ async def _import_files_core(args: args.SvnImport) -> str:
                 str(temp_export_path),
             ]
 
-            await _import_files_core_run_svn_export(svn_command, temp_export_path)
+            await _import_files_core_run_svn_export(svn_command)
 
             # Move files from temp export path to final target path
             # We only have to do this to avoid the SVN pegged revision issue
@@ -129,43 +129,20 @@ async def _import_files_core(args: args.SvnImport) -> str:
         return f"Successfully imported files from SVN into revision {result.number}"
 
 
-async def _import_files_core_run_svn_export(svn_command: list[str], temp_export_path: safe.StatePath) -> None:
+async def _import_files_core_run_svn_export(svn_command: list[str]) -> None:
     """Execute the svn export command and handle errors."""
     log.info(f"Executing SVN command: {' '.join(svn_command)}")
 
-    timeout_seconds = 600
     try:
-        process = await asyncio.create_subprocess_exec(
-            *svn_command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        await svn.run_command(svn_command[0], *svn_command[1:], timeout_seconds=svn.EXPORT_TIMEOUT_SECONDS)
+    except svn.CommandExecutionError as e:
+        log.error(f"SVN export failed with code {e.returncode}: {e.output[:1000]}")
+        raise SvnImportError(
+            f"SVN export failed: {svn.error_message(e)}",
+            details={"returncode": e.returncode, "stderr": e.output[:1000]},
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
-
-        stdout_str = stdout.decode("utf-8", errors="ignore").strip() if stdout else ""
-        stderr_str = stderr.decode("utf-8", errors="ignore").strip() if stderr else ""
-
-        if process.returncode != 0:
-            log.error(f"SVN export failed with code {process.returncode}")
-            log.error(f"SVN stderr: {stderr_str}")
-            log.error(f"SVN stdout: {stdout_str[:1000]}")
-            raise SvnImportError(
-                f"SVN export failed with code {process.returncode}",
-                details={"returncode": process.returncode, "stderr": stderr_str, "stdout": stdout_str[:1000]},
-            )
-
-        log.info("SVN export to temporary directory successful")
-        if stdout_str:
-            log.debug(f"SVN stdout: {stdout_str}")
-        if stderr_str:
-            log.warning(f"SVN stderr: {stderr_str}")
-
-    except TimeoutError:
-        log.error(f"SVN export command timed out after {timeout_seconds} seconds")
-        raise SvnImportError("SVN export command timed out")
     except FileNotFoundError:
         log.error("svn command not found. Is it installed and in PATH?")
         raise SvnImportError("svn command not found")
-    except Exception as e:
-        log.exception("Unexpected error during SVN export subprocess execution")
-        raise SvnImportError(f"Unexpected error during SVN export: {e}")
+
+    log.info("SVN export to temporary directory successful")

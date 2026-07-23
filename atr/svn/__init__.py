@@ -29,7 +29,38 @@ import atr.config as config
 import atr.log as log
 
 ASF_TOOL: Final[str] = "atr"
+EXPORT_TIMEOUT_SECONDS: Final[float] = 240.0
+INFO_TIMEOUT_SECONDS: Final[float] = 30.0
+KEYS_TIMEOUT_SECONDS: Final[float] = 60.0
+PUBLISH_TIMEOUT_SECONDS: Final[float] = 240.0
 _COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
+_CONNECTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
+    {"E000110", "E000111", "E120108", "E170013", "E175002", "E175012"}
+)
+_ERROR_CODE_PRIORITY: Final[tuple[str, ...]] = (
+    "E160020",
+    "E215004",
+    "E170001",
+    "E000110",
+    "E000111",
+    "E120108",
+    "E175012",
+    "E175002",
+    "E170013",
+)
+_ERROR_CODE_RE: Final = re.compile(r"\bE\d{6}\b")
+_ERROR_SUMMARIES: Final[dict[str, str]] = {
+    "E000110": "The connection to the SVN server was reset",
+    "E000111": "The connection to the SVN server was refused",
+    "E120108": "The SVN server unexpectedly closed the connection",
+    "E160020": "A file already exists in the SVN target area",
+    "E170001": "The SVN server rejected the ATR credentials",
+    "E170013": "The SVN server could not be reached",
+    "E175002": "The SVN server returned an unexpected HTTP response",
+    "E175012": "The connection to the SVN server timed out",
+    "E215004": "Authentication to the SVN server failed",
+}
+_STATUS_HINT: Final[str] = "If dist.apache.org is down, see https://status.apache.org/"
 
 
 class CommandExecutionError(RuntimeError):
@@ -42,11 +73,19 @@ class CommandExecutionError(RuntimeError):
         self.output = output
 
 
+class CommandTimeoutError(CommandExecutionError):
+    timeout: float
+
+    def __init__(self, timeout: float) -> None:
+        super().__init__(-1, f"svn timed out after {int(timeout)} seconds")
+        self.timeout = timeout
+
+
 class SvnInfo(pydantic.BaseModel):
     """A dataclass to hold information about a file in a subversion repository."""
 
     path: str
-    name: str
+    name: str | None = None
     url: str
     relative_url: str
     repository_root: str
@@ -121,6 +160,20 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
     )
 
 
+def error_message(exc: CommandExecutionError) -> str:
+    if isinstance(exc, CommandTimeoutError):
+        return f"The SVN operation timed out after {int(exc.timeout)} seconds. {_STATUS_HINT}"
+    codes = set(_ERROR_CODE_RE.findall(exc.output))
+    if code := next((candidate for candidate in _ERROR_CODE_PRIORITY if candidate in codes), None):
+        summary = _ERROR_SUMMARIES[code]
+        if code in _CONNECTION_ERROR_CODES:
+            return f"{summary} ({code}). {_STATUS_HINT}"
+        return f"{summary} ({code})"
+    if detail := _sanitised_first_line(exc.output):
+        return detail
+    return f"svn exited with code {exc.returncode}"
+
+
 async def get_diff(path: pathlib.Path, revision: int) -> str:
     log.debug(f"running svn diff for '{path}': r{revision}")
     svn_token = config.get().SVN_TOKEN
@@ -167,6 +220,7 @@ async def publish_file(local_path: pathlib.Path, target_url: str, username: str,
         f"asf:tool={ASF_TOOL}",
         "-m",
         message,
+        timeout_seconds=KEYS_TIMEOUT_SECONDS,
     )
 
 
@@ -190,6 +244,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         f"asf:tool={ASF_TOOL}",
         "-m",
         message,
+        timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
     )
     revision = parse_committed_revision(output)
     if revision is None:
@@ -197,7 +252,45 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
     return revision
 
 
-async def run_command(cmd: str, *args: str) -> str:
+async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> bool:
+    revision = info.last_changed_rev_number
+    log_output = await _run_svn_command(
+        "log",
+        info.url,
+        "--xml",
+        "--verbose",
+        "-r",
+        str(revision),
+        timeout_seconds=INFO_TIMEOUT_SECONDS,
+    )
+    root = ElementTree.fromstring(log_output)
+    entries = root.findall("logentry")
+    if len(entries) != 1:
+        return False
+    entry = entries[0]
+    if entry.get("revision") != str(revision):
+        return False
+    if entry.findtext("author") != author:
+        return False
+    if entry.findtext("msg") != message:
+        return False
+    target_path = info.relative_url.removeprefix("^")
+    created_paths = {(path.text or "").strip() for path in entry.findall("./paths/path") if path.get("action") == "A"}
+    if target_path not in created_paths:
+        return False
+    tool = await _run_svn_command(
+        "propget",
+        info.url,
+        "--revprop",
+        "-r",
+        str(revision),
+        "asf:tool",
+        timeout_seconds=INFO_TIMEOUT_SECONDS,
+    )
+    return tool.strip() == ASF_TOOL
+
+
+async def run_command(cmd: str, *args: str, timeout_seconds: float | None = None) -> str:
     """Run a svn command asynchronously.
 
     Arguments:
@@ -211,7 +304,13 @@ async def run_command(cmd: str, *args: str) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
 
-    stdout, stderr = await proc.communicate()
+    communicate = asyncio.create_task(proc.communicate())
+    try:
+        stdout, stderr = await asyncio.wait_for(asyncio.shield(communicate), timeout_seconds)
+    except TimeoutError:
+        await _terminate_process(proc, communicate)
+        timeout = timeout_seconds if timeout_seconds is not None else 0.0
+        raise CommandTimeoutError(timeout)
 
     # if the proc.communicate() call returns an error
     # print the error out and return an empty string.
@@ -227,15 +326,46 @@ async def update(path: pathlib.Path) -> str:
     return await _run_svn_command("update", str(path), "--parents")
 
 
-async def _run_svn_command(sub_cmd: str, path: str, *args: str) -> str:
+async def _run_svn_command(sub_cmd: str, path: str, *args: str, timeout_seconds: float | None = None) -> str:
     # Do not log this command, as it may contain a password or secret token
-    return await run_command("svn", *[sub_cmd, *args, path])
+    return await run_command("svn", *[sub_cmd, *args, path], timeout_seconds=timeout_seconds)
 
 
 async def _run_svn_info(path_or_url: str) -> str:
     log.debug(f"fetching svn info for '{path_or_url}'")
-    return await _run_svn_command("info", path_or_url)
+    return await _run_svn_command("info", path_or_url, timeout_seconds=INFO_TIMEOUT_SECONDS)
 
 
-async def _run_svnmucc_command(*args: str) -> str:
-    return await run_command("svnmucc", *args)
+async def _run_svnmucc_command(*args: str, timeout_seconds: float | None = None) -> str:
+    return await run_command("svnmucc", *args, timeout_seconds=timeout_seconds)
+
+
+def _sanitised_first_line(output: str) -> str:
+    lines = output.strip().splitlines()
+    if not lines:
+        return ""
+    line = lines[0].strip()
+    if publish_url := config.get().SVN_PUBLISH_URL:
+        line = line.replace(publish_url.rstrip("/"), "")
+    if len(line) > 200:
+        line = line[:197] + "..."
+    return line
+
+
+async def _terminate_process(
+    proc: asyncio.subprocess.Process,
+    communicate: asyncio.Task[tuple[bytes, bytes]],
+) -> None:
+    try:
+        proc.terminate()
+    except ProcessLookupError:
+        ...
+    try:
+        await asyncio.wait_for(asyncio.shield(communicate), 5)
+        return
+    except TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            ...
+    await communicate

@@ -34,6 +34,7 @@ import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.sql as sql
+import atr.tasks.task as task
 import atr.util as util
 
 # Global debug flag to control worker process output capturing
@@ -246,19 +247,21 @@ class WorkerManager:
         # Reset any tasks that were being processed by now inactive workers
         await self.reset_broken_tasks()
 
-    async def terminate_long_running_task(self, task: sql.Task, worker: WorkerProcess, task_id: int, pid: int) -> None:
+    async def terminate_long_running_task(
+        self, active_task: sql.Task, worker: WorkerProcess, task_id: int, pid: int
+    ) -> None:
         """
         Terminate a task that has been running for too long.
         Updates the task status and terminates the worker process.
         """
         try:
             # Mark the task as failed
-            task.status = sql.TaskStatus.FAILED
-            task.completed = datetime.datetime.now(datetime.UTC)
-            task.error = f"Task terminated after exceeding time limit of {self.max_task_seconds} seconds"
+            active_task.status = sql.TaskStatus.FAILED
+            active_task.completed = datetime.datetime.now(datetime.UTC)
+            active_task.error = f"Task terminated after exceeding time limit of {self.max_task_seconds} seconds"
 
             if worker.pid:
-                os.kill(worker.pid, signal.SIGTERM)
+                os.killpg(worker.pid, signal.SIGTERM)
                 log.info(f"Worker {pid} terminated after processing task {task_id} for > {self.max_task_seconds}s")
         except ProcessLookupError:
             return
@@ -270,22 +273,33 @@ class WorkerManager:
         Check whether a worker has been processing its task for too long.
         Returns True if the worker has been terminated.
         """
+        notify_args = None
         try:
             async with data.begin():
-                task = await data.task(pid=pid, status=sql.TaskStatus.ACTIVE).get()
-                if (not task) or (not task.started):
+                active_task = await data.task(pid=pid, status=sql.TaskStatus.ACTIVE).get()
+                if (not active_task) or (not active_task.started):
                     return False
 
-                task_duration = (datetime.datetime.now(datetime.UTC) - task.started).total_seconds()
-                if task_duration > self.max_task_seconds:
-                    await self.terminate_long_running_task(task, worker, task.id, pid)
-                    return True
+                task_duration = (datetime.datetime.now(datetime.UTC) - active_task.started).total_seconds()
+                if task_duration <= self.max_task_seconds:
+                    return False
 
-                return False
+                await self.terminate_long_running_task(active_task, worker, active_task.id, pid)
+                notify_args = (
+                    active_task.asf_uid,
+                    active_task.task_type,
+                    active_task.project_key,
+                    active_task.version_key,
+                    active_task.revision_number,
+                    active_task.primary_rel_path,
+                    active_task.error or "task terminated",
+                )
         except Exception as e:
             log.error(f"Error checking task duration for worker {pid}: {e}")
             # TODO: Return False here to avoid over-reporting errors
             return False
+        await task.notify_failure(*notify_args)
+        return True
 
     async def pre_spawn_replacement(self, data: db.Session, pid: int, worker: WorkerProcess) -> None:
         if worker.pre_spawned:

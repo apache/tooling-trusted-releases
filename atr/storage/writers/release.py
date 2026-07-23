@@ -1233,21 +1233,48 @@ class ReleaseManager(CommitteeParticipant):
         try:
             revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
         except svn.CommandExecutionError as exc:
-            log.error("SVN publish failed")
-            if "E160020" in exc.output:
-                message = "Release file already exists in SVN"
-                if (match := re.search(r"path '([^']+)'", exc.output)) is not None:
-                    message = f"{message}: {match.group(1)}"
-                    if svn_publish_url := config.get().SVN_PUBLISH_URL:
-                        message = message.replace(svn_publish_url, "")
-                raise datatypes.FailedError(message) from exc
-            raise datatypes.FailedError("SVN publish failed; see worker logs for details") from exc
+            log.exception("SVN publish failed")
+            if "E160020" not in exc.output:
+                raise datatypes.FailedError(svn.error_message(exc)) from exc
+            healed = await self.__already_published_result(
+                internal_url,
+                task_args.asf_uid,
+                log_message,
+            )
+            if healed is not None:
+                return healed
+            message = "Release file already exists in SVN"
+            if (match := re.search(r"path '([^']+)'", exc.output)) is not None:
+                message = f"{message}: {match.group(1)}"
+                if svn_publish_url := config.get().SVN_PUBLISH_URL:
+                    message = message.replace(svn_publish_url, "")
+            raise datatypes.FailedError(message) from exc
         if revision is None:
             raise datatypes.FailedError("SVN publish did not return a Committed revision line")
         return results.SvnPublish(
             kind="svn_publish",
             svn_revision=revision,
             message=f"Published to SVN as r{revision}",
+        )
+
+    async def __already_published_result(
+        self,
+        internal_url: str,
+        asf_uid: str,
+        log_message: str,
+    ) -> results.SvnPublish | None:
+        try:
+            info = await svn.SvnInfo.from_url(internal_url)
+            matches = await svn.publish_revision_matches(info, asf_uid, log_message)
+        except Exception:
+            return None
+        if not matches:
+            return None
+        revision = info.last_changed_rev_number
+        return results.SvnPublish(
+            kind="svn_publish",
+            svn_revision=revision,
+            message=f"Already published to SVN as r{revision}",
         )
 
 
