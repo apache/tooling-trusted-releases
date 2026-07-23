@@ -1478,6 +1478,10 @@ class FoundationAdmin(FoundationCommitter):
                 version=str(version),
             )
         )
+        # Nothing relates LifecycleEvent to Release, so there's no
+        # dependency to order these inserts by. The release row has to save
+        # before the event's foreign key is checked
+        await self.__data.flush()
         # effective is the commit date we observed, but published stays at the
         # default now - that's when we recorded it, not a backdated claim
         self.__data.add(
