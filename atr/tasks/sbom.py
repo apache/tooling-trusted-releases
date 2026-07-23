@@ -530,6 +530,7 @@ async def _generate_cyclonedx_core(
             # Parse the JSON output from syft
             try:
                 sbom_data = json.loads(stdout_str)
+                _strip_temp_prefix(sbom_data, str(temp_dir))
                 log.info(f"Successfully parsed syft output for {artifact_path}")
 
                 # Write the SBOM data to the specified output path
@@ -566,3 +567,11 @@ async def _generate_cyclonedx_core(
         except FileNotFoundError:
             log.error("syft command not found. Is it installed and in PATH?")
             raise SBOMGenerationError("syft command not found")
+
+
+def _strip_temp_prefix(doc: dict[str, Any], temp_dir: str) -> None:
+    # syft names file components after the absolute path it scanned, which --base-path leaves alone
+    for component in doc.get("components", []):
+        name = component.get("name")
+        if isinstance(name, str) and name.startswith(temp_dir):
+            component["name"] = name.removeprefix(temp_dir)

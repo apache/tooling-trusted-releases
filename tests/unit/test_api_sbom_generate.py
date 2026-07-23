@@ -119,6 +119,23 @@ def test_sbom_generate_task_resolves() -> None:
     assert tasks.resolve(sql.TaskType.SBOM_GENERATE) is sbom.generate
 
 
+def test_strip_temp_prefix_leaves_component_names_relative_to_the_scan_root() -> None:
+    temp_dir = "/example/cyclonedx_sbom_abc123"
+    doc = {
+        "components": [
+            {"bom-ref": "aaa", "type": "file", "name": f"{temp_dir}/META-INF/maven/pom.xml"},
+            {"bom-ref": "bbb", "type": "library", "name": "plexus-utils", "version": "4.0.2"},
+        ]
+    }
+
+    sbom._strip_temp_prefix(doc, temp_dir)
+
+    assert doc["components"][0]["name"] == "/META-INF/maven/pom.xml"
+    # A path is not a versioned thing, so stripping it must not invent one
+    assert "version" not in doc["components"][0]
+    assert doc["components"][1]["name"] == "plexus-utils"
+
+
 def test_task_get_results_round_trip_typed_result() -> None:
     task = sql.Task(task_type=sql.TaskType.SBOM_GENERATE, task_args={}, asf_uid="test")
     task.result = results.SBOMGenerate(
