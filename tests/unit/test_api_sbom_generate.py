@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pathlib
 import types
 import unittest.mock as mock
 
@@ -28,6 +29,31 @@ import atr.storage as storage
 import atr.storage.writers.sbom
 import atr.tasks as tasks
 import atr.tasks.sbom as sbom
+
+
+@pytest.mark.asyncio
+async def test_sbom_generate_cyclonedx_records_artifact_rel_path(tmp_path: pathlib.Path) -> None:
+    data = mock.MagicMock()
+    data.commit = mock.AsyncMock()
+    data.refresh = mock.AsyncMock()
+    release_query = mock.MagicMock()
+    release_query.demand = mock.AsyncMock(return_value=_draft_release())
+    data.release = mock.MagicMock(return_value=release_query)
+    writer = _writer_with(data)
+
+    revision = safe.StatePath(tmp_path)
+    rel_path = safe.RelPath("binaries/artifact.tar.gz")
+
+    task = await writer.generate_cyclonedx(
+        safe.ProjectKey("project"),
+        safe.VersionKey("1.0.0"),
+        safe.RevisionNumber("00001"),
+        revision / rel_path,
+        revision / safe.RelPath(f"{rel_path!s}.cdx.json"),
+        rel_path,
+    )
+
+    assert str(task.task_args["source_name"]) == "binaries/artifact.tar.gz"
 
 
 def test_sbom_generate_results_round_trip() -> None:

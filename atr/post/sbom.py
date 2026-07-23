@@ -56,16 +56,16 @@ async def components(
 
 
 @post.typed
-async def report(
+async def quality(
     session: web.Committer,
-    _sbom_report: Literal["sbom/report"],
+    _sbom_quality: Literal["sbom/quality"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     file_path: safe.RelPath,
     _sbom_form: shared.sbom.AugmentSBOMForm,
 ) -> web.WerkzeugResponse:
     """
-    URL: /sbom/report/<project_key>/<version_key>/<path:file_path>
+    URL: /sbom/quality/<project_key>/<version_key>/<path:file_path>
     """
     return await _augment(session, project_key, version_key, file_path)
 
@@ -95,14 +95,14 @@ async def _augment(
         log.exception("Error augmenting SBOM:")
         await quart.flash(f"Error augmenting SBOM: {e!s}", "error")
         return await session.redirect(
-            get.sbom.report,
+            get.sbom.quality,
             project_key=str(project_key),
             version_key=str(version_key),
             file_path=str(rel_path),
         )
 
     return await session.redirect(
-        get.sbom.report,
+        get.sbom.quality,
         success=f"SBOM augmentation task queued for {file_name} (task ID: {util.unwrap(sbom_task.id)})",
         project_key=str(project_key),
         version_key=str(version_key),

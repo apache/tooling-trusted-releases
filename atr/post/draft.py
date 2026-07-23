@@ -382,6 +382,7 @@ async def sbomgen(
                     old_rev.safe_number,
                     path_in_new_revision,
                     sbom_path_in_new_revision,
+                    file_path,
                 )
                 success = await interaction.wait_for_task(sbom_task)
                 if not success:

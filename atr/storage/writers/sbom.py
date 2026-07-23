@@ -147,6 +147,7 @@ class CommitteeParticipant(FoundationCommitter):
         revision_number: safe.RevisionNumber,
         path_in_new_revision: safe.StatePath,
         sbom_path_in_new_revision: safe.StatePath,
+        rel_path: safe.RelPath,
     ) -> sql.Task:
         release_key = sql.release_key(str(project_key), str(version_key))
         release = await self.__data.release(key=str(release_key)).demand(
@@ -163,6 +164,8 @@ class CommitteeParticipant(FoundationCommitter):
             task_args=args.GenerateCycloneDX(
                 artifact_path=artifact_path,
                 output_path=output_path,
+                source_name=rel_path,
+                source_version=version_key,
             ).model_dump(),
             asf_uid=util.unwrap(self.__asf_uid),
             added=datetime.datetime.now(datetime.UTC),

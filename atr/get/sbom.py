@@ -69,7 +69,7 @@ async def components(
 
     block = htm.Block()
     _phase_nav(block, release)
-    block.h1["SBOM contents"]
+    block.h1["SBOM report"]
     block.p[
         "The contents of ",
         htm.code[str(sbom_rel_path)],
@@ -99,19 +99,19 @@ async def components(
         and user.is_committee_member(release.committee, session.uid),
     )
 
-    return await template.blank("SBOM contents", content=block.collect())
+    return await template.blank("SBOM report", content=block.collect())
 
 
 @get.typed
-async def report(
+async def quality(
     session: web.Committer,
-    _sbom_report: Literal["sbom/report"],
+    _sbom_quality: Literal["sbom/quality"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     file_path: safe.RelPath,
 ) -> str:
     """
-    URL: /sbom/report/<project_key>/<version_key>/<file_path>
+    URL: /sbom/quality/<project_key>/<version_key>/<file_path>
     """
     release = await shared.sbom.release_in_phase(session, project_key, version_key, with_committee=True)
 
@@ -120,7 +120,7 @@ async def report(
     is_release_candidate = release.phase == sql.ReleasePhase.RELEASE_CANDIDATE
     _phase_nav(block, release)
 
-    block.h1["SBOM report"]
+    block.h1["SBOM quality report"]
 
     validated_path_str = str(file_path)
 
@@ -162,7 +162,7 @@ async def report(
 
     _cyclonedx_cli_errors(block, task_result)
 
-    return await template.blank("SBOM report", content=block.collect())
+    return await template.blank("SBOM quality report", content=block.collect())
 
 
 async def _augment_section(
@@ -437,8 +437,8 @@ def _license_tally(
 ) -> list[tuple[sbom.models.licenses.Category, int, int | None, int | None, list[str | None]]]:
     counts: dict[sbom.models.licenses.Category, int] = {}
     components: dict[sbom.models.licenses.Category, list[str | None]] = {}
-    new_count = 0
-    updated_count = 0
+    new_counts: dict[sbom.models.licenses.Category, int] = {}
+    updated_counts: dict[sbom.models.licenses.Category, int] = {}
     old_map = {lic.component_name: (lic.license_expression, lic.category) for lic in old_issues} if old_issues else None
     for item in items:
         key = item.category
@@ -446,10 +446,10 @@ def _license_tally(
         name = str(item).capitalize()
         if old_map is not None:
             if item.component_name not in old_map:
-                new_count = new_count + 1
+                new_counts[key] = new_counts.get(key, 0) + 1
                 name = f"{name} (new)"
             elif item.license_expression != old_map[item.component_name][0]:
-                updated_count = updated_count + 1
+                updated_counts[key] = updated_counts.get(key, 0) + 1
                 name = f"{name} (previously {old_map[item.component_name][0]} - Category {
                     str(old_map[item.component_name][1]).upper()
                 })"
@@ -462,8 +462,8 @@ def _license_tally(
             (
                 category,
                 count,
-                new_count if (old_issues is not None) else None,
-                updated_count if (old_issues is not None) else None,
+                new_counts.get(category, 0) if (old_issues is not None) else None,
+                updated_counts.get(category, 0) if (old_issues is not None) else None,
                 components.get(category, []),
             )
             for category, count in counts.items()
@@ -596,7 +596,7 @@ async def _report_task_results(block: htm.Block, task: sql.Task | None):
     if _score_result(task) is not None:
         return None
     block.p[_score_unavailable(task)]
-    return await template.blank("SBOM report", content=block.collect())
+    return await template.blank("SBOM quality report", content=block.collect())
 
 
 def _score_result(task: sql.Task | None) -> results.SBOMToolScore | None:

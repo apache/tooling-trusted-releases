@@ -80,6 +80,12 @@ class GenerateCycloneDX(schema.Strict):
 
     artifact_path: safe.StatePath = schema.description("Absolute path to the artifact")
     output_path: safe.StatePath = schema.description("Absolute path where the generated SBOM JSON should be written")
+    source_name: safe.RelPath | None = schema.Field(
+        default=None, description="Path of the artifact within the revision, used to name the root component"
+    )
+    source_version: safe.VersionKey | None = schema.Field(
+        default=None, description="Release version of the artifact, used to version the root component"
+    )
 
 
 class ImportFile(schema.Strict):

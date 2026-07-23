@@ -168,7 +168,7 @@ async def generate(args: args.FileArgs) -> results.Results | None:
             if await aiofiles.os.path.exists(output_path):
                 raise SBOMGenerationError("SBOM file already exists", {"file_path": sbom_rel_path})
             source_content_hash = await hashes.compute_file_hash(artifact_path)
-            await _generate_cyclonedx_core(artifact_path, output_path)
+            await _generate_cyclonedx_core(artifact_path, output_path, path_str, str(args.version_key))
             bundle = sbom.utilities.path_to_bundle(output_path.path)
             if not bundle:
                 raise SBOMGenerationError("Could not load bundle")
@@ -208,8 +208,11 @@ async def generate(args: args.FileArgs) -> results.Results | None:
 @checks.with_model(args.GenerateCycloneDX)
 async def generate_cyclonedx(args: args.GenerateCycloneDX) -> results.Results | None:
     """Generate a CycloneDX SBOM for the given artifact and write it to the output path."""
+    # Tasks queued before source_name existed fall back to the bare filename
+    source_name = str(args.source_name) if (args.source_name is not None) else args.artifact_path.name
+    source_version = str(args.source_version) if (args.source_version is not None) else None
     try:
-        result_data = await _generate_cyclonedx_core(args.artifact_path, args.output_path)
+        result_data = await _generate_cyclonedx_core(args.artifact_path, args.output_path, source_name, source_version)
         log.info(f"Successfully generated CycloneDX SBOM for {args.artifact_path}")
         msg = result_data["message"]
         if not isinstance(msg, str):
@@ -442,7 +445,9 @@ def _extracted_dir(temp_dir: str) -> str | None:
     return extract_dir
 
 
-async def _generate_cyclonedx_core(artifact_path: safe.StatePath, output_path: safe.StatePath) -> dict[str, Any]:
+async def _generate_cyclonedx_core(
+    artifact_path: safe.StatePath, output_path: safe.StatePath, source_name: str, source_version: str | None
+) -> dict[str, Any]:
     """Core logic to generate CycloneDX SBOM on failure."""
     log.info(f"Generating CycloneDX SBOM for {artifact_path} -> {output_path}")
 
@@ -486,7 +491,20 @@ async def _generate_cyclonedx_core(artifact_path: safe.StatePath, output_path: s
         log.info(f"Using root directory: {extract_dir}")
 
         # Run syft to generate the CycloneDX SBOM
-        syft_command = ["syft", extract_dir, "-o", "cyclonedx-json", "--enrich", "all", "--base-path", f"{temp_dir!s}"]
+        syft_command = [
+            "syft",
+            extract_dir,
+            "-o",
+            "cyclonedx-json",
+            "--enrich",
+            "all",
+            "--base-path",
+            f"{temp_dir!s}",
+            "--source-name",
+            source_name,
+        ]
+        if source_version is not None:
+            syft_command.extend(["--source-version", source_version])
         log.info(f"Running syft: {' '.join(syft_command)}")
 
         try:
