@@ -1102,7 +1102,7 @@ class Project(sqlmodel.SQLModel, table=True):
 
     @property
     def policy_announce_release_default(self) -> str:
-        return """\
+        template = """\
 The Apache {{COMMITTEE}} project team is pleased to announce the
 release of {{PROJECT_NAME}} {{VERSION}}.
 
@@ -1111,11 +1111,14 @@ This is a stable release available for production use.
 Downloads are available from the following URL:
 
 {{DOWNLOAD_URL}}
-{{DISCLAIMER}}
+{{PODLING_DISCLAIMER}}
 On behalf of the Apache {{COMMITTEE}} project team,
 
 {{YOUR_FULL_NAME}} ({{YOUR_ASF_ID}})
 """
+        if self.committee and self.committee.is_podling:
+            return template
+        return template.replace("{{PODLING_DISCLAIMER}}\n", "\n")
 
     @property
     def policy_announce_release_subject_default(self) -> str:

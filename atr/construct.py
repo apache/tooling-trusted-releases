@@ -45,12 +45,12 @@ class _AnnounceSubjectValues(TypedDict):
 class _AnnounceValues(TypedDict):
     BUG_DATABASE: str
     COMMITTEE: str
-    DISCLAIMER: str
     DOWNLOAD_PAGE: str
     DOWNLOAD_URL: str
     HOMEPAGE: str
     LIFECYCLE_PAGE: str
     MAILING_LISTS: str
+    PODLING_DISCLAIMER: str
     PROJECT_NAME: str
     PROJECT_KEY: str
     REPOSITORY: str
@@ -116,7 +116,6 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "BUG_DATABASE": "Bug database URL",
     "CHECKLIST_URL": "URL to the release checklist",
     "COMMITTEE": "Committee name",
-    "DISCLAIMER": "Podling incubation disclaimer",
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
     "DURATION": "Vote duration in hours",
@@ -125,6 +124,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "LIFECYCLE_PAGE": "Lifecycle page URL",
     "MAILING_LISTS": "Mailing lists page URL",
     "OUTCOME": "Vote outcome - 'passed' or 'failed'",
+    "PODLING_DISCLAIMER": "Podling incubation disclaimer",
     "PROJECT_NAME": "Project name",
     "PROJECT_KEY": "ATR key for the project",
     "RELEASE_CHECKLIST": "Release checklist content",
@@ -223,12 +223,12 @@ async def announce_release_subject_and_body(
     values: _AnnounceValues = {
         "BUG_DATABASE": project.bug_database or "",
         "COMMITTEE": committee.display_name,
-        "DISCLAIMER": _podling_disclaimer(project, committee),
         "DOWNLOAD_PAGE": project.download_page or "",
         "DOWNLOAD_URL": download_url,
         "HOMEPAGE": project.homepage or "",
         "LIFECYCLE_PAGE": project.lifecycle_page or "",
         "MAILING_LISTS": project.mailing_lists or "",
+        "PODLING_DISCLAIMER": _podling_disclaimer(project, committee),
         "PROJECT_NAME": project_display_name,
         "PROJECT_KEY": project.key,
         "REPOSITORY": "\n".join(project.repositories),
