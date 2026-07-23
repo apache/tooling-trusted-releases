@@ -69,6 +69,18 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
     return cycle
 
 
+def is_latest_in_cycle(project: sql.Project, release: sql.Release, candidates: Iterable[sql.Release]) -> bool:
+    """Whether `release` is the latest full, unarchived release in its cycle.
+
+    Candidates are filtered here, so callers can pass whichever release list they
+    already have to hand. A release that can't be placed counts as the latest,
+    per latest_release_in_cycle.
+    """
+    active = [r for r in candidates if (r.phase == sql.ReleasePhase.RELEASE) and (not r.is_archived)]
+    latest = latest_release_in_cycle(project, release.version, active)
+    return (latest is None) or (latest.key == release.key)
+
+
 def latest_release_in_cycle(
     project: sql.Project,
     version: str,

@@ -328,7 +328,6 @@ async def _render_release_actions(
 
     async with db.session() as data:
         full_releases = await data.release(project_key=str(project.key), phase=sql.ReleasePhase.RELEASE).all()
-    active_releases = [r for r in full_releases if not r.is_archived]
 
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-0")["Release actions"]]
@@ -354,25 +353,18 @@ async def _render_release_actions(
             body.div(".alert.alert-warning.py-2.px-3")[
                 f"The last archival attempt failed after the vote passed: {failure.error}. You can try again below."
             ]
-        latest = cycles.latest_release_in_cycle(project, release.version, active_releases)
-        if (latest is None) or (latest.key == release.key):
+        if cycles.is_latest_in_cycle(project, release, full_releases):
             body.p[
                 "This is the latest full release in its cycle, so archiving it requires a CAP approval vote"
-                " by the committee PMC."
+                " by the committee PMC. ATR will auto-archive the release once the vote passes."
             ]
             body.append(
                 await form.render(
                     model_cls=shared.projects.ArchiveSelectedRelease,
-                    action=util.as_url(post.projects.archive_release),
-                    form_classes=".d-inline-block.m-0",
+                    action=util.as_url(post.file.post, project_key=project.key, version_key=release.version),
                     submit_classes="btn-sm btn-outline-danger",
                     submit_label="Request archival vote",
                     empty=True,
-                    defaults={"project_key": str(project.key), "release_version": release.version},
-                    confirm=(
-                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the"
-                        " release ready to archive once the vote passes."
-                    ),
                 )
             )
         else:
@@ -380,11 +372,10 @@ async def _render_release_actions(
             body.append(
                 await form.render(
                     model_cls=shared.projects.ConfirmReleaseArchival,
-                    action=util.as_url(post.projects.archive_release_confirm),
+                    action=util.as_url(post.file.post, project_key=project.key, version_key=release.version),
                     submit_classes="btn-sm btn-outline-danger",
                     submit_label="Archive release",
                     empty=True,
-                    defaults={"project_key": str(project.key), "release_version": release.version},
                 )
             )
 

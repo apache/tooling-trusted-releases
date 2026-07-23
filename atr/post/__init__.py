@@ -22,6 +22,7 @@ import atr.post.committees as committees
 import atr.post.compose as compose
 import atr.post.distribution as distribution
 import atr.post.draft as draft
+import atr.post.file as file
 import atr.post.finish as finish
 import atr.post.keys as keys
 import atr.post.manual as manual
@@ -47,6 +48,7 @@ __all__ = [
     "compose",
     "distribution",
     "draft",
+    "file",
     "finish",
     "keys",
     "manual",

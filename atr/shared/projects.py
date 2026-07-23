@@ -41,6 +41,8 @@ type ADD_CATEGORY = Literal["add_category"]
 type REMOVE_CATEGORY = Literal["remove_category"]
 type ADD_LANGUAGE = Literal["add_language"]
 type REMOVE_LANGUAGE = Literal["remove_language"]
+type ARCHIVE_SELECTED_RELEASE = Literal["archive_selected_release"]
+type CONFIRM_RELEASE_ARCHIVAL = Literal["confirm_release_archival"]
 
 
 def _strip_whitespace(value: object) -> object:
@@ -495,8 +497,8 @@ class ArchiveSelectedProject(form.Form):
 
 
 class ArchiveSelectedRelease(form.Form):
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    release_version: safe.VersionKey = form.label("Release version", widget=form.Widget.HIDDEN)
+    variant: ARCHIVE_SELECTED_RELEASE = form.value(ARCHIVE_SELECTED_RELEASE)
+    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.")
 
 
 class CompleteApprovalRequest(form.Form):
@@ -504,13 +506,18 @@ class CompleteApprovalRequest(form.Form):
 
 
 class ConfirmReleaseArchival(form.Form):
-    project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    release_version: safe.VersionKey = form.label("Release version", widget=form.Widget.HIDDEN)
+    variant: CONFIRM_RELEASE_ARCHIVAL = form.value(CONFIRM_RELEASE_ARCHIVAL)
     confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.")
 
 
 class DeleteSelectedProject(form.Form):
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
+
+
+type FileViewForm = Annotated[
+    ArchiveSelectedRelease | ConfirmReleaseArchival,
+    form.DISCRIMINATOR,
+]
 
 
 type ProjectViewForm = Annotated[
