@@ -136,6 +136,57 @@ def test_strip_temp_prefix_leaves_component_names_relative_to_the_scan_root() ->
     assert doc["components"][1]["name"] == "plexus-utils"
 
 
+def _syft_shaped_doc() -> dict:
+    # syft describes the scanned archive with a synthetic file component and roots the dependency
+    # graph on the real package it found inside
+    return {
+        "metadata": {"component": {"bom-ref": "file-wrapper", "type": "file", "name": "widget-1.0.jar"}},
+        "components": [
+            {"bom-ref": "pkg:maven/org.example/widget@1.0", "type": "library", "name": "widget", "version": "1.0"},
+            {"bom-ref": "pkg:maven/org.example/helper@2.0", "type": "library", "name": "helper", "version": "2.0"},
+        ],
+        "dependencies": [
+            {"ref": "pkg:maven/org.example/widget@1.0", "dependsOn": ["pkg:maven/org.example/helper@2.0"]},
+        ],
+    }
+
+
+def test_promote_primary_component_replaces_the_file_wrapper_with_the_graph_root() -> None:
+    doc = _syft_shaped_doc()
+
+    sbom._promote_primary_component(doc)
+
+    # The primary is now the real package, not the synthetic file
+    assert doc["metadata"]["component"]["bom-ref"] == "pkg:maven/org.example/widget@1.0"
+    assert doc["metadata"]["component"]["type"] == "library"
+    # It no longer appears twice, and the graph still resolves against it
+    assert [c["bom-ref"] for c in doc["components"]] == ["pkg:maven/org.example/helper@2.0"]
+    assert doc["dependencies"][0]["ref"] == doc["metadata"]["component"]["bom-ref"]
+
+
+def test_promote_primary_component_abstains_without_a_single_root() -> None:
+    # A distribution that bundles sibling modules has no one primary, so the file wrapper stands
+    doc = _syft_shaped_doc()
+    doc["dependencies"] = [
+        {"ref": "pkg:maven/org.example/widget@1.0", "dependsOn": []},
+        {"ref": "pkg:maven/org.example/helper@2.0", "dependsOn": []},
+    ]
+
+    sbom._promote_primary_component(doc)
+
+    assert doc["metadata"]["component"]["bom-ref"] == "file-wrapper"
+    assert len(doc["components"]) == 2
+
+
+def test_promote_primary_component_abstains_without_a_dependency_graph() -> None:
+    doc = _syft_shaped_doc()
+    del doc["dependencies"]
+
+    sbom._promote_primary_component(doc)
+
+    assert doc["metadata"]["component"]["bom-ref"] == "file-wrapper"
+
+
 def test_task_get_results_round_trip_typed_result() -> None:
     task = sql.Task(task_type=sql.TaskType.SBOM_GENERATE, task_args={}, asf_uid="test")
     task.result = results.SBOMGenerate(
