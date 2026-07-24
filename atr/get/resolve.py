@@ -144,6 +144,13 @@ async def selected(  # noqa: C901
     elif (fetch_error is None) and (not release.expedited):
         fetch_error = "The vote thread could not yet be found."
 
+    mail_warnings: list[str] = []
+    vote_task_error = None
+    if (latest_vote_task is not None) and (latest_vote_task.status == sql.TaskStatus.FAILED):
+        vote_task_error = latest_vote_task.error or "unknown error"
+    elif (latest_vote_task is not None) and isinstance(latest_vote_task.result, models.results.VoteInitiate):
+        mail_warnings = latest_vote_task.result.mail_send_warnings
+
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
     bypass_active = interaction.vote_duration_bypass()
     vote_end = interaction.vote_end_get(latest_vote_task)
@@ -373,6 +380,8 @@ async def selected(  # noqa: C901
         outcome=details.outcome if (details is not None) else "",
         resolve_form=resolve_form,
         fetch_error=fetch_error,
+        mail_warnings=mail_warnings,
+        vote_task_error=vote_task_error,
         archive_url=archive_url,
         cancel_only=cancel_only,
         email_context_summary=email_context_summary,

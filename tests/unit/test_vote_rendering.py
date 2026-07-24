@@ -558,6 +558,38 @@ async def test_trusted_rendering_without_start_mid_disables_form_but_shows_lates
     latest_ballot_get.assert_awaited_once_with("project-1.0.0", 1, "voter")
 
 
+def test_vote_task_warnings_renders_delivery_warnings() -> None:
+    task = _completed_vote_task()
+    task.result = task.result.model_copy(
+        update={"mail_send_warnings": ["failed to send to dev@project.apache.org: connection refused"]}
+    )
+
+    page = htm.Block()
+    vote._render_vote_task_warnings(page, task)
+
+    html = str(page.collect())
+    assert "The vote announcement email reported delivery problems:" in html
+    assert "failed to send to dev@project.apache.org: connection refused" in html
+
+
+def test_vote_task_warnings_renders_failed_task_error() -> None:
+    task = sql.Task(
+        status=sql.TaskStatus.FAILED,
+        task_type=sql.TaskType.VOTE_INITIATE,
+        task_args={},
+        asf_uid="chair",
+        project_key="project",
+        version_key="1.0.0",
+    )
+    task.error = "Failed to send the vote email to any recipient: connection refused"
+
+    page = htm.Block()
+    vote._render_vote_task_warnings(page, task)
+
+    html = str(page.collect())
+    assert "Starting this vote failed: Failed to send the vote email to any recipient: connection refused" in html
+
+
 def _ballot(
     *,
     release_key: str,

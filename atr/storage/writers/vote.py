@@ -484,9 +484,6 @@ class ReleaseManager(CommitteeParticipant):
                 vote_mode=vote_mode.value,
             )
 
-        # TODO: We should log all outgoing email and the session so that users can confirm
-        # And can be warned if there was a failure
-        # (The message should be shown on the vote resolution page)
         return task
 
     async def _committee_for_release(self, release: sql.Release) -> sql.Committee | None:

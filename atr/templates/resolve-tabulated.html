@@ -16,6 +16,19 @@
     <p><span class="badge text-bg-danger">Embargoed release</span></p>
   {% endif %}
 
+  {% if vote_task_error %}
+    <div class="alert alert-danger">Starting this vote failed: {{ vote_task_error }}</div>
+  {% endif %}
+
+  {% if mail_warnings %}
+    <div class="alert alert-warning">
+      <p>The vote announcement email reported delivery problems:</p>
+      <ul class="mb-0">
+        {% for warning in mail_warnings %}<li>{{ warning }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
   {% if trusted_mode %}
     <h2>Authoritative votes</h2>
     <p>

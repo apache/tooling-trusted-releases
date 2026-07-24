@@ -33,7 +33,6 @@ import atr.form as form
 import atr.htm as htm
 import atr.log as log
 import atr.mapping as mapping
-import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -702,18 +701,3 @@ async def _status_selected_impl(
         "redirect_url": None,
     }
     return quart.jsonify(payload)
-
-
-def _warnings_from_vote_result(vote_task: sql.Task | None) -> list[str]:
-    # TODO: Replace this with a schema.Strict model
-    # But we'd still need to do some of this parsing and validation
-    # We should probably rethink how to send data through tasks
-
-    if (not vote_task) or (not vote_task.result):
-        return ["No vote task result found."]
-
-    vote_task_result = vote_task.result
-    if not isinstance(vote_task_result, results.VoteInitiate):
-        return ["Vote task result is not a results.VoteInitiate instance."]
-
-    return vote_task_result.mail_send_warnings

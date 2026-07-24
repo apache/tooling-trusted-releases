@@ -38,6 +38,7 @@ import atr.get.resolve as resolve
 import atr.get.root as root
 import atr.htm as htm
 import atr.mapping as mapping
+import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.post as post
@@ -118,6 +119,8 @@ async def render_options_page(
 
     page = htm.Block()
     _render_header(page, release, show_resolve_section, latest_vote_task)
+    if session is not None:
+        _render_vote_task_warnings(page, latest_vote_task)
     _render_section_download(page, release, session, user_category)
     _render_section_checks(page, release, file_totals)
     await _render_section_vote(page, release, session, user_category, archive_url, latest_vote_task)
@@ -750,6 +753,26 @@ def _render_vote_manual(page: htm.Block) -> None:
         "This release uses manual voting. The vote thread is hosted on the project mailing list, ",
         "and ATR cannot record votes or display the thread for it. ",
         "To participate, reply to the vote thread directly on the mailing list.",
+    ]
+
+
+def _render_vote_task_warnings(page: htm.Block, latest_vote_task: sql.Task | None) -> None:
+    if latest_vote_task is None:
+        return
+    if latest_vote_task.status == sql.TaskStatus.FAILED:
+        page.div(".alert.alert-danger", role="alert")[
+            "Starting this vote failed: ",
+            latest_vote_task.error or "unknown error",
+        ]
+        return
+    if not isinstance(latest_vote_task.result, results.VoteInitiate):
+        return
+    warnings = latest_vote_task.result.mail_send_warnings
+    if not warnings:
+        return
+    page.div(".alert.alert-warning", role="alert")[
+        htm.p["The vote announcement email reported delivery problems:"],
+        htpy.ul(".mb-0")[[htpy.li[warning] for warning in warnings]],
     ]
 
 

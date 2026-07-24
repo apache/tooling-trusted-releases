@@ -1347,6 +1347,7 @@ def _empty_vote_summary() -> dict[str, int]:
 
 def _latest_vote_task() -> SimpleNamespace:
     return SimpleNamespace(
+        status=sql.TaskStatus.COMPLETED,
         result=results.VoteInitiate(
             kind="vote_initiate",
             message="Vote announcement email sent successfully",
@@ -1367,6 +1368,7 @@ def _latest_vote_task() -> SimpleNamespace:
 def _latest_vote_task_with_end(offset_hours: int) -> SimpleNamespace:
     vote_end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=offset_hours)
     return SimpleNamespace(
+        status=sql.TaskStatus.COMPLETED,
         result=results.VoteInitiate(
             kind="vote_initiate",
             message="Vote announcement email sent successfully",
