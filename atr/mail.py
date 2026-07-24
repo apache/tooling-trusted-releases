@@ -37,6 +37,7 @@ import atr.util as util
 # But in many cases we should do so
 _APACHE_DOMAIN: Final[str] = models_mail.APACHE_DOMAIN
 _MAIL_RELAY: Final[str] = "mail-relay.apache.org"
+_PREFLIGHT_TIMEOUT: Final[int] = 10
 _SMTP_PORT: Final[int] = 587
 _SMTP_TIMEOUT: Final[int] = 30
 NOREPLY_EMAIL_ADDRESS: Final[str] = f"noreply@{_APACHE_DOMAIN}"
@@ -70,6 +71,22 @@ def body_with_footer(body: str, category: MailFooterCategory, from_addr: str) ->
 
 def message_id_create() -> str:
     return f"{uuid.uuid4()}@{_APACHE_DOMAIN}"
+
+
+async def relay_reachable() -> bool:
+    context = util.create_secure_ssl_context()
+    smtp = aiosmtplib.SMTP(
+        hostname=_MAIL_RELAY, port=_SMTP_PORT, timeout=_PREFLIGHT_TIMEOUT, tls_context=context, start_tls=True
+    )
+    try:
+        await smtp.connect()
+        await smtp.ehlo()
+    except Exception as e:
+        log.warning(f"Mail relay preflight to {_MAIL_RELAY}:{_SMTP_PORT} failed: {e}")
+        return False
+    finally:
+        smtp.close()
+    return True
 
 
 async def send(msg_data: Message, category: MailFooterCategory) -> tuple[str, list[str]]:

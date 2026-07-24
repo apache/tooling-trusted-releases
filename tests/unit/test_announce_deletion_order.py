@@ -34,6 +34,7 @@ def announcing_writer(
     (unfinished / "00003").mkdir(parents=True)
     monkeypatch.setattr(announce.aioshutil, "move", mock.AsyncMock(side_effect=lambda *a, **k: calls.append("move")))
     monkeypatch.setattr(announce.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL=""))
+    monkeypatch.setattr(announce.config, "is_dev_environment", lambda: True)
     monkeypatch.setattr(
         announce.construct, "announce_release_subject_and_body", mock.AsyncMock(return_value=("Subject", ""))
     )
@@ -96,6 +97,22 @@ def release_row() -> SimpleNamespace:
         unwrap_revision_number="00003",
         version="2.0.0",
     )
+
+
+@pytest.mark.asyncio
+async def test_announce_blocked_when_mail_relay_unreachable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    calls: list[str] = []
+    release_manager = announcing_writer(monkeypatch, tmp_path, calls)
+    monkeypatch.setattr(announce.config, "is_dev_environment", lambda: False)
+    monkeypatch.setattr(announce.mail, "relay_reachable", mock.AsyncMock(return_value=False))
+
+    with pytest.raises(storage.AccessError, match="mail relay") as info:
+        await release_manager.release(**release_arguments())
+
+    assert info.value.status == 503
+    assert calls == []
 
 
 @pytest.mark.asyncio

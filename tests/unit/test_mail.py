@@ -22,6 +22,7 @@ import email.policy as policy
 import unittest.mock as mock
 from typing import TYPE_CHECKING
 
+import aiosmtplib
 import pytest
 
 import atr.mail as mail
@@ -188,6 +189,38 @@ async def test_foundation_committer_send_records_errors_in_audit_log(monkeypatch
     audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
     assert audit_kwargs["sent"] is True
     assert audit_kwargs["errors"] == "failed to send to recipient@apache.org: boom"
+
+
+@pytest.mark.asyncio
+async def test_relay_reachable_false_when_connect_fails(monkeypatch: "MonkeyPatch") -> None:
+    smtp = mock.MagicMock()
+    smtp.connect = mock.AsyncMock(side_effect=OSError("connection refused"))
+    monkeypatch.setattr("atr.mail.aiosmtplib.SMTP", mock.MagicMock(return_value=smtp))
+
+    assert await mail.relay_reachable() is False
+    smtp.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_relay_reachable_false_when_ehlo_fails(monkeypatch: "MonkeyPatch") -> None:
+    smtp = mock.MagicMock()
+    smtp.connect = mock.AsyncMock()
+    smtp.ehlo = mock.AsyncMock(side_effect=aiosmtplib.SMTPHeloError(550, "denied"))
+    monkeypatch.setattr("atr.mail.aiosmtplib.SMTP", mock.MagicMock(return_value=smtp))
+
+    assert await mail.relay_reachable() is False
+    smtp.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_relay_reachable_true_when_ehlo_succeeds(monkeypatch: "MonkeyPatch") -> None:
+    smtp = mock.MagicMock()
+    smtp.connect = mock.AsyncMock()
+    smtp.ehlo = mock.AsyncMock()
+    monkeypatch.setattr("atr.mail.aiosmtplib.SMTP", mock.MagicMock(return_value=smtp))
+
+    assert await mail.relay_reachable() is True
+    smtp.close.assert_called_once()
 
 
 @pytest.mark.asyncio

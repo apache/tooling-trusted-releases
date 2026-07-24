@@ -246,6 +246,13 @@ class ReleaseManager(CommitteeParticipant):
             else:
                 await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
 
+        if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
+            raise storage.AccessError(
+                "The mail relay appears to be unavailable, so the announcement cannot be sent."
+                " Please check https://status.apache.org/ and try again later.",
+                status=503,
+            )
+
         # Ensure that the permissions of every directory are 755
         await asyncio.to_thread(util.chmod_directories, unfinished_path)
 
