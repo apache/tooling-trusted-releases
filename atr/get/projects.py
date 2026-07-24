@@ -1622,6 +1622,25 @@ def _view_action(project: sql.Project, tab: str) -> str:
     return util.as_url(post.projects.view, name=str(project.key)) + f"?tab={tab}"
 
 
+def _vote_mode_description(mode: sql.VoteMode) -> str:
+    match mode:
+        case sql.VoteMode.MANUAL:
+            return (
+                "The vote is held entirely outside ATR. You provide the vote thread URL and record the result manually."
+            )
+        case sql.VoteMode.EMAIL:
+            return (
+                "ATR announces the vote, and votes are cast by replying to the thread."
+                " ATR tabulates the replies when the vote is resolved."
+            )
+        case sql.VoteMode.TRUSTED:
+            return (
+                "ATR announces the vote, but votes are cast on the ATR vote page and"
+                " recorded as ballots, with receipts sent to the thread."
+                " The vote can be resolved automatically."
+            )
+
+
 def _vote_mode_label(mode: sql.VoteMode) -> str:
     return mode.value.capitalize()
 
@@ -1655,6 +1674,7 @@ def _vote_mode_radios(project: sql.Project) -> htm.Element:
             htpy.div(".form-check")[
                 htpy.input(**attrs),
                 htpy.label(".form-check-label", for_=radio_id)[_vote_mode_label(mode)],
+                htm.div(".form-text.text-muted.mt-0.mb-2")[_vote_mode_description(mode)],
             ]
         )
     elements.append(htm.div("#vote_mode")[*radios])
