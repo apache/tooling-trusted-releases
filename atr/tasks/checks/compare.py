@@ -113,11 +113,12 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
             await aiofiles.os.makedirs(github_dir, exist_ok=True)
             checkout_dir = await _checkout_github_source(payload, github_dir)
             if checkout_dir is None:
+                repo_url = f"https://github.com/{payload.repository}.git"
                 await recorder.exception(
                     "Failed to clone GitHub repository for comparison",
-                    {"repo_url": f"https://github.com/{payload.repository}.git", "sha": payload.sha},
+                    {"repo_url": repo_url, "sha": payload.sha},
                 )
-                return None
+                raise RuntimeError(f"Failed to clone {repo_url} at {payload.sha} for source tree comparison")
             archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
             if archive_root_result.root is None:
                 await recorder.concern(

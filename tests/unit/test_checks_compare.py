@@ -52,6 +52,15 @@ class CheckoutRecorder:
         return str(checkout_dir)
 
 
+class CheckoutFailure:
+    async def __call__(
+        self,
+        payload: atr.models.github.TrustedPublisherPayload,
+        checkout_dir: safe.StatePath,
+    ) -> str | None:
+        return None
+
+
 class CloneRecorder:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, pathlib.Path]] = []
@@ -731,6 +740,31 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 
     assert len(recorder.concern_calls) == 0
     assert len(recorder.note_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_trees_raises_when_checkout_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    temp_dir = safe.StatePath(tmp_path)
+    recorder = RecorderStub(True)
+    args = _make_args(recorder)
+    payload = _make_payload()
+    cache_dir = temp_dir / "cache"
+    cache_dir.path.mkdir()
+    tmp_root = temp_dir / "temporary-root"
+
+    monkeypatch.setattr(atr.attestable, "github_tp_payload_read", PayloadLoader(payload))
+    monkeypatch.setattr(atr.tasks.checks.compare, "_checkout_github_source", CheckoutFailure())
+    monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
+    monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
+
+    with pytest.raises(RuntimeError, match=r"Failed to clone .* for source tree comparison"):
+        await atr.tasks.checks.compare.source_trees(args)
+
+    assert len(recorder.exception_calls) == 1
+    message, data = recorder.exception_calls[0]
+    assert message == "Failed to clone GitHub repository for comparison"
+    assert isinstance(data, dict)
+    assert data["repo_url"] == "https://github.com/apache/test.git"
 
 
 @pytest.mark.asyncio
