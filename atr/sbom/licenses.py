@@ -17,7 +17,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
+from typing import TYPE_CHECKING, Final
 
 from cyclonedx.model.license import DisjunctiveLicense, License, LicenseExpression
 
@@ -27,6 +28,12 @@ if TYPE_CHECKING:
 
 from . import constants, models
 from .spdx import license_expression_atoms
+
+# Words that carry no distinguishing meaning, so that "Apache License, Version 2.0" and the SPDX
+# name "Apache License 2.0" reduce to the same thing
+_NAME_NOISE: Final[frozenset[str]] = frozenset({"the", "license", "licence", "licenses", "licences", "version", "v"})
+_NAME_SPLIT: Final[re.Pattern[str]] = re.compile(r"[^0-9a-z]+")
+_NAME_VERSION: Final[re.Pattern[str]] = re.compile(r"^v(\d.*)$")
 
 
 def check(
@@ -68,7 +75,7 @@ def check(
             got_error = False
             any_unknown = parse_failed
             for atom in atoms:
-                folded = atom.casefold()
+                folded = _folded_atom(atom)
                 if folded in constants.licenses.CATEGORY_A_LICENSES_FOLD:
                     continue
                 if folded in constants.licenses.CATEGORY_B_LICENSES_FOLD:
@@ -127,3 +134,31 @@ def expression(license_choice: License) -> str | None:
     if isinstance(license_choice, DisjunctiveLicense):
         return license_choice.id or license_choice.name
     return None
+
+
+def _folded_atom(atom: str) -> str:
+    resolved = _NAME_TO_ID.get(_normalised_name(atom))
+    return (resolved if (resolved is not None) else atom).casefold()
+
+
+def _name_to_id() -> dict[str, str]:
+    index: dict[str, str] = {}
+    for license_id, name in constants.licenses.LICENSE_NAMES.items():
+        index[_normalised_name(name)] = license_id
+    for license_ids in constants.licenses.LICENSES.values():
+        for license_id in license_ids:
+            index.setdefault(_normalised_name(license_id), license_id)
+    return index
+
+
+def _normalised_name(text: str) -> str:
+    words = []
+    for word in _NAME_SPLIT.split(text.casefold()):
+        if (not word) or (word in _NAME_NOISE):
+            continue
+        version = _NAME_VERSION.match(word)
+        words.append(version.group(1) if version else word)
+    return " ".join(words)
+
+
+_NAME_TO_ID: Final[dict[str, str]] = _name_to_id()

@@ -17,6 +17,7 @@
 
 import cyclonedx.model.license as cdx_license
 
+import atr.sbom.constants as constants
 import atr.sbom.licenses as licenses
 import atr.sbom.models as models
 import tests.unit.sboms as sboms
@@ -49,3 +50,51 @@ def test_check() -> None:
         ("forbidden", models.licenses.Category.X, False),
         ("named", models.licenses.Category.X, True),
     ]
+
+
+def test_check_categorises_a_licence_named_in_full() -> None:
+    # Components that give no SPDX identifier name their licence however their build file spelled
+    # it, so the category must not depend on that spelling
+    good, warnings, errors = licenses.check(
+        sboms.with_components(
+            {
+                "type": "library",
+                "name": "maven-style",
+                "licenses": [{"license": {"name": "Apache License, Version 2.0"}}],
+            },
+            {"type": "library", "name": "spdx-style", "licenses": [{"license": {"name": "Apache License 2.0"}}]},
+            {"type": "library", "name": "definite", "licenses": [{"license": {"name": "The MIT License"}}]},
+            {
+                "type": "library",
+                "name": "abbreviated",
+                "licenses": [{"license": {"name": "Eclipse Public License v2.0"}}],
+            },
+        ),
+        include_all=True,
+    )
+
+    assert sorted(issue.component_name for issue in good) == ["definite", "maven-style", "spdx-style"]
+    assert [issue.component_name for issue in warnings] == ["abbreviated"]
+    assert [issue.category for issue in warnings] == [models.licenses.Category.B]
+    assert errors == []
+
+
+def test_check_reports_the_licence_as_the_component_declared_it() -> None:
+    good, _warnings, _errors = licenses.check(
+        sboms.with_components(
+            {
+                "type": "library",
+                "name": "maven-style",
+                "licenses": [{"license": {"name": "Apache License, Version 2.0"}}],
+            },
+        ),
+        include_all=True,
+    )
+
+    assert [issue.license_expression for issue in good] == ["Apache License, Version 2.0"]
+
+
+def test_license_names_resolve_to_exactly_one_identifier() -> None:
+    names = [licenses._normalised_name(name) for name in constants.licenses.LICENSE_NAMES.values()]
+
+    assert len(names) == len(set(names))
