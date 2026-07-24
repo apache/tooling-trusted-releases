@@ -78,6 +78,34 @@ async def test_send_passes_message_id_to_mail_writer(monkeypatch: "MonkeyPatch")
 
 
 @pytest.mark.asyncio
+async def test_send_raises_when_all_recipients_fail(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr(
+        "atr.tasks.message.ldap.account_lookup",
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=validuser,ou=people,dc=apache,dc=org", uid=["validuser"], cn=["Valid User"]
+            )
+        ),
+    )
+    mock_mail_send = mock.AsyncMock(
+        return_value=("mid@apache.org", ["failed to send to dev@project.apache.org: connection refused"])
+    )
+    mock_wafc = mock.MagicMock()
+    mock_wafc.mail.send = mock_mail_send
+    mock_write = mock.MagicMock()
+    mock_write.as_foundation_committer.return_value = mock_wafc
+
+    @contextlib.asynccontextmanager
+    async def mock_storage_write(_asf_uid: str) -> AsyncIterator[mock.MagicMock]:
+        yield mock_write
+
+    monkeypatch.setattr("atr.tasks.message.storage.write", mock_storage_write)
+
+    with pytest.raises(message.SendError, match=r"any recipient"):
+        await message.send(_send_args(email_sender="validuser@apache.org"))
+
+
+@pytest.mark.asyncio
 async def test_send_rejects_banned_asf_account(monkeypatch: "MonkeyPatch") -> None:
     """Test that a banned ASF account raises SendError."""
     monkeypatch.setattr(
@@ -113,6 +141,38 @@ async def test_send_rejects_invalid_asf_id(monkeypatch: "MonkeyPatch") -> None:
 
     with pytest.raises(message.SendError, match=r"Invalid email account"):
         await message.send(_send_args(email_sender="nosuchuser@apache.org"))
+
+
+@pytest.mark.asyncio
+async def test_send_returns_warnings_on_partial_failure(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr(
+        "atr.tasks.message.ldap.account_lookup",
+        mock.AsyncMock(
+            return_value=ldap.Result(
+                dn="uid=validuser,ou=people,dc=apache,dc=org", uid=["validuser"], cn=["Valid User"]
+            )
+        ),
+    )
+    mock_mail_send = mock.AsyncMock(
+        return_value=("mid@apache.org", ["failed to send to other@project.apache.org: connection refused"])
+    )
+    mock_wafc = mock.MagicMock()
+    mock_wafc.mail.send = mock_mail_send
+    mock_write = mock.MagicMock()
+    mock_write.as_foundation_committer.return_value = mock_wafc
+
+    @contextlib.asynccontextmanager
+    async def mock_storage_write(_asf_uid: str) -> AsyncIterator[mock.MagicMock]:
+        yield mock_write
+
+    monkeypatch.setattr("atr.tasks.message.storage.write", mock_storage_write)
+
+    result = await message.send(
+        {**_send_args(email_sender="validuser@apache.org"), "email_cc": ["other@project.apache.org"]}
+    )
+
+    assert result is not None
+    assert result.mail_send_warnings == ["failed to send to other@project.apache.org: connection refused"]
 
 
 @pytest.mark.asyncio

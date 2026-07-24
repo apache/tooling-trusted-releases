@@ -52,6 +52,9 @@ async def send(task_args: args.Send) -> results.Results | None:
         log.warning(f"Mail sending to {task_args.email_to} for subject '{task_args.subject}' encountered errors:")
         for error in mail_errors:
             log.warning(f"- {error}")
+        recipient_total = 1 + len(task_args.email_cc) + len(task_args.email_bcc)
+        if len(mail_errors) >= recipient_total:
+            raise SendError(f"Failed to send to any recipient: {'; '.join(mail_errors)}")
 
     # TODO: Record the vote in the database?
     # We'd need to sync with manual votes too

@@ -367,8 +367,11 @@ async def _initiate_core_logic(task_args: args.Initiate) -> results.Results | No
         wafc = write.as_foundation_committer()
         mid, mail_errors = await wafc.mail.send(message, mail.MailFooterCategory.USER)
 
-    # Original success message structure
     all_destinations = [task_args.email_to, *task_args.email_cc, *task_args.email_bcc]
+    if mail_errors and (len(mail_errors) >= len(all_destinations)):
+        raise VoteInitiationError(f"Failed to send the vote email to any recipient: {'; '.join(mail_errors)}")
+
+    # Original success message structure
     result = results.VoteInitiate(
         kind="vote_initiate",
         message="Vote announcement email sent successfully",

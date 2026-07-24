@@ -165,6 +165,32 @@ async def test_foundation_committer_send_dev_uses_test_id_without_supplied_messa
 
 
 @pytest.mark.asyncio
+async def test_foundation_committer_send_records_errors_in_audit_log(monkeypatch: "MonkeyPatch") -> None:
+    monkeypatch.setattr("atr.storage.writers.mail.config.is_dev_environment", lambda: False)
+    monkeypatch.setattr(
+        "atr.storage.writers.mail.mail.send",
+        mock.AsyncMock(return_value=("mid@apache.org", ["failed to send to recipient@apache.org: boom"])),
+    )
+    writer, write_as = _mail_writer()
+
+    mid, errors = await writer.send(
+        mail.Message(
+            email_sender="sender@apache.org",
+            email_to="recipient@apache.org",
+            subject="Audit test",
+            body="Hello.",
+        ),
+        mail.MailFooterCategory.NONE,
+    )
+
+    assert mid == "mid@apache.org"
+    assert errors == ["failed to send to recipient@apache.org: boom"]
+    audit_kwargs = write_as.append_to_audit_log.call_args.kwargs
+    assert audit_kwargs["sent"] is True
+    assert audit_kwargs["errors"] == "failed to send to recipient@apache.org: boom"
+
+
+@pytest.mark.asyncio
 async def test_send_accepts_legitimate_message(monkeypatch: "MonkeyPatch") -> None:
     """Test that a legitimate message without CRLF is accepted."""
     mock_send_many = mock.AsyncMock(return_value=[])

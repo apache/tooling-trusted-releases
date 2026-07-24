@@ -75,6 +75,7 @@ class FoundationCommitter(GeneralPublic):
 
         self.__write_as.append_to_audit_log(
             sent=not is_dev,
+            errors=", ".join(errors),
             email_sender=message.email_sender,
             email_to=message.email_to,
             subject=message.subject,
