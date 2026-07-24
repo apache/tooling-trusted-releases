@@ -23,6 +23,7 @@ from types import SimpleNamespace
 import pydantic
 import pytest
 
+import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.shared.projects as shared_projects
@@ -320,6 +321,28 @@ async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
     assert releases[0].cycle_key == "example-0"
     new_cycles = [c for c in data.added if isinstance(c, sql.ProjectCycle)]
     assert new_cycles == []
+
+
+async def test_edit_policy_rejects_unknown_template_variables():
+    project = SimpleNamespace(
+        key="example",
+        status=sql.ProjectStatus.ACTIVE,
+        is_active=True,
+        committee_key="alpha",
+        committee=None,
+        release_policy=SimpleNamespace(vote_mode=None, recipient_defaults={}),
+        mark_updated=lambda **_kwargs: None,
+    )
+    data = _MockData(project=project)
+    writer = _make_committee_member(data)
+    good = api.PolicyUpdateArgs.model_validate(
+        {"project": "example", "start_vote_template": "Open for {{DURATION}} hours."}
+    )
+    await writer.edit_policy(safe.ProjectKey("example"), good)
+
+    bad = api.PolicyUpdateArgs.model_validate({"project": "example", "start_vote_template": "{{BAD}} {{WORSE}}"})
+    with pytest.raises(ValueError, match="Unknown template variables: BAD, WORSE"):
+        await writer.edit_policy(safe.ProjectKey("example"), bad)
 
 
 def _cycle(project_key="example", cycle_key="example-default", eod=None, eos=None, eol=None, lts=False):

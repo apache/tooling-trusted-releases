@@ -58,6 +58,17 @@ def test_unknown_template_variables() -> None:
     assert unknown == ["APPLE", "ZEBRA", "version"]
 
 
+def test_validate_template_variables() -> None:
+    names = construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES
+    assert (
+        construct.validate_template_variables("{{PROJECT_NAME}} {{VERSION}}", names) == "{{PROJECT_NAME}} {{VERSION}}"
+    )
+    with pytest.raises(ValueError, match="Unknown template variable: DISCLAIMER"):
+        construct.validate_template_variables("{{DISCLAIMER}}", names)
+    with pytest.raises(ValueError, match="Unknown template variables: BAD, WORSE"):
+        construct.validate_template_variables("{{BAD}} {{WORSE}}", names)
+
+
 def test_vote_policy_form_validates_template_variables() -> None:
     projects.VotePolicyForm.model_validate(_VOTE_BASE)
     with pytest.raises(pydantic.ValidationError, match="Unknown template variables: BAD, WORSE"):

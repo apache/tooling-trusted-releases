@@ -471,6 +471,14 @@ def unknown_template_variables(text: str, names: frozenset[str]) -> list[str]:
     return sorted({name for name in found if name not in names})
 
 
+def validate_template_variables(value: str, names: frozenset[str]) -> str:
+    unknown = unknown_template_variables(value, names)
+    if unknown:
+        noun = util.plural(len(unknown), "variable", include_count=False)
+        raise ValueError(f"Unknown template {noun}: {', '.join(unknown)}")
+    return value
+
+
 def vote_subject_template_variables() -> list[tuple[str, str]]:
     return [(name, TEMPLATE_DESCRIPTIONS[name]) for name in sorted(VOTE_SUBJECT_VARIABLE_NAMES)]
 

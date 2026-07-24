@@ -27,6 +27,7 @@ import strictyaml
 import strictyaml.ruamel.error as error
 
 import atr.calver as calver
+import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
 import atr.models as models
@@ -54,6 +55,15 @@ _TRUSTED_PUBLISHING_FIELDS: Final = _TRUSTED_PUBLISHING_PATH_FIELDS | frozenset(
         "github_repository_name",
     }
 )
+# Policy fields that carry email templates, paired with the variables each one accepts
+_TEMPLATE_VARIABLE_NAMES: Final[dict[str, frozenset[str]]] = {
+    "announce_release_subject": construct.ANNOUNCE_SUBJECT_VARIABLE_NAMES,
+    "announce_release_template": construct.ANNOUNCE_VARIABLE_NAMES,
+    "release_checklist": construct.CHECKLIST_VARIABLE_NAMES,
+    "start_vote_subject": construct.VOTE_SUBJECT_VARIABLE_NAMES,
+    "start_vote_template": construct.VOTE_VARIABLE_NAMES,
+    "finish_vote_template": construct.FINISH_VOTE_VARIABLE_NAMES,
+}
 
 
 class GeneralPublic:
@@ -456,7 +466,6 @@ async def _apply_policy_update_no_commit(
     project_key: models.safe.ProjectKey,
     update: models.api.PolicyUpdateArgs,
 ) -> None:
-    # TODO: Ideally we would centralise the validation in this function
     project, release_policy = await _get_or_create_policy(data, project_key)
     excluded_fields = {"manual_vote", "project", "vote_mode"} | set(_RECIPIENT_API_FIELDS)
     fields_to_update = update.model_fields_set - excluded_fields
@@ -489,6 +498,8 @@ async def _apply_policy_update_no_commit(
 
     if ("min_hours" in fields_to_update) and (update.min_hours is not None):
         models.validation.validate_policy_min_hours(update.min_hours)
+
+    _validate_template_fields(update, fields_to_update)
 
     if fields_to_update & _TRUSTED_PUBLISHING_FIELDS:
         normalised_values.update(_normalise_trusted_publishing_update(release_policy, normalised_values))
@@ -629,3 +640,11 @@ def _validate_file_tag_mappings(mappings: dict[str, list[str]]) -> None:
         for value in values:
             if ".." in value:
                 raise ValueError("File tag mapping values may not contain '..'")
+
+
+def _validate_template_fields(update: models.api.PolicyUpdateArgs, fields_to_update: set[str]) -> None:
+    for template_field, names in _TEMPLATE_VARIABLE_NAMES.items():
+        if template_field in fields_to_update:
+            value = getattr(update, template_field)
+            if value is not None:
+                construct.validate_template_variables(value, names)

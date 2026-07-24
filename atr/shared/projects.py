@@ -111,11 +111,7 @@ def _validate_display_name(val: str) -> str:
 
 
 def _validate_template_variables(value: str, names: frozenset[str]) -> str:
-    unknown = construct.unknown_template_variables(value, names)
-    if unknown:
-        noun = util.plural(len(unknown), "variable", include_count=False)
-        raise ValueError(f"Unknown template {noun}: {', '.join(unknown)}")
-    return value
+    return construct.validate_template_variables(value, names)
 
 
 class AddProjectForm(form.Form):
