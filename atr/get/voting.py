@@ -86,6 +86,8 @@ async def selected(
         release_policy = release.project.release_policy
         if release_policy and (release_policy.min_hours is not None):
             min_hours = release_policy.min_hours
+        if (min_hours == 0) and config.is_production_mode():
+            min_hours = 72
 
         vote_mode = release.effective_vote_mode
         default_subject_template = await construct.start_vote_subject_default(project_key)

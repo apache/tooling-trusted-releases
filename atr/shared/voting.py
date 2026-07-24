@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pydantic
 
+import atr.config as config
 import atr.form as form
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -72,6 +73,8 @@ class StartVotingForm(form.Form):
     @classmethod
     def validate_vote_duration(cls, field):
         util.validate_vote_duration(field)
+        if (field == 0) and config.is_production_mode():
+            raise ValueError("Minimum vote duration must be between 72 and 144 hours inclusive.")
         return field
 
     @pydantic.model_validator(mode="after")

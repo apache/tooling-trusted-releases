@@ -23,6 +23,7 @@ from typing import Annotated, Literal
 import pydantic
 
 import atr.calver as calver
+import atr.config as config
 import atr.construct as construct
 import atr.form as form
 import atr.models.safe as safe
@@ -192,8 +193,7 @@ class VotePolicyForm(form.Form):
     )
     min_hours: form.Int = form.label(
         "Minimum voting period",
-        "The minimum time to run the vote, in hours. Must be 0 or between 72 and 144 inclusive. "
-        "If 0, then wait until 3 +1 votes and more +1 than -1.",
+        "The minimum time to run the vote, in hours. Must be between 72 and 144 inclusive.",
         default=72,
     )
     release_checklist: str = form.label(
@@ -242,6 +242,8 @@ class VotePolicyForm(form.Form):
     @pydantic.model_validator(mode="after")
     def validate_vote_fields(self) -> VotePolicyForm:
         validation.validate_policy_min_hours(self.min_hours)
+        if (self.min_hours == 0) and config.is_production_mode():
+            raise ValueError("Minimum voting period must be between 72 and 144 hours inclusive.")
         return self
 
 
