@@ -124,7 +124,7 @@ async def test_announce_blocks_when_server_unreachable(
         await check(safe.StatePath(tmp_path), util.SvnPublishTarget.RELEASE, public_url, False)
 
     assert info.value.status == 503
-    assert "status.apache.org" in str(info.value)
+    assert "see https://status.apache.org/ for its status." in str(info.value)
 
 
 def _summary(

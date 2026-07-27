@@ -57,13 +57,13 @@ def test_error_message_maps_connection_error() -> None:
     message = svn.error_message(exc)
     assert "could not be reached" in message
     assert "E170013" in message
-    assert "status.apache.org" in message
+    assert "see https://status.apache.org/" in message
 
 
 def test_error_message_reports_timeout() -> None:
     message = svn.error_message(svn.CommandTimeoutError(240.0))
     assert "timed out after 240 seconds" in message
-    assert "status.apache.org" in message
+    assert "see https://status.apache.org/" in message
 
 
 def test_error_message_uses_specific_stacked_error() -> None:

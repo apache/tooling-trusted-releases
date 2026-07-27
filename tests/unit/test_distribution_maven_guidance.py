@@ -31,7 +31,7 @@ def test_distribution_forms_explain_maven_group_id():
 
         assert "Maven Central" in documentation
         assert "groupId" in documentation
-        assert "search.maven.org" in documentation
+        assert "on search.maven.org." in documentation
 
 
 def test_maven_api_error_mentions_group_id():
@@ -47,4 +47,4 @@ def test_maven_api_error_mentions_group_id():
 
     assert error.status == 502
     assert "Maven groupId" in str(error)
-    assert "search.maven.org" in str(error)
+    assert "on https://search.maven.org." in str(error)
