@@ -1,31 +1,31 @@
 {% extends "catalog_site_base.html" %}
 
-{%- block title -%}{{ project.display_name }} {{ version.version }} ~ Apache Release Catalog{%- endblock title -%}
+{%- block title -%}{{ project.display_name }} {{ release_version.version }} ~ Apache Release Catalog{%- endblock title -%}
 
-{%- block description -%}{{ project.display_name }} {{ version.version }} artifacts and downloads.{%- endblock description -%}
+{%- block description -%}{{ project.display_name }} {{ release_version.version }} artifacts and downloads.{%- endblock description -%}
 
 {% block content %}
   <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ project.display_name }}</a></p>
-  <h1 class="mb-3">{{ project.display_name }} {{ version.version }}</h1>
+  <h1 class="mb-3">{{ project.display_name }} {{ release_version.version }}</h1>
 
   {% set status_classes = {"released": "text-bg-success", "archived": "text-bg-secondary"} %}
-  <div class="card mb-3 shadow-sm atr-catalog-version" data-status="{{ version.status }}">
+  <div class="card mb-3 shadow-sm atr-catalog-version" data-status="{{ release_version.status }}">
     <div class="d-flex">
       <div class="atr-certified-panel d-flex align-items-center justify-content-center border-end">
-        {% if version.managed %}
+        {% if release_version.managed %}
           <img src="{{ root }}assets/svg/atr_certified_badge.svg" class="atr-certified-badge" alt="ATR certified">
         {% endif %}
       </div>
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-1">
-          <strong class="fs-5">{{ version.version }}</strong>
-          <span class="badge {{ status_classes[version.status] }}">{{ version.status | capitalize }}</span>
+          <strong class="fs-5">{{ release_version.version }}</strong>
+          <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
         </div>
         <p class="text-muted small mb-2">
-          {% if version.released %}{{ version.released.strftime("%d %b %Y") }}{% elif version.svn_revision %}svn r{{ version.svn_revision }}{% endif %}
+          {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% elif release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
         </p>
-        {% if version.artifacts %}
-          {% for artifact in version.artifacts %}
+        {% if release_version.artifacts %}
+          {% for artifact in release_version.artifacts %}
             <div class="d-flex flex-wrap justify-content-between gap-2 py-1 atr-catalog-artifact">
               <span class="font-monospace small">
                 {{ artifact.artifact_path }}

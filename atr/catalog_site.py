@@ -230,7 +230,7 @@ async def _write_release(
         _ENVIRONMENT.get_template("release.html").render(
             committee=committee,
             project=project,
-            version=version,
+            release_version=version,
             root="../../../",
         ),
     )
