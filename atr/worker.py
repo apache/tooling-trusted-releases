@@ -355,7 +355,7 @@ async def _task_result_process(
             # Find the task by ID
             task_obj = await data.task(id=task_id).get()
             if task_obj:
-                if (status == task.COMPLETED) and (task_obj.task_type in sql.RECURRING_TASK_TYPES):
+                if (status == task.COMPLETED) and (task_obj.task_type in task.RECURRING_TASK_TYPES):
                     # A successful recurring run leaves only a log line behind
                     log_record = _task_completed_record(task_obj, task_results, completed)
                     await data.delete(task_obj)

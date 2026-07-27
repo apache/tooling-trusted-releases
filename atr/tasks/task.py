@@ -30,6 +30,25 @@ ACTIVE: Final = sql.TaskStatus.ACTIVE
 COMPLETED: Final = sql.TaskStatus.COMPLETED
 FAILED: Final = sql.TaskStatus.FAILED
 
+# The recurring tasks reschedule themselves and carry no lasting per-run value, so on
+# success they are logged to a file and dropped rather than kept in the table.
+RECURRING_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
+    {
+        sql.TaskType.CATALOG_SITE_GENERATE,
+        sql.TaskType.DISTRIBUTION_STATUS,
+        sql.TaskType.MAINTENANCE,
+        sql.TaskType.METADATA_UPDATE,
+        sql.TaskType.WORKFLOW_STATUS,
+    }
+)
+
+# Per-type overrides for the worker's default per-task duration limit, in seconds. A type
+# not listed uses the worker's default. A full catalog-site rebuild writes tens of thousands
+# of files, so it needs far longer than the usual limit without being unbounded.
+TASK_TYPE_TIMEOUT_SECONDS: Final[dict[sql.TaskType, int]] = {
+    sql.TaskType.CATALOG_SITE_GENERATE: 1800,
+}
+
 
 class DeferredError(Exception):
     """Raised by a handler to send its own task back to the queue for a later attempt."""

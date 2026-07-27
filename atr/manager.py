@@ -248,7 +248,7 @@ class WorkerManager:
         await self.reset_broken_tasks()
 
     async def terminate_long_running_task(
-        self, active_task: sql.Task, worker: WorkerProcess, task_id: int, pid: int
+        self, active_task: sql.Task, worker: WorkerProcess, task_id: int, pid: int, limit: float
     ) -> None:
         """
         Terminate a task that has been running for too long.
@@ -258,11 +258,11 @@ class WorkerManager:
             # Mark the task as failed
             active_task.status = sql.TaskStatus.FAILED
             active_task.completed = datetime.datetime.now(datetime.UTC)
-            active_task.error = f"Task terminated after exceeding time limit of {self.max_task_seconds} seconds"
+            active_task.error = f"Task terminated after exceeding time limit of {limit} seconds"
 
             if worker.pid:
                 os.killpg(worker.pid, signal.SIGTERM)
-                log.info(f"Worker {pid} terminated after processing task {task_id} for > {self.max_task_seconds}s")
+                log.info(f"Worker {pid} terminated after processing task {task_id} for > {limit}s")
         except ProcessLookupError:
             return
         except Exception as e:
@@ -280,11 +280,12 @@ class WorkerManager:
                 if (not active_task) or (not active_task.started):
                     return False
 
+                limit = task.TASK_TYPE_TIMEOUT_SECONDS.get(active_task.task_type, self.max_task_seconds)
                 task_duration = (datetime.datetime.now(datetime.UTC) - active_task.started).total_seconds()
-                if task_duration <= self.max_task_seconds:
+                if task_duration <= limit:
                     return False
 
-                await self.terminate_long_running_task(active_task, worker, active_task.id, pid)
+                await self.terminate_long_running_task(active_task, worker, active_task.id, pid, limit)
                 notify_args = (
                     active_task.asf_uid,
                     active_task.task_type,

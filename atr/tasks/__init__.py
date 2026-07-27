@@ -59,6 +59,7 @@ import atr.tasks.quarantine as quarantine
 import atr.tasks.sbom as sbom
 import atr.tasks.svn as svn
 import atr.tasks.svnpub as svnpub
+import atr.tasks.task as task
 import atr.tasks.vote as vote
 import atr.util as util
 
@@ -148,7 +149,7 @@ async def clear_scheduled(caller_data: db.Session | None = None) -> None:
         via = sql.validate_instrumented_attribute
 
         delete_stmt = sqlmodel.delete(sql.Task).where(
-            via(sql.Task.task_type).in_(sql.RECURRING_TASK_TYPES),
+            via(sql.Task.task_type).in_(task.RECURRING_TASK_TYPES),
             via(sql.Task.status) == sql.TaskStatus.QUEUED,
             via(sql.Task.scheduled).is_not(None),
         )

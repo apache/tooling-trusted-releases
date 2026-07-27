@@ -343,19 +343,6 @@ class TaskType(enum.StrEnum):
                 assert_never(self)
 
 
-# The recurring tasks reschedule themselves and carry no lasting per-run value,
-# so on success they are logged to a file and dropped rather than kept in the table
-RECURRING_TASK_TYPES: Final[frozenset[TaskType]] = frozenset(
-    {
-        TaskType.CATALOG_SITE_GENERATE,
-        TaskType.DISTRIBUTION_STATUS,
-        TaskType.MAINTENANCE,
-        TaskType.METADATA_UPDATE,
-        TaskType.WORKFLOW_STATUS,
-    }
-)
-
-
 class UserRole(enum.StrEnum):
     COMMITTEE_MEMBER = "committee_member"
     RELEASE_MANAGER = "release_manager"
