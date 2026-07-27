@@ -5,7 +5,7 @@ aiofiles==25.1.0
     #   tooling-trusted-releases
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.1
+aiohttp==3.14.2
     # via
     #   asfpy
     #   asfquart
@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@912de85c7b621453f87ecc14700e7d3862d1aaba
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@3de4a47fb68c6f9e2e6902cbad572c5cd1fb9fd3
     # via tooling-trusted-releases
 asyncssh==2.24.0
     # via tooling-trusted-releases
@@ -49,7 +49,7 @@ blockbuster==1.5.26
     # via tooling-trusted-releases
 boolean-py==5.0
     # via license-expression
-certifi==2026.6.17
+certifi==2026.7.22
     # via requests
 cffi==2.1.0
     # via
@@ -85,12 +85,12 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.40.8
+djlint==1.42.2
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
-dulwich==1.2.11
+dulwich==1.2.12
     # via tooling-trusted-releases
 dunamai==1.26.1
     # via tooling-trusted-releases
@@ -110,7 +110,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.30.3
+filelock==3.32.0
     # via
     #   python-discovery
     #   virtualenv
@@ -126,7 +126,7 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
-greenlet==3.5.3
+greenlet==3.5.4
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -222,11 +222,11 @@ packaging==26.2
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-platformdirs==4.10.0
+platformdirs==4.11.0
     # via
     #   python-discovery
     #   virtualenv
-pre-commit==4.6.0
+pre-commit==4.6.1
 priority==2.0.0
     # via hypercorn
 propcache==0.5.2
@@ -269,7 +269,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.4.4
+python-discovery==1.5.0
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -297,7 +297,7 @@ referencing==0.37.0
     #   cyclonedx-python-lib
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.7.10
+regex==2026.7.19
     # via djlint
 requests==2.34.2
     # via
@@ -364,7 +364,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.6.1
+virtualenv==21.7.0
     # via pre-commit
 watchfiles==1.2.0
     # via
@@ -380,5 +380,5 @@ wsproto==1.3.2
     # via hypercorn
 wtforms==3.2.2
     # via quart-wtforms
-yarl==1.24.2
+yarl==1.24.5
     # via aiohttp
