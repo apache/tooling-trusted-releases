@@ -79,6 +79,46 @@ def test_check_categorises_a_licence_named_in_full() -> None:
     assert errors == []
 
 
+def test_check_a_disjunction_settles_on_the_friendliest_category() -> None:
+    # A component offered under "A OR B" may be taken under whichever half is easier to live with
+    good, warnings, errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "dual", "licenses": [{"expression": "Apache-2.0 OR GPL-3.0-only"}]},
+        ),
+        include_all=True,
+    )
+
+    assert [issue.component_name for issue in good] == ["dual"]
+    assert warnings == []
+    assert errors == []
+
+
+def test_check_a_conjunction_settles_on_the_sternest_category() -> None:
+    # "A AND B" binds the component to both, so the sterner half decides
+    _good, _warnings, errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "both", "licenses": [{"expression": "Apache-2.0 AND GPL-3.0-only"}]},
+        ),
+    )
+
+    assert [(issue.component_name, issue.category) for issue in errors] == [("both", models.licenses.Category.X)]
+
+
+def test_check_category_b_is_an_error_in_a_source_release() -> None:
+    # Category B may ship in a binary but not in source, so a source release turns the warning into an error
+    _good, warnings, errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "weak-copyleft", "licenses": [{"license": {"id": "EPL-2.0"}}]},
+        ),
+        is_source_release=True,
+    )
+
+    assert warnings == []
+    assert [(issue.component_name, issue.category) for issue in errors] == [
+        ("weak-copyleft", models.licenses.Category.B),
+    ]
+
+
 def test_check_reports_the_licence_as_the_component_declared_it() -> None:
     good, _warnings, _errors = licenses.check(
         sboms.with_components(

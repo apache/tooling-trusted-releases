@@ -130,7 +130,7 @@ def test_strip_temp_prefix_leaves_component_names_relative_to_the_scan_root() ->
 
     sbom._strip_temp_prefix(doc, temp_dir)
 
-    assert doc["components"][0]["name"] == "/META-INF/maven/pom.xml"
+    assert doc["components"][0]["name"] == "META-INF/maven/pom.xml"
     # A path is not a versioned thing, so stripping it must not invent one
     assert "version" not in doc["components"][0]
     assert doc["components"][1]["name"] == "plexus-utils"

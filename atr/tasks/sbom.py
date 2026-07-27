@@ -27,7 +27,9 @@ import orjson
 
 import atr.analysis as analysis
 import atr.archives as archives
+import atr.classify as classify
 import atr.config as config
+import atr.db as db
 import atr.hashes as hashes
 import atr.log as log
 import atr.models.args as args
@@ -354,7 +356,9 @@ async def score_tool(args: args.ScoreArgs) -> results.Results | None:
     # TODO: Could update the ATR version with a constant showing last change to the augment/scan
     #  tools so we know if it's outdated
     outdated = sbom.tool.plugin_outdated_version(bundle.bom)
-    _, license_warnings, license_errors = sbom.licenses.check(bundle.bom)
+    # Category B licences are only an error where the SBOM describes a source release
+    is_source = await _sbom_describes_source(args, path_str)
+    _, license_warnings, license_errors = sbom.licenses.check(bundle.bom, is_source_release=is_source)
     vulnerabilities = sbom.osv.vulns_from_bundle(bundle)
     cli_errors = sbom.cyclonedx.validate_cli(bundle)
 
@@ -371,7 +375,7 @@ async def score_tool(args: args.ScoreArgs) -> results.Results | None:
         if previous_bundle is not None:
             prev_version, _ = sbom.utilities.get_props_from_bundle(previous_bundle)
             prev_good, prev_license_warnings, prev_license_errors = sbom.licenses.check(
-                previous_bundle.bom, include_all=True
+                previous_bundle.bom, include_all=True, is_source_release=is_source
             )
             prev_licenses = [*prev_good, *prev_license_warnings, *prev_license_errors]
             prev_vulnerabilities = sbom.osv.vulns_from_bundle(previous_bundle)
@@ -570,12 +574,31 @@ async def _generate_cyclonedx_core(
             raise SBOMGenerationError("syft command not found")
 
 
+async def _sbom_describes_source(args: args.ScoreArgs, sbom_rel_path: str) -> bool:
+    # Find the classification of the artifact this SBOM pairs with
+    artifact_rel = None
+    for suffix in analysis.CYCLONEDX_JSON_SUFFIXES:
+        if sbom_rel_path.endswith(suffix):
+            artifact_rel = sbom_rel_path.removesuffix(suffix)
+            break
+    if not artifact_rel:
+        return False
+    release_key = sql.release_key(str(args.project_key), str(args.version_key))
+    revision_seq = int(str(args.revision_number))
+    async with db.session() as data:
+        classification = await data.release_file_classification_at(release_key, artifact_rel, revision_seq)
+    if classification is None:
+        return False
+    return classify.FileType(classification) == classify.FileType.SOURCE
+
+
 def _strip_temp_prefix(doc: dict[str, Any], temp_dir: str) -> None:
     # syft names file components after the absolute path it scanned, which --base-path leaves alone
     for component in doc.get("components", []):
         name = component.get("name")
         if isinstance(name, str) and name.startswith(temp_dir):
-            component["name"] = name.removeprefix(temp_dir)
+            # Drop the scan directory and the slash that used to join it to the path within
+            component["name"] = name.removeprefix(temp_dir).removeprefix("/")
 
 
 def _promote_primary_component(doc: dict[str, Any]) -> None:

@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any, Literal
+import re
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import asfquart.base as base
 import cmarkgfm
 import markupsafe
 
+import atr.analysis as analysis
 import atr.blueprints.get as get
 import atr.db as db
 import atr.form as form
@@ -78,14 +80,18 @@ async def components(
         ".",
     ]
 
+    task, _augment_tasks, osv_tasks = await _fetch_tasks(str(sbom_rel_path), project_key, release, version_key)
+
     breakdown = await _breakdown(base_path, sbom_rel_path)
     block.h2["Components"]
     if breakdown is None:
         block.p["This SBOM could not be read, so its components cannot be shown."]
     else:
-        _components_section(block, breakdown)
-
-    task, _augment_tasks, osv_tasks = await _fetch_tasks(str(sbom_rel_path), project_key, release, version_key)
+        quality_url = util.as_url(
+            quality, project_key=str(project_key), version_key=str(version_key), file_path=str(sbom_rel_path)
+        )
+        block.p[htm.a(href=quality_url)["View the quality report for this SBOM"], "."]
+        _components_section(block, breakdown, _license_categories(task))
 
     _license_section(block, task)
     await _vulnerability_scan_section(
@@ -136,6 +142,13 @@ async def quality(
     task_result = task.result
     _report_header(block, is_release_candidate, release, task_result)
 
+    artifact_path_str = _artifact_path_for_sbom(validated_path_str)
+    if artifact_path_str is not None:
+        components_url = util.as_url(
+            components, project_key=str(project_key), version_key=str(version_key), file_path=artifact_path_str
+        )
+        block.p[htm.a(href=components_url)["View the components in this SBOM"], "."]
+
     if not is_release_candidate:
         latest_augment = None
         last_augmented_bom = None
@@ -163,6 +176,15 @@ async def quality(
     _cyclonedx_cli_errors(block, task_result)
 
     return await template.blank("SBOM quality report", content=block.collect())
+
+
+def _artifact_path_for_sbom(sbom_path: str) -> str | None:
+    # The reverse of shared.sbom.sbom_for_artifact: recover the artifact the SBOM describes so the
+    # quality report can link across to the components report, which is keyed by the artifact
+    for suffix in analysis.CYCLONEDX_JSON_SUFFIXES:
+        if sbom_path.endswith(suffix):
+            return sbom_path.removesuffix(suffix)
+    return None
 
 
 async def _augment_section(
@@ -252,7 +274,11 @@ def _component_label(item: sbom.models.components.Item) -> str:
     return item.name if (item.version is None) else f"{item.name} {item.version}"
 
 
-def _components_section(block: htm.Block, breakdown: sbom.models.components.Breakdown) -> None:
+def _components_section(
+    block: htm.Block,
+    breakdown: sbom.models.components.Breakdown,
+    license_categories: dict[str, sbom.models.licenses.Category],
+) -> None:
     if breakdown.subject is not None:
         block.p["This SBOM describes ", htm.strong[_component_label(breakdown.subject)], "."]
 
@@ -271,17 +297,20 @@ def _components_section(block: htm.Block, breakdown: sbom.models.components.Brea
                     htm.span(".badge.bg-secondary.me-2.font-monospace")[str(len(group.items))],
                     htm.strong[group.component_type.capitalize()],
                 ],
-                _components_table(group.items),
+                _components_table(group.items, license_categories),
             ]
         )
 
 
-def _components_table(items: list[sbom.models.components.Item]) -> htm.Element:
+def _components_table(
+    items: list[sbom.models.components.Item],
+    license_categories: dict[str, sbom.models.licenses.Category],
+) -> htm.Element:
     rows = [
         htm.tr[
             htm.td[item.name],
             htm.td[item.version or "-"],
-            htm.td[", ".join(item.licenses) if item.licenses else "-"],
+            htm.td[_licenses_cell(item.licenses, license_categories)],
             htm.td[htm.code[item.purl] if item.purl else "-"],
         ]
         for item in items
@@ -306,6 +335,20 @@ def _conformance_section(block: htm.Block, task_result: results.SBOMToolScore) -
 
     if not (warnings or errors):
         block.p["No NTIA 2021 minimum data field conformance warnings or errors found."]
+
+
+_CVE_ID: Final = re.compile(r"CVE-\d{4}-\d+")
+
+
+def _cve_reference(references: list[dict[str, Any]]) -> tuple[str, str] | None:
+    # OSV keys a vulnerability by its own id, often a GHSA, but records the CVE alias among the
+    # references. Where a CVE is present it is the name people search for, so we label and link with it
+    for reference in references:
+        url = reference.get("url", "")
+        match = _CVE_ID.search(url)
+        if match is not None:
+            return match.group(), url
+    return None
 
 
 def _cyclonedx_cli_errors(block: htm.Block, task_result: results.SBOMToolScore):
@@ -377,6 +420,39 @@ async def _fetch_tasks(
             .all()
         )
         return (tasks[0] if (len(tasks) > 0) else None), augment_tasks, osv_tasks
+
+
+def _license_badge(name: str, categories: dict[str, sbom.models.licenses.Category]) -> htm.Element:
+    category = categories.get(name, sbom.models.licenses.Category.A)
+    return htm.div(".d-flex.align-items-center")[
+        htm.span(f".badge.me-2{_license_category_style(category)}")[str(category)],
+        name,
+    ]
+
+
+def _license_categories(task: sql.Task | None) -> dict[str, sbom.models.licenses.Category]:
+    # The score task already categorised every licence expression it found wanting, so a licence
+    # absent from both lists is Category A - no need to run the classifier a second time here
+    task_result = _score_result(task)
+    if task_result is None:
+        return {}
+    categories: dict[str, sbom.models.licenses.Category] = {}
+    for issues in (task_result.license_warnings, task_result.license_errors):
+        if issues is None:
+            continue
+        for issue in _load_license_issues(issues):
+            categories[issue.license_expression] = issue.category
+    return categories
+
+
+def _license_category_style(category: sbom.models.licenses.Category) -> str:
+    match category:
+        case sbom.models.licenses.Category.A:
+            return ".bg-success"
+        case sbom.models.licenses.Category.B:
+            return ".bg-warning.text-dark"
+        case sbom.models.licenses.Category.X:
+            return ".bg-danger"
 
 
 def _license_section(block: htm.Block, task: sql.Task | None) -> None:
@@ -470,6 +546,15 @@ def _license_tally(
         ],
         key=lambda kv: kv[0].value,
     )
+
+
+def _licenses_cell(
+    names: list[str],
+    categories: dict[str, sbom.models.licenses.Category],
+) -> htm.Element | str:
+    if not names:
+        return "-"
+    return htm.div(".d-flex.flex-column.gap-1")[*(_license_badge(name, categories) for name in names)]
 
 
 def _load_license_issues(issues: list[str]) -> list[sbom.models.licenses.Issue]:
@@ -653,7 +738,6 @@ def _vulnerability_component_details_osv(
 
     vuln_details = []
     for vuln in component.vulnerabilities:
-        is_new = False
         vuln_id = vuln.id or "Unknown"
         vuln_summary = vuln.summary
         vuln_refs = []
@@ -665,20 +749,15 @@ def _vulnerability_component_details_osv(
         vuln_severity = _extract_vulnerability_severity(vuln)
         worst = _update_worst_severity(severities, vuln_severity, worst)
 
-        if previous_vulns is not None:
-            if (
-                (vuln_id not in previous_vulns)
-                or (previous_vulns[vuln_id][0] != vuln_severity)
-                or (component.purl not in previous_vulns[vuln_id][1])
-            ):
-                is_new = True
-                new = new + 1
-        vulnerability_url = vuln_primary_ref.get("url", "")
+        is_new = _vulnerability_is_new(vuln_id, vuln_severity, component.purl, previous_vulns)
+        if is_new:
+            new = new + 1
+        display_id, vulnerability_url = _vulnerability_display(vuln_id, vuln_primary_ref, vuln.references)
         # We only show the link if it's a valid web link
         if vulnerability_url.startswith("http"):
-            vuln_header = [htm.a(href=vulnerability_url, target="_blank")[htm.strong(".me-2")[vuln_id]]]
+            vuln_header = [htm.a(href=vulnerability_url, target="_blank")[htm.strong(".me-2")[display_id]]]
         else:
-            vuln_header = [htm.strong(".me-2")[vuln_id]]
+            vuln_header = [htm.strong(".me-2")[display_id]]
         style = f".badge.me-2{_severity_to_style(vuln_severity)}"
         vuln_header.append(htm.span(style)[vuln_severity])
 
@@ -718,6 +797,31 @@ def _vulnerability_component_details_osv(
     details_content = [htm.summary[*summary_elements], *vuln_details]
     block.append(htm.details(".mb-3.rounded")[*details_content])
     return new
+
+
+def _vulnerability_display(
+    vuln_id: str, vuln_primary_ref: dict[str, Any], references: list[dict[str, Any]] | None
+) -> tuple[str, str]:
+    # A CVE alias, where present, is both the friendlier label and a link that matches it
+    cve = _cve_reference(references or [])
+    if cve is not None:
+        return cve
+    return vuln_id, vuln_primary_ref.get("url", "")
+
+
+def _vulnerability_is_new(
+    vuln_id: str,
+    vuln_severity: str,
+    purl: str,
+    previous_vulns: dict[str, tuple[str, list[str]]] | None,
+) -> bool:
+    if previous_vulns is None:
+        return False
+    return (
+        (vuln_id not in previous_vulns)
+        or (previous_vulns[vuln_id][0] != vuln_severity)
+        or (purl not in previous_vulns[vuln_id][1])
+    )
 
 
 def _vulnerability_results_from_bom(
