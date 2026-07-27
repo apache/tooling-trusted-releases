@@ -1,0 +1,15 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}{{ project.display_name }} archived releases ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Archived releases for {{ project.display_name }}.{%- endblock description -%}
+
+{% block content %}
+  <p class="mb-1"><a href="index.html" class="atr-back-link">&larr; {{ project.display_name }}</a></p>
+  <h1 class="mb-3">{{ project.display_name }} &ndash; archived releases</h1>
+  {% if versions %}
+    {% for version in versions %}{% include "_version.html" %}{% endfor %}
+  {% else %}
+    <div class="alert alert-info" role="alert">No archived releases.</div>
+  {% endif %}
+{% endblock content %}

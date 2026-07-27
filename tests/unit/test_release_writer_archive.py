@@ -167,6 +167,8 @@ def _make_member(
     mock_data.release = mock.MagicMock(return_value=ReleaseQuery(release_result))
     mock_data.project = mock.MagicMock(return_value=ReleaseQuery(project))
     mock_data.approval_request = mock.MagicMock(return_value=ReleaseQuery(approval))
+    # Archival queues a catalog-site regeneration, which first looks for an existing queued one.
+    mock_data.task = mock.MagicMock(return_value=ReleaseQuery(None))
     mock_data.execute_query = mock.AsyncMock()
     mock_data.begin_immediate = mock.AsyncMock()
     mock_data.expire_all = mock.MagicMock()

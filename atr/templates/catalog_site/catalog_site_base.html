@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="description"
+          content="{%- block description -%}{%- endblock description -%}" />
+    <title>{%- block title -%}{%- endblock title -%}</title>
+
+    <link rel="icon"
+          type="image/x-icon"
+          href="https://apache.org/favicons/favicon.ico" />
+    <link rel="stylesheet" href="{{ root }}assets/css/normalize.css" />
+    <link rel="stylesheet" href="{{ root }}assets/css/atr.css" />
+    <link rel="stylesheet" href="{{ root }}assets/css/bootstrap.custom.css" />
+  </head>
+  <body class="d-flex flex-column min-vh-100">
+    <nav class="navbar navbar-light bg-info-light navbar-ribbon" aria-label="Release catalog">
+      <div class="container-fluid">
+        <a class="navbar-atr" href="{{ root }}index.html">
+          <img src="{{ root }}assets/svg/atr_logo.svg"
+               alt="The Apache Software Foundation"
+               class="asf-logo" />
+        </a>
+        <span class="navbar-text ms-3 me-auto fw-semibold">Release catalog</span>
+      </div>
+    </nav>
+
+    <main class="container py-4 flex-grow-1">
+      {% block content %}{% endblock content %}
+    </main>
+
+    <footer class="footer">
+      <p>
+        Copyright &copy; 2026, The Apache Software Foundation. Material licensed under the
+        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License, version 2.0</a>.
+      </p>
+      <p>
+        This is ATR version <code id="atr-version"><a href="https://github.com/apache/tooling-trusted-releases/commit/{{ commit }}">{{ version }}</a></code>.
+        For inquiries, contact <a href="mailto:dev@tooling.apache.org">dev@tooling.apache.org</a>.
+        Submit bug reports and feedback to <a href="https://github.com/apache/tooling-trusted-releases/issues">the source code repository</a>.
+      </p>
+    </footer>
+  </body>
+</html>

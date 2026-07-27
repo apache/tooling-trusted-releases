@@ -41,7 +41,7 @@ class TemplateVisitor(ast.NodeVisitor):
         self.found = []
 
     def visit_Call(self, node):
-        if isinstance(node.func, ast.Attribute) and (node.func.attr == "render"):
+        if isinstance(node.func, ast.Attribute) and (node.func.attr in ("render", "get_template")):
             if node.args:
                 arg = node.args[0]
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):

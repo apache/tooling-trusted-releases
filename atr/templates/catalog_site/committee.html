@@ -1,0 +1,34 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}{{ committee.display_name }} ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Releases for {{ committee.display_name }}.{%- endblock description -%}
+
+{% block content %}
+  <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
+  <h1 class="mb-4">{{ committee.display_name }}</h1>
+  {% if retired %}
+    <div class="alert alert-secondary" role="alert">
+      This committee has retired to the Attic. Its projects are no longer active.
+    </div>
+  {% else %}
+    <h2 class="fs-4 border-bottom pb-1">Current projects</h2>
+    {% if current %}
+      <div class="list-group mb-4">
+        {% for project in current %}
+          <a class="list-group-item list-group-item-action" href="{{ project.key }}/index.html">{{ project.display_name }}</a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted">No current projects.</p>
+    {% endif %}
+    {% if archived %}
+      <h2 class="fs-4 border-bottom pb-1">Archived projects</h2>
+      <div class="list-group">
+        {% for project in archived %}
+          <a class="list-group-item list-group-item-action" href="{{ project.key }}/index.html">{{ project.display_name }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock content %}

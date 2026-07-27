@@ -31,6 +31,10 @@ COMPLETED: Final = sql.TaskStatus.COMPLETED
 FAILED: Final = sql.TaskStatus.FAILED
 
 
+class DeferredError(Exception):
+    """Raised by a handler to send its own task back to the queue for a later attempt."""
+
+
 class Error(Exception):
     """Error during task execution."""
 

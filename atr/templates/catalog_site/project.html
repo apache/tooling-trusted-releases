@@ -1,0 +1,27 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}{{ project.display_name }} ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Release catalogue for {{ project.display_name }}.{%- endblock description -%}
+
+{% block content %}
+  <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h1 class="mb-0">{{ project.display_name }}</h1>
+    <span>
+      <a class="btn btn-sm btn-outline-secondary" href="cle.json">Project CLE</a>
+      {% if has_archive %}<a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>{% endif %}
+    </span>
+  </div>
+  {% if retired %}
+    <div class="alert alert-secondary" role="alert">
+      This project has been archived. See its archived releases for the history.
+    </div>
+  {% elif versions %}
+    {% for version in versions %}{% include "_version.html" %}{% endfor %}
+  {% else %}
+    <div class="alert alert-info" role="alert">
+      No catalogued releases yet for {{ project.display_name }}.
+    </div>
+  {% endif %}
+{% endblock content %}

@@ -71,15 +71,15 @@ def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.a
     checksum_url: str | None = None
     sbom_url: str | None = None
     if downloadable:
-        # The stored directory is the file's real dist location, so a moved project's artifacts
+        # The stored suffix is the file's real dist location, so a moved project's artifacts
         # (graduated from an umbrella, or shifted to the Attic) resolve where they actually live. The
         # signature, checksum and SBOM share the directory. A row with no recorded suffix roots at
-        # the bare file path, so the link is empty-suffixed rather than the literal "None"
-        directory = safe.RelPath(row.download_path_suffix) if row.download_path_suffix else None
+        # the bare file path.
+        suffix = row.download_path_suffix
 
         def _dist_url(rel_path: str, kind: util.DownloadFile) -> str:
-            relpath = directory.append(rel_path) if (directory is not None) else safe.RelPath(rel_path)
-            return util.download_url_for_path(relpath, kind, archived=archived)
+            path = f"{suffix}/{rel_path}" if suffix else rel_path
+            return util.download_url_for_published_path(path, kind, archived=archived)
 
         artifact_url = _dist_url(row.artifact_path, util.DownloadFile.ARTIFACT)
         if row.signature_path:

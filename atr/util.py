@@ -722,13 +722,21 @@ def download_page_url_error(url: str) -> str | None:
 
 
 def download_url_for_path(relpath: safe.RelPath, kind: DownloadFile, archived: bool = False) -> str:
+    return download_url_for_published_path(str(relpath), kind, archived)
+
+
+def download_url_for_published_path(path: str, kind: DownloadFile, archived: bool = False) -> str:
     # Where a published file at a known dist-relative path is fetched from. Release artifacts use
     # the mirror network; verification metadata uses the canonical host; archived files use the archive.
+    # The path is a real published filename, not an ATR-jailed one, so percent-encode it rather than
+    # validating - RelPath rejects legit dist names (a ":" in a container image, a "#" in a C# artifact).
+    # "+()" stay literal so existing links are unchanged.
+    encoded = urllib.parse.quote(path, safe="/+()")
     if archived:
-        return paths.archive_download_url(relpath)
+        return paths.archive_download_url(encoded)
     if kind is DownloadFile.ARTIFACT:
-        return paths.closer_download_url(relpath)
-    return paths.downloads_url(relpath)
+        return paths.closer_download_url(encoded)
+    return paths.downloads_url(encoded)
 
 
 def email_from_uid(uid: str) -> str | None:

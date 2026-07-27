@@ -23,10 +23,10 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 
 
-def archive_download_url(relpath: safe.RelPath) -> str:
+def archive_download_url(path: str | safe.RelPath) -> str:
     # archive.apache.org keeps every release ever published, including those pruned from the
     # live mirror, so an archived release's files are served from here regardless of host.
-    return f"{constants.ARCHIVE_APACHE_URL}/{relpath}"
+    return f"{constants.ARCHIVE_APACHE_URL}/{path}"
 
 
 def base_path_for_revision(
@@ -35,11 +35,11 @@ def base_path_for_revision(
     return get_unfinished_dir() / project_key / version_key / revision
 
 
-def closer_download_url(relpath: safe.RelPath) -> str:
+def closer_download_url(path: str | safe.RelPath) -> str:
     # For the artifacts themselves we go via the mirror network rather than
     # downloads.apache.org. action=download skips the human mirror-picker page and
     # redirects straight to a chosen mirror.
-    return f"{constants.CLOSER_LUA_URL}/{relpath}?action=download"
+    return f"{constants.CLOSER_LUA_URL}/{path}?action=download"
 
 
 def committee_dist_relpath(
@@ -61,11 +61,11 @@ def committee_keys_url(committee: sql.Committee) -> str:
     return downloads_url(committee_dist_relpath(committee, filename="KEYS"))
 
 
-def downloads_url(relpath: safe.RelPath) -> str:
+def downloads_url(path: str | safe.RelPath) -> str:
     # downloads.apache.org itself, not a mirror. Signatures, checksums and KEYS
     # must come from here rather than a mirror, otherwise a bad mirror could serve
     # a matching artifact and signature.
-    return f"{constants.DOWNLOADS_APACHE_URL}/{relpath}"
+    return f"{constants.DOWNLOADS_APACHE_URL}/{path}"
 
 
 def get_archives_dir() -> safe.StatePath:
@@ -74,6 +74,10 @@ def get_archives_dir() -> safe.StatePath:
 
 def get_attestable_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().ATTESTABLE_STORAGE_DIR))
+
+
+def get_catalog_site_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().CATALOG_SITE_DIR))
 
 
 def get_finished_dir() -> safe.StatePath:

@@ -136,6 +136,8 @@ def _data(approval: SimpleNamespace, update_rowcount: int = 1, is_archived: bool
     data = mock.MagicMock()
     data.release = mock.MagicMock(return_value=_query(get=release))
     data.approval_request = mock.MagicMock(return_value=_query(get=approval))
+    # Archival queues a catalog-site regeneration, which first looks for an existing queued one.
+    data.task = mock.MagicMock(return_value=_query(get=None))
     data.execute_query = mock.AsyncMock(return_value=SimpleNamespace(rowcount=update_rowcount))
     data.begin_immediate = mock.AsyncMock()
     data.expire_all = mock.MagicMock()

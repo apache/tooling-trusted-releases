@@ -33,6 +33,7 @@ import sqlalchemy.engine as engine
 import sqlmodel
 
 import atr.analysis as analysis
+import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.constants as constants
 import atr.construct as construct
@@ -129,6 +130,9 @@ async def _archive_release(
             published=archive_date,
         )
     )
+    # Archiving flips a release from current to archived, so the catalog site
+    # pages for its project need rewriting.
+    await catalog_site.queue_regeneration(data, asf_uid, release.project_key)
     await data.commit()
     write_as.append_to_audit_log(
         asf_uid=asf_uid,
@@ -1539,6 +1543,8 @@ class FoundationAdmin(FoundationCommitter):
                         dated=released,
                     )
                 )
+            # A newly catalogued release adds a page to the static site.
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
             await self.__data.commit()
         except Exception:
             # The caller catalogues each release in turn on one session, so a failure

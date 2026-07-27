@@ -120,6 +120,8 @@ class AppConfig:
     SVN_STORAGE_DIR = os.path.join(STATE_DIR, "subversion")
     ARCHIVES_STORAGE_DIR = os.path.join(STATE_DIR, "archives")
     ATTESTABLE_STORAGE_DIR = os.path.join(STATE_DIR, "attestable")
+    # The static release catalog site, rebuilt from the catalogue on each change
+    CATALOG_SITE_DIR = os.path.join(STATE_DIR, "catalog-site")
     SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="database/atr.db")
     STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
     AUTH_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "auth-audit.log")
@@ -261,6 +263,7 @@ def validate() -> None:
         (conf.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),
         (conf.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
         (conf.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),
+        (conf.CATALOG_SITE_DIR, "CATALOG_SITE_DIR"),
         (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
         (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),

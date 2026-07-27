@@ -55,6 +55,8 @@ def announcing_writer(
     monkeypatch.setattr(announce.util, "permitted_announce_recipients", lambda *a, **k: ["announce@example.apache.org"])
     data = mock.MagicMock()
     data.release.return_value.demand = mock.AsyncMock(return_value=release_row())
+    # A released version queues a catalog-site regeneration, which first looks for an existing queued one.
+    data.task.return_value.get = mock.AsyncMock(return_value=None)
     data.commit = mock.AsyncMock(side_effect=lambda: calls.append("commit"))
     release_manager = object.__new__(announce.ReleaseManager)
     release_manager._ReleaseManager__data = data

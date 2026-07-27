@@ -1,0 +1,19 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Released and archived artifacts for Apache Software Foundation projects.{%- endblock description -%}
+
+{% block content %}
+  <h1 class="mb-3">Release catalog</h1>
+  <p class="text-muted">Browse released and archived artifacts by committee.</p>
+  {% if committees %}
+    <div class="list-group">
+      {% for committee in committees %}
+        <a class="list-group-item list-group-item-action" href="{{ committee.key }}/index.html">{{ committee.display_name }}</a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-muted">No committees catalogued yet.</p>
+  {% endif %}
+{% endblock content %}

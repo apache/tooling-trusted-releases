@@ -913,6 +913,43 @@ def _catalog_import_preview(diff: catalogue_diff.CatalogueDiff) -> htm.Element:
 
 
 @admin.typed
+async def catalog_site_rebuild_get(
+    _session: web.Committer, _catalog_site_rebuild: Literal["catalog-site/rebuild"]
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+    """
+    URL: GET /catalog-site/rebuild
+
+    Rebuild the whole static release catalog site.
+    """
+    rendered_form = await form.render(
+        model_cls=form.Empty,
+        submit_label="Rebuild catalog site",
+        empty=True,
+        form_classes="",
+    )
+    return await template.render("update-catalog-site.html", empty_form=rendered_form)
+
+
+@admin.typed
+async def catalog_site_rebuild_post(
+    session: web.Committer, _catalog_site_rebuild: Literal["catalog-site/rebuild"], _form: form.Empty
+) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
+    """Rebuild the whole static release catalog site."""
+    try:
+        task = await tasks.catalog_site_generate_all(session.asf_uid)
+        return {
+            "message": f"Catalog site rebuild task has been queued with ID {task.id}.",
+            "category": "success",
+        }, 200
+    except Exception as e:
+        log.exception("Failed to queue catalog site rebuild task")
+        return {
+            "message": f"Failed to queue catalog site rebuild: {e!s}",
+            "category": "error",
+        }, 200
+
+
+@admin.typed
 async def configuration(_session: web.Committer, _configuration: Literal["configuration"]) -> web.QuartResponse:
     """
     URL: GET /configuration

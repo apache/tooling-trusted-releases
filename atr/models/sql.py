@@ -232,6 +232,7 @@ class TaskStatus(enum.StrEnum):
 class TaskType(enum.StrEnum):
     ARCHIVE_COMPARISON = "archive_comparison"
     CAP_APPROVAL_RESOLVE = "cap_approval_resolve"
+    CATALOG_SITE_GENERATE = "catalog_site_generate"
     COMPARE_SOURCE_TREES = "compare_source_trees"
     DISTRIBUTION_STATUS = "distribution_status"
     DISTRIBUTION_WORKFLOW = "distribution_workflow"
@@ -272,6 +273,8 @@ class TaskType(enum.StrEnum):
                 return "Archive comparison"
             case TaskType.CAP_APPROVAL_RESOLVE:
                 return "CAP approval resolution"
+            case TaskType.CATALOG_SITE_GENERATE:
+                return "Catalog site generation"
             case TaskType.COMPARE_SOURCE_TREES:
                 return "Compare source trees"
             case TaskType.DISTRIBUTION_STATUS:
@@ -344,6 +347,7 @@ class TaskType(enum.StrEnum):
 # so on success they are logged to a file and dropped rather than kept in the table
 RECURRING_TASK_TYPES: Final[frozenset[TaskType]] = frozenset(
     {
+        TaskType.CATALOG_SITE_GENERATE,
         TaskType.DISTRIBUTION_STATUS,
         TaskType.MAINTENANCE,
         TaskType.METADATA_UPDATE,

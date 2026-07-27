@@ -27,6 +27,15 @@ class CapApprovalResolveArgs(schema.Strict):
     attempt: int = pydantic.Field(default=0, description="The current resolve attempt count")
 
 
+class CatalogSiteGenerate(schema.Strict):
+    """Arguments for the task to regenerate the static release catalog site."""
+
+    asf_uid: str = schema.description("ASF UID on whose behalf the site is regenerated")
+    project_key: str | None = pydantic.Field(
+        default=None, description="Regenerate just this project's subtree; null rebuilds the whole site"
+    )
+
+
 class ConvertCycloneDX(schema.Strict):
     """Arguments for the task to convert an artifact to a CycloneDX SBOM."""
 

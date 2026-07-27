@@ -330,6 +330,10 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         task_results = handler_result
         status = task.COMPLETED
         error = None
+    except task.DeferredError:
+        log.info(f"Task {task_id} ({task_type}) deferred, re-queued for a later attempt")
+        await _task_defer(task_id)
+        return
     except Exception as e:
         task_results = None
         status = task.FAILED

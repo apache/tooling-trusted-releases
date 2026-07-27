@@ -28,6 +28,7 @@ import aioshutil
 import sqlmodel
 
 import atr.analysis as analysis
+import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.construct as construct
 import atr.db as db
@@ -308,6 +309,9 @@ class ReleaseManager(CommitteeParticipant):
                     version_key=str(version_key),
                 )
             )
+
+            # A released version is a new page on the static site.
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))
 
             # Record the artifacts before promoting, since promotion deletes the
             # revisions and cascade-deletes the file state we read classifications from
