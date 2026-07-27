@@ -248,25 +248,43 @@ class WorkerManager:
         await self.reset_broken_tasks()
 
     async def terminate_long_running_task(
-        self, active_task: sql.Task, worker: WorkerProcess, task_id: int, pid: int, limit: float
-    ) -> None:
+        self, data: db.Session, worker: WorkerProcess, task_id: int, pid: int, execution_generation: int, limit: float
+    ) -> sql.Task | None:
         """
         Terminate a task that has been running for too long.
         Updates the task status and terminates the worker process.
         """
-        try:
-            # Mark the task as failed
-            active_task.status = sql.TaskStatus.FAILED
-            active_task.completed = datetime.datetime.now(datetime.UTC)
-            active_task.error = f"Task terminated after exceeding time limit of {limit} seconds"
+        error = f"Task terminated after exceeding time limit of {limit} seconds"
+        update_stmt = (
+            sqlmodel.update(sql.Task)
+            .where(
+                sqlmodel.and_(
+                    sql.Task.id == task_id,
+                    sql.Task.status == sql.TaskStatus.ACTIVE,
+                    sql.Task.pid == pid,
+                    sql.Task.execution_generation == execution_generation,
+                )
+            )
+            .values(
+                status=sql.TaskStatus.FAILED,
+                completed=datetime.datetime.now(datetime.UTC),
+                error=error,
+            )
+            .returning(sql.Task)
+        )
+        failed_task = (await data.execute(update_stmt)).scalar_one_or_none()
+        if failed_task is None:
+            return None
 
-            if worker.pid:
+        if worker.pid:
+            try:
                 os.killpg(worker.pid, signal.SIGTERM)
                 log.info(f"Worker {pid} terminated after processing task {task_id} for > {limit}s")
-        except ProcessLookupError:
-            return
-        except Exception as e:
-            log.error(f"Error stopping long-running worker {pid}: {e}")
+            except ProcessLookupError:
+                ...
+            except Exception as e:
+                log.error(f"Error stopping long-running worker {pid}: {e}")
+        return failed_task
 
     async def check_task_duration(self, data: db.Session, pid: int, worker: WorkerProcess) -> bool:
         """
@@ -285,15 +303,19 @@ class WorkerManager:
                 if task_duration <= limit:
                     return False
 
-                await self.terminate_long_running_task(active_task, worker, active_task.id, pid, limit)
+                failed_task = await self.terminate_long_running_task(
+                    data, worker, active_task.id, pid, active_task.execution_generation, limit
+                )
+                if failed_task is None:
+                    return False
                 notify_args = (
-                    active_task.asf_uid,
-                    active_task.task_type,
-                    active_task.project_key,
-                    active_task.version_key,
-                    active_task.revision_number,
-                    active_task.primary_rel_path,
-                    active_task.error or "task terminated",
+                    failed_task.asf_uid,
+                    failed_task.task_type,
+                    failed_task.project_key,
+                    failed_task.version_key,
+                    failed_task.revision_number,
+                    failed_task.primary_rel_path,
+                    failed_task.error or "task terminated",
                 )
         except Exception as e:
             log.error(f"Error checking task duration for worker {pid}: {e}")

@@ -25,6 +25,12 @@ import atr.tasks.task as task
 import atr.worker as worker
 
 
+def test_task_args_for_log_leaves_other_tasks_unchanged() -> None:
+    task_args = {"body": "Not a mail body"}
+
+    assert worker._task_args_for_log(sql.TaskType.MAINTENANCE, task_args) is task_args
+
+
 def test_task_args_for_log_redacts_message_body_and_recipients() -> None:
     task_args = {
         "email_sender": "sender@apache.org",
@@ -54,12 +60,6 @@ def test_task_args_for_log_redacts_message_body_and_recipients() -> None:
     assert task_args["body"] == "Secret body"
 
 
-def test_task_args_for_log_leaves_other_tasks_unchanged() -> None:
-    task_args = {"body": "Not a mail body"}
-
-    assert worker._task_args_for_log(sql.TaskType.MAINTENANCE, task_args) is task_args
-
-
 async def test_task_process_defers_when_ldap_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("atr.config.is_production_mode", lambda: True)
     monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(side_effect=ldap.UnavailableError("down")))
@@ -68,9 +68,9 @@ async def test_task_process_defers_when_ldap_unavailable(monkeypatch: pytest.Mon
     result_process = mock.AsyncMock()
     monkeypatch.setattr("atr.worker._task_result_process", result_process)
 
-    await worker._task_process(1, sql.TaskType.MESSAGE_SEND.value, {}, "alice")
+    await worker._task_process(1, sql.TaskType.MESSAGE_SEND.value, {}, "alice", 3)
 
-    defer.assert_awaited_once_with(1)
+    defer.assert_awaited_once_with(1, 3)
     result_process.assert_not_awaited()
 
 
@@ -86,7 +86,7 @@ async def test_task_process_fails_when_handler_ldap_unavailable(monkeypatch: pyt
     result_process = mock.AsyncMock()
     monkeypatch.setattr("atr.worker._task_result_process", result_process)
 
-    await worker._task_process(1, sql.TaskType.MESSAGE_SEND.value, {}, "alice")
+    await worker._task_process(1, sql.TaskType.MESSAGE_SEND.value, {}, "alice", 3)
 
     defer.assert_not_awaited()
-    result_process.assert_awaited_once_with(1, None, task.FAILED, "down")
+    result_process.assert_awaited_once_with(1, 3, None, task.FAILED, "down")

@@ -34,6 +34,7 @@ import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
+import sqlalchemy
 import sqlmodel
 
 import atr.constants as constants
@@ -110,10 +111,16 @@ async def _execute_check_task(
     task_args: list[str] | dict[str, Any],
     task_id: int,
     task_type: str,
+    execution_generation: int,
 ) -> results.Results | None:
     log.debug(f"Handler {handler.__name__} expects checks.FunctionArguments, fetching full task details")
     async with db.session() as data:
-        task_obj = await data.task(id=task_id).demand(ValueError(f"Task {task_id} disappeared during processing"))
+        task_obj = await data.task(
+            id=task_id,
+            status=task.ACTIVE,
+            pid=os.getpid(),
+            execution_generation=execution_generation,
+        ).demand(ValueError(f"Task {task_id} is no longer owned by this worker"))
 
     # Validate required fields from the Task object itself
     if task_obj.project_key is None:
@@ -190,10 +197,6 @@ def _setup_logging() -> None:
     )
 
 
-def _task_completed_log(record: dict[str, Any]) -> None:
-    logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
-
-
 def _task_args_for_log(
     task_type: str | sql.TaskType, task_args: list[str] | dict[str, Any]
 ) -> list[str] | dict[str, Any]:
@@ -202,6 +205,10 @@ def _task_args_for_log(
     return {
         key: _TASK_ARG_HIDDEN if (key in _MESSAGE_SEND_SENSITIVE_ARGS) else value for key, value in task_args.items()
     }
+
+
+def _task_completed_log(record: dict[str, Any]) -> None:
+    logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
 
 
 def _task_completed_record(
@@ -221,20 +228,14 @@ def _task_completed_record(
     }
 
 
-async def _task_defer(task_id: int) -> None:
+async def _task_defer(task_id: int, execution_generation: int) -> None:
     via = sql.validate_instrumented_attribute
     scheduled = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=_DEFER_SECONDS)
     async with db.session() as data:
         async with data.begin():
             update_stmt = (
                 sqlmodel.update(sql.Task)
-                .where(
-                    sqlmodel.and_(
-                        via(sql.Task.id) == task_id,
-                        sql.Task.status == task.ACTIVE,
-                        via(sql.Task.pid) == os.getpid(),
-                    )
-                )
+                .where(_task_owned_by_this_worker(task_id, execution_generation))
                 .values(status=task.QUEUED, started=None, pid=None, scheduled=scheduled)
                 .returning(via(sql.Task.id))
             )
@@ -243,7 +244,7 @@ async def _task_defer(task_id: int) -> None:
                 log.warning(f"Task {task_id} was not deferred because it is no longer active")
 
 
-async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str] | None:
+async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str, int] | None:
     """
     Attempt to claim the oldest unclaimed task.
     Returns (task_id, task_type, task_args) if successful.
@@ -273,13 +274,21 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
             now = datetime.datetime.now(datetime.UTC)
             update_stmt = (
                 sqlmodel.update(sql.Task)
-                .where(sqlmodel.and_(sql.Task.id == oldest_queued_task, sql.Task.status == task.QUEUED))
-                .values(status=task.ACTIVE, started=now, pid=os.getpid())
+                .where(
+                    sqlmodel.and_(sql.Task.id == oldest_queued_task.scalar_subquery(), sql.Task.status == task.QUEUED)
+                )
+                .values(
+                    status=task.ACTIVE,
+                    started=now,
+                    pid=os.getpid(),
+                    execution_generation=via(sql.Task.execution_generation) + 1,
+                )
                 .returning(
-                    sql.validate_instrumented_attribute(sql.Task.id),
-                    sql.validate_instrumented_attribute(sql.Task.task_type),
-                    sql.validate_instrumented_attribute(sql.Task.task_args),
-                    sql.validate_instrumented_attribute(sql.Task.asf_uid),
+                    via(sql.Task.id),
+                    via(sql.Task.task_type),
+                    via(sql.Task.task_args),
+                    via(sql.Task.asf_uid),
+                    via(sql.Task.execution_generation),
                 )
             )
 
@@ -287,14 +296,30 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
             claimed_task = result.first()
 
             if claimed_task:
-                task_id, task_type, task_args, asf_uid = claimed_task
+                task_id, task_type, task_args, asf_uid, execution_generation = claimed_task
                 log.info(f"Claimed task {task_id} ({task_type}) with args {_task_args_for_log(task_type, task_args)}")
-                return task_id, task_type, task_args, asf_uid
+                return task_id, task_type, task_args, asf_uid, execution_generation
 
             return None
 
 
-async def _task_process(task_id: int, task_type: str, task_args: list[str] | dict[str, Any], asf_uid: str) -> None:
+def _task_owned_by_this_worker(task_id: int, execution_generation: int) -> sqlalchemy.ColumnElement[bool]:
+    via = sql.validate_instrumented_attribute
+    return sqlmodel.and_(
+        via(sql.Task.id) == task_id,
+        sql.Task.status == task.ACTIVE,
+        via(sql.Task.pid) == os.getpid(),
+        sql.Task.execution_generation == execution_generation,
+    )
+
+
+async def _task_process(
+    task_id: int,
+    task_type: str,
+    task_args: list[str] | dict[str, Any],
+    asf_uid: str,
+    execution_generation: int,
+) -> None:
     """Process a claimed task."""
     import atr.config as config
 
@@ -303,7 +328,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         task_type_member = sql.TaskType(task_type)
     except ValueError as e:
         log.error(f"Invalid task type: {task_type}")
-        await _task_result_process(task_id, None, task.FAILED, str(e))
+        await _task_result_process(task_id, execution_generation, None, task.FAILED, str(e))
         return
 
     task_results: results.Results | None
@@ -317,7 +342,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
                 user_account = await ldap.account_lookup(asf_uid)
             except ldap.UnavailableError as e:
                 log.warning(f"Deferring task {task_id} ({task_type}) because LDAP is unavailable: {e}")
-                await _task_defer(task_id)
+                await _task_defer(task_id, execution_generation)
                 return
             # We check here to see if the account is banned - in the case of running tasks,
             # we don't really need to worry about admin/membership status as that wouldn't
@@ -331,7 +356,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
 
         # Check whether the handler is a check handler
         if (len(params) == 1) and (params[0].annotation == checks.FunctionArguments):
-            handler_result = await _execute_check_task(handler, task_args, task_id, task_type)
+            handler_result = await _execute_check_task(handler, task_args, task_id, task_type, execution_generation)
         else:
             # Otherwise, it's not a check handler
             additional_kwargs = {}
@@ -344,7 +369,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         error = None
     except task.DeferredError:
         log.info(f"Task {task_id} ({task_type}) deferred, re-queued for a later attempt")
-        await _task_defer(task_id)
+        await _task_defer(task_id, execution_generation)
         return
     except Exception as e:
         task_results = None
@@ -352,43 +377,65 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         error_details = traceback.format_exc()
         log.error(f"Task {task_id} failed processing: {error_details}")
         error = str(e)
-    await _task_result_process(task_id, task_results, status, error)
+    await _task_result_process(task_id, execution_generation, task_results, status, error)
 
 
 async def _task_result_process(
-    task_id: int, task_results: results.Results | None, status: sql.TaskStatus, error: str | None = None
+    task_id: int,
+    execution_generation: int,
+    task_results: results.Results | None,
+    status: sql.TaskStatus,
+    error: str | None = None,
 ) -> None:
     """Process and store task results in the database."""
     notify_args: tuple[str | None, sql.TaskType, str | None, str | None, str | None, str | None, str] | None = None
     log_record: dict[str, Any] | None = None
     completed = datetime.datetime.now(datetime.UTC)
+    via = sql.validate_instrumented_attribute
+    ownership = _task_owned_by_this_worker(task_id, execution_generation)
     async with db.session() as data:
         async with data.begin():
-            # Find the task by ID
-            task_obj = await data.task(id=task_id).get()
-            if task_obj:
-                if (status == task.COMPLETED) and (task_obj.task_type in task.RECURRING_TASK_TYPES):
-                    # A successful recurring run leaves only a log line behind
+            task_obj = None
+            if status == task.COMPLETED:
+                # A successful recurring run leaves only a log line behind
+                delete_stmt = (
+                    sqlmodel.delete(sql.Task)
+                    .where(
+                        ownership,
+                        via(sql.Task.task_type).in_(task.RECURRING_TASK_TYPES),
+                    )
+                    .returning(sql.Task)
+                )
+                task_obj = (await data.execute(delete_stmt)).scalar_one_or_none()
+                if task_obj is not None:
                     log_record = _task_completed_record(task_obj, task_results, completed)
-                    await data.delete(task_obj)
-                else:
-                    # Update task properties
-                    task_obj.status = status
-                    task_obj.completed = completed
-                    task_obj.result = task_results
 
-                    if status == task.FAILED:
-                        normalised_error = ((error or "").strip()) or "unknown error"
-                        task_obj.error = normalised_error
-                        notify_args = (
-                            task_obj.asf_uid,
-                            task_obj.task_type,
-                            task_obj.project_key,
-                            task_obj.version_key,
-                            task_obj.revision_number,
-                            task_obj.primary_rel_path,
-                            normalised_error,
-                        )
+            if task_obj is None:
+                normalised_error = ((error or "").strip()) or "unknown error"
+                values: dict[str, Any] = {
+                    "status": status,
+                    "completed": completed,
+                    "result": task_results,
+                }
+                if status == task.FAILED:
+                    values["error"] = normalised_error
+                update_stmt = sqlmodel.update(sql.Task).where(ownership).values(**values).returning(sql.Task)
+                task_obj = (await data.execute(update_stmt)).scalar_one_or_none()
+                if (task_obj is not None) and (status == task.FAILED):
+                    notify_args = (
+                        task_obj.asf_uid,
+                        task_obj.task_type,
+                        task_obj.project_key,
+                        task_obj.version_key,
+                        task_obj.revision_number,
+                        task_obj.primary_rel_path,
+                        normalised_error,
+                    )
+
+            if task_obj is None:
+                log.warning(
+                    f"Task {task_id} generation {execution_generation} result was discarded because ownership changed"
+                )
 
     if log_record is not None:
         _task_completed_log(log_record)
@@ -406,9 +453,9 @@ async def _worker_loop_run() -> None:
             log.add_context(worker_pid=os.getpid())
             task = await _task_next_claim()
             if task:
-                task_id, task_type, task_args, asf_uid = task
+                task_id, task_type, task_args, asf_uid, execution_generation = task
                 log.add_context(task_id=task_id, task_type=task_type, asf_uid=asf_uid)
-                await _task_process(task_id, task_type, task_args, asf_uid)
+                await _task_process(task_id, task_type, task_args, asf_uid, execution_generation)
                 processed += 1
                 # Only process max_to_process tasks and then exit
                 # This prevents memory leaks from accumulating

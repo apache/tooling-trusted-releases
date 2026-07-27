@@ -738,6 +738,7 @@ class Task(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
     )
     pid: int | None = None
+    execution_generation: int = sqlmodel.Field(default=0)
     completed: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),

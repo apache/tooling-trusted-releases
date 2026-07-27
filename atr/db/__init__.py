@@ -995,6 +995,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         added: Opt[datetime.datetime] = NOT_SET,
         started: Opt[datetime.datetime | None] = NOT_SET,
         pid: Opt[int | None] = NOT_SET,
+        execution_generation: Opt[int] = NOT_SET,
         completed: Opt[datetime.datetime | None] = NOT_SET,
         result: Opt[Any | None] = NOT_SET,
         error: Opt[str | None] = NOT_SET,
@@ -1027,6 +1028,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Task.started == started)
         if is_defined(pid):
             query = query.where(sql.Task.pid == pid)
+        if is_defined(execution_generation):
+            query = query.where(sql.Task.execution_generation == execution_generation)
         if is_defined(completed):
             query = query.where(sql.Task.completed == completed)
         if is_defined(result):
