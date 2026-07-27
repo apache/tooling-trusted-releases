@@ -25,6 +25,41 @@ import atr.tasks.task as task
 import atr.worker as worker
 
 
+def test_task_args_for_log_redacts_message_body_and_recipients() -> None:
+    task_args = {
+        "email_sender": "sender@apache.org",
+        "email_to": "to@apache.org",
+        "subject": "Subject",
+        "body": "Secret body",
+        "in_reply_to": "previous@apache.org",
+        "email_cc": ["cc@apache.org"],
+        "email_bcc": ["bcc@apache.org"],
+        "message_id": "message@apache.org",
+        "footer_category": "vote",
+    }
+
+    logged = worker._task_args_for_log(sql.TaskType.MESSAGE_SEND, task_args)
+
+    assert logged == {
+        "email_sender": "sender@apache.org",
+        "email_to": "<hidden>",
+        "subject": "Subject",
+        "body": "<hidden>",
+        "in_reply_to": "previous@apache.org",
+        "email_cc": "<hidden>",
+        "email_bcc": "<hidden>",
+        "message_id": "message@apache.org",
+        "footer_category": "vote",
+    }
+    assert task_args["body"] == "Secret body"
+
+
+def test_task_args_for_log_leaves_other_tasks_unchanged() -> None:
+    task_args = {"body": "Not a mail body"}
+
+    assert worker._task_args_for_log(sql.TaskType.MAINTENANCE, task_args) is task_args
+
+
 async def test_task_process_defers_when_ldap_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("atr.config.is_production_mode", lambda: True)
     monkeypatch.setattr("atr.ldap.account_lookup", mock.AsyncMock(side_effect=ldap.UnavailableError("down")))

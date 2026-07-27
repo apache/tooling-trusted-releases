@@ -55,6 +55,8 @@ _DEFER_SECONDS: Final = 120
 
 # Successful recurring tasks are appended here as JSON lines instead of kept in the database
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
+_TASK_ARG_HIDDEN: Final = "<hidden>"
+_MESSAGE_SEND_SENSITIVE_ARGS: Final = frozenset({"body", "email_to", "email_cc", "email_bcc"})
 
 # # Create tables if they don't exist
 # SQLModel.metadata.create_all(engine)
@@ -192,6 +194,16 @@ def _task_completed_log(record: dict[str, Any]) -> None:
     logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
 
 
+def _task_args_for_log(
+    task_type: str | sql.TaskType, task_args: list[str] | dict[str, Any]
+) -> list[str] | dict[str, Any]:
+    if (task_type != sql.TaskType.MESSAGE_SEND) or (not isinstance(task_args, dict)):
+        return task_args
+    return {
+        key: _TASK_ARG_HIDDEN if (key in _MESSAGE_SEND_SENSITIVE_ARGS) else value for key, value in task_args.items()
+    }
+
+
 def _task_completed_record(
     task_obj: sql.Task, result: results.Results | None, completed: datetime.datetime
 ) -> dict[str, Any]:
@@ -203,7 +215,7 @@ def _task_completed_record(
         "added": task_obj.added.isoformat() if task_obj.added else None,
         "started": task_obj.started.isoformat() if task_obj.started else None,
         "completed": completed.isoformat(),
-        "task_args": task_obj.task_args,
+        "task_args": _task_args_for_log(task_obj.task_type, task_obj.task_args),
         "result": result.model_dump(mode="json") if (result is not None) else None,
         "pid": task_obj.pid,
     }
@@ -276,7 +288,7 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
 
             if claimed_task:
                 task_id, task_type, task_args, asf_uid = claimed_task
-                log.info(f"Claimed task {task_id} ({task_type}) with args {task_args}")
+                log.info(f"Claimed task {task_id} ({task_type}) with args {_task_args_for_log(task_type, task_args)}")
                 return task_id, task_type, task_args, asf_uid
 
             return None
@@ -286,7 +298,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
     """Process a claimed task."""
     import atr.config as config
 
-    log.info(f"Processing task {task_id} ({task_type}) with raw args {task_args}")
+    log.info(f"Processing task {task_id} ({task_type}) with raw args {_task_args_for_log(task_type, task_args)}")
     try:
         task_type_member = sql.TaskType(task_type)
     except ValueError as e:
