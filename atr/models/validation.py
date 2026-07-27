@@ -124,8 +124,8 @@ def validate_ignore_pattern(pattern: str) -> None:
 
 
 def validate_policy_min_hours(min_hours: int) -> None:
-    if (min_hours != 0) and ((min_hours < 72) or (min_hours > 144)):
-        raise ValueError("Minimum voting period must be 0 or between 72 and 144 hours inclusive.")
+    if (min_hours != 0) and ((min_hours < 72) or (min_hours > 168)):
+        raise ValueError("Minimum voting period must be 0 or between 72 and 168 hours inclusive.")
 
 
 def validate_security_contact(committee_key: str, security_contact: str | None) -> None:

@@ -74,7 +74,7 @@ class StartVotingForm(form.Form):
     def validate_vote_duration(cls, field):
         util.validate_vote_duration(field)
         if (field == 0) and config.is_production_mode():
-            raise ValueError("Minimum vote duration must be between 72 and 144 hours inclusive.")
+            raise ValueError("Minimum vote duration must be between 72 and 168 hours inclusive.")
         return field
 
     @pydantic.model_validator(mode="after")

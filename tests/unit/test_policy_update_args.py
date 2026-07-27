@@ -25,14 +25,14 @@ def _policy_update(**kwargs: object) -> api.PolicyUpdateArgs:
     return api.PolicyUpdateArgs.model_validate({"project": "tooling", **kwargs})
 
 
-@pytest.mark.parametrize("min_hours", [0, 72, 144])
+@pytest.mark.parametrize("min_hours", [0, 72, 168])
 def test_policy_update_args_accepts_valid_min_hours(min_hours: int) -> None:
     args = _policy_update(min_hours=min_hours)
 
     assert args.min_hours == min_hours
 
 
-@pytest.mark.parametrize("min_hours", [-1, 1, 71, 145])
+@pytest.mark.parametrize("min_hours", [-1, 1, 71, 169])
 def test_policy_update_args_rejects_invalid_min_hours(min_hours: int) -> None:
     with pytest.raises(pydantic.ValidationError, match="Minimum voting period"):
         _policy_update(min_hours=min_hours)

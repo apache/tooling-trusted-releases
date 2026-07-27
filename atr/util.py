@@ -1647,8 +1647,8 @@ def validate_vote_duration(duration: int):
     if duration == 0:
         return
     if duration > 0:
-        if (duration < 72) or (duration > 144):
-            raise ValueError("Vote duration must be 0 or between 72 and 144 hours inclusive.")
+        if (duration < 72) or (duration > 168):
+            raise ValueError("Vote duration must be 0 or between 72 and 168 hours inclusive.")
 
 
 # TODO: AM put these rules into safe.versionkey

@@ -193,7 +193,7 @@ class VotePolicyForm(form.Form):
     )
     min_hours: form.Int = form.label(
         "Minimum voting period",
-        "The minimum time to run the vote, in hours. Must be between 72 and 144 inclusive.",
+        "The minimum time to run the vote, in hours. Must be between 72 and 168 inclusive.",
         default=72,
     )
     release_checklist: str = form.label(
@@ -243,7 +243,7 @@ class VotePolicyForm(form.Form):
     def validate_vote_fields(self) -> VotePolicyForm:
         validation.validate_policy_min_hours(self.min_hours)
         if (self.min_hours == 0) and config.is_production_mode():
-            raise ValueError("Minimum voting period must be between 72 and 144 hours inclusive.")
+            raise ValueError("Minimum voting period must be between 72 and 168 hours inclusive.")
         return self
 
 

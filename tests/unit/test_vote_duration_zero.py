@@ -51,7 +51,7 @@ _VOTING_BASE = {
 
 def test_policy_form_rejects_zero_min_hours_in_production(monkeypatch) -> None:
     monkeypatch.setattr(config, "is_production_mode", lambda: True)
-    with pytest.raises(pydantic.ValidationError, match="between 72 and 144"):
+    with pytest.raises(pydantic.ValidationError, match="between 72 and 168"):
         projects.VotePolicyForm.model_validate(_POLICY_BASE)
 
     monkeypatch.setattr(config, "is_production_mode", lambda: False)
@@ -60,7 +60,7 @@ def test_policy_form_rejects_zero_min_hours_in_production(monkeypatch) -> None:
 
 def test_voting_form_rejects_zero_vote_duration_in_production(monkeypatch) -> None:
     monkeypatch.setattr(config, "is_production_mode", lambda: True)
-    with pytest.raises(pydantic.ValidationError, match="between 72 and 144"):
+    with pytest.raises(pydantic.ValidationError, match="between 72 and 168"):
         voting.StartVotingForm.model_validate(_VOTING_BASE)
 
     monkeypatch.setattr(config, "is_production_mode", lambda: False)
