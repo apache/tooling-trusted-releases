@@ -33,8 +33,13 @@ import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
-INPUT_EXTRA_ARGS: Final[list[str]] = ["committee_key", "committee_signing_keys", "unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "7"
+INPUT_EXTRA_ARGS: Final[list[str]] = [
+    "committee_key",
+    "committee_signing_keys",
+    "unsuffixed_file_hash",
+    "unsuffixed_file_uploaders",
+]
+CHECK_VERSION: Final[str] = "8"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -61,11 +66,13 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         f" using {committee_key} keys (rel: {primary_rel_path})"
     )
 
+    uploader_uids = set(args.extra_args.get("unsuffixed_file_uploaders", []))
     try:
         result_data = await _check_core_logic(
             committee_key=committee_key,
             artifact_path=str(artifact_abs_path),
             signature_path=str(primary_abs_path),
+            uploader_uids=uploader_uids,
         )
     except Exception as e:
         await recorder.exception("Error during signature check execution", {"error": str(e)})
@@ -76,13 +83,17 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             await recorder.blocker(error, result_data)
         case _ if result_data.get("verified"):
             await recorder.note("Signature verified successfully", result_data)
+            if not result_data["signer_is_uploader"]:
+                await _record_uploader_concern(args, recorder, uploader_uids, result_data)
         case _:
             await recorder.exception("Signature verification failed for unknown reasons", result_data)
 
     return None
 
 
-async def _check_core_logic(committee_key: str, artifact_path: str, signature_path: str) -> dict[str, Any]:
+async def _check_core_logic(
+    committee_key: str, artifact_path: str, signature_path: str, uploader_uids: set[str]
+) -> dict[str, Any]:
     """Verify a signature file using the committee's public signing keys."""
     log.info(f"Attempting to fetch keys for committee_key: '{committee_key}'")
     async with db.session() as session:
@@ -99,11 +110,15 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         db_public_keys = result.scalars().all()
     log.info(f"Found {len(db_public_keys)} public keys for committee_key: '{committee_key}'")
     apache_uid_map = {}
+    uploader_fingerprints = set()
     for key in db_public_keys:
         if not key.fingerprint:
             continue
+        fingerprint = key.fingerprint.lower()
         automated = util.is_automated_release_signing_uid(key.primary_declared_uid, committee_key)
-        apache_uid_map[key.fingerprint.lower()] = bool(key.apache_uid) or automated
+        apache_uid_map[fingerprint] = bool(key.apache_uid) or automated
+        if automated or (key.apache_uid in uploader_uids):
+            uploader_fingerprints.add(fingerprint)
 
     public_keys = [key.ascii_armored_key for key in db_public_keys]
     for i, key in enumerate(public_keys):
@@ -116,11 +131,16 @@ async def _check_core_logic(committee_key: str, artifact_path: str, signature_pa
         artifact_path=artifact_path,
         ascii_armored_keys=public_keys,
         apache_uid_map=apache_uid_map,
+        uploader_fingerprints=uploader_fingerprints,
     )
 
 
 def _check_core_logic_verify_signature(
-    signature_path: str, artifact_path: str, ascii_armored_keys: list[str], apache_uid_map: dict[str, bool]
+    signature_path: str,
+    artifact_path: str,
+    ascii_armored_keys: list[str],
+    apache_uid_map: dict[str, bool],
+    uploader_fingerprints: set[str],
 ) -> dict[str, Any]:
     """Verify an OpenPGP signature for a file."""
     start = time.perf_counter_ns()
@@ -228,6 +248,7 @@ def _check_core_logic_verify_signature(
         # provenance is recorded from this, so it must not be widened to the certificate
         "fingerprint": status.fingerprint,
         "certificate_fingerprint": matched_key.fingerprint.lower(),
+        "signer_is_uploader": matched_key.fingerprint.lower() in uploader_fingerprints,
         "status": "Valid signature",
         "debug_info": debug_info,
     }
@@ -408,6 +429,28 @@ def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.PublicKey]
             continue
         public_keys.append(public_key)
     return public_keys
+
+
+async def _record_uploader_concern(
+    args: checks.FunctionArguments,
+    recorder: checks.Recorder,
+    uploader_uids: set[str],
+    result_data: dict[str, Any],
+) -> None:
+    uploader_recorder = await checks.Recorder.create(
+        checker=checks.function_key(check) + "_uploader_mismatch",
+        checker_version=CHECK_VERSION,
+        inputs_hash=recorder.input_hash or "",
+        project_key=args.project_key,
+        version_key=args.version_key,
+        revision_number=args.revision_number,
+        primary_rel_path=args.primary_rel_path,
+        afresh=False,
+    )
+    await uploader_recorder.concern(
+        "The artifact was not uploaded by the owner of the signing key",
+        {**result_data, "uploader_uids": sorted(uploader_uids)},
+    )
 
 
 def _revoked_key_result(

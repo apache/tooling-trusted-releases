@@ -359,6 +359,16 @@ def path_swhid_dir(attestable: models.Attestable, path_key: str) -> str | None:
     return hash_entry.swhid_dir_inner if (hash_entry is not None) else None
 
 
+def path_uploaders(attestable: models.Attestable, path_key: str) -> list[str]:
+    content_hash = path_hash(attestable, path_key)
+    if content_hash is None:
+        return []
+    hash_entry = attestable.hashes.get(content_hash)
+    if hash_entry is None:
+        return []
+    return sorted({uid for uid, _ in hash_entry.uploaders})
+
+
 async def paths_to_hashes_and_sizes(directory: pathlib.Path) -> tuple[dict[safe.RelPath, str], dict[safe.RelPath, int]]:
     path_to_hash: dict[safe.RelPath, str] = {}
     path_to_size: dict[safe.RelPath, int] = {}

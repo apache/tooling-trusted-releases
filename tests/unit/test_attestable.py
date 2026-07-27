@@ -353,3 +353,13 @@ def test_path_provenance_returns_none_for_v1():
     v1 = models.AttestableV1(paths={"a.tar.gz": "h1"})
 
     assert attestable.path_provenance(v1, "a.tar.gz") is None
+
+
+def test_path_uploaders_deduplicates_across_revisions():
+    v2 = models.AttestableV2(
+        paths={"a.tar.gz": models.PathEntryV2(content_hash="h1", classification="source")},
+        hashes={"h1": models.HashEntryV2(size=100, uploaders=[("bob", "00002"), ("alice", "00001")])},
+    )
+
+    assert attestable.path_uploaders(v2, "a.tar.gz") == ["alice", "bob"]
+    assert attestable.path_uploaders(v2, "missing") == []

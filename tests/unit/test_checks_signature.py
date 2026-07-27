@@ -259,7 +259,7 @@ async def test_check_blocks_on_missing_signature_error_kind(
     ]
 
 
-def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: pathlib.Path) -> None:
+def test_check_core_logic_flags_a_signature_from_a_non_uploader(tmp_path: pathlib.Path) -> None:
     signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
 
     result = signature_check._check_core_logic_verify_signature(
@@ -267,25 +267,11 @@ def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: 
         artifact_path=artifact_path,
         ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
         apache_uid_map={_PRIMARY_FINGERPRINT: True},
+        uploader_fingerprints=set(),
     )
 
     assert result["verified"] is True
-    assert result["status"] == "Valid signature"
-    assert result["key_id"] == _SIGNING_SUBKEY_ID
-
-
-def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pathlib.Path) -> None:
-    signature_path, artifact_path = pgp_fixtures.write_expired_subkey_fixture(tmp_path)
-
-    result = signature_check._check_core_logic_verify_signature(
-        signature_path=signature_path,
-        artifact_path=artifact_path,
-        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
-        apache_uid_map={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT: True},
-    )
-
-    assert result["verified"] is False
-    assert result["error_kind"] == "key_expired"
+    assert result["signer_is_uploader"] is False
 
 
 def test_check_core_logic_rejects_signature_from_a_revoked_subkey(tmp_path: pathlib.Path) -> None:
@@ -298,10 +284,82 @@ def test_check_core_logic_rejects_signature_from_a_revoked_subkey(tmp_path: path
         artifact_path=artifact_path,
         ascii_armored_keys=[pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC],
         apache_uid_map={pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT: True},
+        uploader_fingerprints={pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT},
     )
 
     assert result["verified"] is False
     assert result["error_kind"] == "revoked_key"
+
+
+def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pathlib.Path) -> None:
+    signature_path, artifact_path = pgp_fixtures.write_expired_subkey_fixture(tmp_path)
+
+    result = signature_check._check_core_logic_verify_signature(
+        signature_path=signature_path,
+        artifact_path=artifact_path,
+        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+        apache_uid_map={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT: True},
+        uploader_fingerprints={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT},
+    )
+
+    assert result["verified"] is False
+    assert result["error_kind"] == "key_expired"
+
+
+def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: pathlib.Path) -> None:
+    signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
+
+    result = signature_check._check_core_logic_verify_signature(
+        signature_path=signature_path,
+        artifact_path=artifact_path,
+        ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
+        apache_uid_map={_PRIMARY_FINGERPRINT: True},
+        uploader_fingerprints={_PRIMARY_FINGERPRINT},
+    )
+
+    assert result["verified"] is True
+    assert result["status"] == "Valid signature"
+    assert result["key_id"] == _SIGNING_SUBKEY_ID
+    assert result["signer_is_uploader"] is True
+
+
+async def test_check_records_a_concern_when_the_signer_did_not_upload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    signature_path = tmp_path / "artifact.tar.gz.asc"
+    signature_path.write_text("not a signature", encoding="utf-8")
+    recorder = SignatureRecorderStub(signature_path, tmp_path, "atr.tasks.checks.signature.check")
+    recorded_concerns = []
+
+    async def check_core_logic(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        return {"verified": True, "signer_is_uploader": False}
+
+    async def record_uploader_concern(*called_with: object) -> None:
+        recorded_concerns.append(called_with)
+
+    monkeypatch.setattr(signature_check, "_check_core_logic", check_core_logic)
+    monkeypatch.setattr(signature_check, "_record_uploader_concern", record_uploader_concern)
+    args = checks.FunctionArguments(
+        recorder=recorders.get_recorder(recorder),
+        asf_uid="tester",
+        project_key=safe.ProjectKey("test"),
+        version_key=safe.VersionKey("1.0"),
+        revision_number=safe.RevisionNumber("00001"),
+        primary_rel_path=safe.RelPath(signature_path.name),
+        extra_args={"committee_key": "test", "unsuffixed_file_uploaders": ["alice"]},
+    )
+
+    await signature_check.check(args)
+
+    assert recorder.messages == [
+        (
+            sql.CheckResultStatus.NOTE.value,
+            "Signature verified successfully",
+            {"verified": True, "signer_is_uploader": False},
+        )
+    ]
+    assert len(recorded_concerns) == 1
 
 
 def test_key_matches_signature_accepts_subkey_issuer_metadata() -> None:

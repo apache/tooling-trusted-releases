@@ -74,6 +74,7 @@ async def asc_checks(
     tasks = []
 
     if release.committee:
+        input_args = await checks.resolve_extra_args(signature.INPUT_EXTRA_ARGS, release, signature_path)
         tasks.append(
             await queued(
                 asf_uid,
@@ -87,10 +88,13 @@ async def asc_checks(
                     signature.INPUT_POLICY_KEYS,
                     release,
                     revision,
-                    await checks.resolve_extra_args(signature.INPUT_EXTRA_ARGS, release, signature_path),
+                    input_args,
                     file=signature_path,
                 ),
-                extra_args={"committee_key": release.committee.key},
+                extra_args={
+                    "committee_key": release.committee.key,
+                    "unsuffixed_file_uploaders": input_args["unsuffixed_file_uploaders"],
+                },
             )
         )
 

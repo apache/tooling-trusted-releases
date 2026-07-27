@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import functools
+import pathlib
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles
@@ -556,6 +557,17 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
         return ""
 
 
+async def _resolve_unsuffixed_file_uploaders(release: sql.Release, rel_path: str | None = None) -> list[str]:
+    if (not rel_path) or (not release.latest_revision_number):
+        return []
+    attestable_data = await attestable.load(
+        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+    )
+    if attestable_data is None:
+        return []
+    return attestable.path_uploaders(attestable_data, str(pathlib.PurePosixPath(rel_path).with_suffix("")))
+
+
 _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]] = {
     "all_files": _resolve_all_files,
     "committee_key": _resolve_committee_key,
@@ -565,4 +577,5 @@ _EXTRA_ARG_RESOLVERS: Final[dict[str, Callable[[sql.Release, str | None], Any]]]
     "is_podling": _resolve_is_podling,
     "suffixed_file_existence": _resolve_suffixed_file_existence,
     "unsuffixed_file_hash": _resolve_unsuffixed_file_hash,
+    "unsuffixed_file_uploaders": _resolve_unsuffixed_file_uploaders,
 }
