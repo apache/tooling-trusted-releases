@@ -13,7 +13,11 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-1">
         <strong class="fs-5">{{ release_version.version }}</strong>
-        <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
+        <span class="d-flex align-items-center gap-2">
+          <a href="artifacts.json"
+             class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-decoration-none">Metadata</a>
+          <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
+        </span>
       </div>
       <p class="text-muted small mb-2">
         {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% elif release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
@@ -42,5 +46,4 @@
       {% endif %}
     </div>
   </div>
-  <p class="small"><a href="artifacts.json">artifacts.json</a></p>
 {% endblock content %}
