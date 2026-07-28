@@ -24,11 +24,12 @@ import aiofiles
 import atr.log as log
 import atr.models.results as results
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["unsuffixed_file_hash"]
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION: Final[str] = "4"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -39,8 +40,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     algorithm = hash_abs_path.path.suffix.lstrip(".")
     if algorithm not in {"sha256", "sha512"}:
-        await recorder.exception("Unsupported hash algorithm", {"algorithm": algorithm})
-        return None
+        raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
     # Remove the hash file suffix to get the artifact path
     # This replaces the last suffix, which is what we want
@@ -63,17 +63,21 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
     except FileNotFoundError as e:
         await recorder.blocker("Referenced artifact not found", {"error": str(e)})
         return None
-    except Exception as e:
-        await recorder.exception("Unable to verify hash", {"error": str(e)})
-        return None
+    except OSError as e:
+        raise task.CheckRetryableError("Unable to read the artifact file", {"error": str(e)}) from e
     computed_hash = hash_obj.hexdigest()
 
     try:
         async with aiofiles.open(hash_abs_path) as f:
             expected_hash = await f.read()
-    except Exception as e:
-        await recorder.exception("Unable to verify hash", {"error": str(e)})
+    except UnicodeDecodeError as e:
+        await recorder.blocker(
+            "Malformed checksum file",
+            {"error": str(e), "hash_file": str(hash_abs_path.path)},
+        )
         return None
+    except OSError as e:
+        raise task.CheckRetryableError("Unable to read the checksum file", {"error": str(e)}) from e
 
     if (expected_value := _expected_hash_extract(expected_hash, artifact_abs_path.name)) is None:
         await recorder.blocker(

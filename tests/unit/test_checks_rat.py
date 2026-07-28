@@ -28,6 +28,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.tasks.checks.rat as rat
+import atr.tasks.task as task
 import tests.unit.recorders as recorders
 
 # Archive WITHOUT .rat-excludes
@@ -77,7 +78,7 @@ def test_check_includes_excludes_source_policy(rat_available: tuple[bool, bool],
 
 
 @pytest.mark.asyncio
-async def test_check_routes_errors_to_exception(tmp_path: pathlib.Path) -> None:
+async def test_check_raises_retryable_for_tooling_errors(tmp_path: pathlib.Path) -> None:
     recorder, args = await _rat_check_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
     project = types.SimpleNamespace(
         policy_license_check_mode=sql.LicenseCheckMode.BOTH,
@@ -94,12 +95,36 @@ async def test_check_routes_errors_to_exception(tmp_path: pathlib.Path) -> None:
         mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
         mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
     ):
+        with pytest.raises(task.CheckRetryableError, match="Apache RAT process failed"):
+            await rat.check(args)
+
+    assert recorder.messages == []
+
+
+async def test_check_records_concern_for_structural_errors(tmp_path: pathlib.Path) -> None:
+    recorder, args = await _rat_check_args(tmp_path, "apache-example-1.2.3-source.tar.gz")
+    project = types.SimpleNamespace(
+        policy_license_check_mode=sql.LicenseCheckMode.BOTH,
+        policy_source_excludes_rat=[],
+    )
+    result = checkdata.Rat(
+        valid=False,
+        message="Multiple .rat-excludes files not allowed (found 2)",
+        errors=["Found 2 .rat-excludes files"],
+        structural=True,
+    )
+
+    with (
+        mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(tmp_path))),
+        mock.patch.object(recorder, "project", new=mock.AsyncMock(return_value=project)),
+        mock.patch.object(rat, "_synchronous", new=mock.Mock(return_value=result)),
+    ):
         await rat.check(args)
 
     statuses = [status for status, _, _ in recorder.messages]
 
-    assert statuses == [sql.CheckResultStatus.EXCEPTION.value]
-    assert any("Apache RAT process failed" in message for _, message, _ in recorder.messages)
+    assert statuses == [sql.CheckResultStatus.CONCERN.value]
+    assert any("Multiple .rat-excludes files" in message for _, message, _ in recorder.messages)
 
 
 @pytest.mark.asyncio

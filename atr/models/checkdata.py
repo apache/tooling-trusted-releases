@@ -35,6 +35,7 @@ class Rat(schema.Lax):
     unapproved_licenses: int = schema.default(0)
     unknown_licenses: int = schema.default(0)
     errors: list[str] = schema.factory(list)
+    structural: bool = schema.default(False)
     excludes_source: str = schema.default("unknown")
     extended_std_applied: bool = schema.default(False)
     warning: str | None = schema.default(None)

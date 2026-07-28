@@ -25,6 +25,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature_check
+import atr.tasks.task as task
 import tests.unit.pgp_fixtures as pgp_fixtures
 import tests.unit.recorders as recorders
 
@@ -289,6 +290,36 @@ def test_check_core_logic_rejects_signature_from_a_revoked_subkey(tmp_path: path
 
     assert result["verified"] is False
     assert result["error_kind"] == "revoked_key"
+
+
+def test_check_core_logic_missing_artifact_is_a_blocker(tmp_path: pathlib.Path) -> None:
+    signature_path, _artifact_path = pgp_fixtures.write_expired_subkey_fixture(tmp_path)
+
+    result = signature_check._check_core_logic_verify_signature(
+        signature_path=signature_path,
+        artifact_path=str(tmp_path / "nonexistent.tar.gz"),
+        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+        apache_uid_map={},
+        uploader_fingerprints=set(),
+    )
+
+    assert result["verified"] is False
+    assert result["error"] == "Referenced artifact not found"
+    assert result["error_kind"] == "missing_artifact"
+
+
+def test_check_core_logic_unreadable_artifact_is_retryable(tmp_path: pathlib.Path) -> None:
+    signature_path, artifact_path = pgp_fixtures.write_expired_subkey_fixture(tmp_path)
+    pathlib.Path(artifact_path).chmod(0)
+
+    with pytest.raises(task.CheckRetryableError, match="Unable to read the artifact file"):
+        signature_check._check_core_logic_verify_signature(
+            signature_path=signature_path,
+            artifact_path=artifact_path,
+            ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+            apache_uid_map={},
+            uploader_fingerprints=set(),
+        )
 
 
 def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pathlib.Path) -> None:

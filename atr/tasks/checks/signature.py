@@ -21,6 +21,7 @@ import time
 from typing import Any, Final
 
 import openpgp
+import sqlalchemy.exc
 import sqlmodel
 
 import atr.db as db
@@ -29,6 +30,7 @@ import atr.models.results as results
 import atr.models.sql as sql
 import atr.pgp as pgp
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
@@ -39,7 +41,7 @@ INPUT_EXTRA_ARGS: Final[list[str]] = [
     "unsuffixed_file_hash",
     "unsuffixed_file_uploaders",
 ]
-CHECK_VERSION: Final[str] = "8"
+CHECK_VERSION: Final[str] = "9"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -49,8 +51,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         return None
 
     if not (primary_rel_path := args.primary_rel_path):
-        await recorder.exception("Primary relative path is required", {"primary_rel_path": primary_rel_path})
-        return None
+        raise ValueError("Primary relative path is required")
 
     artifact_rel_path = str(primary_rel_path).removesuffix(".asc")
     if not (artifact_abs_path := await recorder.abs_path(artifact_rel_path)):
@@ -58,8 +59,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     committee_key = args.extra_args.get("committee_key")
     if not isinstance(committee_key, str):
-        await recorder.exception("Committee name is required", {"committee_key": committee_key})
-        return None
+        raise ValueError("Committee name is required")
 
     log.info(
         f"Checking signature {primary_abs_path} for {artifact_abs_path}"
@@ -74,9 +74,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             signature_path=str(primary_abs_path),
             uploader_uids=uploader_uids,
         )
-    except Exception as e:
-        await recorder.exception("Error during signature check execution", {"error": str(e)})
-        return None
+    except (OSError, sqlalchemy.exc.SQLAlchemyError) as e:
+        raise task.CheckRetryableError("Error during signature check execution", {"error": str(e)}) from e
 
     match result_data:
         case {"error": error} if error:
@@ -86,7 +85,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
             if not result_data["signer_is_uploader"]:
                 await _record_uploader_concern(args, recorder, uploader_uids, result_data)
         case _:
-            await recorder.exception("Signature verification failed for unknown reasons", result_data)
+            raise RuntimeError("Signature verification failed for unknown reasons")
 
     return None
 
@@ -168,7 +167,11 @@ def _check_core_logic_verify_signature(
 
     try:
         with open(signature_path, "rb") as sig_file:
-            signature, _ = openpgp.DetachedSignature.from_armor(sig_file.read().decode("utf-8"))
+            armored = sig_file.read()
+    except OSError as e:
+        raise task.CheckRetryableError("Unable to read the signature file", {"error": str(e)}) from e
+    try:
+        signature, _ = openpgp.DetachedSignature.from_armor(armored.decode("utf-8"))
     except Exception as e:
         return {
             "verified": False,
@@ -184,6 +187,25 @@ def _check_core_logic_verify_signature(
             ),
         }
     signature_info = signature.signature_info()
+    try:
+        with open(artifact_path, "rb"):
+            pass
+    except FileNotFoundError:
+        return {
+            "verified": False,
+            "error": "Referenced artifact not found",
+            "error_kind": "missing_artifact",
+            "debug_info": _debug_info(
+                key=None,
+                signature_info=signature_info,
+                status="Referenced artifact not found",
+                valid=False,
+                num_committee_keys=len(ascii_armored_keys),
+                key_has_apache_uid=False,
+            ),
+        }
+    except OSError as e:
+        raise task.CheckRetryableError("Unable to read the artifact file", {"error": str(e)}) from e
     issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
     issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
     candidate_keys = [key for key in public_keys if _key_matches_signature(key, issuer_fingerprints, issuer_key_ids)]

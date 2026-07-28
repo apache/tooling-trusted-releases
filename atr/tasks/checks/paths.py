@@ -44,7 +44,7 @@ _DOC_TREE_MAX_FILES: Final = 512
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["binary_artifact_paths", "source_artifact_paths", "download_path_suffix"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling", "all_files"]
-CHECK_VERSION: Final[str] = "7"
+CHECK_VERSION: Final[str] = "8"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -104,8 +104,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         return
 
     if not await aiofiles.os.path.isdir(base_path):
-        log.error(f"Base release directory does not exist or is not a directory: {base_path}")
-        return
+        raise RuntimeError(f"Base release directory does not exist or is not a directory: {base_path}")
 
     is_podling = args.extra_args.get("is_podling", False)
     relative_paths = [p async for p in util.paths_recursive(base_path)]

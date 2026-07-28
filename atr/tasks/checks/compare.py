@@ -29,6 +29,7 @@ from typing import Any, Final
 import aiofiles
 import aiofiles.os
 import dulwich.client
+import dulwich.errors
 import dulwich.objects
 import dulwich.objectspec
 import dulwich.porcelain
@@ -42,6 +43,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.paths as paths
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 _CONFIG: Final = config.get()
@@ -53,7 +55,7 @@ _PERMITTED_ADDED_PATHS: Final[dict[str, list[str]]] = {
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["github_tp_sha"]
-CHECK_VERSION: Final[str] = "3"
+CHECK_VERSION: Final[str] = "4"
 
 
 @dataclasses.dataclass
@@ -80,7 +82,7 @@ class TreeComparisonResult:
     repo_only: set[str]
 
 
-async def source_trees(args: checks.FunctionArguments) -> results.Results | None:  # noqa: C901
+async def source_trees(args: checks.FunctionArguments) -> results.Results | None:
     recorder = await args.recorder(CHECK_VERSION)
     is_source = await recorder.primary_path_is_source()
     if not is_source:
@@ -97,77 +99,16 @@ async def source_trees(args: checks.FunctionArguments) -> results.Results | None
     checkout_dir: str | None = None
     archive_dir: str | None = None
     if payload is not None:
-        if not (primary_abs_path := await recorder.abs_path()):
+        try:
+            outcome = await _compare_checkout_and_archive(args, recorder, payload)
+        except OSError as e:
+            raise task.CheckRetryableError(
+                "Error reading the extracted archive tree",
+                {"error": str(e)},
+            ) from e
+        if outcome is None:
             return None
-        extracted_dir = await checks.resolve_archive_dir(args)
-        if extracted_dir is None:
-            await recorder.exception(
-                "Extracted archive tree is not available",
-                {"rel_path": args.primary_rel_path},
-            )
-            return None
-        tmp_dir = paths.get_tmp_dir()
-        await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
-        async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
-            github_dir = safe.StatePath(temp_dir) / "github"
-            await aiofiles.os.makedirs(github_dir, exist_ok=True)
-            checkout_dir = await _checkout_github_source(payload, github_dir)
-            if checkout_dir is None:
-                repo_url = f"https://github.com/{payload.repository}.git"
-                await recorder.exception(
-                    "Failed to clone GitHub repository for comparison",
-                    {"repo_url": repo_url, "sha": payload.sha},
-                )
-                raise RuntimeError(f"Failed to clone {repo_url} at {payload.sha} for source tree comparison")
-            archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
-            if archive_root_result.root is None:
-                await recorder.concern(
-                    "Could not determine archive root directory for comparison",
-                    {"archive_path": str(primary_abs_path), "extract_dir": str(extracted_dir)},
-                )
-                return None
-            if archive_root_result.extra_entries:
-                await recorder.concern(
-                    "Archive contains entries outside the root directory",
-                    {
-                        "archive_path": str(primary_abs_path),
-                        "root": archive_root_result.root,
-                        "extra_entries": sorted(archive_root_result.extra_entries),
-                    },
-                )
-                return None
-            archive_content_dir = extracted_dir / archive_root_result.root
-            archive_dir = str(archive_content_dir)
-            try:
-                comparison = await _compare_trees(github_dir, archive_content_dir)
-            except RuntimeError as exc:
-                await recorder.exception(
-                    "Failed to compare source tree against GitHub checkout",
-                    {"error": str(exc)},
-                )
-                return None
-            invalid_filtered: set[str] = set()
-            for path in comparison.invalid:
-                required = _PERMITTED_ADDED_PATHS.get(path)
-                if required is None:
-                    invalid_filtered.add(path)
-                elif not all((archive_content_dir / r).path.is_file() for r in required):
-                    invalid_filtered.add(path)
-            if invalid_filtered:
-                invalid_list = sorted(invalid_filtered)
-                await recorder.concern(
-                    "Source archive contains files not in GitHub checkout or with different content",
-                    {"invalid_count": len(invalid_list), "invalid_paths": invalid_list},
-                )
-                return None
-            repo_only_list = sorted(comparison.repo_only)
-            await recorder.note(
-                "Source archive is a valid subset of GitHub checkout",
-                {
-                    "repo_only_count": len(repo_only_list),
-                    "repo_only_paths_sample": repo_only_list[:5],
-                },
-            )
+        checkout_dir, archive_dir = outcome
     payload_summary = _payload_summary(payload)
     log.info(
         "Ran compare.source_trees successfully",
@@ -206,7 +147,15 @@ async def _checkout_github_source(
             email=os.environ.get("EMAIL"),
         )
         return None
-    except Exception:
+    except (
+        OSError,
+        RuntimeError,
+        dulwich.client.HTTPProxyUnauthorized,
+        dulwich.client.HTTPUnauthorized,
+        dulwich.errors.ChecksumMismatch,
+        dulwich.errors.GitProtocolError,
+        dulwich.errors.NotGitRepository,
+    ):
         elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
         log.exception(
             "Failed to clone GitHub repo for compare.source_trees",
@@ -252,6 +201,82 @@ def _clone_repo(repo_url: str, sha: str, checkout_dir: safe.StatePath) -> None:
     git_dir = pathlib.Path(repo.controldir())
     if git_dir.exists():
         shutil.rmtree(git_dir)
+
+
+async def _compare_checkout_and_archive(  # noqa: C901
+    args: checks.FunctionArguments,
+    recorder: checks.Recorder,
+    payload: github_models.TrustedPublisherPayload,
+) -> tuple[str, str] | None:
+    if not (primary_abs_path := await recorder.abs_path()):
+        return None
+    extracted_dir = await checks.resolve_archive_dir(args)
+    if extracted_dir is None:
+        raise task.CheckRetryableError(
+            "Extracted archive tree is not available",
+            {"rel_path": str(args.primary_rel_path)},
+        )
+    tmp_dir = paths.get_tmp_dir()
+    await aiofiles.os.makedirs(tmp_dir, exist_ok=True)
+    async with util.async_temporary_directory(prefix="trees-", dir=tmp_dir) as temp_dir:
+        github_dir = safe.StatePath(temp_dir) / "github"
+        await aiofiles.os.makedirs(github_dir, exist_ok=True)
+        checkout_dir = await _checkout_github_source(payload, github_dir)
+        if checkout_dir is None:
+            repo_url = f"https://github.com/{payload.repository}.git"
+            raise task.CheckRetryableError(
+                "Failed to clone GitHub repository for comparison",
+                {"repo_url": repo_url, "sha": payload.sha},
+            )
+        archive_root_result = await _find_archive_root(primary_abs_path, extracted_dir)
+        if archive_root_result.root is None:
+            await recorder.concern(
+                "Could not determine archive root directory for comparison",
+                {"archive_path": str(primary_abs_path), "extract_dir": str(extracted_dir)},
+            )
+            return None
+        if archive_root_result.extra_entries:
+            await recorder.concern(
+                "Archive contains entries outside the root directory",
+                {
+                    "archive_path": str(primary_abs_path),
+                    "root": archive_root_result.root,
+                    "extra_entries": sorted(archive_root_result.extra_entries),
+                },
+            )
+            return None
+        archive_content_dir = extracted_dir / archive_root_result.root
+        archive_dir = str(archive_content_dir)
+        try:
+            comparison = await _compare_trees(github_dir, archive_content_dir)
+        except RuntimeError as exc:
+            raise task.CheckRetryableError(
+                "Failed to compare source tree against GitHub checkout",
+                {"error": str(exc)},
+            ) from exc
+        invalid_filtered: set[str] = set()
+        for path in comparison.invalid:
+            required = _PERMITTED_ADDED_PATHS.get(path)
+            if required is None:
+                invalid_filtered.add(path)
+            elif not all((archive_content_dir / r).path.is_file() for r in required):
+                invalid_filtered.add(path)
+        if invalid_filtered:
+            invalid_list = sorted(invalid_filtered)
+            await recorder.concern(
+                "Source archive contains files not in GitHub checkout or with different content",
+                {"invalid_count": len(invalid_list), "invalid_paths": invalid_list},
+            )
+            return None
+        repo_only_list = sorted(comparison.repo_only)
+        await recorder.note(
+            "Source archive is a valid subset of GitHub checkout",
+            {
+                "repo_only_count": len(repo_only_list),
+                "repo_only_paths_sample": repo_only_list[:5],
+            },
+        )
+        return checkout_dir, archive_dir
 
 
 async def _compare_trees(repo_dir: safe.StatePath, archive_dir: safe.StatePath) -> TreeComparisonResult:

@@ -25,12 +25,13 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "5"
+CHECK_VERSION_STRUCTURE: Final[str] = "6"
 
 
 class RootDirectoryError(Exception):
@@ -51,10 +52,7 @@ def root_directory(archive_dir: safe.StatePath) -> tuple[str, bytes | None]:
 
     root = entries[0]
     root_path = archive_dir / root
-    try:
-        root_stat = root_path.path.lstat()
-    except OSError as e:
-        raise RootDirectoryError(f"Unable to inspect root entry '{root}': {e}") from e
+    root_stat = root_path.path.lstat()
     if not stat.S_ISDIR(root_stat.st_mode):
         raise RootDirectoryError(f"Root entry is not a directory: {root}")
 
@@ -62,7 +60,7 @@ def root_directory(archive_dir: safe.StatePath) -> tuple[str, bytes | None]:
 
     if root == "package":
         package_json_path = archive_dir / "package" / "package.json"
-        with contextlib.suppress(FileNotFoundError, OSError):
+        with contextlib.suppress(FileNotFoundError):
             package_json_stat = package_json_path.path.lstat()
             # We do this to avoid allowing package.json to be a symlink
             if stat.S_ISREG(package_json_stat.st_mode):
@@ -83,11 +81,10 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.exception(
+        raise task.CheckRetryableError(
             "Extracted archive tree is not available",
-            {"rel_path": args.primary_rel_path},
+            {"rel_path": str(args.primary_rel_path)},
         )
-        return None
 
     filename = artifact_abs_path.path.name
     basename_from_filename: Final[str] = (
@@ -139,7 +136,7 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:  
                 f"Root directory '{root}' does not match expected names '{expected_roots_display}'", data
             )
     except RootDirectoryError as e:
-        await recorder.exception("Could not get the root directory of the archive", {"error": str(e)})
-    except Exception as e:
-        await recorder.exception("Unable to verify archive structure", {"error": str(e)})
+        await recorder.suggestion("Could not get the root directory of the archive", {"error": str(e)})
+    except OSError as e:
+        raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
     return None

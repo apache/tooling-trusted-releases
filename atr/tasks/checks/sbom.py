@@ -23,11 +23,12 @@ import atr.analysis as analysis
 import atr.log as log
 import atr.models.results as results
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["suffixed_file_existence"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -40,9 +41,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     try:
         result_data = await _check_core_logic(artifact_path=str(primary_abs_path))
-    except Exception as e:
-        await recorder.exception("Error during SBOM check execution", {"error": str(e)})
-        return None
+    except OSError as e:
+        raise task.CheckRetryableError("Error during SBOM check execution", {"error": str(e)}) from e
 
     match result_data:
         case {"error": error} if error:
@@ -50,7 +50,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         case _ if result_data.get("found"):
             await recorder.note("SBOM located successfully", result_data)
         case _:
-            await recorder.exception("SBOM location failed for unknown reasons", result_data)
+            raise RuntimeError("SBOM location failed for unknown reasons")
 
     return None
 

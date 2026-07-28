@@ -18,10 +18,13 @@
 import pathlib
 import tarfile
 
+import pytest
+
 import atr.constants as constants
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks.license as license
+import atr.tasks.task as task
 
 TEST_ARCHIVE = pathlib.Path(__file__).parent.parent / "e2e" / "test_files" / "apache-test-0.2.tar.gz"
 TEST_ARCHIVE_BASENAME: str = TEST_ARCHIVE.name
@@ -109,12 +112,35 @@ def test_files_license_accepts_https_urls(tmp_path):
 
 
 def test_files_missing_cache_dir():
-    results = list(
-        license._files_check_core_logic(safe.StatePath(pathlib.Path("/nonexistent")), is_podling=False, is_binary=False)
-    )
-    assert len(results) == 1
-    assert results[0].status == sql.CheckResultStatus.EXCEPTION
-    assert "not available" in results[0].message.lower()
+    with pytest.raises(task.CheckRetryableError, match="Cache directory is not available"):
+        list(
+            license._files_check_core_logic(
+                safe.StatePath(pathlib.Path("/nonexistent")), is_podling=False, is_binary=False
+            )
+        )
+
+
+def test_headers_member_error_escapes_for_non_io_failures(tmp_path, monkeypatch):
+    source_path = tmp_path / "example.py"
+    source_path.write_text("print()\n")
+
+    def broken_validate(content: bytes, filename: str) -> tuple[bool, str | None]:
+        raise ValueError("broken checker")
+
+    monkeypatch.setattr(license, "headers_validate", broken_validate)
+    with pytest.raises(ValueError, match="broken checker"):
+        license._headers_check_core_logic_process_file(source_path, "example.py")
+
+
+def test_headers_member_error_is_recorded_for_io_failures(tmp_path):
+    source_path = tmp_path / "example.py"
+    source_path.write_text("print()\n")
+    source_path.chmod(0)
+
+    result = license._headers_check_core_logic_process_file(source_path, "example.py")
+
+    assert isinstance(result, license.MemberResult)
+    assert result.status == sql.CheckResultStatus.EXCEPTION
 
 
 def test_files_multiple_root_dirs(tmp_path):

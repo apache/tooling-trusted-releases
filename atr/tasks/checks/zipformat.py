@@ -24,12 +24,13 @@ import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION_STRUCTURE: Final[str] = "4"
+CHECK_VERSION_STRUCTURE: Final[str] = "5"
 
 
 async def structure(args: checks.FunctionArguments) -> results.Results | None:
@@ -46,11 +47,10 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.exception(
+        raise task.CheckRetryableError(
             "Extracted archive tree is not available",
-            {"rel_path": args.primary_rel_path},
+            {"rel_path": str(args.primary_rel_path)},
         )
-        return None
 
     log.info(f"Checking zip structure for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -61,8 +61,8 @@ async def structure(args: checks.FunctionArguments) -> results.Results | None:
             await recorder.suggestion(result_data["error"], result_data)
         else:
             await recorder.note(f"Zip structure OK (root: {result_data['root_dir']})", result_data)
-    except Exception as e:
-        await recorder.exception("Error checking zip structure", {"error": str(e)})
+    except OSError as e:
+        raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
 
     return None
 
@@ -82,11 +82,7 @@ def _structure_check_core_logic(archive_dir: safe.StatePath, artifact_path: str)
     non_rooted_entries: list[str] = []
     for entry in entries:
         entry_path = (archive_dir / entry).path
-        try:
-            entry_stat = entry_path.lstat()
-        except OSError as e:
-            return {"error": f"Unable to inspect archive root entry '{entry}': {e}", "expected_roots": expected_roots}
-
+        entry_stat = entry_path.lstat()
         if stat.S_ISDIR(entry_stat.st_mode):
             root_dirs.append(entry)
         else:
@@ -122,7 +118,7 @@ def _structure_npm_result(
     package_json_path = (archive_dir / "package" / "package.json").path
     try:
         package_json_stat = package_json_path.lstat()
-    except (FileNotFoundError, OSError):
+    except FileNotFoundError:
         return None
 
     if not stat.S_ISREG(package_json_stat.st_mode):

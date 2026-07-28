@@ -24,7 +24,7 @@ import atr.tasks.checks as checks
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = []
 INPUT_EXTRA_ARGS: Final[list[str]] = ["cross_format_sibling_swhids"]
-CHECK_VERSION: Final[str] = "1"
+CHECK_VERSION: Final[str] = "2"
 
 
 async def across_formats(args: checks.FunctionArguments) -> results.Results | None:
@@ -34,8 +34,7 @@ async def across_formats(args: checks.FunctionArguments) -> results.Results | No
     primary = str(args.primary_rel_path)
     attestable_data = await attestable.load(args.project_key, args.version_key, args.revision_number)
     if attestable_data is None:
-        await recorder.exception("Attestable data is not available", {"rel_path": primary})
-        return None
+        raise RuntimeError("Attestable data is not available")
     own_swhid = attestable.path_swhid_dir(attestable_data, primary)
     # Do not compare archives if the primary has no SWHID
     # This is a deliberate design choice

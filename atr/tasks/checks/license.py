@@ -31,6 +31,7 @@ import atr.models.safe as safe
 import atr.models.schema as schema
 import atr.models.sql as sql
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 # Constant that must be present in the Apache License header
@@ -82,8 +83,8 @@ INCLUDED_PATTERNS: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_lightweight"]
 INPUT_EXTRA_ARGS: Final[list[str]] = ["is_podling"]
-CHECK_VERSION_FILES: Final[str] = "6"
-CHECK_VERSION_HEADERS: Final[str] = "5"
+CHECK_VERSION_FILES: Final[str] = "7"
+CHECK_VERSION_HEADERS: Final[str] = "6"
 
 _BINARY_LICENSE_FILENAMES: Final[frozenset[str]] = frozenset({"LICENSE", "LICENSE.txt"})
 _BINARY_NOTICE_FILENAMES: Final[frozenset[str]] = frozenset({"NOTICE", "NOTICE.txt"})
@@ -152,11 +153,10 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.exception(
+        raise task.CheckRetryableError(
             "Extracted archive tree is not available",
-            {"rel_path": args.primary_rel_path},
+            {"rel_path": str(args.primary_rel_path)},
         )
-        return None
 
     log.info(f"Checking license files for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -170,9 +170,8 @@ async def files(args: checks.FunctionArguments) -> results.Results | None:
                 case MemberSkippedResult():
                     pass
 
-    except Exception as e:
-        log.exception("Error during license file check execution:")
-        await recorder.exception("Error during license file check execution", {"error": str(e)})
+    except OSError as e:
+        raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
 
     return None
 
@@ -195,11 +194,10 @@ async def headers(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.exception(
+        raise task.CheckRetryableError(
             "Extracted archive tree is not available",
-            {"rel_path": args.primary_rel_path},
+            {"rel_path": str(args.primary_rel_path)},
         )
-        return None
 
     log.info(f"Checking license headers for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -315,12 +313,7 @@ def _files_check_core_logic(archive_dir: safe.StatePath, is_podling: bool, is_bi
     if not archive_dir.path.is_dir():
         # Already protected by the caller
         # We add it here again to make unit testing cleaner
-        yield ArtifactResult(
-            status=sql.CheckResultStatus.EXCEPTION,
-            message="Cache directory is not available",
-            data=None,
-        )
-        return
+        raise task.CheckRetryableError("Cache directory is not available", {"archive_dir": str(archive_dir)})
 
     # Check for license files in the root directory
     top_entries = sorted(e for e in os.listdir(archive_dir) if not e.startswith("._"))
@@ -465,12 +458,7 @@ def _headers_check_core_logic(  # noqa: C901
     #     )
 
     if not archive_dir.path.is_dir():
-        yield ArtifactResult(
-            status=sql.CheckResultStatus.EXCEPTION,
-            message="Cache directory is not available",
-            data=None,
-        )
-        return
+        raise task.CheckRetryableError("Cache directory is not available", {"archive_dir": str(archive_dir)})
 
     # log.info(f"Ignore lines: {ignore_lines}")
 
@@ -563,7 +551,7 @@ def _headers_check_core_logic_process_file(
                 message=f"Invalid license header: {error}",
                 data=None,
             )
-    except Exception as e:
+    except OSError as e:
         return MemberResult(
             status=sql.CheckResultStatus.EXCEPTION,
             path=rel_path,
@@ -614,8 +602,8 @@ async def _headers_core(
                 None,
             )
 
-    except Exception as e:
-        await recorder.exception("Error during license header check execution", {"error": str(e)})
+    except OSError as e:
+        raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
 
     return None
 

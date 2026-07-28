@@ -26,6 +26,7 @@ import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.tasks.checks.targz as targz
 import atr.tasks.checks.zipformat as zipformat
+import atr.tasks.task as task
 import tests.unit.recorders as recorders
 
 
@@ -120,11 +121,10 @@ async def test_targz_structure_fails_when_cache_unavailable(tmp_path: pathlib.Pa
     recorder, args = await _targz_structure_args(tmp_path, "apache-example-1.2.3.tar.gz")
 
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=None)):
-        await targz.structure(args)
+        with pytest.raises(task.CheckRetryableError, match="Extracted archive tree is not available"):
+            await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.EXCEPTION.value for status, _, _ in recorder.messages)
-    assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
-    assert any("extracted archive tree is not available" in message.lower() for _, message, _ in recorder.messages)
+    assert recorder.messages == []
 
 
 @pytest.mark.asyncio
@@ -221,7 +221,7 @@ async def test_targz_structure_rejects_symlink_root(tmp_path: pathlib.Path) -> N
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.EXCEPTION.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.SUGGESTION.value for status, _, _ in recorder.messages)
     assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
@@ -240,7 +240,7 @@ async def test_targz_structure_rejects_symlinked_package_json(tmp_path: pathlib.
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=safe.StatePath(cache_dir))):
         await targz.structure(args)
 
-    assert any(status == sql.CheckResultStatus.EXCEPTION.value for status, _, _ in recorder.messages)
+    assert any(status == sql.CheckResultStatus.SUGGESTION.value for status, _, _ in recorder.messages)
     assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
 
 
@@ -291,11 +291,10 @@ async def test_zipformat_structure_fails_when_cache_unavailable(tmp_path: pathli
     recorder, args = await _zipformat_structure_args(tmp_path, "apache-example-1.2.3.zip")
 
     with mock.patch.object(checks, "resolve_archive_dir", new=mock.AsyncMock(return_value=None)):
-        await zipformat.structure(args)
+        with pytest.raises(task.CheckRetryableError, match="Extracted archive tree is not available"):
+            await zipformat.structure(args)
 
-    assert any(status == sql.CheckResultStatus.EXCEPTION.value for status, _, _ in recorder.messages)
-    assert not any(status == sql.CheckResultStatus.CONCERN.value for status, _, _ in recorder.messages)
-    assert any("extracted archive tree is not available" in message.lower() for _, message, _ in recorder.messages)
+    assert recorder.messages == []
 
 
 def test_zipformat_structure_rejects_dated_src_suffix(tmp_path: pathlib.Path) -> None:

@@ -22,6 +22,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Mapping
 
 import aiofiles.os
+import dulwich.client
 import dulwich.objects
 import dulwich.refs
 import pytest
@@ -33,6 +34,7 @@ import atr.models.safe as safe
 import atr.models.sql
 import atr.tasks.checks
 import atr.tasks.checks.compare
+import atr.tasks.task as task
 
 
 class CheckoutRecorder:
@@ -743,6 +745,20 @@ async def test_source_trees_permits_pkg_info_when_pyproject_toml_exists(
 
 
 @pytest.mark.asyncio
+async def test_checkout_returns_none_for_http_auth_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    def raise_unauthorized(repo_url: str, sha: str, checkout_dir: safe.StatePath) -> None:
+        raise dulwich.client.HTTPUnauthorized("Basic", repo_url)
+
+    monkeypatch.setattr(atr.tasks.checks.compare, "_clone_repo", raise_unauthorized)
+    payload = _make_payload()
+
+    checkout_dir = await atr.tasks.checks.compare._checkout_github_source(payload, safe.StatePath(tmp_path))
+
+    assert checkout_dir is None
+
+
 async def test_source_trees_raises_when_checkout_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     temp_dir = safe.StatePath(tmp_path)
     recorder = RecorderStub(True)
@@ -757,14 +773,12 @@ async def test_source_trees_raises_when_checkout_fails(monkeypatch: pytest.Monke
     monkeypatch.setattr(atr.tasks.checks, "resolve_archive_dir", ArchiveDirResolver(cache_dir))
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", ReturnValue(tmp_root))
 
-    with pytest.raises(RuntimeError, match=r"Failed to clone .* for source tree comparison"):
+    with pytest.raises(task.CheckRetryableError, match="Failed to clone GitHub repository for comparison") as excinfo:
         await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.exception_calls) == 1
-    message, data = recorder.exception_calls[0]
-    assert message == "Failed to clone GitHub repository for comparison"
-    assert isinstance(data, dict)
-    assert data["repo_url"] == "https://github.com/apache/test.git"
+    assert recorder.exception_calls == []
+    assert isinstance(excinfo.value.data, dict)
+    assert excinfo.value.data["repo_url"] == "https://github.com/apache/test.git"
 
 
 @pytest.mark.asyncio
@@ -829,7 +843,7 @@ async def test_source_trees_records_failure_when_archive_root_not_found(
 
 
 @pytest.mark.asyncio
-async def test_source_trees_records_failure_when_cache_dir_unavailable(
+async def test_source_trees_raises_when_cache_dir_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recorder = RecorderStub(True)
@@ -845,12 +859,10 @@ async def test_source_trees_records_failure_when_cache_dir_unavailable(
     )
     monkeypatch.setattr(atr.tasks.checks.compare.paths, "get_tmp_dir", RaiseSync("get_tmp_dir should not be called"))
 
-    await atr.tasks.checks.compare.source_trees(args)
+    with pytest.raises(task.CheckRetryableError, match="Extracted archive tree is not available"):
+        await atr.tasks.checks.compare.source_trees(args)
 
-    assert len(recorder.exception_calls) == 1
-    message, data = recorder.exception_calls[0]
-    assert message == "Extracted archive tree is not available"
-    assert isinstance(data, dict)
+    assert recorder.exception_calls == []
 
 
 @pytest.mark.asyncio

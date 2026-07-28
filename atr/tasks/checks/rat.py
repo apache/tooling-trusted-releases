@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 from typing import Final
 
+import defusedxml
 import defusedxml.ElementTree as ElementTree
 
 import atr.config as config
@@ -32,6 +33,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.tasks.checks as checks
+import atr.tasks.task as task
 import atr.util as util
 
 _CONFIG: Final = config.get()
@@ -68,7 +70,7 @@ _STD_EXCLUSIONS_EXTENDED: Final[list[str]] = [
 # Release policy fields which this check relies on - used for result caching
 INPUT_POLICY_KEYS: Final[list[str]] = ["license_check_mode", "source_excludes_rat"]
 INPUT_EXTRA_ARGS: Final[list[str]] = []
-CHECK_VERSION: Final[str] = "4"
+CHECK_VERSION: Final[str] = "5"
 
 
 class RatError(RuntimeError):
@@ -91,11 +93,10 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     archive_dir = await checks.resolve_archive_dir(args)
     if archive_dir is None:
-        await recorder.exception(
+        raise task.CheckRetryableError(
             "Extracted archive tree is not available",
-            {"rel_path": args.primary_rel_path},
+            {"rel_path": str(args.primary_rel_path)},
         )
-        return None
 
     log.info(f"Checking RAT licenses for {artifact_abs_path} (rel: {args.primary_rel_path})")
 
@@ -103,9 +104,8 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
 
     try:
         await _check_core(args, recorder, archive_dir, policy_excludes)
-    except Exception as e:
-        # TODO: Or bubble for task failure?
-        await recorder.exception("Error running Apache RAT check", {"error": str(e)})
+    except OSError as e:
+        raise task.CheckRetryableError("Error reading the extracted archive tree", {"error": str(e)}) from e
 
     return None
 
@@ -180,8 +180,10 @@ async def _check_core(
     result_data = result.model_dump(exclude={"unapproved_files", "unknown_license_files"})
 
     members_recorded = bool(result.unknown_license_files) or bool(result.unapproved_files)
-    if result.errors:
-        await recorder.exception(result.message, result_data)
+    if result.errors and result.structural:
+        await recorder.concern(result.message, result_data)
+    elif result.errors:
+        raise task.CheckRetryableError(result.message, result_data)
     elif (not result.valid) and (not members_recorded):
         await recorder.concern(result.message, result_data)
     else:
@@ -236,7 +238,7 @@ def _check_core_logic_execute_rat(
             message="Apache RAT process timed out",
             errors=[f"Timeout: {e}"],
         ), None
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         # Change back to the original directory before raising
         os.chdir(current_dir)
         log.error(f"Exception running Apache RAT: {e}")
@@ -364,18 +366,9 @@ def _synchronous(
     if jar_error:
         return jar_error
 
-    try:
-        with tempfile.TemporaryDirectory(prefix="rat_scratch_") as scratch_dir:
-            log.info(f"Created scratch directory: {scratch_dir}")
-            return _synchronous_core(archive_dir, scratch_dir, policy_excludes, rat_jar_path)
-    except Exception as e:
-        import traceback
-
-        log.exception("Error running Apache RAT")
-        return checkdata.Rat(
-            message=f"Failed to run Apache RAT: {e!s}",
-            errors=[str(e), traceback.format_exc()],
-        )
+    with tempfile.TemporaryDirectory(prefix="rat_scratch_") as scratch_dir:
+        log.info(f"Created scratch directory: {scratch_dir}")
+        return _synchronous_core(archive_dir, scratch_dir, policy_excludes, rat_jar_path)
 
 
 def _synchronous_check_jar_exists(rat_jar_path: str) -> tuple[str, checkdata.Rat | None]:
@@ -477,6 +470,7 @@ def _synchronous_core(  # noqa: C901
         return checkdata.Rat(
             message=f"Multiple {_RAT_EXCLUDES_FILENAME} files not allowed (found {len(exclude_file_paths)})",
             errors=[f"Found {len(exclude_file_paths)} {_RAT_EXCLUDES_FILENAME} files"],
+            structural=True,
         )
 
     # Narrow to single path after validation
@@ -493,6 +487,7 @@ def _synchronous_core(  # noqa: C901
             message=f"Failed to determine scan root: {e}",
             errors=[str(e)],
             excludes_source=excludes_source,
+            structural=True,
         )
 
     # Execute RAT and get results or error
@@ -506,6 +501,7 @@ def _synchronous_core(  # noqa: C901
         return checkdata.Rat(
             message=f"Failed to build RAT command: {e}",
             errors=[str(e)],
+            structural=True,
         )
     error_result, xml_output_path = _check_core_logic_execute_rat(command, scan_root, scratch_dir, xml_output_path)
     if error_result is not None:
@@ -565,7 +561,7 @@ def _synchronous_core_parse_output(xml_file: str, base_dir: str) -> checkdata.Ra
     """Parse the XML output from Apache RAT safely."""
     try:
         return _synchronous_core_parse_output_core(xml_file, base_dir)
-    except Exception as e:
+    except (OSError, ElementTree.ParseError, defusedxml.DefusedXmlException) as e:
         log.error(f"Error parsing RAT output: {e}")
         return checkdata.Rat(
             message=f"Failed to parse Apache RAT output: {e!s}",
