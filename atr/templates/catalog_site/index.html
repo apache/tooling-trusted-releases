@@ -8,9 +8,32 @@
   <h1 class="mb-3">Release catalog</h1>
   <p class="text-muted">Browse released and archived artifacts by committee.</p>
   {% if committees %}
-    <div class="list-group">
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
       {% for committee in committees %}
-        <a class="list-group-item list-group-item-action" href="{{ committee.key }}/index.html">{{ committee.display_name }}</a>
+        <div class="col">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col">
+                  <h2 class="card-title fs-4 mb-0">
+                    <a href="{{ committee.key }}/index.html"
+                       class="text-decoration-none stretched-link">{{ committee.display_name }}</a>
+                  </h2>
+                </div>
+                <div class="col-5 col-lg-4 text-center">
+                  <div class="atr-catalog-logo-container">
+                    {# Committees without a logo of their own fall back to the foundation
+                       mark, or the incubator egg for a podling #}
+                    <img src="https://www.apache.org/logos/res/{{ committee.key }}/default.png"
+                         onerror="this.onerror=null;this.src='{{ root }}assets/svg/{{ 'apache_incubator.svg' if committee.is_podling else 'ASF_short-horizontal-color.svg' }}'"
+                         alt=""
+                         class="atr-catalog-logo" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       {% endfor %}
     </div>
   {% else %}

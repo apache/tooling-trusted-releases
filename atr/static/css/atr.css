@@ -1286,6 +1286,23 @@ td.atr-checkbox-col {
     border-top: 1px dashed var(--bs-border-color);
 }
 
+/* Committee logo on the catalog index cards. The box is a fixed size whatever the
+   logo's own proportions, so the card titles beside it stay on a common line */
+.atr-catalog-logo-container {
+    height: 48px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.atr-catalog-logo {
+    max-height: 100%;
+    max-width: 100%;
+    width: auto;
+    object-fit: contain;
+}
+
 .atr-certified-panel {
     padding: 0.5rem;
     width: 6rem;

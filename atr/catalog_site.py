@@ -72,6 +72,8 @@ _ASSETS: Final[tuple[str, ...]] = (
     "webfonts/jost-v.woff2",
     "svg/atr_certified_badge.svg",
     "svg/atr_logo.svg",
+    "svg/apache_incubator.svg",
+    "svg/ASF_short-horizontal-color.svg",
 )
 
 # A committee counts as "current" while it still has a project that hasn't
@@ -86,7 +88,7 @@ async def generate_all(data: db.Session) -> None:
     site_dir = paths.get_catalog_site_dir()
     await _write_assets(site_dir)
     committees = await data.committee().all()
-    await _write_root_index(site_dir, committees)
+    current: list[sql.Committee] = []
     written = 0
     for committee in committees:
         try:
@@ -94,12 +96,17 @@ async def generate_all(data: db.Session) -> None:
         except Exception:
             log.exception(f"Failed to render catalog site committee index for {committee.key}")
             continue
+        if any(project.status in _LIVE_PROJECT_STATUSES for project in projects):
+            current.append(committee)
         for project in projects:
             try:
                 await _write_project(data, committee, project, site_dir)
             except Exception:
                 log.exception(f"Failed to render catalog site for project {project.key}")
         written += 1
+    # A committee whose projects have all retired keeps its pages, but drops off the
+    # front page, so the index stays a list of where releases are still coming from.
+    await _write_root_index(site_dir, current)
     log.info(f"Rebuilt catalog site for {written} of {len(committees)} committees")
 
 
