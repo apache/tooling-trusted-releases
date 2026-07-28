@@ -249,58 +249,53 @@ class WorkerManager:
 
     async def terminate_long_running_task(
         self, active_task: sql.Task, worker: WorkerProcess, task_id: int, pid: int, limit: float
-    ) -> None:
+    ) -> bool:
         """
         Terminate a task that has been running for too long.
         Updates the task status and terminates the worker process.
         """
         try:
             # Mark the task as failed
-            active_task.status = sql.TaskStatus.FAILED
-            active_task.completed = datetime.datetime.now(datetime.UTC)
-            active_task.error = f"Task terminated after exceeding time limit of {limit} seconds"
+            status = task.BROKEN if (active_task.task_type in task.CHECK_TASK_TYPES) else task.FAILED
+            error = f"Task terminated after exceeding time limit of {limit} seconds"
+            if not await task.finalise_failure(task_id, pid, error, status):
+                log.info(f"Task {task_id} was already finalised, not terminating worker {pid}")
+                return False
 
             if worker.pid:
                 os.killpg(worker.pid, signal.SIGTERM)
                 log.info(f"Worker {pid} terminated after processing task {task_id} for > {limit}s")
+            return True
         except ProcessLookupError:
-            return
+            return True
         except Exception as e:
             log.error(f"Error stopping long-running worker {pid}: {e}")
+            return False
 
     async def check_task_duration(self, data: db.Session, pid: int, worker: WorkerProcess) -> bool:
         """
         Check whether a worker has been processing its task for too long.
         Returns True if the worker has been terminated.
         """
-        notify_args = None
+        active_task = None
+        limit = self.max_task_seconds
         try:
             async with data.begin():
-                active_task = await data.task(pid=pid, status=sql.TaskStatus.ACTIVE).get()
-                if (not active_task) or (not active_task.started):
+                candidate = await data.task(pid=pid, status=sql.TaskStatus.ACTIVE).get()
+                if (not candidate) or (not candidate.started):
                     return False
 
-                limit = task.TASK_TYPE_TIMEOUT_SECONDS.get(active_task.task_type, self.max_task_seconds)
-                task_duration = (datetime.datetime.now(datetime.UTC) - active_task.started).total_seconds()
+                limit = task.TASK_TYPE_TIMEOUT_SECONDS.get(candidate.task_type, self.max_task_seconds)
+                task_duration = (datetime.datetime.now(datetime.UTC) - candidate.started).total_seconds()
                 if task_duration <= limit:
                     return False
 
-                await self.terminate_long_running_task(active_task, worker, active_task.id, pid, limit)
-                notify_args = (
-                    active_task.asf_uid,
-                    active_task.task_type,
-                    active_task.project_key,
-                    active_task.version_key,
-                    active_task.revision_number,
-                    active_task.primary_rel_path,
-                    active_task.error or "task terminated",
-                )
+                active_task = candidate
         except Exception as e:
             log.error(f"Error checking task duration for worker {pid}: {e}")
             # TODO: Return False here to avoid over-reporting errors
             return False
-        await task.notify_failure(*notify_args)
-        return True
+        return await self.terminate_long_running_task(active_task, worker, active_task.id, pid, limit)
 
     async def pre_spawn_replacement(self, data: db.Session, pid: int, worker: WorkerProcess) -> None:
         if worker.pre_spawned:

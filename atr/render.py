@@ -363,34 +363,6 @@ def render_checks_summary(
     return card.collect()
 
 
-def render_exception_banner(info: datatypes.PathInfo) -> htm.Element | None:
-    path_count = sum(len(results) for results in info.exceptions.values())
-    release_count = len(info.release_level_exceptions)
-    total = path_count + release_count
-    if total == 0:
-        return None
-
-    affected_paths = sorted(str(p) for p in info.exceptions)
-    check_word = "check" if (total == 1) else "checks"
-
-    children: list[htm.Element | str] = [
-        htpy.i(".bi.bi-cone-striped.me-2"),
-        htpy.strong[f"ATR could not complete {total} automated {check_word}."],
-        " These results indicate a tooling failure, not a confirmed release-candidate issue. ",
-    ]
-    if affected_paths:
-        children.append("Affected files: ")
-        for index, path_str in enumerate(affected_paths):
-            if index > 0:
-                children.append(", ")
-            children.append(htpy.code[path_str])
-        children.append(". ")
-    if release_count > 0:
-        word = "exception" if (release_count == 1) else "exceptions"
-        children.append(f"{release_count} release-level {word}.")
-    return htm.div(".alert.atr-bg-exception.mb-3", role="alert")[*children]
-
-
 def _render_checker_entry(
     stat: datatypes.CheckerStats | None,
     release_problems: list[sql.CheckResult],

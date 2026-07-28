@@ -107,9 +107,8 @@ async def selected(
     page = htm.Block()
     _render_header(page, release)
     _render_summary(page, totals, all_paths, per_file_stats)
-    if info is not None:
-        if banner := render.render_exception_banner(info):
-            page.append(banner)
+    if summary_card := render.render_checks_summary(info, project_key, version_key):
+        page.append(summary_card)
     _render_checks_table(page, release, all_paths, per_file_stats, info)
 
     return await template.blank(
@@ -152,12 +151,6 @@ async def selected_revision(
     checks_summary_elem = render.render_checks_summary(info, project_key, version_key)
     checks_summary_html = str(checks_summary_elem) if checks_summary_elem else ""
 
-    exception_banner_html = ""
-    if info is not None:
-        banner_elem = render.render_exception_banner(info)
-        if banner_elem is not None:
-            exception_banner_html = str(banner_elem)
-
     delete_file_forms: dict[str, str] = {}
     if release.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
         for path in all_paths:
@@ -190,7 +183,6 @@ async def selected_revision(
         phase=release.phase.value,
         delete_file_forms=delete_file_forms,
         csrf_input=str(form.csrf_input()),
-        exception_banner_html=exception_banner_html,
     )
 
     return quart.jsonify(

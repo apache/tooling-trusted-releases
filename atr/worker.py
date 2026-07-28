@@ -23,6 +23,7 @@
 # need to check wall clock time as well as CPU time.
 
 import asyncio
+import contextlib
 import datetime
 import inspect
 import json
@@ -307,6 +308,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         return
 
     task_results: results.Results | None
+    error_data: Any = None
     try:
         if (
             asf_uid != constants.SYSTEM_SERVICE_UID
@@ -349,6 +351,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
     except task.CheckRetryableError as e:
         task_results = None
         status = task.BROKEN
+        error_data = e.data
         log.error(f"Task {task_id} failed with a retryable error: {e}")
         error = str(e)
     except Exception as e:
@@ -357,48 +360,69 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         error_details = traceback.format_exc()
         log.error(f"Task {task_id} failed processing: {error_details}")
         error = str(e)
-    await _task_result_process(task_id, task_results, status, error)
+    await _task_result_process(task_id, task_results, status, error, error_data=error_data)
 
 
 async def _task_result_process(
-    task_id: int, task_results: results.Results | None, status: sql.TaskStatus, error: str | None = None
+    task_id: int,
+    task_results: results.Results | None,
+    status: sql.TaskStatus,
+    error: str | None = None,
+    error_data: Any = None,
 ) -> None:
     """Process and store task results in the database."""
-    notify_args: tuple[str | None, sql.TaskType, str | None, str | None, str | None, str | None, str] | None = None
+    if status in (task.FAILED, task.BROKEN):
+        await task.finalise_failure(task_id, os.getpid(), error or "", status, error_data=error_data)
+        return
+    pid = os.getpid()
+    via = sql.validate_instrumented_attribute
     log_record: dict[str, Any] | None = None
     completed = datetime.datetime.now(datetime.UTC)
     async with db.session() as data:
         async with data.begin():
-            # Find the task by ID
-            task_obj = await data.task(id=task_id).get()
-            if task_obj:
-                if (status == task.COMPLETED) and (task_obj.task_type in task.RECURRING_TASK_TYPES):
-                    # A successful recurring run leaves only a log line behind
-                    log_record = _task_completed_record(task_obj, task_results, completed)
-                    await data.delete(task_obj)
-                else:
-                    # Update task properties
-                    task_obj.status = status
-                    task_obj.completed = completed
-                    task_obj.result = task_results
-
-                    if status in (task.FAILED, task.BROKEN):
-                        normalised_error = ((error or "").strip()) or "unknown error"
-                        task_obj.error = normalised_error
-                        notify_args = (
-                            task_obj.asf_uid,
-                            task_obj.task_type,
-                            task_obj.project_key,
-                            task_obj.version_key,
-                            task_obj.revision_number,
-                            task_obj.primary_rel_path,
-                            normalised_error,
-                        )
+            update_stmt = (
+                sqlmodel.update(sql.Task)
+                .where(
+                    via(sql.Task.id) == task_id,
+                    via(sql.Task.status) == task.ACTIVE,
+                    via(sql.Task.pid) == pid,
+                )
+                .values(status=task.COMPLETED, completed=completed, result=task_results)
+                .returning(
+                    via(sql.Task.task_type),
+                    via(sql.Task.task_args),
+                    via(sql.Task.asf_uid),
+                    via(sql.Task.added),
+                    via(sql.Task.started),
+                )
+            )
+            row = (await data.execute(update_stmt)).first()
+            if row is None:
+                log.warning(f"Task {task_id} was not completed because it is no longer active")
+                return
+            task_type, task_args, asf_uid, added, started = row
+            with contextlib.suppress(ValueError):
+                task_type = sql.TaskType(task_type)
+            if task_type in task.RECURRING_TASK_TYPES:
+                # A successful recurring run leaves only a log line behind
+                task_obj = sql.Task(
+                    id=task_id,
+                    status=task.COMPLETED,
+                    task_type=task_type,
+                    task_args=task_args,
+                    asf_uid=asf_uid,
+                    added=added,
+                    started=started,
+                    pid=pid,
+                    completed=completed,
+                )
+                log_record = _task_completed_record(task_obj, task_results, completed)
+                await data.execute(
+                    sqlmodel.delete(sql.Task).where(via(sql.Task.id) == task_id, via(sql.Task.pid) == pid)
+                )
 
     if log_record is not None:
         _task_completed_log(log_record)
-    if notify_args is not None:
-        await task.notify_failure(*notify_args)
 
 
 async def _worker_loop_run() -> None:

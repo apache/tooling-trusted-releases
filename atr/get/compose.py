@@ -126,11 +126,6 @@ async def selected(
     for path in all_paths:
         delete_file_forms[str(path)] = await _render_delete_file_form(release, path)
 
-    exception_banner_html: str = ""
-    if info is not None:
-        banner = render.render_exception_banner(info)
-        if banner is not None:
-            exception_banner_html = str(banner)
     files_table_html = await _render_files_table_html(
         release,
         paths=all_paths,
@@ -138,7 +133,6 @@ async def selected(
         project_key=release.safe_project_key,
         version_key=release.safe_version_key,
         delete_file_forms=delete_file_forms,
-        exception_banner_html=exception_banner_html,
     )
 
     recheck_form = await form.render(
@@ -241,7 +235,6 @@ async def selected(
         has_files=has_files,
         blocker_errors=blocker_errors,
         checks_summary_html=checks_summary_html,
-        exception_banner_html=exception_banner_html,
         move_file_html=move_file_html,
         scripts=str(scripts),
     )
@@ -400,7 +393,6 @@ async def _render_files_table_html(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     delete_file_forms: dict[str, htm.Element],
-    exception_banner_html: str,
 ) -> str:
     if not paths:
         return _EMPTY_FILES_TABLE_HTML
@@ -414,7 +406,6 @@ async def _render_files_table_html(
         phase=release.phase.value,
         delete_file_forms=delete_file_forms,
         csrf_input=str(form.csrf_input()),
-        exception_banner_html=exception_banner_html,
     )
 
 
@@ -632,12 +623,6 @@ async def _status_selected_impl(
         ragp = read.as_general_public()
         info = await ragp.releases.path_info(release, all_paths)
 
-    exception_banner_html = ""
-    if info is not None:
-        banner_elem = render.render_exception_banner(info)
-        if banner_elem is not None:
-            exception_banner_html = str(banner_elem)
-
     # Always rebuild the files table fragment
     # Check results can change between polls
     delete_file_forms: dict[str, htm.Element] = {}
@@ -650,7 +635,6 @@ async def _status_selected_impl(
         project_key=release.safe_project_key,
         version_key=release.safe_version_key,
         delete_file_forms=delete_file_forms,
-        exception_banner_html=exception_banner_html,
     )
 
     checks_summary_elem = render.render_checks_summary(info, release.safe_project_key, release.safe_version_key)

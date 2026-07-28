@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import datetime
+
 import unittest.mock as mock
 
 import atr.models.safe as safe
@@ -45,30 +45,20 @@ def test_highest_severity_precedence() -> None:
     )
 
 
-def test_render_exception_banner_empty_returns_none() -> None:
+def test_render_checks_summary_shows_release_level_exception() -> None:
+    result = mock.MagicMock(spec=sql.CheckResult)
+    result.status = sql.CheckResultStatus.EXCEPTION
+    result.message = "Base release directory does not exist"
+    result.checker = "atr.tasks.checks.paths.check"
     info = datatypes.PathInfo()
-    assert render.render_exception_banner(info) is None
+    info.release_level_exceptions.append(result)
 
+    card = render.render_checks_summary(info, safe.ProjectKey("test"), safe.VersionKey("1.0"))
 
-def test_render_exception_banner_path_level() -> None:
-    path = safe.RelPath("apache-test-1.0-source.tar.gz")
-    info = datatypes.PathInfo()
-    info.exceptions[path] = [_fake_check_result()]
-    banner = render.render_exception_banner(info)
-    assert banner is not None
-    html = str(banner)
-    assert "atr-bg-exception" in html
-    assert "could not complete 1 automated check" in html
-    assert str(path) in html
-
-
-def test_render_exception_banner_release_level_only() -> None:
-    info = datatypes.PathInfo()
-    info.release_level_exceptions.append(_fake_check_result())
-    banner = render.render_exception_banner(info)
-    assert banner is not None
-    html = str(banner)
-    assert "release-level exception" in html
+    assert card is not None
+    html = str(card)
+    assert "Checks summary" in html
+    assert "Base release directory does not exist" in html
 
 
 def test_table_constants_are_consistent() -> None:
@@ -84,12 +74,3 @@ def test_table_constants_are_consistent() -> None:
         assert status in render.CELL_TEXT_CLASS
     assert render.PATH_STYLE_CLASS[sql.CheckResultStatus.BLOCKER] == "atr-text-blocker"
     assert render.PATH_STYLE_CLASS[sql.CheckResultStatus.EXCEPTION] == "text-danger"
-
-
-def _fake_check_result() -> sql.CheckResult:
-    result = mock.MagicMock(spec=sql.CheckResult)
-    result.status = sql.CheckResultStatus.EXCEPTION
-    result.message = "tool crashed"
-    result.created = datetime.datetime(2026, 5, 13, tzinfo=datetime.UTC)
-    result.checker = "atr.tasks.checks.foo"
-    return result

@@ -89,7 +89,7 @@ async def test_task_process_fails_when_handler_ldap_unavailable(monkeypatch: pyt
     await worker._task_process(1, sql.TaskType.MESSAGE_SEND.value, {}, "alice")
 
     defer.assert_not_awaited()
-    result_process.assert_awaited_once_with(1, None, task.FAILED, "down")
+    result_process.assert_awaited_once_with(1, None, task.FAILED, "down", error_data=None)
 
 
 async def test_task_process_marks_retryable_check_failures_broken(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,4 +104,10 @@ async def test_task_process_marks_retryable_check_failures_broken(monkeypatch: p
 
     await worker._task_process(1, sql.TaskType.COMPARE_SOURCE_TREES.value, {}, "alice")
 
-    result_process.assert_awaited_once_with(1, None, task.BROKEN, "clone failed")
+    result_process.assert_awaited_once_with(
+        1,
+        None,
+        task.BROKEN,
+        "clone failed",
+        error_data={"repo_url": "https://example.invalid/repo.git"},
+    )
