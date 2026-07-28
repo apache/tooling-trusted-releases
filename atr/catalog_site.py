@@ -303,6 +303,8 @@ async def _write_project(
 
     project_dir = site_dir / committee.key / project.key
     retired = project.status not in _LIVE_PROJECT_STATUSES
+    # The signing keys are published per committee, beside the release files themselves
+    keys_url = paths.committee_keys_url(committee)
     cle_document = await _project_cle_document(data, project, now)
     await _write(project_dir / "cle.json", json.dumps(cle_document, indent=2, default=str))
     await _write(
@@ -313,6 +315,7 @@ async def _write_project(
             versions=current,
             has_archive=bool(archived),
             retired=retired,
+            keys_url=keys_url,
             root="../../",
         ),
     )
@@ -323,6 +326,7 @@ async def _write_project(
             project=project,
             versions=archived,
             retired=retired,
+            keys_url=keys_url,
             root="../../",
         ),
     )
