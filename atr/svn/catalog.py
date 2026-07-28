@@ -22,11 +22,12 @@ Catalogue published dist commits into the database via the storage interface.
 import dataclasses
 import datetime
 import pathlib
-from typing import Final
+from typing import Final, NamedTuple
 
 import atr.analysis as analysis
 import atr.classify as classify
 import atr.config as config
+import atr.constants as constants
 import atr.db as db
 import atr.log as log
 import atr.models.safe as safe
@@ -48,6 +49,9 @@ _CHECKSUM_SUFFIXES: Final[tuple[str, ...]] = (".sha512", ".sha256", ".sha1", ".s
 type _ResolvedRelease = tuple[safe.ProjectKey, safe.VersionKey, list[release.ArtifactInput]]
 type _ResolvedArchive = tuple[safe.ProjectKey, safe.VersionKey]
 
+# How a release is identified while a commit is being read: committee, subproject, version
+type _ReleaseKey = tuple[str, str | None, str]
+
 
 @dataclasses.dataclass
 class _ReleaseFiles:
@@ -60,6 +64,14 @@ class _ReleaseFiles:
     has_source: bool = False
 
 
+class _StructuralChanges(NamedTuple):
+    # Releases whose files the commit lists, version directories it deleted, and version
+    # directories it added whole, mapped to their path under the release root
+    added: dict[_ReleaseKey, _ReleaseFiles]
+    removed: set[_ReleaseKey]
+    copied: dict[_ReleaseKey, str]
+
+
 async def catalogue_commit(commit: dict) -> None:
     if str(commit.get("committer", "")) == svn.ASF_TOOL:
         # Our own publishes are already in the database
@@ -68,7 +80,9 @@ async def catalogue_commit(commit: dict) -> None:
     if not isinstance(changed, dict):
         log.warning(f"dist commit payload has unexpected changed shape: {type(changed).__name__}")
         return
-    added, removed = _structural_changes(changed)
+    changes = _structural_changes(changed)
+    added, removed = changes.added, changes.removed
+    await _expand_copied(changes.copied, added)
     added = _collapse_airflow_providers(added)
     if not (added or removed):
         return
@@ -159,6 +173,31 @@ def _companion(siblings: set[str], artifact: str, suffixes: tuple[str, ...]) -> 
         if (artifact + suffix) in siblings:
             return artifact + suffix
     return None
+
+
+async def _expand_copied(copied: dict[_ReleaseKey, str], added: dict[_ReleaseKey, _ReleaseFiles]) -> None:
+    # Publishing by copying a whole version directory across from dev is the common
+    # release flow, and svn reports it as a single added directory. The files have to be
+    # listed from the repository, since the commit itself never names them
+    for key, relpath in copied.items():
+        if key in added:
+            continue
+        committee, subproject, version = key
+        try:
+            names = await svn.list_files(f"{constants.SVN_DIST_ROOT_URL}/{_RELEASE_PREFIX}{relpath}")
+        except Exception:
+            log.exception(f"dist watcher could not list {relpath}, so it stays uncatalogued")
+            continue
+        bundle = _ReleaseFiles(committee, subproject, version)
+        for name in names:
+            rel = f"{relpath}/{name}"
+            dirpath, _, filename = rel.rpartition("/")
+            file_type = classify.classify_path(pathlib.PurePosixPath(rel))
+            bundle.files.append((dirpath, filename, file_type))
+            if file_type is classify.FileType.SOURCE:
+                bundle.has_source = True
+        if bundle.has_source:
+            added[key] = bundle
 
 
 def _decompose_change(path: str) -> tuple[str, dist.Decomposed, bool, str | None] | None:
@@ -288,14 +327,14 @@ def _sbom_companion(siblings: set[str], artifact: str) -> str | None:
     return None
 
 
-def _structural_changes(
-    changed: dict,
-) -> tuple[dict[tuple[str, str | None, str], _ReleaseFiles], set[tuple[str, str | None, str]]]:
+def _structural_changes(changed: dict) -> _StructuralChanges:
     # Group added files by release so we can record their artifacts, and collect
     # version-dir deletions as archivals. A release is only identified by an added
-    # source artifact; binary/doc/metadata files are included but don't make a release
-    added: dict[tuple[str, str | None, str], _ReleaseFiles] = {}
-    removed: set[tuple[str, str | None, str]] = set()
+    # source artifact; binary/doc/metadata files are included but don't make a release.
+    # A version directory added whole is kept aside, since its files are not in the commit
+    added: dict[_ReleaseKey, _ReleaseFiles] = {}
+    removed: set[_ReleaseKey] = set()
+    copied: dict[_ReleaseKey, str] = {}
     for raw_path, info in changed.items():
         path = str(raw_path)
         flags = str(info.get("flags", "")) if isinstance(info, dict) else ""
@@ -310,6 +349,8 @@ def _structural_changes(
         key = (committee, subproject, decomposed.version)
         if flags.startswith("D") and is_dir:
             removed.add(key)
+        elif flags.startswith("A") and is_dir:
+            copied[key] = path.removeprefix(_RELEASE_PREFIX).rstrip("/")
         elif flags.startswith("A") and (filename is not None):
             bundle = added.get(key)
             if bundle is None:
@@ -321,7 +362,8 @@ def _structural_changes(
             bundle.files.append((dirpath, filename, file_type))
             if file_type is classify.FileType.SOURCE:
                 bundle.has_source = True
-    return {key: bundle for key, bundle in added.items() if bundle.has_source}, removed
+    with_source = {key: bundle for key, bundle in added.items() if bundle.has_source}
+    return _StructuralChanges(added=with_source, removed=removed, copied=copied)
 
 
 def _airflow_bundle_area(bundle: _ReleaseFiles) -> str | None:

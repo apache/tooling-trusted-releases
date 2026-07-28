@@ -32,6 +32,7 @@ ASF_TOOL: Final[str] = "atr"
 EXPORT_TIMEOUT_SECONDS: Final[float] = 240.0
 INFO_TIMEOUT_SECONDS: Final[float] = 30.0
 KEYS_TIMEOUT_SECONDS: Final[float] = 60.0
+LIST_TIMEOUT_SECONDS: Final[float] = 60.0
 PUBLISH_TIMEOUT_SECONDS: Final[float] = 240.0
 _COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
 _CONNECTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
@@ -194,6 +195,12 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     log_output = await _run_svn_command("log", str(path), "--xml", "--username", ASF_TOOL, "--password", svn_token)
     root = ElementTree.fromstring(log_output)
     return SvnLog.from_xml_tree(root)
+
+
+async def list_files(url: str) -> list[str]:
+    """List every file below a URL, as paths relative to it. Directories are left out."""
+    output = await _run_svn_command("list", url, "--recursive", timeout_seconds=LIST_TIMEOUT_SECONDS)
+    return [line for line in output.splitlines() if line and (not line.endswith("/"))]
 
 
 def parse_committed_revision(output: str) -> int | None:
