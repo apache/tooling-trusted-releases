@@ -8,9 +8,15 @@
   <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
   <h1 class="mb-4">{{ committee.display_name }}</h1>
   {% if retired %}
-    <div class="alert alert-secondary" role="alert">
-      This committee has retired to the Attic. Its projects are no longer active.
-    </div>
+    {% if not committee.is_podling %}
+      <div class="alert alert-secondary" role="alert">
+        This committee has retired to the Attic. Its projects are no longer active.
+      </div>
+    {% else %}
+      <div class="alert alert-secondary" role="alert">
+        This podling has retired from the Incubator. Its projects are no longer active.
+      </div>
+    {% endif %}
   {% else %}
     <h2 class="fs-4 border-bottom pb-1">Current projects</h2>
     {% if current %}
