@@ -30,10 +30,11 @@ import datetime
 import json
 import pathlib
 import shutil
-from collections.abc import Sequence
+from collections.abc import Container, Iterable, Sequence
 from typing import Any, Final
 
 import aiofiles.os
+import aioshutil
 import jinja2
 import sqlmodel
 
@@ -113,6 +114,9 @@ async def generate_all(data: db.Session) -> None:
     committees = await data.committee(_projects=True).all()
     written = await _write_committee_pages(data, committees, site_dir)
     await _write_index_pages(site_dir, written)
+    # Keyed off every committee rather than the ones written, so a committee whose page
+    # failed to render keeps what it had instead of losing the lot
+    await _prune_directories(site_dir, {committee.key for committee in committees} | {"assets"})
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
@@ -152,15 +156,29 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     if project.committee_key is None:
         log.warning(f"Catalog site: project {project_key} has no committee, skipping regeneration")
         return
-    # The project page links back past a committee that holds only the one project,
-    # so it needs the committee's projects to know which way to point.
-    committee = await data.committee(key=project.committee_key, _projects=True).get()
+    # The committee index is built from its projects, and the project page links back
+    # past a committee that holds only the one, so both need them loaded.
+    committees = await data.committee(_projects=True).all()
+    committee = next((c for c in committees if c.key == project.committee_key), None)
     if committee is None:
         log.warning(f"Catalog site: committee {project.committee_key} not found, skipping regeneration")
         return
     site_dir = paths.get_catalog_site_dir()
     await _write_committee_index(data, committee, site_dir)
-    await _write_project(data, committee, project, site_dir)
+    # A project sharing its committee's key is the committee page, so it's written already
+    if project.key != committee.key:
+        await _write_project(data, committee, project, site_dir)
+    # A first release, or a last one archived, moves a committee on or off the front page
+    # and between the Incubator's two columns, so the indexes are rebuilt every time too.
+    # The assets are not: they only change with a deploy, so the full rebuild owns them.
+    await _write_index_pages(site_dir, committees)
+
+
+def _last_updated() -> str:
+    return datetime.datetime.now(datetime.UTC).strftime("%d %b %Y %H:%M UTC")
+
+
+_ENVIRONMENT.globals["last_updated"] = _last_updated
 
 
 async def _project_cle_document(data: db.Session, project: sql.Project, now: datetime.datetime) -> dict[str, Any]:
@@ -169,6 +187,49 @@ async def _project_cle_document(data: db.Session, project: sql.Project, now: dat
     events_stmt = sqlmodel.select(sql.LifecycleEvent).where(via(sql.LifecycleEvent.project_key) == project.key)
     events = (await data.execute(events_stmt)).scalars().all()
     return cle.project_document(project, events, releases, now=now)
+
+
+def _project_path(committee: sql.Committee, project: sql.Project) -> str:
+    """Where a project's pages sit below its committee, as a relative path prefix.
+
+    A project sharing its committee's key is the committee page itself, so it gets no
+    directory of its own. The rest drop the committee key from the front of theirs,
+    unless a sibling is already keyed by what would be left.
+    """
+    if project.key == committee.key:
+        return ""
+    trimmed = project.key.removeprefix(f"{committee.key}-")
+    if any(sibling.key == trimmed for sibling in committee.projects):
+        return f"{project.key}/"
+    return f"{trimmed}/"
+
+
+_ENVIRONMENT.globals["project_path"] = _project_path
+
+
+def _project_segments(committee: sql.Committee, projects: Iterable[sql.Project]) -> set[str]:
+    return {_project_path(committee, project).removesuffix("/") for project in projects}
+
+
+async def _prune_directories(directory: safe.StatePath, keep: Container[str]) -> None:
+    """Remove the subdirectories of one that this build didn't write.
+
+    Files are left alone, since every page is rewritten in place. Only whole directories
+    go stale, when a committee, project or release stops being catalogued under that name.
+    """
+    path = directory.path
+    try:
+        entries = await aiofiles.os.listdir(path)
+    except FileNotFoundError:
+        return
+    pruned: list[str] = []
+    for name in sorted(entries):
+        if (name in keep) or (not await aiofiles.os.path.isdir(path / name)):
+            continue
+        await aioshutil.rmtree(path / name)
+        pruned.append(name)
+    if pruned:
+        log.info(f"Catalog site: pruned {len(pruned)} stale directories from {path}: {', '.join(pruned)}")
 
 
 async def _write(path: safe.StatePath, content: str) -> None:
@@ -192,11 +253,11 @@ async def _write_attic_index(
     # A retired PMC is filed either under the Attic itself or as a committee that kept
     # its own key, but a reader wants one list, so the two are merged by name here.
     # Nothing here still releases, so each entry opens straight at its archive.
-    entries = [(project.display_name, f"{project.key}/archive.html") for project in projects]
+    entries = [(project.display_name, f"{_project_path(attic, project)}archive.html") for project in projects]
     for committee in committees:
         path = f"{committee.key}/index.html"
         if len(committee.projects) == 1:
-            path = f"{committee.key}/{committee.projects[0].key}/archive.html"
+            path = f"{committee.key}/{_project_path(committee, committee.projects[0])}archive.html"
         entries.append((committee.display_name, f"../{path}"))
     entries.sort(key=lambda entry: entry[0].lower())
     html = _ENVIRONMENT.get_template("attic.html").render(committee=attic, entries=entries, root="../")
@@ -210,20 +271,33 @@ def _has_live_project(committee: sql.Committee) -> bool:
 async def _write_committee_index(
     data: db.Session, committee: sql.Committee, site_dir: safe.StatePath
 ) -> list[sql.Project]:
-    projects = list(await data.project(committee_key=committee.key).all())
-    current = sorted((p for p in projects if p.status in _LIVE_PROJECT_STATUSES), key=lambda p: p.display_name.lower())
-    archived = sorted(
-        (p for p in projects if p.status not in _LIVE_PROJECT_STATUSES), key=lambda p: p.display_name.lower()
-    )
-    html = _ENVIRONMENT.get_template("committee.html").render(
+    """Write the committee page, returning the projects that still need one of their own.
+
+    A committee running a project of its own name has no separate page for it. That
+    project's releases become the committee page, with the others listed beneath them.
+    """
+    projects = sorted(committee.projects, key=lambda project: project.display_name.lower())
+    tlp = next((project for project in projects if project.key == committee.key), None)
+    subprojects = [project for project in projects if project is not tlp]
+    current = [project for project in subprojects if project.status in _LIVE_PROJECT_STATUSES]
+    archived = [project for project in subprojects if project.status not in _LIVE_PROJECT_STATUSES]
+    if tlp is not None:
+        await _write_project(data, committee, tlp, site_dir, current, archived)
+        return subprojects
+    # Nothing of the committee's own to show, so the page is just the way down to
+    # the projects, rendered by the same template with no project against it.
+    html = _ENVIRONMENT.get_template("project.html").render(
         committee=committee,
-        current=current,
-        archived=archived,
+        project=None,
+        subprojects=current,
+        archived_subprojects=archived,
         retired=not current,
+        keys_url=paths.committee_keys_url(committee),
         root="../",
     )
     await _write(site_dir / committee.key / "index.html", html)
-    return projects
+    await _prune_directories(site_dir / committee.key, _project_segments(committee, subprojects))
+    return subprojects
 
 
 async def _write_committee_pages(
@@ -245,6 +319,9 @@ async def _write_committee_pages(
                 await _write_project(data, committee, project, site_dir)
             except Exception:
                 log.exception(f"Failed to render catalog site for project {project.key}")
+        if committee.key in _INDEXING_COMMITTEE_KEYS:
+            # These skip the committee index, which is where the tidying otherwise happens
+            await _prune_directories(site_dir / committee.key, _project_segments(committee, projects))
         written.append(committee)
     return written
 
@@ -299,7 +376,12 @@ async def _write_incubator_index(
 
 
 async def _write_project(
-    data: db.Session, committee: sql.Committee, project: sql.Project, site_dir: safe.StatePath
+    data: db.Session,
+    committee: sql.Committee,
+    project: sql.Project,
+    site_dir: safe.StatePath,
+    subprojects: Sequence[sql.Project] = (),
+    archived_subprojects: Sequence[sql.Project] = (),
 ) -> None:
     now = datetime.datetime.now(datetime.UTC)
     artifacts = await data.artifact(project_key=project.key, _release=True).all()
@@ -308,7 +390,12 @@ async def _write_project(
     current = [v for v in assembled.versions if v.status == "released"]
     archived = [v for v in assembled.versions if v.status == "archived"]
 
-    project_dir = site_dir / committee.key / project.key
+    # A committee's own project is its index page, so it sits a level up from the
+    # rest and everything below it steps back one fewer time.
+    segment = _project_path(committee, project).removesuffix("/")
+    committee_dir = site_dir / committee.key
+    project_dir = (committee_dir / segment) if segment else committee_dir
+    root = "../../" if segment else "../"
     retired = project.status not in _LIVE_PROJECT_STATUSES
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
@@ -319,11 +406,13 @@ async def _write_project(
         _ENVIRONMENT.get_template("project.html").render(
             committee=committee,
             project=project,
+            subprojects=subprojects,
+            archived_subprojects=archived_subprojects,
             versions=current,
             has_archive=bool(archived),
             retired=retired,
             keys_url=keys_url,
-            root="../../",
+            root=root,
         ),
     )
     await _write(
@@ -334,15 +423,24 @@ async def _write_project(
             versions=archived,
             retired=retired,
             keys_url=keys_url,
-            root="../../",
+            root=root,
         ),
     )
     for version in assembled.versions:
-        await _write_release(project_dir, committee, project, version)
+        await _write_release(project_dir, committee, project, version, f"{root}../")
+    keep = {str(version.version) for version in assembled.versions}
+    if not segment:
+        # Hoisted onto the committee page, so the subprojects sit beside the versions
+        keep |= _project_segments(committee, (*subprojects, *archived_subprojects))
+    await _prune_directories(project_dir, keep)
 
 
 async def _write_release(
-    project_dir: safe.StatePath, committee: sql.Committee, project: sql.Project, version: api.CatalogVersion
+    project_dir: safe.StatePath,
+    committee: sql.Committee,
+    project: sql.Project,
+    version: api.CatalogVersion,
+    root: str,
 ) -> None:
     release_dir = project_dir / str(version.version)
     await _write(
@@ -351,7 +449,7 @@ async def _write_release(
             committee=committee,
             project=project,
             release_version=version,
-            root="../../../",
+            root=root,
         ),
     )
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))

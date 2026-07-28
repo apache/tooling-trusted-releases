@@ -1,14 +1,13 @@
-{# Shared by the project and archive pages, which sit at the same depth. The indexes
-   link straight past a committee holding a single project, so step back the same way
-   rather than to a committee page that was never passed through #}
-{% if committee.projects | length == 1 %}
-  {% if committee.is_podling %}
-    <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
-  {% elif retired %}
-    <p class="mb-1"><a href="{{ root }}{{ attic_key }}/index.html" class="atr-back-link">&larr; Attic</a></p>
-  {% else %}
-    <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
-  {% endif %}
-{% else %}
+{# The committee's own project is the committee page, and the indexes link straight past
+   a committee holding a single project, so both step back to an index rather than to a
+   committee page that was never passed through #}
+{% set own_page = project and (project.key != committee.key) %}
+{% if own_page and (committee.projects | length > 1) %}
   <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
+{% elif committee.is_podling %}
+  <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
+{% elif retired %}
+  <p class="mb-1"><a href="{{ root }}{{ attic_key }}/index.html" class="atr-back-link">&larr; Attic</a></p>
+{% else %}
+  <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
 {% endif %}

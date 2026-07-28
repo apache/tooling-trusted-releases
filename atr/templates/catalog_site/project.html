@@ -1,34 +1,64 @@
 {% extends "catalog_site_base.html" %}
 
-{%- block title -%}{{ project.display_name }} ~ Apache Release Catalog{%- endblock title -%}
+{% set heading = project.display_name if project else committee.display_name %}
 
-{%- block description -%}Release catalogue for {{ project.display_name }}.{%- endblock description -%}
+{%- block title -%}{{ heading }} ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Release catalogue for {{ heading }}.{%- endblock description -%}
 
 {% block content %}
   {% include "_project_back_link.html" %}
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <h1 class="mb-0">{{ project.display_name }}</h1>
+    <h1 class="mb-0">{{ heading }}</h1>
     <span>
       <a class="btn btn-sm btn-outline-secondary" href="{{ keys_url }}">Public KEYS</a>
-      <a class="btn btn-sm btn-outline-secondary ms-2" href="cle.json">Project CLE</a>
-      {# A retired project has nothing current, so the archive is always the way on #}
-      {% if has_archive or retired %}
-        <a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>
+      {% if project %}
+        <a class="btn btn-sm btn-outline-secondary ms-2" href="cle.json">Project CLE</a>
+        {# A retired project has nothing current, so the archive is always the way on #}
+        {% if has_archive or retired %}
+          <a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>
+        {% endif %}
       {% endif %}
     </span>
   </div>
   {% if retired %}
     <div class="alert alert-secondary" role="alert">
-      This project has been archived. See its <a href="archive.html" class="alert-link">archived releases</a> for the history.
+      {% if project %}
+        This project has been archived. See its <a href="archive.html" class="alert-link">archived releases</a> for the history.
+      {% elif committee.is_podling %}
+        This podling has retired from the Incubator. Its projects are no longer active.
+      {% else %}
+        This committee has retired to the Attic. Its projects are no longer active.
+      {% endif %}
     </div>
   {% endif %}
-  {# A retired project can still hold releases that were never archived themselves.
-     They belong to nothing else, so list them here rather than drop them #}
-  {% if versions %}
-    {% for version in versions %}{% include "_version.html" %}{% endfor %}
-  {% elif not retired %}
-    <div class="alert alert-info" role="alert">
-      No catalogued releases yet for {{ project.display_name }}.
+  {% if project %}
+    {# A retired project can still hold releases that were never archived themselves.
+       They belong to nothing else, so list them here rather than drop them #}
+    {% if versions %}
+      {% for version in versions %}{% include "_version.html" %}{% endfor %}
+    {% elif not retired %}
+      <div class="alert alert-info" role="alert">
+        No catalogued releases yet for {{ heading }}.
+      </div>
+    {% endif %}
+  {% endif %}
+  {% if subprojects %}
+    <h2 class="fs-4 border-bottom pb-1 mt-4">Subprojects</h2>
+    <div class="list-group mb-4">
+      {% for subproject in subprojects %}
+        <a class="list-group-item list-group-item-action"
+           href="{{ project_path(committee, subproject) }}index.html">{{ subproject.display_name }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if archived_subprojects %}
+    <h2 class="fs-4 border-bottom pb-1 mt-4">Archived subprojects</h2>
+    <div class="list-group">
+      {% for subproject in archived_subprojects %}
+        <a class="list-group-item list-group-item-action"
+           href="{{ project_path(committee, subproject) }}index.html">{{ subproject.display_name }}</a>
+      {% endfor %}
     </div>
   {% endif %}
 {% endblock content %}
