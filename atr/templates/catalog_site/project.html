@@ -5,7 +5,15 @@
 {%- block description -%}Release catalogue for {{ project.display_name }}.{%- endblock description -%}
 
 {% block content %}
-  <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
+  {% if committee.projects | length == 1 %}
+    {% if committee.is_podling %}
+      <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
+    {% else %}
+      <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
+    {% endif %}
+  {% else %}
+    <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
+  {% endif %}
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <h1 class="mb-0">{{ project.display_name }}</h1>
     <span>

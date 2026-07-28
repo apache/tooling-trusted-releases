@@ -15,8 +15,15 @@
             <div class="card-body">
               <div class="row align-items-center">
                 <div class="col">
+                  {# A committee with a single project has nothing to choose from, so
+                     the card opens the project itself #}
+                  {% if committee.projects | length == 1 %}
+                    {% set target = committee.key ~ "/" ~ committee.projects[0].key ~ "/index.html" %}
+                  {% else %}
+                    {% set target = committee.key ~ "/index.html" %}
+                  {% endif %}
                   <h2 class="card-title fs-4 mb-0">
-                    <a href="{{ committee.key }}/index.html"
+                    <a href="{{ root }}{{ target }}"
                        class="text-decoration-none stretched-link">{{ committee.display_name }}</a>
                   </h2>
                 </div>

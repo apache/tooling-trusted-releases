@@ -82,27 +82,48 @@ _LIVE_PROJECT_STATUSES: Final[frozenset[sql.ProjectStatus]] = frozenset(
     {sql.ProjectStatus.ACTIVE, sql.ProjectStatus.DORMANT, sql.ProjectStatus.STANDING}
 )
 
+# The Incubator holds no releases of its own. Its page is an index of the podlings
+# instead, so the podlings are catalogued there rather than on the front page.
+_INCUBATOR_COMMITTEE_KEY: Final = "incubator"
+_ENVIRONMENT.globals["incubator_key"] = _INCUBATOR_COMMITTEE_KEY
+
 
 async def generate_all(data: db.Session) -> None:
     """Rebuild every page, overwriting in place so the site stays servable throughout."""
     site_dir = paths.get_catalog_site_dir()
     await _write_assets(site_dir)
-    committees = await data.committee().all()
+    # The indexes link a single-project committee straight to that project, so they
+    # need its projects alongside it.
+    committees = await data.committee(_projects=True).all()
     current: list[sql.Committee] = []
+    current_podlings: list[sql.Committee] = []
+    retired_podlings: list[sql.Committee] = []
+    incubator: sql.Committee | None = None
     written = 0
     for committee in committees:
+        if committee.key == _INCUBATOR_COMMITTEE_KEY:
+            # Its index needs every podling's state, so it waits for the whole walk
+            incubator = committee
+            continue
         try:
             projects = await _write_committee_index(data, committee, site_dir)
         except Exception:
             log.exception(f"Failed to render catalog site committee index for {committee.key}")
             continue
-        if any(project.status in _LIVE_PROJECT_STATUSES for project in projects):
+        live = any(project.status in _LIVE_PROJECT_STATUSES for project in projects)
+        if committee.is_podling:
+            (current_podlings if live else retired_podlings).append(committee)
+        elif live:
             current.append(committee)
         for project in projects:
             try:
                 await _write_project(data, committee, project, site_dir)
             except Exception:
                 log.exception(f"Failed to render catalog site for project {project.key}")
+        written += 1
+    if incubator is not None:
+        await _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
+        current.append(incubator)
         written += 1
     # A committee whose projects have all retired keeps its pages, but drops off the
     # front page, so the index stays a list of where releases are still coming from.
@@ -143,9 +164,14 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     if project is None:
         log.warning(f"Catalog site: project {project_key} not found, skipping regeneration")
         return
-    committee = project.committee
-    if committee is None:
+    if project.committee_key is None:
         log.warning(f"Catalog site: project {project_key} has no committee, skipping regeneration")
+        return
+    # The project page links back past a committee that holds only the one project,
+    # so it needs the committee's projects to know which way to point.
+    committee = await data.committee(key=project.committee_key, _projects=True).get()
+    if committee is None:
+        log.warning(f"Catalog site: committee {project.committee_key} not found, skipping regeneration")
         return
     site_dir = paths.get_catalog_site_dir()
     await _write_committee_index(data, committee, site_dir)
@@ -189,6 +215,24 @@ async def _write_committee_index(
     )
     await _write(site_dir / committee.key / "index.html", html)
     return projects
+
+
+async def _write_incubator_index(
+    site_dir: safe.StatePath,
+    incubator: sql.Committee,
+    current: Sequence[sql.Committee],
+    retired: Sequence[sql.Committee],
+) -> None:
+    def by_name(committee: sql.Committee) -> str:
+        return committee.display_name.lower()
+
+    html = _ENVIRONMENT.get_template("incubator.html").render(
+        committee=incubator,
+        current=sorted(current, key=by_name),
+        retired=sorted(retired, key=by_name),
+        root="../",
+    )
+    await _write(site_dir / incubator.key / "index.html", html)
 
 
 async def _write_project(

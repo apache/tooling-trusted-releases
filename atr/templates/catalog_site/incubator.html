@@ -1,0 +1,41 @@
+{% extends "catalog_site_base.html" %}
+
+{%- block title -%}{{ committee.display_name }} ~ Apache Release Catalog{%- endblock title -%}
+
+{%- block description -%}Podlings incubating at the Apache Software Foundation, and those that have retired.{%- endblock description -%}
+
+{# Everything listed here is a podling, so the names carry no "(Incubating)" suffix.
+   A podling with a single project has nothing to choose from, so it links straight
+   to that project #}
+{% macro podling_list(root, podlings, empty_message) %}
+  {% if podlings %}
+    <div class="list-group">
+      {% for podling in podlings %}
+        {% if podling.projects | length == 1 %}
+          {% set target = podling.key ~ "/" ~ podling.projects[0].key ~ "/index.html" %}
+        {% else %}
+          {% set target = podling.key ~ "/index.html" %}
+        {% endif %}
+        <a class="list-group-item list-group-item-action"
+           href="{{ root }}{{ target }}">{{ podling.name or podling.key.title() }}</a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-muted">{{ empty_message }}</p>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+  <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
+  <h1 class="mb-3">{{ committee.display_name }}</h1>
+  <div class="row g-4">
+    <div class="col-md-6">
+      <h2 class="fs-4 border-bottom pb-1">Current podlings</h2>
+      {{ podling_list(root, current, "No current podlings.") }}
+    </div>
+    <div class="col-md-6">
+      <h2 class="fs-4 border-bottom pb-1">Retired podlings</h2>
+      {{ podling_list(root, retired, "No retired podlings.") }}
+    </div>
+  </div>
+{% endblock content %}

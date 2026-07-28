@@ -5,7 +5,12 @@
 {%- block description -%}Releases for {{ committee.display_name }}.{%- endblock description -%}
 
 {% block content %}
-  <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
+  {# Podlings are catalogued on the Incubator page, not the front page #}
+  {% if committee.is_podling %}
+    <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
+  {% else %}
+    <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
+  {% endif %}
   <h1 class="mb-4">{{ committee.display_name }}</h1>
   {% if retired %}
     {% if not committee.is_podling %}
