@@ -51,7 +51,14 @@ import atr.util as util
 
 _TEMPLATES_DIR: Final = pathlib.Path(__file__).parent / "templates" / "catalog_site"
 _ENVIRONMENT: Final = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
+    # The app's own template root comes second, so the site can include the shared
+    # footer while its own templates keep resolving by their bare names
+    loader=jinja2.ChoiceLoader(
+        [
+            jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
+            jinja2.FileSystemLoader(str(_TEMPLATES_DIR.parent)),
+        ]
+    ),
     autoescape=jinja2.select_autoescape(["html"]),
     undefined=jinja2.StrictUndefined,
 )

@@ -30,16 +30,6 @@
       {% block content %}{% endblock content %}
     </main>
 
-    <footer class="footer">
-      <p>
-        Copyright &copy; 2026, The Apache Software Foundation. Material licensed under the
-        <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License, version 2.0</a>.
-      </p>
-      <p>
-        This is ATR version <code id="atr-version"><a href="https://github.com/apache/tooling-trusted-releases/commit/{{ commit }}">{{ version }}</a></code>.
-        For inquiries, contact <a href="mailto:dev@tooling.apache.org">dev@tooling.apache.org</a>.
-        Submit bug reports and feedback to <a href="https://github.com/apache/tooling-trusted-releases/issues">the source code repository</a>.
-      </p>
-    </footer>
+    {% include "includes/footer.html" %}
   </body>
 </html>
