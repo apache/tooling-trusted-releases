@@ -5,29 +5,27 @@
 {%- block description -%}Release catalogue for {{ project.display_name }}.{%- endblock description -%}
 
 {% block content %}
-  {% if committee.projects | length == 1 %}
-    {% if committee.is_podling %}
-      <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
-    {% else %}
-      <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
-    {% endif %}
-  {% else %}
-    <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
-  {% endif %}
+  {% include "_project_back_link.html" %}
   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <h1 class="mb-0">{{ project.display_name }}</h1>
     <span>
       <a class="btn btn-sm btn-outline-secondary" href="cle.json">Project CLE</a>
-      {% if has_archive %}<a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>{% endif %}
+      {# A retired project has nothing current, so the archive is always the way on #}
+      {% if has_archive or retired %}
+        <a class="btn btn-sm btn-outline-secondary ms-2" href="archive.html">Archived releases</a>
+      {% endif %}
     </span>
   </div>
   {% if retired %}
     <div class="alert alert-secondary" role="alert">
-      This project has been archived. See its archived releases for the history.
+      This project has been archived. See its <a href="archive.html" class="alert-link">archived releases</a> for the history.
     </div>
-  {% elif versions %}
+  {% endif %}
+  {# A retired project can still hold releases that were never archived themselves.
+     They belong to nothing else, so list them here rather than drop them #}
+  {% if versions %}
     {% for version in versions %}{% include "_version.html" %}{% endfor %}
-  {% else %}
+  {% elif not retired %}
     <div class="alert alert-info" role="alert">
       No catalogued releases yet for {{ project.display_name }}.
     </div>

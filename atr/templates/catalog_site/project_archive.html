@@ -5,8 +5,14 @@
 {%- block description -%}Archived releases for {{ project.display_name }}.{%- endblock description -%}
 
 {% block content %}
-  <p class="mb-1"><a href="index.html" class="atr-back-link">&larr; {{ project.display_name }}</a></p>
-  <h1 class="mb-3">{{ project.display_name }} &ndash; archived releases</h1>
+  {% include "_project_back_link.html" %}
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h1 class="mb-0">{{ project.display_name }} &ndash; archived releases</h1>
+    <span>
+      <a class="btn btn-sm btn-outline-secondary" href="cle.json">Project CLE</a>
+      <a class="btn btn-sm btn-outline-secondary ms-2" href="index.html">Current releases</a>
+    </span>
+  </div>
   {% if versions %}
     {% for version in versions %}{% include "_version.html" %}{% endfor %}
   {% else %}

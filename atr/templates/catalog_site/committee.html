@@ -8,6 +8,8 @@
   {# Podlings are catalogued on the Incubator page, not the front page #}
   {% if committee.is_podling %}
     <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
+  {% elif retired %}
+    <p class="mb-1"><a href="{{ root }}{{ attic_key }}/index.html" class="atr-back-link">&larr; Attic</a></p>
   {% else %}
     <p class="mb-1"><a href="{{ root }}index.html" class="atr-back-link">&larr; Release catalog</a></p>
   {% endif %}
@@ -33,13 +35,13 @@
     {% else %}
       <p class="text-muted">No current projects.</p>
     {% endif %}
-    {% if archived %}
-      <h2 class="fs-4 border-bottom pb-1">Archived projects</h2>
-      <div class="list-group">
-        {% for project in archived %}
-          <a class="list-group-item list-group-item-action" href="{{ project.key }}/index.html">{{ project.display_name }}</a>
-        {% endfor %}
-      </div>
-    {% endif %}
+  {% endif %}
+  {% if archived %}
+    <h2 class="fs-4 border-bottom pb-1">Archived projects</h2>
+    <div class="list-group">
+      {% for project in archived %}
+        <a class="list-group-item list-group-item-action" href="{{ project.key }}/index.html">{{ project.display_name }}</a>
+      {% endfor %}
+    </div>
   {% endif %}
 {% endblock content %}

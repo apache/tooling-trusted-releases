@@ -87,6 +87,15 @@ _LIVE_PROJECT_STATUSES: Final[frozenset[sql.ProjectStatus]] = frozenset(
 _INCUBATOR_COMMITTEE_KEY: Final = "incubator"
 _ENVIRONMENT.globals["incubator_key"] = _INCUBATOR_COMMITTEE_KEY
 
+# The Attic holds the PMCs that have retired. They reach it either as one of the
+# Attic's own projects or as a committee that kept its key, so its page merges both.
+_ATTIC_COMMITTEE_KEY: Final = "attic"
+_ENVIRONMENT.globals["attic_key"] = _ATTIC_COMMITTEE_KEY
+
+# Both index the rest of the catalogue rather than releases of their own, so their
+# pages are written once the walk has been through every committee.
+_INDEXING_COMMITTEE_KEYS: Final[frozenset[str]] = frozenset({_ATTIC_COMMITTEE_KEY, _INCUBATOR_COMMITTEE_KEY})
+
 
 async def generate_all(data: db.Session) -> None:
     """Rebuild every page, overwriting in place so the site stays servable throughout."""
@@ -95,40 +104,9 @@ async def generate_all(data: db.Session) -> None:
     # The indexes link a single-project committee straight to that project, so they
     # need its projects alongside it.
     committees = await data.committee(_projects=True).all()
-    current: list[sql.Committee] = []
-    current_podlings: list[sql.Committee] = []
-    retired_podlings: list[sql.Committee] = []
-    incubator: sql.Committee | None = None
-    written = 0
-    for committee in committees:
-        if committee.key == _INCUBATOR_COMMITTEE_KEY:
-            # Its index needs every podling's state, so it waits for the whole walk
-            incubator = committee
-            continue
-        try:
-            projects = await _write_committee_index(data, committee, site_dir)
-        except Exception:
-            log.exception(f"Failed to render catalog site committee index for {committee.key}")
-            continue
-        live = any(project.status in _LIVE_PROJECT_STATUSES for project in projects)
-        if committee.is_podling:
-            (current_podlings if live else retired_podlings).append(committee)
-        elif live:
-            current.append(committee)
-        for project in projects:
-            try:
-                await _write_project(data, committee, project, site_dir)
-            except Exception:
-                log.exception(f"Failed to render catalog site for project {project.key}")
-        written += 1
-    if incubator is not None:
-        await _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
-        current.append(incubator)
-        written += 1
-    # A committee whose projects have all retired keeps its pages, but drops off the
-    # front page, so the index stays a list of where releases are still coming from.
-    await _write_root_index(site_dir, current)
-    log.info(f"Rebuilt catalog site for {written} of {len(committees)} committees")
+    written = await _write_committee_pages(data, committees, site_dir)
+    await _write_index_pages(site_dir, written)
+    log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
 async def queue_regeneration(data: db.Session, asf_uid: str, project_key: str) -> None:
@@ -198,6 +176,30 @@ async def _write_assets(site_dir: safe.StatePath) -> None:
         await asyncio.to_thread(shutil.copyfile, _STATIC_DIR / rel, destination)
 
 
+async def _write_attic_index(
+    site_dir: safe.StatePath,
+    attic: sql.Committee,
+    projects: Sequence[sql.Project],
+    committees: Sequence[sql.Committee],
+) -> None:
+    # A retired PMC is filed either under the Attic itself or as a committee that kept
+    # its own key, but a reader wants one list, so the two are merged by name here.
+    # Nothing here still releases, so each entry opens straight at its archive.
+    entries = [(project.display_name, f"{project.key}/archive.html") for project in projects]
+    for committee in committees:
+        path = f"{committee.key}/index.html"
+        if len(committee.projects) == 1:
+            path = f"{committee.key}/{committee.projects[0].key}/archive.html"
+        entries.append((committee.display_name, f"../{path}"))
+    entries.sort(key=lambda entry: entry[0].lower())
+    html = _ENVIRONMENT.get_template("attic.html").render(committee=attic, entries=entries, root="../")
+    await _write(site_dir / attic.key / "index.html", html)
+
+
+def _has_live_project(committee: sql.Committee) -> bool:
+    return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
+
+
 async def _write_committee_index(
     data: db.Session, committee: sql.Committee, site_dir: safe.StatePath
 ) -> list[sql.Project]:
@@ -215,6 +217,60 @@ async def _write_committee_index(
     )
     await _write(site_dir / committee.key / "index.html", html)
     return projects
+
+
+async def _write_committee_pages(
+    data: db.Session, committees: Sequence[sql.Committee], site_dir: safe.StatePath
+) -> list[sql.Committee]:
+    """Write each committee's own page and those of its projects, returning the ones written."""
+    written: list[sql.Committee] = []
+    for committee in committees:
+        if committee.key in _INDEXING_COMMITTEE_KEYS:
+            projects = list(committee.projects)
+        else:
+            try:
+                projects = await _write_committee_index(data, committee, site_dir)
+            except Exception:
+                log.exception(f"Failed to render catalog site committee index for {committee.key}")
+                continue
+        for project in projects:
+            try:
+                await _write_project(data, committee, project, site_dir)
+            except Exception:
+                log.exception(f"Failed to render catalog site for project {project.key}")
+        written.append(committee)
+    return written
+
+
+async def _write_index_pages(site_dir: safe.StatePath, committees: Sequence[sql.Committee]) -> None:
+    """Write the three pages that index the others: the front page, Incubator and Attic."""
+    current: list[sql.Committee] = []
+    current_podlings: list[sql.Committee] = []
+    retired_podlings: list[sql.Committee] = []
+    retired_committees: list[sql.Committee] = []
+    incubator: sql.Committee | None = None
+    attic: sql.Committee | None = None
+    for committee in committees:
+        if committee.key == _INCUBATOR_COMMITTEE_KEY:
+            incubator = committee
+        elif committee.key == _ATTIC_COMMITTEE_KEY:
+            attic = committee
+        elif committee.is_podling:
+            (current_podlings if _has_live_project(committee) else retired_podlings).append(committee)
+        elif _has_live_project(committee):
+            current.append(committee)
+        else:
+            # Nothing left to release, so it belongs with the rest of the Attic
+            retired_committees.append(committee)
+    if incubator is not None:
+        await _write_incubator_index(site_dir, incubator, current_podlings, retired_podlings)
+        current.append(incubator)
+    if attic is not None:
+        await _write_attic_index(site_dir, attic, list(attic.projects), retired_committees)
+        current.append(attic)
+    # A committee whose projects have all retired keeps its pages, but drops off the
+    # front page, so the index stays a list of where releases are still coming from.
+    await _write_root_index(site_dir, current)
 
 
 async def _write_incubator_index(
@@ -246,6 +302,7 @@ async def _write_project(
     archived = [v for v in assembled.versions if v.status == "archived"]
 
     project_dir = site_dir / committee.key / project.key
+    retired = project.status not in _LIVE_PROJECT_STATUSES
     cle_document = await _project_cle_document(data, project, now)
     await _write(project_dir / "cle.json", json.dumps(cle_document, indent=2, default=str))
     await _write(
@@ -255,7 +312,7 @@ async def _write_project(
             project=project,
             versions=current,
             has_archive=bool(archived),
-            retired=project.status not in _LIVE_PROJECT_STATUSES,
+            retired=retired,
             root="../../",
         ),
     )
@@ -265,6 +322,7 @@ async def _write_project(
             committee=committee,
             project=project,
             versions=archived,
+            retired=retired,
             root="../../",
         ),
     )
