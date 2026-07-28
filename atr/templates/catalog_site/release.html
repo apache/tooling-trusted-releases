@@ -10,43 +10,36 @@
 
   {% set status_classes = {"released": "text-bg-success", "archived": "text-bg-secondary"} %}
   <div class="card mb-3 shadow-sm atr-catalog-version" data-status="{{ release_version.status }}">
-    <div class="d-flex">
-      <div class="atr-certified-panel d-flex align-items-center justify-content-center border-end">
-        {% if release_version.managed %}
-          <img src="{{ root }}assets/svg/atr_certified_badge.svg" class="atr-certified-badge" alt="ATR certified">
-        {% endif %}
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <strong class="fs-5">{{ release_version.version }}</strong>
+        <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
       </div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <strong class="fs-5">{{ release_version.version }}</strong>
-          <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
-        </div>
-        <p class="text-muted small mb-2">
-          {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% elif release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
-        </p>
-        {% if release_version.artifacts %}
-          {% for artifact in release_version.artifacts %}
-            <div class="d-flex flex-wrap justify-content-between gap-2 py-1 atr-catalog-artifact">
-              <span class="font-monospace small">
-                {{ artifact.artifact_path }}
-                {% if artifact.classification %}<span class="badge text-bg-light ms-1">{{ artifact.classification }}</span>{% endif %}
-              </span>
-              <span class="small text-nowrap">
-                {% if artifact.downloadable %}
-                  <a class="btn btn-sm btn-primary" href="{{ artifact.artifact_url }}">Download</a>
-                  {% if artifact.signature_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.signature_url }}">Signature</a>{% endif %}
-                  {% if artifact.checksum_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.checksum_url }}">Checksum</a>{% endif %}
-                  {% if artifact.sbom_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.sbom_url }}">SBOM</a>{% endif %}
-                {% else %}
-                  <span class="text-secondary">Metadata only</span>
-                {% endif %}
-              </span>
-            </div>
-          {% endfor %}
-        {% else %}
-          <p class="text-secondary small fst-italic mb-0">No catalogued artifacts for this version.</p>
-        {% endif %}
-      </div>
+      <p class="text-muted small mb-2">
+        {% if release_version.released %}{{ release_version.released.strftime("%d %b %Y") }}{% elif release_version.svn_revision %}svn r{{ release_version.svn_revision }}{% endif %}
+      </p>
+      {% if release_version.artifacts %}
+        {% for artifact in release_version.artifacts %}
+          <div class="d-flex flex-wrap justify-content-between gap-2 py-1 atr-catalog-artifact">
+            <span class="font-monospace small">
+              {{ artifact.artifact_path }}
+              {% if artifact.classification %}<span class="badge text-bg-light ms-1">{{ artifact.classification }}</span>{% endif %}
+            </span>
+            <span class="small text-nowrap">
+              {% if artifact.downloadable %}
+                <a class="btn btn-sm btn-primary" href="{{ artifact.artifact_url }}">Download</a>
+                {% if artifact.signature_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.signature_url }}">Signature</a>{% endif %}
+                {% if artifact.checksum_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.checksum_url }}">Checksum</a>{% endif %}
+                {% if artifact.sbom_url %}<a class="btn btn-sm btn-outline-secondary ms-2" href="{{ artifact.sbom_url }}">SBOM</a>{% endif %}
+              {% else %}
+                <span class="text-secondary">Metadata only</span>
+              {% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-secondary small fst-italic mb-0">No catalogued artifacts for this version.</p>
+      {% endif %}
     </div>
   </div>
   <p class="small"><a href="artifacts.json">artifacts.json</a></p>
