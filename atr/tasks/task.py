@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
 
 import atr.constants as constants
 import atr.log as log
@@ -29,6 +29,7 @@ QUEUED: Final = sql.TaskStatus.QUEUED
 ACTIVE: Final = sql.TaskStatus.ACTIVE
 COMPLETED: Final = sql.TaskStatus.COMPLETED
 FAILED: Final = sql.TaskStatus.FAILED
+BROKEN: Final = sql.TaskStatus.BROKEN
 
 # The recurring tasks reschedule themselves and carry no lasting per-run value, so on
 # success they are logged to a file and dropped rather than kept in the table.
@@ -48,6 +49,13 @@ RECURRING_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
 TASK_TYPE_TIMEOUT_SECONDS: Final[dict[sql.TaskType, int]] = {
     sql.TaskType.CATALOG_SITE_GENERATE: 1800,
 }
+
+
+class CheckRetryableError(Exception):
+    def __init__(self, message: str, data: Any = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.data = data
 
 
 class DeferredError(Exception):

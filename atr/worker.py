@@ -190,10 +190,6 @@ def _setup_logging() -> None:
     )
 
 
-def _task_completed_log(record: dict[str, Any]) -> None:
-    logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
-
-
 def _task_args_for_log(
     task_type: str | sql.TaskType, task_args: list[str] | dict[str, Any]
 ) -> list[str] | dict[str, Any]:
@@ -202,6 +198,10 @@ def _task_args_for_log(
     return {
         key: _TASK_ARG_HIDDEN if (key in _MESSAGE_SEND_SENSITIVE_ARGS) else value for key, value in task_args.items()
     }
+
+
+def _task_completed_log(record: dict[str, Any]) -> None:
+    logging.getLogger(_TASK_LOG_LOGGER).info(json.dumps(record, allow_nan=False))
 
 
 def _task_completed_record(
@@ -346,6 +346,11 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
         log.info(f"Task {task_id} ({task_type}) deferred, re-queued for a later attempt")
         await _task_defer(task_id)
         return
+    except task.CheckRetryableError as e:
+        task_results = None
+        status = task.BROKEN
+        log.error(f"Task {task_id} failed with a retryable error: {e}")
+        error = str(e)
     except Exception as e:
         task_results = None
         status = task.FAILED
@@ -377,7 +382,7 @@ async def _task_result_process(
                     task_obj.completed = completed
                     task_obj.result = task_results
 
-                    if status == task.FAILED:
+                    if status in (task.FAILED, task.BROKEN):
                         normalised_error = ((error or "").strip()) or "unknown error"
                         task_obj.error = normalised_error
                         notify_args = (

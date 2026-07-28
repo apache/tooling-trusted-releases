@@ -1076,7 +1076,7 @@ async def wait_for_task(
             return False
         for _attempt in range(timeout_s * 10):
             await data.refresh(t)
-            if t.status == sql.TaskStatus.FAILED:
+            if t.status in (sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN):
                 raise InteractionError(f"Task {task.id} failed with error {t.error}")
             if t.status == desired_status:
                 return True

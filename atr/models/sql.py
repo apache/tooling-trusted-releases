@@ -227,6 +227,7 @@ class TaskStatus(enum.StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
+    BROKEN = "broken"
 
 
 class TaskType(enum.StrEnum):
@@ -783,8 +784,8 @@ class Task(sqlmodel.SQLModel, table=True):
         sqlalchemy.Index("ix_task_status_added", "status", "added"),
         # Ensure valid status transitions:
         # - QUEUED can transition to ACTIVE
-        # - ACTIVE can transition to COMPLETED or FAILED
-        # - COMPLETED and FAILED are terminal states
+        # - ACTIVE can transition to COMPLETED, FAILED, or BROKEN
+        # - COMPLETED, FAILED, and BROKEN are terminal states
         sqlalchemy.CheckConstraint(
             """
             (
@@ -796,6 +797,8 @@ class Task(sqlmodel.SQLModel, table=True):
                 OR (status = 'COMPLETED' AND completed IS NOT NULL AND result IS NOT NULL)
                 -- ACTIVE -> FAILED requires setting completed time and error (result optional)
                 OR (status = 'FAILED' AND completed IS NOT NULL AND error IS NOT NULL)
+                -- ACTIVE -> BROKEN requires setting completed time and error (result optional)
+                OR (status = 'BROKEN' AND completed IS NOT NULL AND error IS NOT NULL)
             )
             """,
             name="valid_task_status_transitions",

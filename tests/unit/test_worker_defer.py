@@ -25,6 +25,12 @@ import atr.tasks.task as task
 import atr.worker as worker
 
 
+def test_task_args_for_log_leaves_other_tasks_unchanged() -> None:
+    task_args = {"body": "Not a mail body"}
+
+    assert worker._task_args_for_log(sql.TaskType.MAINTENANCE, task_args) is task_args
+
+
 def test_task_args_for_log_redacts_message_body_and_recipients() -> None:
     task_args = {
         "email_sender": "sender@apache.org",
@@ -52,12 +58,6 @@ def test_task_args_for_log_redacts_message_body_and_recipients() -> None:
         "footer_category": "vote",
     }
     assert task_args["body"] == "Secret body"
-
-
-def test_task_args_for_log_leaves_other_tasks_unchanged() -> None:
-    task_args = {"body": "Not a mail body"}
-
-    assert worker._task_args_for_log(sql.TaskType.MAINTENANCE, task_args) is task_args
 
 
 async def test_task_process_defers_when_ldap_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,3 +90,18 @@ async def test_task_process_fails_when_handler_ldap_unavailable(monkeypatch: pyt
 
     defer.assert_not_awaited()
     result_process.assert_awaited_once_with(1, None, task.FAILED, "down")
+
+
+async def test_task_process_marks_retryable_check_failures_broken(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def handler(args: object) -> None:
+        raise task.CheckRetryableError("clone failed", {"repo_url": "https://example.invalid/repo.git"})
+
+    monkeypatch.setattr("atr.config.is_production_mode", lambda: False)
+    monkeypatch.setattr("atr.config.is_ldap_configured", lambda: False)
+    monkeypatch.setattr("atr.tasks.resolve", lambda task_type: handler)
+    result_process = mock.AsyncMock()
+    monkeypatch.setattr("atr.worker._task_result_process", result_process)
+
+    await worker._task_process(1, sql.TaskType.COMPARE_SOURCE_TREES.value, {}, "alice")
+
+    result_process.assert_awaited_once_with(1, None, task.BROKEN, "clone failed")

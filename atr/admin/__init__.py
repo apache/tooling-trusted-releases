@@ -1927,6 +1927,7 @@ async def tasks_recent(_session: web.Committer, _tasks_recent: Literal["tasks/re
                 sql.TaskStatus.ACTIVE: ".table-info",
                 sql.TaskStatus.COMPLETED: ".table-success",
                 sql.TaskStatus.FAILED: ".table-danger",
+                sql.TaskStatus.BROKEN: ".table-warning",
             }.get(task.status, "")
             if (task.started is not None) and (task.completed is not None):
                 took_seconds = (task.completed - task.started).total_seconds()

@@ -325,7 +325,9 @@ class WorkerManager:
                     .select_from(sql.Task)
                     .where(
                         sql.Task.pid == pid,
-                        via(sql.Task.status).in_([sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED]),
+                        via(sql.Task.status).in_(
+                            [sql.TaskStatus.COMPLETED, sql.TaskStatus.FAILED, sql.TaskStatus.BROKEN]
+                        ),
                         via(sql.Task.started) >= worker.started,
                     )
                 )
