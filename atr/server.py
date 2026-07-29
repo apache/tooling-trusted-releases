@@ -782,6 +782,7 @@ async def _initialise_pubsub(conf: type[config.AppConfig], app: base.QuartApp):
             password=pubsub_password,
         )
         task = asyncio.create_task(listener.start())
+        task.add_done_callback(_pubsub_listener_finished)
         app.extensions["pubsub_listener"] = task
         log.info("PubSub listener task created")
     else:
@@ -1010,6 +1011,12 @@ def _pending_migrations(state_dir: pathlib.Path) -> set[tuple[str, str]]:
         if (state_dir / old_path).exists():
             pending.add((old_path, new_path))
     return pending
+
+
+def _pubsub_listener_finished(task: asyncio.Task[None]) -> None:
+    if task.cancelled():
+        return
+    log.error(f"PubSub listener task finished unexpectedly: {task.exception()!r}")
 
 
 async def _register_recurrent_tasks() -> None:

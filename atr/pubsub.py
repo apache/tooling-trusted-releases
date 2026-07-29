@@ -36,6 +36,8 @@ _DEFAULT_INACTIVITY_TIMEOUT = 11
 # Default read buffer size. Max payload size in pypubsub is 256kb (plus metadata and JSON overhead)
 _DEFAULT_READ_BUFFER_SIZE = 300 * 1024
 
+_STREAM_CONTENT_TYPE = "application/vnd.pypubsub-stream"
+
 
 def is_ldap_payload(payload: dict[str, Any]) -> bool:
     return "ldap" in payload.get("pubsub_topics", [])
@@ -64,7 +66,7 @@ async def listen(
     password: str | None = None,
     sock_read: float | None = None,
     buffersize: int | None = None,
-) -> AsyncGenerator[Any | None]:
+) -> AsyncGenerator[dict[str, Any]]:
     if username:
         if password is None:
             raise ValueError("PubSub password is required")
@@ -88,27 +90,19 @@ async def listen(
             log.debug("Opening new connection...")
             try:
                 async for payload in _process_connection(session, pubsub_url):
-                    if not payload:
-                        ### tbd?: event loop killed or hit EOF
-                        pass
-
                     # We got a payload, so reset the DELAY.
                     delay = 0.0
 
                     yield payload
 
-            except (
-                ConnectionRefusedError,
-                aiohttp.ClientConnectorError,
-                aiohttp.ServerTimeoutError,
-                aiohttp.ClientPayloadError,
-            ) as e:
+            except Exception as e:
                 log.error(f"Connection failed ({type(e).__name__}: {e}), reconnecting in {delay} seconds")
-                await asyncio.sleep(delay)
 
-                # Back off on the delay. Step it up from 0s, doubling each
-                # time, and top out at 30s retry. Steps: 0, 2, 6, 14, 30.
-                delay = min(30.0, (delay + 1.0) * 2)
+            await asyncio.sleep(delay)
+
+            # Back off on the delay. Step it up from 0s, doubling each
+            # time, and top out at 30s retry. Steps: 0, 2, 6, 14, 30.
+            delay = min(30.0, (delay + 1.0) * 2)
 
 
 async def _handle_payload(payload: dict[str, Any]) -> None:
@@ -127,6 +121,9 @@ async def _process_connection(session, pubsub_url):
     # Connect to pubsub and listen for payloads.
     async with session.get(pubsub_url) as conn:
         # print('LIMITS:', conn.content.get_read_buffer_limits())
+        conn.raise_for_status()
+        if conn.content_type != _STREAM_CONTENT_TYPE:
+            log.warning(f"Unexpected pubsub content type: {conn.content_type}")
 
         while True:
             # The pubsub server defines stream payloads as:
@@ -138,19 +135,17 @@ async def _process_connection(session, pubsub_url):
             #
             # Note: this newline is in RAW, but the json loader
             # ignores it.
-            try:
-                raw = await conn.content.readuntil(b"\n")
-            except ValueError as e:
-                log.error(f'Saw "{e}"; re-raising as ClientPayloadError to close/reconnect')
-                raise aiohttp.ClientPayloadError("re-raised from ValueError in readuntil()")
+            raw = await conn.content.readuntil(b"\n")
 
             if not raw:
                 # EOF - end this connection so listen() reopens it, rather than
                 # falling through to json.loads(b"") and raising.
-                yield None
                 return
 
-            yield json.loads(raw)
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError(f"Expected a JSON object, got {type(payload).__name__}")
+            yield payload
 
 
 class PubSubListener:
@@ -178,7 +173,7 @@ class PubSubListener:
 
         try:
             async for payload in listen(full_url, username=self.username, password=self.password):
-                if (payload is None) or ("stillalive" in payload):
+                if "stillalive" in payload:
                     continue
                 await _handle_payload(payload)
         except asyncio.CancelledError:

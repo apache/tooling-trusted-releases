@@ -31,11 +31,15 @@ _STILLALIVE = {"stillalive": 1234.5}
 class Server:
     def __init__(self) -> None:
         self.connections = 0
+        self.reject = 0
         self.scripts: list[list[bytes]] = []
         self.url = ""
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
         self.connections += 1
+        if self.reject > 0:
+            self.reject -= 1
+            return web.Response(status=503)
         script = self.scripts.pop(0) if self.scripts else []
         resp = web.StreamResponse()
         resp.content_type = "application/vnd.pypubsub-stream"
@@ -67,6 +71,28 @@ async def test_listen_reconnects_after_eof(server: Server) -> None:
     assert server.connections == 2
 
 
+async def test_listen_survives_bad_status(server: Server) -> None:
+    server.reject = 1
+    server.scripts = [[_line(_EVENT)]]
+    payloads = await _collect(server.url, 1)
+    assert payloads[0]["commit"] == {"id": 1}
+    assert server.connections == 2
+
+
+async def test_listen_survives_non_object_line(server: Server) -> None:
+    server.scripts = [[b'"not an object"\n'], [_line(_EVENT)]]
+    payloads = await _collect(server.url, 1)
+    assert payloads[0]["commit"] == {"id": 1}
+    assert server.connections == 2
+
+
+async def test_listen_survives_truncated_line(server: Server) -> None:
+    server.scripts = [[b'{"truncated'], [_line(_EVENT)]]
+    payloads = await _collect(server.url, 1)
+    assert payloads[0]["commit"] == {"id": 1}
+    assert server.connections == 2
+
+
 async def test_listen_yields_events_and_keepalives(server: Server) -> None:
     server.scripts = [[_line(_STILLALIVE), _line(_EVENT)]]
     payloads = await _collect(server.url, 2)
@@ -80,8 +106,6 @@ async def _collect(url: str, count: int) -> list[dict[str, Any]]:
     gen = pubsub.listen(url)
     async with asyncio.timeout(5):
         async for payload in gen:
-            if payload is None:
-                continue
             payloads.append(payload)
             if len(payloads) == count:
                 break
