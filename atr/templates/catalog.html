@@ -15,6 +15,12 @@
        href="{{ as_url(api.cle_project, project_key=project.key) }}">Project CLE</a>
   </div>
 
+  {% if committee and not committee.catalog_reviewed %}
+    <div class="alert alert-warning" role="alert">
+      This information was assembled by ATR from the distribution archives and has not yet been reviewed by {{ committee.display_name }}.
+    </div>
+  {% endif %}
+
   {% if not versions %}
     <div class="alert alert-info mt-3" role="alert">
       <i class="bi bi-info-circle me-2"></i> No catalogued releases yet for {{ project.display_name }}.

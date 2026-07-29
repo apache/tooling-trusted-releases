@@ -54,6 +54,7 @@ async def project(_session: web.Public, _catalog: Literal["catalog"], project_ke
     return await template.render(
         "catalog.html",
         project=project_obj,
+        committee=project_obj.committee,
         versions=assembled.versions,
         groups=catalog.cycle_groups(assembled.versions, project_cycles, now) if assembled.grouped else [],
         grouped=assembled.grouped,

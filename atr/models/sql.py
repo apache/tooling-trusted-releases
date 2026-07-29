@@ -895,6 +895,21 @@ class Committee(sqlmodel.SQLModel, table=True):
     is_podling: bool = sqlmodel.Field(default=False)
     automated_keys_file: bool = sqlmodel.Field(default=True)
 
+    # The date the PMC itself retired, not the dates its projects did. Null when there's
+    # no such date, which includes a committee that's retired but undated (an older Attic
+    # entry we have no record for); is_archived carries the status
+    archived: datetime.datetime | None = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(UTCDateTime),
+        **example(datetime.datetime(2026, 1, 15, 1, 2, 3, tzinfo=datetime.UTC)),
+    )
+    # The archived status. The archived date above can be null while this is true,
+    # for a committee we know has retired but can't date
+    is_archived: bool = sqlmodel.Field(default=False)
+    # True once the PMC has been through the projects and releases we seeded for them.
+    # Until then the catalogue says as much, because nobody who would know has checked it
+    catalog_reviewed: bool = sqlmodel.Field(default=False)
+
     # 1-M: Committee -> [Committee]
     # M-1: Committee -> Committee
     child_committees: list["Committee"] = sqlmodel.Relationship(

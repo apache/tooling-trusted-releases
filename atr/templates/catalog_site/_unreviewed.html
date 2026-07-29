@@ -1,0 +1,5 @@
+{% if not committee.catalog_reviewed %}
+  <div class="alert alert-warning" role="alert">
+    This information was assembled by ATR from the distribution archives and has not yet been reviewed by {{ committee.display_name }}.
+  </div>
+{% endif %}

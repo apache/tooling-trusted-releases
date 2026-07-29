@@ -397,6 +397,15 @@ async def catalog_get(_session: web.Committer, _catalog: Literal["catalog"]) -> 
     return await template.render("admin-catalog.html", committees=listing)
 
 
+class CatalogReviewedForm(form.Form):
+    reviewed: form.Bool = form.label(
+        "The PMC has reviewed this catalogue",
+        "Tick once the PMC has been through the projects and releases we seeded for them."
+        " Until it is ticked, the catalogue tells readers that the information is unreviewed",
+        default=False,
+    )
+
+
 @admin.typed
 async def catalog_committee_get(
     _session: web.Committer, _catalog: Literal["catalog"], committee_key: safe.CommitteeKey
@@ -407,6 +416,9 @@ async def catalog_committee_get(
     List a committee's projects with their release and artifact counts.
     """
     async with db.session() as data:
+        committee = await data.committee(key=str(committee_key)).demand(
+            exceptions.NotFound(f"Committee '{committee_key}' not found.")
+        )
         projects = await data.project(committee_key=str(committee_key), _releases=True).order_by(sql.Project.key).all()
         artifact_counts = await _catalog_artifact_counts(data, [str(project.key) for project in projects])
         summaries = [
@@ -450,7 +462,37 @@ async def catalog_committee_get(
             ]
         ],
     ]
-    return await template.render("catalog-committee.html", committee_key=str(committee_key), projects=table)
+    reviewed_form = await form.render(
+        model_cls=CatalogReviewedForm,
+        action=f"/admin/catalog/{committee_key}/reviewed",
+        submit_label="Save review status",
+        defaults={"reviewed": committee.catalog_reviewed},
+    )
+    return await template.render(
+        "catalog-committee.html",
+        committee_key=str(committee_key),
+        projects=table,
+        reviewed_form=reviewed_form,
+    )
+
+
+@admin.typed
+async def catalog_reviewed_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _reviewed: Literal["reviewed"],
+    reviewed_form: CatalogReviewedForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/reviewed
+
+    Record whether the PMC has reviewed the catalogue seeded for them.
+    """
+    async with storage.write(session) as write:
+        waca = write.as_committee_admin(str(committee_key))
+        await waca.committee.catalog_reviewed_set(reviewed_form.reviewed)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
 
 
 def _catalog_select(name: str, options: list[tuple[str, str]], placeholder: str) -> htpy.Element:

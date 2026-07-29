@@ -18,9 +18,14 @@
 # Removing this will cause circular imports
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import atr.db as db
 import atr.models.sql as sql
 import atr.storage as storage
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class GeneralPublic:
@@ -183,6 +188,45 @@ class FoundationAdmin(CommitteeMember):
             raise storage.AccessError("Not authorized", status=403)
         self.__asf_uid = asf_uid
         self.__committee_key = committee_key
+
+    async def archive(self, archived: datetime.datetime | None) -> None:
+        """Retire the committee, dating the retirement where we know the date."""
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__data.committee(key=self.__committee_key).demand(
+                storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+            )
+            committee.is_archived = True
+            committee.archived = archived
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            archived=archived.isoformat() if (archived is not None) else None,
+        )
+
+    async def catalog_reviewed_set(self, reviewed: bool) -> None:
+        """Record whether the PMC has reviewed the catalogue we seeded for them."""
+        await self.__data.begin_immediate()
+        try:
+            committee = await self.__data.committee(key=self.__committee_key).demand(
+                storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
+            )
+            committee.catalog_reviewed = reviewed
+            committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            committee_key=self.__committee_key,
+            catalog_reviewed=reviewed,
+        )
 
     async def roster_person_remove(self, asf_uid: str) -> None:
         asf_uid = asf_uid.strip().lower()
