@@ -20,19 +20,15 @@
       <i class="bi bi-info-circle me-2"></i> No catalogued releases yet for {{ project.display_name }}.
     </div>
   {% elif grouped %}
-    {% for cycle_entry in cycles %}
+    {% for group in groups %}
       <div class="mb-4">
-        {# The default cycle has no real lifecycle, so skip its header when it stands alone and
-           label it the way the project page does when it sits alongside genuine cycles. #}
-        {% if cycle_entry.cycle != "default" %}
+        {% if group.label %}
           <h2 class="fs-4 border-bottom pb-1">
-            Version {{ cycle_entry.cycle }}
-            {% if cycle_entry.lifecycle %}<span class="badge text-bg-primary align-middle">{{ cycle_entry.lifecycle }}</span>{% endif %}
+            {{ group.label }}
+            {% if group.lifecycle %}<span class="badge text-bg-primary align-middle">{{ group.lifecycle }}</span>{% endif %}
           </h2>
-        {% elif cycles | length > 1 %}
-          <h2 class="fs-4 border-bottom pb-1">No lifecycle information</h2>
         {% endif %}
-        {% for version in cycle_entry.versions %}
+        {% for version in group.versions %}
           {% include "_catalog_version.html" %}
         {% endfor %}
       </div>

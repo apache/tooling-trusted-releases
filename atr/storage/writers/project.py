@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy.exc
 
+import atr.catalog_site as catalog_site
 import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
@@ -662,6 +663,7 @@ class FoundationAdmin(FoundationCommitter):
 
         if version_scheme_fields & provided:
             await cycles.reassign_release_cycles(self.__data, project)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
 
 
 async def _build_and_add_project(

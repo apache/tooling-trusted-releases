@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
     import atr.db as db
 
-_DEFAULT_CYCLE: Final[str] = "default"
+DEFAULT_CYCLE: Final[str] = "default"
 
 
 def cycle_name_for_version(project: sql.Project, version: str) -> str:
@@ -53,7 +53,7 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
     capture groups, or capture-group 1 captured the empty string.
     """
     if project.cycle_match is None:
-        return _DEFAULT_CYCLE
+        return DEFAULT_CYCLE
 
     match = re.fullmatch(project.cycle_match, version)
     if match is None:
@@ -67,6 +67,21 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
         raise ValueError(f"cycle_match for project {project.key!r} captured empty string from version {version!r}")
 
     return cycle
+
+
+def display_name(cycle_name: str) -> str:
+    """Heading for a cycle. The default one is the catch-all, not a lifecycle."""
+    return "No lifecycle information" if cycle_name == DEFAULT_CYCLE else f"Version {cycle_name}"
+
+
+def headings_needed(cycle_names: Iterable[str]) -> bool:
+    """Whether a project's cycles are worth heading at all.
+
+    A project sitting on nothing but the implicit default cycle has no lifecycle
+    to show, so its releases stay in one flat list.
+    """
+    names = list(cycle_names)
+    return (len(names) > 1) or any(name != DEFAULT_CYCLE for name in names)
 
 
 def is_latest_in_cycle(project: sql.Project, release: sql.Release, candidates: Iterable[sql.Release]) -> bool:
@@ -166,7 +181,7 @@ async def reassign_release_cycles(data: db.Session, project: sql.Project) -> Non
         try:
             cycle_name = cycle_name_for_version(project, release.version)
         except ValueError:
-            cycle_name = _DEFAULT_CYCLE
+            cycle_name = DEFAULT_CYCLE
         new_cycle_key = f"{project.key}-{cycle_name}"
         if release.cycle_key == new_cycle_key:
             continue

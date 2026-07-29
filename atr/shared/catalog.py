@@ -21,6 +21,7 @@ import datetime
 from collections.abc import Sequence
 from typing import Final, Literal
 
+import atr.cycles as cycles
 import atr.models as models
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -34,6 +35,19 @@ class CatalogProject:
     versions: list[models.api.CatalogVersion]
     cycles: list[models.api.CatalogCycle]
     grouped: bool
+
+
+@dataclasses.dataclass
+class CycleGroup:
+    """A cycle and its versions, ready to render.
+
+    `label` is None when the project has nothing worth heading - a lone default
+    cycle - so a template iterates without carrying the rule itself.
+    """
+
+    label: str | None
+    lifecycle: str | None
+    versions: Sequence[models.api.CatalogVersion]
 
 
 def assemble(
@@ -51,10 +65,10 @@ def assemble(
     if grouped:
         # Cycle labels are unique within a project, so they group and look up safely.
         cycles_by_label = {cycle.cycle: cycle for cycle in project_cycles}
-        cycles = _cycles(versions, cycles_by_label, now)
+        catalog_cycles = _cycles(versions, cycles_by_label, now)
     else:
-        cycles = []
-    return CatalogProject(versions=versions, cycles=cycles, grouped=grouped)
+        catalog_cycles = []
+    return CatalogProject(versions=versions, cycles=catalog_cycles, grouped=grouped)
 
 
 def cle_project_url(atr_host: str, project_key: str) -> str:
@@ -63,6 +77,29 @@ def cle_project_url(atr_host: str, project_key: str) -> str:
 
 def cle_release_url(atr_host: str, project_key: str, version: str) -> str:
     return f"https://{atr_host}/api/cle/release/{project_key}/{version}"
+
+
+def cycle_groups(
+    versions: Sequence[models.api.CatalogVersion],
+    project_cycles: Sequence[sql.ProjectCycle],
+    now: datetime.datetime,
+) -> list[CycleGroup]:
+    """Group versions into their cycles for display, most recently active first.
+
+    `assemble` groups every version of a project at once and returns the API shape.
+    Pages regroup here instead, so that a caller which has split the versions -
+    releases on one page, archives on another - labels each side by the same rule.
+    """
+    grouped = _cycles(versions, {cycle.cycle: cycle for cycle in project_cycles}, now)
+    headed = cycles.headings_needed(entry.cycle for entry in grouped)
+    return [
+        CycleGroup(
+            label=cycles.display_name(entry.cycle) if headed else None,
+            lifecycle=entry.lifecycle,
+            versions=entry.versions,
+        )
+        for entry in grouped
+    ]
 
 
 def _artifact(row: sql.Artifact, downloadable: bool, archived: bool) -> models.api.CatalogArtifact:
@@ -135,7 +172,11 @@ def _grouped_layout(version_method: sql.VersionMethod) -> bool:
     return version_method in _GROUPED_METHODS
 
 
-def _lifecycle_badge(cycle: sql.ProjectCycle, now: datetime.datetime) -> str:
+def _lifecycle_badge(cycle: sql.ProjectCycle, now: datetime.datetime) -> str | None:
+    # The default cycle is the catch-all for projects without cycle_match. It carries no
+    # lifecycle dates, so it has no state to report either.
+    if cycle.cycle == cycles.DEFAULT_CYCLE:
+        return None
     if cycle.lts:
         return "LTS"
     if (cycle.eol is not None) and (cycle.eol <= now):

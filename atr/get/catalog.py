@@ -43,18 +43,19 @@ async def project(_session: web.Public, _catalog: Literal["catalog"], project_ke
         artifacts = await data.artifact(project_key=project_obj.key, _release=True).all()
         project_cycles = await data.project_cycle(project_key=project_obj.key).all()
 
+    now = datetime.datetime.now(datetime.UTC)
     assembled = catalog.assemble(
         project_obj.version_method,
         artifacts,
         project_cycles,
-        datetime.datetime.now(datetime.UTC),
+        now,
     )
 
     return await template.render(
         "catalog.html",
         project=project_obj,
         versions=assembled.versions,
-        cycles=assembled.cycles,
+        groups=catalog.cycle_groups(assembled.versions, project_cycles, now) if assembled.grouped else [],
         grouped=assembled.grouped,
         api=api,
         format_datetime=util.format_datetime,

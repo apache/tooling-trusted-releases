@@ -1,0 +1,18 @@
+{# Shared by the project and archive pages. Semver and calver projects group their
+   releases by cycle; everything else is one flat list, since a project on nothing but
+   the default cycle has no lifecycle to show #}
+{% if groups %}
+  {% for group in groups %}
+    <div class="mb-4">
+      {% if group.label %}
+        <h3 class="fs-5 border-bottom pb-1">
+          {{ group.label }}
+          {% if group.lifecycle %}<span class="badge text-bg-primary align-middle">{{ group.lifecycle }}</span>{% endif %}
+        </h3>
+      {% endif %}
+      {% for version in group.versions %}{% include "_version.html" %}{% endfor %}
+    </div>
+  {% endfor %}
+{% else %}
+  {% for version in versions %}{% include "_version.html" %}{% endfor %}
+{% endif %}

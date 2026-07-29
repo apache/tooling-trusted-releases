@@ -80,6 +80,10 @@ class _MockData:
         all_mock = mock.AsyncMock(return_value=list(self._releases))
         return SimpleNamespace(all=all_mock)
 
+    def task(self, **_kwargs):
+        # Nothing queued, so a cycle change adds its own catalog site regeneration.
+        return _Query(None)
+
 
 async def test_edit_cycle_dates_pairs_withdraw_when_changing_existing_date():
     existing = datetime.datetime(2026, 6, 1, tzinfo=datetime.UTC)
@@ -321,6 +325,28 @@ async def test_edit_version_scheme_skips_release_already_in_correct_cycle():
     assert releases[0].cycle_key == "example-0"
     new_cycles = [c for c in data.added if isinstance(c, sql.ProjectCycle)]
     assert new_cycles == []
+
+
+async def test_edit_version_scheme_queues_catalog_site_regeneration():
+    data = _MockData(project=_project(), releases=[_release("0.1", cycle_key="example-default")])
+    writer = _make_committee_member(data)
+
+    await writer.edit_version_scheme(_version_scheme_form(cycle_match=r"^(\d+)\.\d+$"))
+
+    tasks = [t for t in data.added if isinstance(t, sql.Task)]
+    assert [t.task_type for t in tasks] == [sql.TaskType.CATALOG_SITE_GENERATE]
+    assert tasks[0].project_key == "example"
+
+
+async def test_edit_cycle_dates_queues_catalog_site_regeneration():
+    data = _MockData(project=_project(), cycle=_cycle())
+    writer = _make_committee_member(data)
+
+    await writer.edit_cycle_dates(_cycle_dates_form(eol=datetime.date(2026, 7, 1)))
+
+    tasks = [t for t in data.added if isinstance(t, sql.Task)]
+    assert [t.task_type for t in tasks] == [sql.TaskType.CATALOG_SITE_GENERATE]
+    assert tasks[0].project_key == "example"
 
 
 async def test_edit_policy_rejects_unknown_template_variables():

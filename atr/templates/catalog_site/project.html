@@ -37,7 +37,7 @@
     {# A retired project can still hold releases that were never archived themselves.
        They belong to nothing else, so list them here rather than drop them #}
     {% if versions %}
-      {% for version in versions %}{% include "_version.html" %}{% endfor %}
+      {% include "_release_list.html" %}
     {% else %}
       <div class="alert alert-info" role="alert">
         No catalogued releases for {{ heading }}.

@@ -28,6 +28,7 @@ import strictyaml
 import atr.blueprints.get as get
 import atr.config as config
 import atr.construct as construct
+import atr.cycles as cycles
 import atr.db as db
 import atr.db.interaction as interaction
 import atr.form as form
@@ -269,7 +270,7 @@ async def view(
             _release_policy=True,
             _releases=True,
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
-        cycles = list(await data.project_cycle(project_key=str(project_key)).all())
+        project_cycles = list(await data.project_cycle(project_key=str(project_key)).all())
         active_committee_projects = 0
         if project.committee is not None:
             active_committee_projects = len(
@@ -301,7 +302,9 @@ async def view(
 
     released_cycle_keys = {r.cycle_key for r in project.releases_including_embargoed}
     visible_cycle_keys = {r.cycle_key for r in visible_releases}
-    cycles = [c for c in cycles if (c.cycle_key not in released_cycle_keys) or (c.cycle_key in visible_cycle_keys)]
+    project_cycles = [
+        c for c in project_cycles if (c.cycle_key not in released_cycle_keys) or (c.cycle_key in visible_cycle_keys)
+    ]
 
     page = htm.Block()
 
@@ -346,7 +349,7 @@ async def view(
         can_manage_taxonomy,
         can_start_release,
         project,
-        cycles,
+        project_cycles,
         visible_releases,
     )
     page.append(tabs)
@@ -505,11 +508,6 @@ def _asf_yaml_recipient_blocks(project: sql.Project) -> dict[str, object]:
     return policy
 
 
-def _cycle_display_name(cycle: sql.ProjectCycle) -> str:
-    # The "default" cycle is what every project gets when it has no cycle_match
-    return "No lifecycle information" if cycle.cycle == "default" else f"Version {cycle.cycle}"
-
-
 def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:
     return any(getattr(cycle, attr) is not None for attr in ("start", "begin", "latest", "eod", "eos", "eol"))
 
@@ -578,7 +576,7 @@ async def _generate_tabs(
     can_manage_taxonomy: bool,
     can_start_release: bool,
     project: sql.Project,
-    cycles: list[sql.ProjectCycle],
+    project_cycles: list[sql.ProjectCycle],
     releases: list[sql.Release],
 ) -> htpy.Element:
     tab_items: list[htm.Tab] = [
@@ -587,7 +585,7 @@ async def _generate_tabs(
             label="Releases",
             render=lambda: _render_releases_tab(
                 project,
-                cycles,
+                project_cycles,
                 releases,
                 can_edit_policy=can_edit_policy,
                 can_start_release=can_start_release,
@@ -1277,7 +1275,7 @@ async def _render_releases_sections(
 
 async def _render_releases_tab(
     project: sql.Project,
-    cycles: list[sql.ProjectCycle],
+    project_cycles: list[sql.ProjectCycle],
     releases: list[sql.Release],
     *,
     can_edit_policy: bool,
@@ -1301,12 +1299,12 @@ async def _render_releases_tab(
         # cycle dates set. Once cycles get used or dates get filled in, headings
         # surface automatically. The card / form surfaces whenever policy can be edited, so a
         # PMC of a simple-default project can still set eod/eos/eol/lts.
-        show_cycle_heading = (len(cycles) > 1) or any(c.cycle != "default" for c in cycles)
+        show_cycle_heading = cycles.headings_needed(c.cycle for c in project_cycles)
 
         # Newest first, as the old per-phase queries returned them.
         releases = sorted(releases, key=lambda r: r.created, reverse=True)
 
-        for cycle in cycles:
+        for cycle in project_cycles:
             cycle_drafts = [
                 r
                 for r in releases
@@ -1331,11 +1329,11 @@ async def _render_releases_tab(
                 continue
 
             if show_cycle_heading:
-                body.h2(".mt-4.mb-3")[_cycle_display_name(cycle)]
+                body.h2(".mt-4.mb-3")[cycles.display_name(cycle.cycle)]
 
             # Skip cycle dates UI for the default cycle - it's the catch-all for
             # projects without cycle_match and shouldn't carry lifecycle dates.
-            if cycle.cycle != "default":
+            if cycle.cycle != cycles.DEFAULT_CYCLE:
                 if can_edit_policy:
                     body.append(await _render_cycle_dates_form(project, cycle))
                 elif cycle_has_dates:

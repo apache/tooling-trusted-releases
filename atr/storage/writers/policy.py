@@ -27,6 +27,7 @@ import strictyaml
 import strictyaml.ruamel.error as error
 
 import atr.calver as calver
+import atr.catalog_site as catalog_site
 import atr.construct as construct
 import atr.cycles as cycles
 import atr.db as db
@@ -230,6 +231,7 @@ class ReleaseManager(CommitteeParticipant):
         if cycle.lts != form.lts:
             cycle.lts = form.lts
 
+        await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))
         await self.__commit_and_log(str(project_key))
 
     async def edit_policy(
@@ -313,6 +315,7 @@ class ReleaseManager(CommitteeParticipant):
         project.branch_template = form.branch_template.strip() or None
 
         await cycles.reassign_release_cycles(self.__data, project)
+        await catalog_site.queue_regeneration(self.__data, self.__asf_uid, str(project_key))
         await self.__commit_and_log(str(project_key))
 
     async def edit_vote(self, form: shared.projects.VotePolicyForm) -> None:

@@ -387,6 +387,8 @@ async def _write_project(
     assembled = catalog.assemble(project.version_method, artifacts, project_cycles, now)
     current = [v for v in assembled.versions if v.status == "released"]
     archived = [v for v in assembled.versions if v.status == "archived"]
+    current_groups = catalog.cycle_groups(current, project_cycles, now) if assembled.grouped else []
+    archived_groups = catalog.cycle_groups(archived, project_cycles, now) if assembled.grouped else []
 
     # A committee's own project is its index page, so it sits a level up from the
     # rest and everything below it steps back one fewer time.
@@ -411,6 +413,7 @@ async def _write_project(
             subprojects=subprojects,
             archived_subprojects=archived_subprojects,
             versions=current,
+            groups=current_groups,
             has_archive=bool(archived),
             retired=retired,
             keys_url=keys_url,
@@ -423,6 +426,7 @@ async def _write_project(
             committee=committee,
             project=project,
             versions=archived,
+            groups=archived_groups,
             retired=retired,
             keys_url=keys_url,
             root=root,
