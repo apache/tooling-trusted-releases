@@ -15,10 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import unittest.mock as mock
+
 import aiohttp
 import pytest
 
+import atr.models.args as args
+import atr.models.safe as safe
 import atr.sbom.osv as osv
+import atr.tasks.sbom as tasks_sbom
 
 
 class FakeResponse:
@@ -65,6 +70,31 @@ def sleeps(monkeypatch):
 
     monkeypatch.setattr(osv.asyncio, "sleep", fake_sleep)
     return recorded
+
+
+async def test_osv_scan_reports_truncated_response_as_unavailable(tmp_path, monkeypatch):
+    rel_path = safe.RelPath("artifact.cdx.json")
+    (tmp_path / str(rel_path)).write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(tasks_sbom.paths, "get_unfinished_dir_for", lambda *_args: safe.StatePath(tmp_path))
+    monkeypatch.setattr(tasks_sbom.sbom.utilities, "path_to_bundle", lambda _path: mock.sentinel.bundle)
+    monkeypatch.setattr(
+        tasks_sbom.sbom.osv,
+        "scan_bundle",
+        mock.AsyncMock(side_effect=aiohttp.ClientPayloadError()),
+    )
+    task_args = args.FileArgs(
+        project_key=safe.ProjectKey("project"),
+        version_key=safe.VersionKey("1.0.0"),
+        revision_number=safe.RevisionNumber("00001"),
+        file_path=rel_path,
+        asf_uid="test",
+    )
+
+    with pytest.raises(
+        tasks_sbom.SBOMScanningError,
+        match="The OSV service could not be reached; try the scan again later",
+    ):
+        await tasks_sbom.osv_scan(task_args.model_dump())
 
 
 async def test_request_json_does_not_retry_client_errors(sleeps):

@@ -23,6 +23,7 @@ from typing import Any, Final
 
 import aiofiles
 import aiofiles.os
+import aiohttp
 import orjson
 
 import atr.analysis as analysis
@@ -44,6 +45,7 @@ import atr.tasks.checks as checks
 import atr.util as util
 
 _CONFIG: Final = config.get()
+_OSV_UNAVAILABLE_MESSAGE: Final = "The OSV service could not be reached; try the scan again later"
 
 
 class SBOMConversionError(Exception):
@@ -243,7 +245,14 @@ async def osv_scan(args: args.FileArgs) -> results.Results | None:
     bundle = sbom.utilities.path_to_bundle(full_path.path)
     if not bundle:
         raise SBOMScanningError("Could not load bundle")
-    vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
+    try:
+        vulnerabilities, ignored = await sbom.osv.scan_bundle(bundle)
+    except (TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError) as e:
+        raise SBOMScanningError(_OSV_UNAVAILABLE_MESSAGE) from e
+    except aiohttp.ClientResponseError as e:
+        if (e.status != 429) and (e.status < 500):
+            raise
+        raise SBOMScanningError(_OSV_UNAVAILABLE_MESSAGE) from e
     patch_ops = await sbom.utilities.bundle_to_vuln_patch(bundle, vulnerabilities)
     components = []
     for v in vulnerabilities:
