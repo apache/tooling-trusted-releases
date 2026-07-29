@@ -91,6 +91,36 @@ def release_document(
     return _document(project, list(events), [release], now=now)
 
 
+def release_documents(
+    project: sql.Project,
+    releases: Iterable[sql.Release],
+    events: Iterable[sql.LifecycleEvent],
+    *,
+    now: datetime.datetime,
+) -> dict[str, dict[str, Any]]:
+    """Generate a `release_document` for every released version, keyed by version.
+
+    For callers rendering a whole project at once. The per-release filter that
+    `release_document` asks of its caller is applied here by partitioning the
+    events once, rather than rescanning them for each release. Records outside
+    the released phase are skipped, since CLE only resolves for those.
+    """
+    by_version: dict[str, list[sql.LifecycleEvent]] = {}
+    by_cycle: dict[str, list[sql.LifecycleEvent]] = {}
+    for event in events:
+        if event.version_key is not None:
+            by_version.setdefault(event.version_key, []).append(event)
+        elif event.cycle_key is not None:
+            by_cycle.setdefault(event.cycle_key, []).append(event)
+    documents: dict[str, dict[str, Any]] = {}
+    for release in releases:
+        if release.phase is not sql.ReleasePhase.RELEASE:
+            continue
+        touching = by_version.get(release.key, []) + by_cycle.get(release.cycle_key, [])
+        documents[release.version] = release_document(project, release, touching, now=now)
+    return documents
+
+
 def _definitions_for(
     events: list[cle.CleEvent],
 ) -> dict[str, list[cle.SupportDefinition]] | None:

@@ -181,12 +181,10 @@ def _last_updated() -> str:
 _ENVIRONMENT.globals["last_updated"] = _last_updated
 
 
-async def _project_cle_document(data: db.Session, project: sql.Project, now: datetime.datetime) -> dict[str, Any]:
-    releases = await data.release(project_key=project.key).all()
+async def _lifecycle_events(data: db.Session, project: sql.Project) -> Sequence[sql.LifecycleEvent]:
     via = sql.validate_instrumented_attribute
-    events_stmt = sqlmodel.select(sql.LifecycleEvent).where(via(sql.LifecycleEvent.project_key) == project.key)
-    events = (await data.execute(events_stmt)).scalars().all()
-    return cle.project_document(project, events, releases, now=now)
+    stmt = sqlmodel.select(sql.LifecycleEvent).where(via(sql.LifecycleEvent.project_key) == project.key)
+    return (await data.execute(stmt)).scalars().all()
 
 
 def _project_path(committee: sql.Committee, project: sql.Project) -> str:
@@ -399,8 +397,12 @@ async def _write_project(
     retired = project.status not in _LIVE_PROJECT_STATUSES
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
-    cle_document = await _project_cle_document(data, project, now)
-    await _write(project_dir / "cle.json", json.dumps(cle_document, indent=2, default=str))
+    # Both the project document and the per-release ones are cut from the same rows
+    releases = await data.release(project_key=project.key).all()
+    events = await _lifecycle_events(data, project)
+    project_document = cle.project_document(project, events, releases, now=now)
+    release_documents = cle.release_documents(project, releases, events, now=now)
+    await _write(project_dir / "cle.json", json.dumps(project_document, indent=2, default=str))
     await _write(
         project_dir / "index.html",
         _ENVIRONMENT.get_template("project.html").render(
@@ -427,7 +429,8 @@ async def _write_project(
         ),
     )
     for version in assembled.versions:
-        await _write_release(project_dir, committee, project, version, f"{root}../")
+        document = release_documents.get(str(version.version))
+        await _write_release(project_dir, committee, project, version, f"{root}../", document)
     keep = {str(version.version) for version in assembled.versions}
     if not segment:
         # Hoisted onto the committee page, so the subprojects sit beside the versions
@@ -441,8 +444,13 @@ async def _write_release(
     project: sql.Project,
     version: api.CatalogVersion,
     root: str,
+    cle_document: dict[str, Any] | None,
 ) -> None:
     release_dir = project_dir / str(version.version)
+    if cle_document is not None:
+        await _write(release_dir / "cle.json", json.dumps(cle_document, indent=2, default=str))
+        # The document is a sibling of artifacts.json, so the link is relative like the page's
+        version = version.model_copy(update={"cle_url": "cle.json"})
     await _write(
         release_dir / "index.html",
         _ENVIRONMENT.get_template("release.html").render(
