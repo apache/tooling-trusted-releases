@@ -101,6 +101,25 @@ async def test_listen_yields_events_and_keepalives(server: Server) -> None:
     assert server.connections == 1
 
 
+async def test_start_isolates_handler_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    handled = []
+
+    async def fake_listen(url: str, username: str | None = None, password: str | None = None):
+        yield {"pubsub_topics": ["commit", "svn"], "n": 1}
+        yield {"stillalive": 1.0}
+        yield {"pubsub_topics": ["commit", "svn"], "n": 2}
+
+    async def fake_handle(payload: dict[str, Any]) -> None:
+        if payload["n"] == 1:
+            raise RuntimeError("boom")
+        handled.append(payload["n"])
+
+    monkeypatch.setattr(pubsub, "listen", fake_listen)
+    monkeypatch.setattr(pubsub.commits, "handle", fake_handle)
+    await pubsub.PubSubListener("https://pubsub.invalid/", "user", "password").start()
+    assert handled == [2]
+
+
 async def _collect(url: str, count: int) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     gen = pubsub.listen(url)

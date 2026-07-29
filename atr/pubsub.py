@@ -106,15 +106,10 @@ async def listen(
 
 
 async def _handle_payload(payload: dict[str, Any]) -> None:
-    # Isolate per-payload failures: one bad commit or LDAP event must not tear the
-    # whole listener down (and with it the other topic)
-    try:
-        if is_commit_payload(payload):
-            await commits.handle(payload)
-        elif is_ldap_payload(payload):
-            await ldap.handle_update(payload)
-    except Exception as exc:
-        log.exception(f"PubSub handler failed for one payload, skipping: {exc}")
+    if is_commit_payload(payload):
+        await commits.handle(payload)
+    elif is_ldap_payload(payload):
+        await ldap.handle_update(payload)
 
 
 async def _process_connection(session, pubsub_url):
@@ -175,7 +170,12 @@ class PubSubListener:
             async for payload in listen(full_url, username=self.username, password=self.password):
                 if "stillalive" in payload:
                     continue
-                await _handle_payload(payload)
+                # Isolate per-payload failures: one bad commit or LDAP event must not tear the
+                # whole listener down (and with it the other topic)
+                try:
+                    await _handle_payload(payload)
+                except Exception as exc:
+                    log.exception(f"PubSub handler failed for one payload, skipping: {exc}")
         except asyncio.CancelledError:
             log.info("PubSubListener cancelled, shutting down gracefully")
             raise
