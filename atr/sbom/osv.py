@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import TYPE_CHECKING, Any, Final
 
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 _DEBUG: bool = os.environ.get("DEBUG_SBOM_TOOL") == "1"
 _OSV_API_BASE: Final[str] = "https://api.osv.dev/v1"
 _API_TIMEOUT: Final = aiohttp.ClientTimeout(total=60, connect=10)
+_RETRY_DELAY_SECONDS: Final = (1, 3)
 _SOURCE_DATABASE_NAMES: Final = {
     "ASB": "Android Security Bulletin",
     "PUB": "Android Security Bulletin",
@@ -197,10 +199,7 @@ async def _fetch_vulnerabilities_for_batch(
     if _DEBUG:
         print(f"[DEBUG] Sending querybatch with {len(queries)} queries")
     payload = {"queries": queries}
-    async with session.post(f"{_OSV_API_BASE}/querybatch", json=payload) as response:
-        # TODO: Should we retry?
-        response.raise_for_status()
-        data = await response.json()
+    data = await _request_json(session, "POST", f"{_OSV_API_BASE}/querybatch", payload)
     results_data = data.get("results", [])
     if _DEBUG:
         print(f"[DEBUG] Received {len(results_data)} results")
@@ -213,10 +212,8 @@ async def _fetch_vulnerability_details(
 ) -> models.osv.VulnerabilityDetails:
     if _DEBUG:
         print(f"[DEBUG] Fetching details for {vuln_id}")
-    async with session.get(f"{_OSV_API_BASE}/vulns/{vuln_id}") as response:
-        response.raise_for_status()
-        data = await response.json()
-        return models.osv.VulnerabilityDetails.model_validate(data)
+    data = await _request_json(session, "GET", f"{_OSV_API_BASE}/vulns/{vuln_id}")
+    return models.osv.VulnerabilityDetails.model_validate(data)
 
 
 def _get_source(vuln: models.osv.VulnerabilityDetails) -> dict[str, str]:
@@ -255,6 +252,46 @@ async def _paginate_query(
             break
         current_query["page_token"] = next_page_token
     return all_vulns
+
+
+async def _request_json(
+    session: aiohttp.ClientSession,
+    method: str,
+    url: str,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    for delay in _RETRY_DELAY_SECONDS:
+        try:
+            return await _request_json_once(session, method, url, payload)
+        except (TimeoutError, aiohttp.ClientConnectionError, aiohttp.ClientPayloadError):
+            await asyncio.sleep(delay)
+        except aiohttp.ClientResponseError as e:
+            if (e.status != 429) and (e.status < 500):
+                raise
+            if _retry_after_exceeds_delay(e, delay):
+                raise
+            await asyncio.sleep(delay)
+    return await _request_json_once(session, method, url, payload)
+
+
+async def _request_json_once(
+    session: aiohttp.ClientSession,
+    method: str,
+    url: str,
+    payload: dict[str, Any] | None,
+) -> Any:
+    async with session.request(method, url, json=payload) as response:
+        response.raise_for_status()
+        return await response.json()
+
+
+def _retry_after_exceeds_delay(error: aiohttp.ClientResponseError, delay: int) -> bool:
+    if (error.status != 429) or (error.headers is None):
+        return False
+    retry_after = error.headers.get("Retry-After")
+    if retry_after is None:
+        return False
+    return (not retry_after.isdigit()) or (int(retry_after) > delay)
 
 
 def _scan_bundle_build_queries(
