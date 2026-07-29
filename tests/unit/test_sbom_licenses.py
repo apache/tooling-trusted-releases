@@ -79,6 +79,24 @@ def test_check_categorises_a_licence_named_in_full() -> None:
     assert errors == []
 
 
+def test_check_categorises_a_public_domain_declaration_as_category_a() -> None:
+    # ASF policy lets us include works in the public domain, and components declaring one tend to
+    # name it rather than reach for an SPDX identifier
+    good, warnings, errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "named", "licenses": [{"license": {"name": "Public Domain"}}]},
+            {"type": "library", "name": "hyphenated", "licenses": [{"license": {"name": "public-domain"}}]},
+            {"type": "library", "name": "definite", "licenses": [{"license": {"name": "The Public Domain"}}]},
+            {"type": "library", "name": "dedicated", "licenses": [{"license": {"id": "CC0-1.0"}}]},
+        ),
+        include_all=True,
+    )
+
+    assert sorted(issue.component_name for issue in good) == ["dedicated", "definite", "hyphenated", "named"]
+    assert warnings == []
+    assert errors == []
+
+
 def test_check_a_disjunction_settles_on_the_friendliest_category() -> None:
     # A component offered under "A OR B" may be taken under whichever half is easier to live with
     good, warnings, errors = licenses.check(
