@@ -33,13 +33,14 @@
     </div>
   {% endif %}
   {% if project %}
+    <h2 class="fs-4 border-bottom pb-1">Releases</h2>
     {# A retired project can still hold releases that were never archived themselves.
        They belong to nothing else, so list them here rather than drop them #}
     {% if versions %}
       {% for version in versions %}{% include "_version.html" %}{% endfor %}
-    {% elif not retired %}
+    {% else %}
       <div class="alert alert-info" role="alert">
-        No catalogued releases yet for {{ heading }}.
+        No catalogued releases for {{ heading }}.
       </div>
     {% endif %}
   {% endif %}
