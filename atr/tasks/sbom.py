@@ -431,6 +431,18 @@ async def _convert_cyclonedx_core(
     }
 
 
+def _dependency_graph_root(doc: dict[str, Any]) -> dict[str, Any] | None:
+    dependencies = doc.get("dependencies", [])
+    if not dependencies:
+        return None
+    depended_on = {ref for entry in dependencies for ref in entry.get("dependsOn", [])}
+    roots = [entry["ref"] for entry in dependencies if entry.get("ref") not in depended_on]
+    if len(roots) != 1:
+        # No single root means no unambiguous primary, so we leave syft's own choice in place
+        return None
+    return next((c for c in doc.get("components", []) if c.get("bom-ref") == roots[0]), None)
+
+
 def _extracted_dir(temp_dir: str) -> str | None:
     # Loop through all the dirs in temp_dir
     extract_dir = None
@@ -574,6 +586,21 @@ async def _generate_cyclonedx_core(
             raise SBOMGenerationError("syft command not found")
 
 
+def _promote_primary_component(doc: dict[str, Any]) -> None:
+    # Scanning an archive, syft describes it with a synthetic file component and catalogues the
+    # real package alongside the rest. Where that package is the sole root of the dependency graph
+    # it is the thing the SBOM is really about, so it stands in as the primary component, carrying
+    # its own identifier and rooting the graph on itself
+    metadata = doc.get("metadata")
+    if not (isinstance(metadata, dict) and isinstance(metadata.get("component"), dict)):
+        return
+    root_component = _dependency_graph_root(doc)
+    if root_component is None:
+        return
+    metadata["component"] = root_component
+    doc["components"] = [c for c in doc.get("components", []) if c is not root_component]
+
+
 async def _sbom_describes_source(args: args.ScoreArgs, sbom_rel_path: str) -> bool:
     # Find the classification of the artifact this SBOM pairs with
     artifact_rel = None
@@ -599,30 +626,3 @@ def _strip_temp_prefix(doc: dict[str, Any], temp_dir: str) -> None:
         if isinstance(name, str) and name.startswith(temp_dir):
             # Drop the scan directory and the slash that used to join it to the path within
             component["name"] = name.removeprefix(temp_dir).removeprefix("/")
-
-
-def _promote_primary_component(doc: dict[str, Any]) -> None:
-    # Scanning an archive, syft describes it with a synthetic file component and catalogues the
-    # real package alongside the rest. Where that package is the sole root of the dependency graph
-    # it is the thing the SBOM is really about, so it stands in as the primary component, carrying
-    # its own identifier and rooting the graph on itself
-    metadata = doc.get("metadata")
-    if not (isinstance(metadata, dict) and isinstance(metadata.get("component"), dict)):
-        return
-    root_component = _dependency_graph_root(doc)
-    if root_component is None:
-        return
-    metadata["component"] = root_component
-    doc["components"] = [c for c in doc.get("components", []) if c is not root_component]
-
-
-def _dependency_graph_root(doc: dict[str, Any]) -> dict[str, Any] | None:
-    dependencies = doc.get("dependencies", [])
-    if not dependencies:
-        return None
-    depended_on = {ref for entry in dependencies for ref in entry.get("dependsOn", [])}
-    roots = [entry["ref"] for entry in dependencies if entry.get("ref") not in depended_on]
-    if len(roots) != 1:
-        # No single root means no unambiguous primary, so we leave syft's own choice in place
-        return None
-    return next((c for c in doc.get("components", []) if c.get("bom-ref") == roots[0]), None)
