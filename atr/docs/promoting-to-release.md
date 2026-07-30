@@ -1,8 +1,8 @@
-# 2.7. Promoting to release
+# 2.8. Promoting to release
 
 **Up**: `2.` [User guide](user-guide)
 
-**Prev**: `2.6.` [SBOM workflows](sbom-workflows)
+**Prev**: `2.7.` [Staging and voting](staging-and-voting)
 
 **Next**: `3.1.` [Running the server](running-the-server)
 
@@ -29,7 +29,9 @@ Files in `/dist/atr/` are **not mirrored** by the Apache distribution mirror net
 * TLP: `https://dist.apache.org/repos/dist/release/<committee>/`
 * Podling: `https://dist.apache.org/repos/dist/release/incubator/<committee>/`
 
-The move is a manual SVN step performed once per release. ATR does not do it for you yet because automatic publishing to SVN is currently in testing, so we use `/dist/atr/` instead of `/dist/release/`. In future, ATR will do this for you.
+The move is a manual SVN step performed once per release. ATR does not do it for you yet because automatic publishing to SVN is currently in testing, so we use `/dist/atr/` instead of `/dist/release/`. `/dist/atr/` is a testing area which we intend to operate only for the duration of Alpha. When Beta starts, ATR will publish approved artifacts directly to `/dist/release/` after a successful vote, and this manual step will no longer be needed.
+
+Note that this is the only point at which SVN is involved in the ATR release process. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting).
 
 ## Prerequisites
 

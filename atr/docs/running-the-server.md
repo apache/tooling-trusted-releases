@@ -2,7 +2,7 @@
 
 **Up**: `3.` [Developer guide](developer-guide)
 
-**Prev**: `2.7.` [Promoting to release](promoting-to-release)
+**Prev**: `2.8.` [Promoting to release](promoting-to-release)
 
 **Next**: `3.2.` [Overview of the code](overview-of-the-code)
 

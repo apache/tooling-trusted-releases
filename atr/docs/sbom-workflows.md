@@ -4,7 +4,7 @@
 
 **Prev**: `2.5.` [Trusted Publishing](trusted-publishing)
 
-**Next**: `2.7.` [Promoting to release](promoting-to-release)
+**Next**: `2.7.` [Staging and voting](staging-and-voting)
 
 **Sections**:
 

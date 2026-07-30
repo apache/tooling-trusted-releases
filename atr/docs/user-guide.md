@@ -14,7 +14,8 @@
 * `2.4.` [License checks](license-checks)
 * `2.5.` [Trusted Publishing](trusted-publishing)
 * `2.6.` [SBOM workflows](sbom-workflows)
-* `2.7.` [Promoting to release](promoting-to-release)
+* `2.7.` [Staging and voting](staging-and-voting)
+* `2.8.` [Promoting to release](promoting-to-release)
 
 **Sections**:
 
@@ -59,8 +60,10 @@ The ASF releases open source software. The ATR platform helps PMCs release their
    * ***Compose***. In this phase ***Release Artifacts*** are assembled and checked for compliance.
      The Release Manager can iterate on the artifacts until the Candidate is ready.
    * ***Vote***. In this phase the PMC votes on the release and approves (or not). Votes may be canceled. Once the vote passes it is ready to publish.
-   * ***Finish***. In this phase the Release Artifacts are committed to `svn:dist:release` and announcement is deferred until the artifacts have made it
-     onto the download servers. The announcement is sent and the artifacts published to the Release Catalog.
+     The artifacts being voted on remain in ATR for the duration of the vote, and vote emails should link to them there. See [Staging and voting](staging-and-voting).
+   * ***Finish***. In this phase the Release Artifacts are committed to the Apache distribution SVN repository and announcement is deferred until the artifacts have made it
+     onto the download servers. The announcement is sent and the artifacts published to the Release Catalog. During Alpha the commit goes to `svn:dist:atr` and a
+     manual move is needed to publish, as described in [Promoting to release](promoting-to-release).
 2. ***Released***. Releases that are released are active and cataloged and available via both a standard catalog api and at the proper urls using the CDN and download servers.
    Releases that use the current legacy methods skipping the ATR are also cataloged,
 3. ***Archived***. All cataloged releases may be archived using the ATR platform or by direct removal from `svn:dist:release`.
