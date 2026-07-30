@@ -12,7 +12,7 @@
     <div class="list-group">
       {% for podling in podlings %}
         {% if podling.projects | length == 1 %}
-          {% set target = podling.key ~ "/" ~ podling.projects[0].key ~ "/index.html" %}
+          {% set target = podling.projects[0].key ~ "/index.html" %}
         {% else %}
           {% set target = podling.key ~ "/index.html" %}
         {% endif %}

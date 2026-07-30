@@ -30,7 +30,7 @@ import datetime
 import json
 import pathlib
 import shutil
-from collections.abc import Container, Iterable, Sequence
+from collections.abc import Container, Sequence
 from typing import Any, Final
 
 import aiofiles.os
@@ -114,9 +114,11 @@ async def generate_all(data: db.Session) -> None:
     committees = await data.committee(_projects=True).all()
     written = await _write_committee_pages(data, committees, site_dir)
     await _write_index_pages(site_dir, written)
-    # Keyed off every committee rather than the ones written, so a committee whose page
-    # failed to render keeps what it had instead of losing the lot
-    await _prune_directories(site_dir, {committee.key for committee in committees} | {"assets"})
+    # Every committee and every project holds a directory here. Keyed off all of them
+    # rather than the ones written, so a page that failed to render keeps what it had
+    keep = {committee.key for committee in committees}
+    keep |= {project.key for committee in committees for project in committee.projects}
+    await _prune_directories(site_dir, keep | {"assets"})
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
@@ -187,28 +189,6 @@ async def _lifecycle_events(data: db.Session, project: sql.Project) -> Sequence[
     return (await data.execute(stmt)).scalars().all()
 
 
-def _project_path(committee: sql.Committee, project: sql.Project) -> str:
-    """Where a project's pages sit below its committee, as a relative path prefix.
-
-    A project sharing its committee's key is the committee page itself, so it gets no
-    directory of its own. The rest drop the committee key from the front of theirs,
-    unless a sibling is already keyed by what would be left.
-    """
-    if project.key == committee.key:
-        return ""
-    trimmed = project.key.removeprefix(f"{committee.key}-")
-    if any(sibling.key == trimmed for sibling in committee.projects):
-        return f"{project.key}/"
-    return f"{trimmed}/"
-
-
-_ENVIRONMENT.globals["project_path"] = _project_path
-
-
-def _project_segments(committee: sql.Committee, projects: Iterable[sql.Project]) -> set[str]:
-    return {_project_path(committee, project).removesuffix("/") for project in projects}
-
-
 async def _prune_directories(directory: safe.StatePath, keep: Container[str]) -> None:
     """Remove the subdirectories of one that this build didn't write.
 
@@ -251,11 +231,11 @@ async def _write_attic_index(
     # A retired PMC is filed either under the Attic itself or as a committee that kept
     # its own key, but a reader wants one list, so the two are merged by name here.
     # Nothing here still releases, so each entry opens straight at its archive.
-    entries = [(project.display_name, f"{_project_path(attic, project)}archive.html") for project in projects]
+    entries = [(project.display_name, f"../{project.key}/archive.html") for project in projects]
     for committee in committees:
         path = f"{committee.key}/index.html"
         if len(committee.projects) == 1:
-            path = f"{committee.key}/{_project_path(committee, committee.projects[0])}archive.html"
+            path = f"{committee.projects[0].key}/archive.html"
         entries.append((committee.display_name, f"../{path}"))
     entries.sort(key=lambda entry: entry[0].lower())
     html = _ENVIRONMENT.get_template("attic.html").render(committee=attic, entries=entries, root="../")
@@ -294,7 +274,8 @@ async def _write_committee_index(
         root="../",
     )
     await _write(site_dir / committee.key / "index.html", html)
-    await _prune_directories(site_dir / committee.key, _project_segments(committee, subprojects))
+    # Its projects sit at the site root, so nothing but the page itself belongs here
+    await _prune_directories(site_dir / committee.key, set())
     return subprojects
 
 
@@ -319,7 +300,7 @@ async def _write_committee_pages(
                 log.exception(f"Failed to render catalog site for project {project.key}")
         if committee.key in _INDEXING_COMMITTEE_KEYS:
             # These skip the committee index, which is where the tidying otherwise happens
-            await _prune_directories(site_dir / committee.key, _project_segments(committee, projects))
+            await _prune_directories(site_dir / committee.key, set())
         written.append(committee)
     return written
 
@@ -390,12 +371,11 @@ async def _write_project(
     current_groups = catalog.cycle_groups(current, project_cycles, now) if assembled.grouped else []
     archived_groups = catalog.cycle_groups(archived, project_cycles, now) if assembled.grouped else []
 
-    # A committee's own project is its index page, so it sits a level up from the
-    # rest and everything below it steps back one fewer time.
-    segment = _project_path(committee, project).removesuffix("/")
-    committee_dir = site_dir / committee.key
-    project_dir = (committee_dir / segment) if segment else committee_dir
-    root = "../../" if segment else "../"
+    # Every project is addressable as <key>/<version>/artifacts.json from the site root,
+    # so a purl resolves without knowing the committee. A project sharing its committee's
+    # key lands on the committee directory, which is how the two share a page.
+    project_dir = site_dir / project.key
+    root = "../"
     retired = project.status not in _LIVE_PROJECT_STATUSES
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
@@ -435,11 +415,7 @@ async def _write_project(
     for version in assembled.versions:
         document = release_documents.get(str(version.version))
         await _write_release(project_dir, committee, project, version, f"{root}../", document)
-    keep = {str(version.version) for version in assembled.versions}
-    if not segment:
-        # Hoisted onto the committee page, so the subprojects sit beside the versions
-        keep |= _project_segments(committee, (*subprojects, *archived_subprojects))
-    await _prune_directories(project_dir, keep)
+    await _prune_directories(project_dir, {str(version.version) for version in assembled.versions})
 
 
 async def _write_release(

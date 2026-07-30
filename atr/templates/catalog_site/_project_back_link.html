@@ -3,7 +3,7 @@
    committee page that was never passed through #}
 {% set own_page = project and (project.key != committee.key) %}
 {% if own_page and (committee.projects | length > 1) %}
-  <p class="mb-1"><a href="../index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
+  <p class="mb-1"><a href="{{ root }}{{ committee.key }}/index.html" class="atr-back-link">&larr; {{ committee.display_name }}</a></p>
 {% elif committee.is_podling %}
   <p class="mb-1"><a href="{{ root }}{{ incubator_key }}/index.html" class="atr-back-link">&larr; Incubator</a></p>
 {% elif retired %}

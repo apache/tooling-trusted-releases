@@ -50,7 +50,7 @@
     <div class="list-group mb-4">
       {% for subproject in subprojects %}
         <a class="list-group-item list-group-item-action"
-           href="{{ project_path(committee, subproject) }}index.html">{{ subproject.display_name }}</a>
+           href="{{ root }}{{ subproject.key }}/index.html">{{ subproject.display_name }}</a>
       {% endfor %}
     </div>
   {% endif %}
@@ -59,7 +59,7 @@
     <div class="list-group">
       {% for subproject in archived_subprojects %}
         <a class="list-group-item list-group-item-action"
-           href="{{ project_path(committee, subproject) }}index.html">{{ subproject.display_name }}</a>
+           href="{{ root }}{{ subproject.key }}/index.html">{{ subproject.display_name }}</a>
       {% endfor %}
     </div>
   {% endif %}
