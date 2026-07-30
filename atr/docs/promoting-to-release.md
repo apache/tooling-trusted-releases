@@ -31,7 +31,7 @@ Files in `/dist/atr/` are **not mirrored** by the Apache distribution mirror net
 
 The move is a manual SVN step performed once per release. ATR does not do it for you yet because automatic publishing to SVN is currently in testing, so we use `/dist/atr/` instead of `/dist/release/`. `/dist/atr/` is a testing area which we intend to operate only for the duration of Alpha. When Beta starts, ATR will publish approved artifacts directly to `/dist/release/` after a successful vote, and this manual step will no longer be needed.
 
-Note that this is the only point at which SVN is involved in the ATR release process. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting).
+Note that SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting).
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ Before you start, confirm what ATR published and where. List the source director
 svn ls https://dist.apache.org/repos/dist/atr/<committee>/
 ```
 
-**Podling note**: For a podling, prefix the committee path with `incubator/`. Podlings replace `release/<committee>/` with `release/incubator/<committee>/` everywhere below. The source paths under `atr/incubator/<committee>/` follow the same shape. Incubator policy additionally requires the IPMC to have voted on the release before promotion; the PPMC vote that ATR records is not sufficient on its own.
+**Podling note**: For a podling, prefix the committee path with `incubator/`. Podlings replace `release/<committee>/` with `release/incubator/<committee>/` everywhere below. The source paths under `atr/incubator/<committee>/` follow the same shape.
 
 You should also decide the destination layout. Two common conventions exist. The first is a flat layout that matches what ATR produced, where files sit directly under `release/<committee>/`. The second is a per version subdirectory, where files live at `release/<committee>/<version>/`_file_. Most TLPs use the per version layout. Stick to whatever your project has used for previous releases, which you can check with:
 
@@ -54,6 +54,8 @@ svn ls https://dist.apache.org/repos/dist/release/<committee>/
 ## Moving the files
 
 There are two general ways to perform the move. Choose based on whether the destination layout matches the source.
+
+Both `svn move` and `svnmucc mv` record copyfrom metadata, linking each file in `dist/release` to the exact path and revision that it was moved from in `dist/atr`. This preserves the provenance of the artifacts across the move, and can be inspected with `svn log -v`. Do not download and re-import the files instead, as that would break the link.
 
 ### Option A: flat to flat
 
@@ -71,7 +73,7 @@ Multiple sources moved to a single destination directory commit atomically as on
 
 ### Option B: flat to per version subdirectory
 
-If you need to place files under a new _version_ directory, or you need to rename anything in flight, use `svnmucc`. This is the _Multiple URL Command Client_, and it ships with the standard `subversion` package. It can performs many URL operations in a single atomic revision:
+If you need to place files under a new _version_ directory, or you need to rename anything in flight, use `svnmucc`. This is the _Multiple URL Command Client_, and it ships with the standard `subversion` package. It can perform many URL operations in a single atomic revision:
 
 ```shell
 svnmucc -m "Promote <committee> <version> to release" \
@@ -112,4 +114,4 @@ Do this as a separate commit, after promotion, once you have verified that the n
 
 The `KEYS` file lives at `https://dist.apache.org/repos/dist/release/<committee>/KEYS` and is managed independently of any individual release. ATR publishes its own version into `dist/atr/<committee>/KEYS` during Alpha as long as `dist/atr/<committee>` already exists. This file is the result of attempting to import the `dist/release` version of `KEYS`, augmenting it with any keys which have been uploaded and associated with this committee by users on ATR, and then formatting it cleanly. It may therefore diverge from the `dist/release` version in several ways.
 
-If you want to use ATR's version of the `KEYS` file, you can move it do the `dist/release` area in similar ways to the above. You must ensure that the public keys of any keypairs used to sign a release are present in your `dist/release` `KEYS` file, no matter its origin, before you publish signed artifacts to `dist/release`. When ATR goes to Beta, we will review how `KEYS` files are managed and published, and this process will likely change.
+If you want to use ATR's version of the `KEYS` file, you can move it to the `dist/release` area in similar ways to the above. You must ensure that the public keys of any keypairs used to sign a release are present in your `dist/release` `KEYS` file, no matter its origin, before you publish signed artifacts to `dist/release`. When ATR goes to Beta, we will review how `KEYS` files are managed and published, and this process will likely change.
