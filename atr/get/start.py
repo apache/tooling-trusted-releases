@@ -37,15 +37,48 @@ import atr.web as web
 
 
 @get.typed
-async def selected(session: web.Committer, _start: Literal["start"], project_key: safe.ProjectKey) -> str:
+async def metadata(
+    session: web.Committer,
+    _start: Literal["start"],
+    project_key: safe.ProjectKey,
+    _metadata: Literal["metadata"],
+) -> web.WerkzeugResponse | str:
+    """
+    URL: /start/<project_key>/metadata
+    """
+    await session.prevent_confusing_ui_display(project_key)
+    async with db.session() as data:
+        project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
+            base.ASFQuartException(f"Project {project_key} not found", errorcode=404)
+        )
+
+    missing = shared.start.missing_release_metadata(project)
+    if not missing:
+        return await session.redirect(selected, project_key=str(project_key))
+
+    committee = project.committee
+    can_edit = committee is not None and (
+        user.is_committee_member(committee, session.uid) or user.is_release_manager(committee, session.uid)
+    )
+    content = await _render_metadata_page(project, missing, can_edit=can_edit)
+    return await template.blank(title=f"Complete metadata for {project.display_name}", content=content)
+
+
+@get.typed
+async def selected(
+    session: web.Committer, _start: Literal["start"], project_key: safe.ProjectKey
+) -> web.WerkzeugResponse | str:
     """
     URL: /start/<project_key>
     """
     await session.prevent_confusing_ui_display(project_key)
     async with db.session() as data:
         project = await data.project(
-            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _release_policy=True
+            key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
         ).demand(base.ASFQuartException(f"Project {project_key} not found", errorcode=404))
+
+    if shared.start.missing_release_metadata(project):
+        return await session.redirect(metadata, project_key=str(project_key))
 
     releases = await interaction.all_releases(project)
     if not user.can_view_embargoed_release(project.committee, session.uid, is_member=session.is_member):
@@ -119,6 +152,29 @@ def _get_phase_symbol(phase: sql.ReleasePhase) -> str:
             return "③"
         case sql.ReleasePhase.RELEASE:
             return "Ⓡ"
+
+
+async def _render_metadata_page(project: sql.Project, missing: list[str], *, can_edit: bool) -> htm.Element:
+    page = htm.Block()
+    page.h1[f"Complete metadata for {project.display_name}"]
+    page.div(".alert.alert-danger")[
+        "Before you can start a release, the following project metadata must be set: ",
+        htm.strong[", ".join(missing)],
+        ".",
+    ]
+    if not can_edit:
+        page.p["A PMC member or release manager needs to complete this before a release can be started."]
+        return page.collect()
+
+    await form.render_block(
+        page,
+        model_cls=shared.projects.EditMetadataForm,
+        action=util.as_url(metadata, project_key=str(project.key)),
+        submit_label="Save metadata",
+        cancel_url=util.as_url(root.index),
+        defaults=shared.projects.edit_metadata_defaults(project),
+    )
+    return page.collect()
 
 
 async def _render_page(project: sql.Project, releases: list[sql.Release], can_create_expedited: bool) -> htm.Element:

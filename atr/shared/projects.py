@@ -336,6 +336,43 @@ class EditMetadataForm(form.Form):
     def validate_display_name(cls, val: str) -> str:
         return _validate_display_name(val)
 
+    @pydantic.field_validator("description", mode="after")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A project description is required.")
+        return value
+
+    @pydantic.field_validator("homepage", "download_page", mode="after")
+    @classmethod
+    def validate_required_urls(cls, value: pydantic.HttpUrl | None) -> pydantic.HttpUrl | None:
+        if value is None:
+            raise ValueError("A valid URL is required.")
+        return value
+
+    @pydantic.field_validator("repositories", mode="after")
+    @classmethod
+    def validate_repositories(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("At least one repository is required.")
+        return value
+
+
+def edit_metadata_defaults(project: sql.Project) -> dict[str, str]:
+    return {
+        "project_key": str(project.key),
+        "display_name": (project.name or "").removeprefix("Apache "),
+        "description": project.description or "",
+        "short_description": project.short_description or "",
+        "homepage": project.homepage or "",
+        "lifecycle_page": project.lifecycle_page or "",
+        "download_page": project.download_page or "",
+        "bug_database": project.bug_database or "",
+        "mailing_lists": project.mailing_lists or "",
+        "repositories": "\n".join(project.repositories),
+        "standards": "\n".join(project.standards),
+    }
+
 
 class EditVersionSchemeForm(form.Form):
     variant: EDIT_VERSION_SCHEME = form.value(EDIT_VERSION_SCHEME)

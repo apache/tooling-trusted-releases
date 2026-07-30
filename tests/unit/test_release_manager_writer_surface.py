@@ -183,14 +183,14 @@ async def test_project_metadata_rejects_foreign_committee() -> None:
         csrf_token="test",
         project_key=safe.ProjectKey("example"),
         display_name="Example",
-        description="",
+        description="Example project",
         short_description="",
-        homepage="",
+        homepage="https://example.apache.org/",
         lifecycle_page="",
-        download_page="",
+        download_page="https://example.apache.org/download",
         bug_database="",
         mailing_lists="",
-        repositories=[],
+        repositories=["https://github.com/apache/example"],
         standards=[],
     )
 

@@ -15,10 +15,30 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from typing import Final
+
 import pydantic
 
 import atr.form as form
+import atr.models.sql as sql
 import atr.util as util
+
+_REQUIRED_METADATA_FIELDS: Final[tuple[tuple[str, str], ...]] = (
+    ("name", "Project name"),
+    ("description", "Project description"),
+    ("homepage", "Homepage"),
+    ("download_page", "Download page"),
+    ("repositories", "Repositories"),
+)
+
+
+def missing_release_metadata(project: sql.Project) -> list[str]:
+    """Return the labels of any required project metadata that is not yet set."""
+    missing = []
+    for attribute, label in _REQUIRED_METADATA_FIELDS:
+        if not getattr(project, attribute):
+            missing.append(label)
+    return missing
 
 
 class StartReleaseForm(form.Form):

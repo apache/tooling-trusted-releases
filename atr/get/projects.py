@@ -1112,19 +1112,7 @@ async def _render_metadata_form(project: sql.Project) -> htm.Element:
             model_cls=shared.projects.EditMetadataForm,
             action=_view_action(project, "metadata"),
             submit_label="Save",
-            defaults={
-                "project_key": str(project.key),
-                "display_name": (project.name or "").removeprefix("Apache "),
-                "description": project.description or "",
-                "short_description": project.short_description or "",
-                "homepage": project.homepage or "",
-                "lifecycle_page": project.lifecycle_page or "",
-                "download_page": project.download_page or "",
-                "bug_database": project.bug_database or "",
-                "mailing_lists": project.mailing_lists or "",
-                "repositories": "\n".join(project.repositories),
-                "standards": "\n".join(project.standards),
-            },
+            defaults=shared.projects.edit_metadata_defaults(project),
         )
     return card.collect()
 
