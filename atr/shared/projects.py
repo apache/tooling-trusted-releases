@@ -22,10 +22,10 @@ from typing import Annotated, Literal
 
 import pydantic
 
-import atr.calver as calver
 import atr.config as config
 import atr.construct as construct
 import atr.form as form
+import atr.models.calver as calver
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation

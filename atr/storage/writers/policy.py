@@ -26,7 +26,6 @@ import sqlmodel
 import strictyaml
 import strictyaml.ruamel.error as error
 
-import atr.calver as calver
 import atr.catalog_site as catalog_site
 import atr.construct as construct
 import atr.cycles as cycles
@@ -518,10 +517,10 @@ def _calver_cycle_match(calver_format: str | None) -> str | None:
     if calver_format is None:
         return None
     try:
-        calver.validate(calver_format)
+        models.calver.validate(calver_format)
     except ValueError as exc:
         raise ValueError(f"Invalid calver format: {exc}") from exc
-    return calver.cycle_regex(calver_format)
+    return models.calver.cycle_regex(calver_format)
 
 
 def _collapse_to_default(submitted: str, default_text: str) -> str:

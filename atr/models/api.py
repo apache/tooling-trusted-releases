@@ -530,11 +530,12 @@ class ProjectConfigProjectArgs(schema.Strict):
     standards: list[str] | None = None
     categories: list[str] | None = None
     programming_languages: list[str] | None = None
-    # Changing any of these four reassigns existing releases to the cycle
-    # their version string now maps to.
+    # Changing any of these reassigns existing releases to the cycle their
+    # version string now maps to
     version_method: sql.VersionMethod | None = None
     version_pattern: str | None = None
     cycle_match: str | None = None
+    calver_format: str | None = None
     branch_template: str | None = None
 
     @pydantic.field_validator("version_method", mode="before")
@@ -546,6 +547,20 @@ class ProjectConfigProjectArgs(schema.Strict):
             except ValueError:
                 raise ValueError(f"'{v}' is not a valid VersionMethod")
         return v
+
+    @pydantic.model_validator(mode="after")
+    def _validate_calver_format(self) -> Self:
+        date_format = self.calver_format.strip() if self.calver_format else None
+        if date_format is None:
+            return self
+        if (self.version_method is not None) and (self.version_method is not sql.VersionMethod.CALVER):
+            raise ValueError("Field 'calver_format' applies only when version_method is 'calver'")
+        if self.cycle_match and self.cycle_match.strip():
+            raise ValueError("Set either 'calver_format' or 'cycle_match', not both")
+        from . import calver
+
+        calver.validate(date_format)
+        return self
 
     @pydantic.model_validator(mode="after")
     def _validate_version_scheme(self) -> Self:

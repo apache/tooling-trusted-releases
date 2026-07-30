@@ -20,8 +20,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import atr.calver as calver
 import atr.cycles as cycles
+import atr.models.calver as calver
 import atr.models.sql as sql
 
 

@@ -21,6 +21,9 @@ import pydantic
 import pytest
 
 import atr.models.api as api
+import atr.models.calver as calver
+import atr.models.sql as sql
+import atr.storage.writers.project as project_writer
 
 
 def test_project_config_accepts_announce_recipients_on_any_apache_address() -> None:
@@ -94,6 +97,63 @@ def test_project_config_accepts_download_path_suffix() -> None:
 
     assert args.policy is not None
     assert args.policy.download_path_suffix == "{{PROJECT_KEY}}-{{VERSION}}"
+
+
+def test_project_config_accepts_calver_format_for_a_calver_project() -> None:
+    args = _project_config_project(version_method="calver", calver_format="(YY.MM).N")
+
+    assert args.project is not None
+    assert args.project.calver_format == "(YY.MM).N"
+
+
+def test_project_config_rejects_calver_format_for_another_version_method() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("applies only when version_method is 'calver'")):
+        _project_config_project(version_method="semver", calver_format="(YY.MM).N")
+
+
+def test_project_config_rejects_a_hand_written_cycle_match_beside_a_date_format() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("not both")):
+        _project_config_project(calver_format="(YY.MM).N", cycle_match=r"^(\d+)\.")
+
+
+def test_project_config_rejects_a_malformed_date_format() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("unmatched (")):
+        _project_config_project(version_method="calver", calver_format="(YY.MM")
+
+
+def test_calver_format_compiles_the_cycle_match() -> None:
+    project = _project()
+
+    _apply_version_scheme(project, version_method="calver", calver_format="(YY.MM).N")
+
+    assert project.version_method == sql.VersionMethod.CALVER
+    assert project.cycle_match == calver.cycle_regex("(YY.MM).N")
+
+
+def test_leaving_calver_clears_the_date_format() -> None:
+    project = _project(version_method=sql.VersionMethod.CALVER, calver_format="(YY.MM).N")
+
+    _apply_version_scheme(project, version_method="semver", cycle_match=r"^(\d+)\.\d+\.\d+$")
+
+    assert project.version_method == sql.VersionMethod.SEMVER
+    assert project.calver_format is None
+
+
+def test_editing_an_unrelated_field_leaves_a_stored_cycle_match_alone() -> None:
+    project = _project(version_method=sql.VersionMethod.CALVER, calver_format="(YY.MM).N", cycle_match="^(2025)")
+
+    _apply_version_scheme(project, branch_template="release-{cycle}")
+
+    assert project.cycle_match == "^(2025)"
+
+
+def _apply_version_scheme(project: sql.Project, **fields: object) -> None:
+    args = api.ProjectConfigProjectArgs.model_validate(fields)
+    project_writer._apply_version_scheme(project, args, args.model_fields_set)
+
+
+def _project(**fields: object) -> sql.Project:
+    return sql.Project(key="example", name="Apache Example", committee_key="tooling", **fields)
 
 
 def _project_config(**policy: object) -> api.ProjectConfigArgs:

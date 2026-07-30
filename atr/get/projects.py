@@ -427,6 +427,7 @@ def _asf_yaml_metadata(project: sql.Project) -> dict[str, object]:
         items = [item.strip() for item in (raw or "").split(",") if item.strip()]
         if items:
             metadata[field] = items
+    metadata.update(_asf_yaml_version_scheme(project))
     return metadata
 
 
@@ -506,6 +507,24 @@ def _asf_yaml_recipient_blocks(project: sql.Project) -> dict[str, object]:
         if recipients:
             policy[key] = recipients
     return policy
+
+
+def _asf_yaml_version_scheme(project: sql.Project) -> dict[str, object]:
+    scheme: dict[str, object] = {}
+    if project.version_method != sql.VersionMethod.SIMPLE:
+        scheme["version_method"] = project.version_method.value
+    if project.version_pattern:
+        scheme["version_pattern"] = project.version_pattern
+    # A calver project authors its date format, and cycle_match is compiled from
+    # it, so we emit whichever of the two the project actually sets
+    if project.version_method == sql.VersionMethod.CALVER:
+        if project.calver_format:
+            scheme["calver_format"] = project.calver_format
+    elif project.cycle_match:
+        scheme["cycle_match"] = project.cycle_match
+    if project.branch_template:
+        scheme["branch_template"] = project.branch_template
+    return scheme
 
 
 def _cycle_has_dates(cycle: sql.ProjectCycle) -> bool:

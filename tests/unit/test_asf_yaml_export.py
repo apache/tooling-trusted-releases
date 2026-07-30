@@ -41,6 +41,11 @@ class _FakeProject:
             "standards": [],
             "categories": None,
             "programming_languages": None,
+            "version_method": sql.VersionMethod.SIMPLE,
+            "version_pattern": None,
+            "cycle_match": None,
+            "calver_format": None,
+            "branch_template": None,
             "release_policy": None,
             "update_type": sql.UpdateType.MANUAL,
         }
@@ -151,6 +156,24 @@ def test_export_includes_set_policy_fields() -> None:
     }
 
 
+def test_export_includes_the_date_format_a_calver_project_authors() -> None:
+    project = _FakeProject(
+        key="example",
+        committee_key="tooling",
+        name="Apache Example",
+        version_method=sql.VersionMethod.CALVER,
+        calver_format="(YY.MM).N",
+        cycle_match="^(\\d{2}\\.\\d{2})(?:\\.\\d+)?$",
+    )
+
+    metadata = strictyaml.load(projects._asf_yaml_export(project)).data["project"]["metadata"]
+
+    # cycle_match is compiled from the date format on import, so exporting it too
+    # would offer two sources for one setting
+    assert metadata["calver_format"] == "(YY.MM).N"
+    assert "cycle_match" not in metadata
+
+
 def test_export_minimal_project_omits_empty_blocks() -> None:
     project = _FakeProject(key="trusted-releases", committee_key="tooling", name="Apache Trusted Releases")
 
@@ -196,6 +219,10 @@ def test_export_reproduces_every_field() -> None:
         standards=["https://owasp.org/www-project-application-security-verification-standard/"],
         categories="build-management",
         programming_languages="python",
+        version_method=sql.VersionMethod.SEMVER,
+        version_pattern=r"^\d+\.\d+\.\d+$",
+        cycle_match=r"^(\d+)\.\d+\.\d+$",
+        branch_template="release-{cycle}",
         recipients={
             sql.RecipientAction.VOTE: {"to": "private@tooling.apache.org", "cc": ["dev@tooling.apache.org"]},
             sql.RecipientAction.ANNOUNCE: {"to": "announce@apache.org"},
@@ -224,6 +251,10 @@ def test_export_reproduces_every_field() -> None:
                 "standards": ["https://owasp.org/www-project-application-security-verification-standard/"],
                 "categories": ["build-management"],
                 "programming_languages": ["python"],
+                "version_method": "semver",
+                "version_pattern": r"^\d+\.\d+\.\d+$",
+                "cycle_match": r"^(\d+)\.\d+\.\d+$",
+                "branch_template": "release-{cycle}",
             },
             "policy": {
                 "vote_recipients": {"to": "private@tooling.apache.org", "cc": ["dev@tooling.apache.org"]},

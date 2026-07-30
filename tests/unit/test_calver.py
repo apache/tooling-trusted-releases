@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-import atr.calver as calver
+import atr.models.calver as calver
 
 
 def test_order_key_compares_dotted_non_padded_dates_numerically():

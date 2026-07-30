@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Final
 
 import semver
 
-import atr.calver as calver
+import atr.models.calver as calver
 import atr.models.sql as sql
 
 if TYPE_CHECKING:

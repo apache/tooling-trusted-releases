@@ -29,6 +29,7 @@ import atr.constants as constants
 import atr.cycles as cycles
 import atr.db as db
 import atr.models.api as api
+import atr.models.calver as calver
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.validation as validation
@@ -644,7 +645,13 @@ class FoundationAdmin(FoundationCommitter):
         }
         list_fields = {"repositories", "standards"}
         csv_fields = {"categories", "programming_languages"}
-        version_scheme_fields = {"version_method", "version_pattern", "cycle_match", "branch_template"}
+        version_scheme_fields = {
+            "version_method",
+            "version_pattern",
+            "cycle_match",
+            "calver_format",
+            "branch_template",
+        }
         provided = args.model_fields_set
 
         for field in str_fields & provided:
@@ -658,12 +665,32 @@ class FoundationAdmin(FoundationCommitter):
             items = [str(item).strip() for item in getattr(args, field) or []]
             joined = ", ".join(item for item in items if item)
             setattr(project, field, joined or None)
-        if "version_method" in provided:
-            project.version_method = args.version_method or sql.VersionMethod.SIMPLE
-
         if version_scheme_fields & provided:
+            _apply_version_scheme(project, args, provided)
             await cycles.reassign_release_cycles(self.__data, project)
             await catalog_site.queue_regeneration(self.__data, self.__asf_uid, project.key)
+
+
+def _apply_version_scheme(project: sql.Project, args: api.ProjectConfigProjectArgs, provided: set[str]) -> None:
+    if "version_method" in provided:
+        project.version_method = args.version_method or sql.VersionMethod.SIMPLE
+
+    if project.version_method is not sql.VersionMethod.CALVER:
+        if "calver_format" in provided:
+            raise ValueError("Field 'calver_format' applies only when version_method is 'calver'")
+        if "version_method" in provided:
+            # A project that has moved off calver keeps no date format behind
+            project.calver_format = None
+        return
+
+    # Cycle membership for a calver project comes from its date format, so
+    # cycle_match is compiled here rather than authored
+    if "cycle_match" in provided:
+        raise ValueError("Calver projects derive 'cycle_match' from 'calver_format'; set 'calver_format' instead")
+    if "calver_format" in provided:
+        project.calver_format = (args.calver_format or "").strip() or None
+    if {"calver_format", "version_method"} & provided:
+        project.cycle_match = calver.cycle_regex(project.calver_format) if project.calver_format else None
 
 
 async def _build_and_add_project(
