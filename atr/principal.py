@@ -60,7 +60,7 @@ class ArgumentNoneType:
 
 ArgumentNone = ArgumentNoneType()
 
-type UID = web.Committer | str | None | ArgumentNoneType
+type UID = web.Committer | str | ArgumentNoneType | None
 
 
 class Committer:

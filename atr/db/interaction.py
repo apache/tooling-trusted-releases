@@ -1105,7 +1105,7 @@ async def _trusted_ballot_details_from_ballots(
     release: sql.Release,
     ballots: Sequence[sql.BallotPaper],
     *,
-    expected_vote_round: int | None | object = _NO_EXPECTED_VOTE_ROUND,
+    expected_vote_round: int | object | None = _NO_EXPECTED_VOTE_ROUND,
     caller_data: db.Session | None = None,
 ) -> tuple[list[TrustedBallotDetail], TrustedVoteSummary]:
     if release.committee is None:
