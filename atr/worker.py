@@ -29,7 +29,6 @@ import inspect
 import json
 import logging
 import os
-import resource
 import signal
 import threading
 import time
@@ -97,7 +96,7 @@ def main() -> None:
     for s in (signal.SIGTERM, signal.SIGINT):
         signal.signal(s, lambda signum, frame: asyncio.create_task(_handle_signal(signum)))
 
-    _worker_resources_limit_set()
+    util.cpu_limit_arm(_CPU_LIMIT_SECONDS)
     threading.Thread(target=_memory_watchdog_run, daemon=True).start()
 
     async def _start() -> None:
@@ -459,6 +458,7 @@ async def _worker_loop_run() -> None:
             if task:
                 task_id, task_type, task_args, asf_uid = task
                 log.add_context(task_id=task_id, task_type=task_type, asf_uid=asf_uid)
+                util.cpu_limit_arm(_CPU_LIMIT_SECONDS)
                 await _task_process(task_id, task_type, task_args, asf_uid)
                 processed += 1
                 # Only process max_to_process tasks and then exit
@@ -473,18 +473,6 @@ async def _worker_loop_run() -> None:
             # TODO: Should probably be more robust about this
             log.exception("Worker loop error")
             await asyncio.sleep(1)
-
-
-def _worker_resources_limit_set() -> None:
-    """Set CPU limits for this process."""
-    # TODO: https://github.com/apache/tooling-trusted-releases/issues/411
-    # # Set CPU time limit
-    try:
-        resource.setrlimit(resource.RLIMIT_CPU, (_CPU_LIMIT_SECONDS, _CPU_LIMIT_SECONDS))
-        log.info(f"Set CPU time limit to {_CPU_LIMIT_SECONDS} seconds")
-    except ValueError as e:
-        log.warning(f"Could not set CPU time limit: {e}")
-    return
 
 
 if __name__ == "__main__":

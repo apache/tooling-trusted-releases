@@ -32,6 +32,7 @@ import json
 import os
 import pathlib
 import re
+import resource
 import socket
 import ssl
 import tempfile
@@ -617,6 +618,18 @@ async def content_list(
             is_file=bool(stat.st_mode & 0o0100000),
             is_dir=bool(stat.st_mode & 0o040000),
         )
+
+
+def cpu_limit_arm(budget_seconds: int) -> None:
+    times = os.times()
+    soft = int(times.user + times.system) + budget_seconds + 1
+    hard = resource.getrlimit(resource.RLIMIT_CPU)[1]
+    if hard != resource.RLIM_INFINITY:
+        soft = min(soft, hard)
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (soft, hard))
+    except ValueError as e:
+        log.warning(f"Could not set CPU time limit: {e}")
 
 
 async def create_hard_link_clone(

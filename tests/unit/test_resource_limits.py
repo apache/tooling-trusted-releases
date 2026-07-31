@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import resource
 import subprocess
 import sys
 import time
@@ -22,6 +23,21 @@ import time
 import psutil
 
 import atr.util as util
+
+
+def test_cpu_limit_arm_rearms_soft_limit() -> None:
+    before = resource.getrlimit(resource.RLIMIT_CPU)
+    try:
+        util.cpu_limit_arm(300)
+        soft_one, hard_one = resource.getrlimit(resource.RLIMIT_CPU)
+        util.cpu_limit_arm(600)
+        soft_two, hard_two = resource.getrlimit(resource.RLIMIT_CPU)
+    finally:
+        resource.setrlimit(resource.RLIMIT_CPU, before)
+    assert hard_one == before[1]
+    assert hard_two == before[1]
+    assert soft_one >= 301
+    assert soft_two > soft_one
 
 
 def test_process_tree_rss_counts_children() -> None:
