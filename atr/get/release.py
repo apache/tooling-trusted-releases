@@ -62,12 +62,11 @@ async def finished(
 
 
 @get.typed
-async def releases(_session: web.Public, _releases: Literal["releases"]) -> str:
+async def releases(_session: web.Committer, _releases: Literal["releases"]) -> str:
     """
     URL: /releases
     View all releases.
     """
-    # Releases are public, so we don't need to filter by user
     async with db.session() as data:
         releases = await data.release(
             phase=sql.ReleasePhase.RELEASE,

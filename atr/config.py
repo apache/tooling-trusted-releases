@@ -102,6 +102,7 @@ class AppConfig:
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
     CAP_API_BASE_URL = decouple.config("CAP_API_BASE_URL", default="https://cap-test.apache.org")
     CAP_ROLE_ACCOUNT_TOKEN = _config_secrets("CAP_ROLE_ACCOUNT_TOKEN", STATE_DIR, default=None, cast=str)
+    RELEASE_CATALOG_URL = decouple.config("RELEASE_CATALOG_URL", default="https://catalog.apache.org/")
 
     DEBUG = False
     TEMPLATES_AUTO_RELOAD = False

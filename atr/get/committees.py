@@ -37,7 +37,7 @@ import atr.web as web
 
 
 @get.typed
-async def directory(_session: web.Public, _committees: Literal["committees"]) -> str:
+async def directory(_session: web.Committer, _committees: Literal["committees"]) -> str:
     """
     URL: /committees
     Main committee directory page.
@@ -62,7 +62,7 @@ async def directory(_session: web.Public, _committees: Literal["committees"]) ->
 
 
 @get.typed
-async def view(session: web.Public, _committees: Literal["committees"], name: safe.CommitteeKey) -> str:
+async def view(session: web.Committer, _committees: Literal["committees"], name: safe.CommitteeKey) -> str:
     """
     URL: /committees/<name>
     """

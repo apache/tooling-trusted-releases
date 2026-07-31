@@ -110,6 +110,9 @@ async def test_projects_directory_action_forms(
     render = mock.AsyncMock(return_value="")
     form_render = mock.AsyncMock(return_value="")
     monkeypatch.setattr(sessions, "read", mock.AsyncMock(return_value=sql.UserSession(uid="alice")))
+    monkeypatch.setattr(
+        sessions.asfquart.session, "read", mock.AsyncMock(return_value=sessions.asfquart.session.ClientSession({}))
+    )
     monkeypatch.setattr(log, "performance", mock.Mock())
     monkeypatch.setattr(projects.template, "render", render)
     monkeypatch.setattr(projects.form, "render", form_render)

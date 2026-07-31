@@ -157,7 +157,7 @@ async def project_yaml(
 
 
 @get.typed
-async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
+async def projects(session: web.Committer, _projects: Literal["projects"]) -> str:
     """
     URL: /projects
     Main project directory page.
@@ -167,9 +167,7 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
         approvals = await data.approval_request(
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED]
         ).all()
-        release_counts: dict[str, tuple[int, int]] = {}
-        if session is not None:
-            release_counts = await interaction.project_release_counts(data)
+        release_counts = await interaction.project_release_counts(data)
 
     # Release archival requests surface on the release's own file page, not here
     approvals_by_project = {a.project_key: a for a in approvals if a.action != sql.ApprovalAction.ARCHIVE_RELEASE}
@@ -179,48 +177,47 @@ async def projects(session: web.Public, _projects: Literal["projects"]) -> str:
     )
 
     action_forms: dict[str, htm.Element] = {}
-    if session is not None:
-        for project in projects:
-            if not project.is_active:
-                continue
-            if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
-                continue
-            approval = approvals_by_project.get(str(project.key))
-            if approval is not None:
-                action_forms[str(project.key)] = await _approval_request_element(approval)
-                continue
-            if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
-                continue
-            total_releases, non_draft_releases = release_counts.get(str(project.key), (0, 0))
-            if total_releases == 0:
-                action_forms[str(project.key)] = await form.render(
-                    model_cls=shared.projects.DeleteSelectedProject,
-                    action=util.as_url(post.projects.delete),
-                    form_classes=".d-inline-block.m-0",
-                    submit_classes="btn-sm btn-outline-danger",
-                    submit_label="Request deletion",
-                    empty=True,
-                    defaults={"project_key": str(project.key)},
-                    confirm=(
-                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                        " ready to delete only if the vote passes, and you must then return to complete it."
-                    ),
-                )
-            elif non_draft_releases == 0:
-                action_forms[str(project.key)] = await form.render(
-                    model_cls=shared.projects.ArchiveSelectedProject,
-                    action=util.as_url(post.projects.archive),
-                    form_classes=".d-inline-block.m-0",
-                    submit_classes="btn-sm btn-outline-secondary",
-                    submit_label="Request archival",
-                    empty=True,
-                    defaults={"project_key": str(project.key)},
-                    confirm=(
-                        "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
-                        " ready to archive only if the vote passes, and you must then return to complete it, which"
-                        " deletes the draft releases and retires the project."
-                    ),
-                )
+    for project in projects:
+        if not project.is_active:
+            continue
+        if not (user.is_committee_member(project.committee, session.uid) or session.is_admin):
+            continue
+        approval = approvals_by_project.get(str(project.key))
+        if approval is not None:
+            action_forms[str(project.key)] = await _approval_request_element(approval)
+            continue
+        if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
+            continue
+        total_releases, non_draft_releases = release_counts.get(str(project.key), (0, 0))
+        if total_releases == 0:
+            action_forms[str(project.key)] = await form.render(
+                model_cls=shared.projects.DeleteSelectedProject,
+                action=util.as_url(post.projects.delete),
+                form_classes=".d-inline-block.m-0",
+                submit_classes="btn-sm btn-outline-danger",
+                submit_label="Request deletion",
+                empty=True,
+                defaults={"project_key": str(project.key)},
+                confirm=(
+                    "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                    " ready to delete only if the vote passes, and you must then return to complete it."
+                ),
+            )
+        elif non_draft_releases == 0:
+            action_forms[str(project.key)] = await form.render(
+                model_cls=shared.projects.ArchiveSelectedProject,
+                action=util.as_url(post.projects.archive),
+                form_classes=".d-inline-block.m-0",
+                submit_classes="btn-sm btn-outline-secondary",
+                submit_label="Request archival",
+                empty=True,
+                defaults={"project_key": str(project.key)},
+                confirm=(
+                    "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
+                    " ready to archive only if the vote passes, and you must then return to complete it, which"
+                    " deletes the draft releases and retires the project."
+                ),
+            )
 
     return await template.render("projects.html", projects=projects, action_forms=action_forms)
 

@@ -26,6 +26,7 @@ only adds the file layout and the rendering.
 """
 
 import asyncio
+import dataclasses
 import datetime
 import json
 import pathlib
@@ -82,6 +83,8 @@ _ASSETS: Final[tuple[str, ...]] = (
     "svg/atr_logo.svg",
     "svg/apache_incubator.svg",
     "svg/ASF_short-horizontal-color.svg",
+    # The front page reuses the app's card filter, so the same script comes along
+    "js/src/card-grid.js",
 )
 
 # A committee counts as "current" while it still has a project that hasn't
@@ -113,7 +116,7 @@ async def generate_all(data: db.Session) -> None:
     # need its projects alongside it.
     committees = await data.committee(_projects=True).all()
     written = await _write_committee_pages(data, committees, site_dir)
-    await _write_index_pages(site_dir, written)
+    await _write_index_pages(data, site_dir, written)
     # Every committee and every project holds a directory here. Keyed off all of them
     # rather than the ones written, so a page that failed to render keeps what it had
     keep = {committee.key for committee in committees}
@@ -173,7 +176,46 @@ async def regenerate_project(data: db.Session, project_key: str) -> None:
     # A first release, or a last one archived, moves a committee on or off the front page
     # and between the Incubator's two columns, so the indexes are rebuilt every time too.
     # The assets are not: they only change with a deploy, so the full rebuild owns them.
-    await _write_index_pages(site_dir, committees)
+    await _write_index_pages(data, site_dir, committees)
+
+
+@dataclasses.dataclass
+class _CommitteeSummary:
+    release_count: int
+    latest_date: datetime.datetime | None
+    project_names: list[str]
+
+
+async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
+    """Fold the released artifacts onto the committee card that shows them on the front page."""
+    releases = await data.release(phase=sql.ReleasePhase.RELEASE, _committee=True, _project=True).all()
+    counts: dict[str, int] = {}
+    latest: dict[str, datetime.datetime] = {}
+    for release in releases:
+        if release.is_archived:
+            continue
+        committee = release.project.committee
+        if committee is None:
+            continue
+        key = _INCUBATOR_COMMITTEE_KEY if committee.is_podling else committee.key
+        counts[key] = counts.get(key, 0) + 1
+        released = release.released
+        if (released is not None) and ((key not in latest) or (released > latest[key])):
+            latest[key] = released
+    # The search matches project names as well as committee names, so each card lists its
+    # projects. The Incubator lists its podlings, which are committees rather than projects.
+    names: dict[str, list[str]] = {
+        committee.key: sorted(project.display_name for project in committee.projects) for committee in committees
+    }
+    names[_INCUBATOR_COMMITTEE_KEY] = sorted(committee.display_name for committee in committees if committee.is_podling)
+    return {
+        key: _CommitteeSummary(
+            release_count=counts.get(key, 0),
+            latest_date=latest.get(key),
+            project_names=names.get(key, []),
+        )
+        for key in (set(counts) | set(names))
+    }
 
 
 def _last_updated() -> str:
@@ -228,15 +270,13 @@ async def _write_attic_index(
     projects: Sequence[sql.Project],
     committees: Sequence[sql.Committee],
 ) -> None:
-    # A retired PMC is filed either under the Attic itself or as a committee that kept
-    # its own key, but a reader wants one list, so the two are merged by name here.
-    # Nothing here still releases, so each entry opens straight at its archive.
-    entries = [(project.display_name, f"../{project.key}/archive.html") for project in projects]
+    # A retired PMC is filed either under the Attic itself or as a committee that kept its own
+    # key. Either way it's the projects a reader wants, so both are flattened into one list by
+    # their "Apache ..." name, each opening at its archive.
+    retired_projects = list(projects)
     for committee in committees:
-        path = f"{committee.key}/index.html"
-        if len(committee.projects) == 1:
-            path = f"{committee.projects[0].key}/archive.html"
-        entries.append((committee.display_name, f"../{path}"))
+        retired_projects.extend(committee.projects)
+    entries = [(project.display_name, f"../{project.key}/archive.html") for project in retired_projects]
     entries.sort(key=lambda entry: entry[0].lower())
     html = _ENVIRONMENT.get_template("attic.html").render(committee=attic, entries=entries, root="../")
     await _write(site_dir / attic.key / "index.html", html)
@@ -305,7 +345,7 @@ async def _write_committee_pages(
     return written
 
 
-async def _write_index_pages(site_dir: safe.StatePath, committees: Sequence[sql.Committee]) -> None:
+async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committees: Sequence[sql.Committee]) -> None:
     """Write the three pages that index the others: the front page, Incubator and Attic."""
     current: list[sql.Committee] = []
     current_podlings: list[sql.Committee] = []
@@ -333,7 +373,8 @@ async def _write_index_pages(site_dir: safe.StatePath, committees: Sequence[sql.
         current.append(attic)
     # A committee whose projects have all retired keeps its pages, but drops off the
     # front page, so the index stays a list of where releases are still coming from.
-    await _write_root_index(site_dir, current)
+    summaries = await _committee_summaries(data, committees)
+    await _write_root_index(site_dir, current, summaries)
 
 
 async def _write_incubator_index(
@@ -443,9 +484,11 @@ async def _write_release(
     await _write(release_dir / "artifacts.json", version.model_dump_json(indent=2))
 
 
-async def _write_root_index(site_dir: safe.StatePath, committees: Sequence[sql.Committee]) -> None:
+async def _write_root_index(
+    site_dir: safe.StatePath, committees: Sequence[sql.Committee], summaries: dict[str, _CommitteeSummary]
+) -> None:
     ordered = sorted(committees, key=lambda committee: committee.display_name.lower())
     await _write(
         site_dir / "index.html",
-        _ENVIRONMENT.get_template("index.html").render(committees=ordered, root=""),
+        _ENVIRONMENT.get_template("index.html").render(committees=ordered, summaries=summaries, root=""),
     )

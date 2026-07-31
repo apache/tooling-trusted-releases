@@ -1,6 +1,6 @@
 {% extends "catalog_site_base.html" %}
 
-{%- block title -%}Apache Release Catalog{%- endblock title -%}
+{%- block title -%}ASF Release Catalog{%- endblock title -%}
 
 {%- block description -%}Released and archived artifacts for Apache Software Foundation projects.{%- endblock description -%}
 
@@ -8,10 +8,23 @@
   <h1 class="mb-3">Release catalog</h1>
   <p class="text-muted">Browse released and archived artifacts by committee.</p>
   {% if committees %}
+    <div class="mb-3">
+      <input type="text"
+             id="project-filter"
+             aria-label="Committee or project name filter"
+             class="form-control d-inline-block w-auto" />
+      <button type="button" class="btn btn-primary" id="filter-button">Filter</button>
+    </div>
+    <div class="mb-3">
+      <p>
+        Total count: <span id="committee-count">{{ committees|length }}</span>
+      </p>
+    </div>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
       {% for committee in committees %}
+        {% set summary = summaries.get(committee.key) %}
         <div class="col">
-          <div class="card h-100 shadow-sm">
+          <div class="card h-100 shadow-sm page-committee-card">
             <div class="card-body">
               <div class="row align-items-center">
                 <div class="col">
@@ -26,6 +39,16 @@
                     <a href="{{ root }}{{ target }}"
                        class="text-decoration-none stretched-link">{{ committee.display_name }}</a>
                   </h2>
+                  {% if summary %}
+                    <p class="text-muted small mb-0 mt-1">
+                      {{ summary.release_count }} {{ "release" if summary.release_count == 1 else "releases" }}
+                      {%- if summary.latest_date %} &middot; latest {{ summary.latest_date.strftime("%Y-%m-%d") }}{% endif %}
+                    </p>
+                    {# The projects ride along hidden so a search matches on their names too #}
+                    {% for name in summary.project_names %}
+                      <span class="d-none" data-project-name="{{ name }}"></span>
+                    {% endfor %}
+                  {% endif %}
                 </div>
                 <div class="col-5 col-lg-4 text-center">
                   <div class="atr-catalog-logo-container">
@@ -47,3 +70,12 @@
     <p class="text-muted">No committees catalogued yet.</p>
   {% endif %}
 {% endblock content %}
+
+{% block scripts %}
+  <script src="{{ root }}assets/js/src/card-grid.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      initCardGrid({ cardSelector: ".page-committee-card", countId: "committee-count", noun: "committees" });
+    });
+  </script>
+{% endblock scripts %}

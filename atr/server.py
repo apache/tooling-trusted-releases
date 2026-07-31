@@ -312,6 +312,7 @@ def _app_setup_context(app: base.QuartApp) -> None:
             "is_cyclonedx_xml_fn": analysis.is_cyclonedx_xml,
             "is_test_mode": config.is_test_mode(),
             "post": post,
+            "release_catalog_url": config.get().RELEASE_CATALOG_URL,
             "static_url": util.static_url,
             "topnav_unfinished_releases": topnav_unfinished_releases,
             "topnav_user_projects": topnav_user_projects,

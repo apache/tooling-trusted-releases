@@ -84,16 +84,18 @@
           <ul class="dropdown-menu"
               id="menuCatalog"
               aria-labelledby="dropdownCatalog">
+            {% if current_user %}
+              <li>
+                <a class="dropdown-item" href="{{ as_url(get.release.releases) }}"><i class="bi bi-view-list"></i>
+                  Current</a>
+              </li>
+            {% endif %}
             <li>
-              <a class="dropdown-item" href="{{ as_url(get.release.releases) }}"><i class="bi bi-view-list"></i>
+              <a class="dropdown-item" href="{{ release_catalog_url }}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i>
                 Catalog</a>
             </li>
             <li>
-              <a class="dropdown-item" href="{{ as_url(get.committees.directory) }}"><i class="bi bi-collection"></i>
-                Committees</a>
-            </li>
-            <li>
-              <a class="dropdown-item" href="https://downloads.apache.org/"><i class="bi bi-download"></i>
+              <a class="dropdown-item" href="https://downloads.apache.org/" target="_blank" rel="noopener"><i class="bi bi-download"></i>
                 Downloads</a>
             </li>
           </ul>

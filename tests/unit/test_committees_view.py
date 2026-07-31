@@ -73,7 +73,10 @@ async def test_view_sorts_projects_after_session_close(sqlite_global_db, monkeyp
     await _seed_committee_with_projects()
 
     render = mock.AsyncMock(return_value="")
-    monkeypatch.setattr(sessions, "read", mock.AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "read", mock.AsyncMock(return_value=sql.UserSession(uid="alice")))
+    monkeypatch.setattr(
+        sessions.asfquart.session, "read", mock.AsyncMock(return_value=sessions.asfquart.session.ClientSession({}))
+    )
     monkeypatch.setattr(log, "performance", mock.Mock())
     monkeypatch.setattr(committees.template, "render", render)
     monkeypatch.setattr(committees.form, "render", mock.AsyncMock(return_value=""))
