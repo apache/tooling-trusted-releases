@@ -259,4 +259,5 @@ INACTIVITY_WARNING_DAYS: Final[int] = 80
 SYSTEM_SERVICE_UID: Final[str] = "system"
 
 WORKER_MAX_TASKS_ENV: Final[str] = "ATR_WORKER_MAX_TASKS"
+WORKER_MEMORY_LIMIT_BYTES: Final[int] = 3 * 1024 * 1024 * 1024
 WORKER_TASK_BUDGETS: Final[tuple[int, ...]] = (8, 14, 10, 16, 12)

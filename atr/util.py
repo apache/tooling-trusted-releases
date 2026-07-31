@@ -51,6 +51,7 @@ import gitignore_parser
 import jinja2
 import markupsafe
 import openpgp
+import psutil
 import pydantic
 import quart
 
@@ -1262,6 +1263,16 @@ def plural(count: int, singular: str, plural_form: str | None = None, *, include
     if include_count:
         return f"{count} {word}"
     return word
+
+
+def process_tree_rss(process: psutil.Process) -> int:
+    total = process.memory_info().rss
+    for child in process.children(recursive=True):
+        try:
+            total += child.memory_info().rss
+        except psutil.NoSuchProcess:
+            continue
+    return total
 
 
 def publication_check_url(

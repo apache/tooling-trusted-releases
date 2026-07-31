@@ -31,10 +31,13 @@ import logging
 import os
 import resource
 import signal
+import threading
+import time
 import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
 
+import psutil
 import sqlmodel
 
 import atr.constants as constants
@@ -47,12 +50,14 @@ import atr.models.sql as sql
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.tasks.task as task
+import atr.util as util
 
-# Resource limits, 5 minutes and 3GB
+# Resource limits, 5 minutes
 _CPU_LIMIT_SECONDS: Final = 300
-_MEMORY_LIMIT_BYTES: Final = 3 * 1024 * 1024 * 1024
 
 _DEFER_SECONDS: Final = 120
+
+_MEMORY_WATCHDOG_POLL_SECONDS: Final = 0.5
 
 # Successful recurring tasks are appended here as JSON lines instead of kept in the database
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
@@ -93,6 +98,7 @@ def main() -> None:
         signal.signal(s, lambda signum, frame: asyncio.create_task(_handle_signal(signum)))
 
     _worker_resources_limit_set()
+    threading.Thread(target=_memory_watchdog_run, daemon=True).start()
 
     async def _start() -> None:
         await asyncio.create_task(db.init_database_for_worker())
@@ -156,6 +162,22 @@ async def _execute_check_task(
     log.debug(f"Calling {handler.__name__} with structured arguments: {function_arguments}")
     handler_result = await handler(function_arguments)
     return handler_result
+
+
+def _memory_watchdog_run() -> None:
+    process = psutil.Process()
+    while True:
+        try:
+            rss = util.process_tree_rss(process)
+        except psutil.Error:
+            rss = 0
+        if rss > constants.WORKER_MEMORY_LIMIT_BYTES:
+            log.error(
+                f"Worker process tree uses {rss} bytes of resident memory,"
+                f" over the limit of {constants.WORKER_MEMORY_LIMIT_BYTES} bytes, terminating"
+            )
+            os.killpg(os.getpgrp(), signal.SIGKILL)
+        time.sleep(_MEMORY_WATCHDOG_POLL_SECONDS)
 
 
 def _setup_logging() -> None:
@@ -454,7 +476,7 @@ async def _worker_loop_run() -> None:
 
 
 def _worker_resources_limit_set() -> None:
-    """Set CPU and memory limits for this process."""
+    """Set CPU limits for this process."""
     # TODO: https://github.com/apache/tooling-trusted-releases/issues/411
     # # Set CPU time limit
     try:
@@ -462,13 +484,6 @@ def _worker_resources_limit_set() -> None:
         log.info(f"Set CPU time limit to {_CPU_LIMIT_SECONDS} seconds")
     except ValueError as e:
         log.warning(f"Could not set CPU time limit: {e}")
-
-    # Set memory limit
-    try:
-        resource.setrlimit(resource.RLIMIT_AS, (_MEMORY_LIMIT_BYTES, _MEMORY_LIMIT_BYTES))
-        log.info(f"Set memory limit to {_MEMORY_LIMIT_BYTES} bytes")
-    except ValueError as e:
-        log.warning(f"Could not set memory limit: {e}")
     return
 
 
