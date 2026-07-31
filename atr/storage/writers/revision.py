@@ -405,6 +405,7 @@ class CommitteeParticipant(FoundationCommitter):
         release = await self.__data.release(key=str(release_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
+        self.__assert_release_in_committee(release)
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)
         quarantined = await self.__data.quarantined(
@@ -445,6 +446,7 @@ class CommitteeParticipant(FoundationCommitter):
             release = await data.release(key=release_key, _release_policy=True, _project_release_policy=True).demand(
                 RuntimeError("Release does not exist for new revision creation")
             )
+            self.__assert_release_in_committee(release)
             storage.ensure_project_active(release.project)
             self.__write.ensure_release_writable(release)
             if release.phase not in allowed_phases:
@@ -634,6 +636,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         release_key = str(sql.release_key(project_key, version_key))
         release = await self.__data.release(release_key).demand(storage.AccessError("No release found"))
+        self.__assert_release_in_committee(release)
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)
         via = sql.validate_instrumented_attribute
@@ -733,6 +736,12 @@ class CommitteeParticipant(FoundationCommitter):
         await data.commit()
 
         return quarantined
+
+    def __assert_release_in_committee(self, release: sql.Release) -> None:
+        if release.project.committee_key != self.__committee_key:
+            raise storage.AccessError(
+                f"Project {release.project_key} is not in committee {self.__committee_key}", status=403
+            )
 
 
 class CommitteeMember(CommitteeParticipant):

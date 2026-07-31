@@ -510,6 +510,7 @@ def _make_participant() -> revision.CommitteeParticipant:
 
 
 def _mock_db_session(release: mock.MagicMock) -> mock.MagicMock:
+    release.project.committee_key = "test"
     mock_query = mock.MagicMock()
     mock_query.demand = mock.AsyncMock(return_value=release)
     mock_data = mock.AsyncMock()

@@ -993,6 +993,7 @@ def _make_release_participant() -> release.CommitteeParticipant:
 
 
 def _mock_db_session(release: mock.MagicMock, selected_revision: mock.MagicMock | None = None) -> mock.MagicMock:
+    release.project.committee_key = "test"
     mock_query = mock.MagicMock()
     mock_query.demand = mock.AsyncMock(return_value=release)
     mock_selected_query = mock.MagicMock()
