@@ -203,7 +203,7 @@
                     <td class="text-break font-monospace px-2">
                       <a href="{{ as_url(get.keys.details, fingerprint=key.fingerprint) }}">{{ key.fingerprint[-16:]|upper }}</a>
                     </td>
-                    <td class="text-break px-2">{{ email_from_key(key.primary_declared_uid) or 'Not specified' }}</td>
+                    <td class="text-break px-2">{{ email_from_key(key.primary_declared_uid or '') or 'Not specified' }}</td>
                     <td class="text-break px-2">{{ key.apache_uid or "−" }}</td>
                     <td class="px-2">
                       {% if key.apache_uid in committee.committee_members %}
