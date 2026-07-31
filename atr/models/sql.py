@@ -692,6 +692,20 @@ class PersonalAccessToken(sqlmodel.SQLModel, table=True):
             return False
 
 
+# PubSubFailure:
+class PubSubFailure(sqlmodel.SQLModel, table=True):
+    id: int | None = sqlmodel.Field(default=None, primary_key=True)
+    created: datetime.datetime = sqlmodel.Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        sa_column=sqlalchemy.Column(UTCDateTime, nullable=False),
+    )
+    cursor: str | None = sqlmodel.Field(default=None)
+    detail: str = sqlmodel.Field()
+    payload: dict[str, Any] = sqlmodel.Field(
+        default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON, nullable=False)
+    )
+
+
 # RevisionCounter:
 class RevisionCounter(sqlmodel.SQLModel, table=True):
     release_key: str = sqlmodel.Field(primary_key=True)

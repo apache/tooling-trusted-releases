@@ -568,6 +568,20 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         return Query(self, query)
 
+    def pub_sub_failure(
+        self,
+        id: Opt[int] = NOT_SET,
+        cursor: Opt[str | None] = NOT_SET,
+    ) -> Query[sql.PubSubFailure]:
+        query = sqlmodel.select(sql.PubSubFailure)
+
+        if is_defined(id):
+            query = query.where(sql.PubSubFailure.id == id)
+        if is_defined(cursor):
+            query = query.where(sql.PubSubFailure.cursor == cursor)
+
+        return Query(self, query)
+
     def signing_certificate(
         self,
         fingerprint: Opt[str] = NOT_SET,
