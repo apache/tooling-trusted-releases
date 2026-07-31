@@ -27,13 +27,13 @@ import atr.svn.catalog as catalog
 _DIST_PUBSUB_PREFIX: Final[str] = "/svn/dist/"
 
 
-async def handle(payload: dict) -> None:
+async def handle(payload: dict) -> str | None:
     pubsub_path = str(payload.get("pubsub_path", ""))
     if not pubsub_path.startswith(_DIST_PUBSUB_PREFIX):
-        return
+        return None
     commit = payload.get("commit", {})
     if not isinstance(commit, dict):
-        return
+        return "Commit in SVN pubsub payload is not an object"
     # Log every dist commit we accept, so a deploy can confirm the prefix above
     # actually matches dist commits even when a commit catalogues nothing.
     changed = commit.get("changed", {})

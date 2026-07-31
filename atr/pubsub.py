@@ -17,15 +17,25 @@
 
 import asyncio
 import json
+import pathlib
+import re
 import urllib.parse
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import aiohttp
 
+import atr.cache as cache
+import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
+import atr.models.sql as sql
+import atr.paths as paths
+import atr.storage as storage
 import atr.svn.commits as commits
+import atr.util as util
+
+_CURSOR_PATTERN = re.compile(r"[0-9A-Za-z-]{36}")
 
 # The server sends keepalives every 5 seconds, so we should see
 # activity well within this timeout period.
@@ -66,6 +76,7 @@ async def listen(
     password: str | None = None,
     sock_read: float | None = None,
     buffersize: int | None = None,
+    cursor: Callable[[], str | None] | None = None,
 ) -> AsyncGenerator[dict[str, Any]]:
     if username:
         if password is None:
@@ -89,7 +100,7 @@ async def listen(
         while True:
             log.debug("Opening new connection...")
             try:
-                async for payload in _process_connection(session, pubsub_url):
+                async for payload in _process_connection(session, pubsub_url, cursor() if cursor else None):
                     # We got a payload, so reset the DELAY.
                     delay = 0.0
 
@@ -105,20 +116,75 @@ async def listen(
             delay = min(30.0, (delay + 1.0) * 2)
 
 
-async def _handle_payload(payload: dict[str, Any]) -> None:
+async def _cursor_load(stream: str) -> str | None:
+    try:
+        text = await asyncio.to_thread(_cursor_path().read_text)
+    except FileNotFoundError:
+        return None
+    data = json.loads(text)
+    if data.get("stream") != stream:
+        return None
+    cursor = data.get("cursor")
+    if isinstance(cursor, str) and _CURSOR_PATTERN.fullmatch(cursor):
+        return cursor
+    raise ValueError(f"Invalid cursor in {_cursor_path()}")
+
+
+def _cursor_path() -> pathlib.Path:
+    return pathlib.Path(paths.get_runtime_dir()) / "pubsub-cursor.json"
+
+
+async def _cursor_save(stream: str, cursor: str) -> None:
+    await util.atomic_write_file(_cursor_path(), json.dumps({"stream": stream, "cursor": cursor}))
+
+
+async def _failure_record(payload: dict[str, Any], detail: str) -> None:
+    cursor = payload.get("pubsub_cursor")
+    failure = sql.PubSubFailure(
+        cursor=cursor if isinstance(cursor, str) else None,
+        detail=detail,
+        payload=payload,
+    )
+    try:
+        async with db.session() as data:
+            data.add(failure)
+            await data.commit()
+    except Exception as exc:
+        log.exception(f"PubSub failure record failed: {exc}")
+
+
+async def _halt_notify(detail: str) -> None:
+    message = (
+        f"PubSub is not running: the resume file {_cursor_path()} is damaged ({detail}). "
+        "Inspect it, then remove it and restart ATR to resume from the live stream."
+    )
+    try:
+        for asf_uid in sorted(cache.admins_get()):
+            async with storage.write_as_user_service(asf_uid) as waus:
+                await waus.notifications_create(message)
+    except Exception:
+        log.exception("Failed to record PubSub halt notifications")
+
+
+async def _handle_payload(payload: dict[str, Any]) -> str | None:
     if is_commit_payload(payload):
-        await commits.handle(payload)
-    elif is_ldap_payload(payload):
-        await ldap.handle_update(payload)
+        return await commits.handle(payload)
+    if is_ldap_payload(payload):
+        return await ldap.handle_update(payload)
+    return "No handler for payload topics"
 
 
-async def _process_connection(session, pubsub_url):
+async def _process_connection(session, pubsub_url, since):
     # Connect to pubsub and listen for payloads.
-    async with session.get(pubsub_url) as conn:
+    headers = {"X-Fetch-Since-Cursor": since} if since else {}
+    async with session.get(pubsub_url, headers=headers) as conn:
         # print('LIMITS:', conn.content.get_read_buffer_limits())
         conn.raise_for_status()
         if conn.content_type != _STREAM_CONTENT_TYPE:
             log.warning(f"Unexpected pubsub content type: {conn.content_type}")
+        if since:
+            # TODO: Modify the PubSub server to confirm replay
+            log.info(f"Requested replay since cursor {since}; the server does not confirm replay")
 
         while True:
             # The pubsub server defines stream payloads as:
@@ -155,6 +221,8 @@ class PubSubListener:
         self.username = username
         self.password = password
         self.topics = topics
+        self.cursor: str | None = None
+        self.staged: str | None = None
 
     async def start(self) -> None:
         """Run forever, processing PubSub payloads as they arrive."""
@@ -167,15 +235,36 @@ class PubSubListener:
         log.info(f"PubSubListener starting with URL: {full_url}")
 
         try:
-            async for payload in listen(full_url, username=self.username, password=self.password):
+            self.cursor = await _cursor_load(full_url)
+        except Exception as exc:
+            log.exception(f"PubSub resume file is damaged, not starting: {exc}")
+            await _halt_notify(f"{type(exc).__name__}: {exc}")
+            return
+
+        try:
+            async for payload in listen(
+                full_url, username=self.username, password=self.password, cursor=lambda: self.cursor
+            ):
                 if "stillalive" in payload:
+                    await self._checkpoint(full_url)
                     continue
                 # Isolate per-payload failures: one bad commit or LDAP event must not tear the
                 # whole listener down (and with it the other topic)
                 try:
-                    await _handle_payload(payload)
+                    detail = await _handle_payload(payload)
                 except Exception as exc:
-                    log.exception(f"PubSub handler failed for one payload, skipping: {exc}")
+                    log.exception(
+                        f"PubSub handler failed for one payload, skipping: {exc}",
+                        cursor=payload.get("pubsub_cursor"),
+                    )
+                    await _failure_record(payload, f"{type(exc).__name__}: {exc}")
+                    continue
+                if detail is not None:
+                    log.warning(f"PubSub handler reported a problem: {detail}", cursor=payload.get("pubsub_cursor"))
+                    await _failure_record(payload, detail)
+                staged = payload.get("pubsub_cursor")
+                if isinstance(staged, str) and _CURSOR_PATTERN.fullmatch(staged):
+                    self.staged = staged
         except asyncio.CancelledError:
             log.info("PubSubListener cancelled, shutting down gracefully")
             raise
@@ -183,6 +272,17 @@ class PubSubListener:
             log.exception(f"PubSubListener error: {exc}")
         finally:
             log.info("PubSubListener.start() finished")
+
+    async def _checkpoint(self, stream: str) -> None:
+        cursor = self.staged
+        if (cursor is None) or (cursor == self.cursor):
+            return
+        try:
+            await _cursor_save(stream, cursor)
+        except Exception as exc:
+            log.exception(f"PubSub cursor save failed, will retry: {exc}")
+            return
+        self.cursor = cursor
 
     def _configured(self) -> bool:
         if not self.url:

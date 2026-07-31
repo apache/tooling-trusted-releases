@@ -183,13 +183,11 @@ async def test_github_to_apache_raises_when_ldap_unavailable(monkeypatch: "Monke
 
 
 @pytest.mark.asyncio
-async def test_handle_update_handles_invalid_payload(monkeypatch: "MonkeyPatch"):
-    warnings: list[str] = []
-    monkeypatch.setattr("atr.log.warning", lambda msg: warnings.append(msg))
+async def test_handle_update_handles_invalid_payload():
+    detail = await ldap.handle_update({"not": "valid"})
 
-    await ldap.handle_update({"not": "valid"})
-
-    assert any("Failed to parse" in msg for msg in warnings)
+    assert detail is not None
+    assert "Failed to parse" in detail
 
 
 @pytest.mark.asyncio

@@ -254,15 +254,14 @@ async def github_to_apache(github_numeric_uid: int) -> str:
     return ldap_params.results_list[0].uid[0]
 
 
-async def handle_update(payload: dict) -> None:
+async def handle_update(payload: dict) -> str | None:
     import atr.cache as cache
     import atr.log as log
 
     try:
         parsed = PubSubPayload.model_validate(payload)
     except schema.pydantic.ValidationError:
-        log.warning(f"Failed to parse LDAP pubsub payload with DN: {payload.get('dn', '<missing>')}")
-        return
+        return f"Failed to parse LDAP pubsub payload with DN: {payload.get('dn', '<missing>')}"
 
     uid = _extract_uid_from_pubsub(parsed)
     if uid is None:
