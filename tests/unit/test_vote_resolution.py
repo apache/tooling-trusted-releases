@@ -1435,6 +1435,7 @@ def _mock_write_as() -> mock.MagicMock:
     write_as = mock.MagicMock()
     write_as.append_to_audit_log = mock.MagicMock()
     write_as.revision.create_revision_with_quarantine = mock.AsyncMock()
+    write_as.cache.get_message_archive_url = mock.AsyncMock(return_value=None)
     return write_as
 
 

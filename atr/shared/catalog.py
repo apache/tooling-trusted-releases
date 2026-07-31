@@ -229,6 +229,7 @@ def _versions(
                 cle_url=cle_release_url(atr_host, release.project_key, str(version))
                 if (atr_host is not None) and cle_eligible and (release is not None)
                 else None,
+                vote_thread_url=release.vote_thread_url if (release is not None) else None,
                 artifacts=[_artifact(row, downloadable, status == "archived") for row in rows],
             )
         )

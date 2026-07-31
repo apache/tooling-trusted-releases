@@ -540,12 +540,9 @@ class ReleaseManager(CommitteeParticipant):
                 and (release.podling_thread_id is None)
             ):
                 latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
-                if latest_vote_task is not None:
-                    task_mid = interaction.task_mid_get(latest_vote_task)
-                    task_recipient = interaction.task_recipient_get(latest_vote_task)
-                    archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
-                    if archive_url is not None:
-                        podling_round_one_thread_id = archive_url.split("/")[-1]
+                archive_url = await self.__resolved_vote_thread_url(latest_vote_task)
+                if archive_url is not None:
+                    podling_round_one_thread_id = archive_url.split("/")[-1]
             await self.__data.rollback()
             return await self._resolve_trusted(
                 project_key,
@@ -711,9 +708,7 @@ class ReleaseManager(CommitteeParticipant):
                 # We only set the podling_thread_id to the thread_id of the vote thread
                 # Then we automatically start the Incubator PMC vote
                 # TODO: Note on the resolve vote page that resolving the Project PPMC vote starts the Incubator PMC vote
-                task_mid = interaction.task_mid_get(latest_vote_task)
-                task_recipient = interaction.task_recipient_get(latest_vote_task)
-                archive_url = await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
+                archive_url = await self.__resolved_vote_thread_url(latest_vote_task)
                 if archive_url is None:
                     raise storage.AccessError("No archive URL found for podling vote", status=404)
                 thread_id = archive_url.split("/")[-1]
@@ -795,6 +790,7 @@ class ReleaseManager(CommitteeParticipant):
                 f" (sent to {incubator_vote_address})"
             )
         elif vote_result == "passed":
+            vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
             await self._resolve_transition(
                 release,
                 expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -803,6 +799,7 @@ class ReleaseManager(CommitteeParticipant):
                 new_vote_mode=release.effective_vote_mode,
                 new_vote_resolved=datetime.datetime.now(datetime.UTC),
                 new_podling_thread_id=release.podling_thread_id,
+                new_vote_thread_url=vote_thread_url,
             )
             await self.__data.commit()
             await self.__data.refresh(release)
@@ -1111,6 +1108,7 @@ class ReleaseManager(CommitteeParticipant):
                     f" (sent to {incubator_vote_address})"
                 )
             elif vote_result == "passed":
+                vote_thread_url = await self.__resolved_vote_thread_url(latest_vote_task)
                 await self._resolve_transition(
                     release,
                     expected_phase=sql.ReleasePhase.RELEASE_CANDIDATE,
@@ -1119,6 +1117,7 @@ class ReleaseManager(CommitteeParticipant):
                     new_vote_mode=release.effective_vote_mode,
                     new_vote_resolved=datetime.datetime.now(datetime.UTC),
                     new_podling_thread_id=release.podling_thread_id,
+                    new_vote_thread_url=vote_thread_url,
                 )
                 await self.__data.commit()
                 await self.__data.refresh(release)
@@ -1201,6 +1200,15 @@ class ReleaseManager(CommitteeParticipant):
         )
         return release, voting_round, success_message, error_message
 
+    async def __resolved_vote_thread_url(self, vote_task: sql.Task | None) -> str | None:
+        # The thread only becomes linkable once its vote email is archived. The lookup is cached
+        # and best effort, so a thread that isn't archived yet just leaves the release unlinked.
+        if vote_task is None:
+            return None
+        task_mid = interaction.task_mid_get(vote_task)
+        task_recipient = interaction.task_recipient_get(vote_task)
+        return await self.__write_as.cache.get_message_archive_url(task_mid, task_recipient)
+
     async def _resolve_transition(
         self,
         release: sql.Release,
@@ -1211,6 +1219,7 @@ class ReleaseManager(CommitteeParticipant):
         new_vote_mode: sql.VoteMode | None,
         new_vote_resolved: datetime.datetime | None,
         new_podling_thread_id: str | None,
+        new_vote_thread_url: str | None = None,
     ) -> None:
         via = sql.validate_instrumented_attribute
         stmt = sqlmodel.update(sql.Release).where(
@@ -1237,6 +1246,7 @@ class ReleaseManager(CommitteeParticipant):
                 vote_mode=new_vote_mode,
                 vote_resolved=new_vote_resolved,
                 podling_thread_id=new_podling_thread_id,
+                vote_thread_url=new_vote_thread_url,
                 activity_at=activity_at_value,
                 inactivity_notice_key=notice_key_value,
             )

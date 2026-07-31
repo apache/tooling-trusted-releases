@@ -69,6 +69,8 @@ class CatalogVersion(schema.Strict):
     cycle: str | None
     # The per-version CLE feed, or None when no released-phase record backs this version.
     cle_url: str | None = None
+    # The lists.apache.org vote thread, present only for releases voted through ATR.
+    vote_thread_url: str | None = None
     artifacts: Sequence[CatalogArtifact]
 
     @pydantic.field_validator("released", mode="before")

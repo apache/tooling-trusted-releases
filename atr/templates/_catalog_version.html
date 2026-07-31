@@ -11,6 +11,10 @@
         <strong class="fs-5">{{ version.version }}</strong>
         <span>
           <span class="badge {{ status_classes[version.status] }}">{{ version.status | capitalize }}</span>
+          {% if version.vote_thread_url %}
+            <a href="{{ version.vote_thread_url }}" target="_blank" rel="noopener"
+               class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-decoration-none ms-2">Vote</a>
+          {% endif %}
           {% if version.released %}
             <a class="btn btn-sm btn-outline-secondary ms-2"
                href="{{ as_url(api.cle_release, project_key=project.key, version_key=version.version) }}">CLE</a>

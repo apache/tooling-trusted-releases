@@ -18,6 +18,10 @@
         <span class="d-flex align-items-center gap-2">
           <a href="artifacts.json"
              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-decoration-none">Metadata</a>
+          {% if release_version.vote_thread_url %}
+            <a href="{{ release_version.vote_thread_url }}" target="_blank" rel="noopener"
+               class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle text-decoration-none">Vote</a>
+          {% endif %}
           <span class="badge {{ status_classes[release_version.status] }}">{{ release_version.status | capitalize }}</span>
         </span>
       </div>

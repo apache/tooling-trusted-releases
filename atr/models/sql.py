@@ -1511,6 +1511,9 @@ class Release(sqlmodel.SQLModel, table=True):
         **example(datetime.datetime(2025, 5, 7, 1, 2, 3, tzinfo=datetime.UTC)),
     )
     podling_thread_id: str | None = sqlmodel.Field(default=None, **example("hmk1lpwnnxn5zsbp8gwh7115h2qm7jrh"))
+    vote_thread_url: str | None = sqlmodel.Field(
+        default=None, **example("https://lists.apache.org/thread/hmk1lpwnnxn5zsbp8gwh7115h2qm7jrh")
+    )
 
     # 1-M: Release -C-> [Revision]
     # M-1: Revision -> Release
