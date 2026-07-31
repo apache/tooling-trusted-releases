@@ -183,7 +183,6 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(state_dir_str) / "hypercorn" / "logs",
         pathlib.Path(state_dir_str) / "hypercorn" / "secrets",
         pathlib.Path(state_dir_str) / "logs",
-        pathlib.Path(state_dir_str) / "runtime",
         pathlib.Path(state_dir_str) / "secrets" / "cached",
         pathlib.Path(state_dir_str) / "secrets" / "curated",
         pathlib.Path(state_dir_str) / "secrets" / "generated",
@@ -191,6 +190,7 @@ def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
         pathlib.Path(paths.get_catalog_site_dir()),
         pathlib.Path(paths.get_finished_dir()),
         pathlib.Path(paths.get_quarantined_dir()),
+        pathlib.Path(paths.get_runtime_dir()),
         pathlib.Path(paths.get_tmp_dir()),
         pathlib.Path(paths.get_unfinished_dir()),
     ]
