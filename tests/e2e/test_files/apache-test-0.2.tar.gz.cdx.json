@@ -1,0 +1,68 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-01-01T00:00:00Z",
+    "authors": [
+      {
+        "name": "ATR end to end tests"
+      }
+    ],
+    "supplier": {
+      "name": "The Apache Software Foundation",
+      "url": [
+        "https://www.apache.org/"
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "apache-test",
+      "name": "apache-test",
+      "version": "0.2",
+      "supplier": {
+        "name": "The Apache Software Foundation",
+        "url": [
+          "https://www.apache.org/"
+        ]
+      },
+      "purl": "pkg:generic/apache-test@0.2"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "example-lib",
+      "name": "example-lib",
+      "version": "1.0.0",
+      "supplier": {
+        "name": "Example Org"
+      },
+      "purl": "pkg:maven/org.example/example-lib@1.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "another-lib",
+      "name": "another-lib",
+      "version": "2.1.0",
+      "supplier": {
+        "name": "Example Org"
+      },
+      "purl": "pkg:maven/org.example/another-lib@2.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -44,6 +44,7 @@ def page_release_with_file(page: Page) -> Generator[Page]:
             f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}",
             f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}.sha512",
             f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}.asc",
+            f"{sbom_helpers.CURRENT_DIR}/../test_files/{sbom_helpers.FILE_NAME}.cdx.json",
         ]
     )
     page.get_by_role("button", name="Add files").click()

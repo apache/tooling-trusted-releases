@@ -117,10 +117,6 @@
               {% endif %}
               {% if is_cyclonedx_json_fn(path.as_path().name) %}
                 <a href="{{ as_url(get.sbom.quality, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
-                   class="btn btn-sm btn-outline-secondary">Quality report</a>
-              {% endif %}
-              {% if info and (path in info.sbom_paths) %}
-                <a href="{{ as_url(get.sbom.components, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
                    class="btn btn-sm btn-outline-secondary">View SBOM</a>
               {% endif %}
               {% if has_blockers %}

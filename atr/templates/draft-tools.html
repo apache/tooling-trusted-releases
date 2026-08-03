@@ -32,20 +32,4 @@
     {{ sha512_form|safe }}
   </div>
 
-  {% if (file_path.endswith(".tar.gz") or file_path.endswith(".zip") or file_path.endswith(".jar") or file_path.endswith(".tgz")) and is_viewing_as_admin_fn(current_user.uid) %}
-    <h3>Generate SBOM</h3>
-    <div class="alert-info">
-      <p>NOTE: This functionality is in early release.</p>
-    </div>
-    <p>Generate a CycloneDX Software Bill of Materials (SBOM) file for this artifact.</p>
-    {{ sbom_form|safe }}
-  {% endif %}
-  {% if is_cyclonedx_xml_fn(file_path) and is_viewing_as_admin_fn(current_user.uid) %}
-    <h3>Convert SBOM</h3>
-    <div class="alert-info">
-      <p>NOTE: This functionality is in early release.</p>
-    </div>
-    <p>Convert this XML CycloneDX Software Bill of Materials (SBOM) into a JSON equivalent.</p>
-    {{ sbom_convert_form|safe }}
-  {% endif %}
 {% endblock content %}

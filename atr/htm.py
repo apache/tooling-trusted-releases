@@ -45,6 +45,7 @@ form = htpy.form
 h1 = htpy.h1
 h2 = htpy.h2
 h3 = htpy.h3
+h4 = htpy.h4
 html = htpy.html
 i = htpy.i
 li = htpy.li
@@ -210,6 +211,11 @@ class Block:
     def h3(self) -> BlockElementCallable:
         self.__check_parent("h3", {"body", "div"})
         return BlockElementCallable(self, h3)
+
+    @property
+    def h4(self) -> BlockElementCallable:
+        self.__check_parent("h4", {"body", "div"})
+        return BlockElementCallable(self, h4)
 
     @property
     def li(self) -> BlockElementCallable:

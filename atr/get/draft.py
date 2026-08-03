@@ -78,31 +78,6 @@ async def tools(
         submit_classes="btn-outline-secondary",
         empty=True,
     )
-    sbom_form = await form.render(
-        model_cls=form.Empty,
-        action=util.as_url(
-            post.draft.sbomgen,
-            project_key=str(project_key),
-            version_key=str(version_key),
-            file_path=str(file_path),
-        ),
-        submit_label="Generate CycloneDX SBOM (.cdx.json)",
-        submit_classes="btn-outline-secondary",
-        empty=True,
-    )
-    sbom_convert_form = await form.render(
-        model_cls=form.Empty,
-        action=util.as_url(
-            post.draft.sbomconvert,
-            project_key=str(project_key),
-            version_key=str(version_key),
-            file_path=str(file_path),
-        ),
-        submit_label="Convert XML SBOM (.cdx.xml)",
-        submit_classes="btn-outline-secondary",
-        empty=True,
-    )
-
     return await template.render(
         "draft-tools.html",
         asf_id=session.uid,
@@ -113,6 +88,4 @@ async def tools(
         release=release,
         format_file_size=util.format_file_size,
         sha512_form=sha512_form,
-        sbom_form=sbom_form,
-        sbom_convert_form=sbom_convert_form,
     )

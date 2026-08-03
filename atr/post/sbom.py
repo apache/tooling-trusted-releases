@@ -52,7 +52,7 @@ async def components(
     sbom_path = await shared.sbom.sbom_for_artifact(paths.release_directory(release), file_path)
     if sbom_path is None:
         raise base.ASFQuartException("This file has no CycloneDX JSON SBOM", errorcode=404)
-    return await _scan(session, release, project_key, version_key, sbom_path, file_path)
+    return await _scan(session, release, project_key, version_key, sbom_path)
 
 
 @post.typed
@@ -116,9 +116,8 @@ async def _scan(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     rel_path: safe.RelPath,
-    artifact_path: safe.RelPath,
 ) -> web.WerkzeugResponse:
-    """Scan a CycloneDX SBOM file for vulnerabilities using OSV, returning to the artifact's page."""
+    """Scan a CycloneDX SBOM file for vulnerabilities using OSV, returning to the SBOM report."""
     if not analysis.is_cyclonedx_json(rel_path.as_path().name):
         raise base.ASFQuartException("OSV scanning is only supported for CycloneDX JSON files", errorcode=400)
 
@@ -137,16 +136,16 @@ async def _scan(
         log.exception("Error starting OSV scan:")
         await quart.flash(f"Error starting OSV scan: {e!s}", "error")
         return await session.redirect(
-            get.sbom.components,
+            get.sbom.quality,
             project_key=str(project_key),
             version_key=str(version_key),
-            file_path=str(artifact_path),
+            file_path=str(rel_path),
         )
 
     return await session.redirect(
-        get.sbom.components,
+        get.sbom.quality,
         success=f"OSV vulnerability scan queued for {rel_path!s} (task ID: {util.unwrap(sbom_task.id)})",
         project_key=str(project_key),
         version_key=str(version_key),
-        file_path=str(artifact_path),
+        file_path=str(rel_path),
     )
