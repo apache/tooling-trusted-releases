@@ -51,20 +51,13 @@ import atr.tasks.checks as checks
 import atr.tasks.task as task
 import atr.util as util
 
-# Resource limits, 5 minutes
 _CPU_LIMIT_SECONDS: Final = 300
-
 _DEFER_SECONDS: Final = 120
-
 _MEMORY_WATCHDOG_POLL_SECONDS: Final = 0.5
-
-# Successful recurring tasks are appended here as JSON lines instead of kept in the database
+_SHUTDOWN_GRACE_SECONDS: Final = 15.0
 _TASK_LOG_LOGGER: Final = "atr.tasks.log"
 _TASK_ARG_HIDDEN: Final = "<hidden>"
 _MESSAGE_SEND_SENSITIVE_ARGS: Final = frozenset({"body", "email_to", "email_cc", "email_bcc"})
-
-# # Create tables if they don't exist
-# SQLModel.metadata.create_all(engine)
 
 
 def main() -> None:
@@ -80,29 +73,34 @@ def main() -> None:
     log.info(f"Starting worker process with pid {os.getpid()}")
 
     tasks: list[asyncio.Task] = []
+    shutdown_requested = False
 
-    async def _handle_signal(signum: int) -> None:
+    def _handle_signal(signum: int) -> None:
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            os._exit(1)
+        shutdown_requested = True
         log.info(f"Received signal {signum}, shutting down...")
-
-        await db.shutdown_database()
-
+        # Work in a thread cannot be cancelled, so exit even if the loop cannot finish
+        timer = threading.Timer(_SHUTDOWN_GRACE_SECONDS, os._exit, args=(1,))
+        timer.daemon = True
+        timer.start()
         for t in tasks:
             t.cancel()
-
-        log.debug("Cancelled all running tasks")
-        asyncio.get_event_loop().stop()
-        log.debug("Stopped event loop")
-
-    for s in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(s, lambda signum, frame: asyncio.create_task(_handle_signal(signum)))
 
     util.cpu_limit_arm(_CPU_LIMIT_SECONDS)
     threading.Thread(target=_memory_watchdog_run, daemon=True).start()
 
     async def _start() -> None:
+        loop = asyncio.get_running_loop()
+        for s in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(s, _handle_signal, s)
         await asyncio.create_task(db.init_database_for_worker())
         tasks.append(asyncio.create_task(_worker_loop_run()))
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            log.debug("Cancelled all running tasks")
 
     asyncio.run(_start())
 

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import io
 import os
@@ -42,13 +43,14 @@ import atr.util as util
 # Global debug flag to control worker process output capturing
 global_worker_debug: bool = False
 
-_KILL_WAIT_SECONDS: Final = 5.0
-
-_MEMORY_TERMINATE_LIMIT_BYTES: Final[int] = (constants.WORKER_MEMORY_LIMIT_BYTES * 6) // 5
-
 # Global worker manager instance
 # Can't use "StringClass" | None, must use Optional["StringClass"] for forward references
 global_worker_manager: WorkerManager | None = None
+
+
+_KILL_POLL_SECONDS: Final = 0.1
+_KILL_WAIT_SECONDS: Final = 5.0
+_MEMORY_TERMINATE_LIMIT_BYTES: Final[int] = (constants.WORKER_MEMORY_LIMIT_BYTES * 6) // 5
 
 
 class WorkerManager:
@@ -59,15 +61,21 @@ class WorkerManager:
         min_workers: int = 4,
         check_interval_seconds: float = 2.0,
         max_task_seconds: float = 300.0,
+        terminate_grace_seconds: float = 10.0,
     ):
         self.min_workers = min_workers
         self.max_workers = 2 * min_workers
         self.check_interval_seconds = check_interval_seconds
         self.max_task_seconds = max_task_seconds
+        self.terminate_grace_seconds = terminate_grace_seconds
         self.workers: dict[int, WorkerProcess] = {}
+        self.stop_tasks: set[asyncio.Task] = set()
         self.budget_index = 0
         self.running = False
         self.check_task: asyncio.Task | None = None
+
+    def active_worker_count(self) -> int:
+        return sum(1 for worker in self.workers.values() if not worker.stopping)
 
     async def start(self) -> None:
         """Start the worker manager."""
@@ -105,31 +113,62 @@ class WorkerManager:
 
     async def stop_all_workers(self) -> None:
         """Stop all worker processes."""
-        for worker in list(self.workers.values()):
-            if worker.pid:
-                try:
-                    os.kill(worker.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    # The process may have already exited
-                    ...
-                except Exception as e:
-                    log.error(f"Error stopping worker {worker.pid}: {e}")
-
-        # Wait for processes to exit
-        for worker in list(self.workers.values()):
-            try:
-                await asyncio.wait_for(worker.process.wait(), timeout=5.0)
-            except TimeoutError:
-                if worker.pid:
-                    try:
-                        os.kill(worker.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        # The process may have already exited
-                        ...
-                    except Exception as e:
-                        log.error(f"Error force killing worker {worker.pid}: {e}")
-
+        # Stopping concurrently bounds shutdown by the slowest worker rather than by their sum
+        stopping = [self.stop_worker(worker) for worker in self.workers.values() if not worker.stopping]
+        awaitables = stopping + list(self.stop_tasks)
+        if awaitables:
+            await asyncio.gather(*awaitables, return_exceptions=True)
         self.workers.clear()
+
+    async def stop_worker(self, worker: WorkerProcess) -> None:
+        pid = worker.pid
+        if not pid:
+            return
+        worker.stopping = True
+        # Assume the group survives, so that an error before any check leaves the worker stoppable again
+        live_members = [pid]
+        try:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGTERM)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(worker.process.wait(), timeout=self.terminate_grace_seconds)
+            # The worker may have exited while a child of it ignored the signal, so check the whole group
+            live_members = await asyncio.to_thread(_live_process_group_members, pid)
+            if not live_members:
+                return
+            log.warning(f"Process group of worker {pid} survived SIGTERM, sending SIGKILL")
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
+            live_members = await self.wait_for_process_group(pid)
+            if live_members:
+                log.error(f"Process group of worker {pid} has live members after SIGKILL: {live_members}")
+        finally:
+            # A group which is still alive can be stopped again, so do not skip the worker forever
+            worker.stopping = not live_members
+
+    def stop_worker_in_background(self, worker: WorkerProcess) -> asyncio.Task:
+        worker.stopping = True
+        stop_task = asyncio.create_task(self.stop_worker(worker))
+        self.stop_tasks.add(stop_task)
+        stop_task.add_done_callback(self.stop_task_done)
+        return stop_task
+
+    def stop_task_done(self, stop_task: asyncio.Task) -> None:
+        self.stop_tasks.discard(stop_task)
+        if stop_task.cancelled():
+            return
+        error = stop_task.exception()
+        if error is not None:
+            log.error(f"Error stopping a worker: {error}")
+
+    async def wait_for_process_group(self, pgid: int) -> list[int]:
+        # Signal delivery is not instant, so poll rather than declaring survivors on the first look
+        deadline = asyncio.get_running_loop().time() + _KILL_WAIT_SECONDS
+        while True:
+            live_members = await asyncio.to_thread(_live_process_group_members, pgid)
+            if (not live_members) or (asyncio.get_running_loop().time() >= deadline):
+                return live_members
+            await asyncio.sleep(_KILL_POLL_SECONDS)
 
     async def spawn_worker(self) -> None:
         """Spawn a new worker process."""
@@ -220,6 +259,10 @@ class WorkerManager:
                     log.info(f"Worker {pid} has exited")
                     continue
 
+                # A worker being stopped in the background stays tracked until it is seen to exit
+                if worker.stopping:
+                    continue
+
                 if await self.check_worker_memory(data, pid, worker):
                     exited_workers.append(pid)
                     continue
@@ -227,7 +270,6 @@ class WorkerManager:
                 # Check if worker has been processing its task for too long
                 # This also stops tasks if they have indeed been running for too long
                 if await self.check_task_duration(data, pid, worker):
-                    exited_workers.append(pid)
                     continue
 
                 await self.pre_spawn_replacement(data, pid, worker)
@@ -262,7 +304,7 @@ class WorkerManager:
     ) -> bool:
         """
         Terminate a task that has been running for too long.
-        Updates the task status and terminates the worker process.
+        Updates the task status and starts terminating the worker process.
         """
         try:
             # Mark the task as failed
@@ -273,8 +315,9 @@ class WorkerManager:
                 return False
 
             if worker.pid:
-                os.killpg(worker.pid, signal.SIGTERM)
-                log.info(f"Worker {pid} terminated after processing task {task_id} for > {limit}s")
+                # Stopping in the background, because waiting here would delay every later worker
+                self.stop_worker_in_background(worker)
+                log.info(f"Worker {pid} is being stopped after processing task {task_id} for > {limit}s")
             return True
         except ProcessLookupError:
             return True
@@ -382,12 +425,17 @@ class WorkerManager:
 
     async def maintain_worker_pool(self) -> None:
         """Ensure we maintain the minimum number of workers."""
-        current_count = len(self.workers)
-        if current_count < self.min_workers:
-            log.info(f"Worker pool below minimum ({current_count} < {self.min_workers}), spawning new workers")
-            while len(self.workers) < self.min_workers:
-                await self.spawn_worker()
-            log.info(f"Worker pool restored to {len(self.workers)} workers")
+        # Workers being stopped do not count, but they still occupy a slot below max_workers
+        if self.active_worker_count() >= self.min_workers:
+            return
+        log.info(f"Worker pool below minimum ({self.active_worker_count()} < {self.min_workers}), spawning new workers")
+        while self.active_worker_count() < self.min_workers:
+            tracked = len(self.workers)
+            await self.spawn_worker()
+            if len(self.workers) == tracked:
+                log.warning("Could not spawn a replacement worker")
+                return
+        log.info(f"Worker pool restored to {self.active_worker_count()} workers")
 
     async def _log_tasks_held_by_unmanaged_pids(self, data: db.Session, active_worker_pids: list[int]) -> None:
         """Log tasks that are active and held by PIDs not managed by this worker manager."""
@@ -476,6 +524,7 @@ class WorkerProcess:
         self.last_checked = started
         self.budget = budget
         self.pre_spawned = False
+        self.stopping = False
 
     @property
     def pid(self) -> int | None:
