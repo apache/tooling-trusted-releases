@@ -25,7 +25,9 @@ import io
 import os
 import signal
 import sys
+from typing import Final
 
+import psutil
 import sqlalchemy
 import sqlalchemy.engine as engine
 import sqlmodel
@@ -39,6 +41,10 @@ import atr.util as util
 
 # Global debug flag to control worker process output capturing
 global_worker_debug: bool = False
+
+_KILL_WAIT_SECONDS: Final = 5.0
+
+_MEMORY_TERMINATE_LIMIT_BYTES: Final[int] = (constants.WORKER_MEMORY_LIMIT_BYTES * 6) // 5
 
 # Global worker manager instance
 # Can't use "StringClass" | None, must use Optional["StringClass"] for forward references
@@ -214,6 +220,10 @@ class WorkerManager:
                     log.info(f"Worker {pid} has exited")
                     continue
 
+                if await self.check_worker_memory(data, pid, worker):
+                    exited_workers.append(pid)
+                    continue
+
                 # Check if worker has been processing its task for too long
                 # This also stops tasks if they have indeed been running for too long
                 if await self.check_task_duration(data, pid, worker):
@@ -296,6 +306,40 @@ class WorkerManager:
             # TODO: Return False here to avoid over-reporting errors
             return False
         return await self.terminate_long_running_task(active_task, worker, active_task.id, pid, limit)
+
+    async def check_worker_memory(self, data: db.Session, pid: int, worker: WorkerProcess) -> bool:
+        active_task = None
+        try:
+            async with data.begin():
+                active_task = await data.task(pid=pid, status=sql.TaskStatus.ACTIVE).get()
+        except Exception as e:
+            log.error(f"Error checking active task for worker {pid}: {e}")
+        try:
+            rss = await asyncio.to_thread(_worker_tree_rss, pid)
+        except Exception as e:
+            log.error(f"Error sampling memory of worker {pid}: {e}")
+            return False
+        if rss <= _MEMORY_TERMINATE_LIMIT_BYTES:
+            return False
+        log.error(f"Worker {pid} process tree uses {rss} bytes of resident memory, terminating")
+        if active_task is not None:
+            status = task.BROKEN if (active_task.task_type in task.CHECK_TASK_TYPES) else task.FAILED
+            error = f"Task terminated because its worker used {rss} bytes of resident memory"
+            if not await task.finalise_failure(active_task.id, pid, error, status):
+                log.info(f"Task {active_task.id} was already finalised, killing worker {pid} without a verdict")
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        try:
+            await asyncio.wait_for(worker.process.wait(), timeout=_KILL_WAIT_SECONDS)
+        except TimeoutError:
+            log.error(f"Worker {pid} did not exit after SIGKILL, keeping it tracked to retry")
+            return False
+        live_members = await asyncio.to_thread(_live_process_group_members, pid)
+        if live_members:
+            log.error(f"Worker {pid} exited after SIGKILL but its process group has live members: {live_members}")
+        return True
 
     async def pre_spawn_replacement(self, data: db.Session, pid: int, worker: WorkerProcess) -> None:
         if worker.pre_spawned:
@@ -403,6 +447,24 @@ class WorkerManager:
 
         except Exception as e:
             log.error(f"Error resetting broken tasks: {e}")
+
+
+def _live_process_group_members(pgid: int) -> list[int]:
+    members = []
+    for process in psutil.process_iter():
+        try:
+            if (os.getpgid(process.pid) == pgid) and (process.status() != psutil.STATUS_ZOMBIE):
+                members.append(process.pid)
+        except (OSError, psutil.Error):
+            continue
+    return members
+
+
+def _worker_tree_rss(pid: int) -> int:
+    try:
+        return util.process_tree_rss(psutil.Process(pid))
+    except psutil.NoSuchProcess:
+        return 0
 
 
 class WorkerProcess:
