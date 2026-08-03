@@ -69,6 +69,39 @@ class FoundationAdmin:
             moved_to=str(dest_committee_key),
         )
 
+    async def move_release(self, release_key: safe.ReleaseKey, target_project_key: safe.ProjectKey) -> None:
+        old_key = str(release_key)
+        to_project = str(target_project_key)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.get(sql.Release, old_key)
+            if release is None:
+                raise storage.AccessError(f"Release '{old_key}' not found.", status=404)
+            # Capture the source project and version before the re-point expires the row
+            from_project = release.project_key
+            version = release.version
+            await self._ensure_release_catalog_only(old_key)
+            if await self.__data.project(key=to_project).get() is None:
+                raise storage.AccessError(f"Target project '{to_project}' not found.", status=404)
+            if from_project == to_project:
+                raise storage.AccessError("The release is already in that project.", status=400)
+            new_key = f"{to_project}-{version}"
+            if await self.__data.get(sql.Release, new_key) is not None:
+                raise storage.AccessError(f"Target already has release {new_key}.", status=409)
+            await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
+            await self._repoint_release_rows(old_key, from_project, version, to_project)
+            await self._assert_fk_integrity()
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            moved_release=old_key,
+            moved_to_project=to_project,
+        )
+
     async def rename_project(self, old_key: safe.ProjectKey, new_key: safe.ProjectKey, new_name: str | None) -> None:
         old = str(old_key)
         new = str(new_key)
@@ -384,20 +417,26 @@ class FoundationAdmin:
         )
 
     async def _repoint_one_release(self, release_repoint: catalogue_diff.ReleaseRepoint) -> None:
+        await self._repoint_release_rows(
+            release_repoint.key,
+            release_repoint.from_project,
+            str(release_repoint.row.version),
+            release_repoint.to_project,
+        )
+
+    async def _repoint_release_rows(self, old_key: str, from_project: str, version: str, to_project: str) -> None:
         via = sql.validate_instrumented_attribute
-        old_key = release_repoint.key
-        version = str(release_repoint.row.version)
-        new_key = f"{release_repoint.to_project}-{version}"
+        new_key = f"{to_project}-{version}"
         await self.__data.execute(
             sqlmodel.update(sql.Artifact)
-            .where(via(sql.Artifact.project_key) == release_repoint.from_project)
+            .where(via(sql.Artifact.project_key) == from_project)
             .where(via(sql.Artifact.version) == version)
-            .values(release_key=new_key, project_key=release_repoint.to_project)
+            .values(release_key=new_key, project_key=to_project)
         )
         await self.__data.execute(
             sqlmodel.update(sql.LifecycleEvent)
             .where(via(sql.LifecycleEvent.version_key) == old_key)
-            .values(version_key=new_key, project_key=release_repoint.to_project)
+            .values(version_key=new_key, project_key=to_project)
         )
         # Other release-key children re-point to the new key
         for model, attr in repoint.RELEASE_KEY_REFS:
@@ -408,11 +447,11 @@ class FoundationAdmin:
         await self.__data.execute(
             sqlmodel.update(sql.Release)
             .where(via(sql.Release.key) == old_key)
-            .values(key=new_key, project_key=release_repoint.to_project)
+            .values(key=new_key, project_key=to_project)
         )
         # Resolve the repointed release's cycle against the target's scheme, then align its events
         self.__data.expire_all()
-        target_project = await self.__data.project(key=release_repoint.to_project).get()
+        target_project = await self.__data.project(key=to_project).get()
         if target_project is None:
             raise storage.AccessError("The repoint target could not be reloaded.", status=500)
         await cycles.reassign_release_cycles(self.__data, target_project)
@@ -528,6 +567,22 @@ class FoundationAdmin:
             raise storage.AccessError(
                 f"Project '{project_key}' has live release-workflow data (revisions); "
                 "this page corrects catalogued projects only.",
+                status=409,
+            )
+
+    async def _ensure_release_catalog_only(self, release_key: str) -> None:
+        # A live release also carries revisions and file-state, whose keys this page does not
+        # re-point, so we only move a release that has none
+        via = sql.validate_instrumented_attribute
+        result = await self.__data.execute(
+            sqlmodel.select(sqlalchemy.func.count())
+            .select_from(sql.Revision)
+            .where(via(sql.Revision.release_key) == release_key)
+        )
+        if int(result.scalar() or 0) > 0:
+            raise storage.AccessError(
+                f"Release '{release_key}' has live release-workflow data (revisions); "
+                "this page moves catalogued releases only.",
                 status=409,
             )
 

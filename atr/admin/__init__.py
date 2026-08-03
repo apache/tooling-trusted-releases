@@ -446,6 +446,10 @@ async def catalog_committee_get(
                     htpy.td[
                         htpy.a(
                             ".btn.btn-sm.btn-outline-secondary.me-1",
+                            href=f"/admin/catalog/{committee_key}/project/{project.key}",
+                        )["Releases"],
+                        htpy.a(
+                            ".btn.btn-sm.btn-outline-secondary.me-1",
                             href=f"/admin/catalog/{committee_key}/rename/{project.key}",
                         )["Rename"],
                         htpy.a(
@@ -510,6 +514,19 @@ async def _catalog_artifact_counts(data: db.Session, project_keys: list[str]) ->
         sqlmodel.select(via(sql.Artifact.project_key), sqlalchemy.func.count())
         .where(via(sql.Artifact.project_key).in_(project_keys))
         .group_by(via(sql.Artifact.project_key))
+    )
+    return {row[0]: int(row[1]) for row in result.all()}
+
+
+async def _catalog_release_key_counts(
+    data: db.Session, model: type[sqlmodel.SQLModel], attr: str, release_keys: list[str]
+) -> dict[str, int]:
+    if not release_keys:
+        return {}
+    via = sql.validate_instrumented_attribute
+    column = via(getattr(model, attr))
+    result = await data.execute(
+        sqlmodel.select(column, sqlalchemy.func.count()).where(column.in_(release_keys)).group_by(column)
     )
     return {row[0]: int(row[1]) for row in result.all()}
 
@@ -724,6 +741,158 @@ async def catalog_remove_post(
         else:
             await wafa.catalogue.delete_project(project_key)
     return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+@admin.typed
+async def catalog_project_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>
+
+    List a project's releases and offer to move the catalogued ones elsewhere.
+    """
+    async with db.session() as data:
+        await data.project(key=str(project_key)).demand(exceptions.NotFound(f"Project '{project_key}' not found."))
+        releases = await data.release(project_key=str(project_key)).order_by(sql.Release.version).all()
+        release_keys = [str(release.key) for release in releases]
+        artifact_counts = await _catalog_release_key_counts(data, sql.Artifact, "release_key", release_keys)
+        revision_counts = await _catalog_release_key_counts(data, sql.Revision, "release_key", release_keys)
+
+    table = htpy.table(".table")[
+        htpy.thead[
+            htpy.tr[
+                htpy.th["Version"],
+                htpy.th["Phase"],
+                htpy.th["Artifacts"],
+                htpy.th["Managed"],
+                htpy.th["Actions"],
+            ]
+        ],
+        htpy.tbody[
+            [
+                htpy.tr[
+                    htpy.td[htpy.strong[release.version]],
+                    htpy.td[release.phase.value],
+                    htpy.td[str(artifact_counts.get(str(release.key), 0))],
+                    htpy.td["Yes" if (revision_counts.get(str(release.key), 0) > 0) else "No"],
+                    htpy.td[
+                        _catalog_release_move_action(
+                            str(committee_key),
+                            str(project_key),
+                            release.version,
+                            managed=revision_counts.get(str(release.key), 0) > 0,
+                        )
+                    ],
+                ]
+                for release in releases
+            ]
+        ],
+    ]
+    return await template.render(
+        "catalog-project.html",
+        committee_key=str(committee_key),
+        project_key=str(project_key),
+        releases=table,
+    )
+
+
+def _catalog_release_move_action(committee_key: str, project_key: str, version: str, managed: bool) -> htpy.Element:
+    # A managed release keeps its files under the workflow, so its move is greyed out
+    if managed:
+        return htpy.span(".btn.btn-sm.btn-outline-secondary.me-1.disabled", title="has workflow files")["Move"]
+    return htpy.a(
+        ".btn.btn-sm.btn-outline-secondary.me-1",
+        href=f"/admin/catalog/{committee_key}/project/{project_key}/release/{version}/move",
+    )["Move"]
+
+
+class CatalogReleaseMoveForm(form.Form):
+    target_project: str = form.label(
+        "Destination project", "The project to move this release into.", widget=form.Widget.CUSTOM, default=""
+    )
+
+
+@admin.typed
+async def catalog_release_move_get(
+    _session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _move: Literal["move"],
+) -> str:
+    """
+    URL: GET /catalog/<committee_key>/project/<project_key>/release/<version_key>/move
+
+    Confirm moving a single catalogued release to another project, across PMCs if need be.
+    """
+    async with db.session() as data:
+        projects = await data.project().order_by(sql.Project.key).all()
+    targets = [p for p in projects if str(p.key) != str(project_key)]
+    rendered_form = await form.render(
+        model_cls=CatalogReleaseMoveForm,
+        submit_label="Move release",
+        submit_classes="btn-primary",
+        custom={
+            "target_project": _catalog_select(
+                "target_project",
+                [(str(p.key), p.name or str(p.key)) for p in targets],
+                "Choose a project",
+            )
+        },
+    )
+    intro = htpy.div[
+        htpy.p[f"Move {version_key} out of {project_key} and into another project."],
+        htpy.p(".text-muted")["Only the catalogue attribution moves; the files stay where they are in dist."],
+    ]
+    return await template.render(
+        "catalog-confirm.html",
+        heading=f"Move {project_key}-{version_key}",
+        committee_key=str(committee_key),
+        intro=intro,
+        form=rendered_form,
+    )
+
+
+@admin.typed
+async def catalog_release_move_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _move: Literal["move"],
+    move_form: CatalogReleaseMoveForm,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/move
+
+    Apply the release move.
+    """
+    raw = move_form.target_project.strip()
+    if not raw:
+        raise exceptions.BadRequest("Choose a destination project.")
+    try:
+        target = safe.ProjectKey(raw)
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid project key: {error}") from error
+    try:
+        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.move_release(release_key, target)
+    return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 
 _CATALOG_PREVIEW_LIMIT: Final[int] = 50

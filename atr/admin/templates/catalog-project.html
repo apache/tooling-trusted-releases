@@ -1,0 +1,11 @@
+{% extends "layouts/base-admin.html" %}
+
+{%- block title -%}Releases: {{ project_key }} ~ ATR{%- endblock title -%}
+
+{%- block description -%}Move catalogued releases for {{ project_key }}.{%- endblock description -%}
+
+{% block content %}
+    <h1>Releases: {{ project_key }}</h1>
+    <p><a href="/admin/catalog/{{ committee_key }}">Back to {{ committee_key }}</a></p>
+    {{ releases }}
+{% endblock content %}
