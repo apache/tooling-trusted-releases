@@ -49,6 +49,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.shared.start as start
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.svn as svn
@@ -291,6 +292,10 @@ async def _start_release(
         raise storage.AccessError(f"Project {project_key} not found", status=404)
 
     _assert_can_start(asf_uid, project)
+    if missing := start.missing_release_metadata(project):
+        raise storage.AccessError(
+            f"Project metadata incomplete, cannot start a release: {', '.join(missing)}", status=400
+        )
     if expedited and (project.committee is not None) and project.committee.is_podling:
         raise storage.AccessError("Expedited releases are not available for podling projects.", status=400)
     await _assert_no_existing_release(data, project, project_key, version)
