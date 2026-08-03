@@ -30,7 +30,7 @@ arrow==1.4.0
     # via isoduration
 asfpy==0.58
     # via asfquart
-asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@0e13c2cc015e7227b1850a8d5b4226ee0affbb3e
+asfquart @ git+https://github.com/apache/infrastructure-asfquart.git@1ae6700dbcefd8a46f123b31f1e7bbe8eb4a5e31
     # via tooling-trusted-releases
 asyncssh==2.24.0
     # via tooling-trusted-releases
@@ -85,7 +85,7 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.42.3
+djlint==1.43.1
 dnspython==2.8.0
     # via
     #   email-validator
