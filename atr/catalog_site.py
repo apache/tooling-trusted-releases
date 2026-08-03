@@ -186,6 +186,13 @@ class _CommitteeSummary:
     project_names: list[str]
 
 
+@dataclasses.dataclass
+class _SubprojectSummary:
+    release_count: int
+    latest_date: datetime.datetime | None
+    has_archived: bool
+
+
 async def _committee_summaries(data: db.Session, committees: Sequence[sql.Committee]) -> dict[str, _CommitteeSummary]:
     """Fold the released artifacts onto the committee card that shows them on the front page."""
     releases = await data.release(phase=sql.ReleasePhase.RELEASE, _committee=True, _project=True).all()
@@ -216,6 +223,10 @@ async def _committee_summaries(data: db.Session, committees: Sequence[sql.Commit
         )
         for key in (set(counts) | set(names))
     }
+
+
+def _has_live_project(committee: sql.Committee) -> bool:
+    return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
 
 
 def _last_updated() -> str:
@@ -252,6 +263,26 @@ async def _prune_directories(directory: safe.StatePath, keep: Container[str]) ->
         log.info(f"Catalog site: pruned {len(pruned)} stale directories from {path}: {', '.join(pruned)}")
 
 
+async def _subproject_summaries(data: db.Session, subprojects: Sequence[sql.Project]) -> dict[str, _SubprojectSummary]:
+    return {subproject.key: await _subproject_summary(data, subproject) for subproject in subprojects}
+
+
+async def _subproject_summary(data: db.Session, project: sql.Project) -> _SubprojectSummary:
+    releases = await data.release(project_key=project.key, phase=sql.ReleasePhase.RELEASE).all()
+    release_count = 0
+    latest_date: datetime.datetime | None = None
+    has_archived = False
+    for release in releases:
+        if release.is_archived:
+            has_archived = True
+            continue
+        release_count += 1
+        released = release.released or release.created
+        if (latest_date is None) or (released > latest_date):
+            latest_date = released
+    return _SubprojectSummary(release_count=release_count, latest_date=latest_date, has_archived=has_archived)
+
+
 async def _write(path: safe.StatePath, content: str) -> None:
     await util.atomic_write_file(path.path, content)
 
@@ -282,10 +313,6 @@ async def _write_attic_index(
     await _write(site_dir / attic.key / "index.html", html)
 
 
-def _has_live_project(committee: sql.Committee) -> bool:
-    return any(project.status in _LIVE_PROJECT_STATUSES for project in committee.projects)
-
-
 async def _write_committee_index(
     data: db.Session, committee: sql.Committee, site_dir: safe.StatePath
 ) -> list[sql.Project]:
@@ -309,6 +336,7 @@ async def _write_committee_index(
         project=None,
         subprojects=current,
         archived_subprojects=archived,
+        subproject_summaries=await _subproject_summaries(data, (*current, *archived)),
         retired=not current,
         keys_url=paths.committee_keys_url(committee),
         root="../",
@@ -345,6 +373,24 @@ async def _write_committee_pages(
     return written
 
 
+async def _write_incubator_index(
+    site_dir: safe.StatePath,
+    incubator: sql.Committee,
+    current: Sequence[sql.Committee],
+    retired: Sequence[sql.Committee],
+) -> None:
+    def by_name(committee: sql.Committee) -> str:
+        return committee.display_name.lower()
+
+    html = _ENVIRONMENT.get_template("incubator.html").render(
+        committee=incubator,
+        current=sorted(current, key=by_name),
+        retired=sorted(retired, key=by_name),
+        root="../",
+    )
+    await _write(site_dir / incubator.key / "index.html", html)
+
+
 async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committees: Sequence[sql.Committee]) -> None:
     """Write the three pages that index the others: the front page, Incubator and Attic."""
     current: list[sql.Committee] = []
@@ -377,24 +423,6 @@ async def _write_index_pages(data: db.Session, site_dir: safe.StatePath, committ
     await _write_root_index(site_dir, current, summaries)
 
 
-async def _write_incubator_index(
-    site_dir: safe.StatePath,
-    incubator: sql.Committee,
-    current: Sequence[sql.Committee],
-    retired: Sequence[sql.Committee],
-) -> None:
-    def by_name(committee: sql.Committee) -> str:
-        return committee.display_name.lower()
-
-    html = _ENVIRONMENT.get_template("incubator.html").render(
-        committee=incubator,
-        current=sorted(current, key=by_name),
-        retired=sorted(retired, key=by_name),
-        root="../",
-    )
-    await _write(site_dir / incubator.key / "index.html", html)
-
-
 async def _write_project(
     data: db.Session,
     committee: sql.Committee,
@@ -420,6 +448,7 @@ async def _write_project(
     retired = project.status not in _LIVE_PROJECT_STATUSES
     # The signing keys are published per committee, beside the release files themselves
     keys_url = paths.committee_keys_url(committee)
+    subproject_summaries = await _subproject_summaries(data, (*subprojects, *archived_subprojects))
     # Both the project document and the per-release ones are cut from the same rows
     releases = await data.release(project_key=project.key).all()
     events = await _lifecycle_events(data, project)
@@ -433,6 +462,7 @@ async def _write_project(
             project=project,
             subprojects=subprojects,
             archived_subprojects=archived_subprojects,
+            subproject_summaries=subproject_summaries,
             versions=current,
             groups=current_groups,
             has_archive=bool(archived),
