@@ -35,7 +35,11 @@ After the per-type time limit, 300s by default, spent on a task, the manager fai
 
 A worker being stopped stays tracked, and is skipped by later checks, until it is seen to exit; it does not count towards the minimum pool size, so its replacement is spawned immediately. A stop which fails, or which leaves the group alive, makes the worker eligible to be stopped again rather than leaving it skipped. Workers handle SIGTERM on their event loop by cancelling their tasks, force exiting after a 15s grace so that work wedged in a thread cannot hold the process open. Server shutdown stops all workers by the same route, concurrently.
 
-The tracked pool of four to eight is not a cap on live processes: workers orphaned by a server restart run on beside the pool, and may run another task twice via the untracked reset. Their verdict in the database is safe, because a worker only records the outcome of a task which is still active and still claimed by that same worker, but their effects outside the database are not.
+The tracked pool of four to eight is not a cap on live processes, because workers orphaned by a server restart run on beside the pool. Every claim records the process number of the claiming worker and the creation time of that process, which together identify the claimant, because a process which took the number later must have been created later. Creation times are compared with a two second tolerance, because stepping the wall clock shifts the boot time from which the kernel derives them.
+
+A claim is returned to the queue only when its claimant is provably dead, and if the dead claimant left survivors in its process group they are killed first, with the claim returned once a later pass finds the group empty. A live claimant within its time limit is left to finish, which is the restart case. A live claimant over its limit has its task failed and its process group killed, with SIGKILL because the manager holds no handle on it, and its creation time is checked once more immediately before the kill, because failing the task first can block for as long as the database busy timeout, within which the number could pass to an unrelated process.
+
+A claim recorded before creation times were kept identifies its claimant by process number alone, which proves nothing, so it is returned to the queue as all untracked claims were before.
 
 ## Heavy operations
 

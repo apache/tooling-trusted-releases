@@ -753,6 +753,7 @@ class Task(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(UTCDateTime),
     )
     pid: int | None = None
+    pid_created: float | None = None
     completed: datetime.datetime | None = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(UTCDateTime),

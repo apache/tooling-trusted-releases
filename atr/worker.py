@@ -17,11 +17,6 @@
 
 """worker.py - Task worker process for ATR"""
 
-# TODO: If started is older than some threshold and status
-# is active but the pid is no longer running, we can revert
-# the task to status='QUEUED'. For this to work, ideally we
-# need to check wall clock time as well as CPU time.
-
 import asyncio
 import contextlib
 import datetime
@@ -255,7 +250,7 @@ async def _task_defer(task_id: int) -> None:
                         via(sql.Task.pid) == os.getpid(),
                     )
                 )
-                .values(status=task.QUEUED, started=None, pid=None, scheduled=scheduled)
+                .values(status=task.QUEUED, started=None, pid=None, pid_created=None, scheduled=scheduled)
                 .returning(via(sql.Task.id))
             )
             result = await data.execute(update_stmt)
@@ -286,15 +281,17 @@ async def _task_next_claim() -> tuple[int, str, list[str] | dict[str, Any], str]
                 )
                 .order_by(via(sql.Task.added).asc())
                 .limit(1)
+                .scalar_subquery()
             )
 
             # Use an UPDATE with a WHERE clause to atomically claim the task
             # This ensures that only one worker can claim a specific task
             now = datetime.datetime.now(datetime.UTC)
+            created = psutil.Process().create_time()
             update_stmt = (
                 sqlmodel.update(sql.Task)
                 .where(sqlmodel.and_(sql.Task.id == oldest_queued_task, sql.Task.status == task.QUEUED))
-                .values(status=task.ACTIVE, started=now, pid=os.getpid())
+                .values(status=task.ACTIVE, started=now, pid=os.getpid(), pid_created=created)
                 .returning(
                     sql.validate_instrumented_attribute(sql.Task.id),
                     sql.validate_instrumented_attribute(sql.Task.task_type),

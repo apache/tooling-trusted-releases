@@ -20,6 +20,7 @@ import os
 import unittest.mock as mock
 from collections.abc import AsyncIterator
 
+import psutil
 import pytest
 import sqlalchemy
 import sqlalchemy.ext.asyncio
@@ -94,6 +95,20 @@ async def test_completion_is_fenced_and_stores_a_null_result(sqlite_sessionmaker
         await data.refresh(task_row)
         assert task_row.status == sql.TaskStatus.COMPLETED
         assert task_row.completed is not None
+
+
+async def test_task_claim_records_the_process_creation_time(sqlite_sessionmaker) -> None:
+    async with sqlite_sessionmaker() as data:
+        task_row = sql.Task(task_type=sql.TaskType.COMPARE_SOURCE_TREES, task_args={}, asf_uid="alice")
+        data.add(task_row)
+        await data.commit()
+
+        claimed = await worker._task_next_claim()
+
+        assert claimed is not None
+        await data.refresh(task_row)
+        assert task_row.pid == os.getpid()
+        assert task_row.pid_created == psutil.Process().create_time()
 
 
 def _active_task(pid: int, task_type: sql.TaskType = sql.TaskType.COMPARE_SOURCE_TREES) -> sql.Task:

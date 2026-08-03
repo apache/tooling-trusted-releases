@@ -48,6 +48,7 @@ global_worker_debug: bool = False
 global_worker_manager: WorkerManager | None = None
 
 
+_CREATED_TOLERANCE_SECONDS: Final = 2.0
 _KILL_POLL_SECONDS: Final = 0.1
 _KILL_WAIT_SECONDS: Final = 5.0
 _MEMORY_TERMINATE_LIMIT_BYTES: Final[int] = (constants.WORKER_MEMORY_LIMIT_BYTES * 6) // 5
@@ -437,64 +438,82 @@ class WorkerManager:
                 return
         log.info(f"Worker pool restored to {self.active_worker_count()} workers")
 
-    async def _log_tasks_held_by_unmanaged_pids(self, data: db.Session, active_worker_pids: list[int]) -> None:
-        """Log tasks that are active and held by PIDs not managed by this worker manager."""
-        foreign_tasks_stmt = sqlmodel.select(sql.Task.pid, sql.Task.id).where(
-            sqlmodel.and_(
-                sql.validate_instrumented_attribute(sql.Task.pid).notin_(active_worker_pids),
-                sql.Task.status == sql.TaskStatus.ACTIVE,
-                sql.validate_instrumented_attribute(sql.Task.pid).isnot(None),
-            )
-        )
-        foreign_tasks_result = await data.execute(foreign_tasks_stmt)
-        foreign_pids_with_tasks: dict[int, int] = {
-            row.pid: row.id for row in foreign_tasks_result if row.pid is not None
-        }
-
-        if not foreign_pids_with_tasks:
-            return
-
-        log.debug(f"Found tasks potentially claimed by non-managed PIDs: {foreign_pids_with_tasks}")
-        for foreign_pid, task_id_held in foreign_pids_with_tasks.items():
-            try:
-                os.kill(foreign_pid, 0)
-                log.warning(f"Task {task_id_held} is held by an active, unmanaged process (PID: {foreign_pid})")
-            except ProcessLookupError:
-                log.info(f"Task {task_id_held} was held by PID {foreign_pid}, which is no longer running")
-            except Exception as e:
-                log.error(f"Unexpected error: {foreign_pid} holding task {task_id_held}: {e}")
+    async def reconcile_unmanaged_claim(self, claim: sql.Task) -> int:
+        if claim.pid is None:
+            return 0
+        try:
+            observed = await asyncio.to_thread(_process_created, claim.pid)
+        except psutil.Error as e:
+            log.error(f"Error checking the claimant of task {claim.id}: {e}")
+            return 0
+        if _claimant_alive(claim, observed):
+            await self.terminate_unmanaged_claim(claim)
+            return 0
+        if (claim.pid_created is not None) and (observed is None) and await _kill_surviving_group(claim):
+            return 0
+        return await _requeue_claim(claim)
 
     async def reset_broken_tasks(self) -> None:
         """Reset any tasks that were being processed by exited or unmanaged workers."""
         try:
             async with db.session() as data:
-                async with data.begin():
-                    active_worker_pids = list(self.workers)
-                    try:
-                        await self._log_tasks_held_by_unmanaged_pids(data, active_worker_pids)
-                    except Exception:
-                        ...
-
-                    update_stmt = (
-                        sqlmodel.update(sql.Task)
-                        .where(
-                            sqlmodel.and_(
-                                sql.validate_instrumented_attribute(sql.Task.pid).notin_(active_worker_pids),
-                                sql.Task.status == sql.TaskStatus.ACTIVE,
-                            )
-                        )
-                        .values(status=sql.TaskStatus.QUEUED, started=None, pid=None)
-                    )
-
-                    result = await data.execute(update_stmt)
-                    if not isinstance(result, engine.CursorResult):
-                        log.error(f"Expected cursor result, got {type(result)}")
-                        return
-                    if result.rowcount > 0:
-                        log.info(f"Reset {util.plural(result.rowcount, 'task')} to state 'QUEUED' due to worker issues")
-
+                claims = await self.unmanaged_claims(data)
+            requeued = 0
+            for claim in claims:
+                requeued += await self.reconcile_unmanaged_claim(claim)
+            if requeued > 0:
+                log.info(f"Reset {util.plural(requeued, 'task')} to state 'QUEUED' due to worker issues")
         except Exception as e:
             log.error(f"Error resetting broken tasks: {e}")
+
+    async def terminate_unmanaged_claim(self, claim: sql.Task) -> None:
+        if (claim.pid is None) or (claim.started is None):
+            return
+        limit = task.TASK_TYPE_TIMEOUT_SECONDS.get(claim.task_type, self.max_task_seconds)
+        if (datetime.datetime.now(datetime.UTC) - claim.started).total_seconds() <= limit:
+            return
+        status = task.BROKEN if (claim.task_type in task.CHECK_TASK_TYPES) else task.FAILED
+        error = f"Task terminated after exceeding time limit of {limit} seconds"
+        if not await task.finalise_failure(claim.id, claim.pid, error, status):
+            return
+        observed = await asyncio.to_thread(_process_created, claim.pid)
+        if not _claimant_alive(claim, observed):
+            log.info(f"Worker {claim.pid}, which held task {claim.id}, exited before it could be killed")
+            return
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(claim.pid, signal.SIGKILL)
+        log.warning(f"Killed unmanaged worker {claim.pid}, which held task {claim.id} for over {limit}s")
+
+    async def unmanaged_claims(self, data: db.Session) -> list[sql.Task]:
+        via = sql.validate_instrumented_attribute
+        query = sqlmodel.select(sql.Task).where(
+            sqlmodel.and_(
+                via(sql.Task.pid).notin_(list(self.workers)),
+                via(sql.Task.pid).isnot(None),
+                sql.Task.status == sql.TaskStatus.ACTIVE,
+            )
+        )
+        return list((await data.execute(query)).scalars().all())
+
+
+def _claimant_alive(claim: sql.Task, observed: float | None) -> bool:
+    if (claim.pid_created is None) or (observed is None):
+        return False
+    return abs(observed - claim.pid_created) <= _CREATED_TOLERANCE_SECONDS
+
+
+async def _kill_surviving_group(claim: sql.Task) -> bool:
+    if claim.pid is None:
+        return False
+    live_members = await asyncio.to_thread(_live_process_group_members, claim.pid)
+    if not live_members:
+        return False
+    try:
+        os.killpg(claim.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return False
+    log.info(f"Killed surviving process group members for task {claim.id}: {live_members}")
+    return True
 
 
 def _live_process_group_members(pgid: int) -> list[int]:
@@ -506,6 +525,37 @@ def _live_process_group_members(pgid: int) -> list[int]:
         except (OSError, psutil.Error):
             continue
     return members
+
+
+def _process_created(pid: int) -> float | None:
+    try:
+        process = psutil.Process(pid)
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return None
+        return process.create_time()
+    except psutil.NoSuchProcess:
+        return None
+
+
+async def _requeue_claim(claim: sql.Task) -> int:
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        async with data.begin():
+            update_stmt = (
+                sqlmodel.update(sql.Task)
+                .where(
+                    via(sql.Task.id) == claim.id,
+                    via(sql.Task.status) == sql.TaskStatus.ACTIVE,
+                    via(sql.Task.pid) == claim.pid,
+                    via(sql.Task.pid_created) == claim.pid_created,
+                )
+                .values(status=sql.TaskStatus.QUEUED, started=None, pid=None, pid_created=None)
+            )
+            result = await data.execute(update_stmt)
+    if isinstance(result, engine.CursorResult):
+        return result.rowcount
+    log.error(f"Expected cursor result, got {type(result)}")
+    return 0
 
 
 def _worker_tree_rss(pid: int) -> int:
