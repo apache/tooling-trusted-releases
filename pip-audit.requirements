@@ -69,7 +69,7 @@ cmarkgfm==2025.10.22
     # via tooling-trusted-releases
 colorama==0.4.6 ; sys_platform == 'win32'
     # via click
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   asfpy
     #   asyncssh
@@ -110,7 +110,7 @@ ezt==1.1
     # via
     #   asfpy
     #   asfquart
-filelock==3.32.0
+filelock==3.32.2
     # via
     #   python-discovery
     #   virtualenv
