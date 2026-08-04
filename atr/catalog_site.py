@@ -125,6 +125,26 @@ async def generate_all(data: db.Session) -> None:
     log.info(f"Rebuilt catalog site for {len(written)} of {len(committees)} committees")
 
 
+async def queue_full_regeneration(data: db.Session, asf_uid: str) -> sql.Task:
+    """Queue a full rebuild of the whole catalog site, reusing one already queued."""
+    existing = await data.task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+        project_key=None,
+    ).get()
+    if existing is not None:
+        return existing
+    task = sql.Task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+        task_args=args.CatalogSiteGenerate(asf_uid=asf_uid, project_key=None).model_dump(),
+        asf_uid=asf_uid,
+        project_key=None,
+    )
+    data.add(task)
+    return task
+
+
 async def queue_regeneration(data: db.Session, asf_uid: str, project_key: str) -> None:
     """Queue an incremental regeneration of one project's subtree.
 

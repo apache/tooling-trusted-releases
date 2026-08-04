@@ -23,6 +23,7 @@ from typing import Final
 import sqlalchemy
 import sqlmodel
 
+import atr.catalog_site as catalog_site
 import atr.cycles as cycles
 import atr.db as db
 import atr.models.safe as safe
@@ -59,6 +60,8 @@ class FoundationAdmin:
                 raise storage.AccessError(f"No destination committee '{dest_committee_key}'.", status=404)
             project.committee_key = str(dest_committee_key)
             project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            # The project changes committee, so both the old and new indexes go stale
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()
@@ -91,6 +94,9 @@ class FoundationAdmin:
                 raise storage.AccessError(f"Target already has release {new_key}.", status=409)
             await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
             await self._repoint_release_rows(old_key, from_project, version, to_project)
+            # The release leaves one project's subtree and joins another, so both regenerate
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, from_project)
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, to_project)
             await self._assert_fk_integrity()
             await self.__data.commit()
         except Exception:
@@ -122,6 +128,8 @@ class FoundationAdmin:
                 if renamed is None:
                     raise storage.AccessError("The renamed project could not be reloaded.", status=500)
                 renamed.name = new_name
+            # Same committee and the project stays put, so its subtree regenerates in place
+            await catalog_site.queue_regeneration(self.__data, self.__asf_uid, new)
             await self._assert_fk_integrity()
             await self.__data.commit()
         except Exception:
@@ -158,6 +166,8 @@ class FoundationAdmin:
             moved_keys = await self._rehome_rows(source, target, source_release_keys)
             await self._rehome_cycles(target, moved_keys, source_cycle_keys)
             await self._drop_project(source)
+            # The source project is gone and its committee index with it, so rebuild the whole site
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self._assert_fk_integrity()
             await self.__data.commit()
         except Exception:
@@ -232,6 +242,8 @@ class FoundationAdmin:
             await self._ensure_catalog_only(key)
             await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
             await self._delete_project_rows(key)
+            # The committee index can't regenerate through a project that no longer exists
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self._assert_fk_integrity()
             await self.__data.commit()
         except Exception:
@@ -367,6 +379,10 @@ class FoundationAdmin:
                 # has not seen. The watcher catalogues releases while the page is open
                 raise catalogue_import.StaleError(committee_key)
             await self._apply_diff(diff)
+            # A committee-wide import moves projects and releases around, so a full rebuild - but
+            # only when it changed something, since a conflict-only or no-op import leaves the site as-is
+            if any(diff.counts[change] for change in ("add", "release_repoint", "artifact_repoint", "delete")):
+                await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()
