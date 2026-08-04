@@ -247,6 +247,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         svn_token,
         "--non-interactive",
         "--no-auth-cache",
+        "--no-ignore",
         "--with-revprop",
         f"asf:tool={ASF_TOOL}",
         "-m",
