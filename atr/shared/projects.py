@@ -343,7 +343,16 @@ class EditMetadataForm(form.Form):
             raise ValueError("A project description is required.")
         return value
 
-    @pydantic.field_validator("homepage", "download_page", mode="after")
+    @pydantic.field_validator("download_page", mode="after")
+    @classmethod
+    def validate_download_page(cls, value: pydantic.HttpUrl | None) -> pydantic.HttpUrl | None:
+        if value is None:
+            raise ValueError("A valid URL is required.")
+        if error := util.download_page_url_error(str(value)):
+            raise ValueError(error)
+        return value
+
+    @pydantic.field_validator("homepage", mode="after")
     @classmethod
     def validate_required_urls(cls, value: pydantic.HttpUrl | None) -> pydantic.HttpUrl | None:
         if value is None:

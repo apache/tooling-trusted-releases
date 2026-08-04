@@ -731,7 +731,9 @@ def download_page_url_error(url: str) -> str | None:
     try:
         ipaddress.ip_address(parts.hostname)
     except ValueError:
-        return None
+        if parts.hostname.endswith(".apache.org"):
+            return None
+        return "Must be a subdomain of apache.org"
     return "Must not use a literal IP address"
 
 
