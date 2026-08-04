@@ -26,7 +26,6 @@ import sqlmodel
 
 import atr.analysis as analysis
 import atr.attestable as attestable
-import atr.catalog_site as catalog_site
 import atr.constants as constants
 import atr.db as db
 import atr.detection as detection
@@ -38,7 +37,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as file_paths
 import atr.tasks.cap as cap
-import atr.tasks.catalog_site as catalog_site_task
+import atr.tasks.catalog_site as catalog_site
 import atr.tasks.checks as checks
 import atr.tasks.checks.compare as compare
 import atr.tasks.checks.hashing as hashing
@@ -130,9 +129,26 @@ async def cap_approval_resolve(
 
 
 async def catalog_site_generate_all(asf_uid: str, caller_data: db.Session | None = None) -> sql.Task:
-    """Queue a full rebuild of the static release catalog site"""
+    """Queue a full rebuild of the static release catalog site, reusing one already queued."""
     async with db.ensure_session(caller_data) as data:
-        task = await catalog_site.queue_full_regeneration(data, asf_uid)
+        existing = await data.task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+            project_key=None,
+        ).get()
+        if existing is not None:
+            return existing
+        task = sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.CATALOG_SITE_GENERATE,
+            task_args=args.CatalogSiteGenerate(asf_uid=asf_uid, project_key=None).model_dump(),
+            asf_uid=asf_uid,
+            revision_number=None,
+            primary_rel_path=None,
+            project_key=None,
+            version_key=None,
+        )
+        data.add(task)
         await data.commit()
         await data.flush()
         return task
@@ -359,7 +375,7 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
         case sql.TaskType.CAP_APPROVAL_RESOLVE:
             return cap.resolve
         case sql.TaskType.CATALOG_SITE_GENERATE:
-            return catalog_site_task.generate
+            return catalog_site.generate
         case sql.TaskType.COMPARE_SOURCE_TREES:
             return compare.source_trees
         case sql.TaskType.DISTRIBUTION_STATUS:
