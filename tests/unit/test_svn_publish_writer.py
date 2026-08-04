@@ -156,6 +156,7 @@ async def test_publish_to_svn_execute_heals_existing_path_published_by_same_user
         assert result.svn_revision == 42
         assert provenance.await_args.args[1] == "alice"
         assert "Project: project" in provenance.await_args.args[2]
+        assert "Revision: 00001" in provenance.await_args.args[2]
 
 
 async def test_publish_to_svn_execute_maps_connection_error(

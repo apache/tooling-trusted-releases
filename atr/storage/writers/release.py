@@ -1242,6 +1242,7 @@ class ReleaseManager(CommitteeParticipant):
             f"Committee: {committee.key}\n"
             f"Project: {task_args.project_key!s}\n"
             f"Version: {task_args.version_key!s}\n"
+            f"Revision: {task_args.revision_number!s}\n"
             "Tool: ATR\n"
             f"Released by {task_args.asf_uid} via ATR"
         )
