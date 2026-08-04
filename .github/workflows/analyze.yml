@@ -76,6 +76,9 @@ jobs:
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         env:
           BEFORE: ${{ github.event.before }}
+          # Vulnerability audits are time-dependent and already run against the
+          # pushed tip above. A later commit in a push may fix an earlier one.
+          SKIP: pip-audit,uv-audit
         run: |
           if ! git rev-parse --verify --quiet "${BEFORE}^{commit}" > /dev/null; then
             echo "WARNING: previous tip ${BEFORE} is unavailable, skipping per-commit checks for this push"
