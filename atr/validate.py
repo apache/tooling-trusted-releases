@@ -24,6 +24,7 @@ from typing import Final, NamedTuple, TypeVar
 import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 
 
@@ -317,8 +318,8 @@ def project_cycle_match(p: sql.Project) -> Divergences:
         if not pattern:
             return True
         try:
-            compiled = re.compile(pattern)
-        except re.error:
+            compiled = validation.compile_project_pattern(pattern, captures=True)
+        except ValueError:
             return False
         # Capture group 1 carries the cycle name, so we need at least one
         return compiled.groups >= 1
@@ -384,8 +385,8 @@ def project_version_pattern(p: sql.Project) -> Divergences:
         if not pattern:
             return True
         try:
-            re.compile(pattern)
-        except re.error:
+            validation.compile_project_pattern(pattern)
+        except ValueError:
             return False
         return True
 

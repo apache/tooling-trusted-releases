@@ -31,10 +31,10 @@ dependencies = [
   "email-validator>=2.2.0,<3.0.0",
   "exarch>=0.2.7,<0.4",
   "gitignore-parser (>=0.1.12,<0.2.0)",
+  "google-re2>=1.1.20251105",
   "greenlet>=3.1.1,<4.0.0",
   "htpy (>=25.7.0,<26.0.0)",
   "hypercorn[uvloop]>=0.17,<1.0.0",
-  "hyperscan>=0.8.0",
   "jsonpatch>=1.33",
   "ldap3 (==2.10.2rc3)",
   "orjson>=3.11.9",
@@ -175,3 +175,6 @@ exclude-newer = "5 days"
 exclude-newer-package = { cryptography = "2026-08-04" }
 override-dependencies = ["cryptography>=50.0,<51.0.0"]
 required-version = ">=0.9.17"
+
+[tool.uv.extra-build-dependencies]
+google-re2 = ["pybind11==3.0.4"]

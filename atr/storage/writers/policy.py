@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import datetime
-import re
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlmodel
@@ -294,8 +293,8 @@ class ReleaseManager(CommitteeParticipant):
             cycle_match = form.cycle_match.strip() or None
             if cycle_match is not None:
                 try:
-                    compiled = re.compile(cycle_match)
-                except re.error as exc:
+                    compiled = models.validation.compile_project_pattern(cycle_match, captures=True)
+                except ValueError as exc:
                     raise ValueError(f"Invalid cycle_match regex: {exc}") from exc
                 if compiled.groups < 1:
                     raise ValueError("cycle_match must contain at least one capture group")
@@ -303,8 +302,8 @@ class ReleaseManager(CommitteeParticipant):
         version_pattern = form.version_pattern.strip() or None
         if version_pattern is not None:
             try:
-                re.compile(version_pattern)
-            except re.error as exc:
+                models.validation.compile_project_pattern(version_pattern)
+            except ValueError as exc:
                 raise ValueError(f"Invalid version_pattern regex: {exc}") from exc
 
         project.version_method = version_method

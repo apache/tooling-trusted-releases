@@ -34,13 +34,13 @@ def test_validate_ignore_pattern_allows_literal_lookaround_tokens() -> None:
     validation.validate_ignore_pattern("(?=a)")
 
 
-def test_validate_ignore_pattern_hyperscan_supported_constructs() -> None:
-    pattern = r"^(?i)apple(?-i)banana[[:digit:]]{2}\b(?#fruit)|^cherry\s+date$"
+def test_validate_ignore_pattern_re2_supported_constructs() -> None:
+    pattern = r"^(?i)apple(?-i)banana[[:digit:]]{2}\b|^cherry\s+date$"
     regex = validation.compile_ignore_pattern(pattern)
-    assert regex.search("APPLEbanana12 ") is True
-    assert regex.search("applebanana99-") is True
-    assert regex.search("cherry   date") is True
-    assert regex.search("cherry\tdate") is True
+    assert regex.search("APPLEbanana12 ") is not None
+    assert regex.search("applebanana99-") is not None
+    assert regex.search("cherry   date") is not None
+    assert regex.search("cherry\tdate") is not None
 
     assert regex.search("APPLEBANANA12 ") is None
     assert regex.search("applebanana123 ") is None

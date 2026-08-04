@@ -8,9 +8,11 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
 
 RUN apk update && \
     apk add --no-cache \
+      build-base \
       git \
       make \
-      patch
+      patch \
+      re2-dev
 
 RUN pip3 install uv==${UV_VERSION}
 
@@ -107,6 +109,7 @@ RUN apk update && \
       gpg-agent \
       icu-libs \
       openjdk17 \
+      re2 \
       rsync \
       subversion
 

@@ -177,3 +177,8 @@ async def test_public_resolver_rejects_non_global_addresses():
 
     with pytest.raises(aiohttp.ClientConnectionError):
         await resolver.resolve("internal.apache.org", 443)
+
+
+def test_version_key_error_rejects_too_long():
+    assert util.version_key_error("1" * safe.MAX_VERSION_LENGTH) is None
+    assert util.version_key_error("1" * (safe.MAX_VERSION_LENGTH + 1)) is not None

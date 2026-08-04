@@ -66,3 +66,8 @@ def test_safe_types_accept_valid_alpha(cls: type[safe.Alphanumeric]):
 def test_safe_version_types_accept_valid_version(cls: type[safe.Alphanumeric]):
     value = cls("0.1+def")
     assert str(value) == "0.1+def"
+
+
+def test_safe_version_types_reject_too_long():
+    with pytest.raises(ValueError, match="at most"):
+        safe.VersionKey("1" * (safe.MAX_VERSION_LENGTH + 1))

@@ -410,8 +410,8 @@ class EditVersionSchemeForm(form.Form):
         version_pattern = val.strip()
         if version_pattern:
             try:
-                re.compile(version_pattern)
-            except re.error as e:
+                validation.compile_project_pattern(version_pattern)
+            except ValueError as e:
                 raise ValueError(f"Version pattern is not a valid regex: {e}")
         return val
 
@@ -421,8 +421,8 @@ class EditVersionSchemeForm(form.Form):
         cycle_match = val.strip()
         if cycle_match:
             try:
-                compiled = re.compile(cycle_match)
-            except re.error as e:
+                compiled = validation.compile_project_pattern(cycle_match, captures=True)
+            except ValueError as e:
                 raise ValueError(f"Cycle match is not a valid regex: {e}")
             # capture group 1 is the cycle name
             if compiled.groups < 1:

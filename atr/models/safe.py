@@ -32,6 +32,8 @@ _PATH_CHARS: Final = frozenset(string.ascii_letters + string.digits + "-._+~/()"
 _OWNER_NAMESPACE_CHARS: Final = _ALPHANUM | frozenset(".")
 _VERSION_CHARS: Final = _ALPHANUM | frozenset(".+")
 
+MAX_VERSION_LENGTH: Final[int] = 128
+
 
 class SafeType:
     __slots__ = ("_value",)
@@ -310,6 +312,8 @@ class VersionKey(Alphanumeric):
         return _VERSION_CHARS
 
     def _additional_validations(self, value: str):
+        if len(value) > MAX_VERSION_LENGTH:
+            raise ValueError(f"A version should be at most {MAX_VERSION_LENGTH} characters")
         if value[0] not in _ALPHANUM:
             raise ValueError("A version should start with an alphanumeric character")
         if value[-1] not in _ALPHANUM:

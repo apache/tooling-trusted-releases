@@ -23,9 +23,9 @@ from typing import Final
 
 _ALLOWED_PACKAGES: Final = frozenset(
     {
-        "hyperscan",
         "pydantic",
         "pydantic_core",
+        "re2",
         "sqlalchemy",
         "sqlmodel",
     }

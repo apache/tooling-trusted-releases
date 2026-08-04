@@ -1680,6 +1680,8 @@ def version_key_error(version_key: str) -> str | None:
     """Check if the given version name is valid."""
     if version_key == "":
         return "Must not be empty"
+    if len(version_key) > safe.MAX_VERSION_LENGTH:
+        return f"Must be at most {safe.MAX_VERSION_LENGTH} characters"
     if version_key.lower() == "version":
         return "Must not be 'version'"
     if not re.match(r"^[a-zA-Z0-9]", version_key):

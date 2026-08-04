@@ -48,6 +48,7 @@ import atr.models.attestable as attestable
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.paths as paths
 import atr.shared.start as start
 import atr.storage as storage
@@ -341,7 +342,13 @@ def _validate_version(project: sql.Project, version: safe.VersionKey) -> None:
     # have the packaging library as a dependency, but it's Python specific.
     if version_key_error := util.version_key_error(str(version)):
         raise storage.AccessError(f'Invalid version name "{version!s}": {version_key_error}', status=400)
-    if (project.version_pattern is not None) and (not re.fullmatch(project.version_pattern, str(version))):
+    if project.version_pattern is None:
+        return
+    try:
+        pattern = validation.compile_project_pattern(project.version_pattern)
+    except ValueError as exc:
+        raise storage.AccessError(f"The project's version pattern is invalid: {exc}", status=400) from exc
+    if pattern.fullmatch(str(version)) is None:
         raise storage.AccessError(
             f'Version "{version!s}" does not match the project\'s version pattern',
             status=400,

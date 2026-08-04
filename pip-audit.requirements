@@ -126,6 +126,8 @@ frozenlist==1.8.0
     #   aiosignal
 gitignore-parser==0.1.13
     # via tooling-trusted-releases
+google-re2==1.1.20251105
+    # via tooling-trusted-releases
 greenlet==3.5.4
     # via
     #   sqlalchemy
@@ -146,8 +148,6 @@ hypercorn==0.18.0
     #   tooling-trusted-releases
 hyperframe==6.1.0
     # via h2
-hyperscan==0.8.2
-    # via tooling-trusted-releases
 identify==2.6.19
     # via pre-commit
 idna==3.18

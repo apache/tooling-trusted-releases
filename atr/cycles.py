@@ -25,13 +25,13 @@ via re.fullmatch; capture-group 1 is the cycle name.
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Final
 
 import semver
 
 import atr.models.calver as calver
 import atr.models.sql as sql
+import atr.models.validation as validation
 
 if TYPE_CHECKING:
     import datetime
@@ -55,7 +55,7 @@ def cycle_name_for_version(project: sql.Project, version: str) -> str:
     if project.cycle_match is None:
         return DEFAULT_CYCLE
 
-    match = re.fullmatch(project.cycle_match, version)
+    match = validation.compile_project_pattern(project.cycle_match, captures=True).fullmatch(version)
     if match is None:
         raise ValueError(f"Version {version!r} does not match cycle_match for project {project.key!r}")
 

@@ -17,7 +17,6 @@
 
 import dataclasses
 import datetime
-import re
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, Literal, Self, TypeVar
 
@@ -573,8 +572,8 @@ class ProjectConfigProjectArgs(schema.Strict):
             if not (isinstance(value, str) and value.strip()):
                 continue
             try:
-                compiled = re.compile(value.strip())
-            except re.error as exc:
+                compiled = validation.compile_project_pattern(value.strip(), captures=True)
+            except ValueError as exc:
                 raise ValueError(f"Invalid {field} regex: {exc}") from exc
             if (field == "cycle_match") and (compiled.groups < 1):
                 raise ValueError("cycle_match must contain at least one capture group")
