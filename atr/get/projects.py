@@ -1326,10 +1326,11 @@ async def _render_releases_tab(
             cycle_full = [r for r in cycle_released if not r.is_archived]
 
             cycle_has_dates = _cycle_has_dates(cycle)
-            # Archived releases aren't listed, but they still count here, or a cycle whose
-            # releases have all been archived would vanish from the page along with its dates
+            # A cycle with no releases is hidden, so this stays a list of releases and not of empty
+            # versions. Archived releases still count, so a cycle whose releases have all been archived
+            # keeps its place and its dates rather than vanishing
             cycle_has_releases = bool(cycle_drafts or cycle_candidates or cycle_previews or cycle_released)
-            if not (cycle_has_dates or cycle_has_releases or show_cycle_heading or can_edit_policy):
+            if not cycle_has_releases:
                 continue
 
             if show_cycle_heading:
@@ -1348,8 +1349,6 @@ async def _render_releases_tab(
                     project, cycle_drafts, cycle_candidates, cycle_previews, cycle_full, nested=show_cycle_heading
                 )
             )
-            if not cycle_has_releases and show_cycle_heading:
-                body.p(".text-muted.mb-4")["No releases."]
 
     return block.collect()
 
