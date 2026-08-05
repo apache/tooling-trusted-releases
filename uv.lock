@@ -1911,18 +1911,18 @@ wheels = [
 
 [[package]]
 name = "rpgp-py"
-version = "0.19.8"
+version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e9/3b/7d627a66b12066fc38edf517cba7558e6c1daa141a5a00a4735529e160aa/rpgp_py-0.19.8.tar.gz", hash = "sha256:968b73a9c4a6dff06c106945201b147413111f0cce48b8e5adf4ab9e86142d14", size = 131745, upload-time = "2026-06-13T10:34:07.892Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/07/761c1c03da215f1db06f63af56a10f700e7158b1676669324b236cbef935/rpgp_py-0.20.0.tar.gz", hash = "sha256:2a072023dfd034f914266e34b91d54b415565a12a2a177c23e720714c1ebf8a1", size = 144237, upload-time = "2026-07-23T22:48:29.735Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/cb/3d049b94d36c75f10fc6ff30aaa7a242c9d4ba8fc4b9064eb1427534916d/rpgp_py-0.19.8-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:3800b63bf0a7899f9f531a60d943902d56f8775f49a7c7af8c5dfa5b58f36c0b", size = 3542161, upload-time = "2026-06-13T10:33:56.639Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/80/e227c688d212a7f7f86e86957b204501c836ba7196c9f2d43607bb4b8f4e/rpgp_py-0.19.8-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:097b10c6b31c4fba71f71415723168f8dc73f7df7e756626ccea9f2e2e6d4bc7", size = 3301523, upload-time = "2026-06-13T10:33:58.035Z" },
-    { url = "https://files.pythonhosted.org/packages/64/d8/5248a999469edc8a67fcf35a4d7efcc40246412347179f2b8e8b3a54d2b8/rpgp_py-0.19.8-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3dbf89c162cc50e1b4a0ce2411978cdf79f64cfb2df72494ee41ad9a5552c28e", size = 3621544, upload-time = "2026-06-13T10:33:59.509Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/c2/c96e894b4986a9b49aa28ed99b54cda6eae7cb2675f6536ad7a54d863da9/rpgp_py-0.19.8-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f89a2dfa972840b5997a6246774e9c385d3f81a04d64eccb1ed479e280d137e3", size = 3750464, upload-time = "2026-06-13T10:34:00.834Z" },
-    { url = "https://files.pythonhosted.org/packages/66/b2/2341b1248d93c50130732d933031dacd474d990e8545c9f1c8826034bad1/rpgp_py-0.19.8-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:979fda6b9d33af2406a3341c377716dd488edb1ab391f30c24dcd245c9927b8d", size = 3819997, upload-time = "2026-06-13T10:34:02.852Z" },
-    { url = "https://files.pythonhosted.org/packages/56/81/2844751c10718bd773d00fbe653f037bf88ef78289b6f56483488c452373/rpgp_py-0.19.8-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:0d2152067d02ddcc623288f688953ba6a9d6a95818e3e72b5913b0f2e52b3170", size = 4031482, upload-time = "2026-06-13T10:34:04.213Z" },
-    { url = "https://files.pythonhosted.org/packages/79/26/06caaee58db0fcb16fdfdc16070ef535eb333d0219fa33def27df3f2d81b/rpgp_py-0.19.8-cp310-abi3-win32.whl", hash = "sha256:035ab197298cbb979ea784c27262bfcde90f544b8d8bd2cf9ce86ef8e235cde5", size = 3125027, upload-time = "2026-06-13T10:34:05.429Z" },
-    { url = "https://files.pythonhosted.org/packages/82/f5/cb03284487e6d14a7d4df280fde001e0effef6be1c8ca479d007c977ac37/rpgp_py-0.19.8-cp310-abi3-win_amd64.whl", hash = "sha256:6ca6d22f98baa175faad7bc92c21c6ebcd64be6fd499524320dcb560ea31001f", size = 3391454, upload-time = "2026-06-13T10:34:06.683Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/10/e14898866810360e5394d10997660500e080224a57b8df1a95a9b30d54d7/rpgp_py-0.20.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:618354b938c629661f9a19e290d06dbd41c20ca908cf47058c25aa629c7ccb82", size = 3125475, upload-time = "2026-07-23T22:48:18.913Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/bd/45bbe117b7a56e1ab8cd6742becaadffc879f460be6a89d16d0fd9765ecc/rpgp_py-0.20.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:63286e891a0910f9d2e407b94cb21b274dcdc5d3f1e60d101b884667ce0a3c70", size = 2965414, upload-time = "2026-07-23T22:48:20.392Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/5a/480757bf4495abd7649c35580aa59ada149c57ae386349ad8eab08d8ad6d/rpgp_py-0.20.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:fca326cbcbe0102bba1c2628ccaee2d75229fe50195c90bb646d79a55a330b0e", size = 3284497, upload-time = "2026-07-23T22:48:21.714Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/f9/d53041547713dfec33f035d029e15b4127c4d02dcab8fbeb4af8795fd16e/rpgp_py-0.20.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:499c28ba70b2e2da214e9463369a6d929062e8e7037447b6d45a9d2663f3ba43", size = 3322931, upload-time = "2026-07-23T22:48:23.104Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/a1/b122189c65bce7bdd60d1e2861b663c32d583f6c259c1ddd1da56d0aee50/rpgp_py-0.20.0-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:95881d16420949c6b893bff60276aa5da0683ae86e4cab98506b54f7b293c8f2", size = 3456963, upload-time = "2026-07-23T22:48:24.652Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/02/7f953e4c2b681c917f1d27aa204042b9552a9eb674d7cefa0233b2302eac/rpgp_py-0.20.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:659475b9ba64cc42596e2bfa953f9cb7fd271486b2e2a957d3a7660baa6712d5", size = 3633922, upload-time = "2026-07-23T22:48:26.004Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/7c/ad594a2810bb7093958d0ca9a4693db773c775f833510435e3a49ab33274/rpgp_py-0.20.0-cp310-abi3-win32.whl", hash = "sha256:f4802be4265103aa3ac5ac7882ac7388fe4b3bd3ad2257500f6ab5a8f2879637", size = 2832232, upload-time = "2026-07-23T22:48:27.321Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/3f/868a9f090ecec6ec26d52522aab0f33e25184ec48a4ce260cf834fda48be/rpgp_py-0.20.0-cp310-abi3-win_amd64.whl", hash = "sha256:278d002db1a91a709f5fdc423e06adba0852e1ed2ad363ecb1b70decc9e80516", size = 3052667, upload-time = "2026-07-23T22:48:28.669Z" },
 ]
 
 [[package]]
@@ -2178,7 +2178,7 @@ requires-dist = [
     { name = "quart-wtforms", specifier = ">=1.0.3,<2.0.0" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "rich", specifier = ">=14.0.0" },
-    { name = "rpgp-py", specifier = "==0.19.8" },
+    { name = "rpgp-py", specifier = "==0.20.0" },
     { name = "semver", specifier = ">=3.0.4" },
     { name = "sqlmodel", specifier = ">=0.0.24,<0.1.0" },
     { name = "ssh-audit", specifier = ">=3.3.0" },

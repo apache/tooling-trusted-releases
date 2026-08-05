@@ -418,14 +418,14 @@ async def test_ensure_uses_cached_email_lookup_for_bulk_import() -> None:
 
 
 def test_key_expires_at_uses_v4_user_binding_expiration() -> None:
-    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
-    binding = next(iter(key.user_bindings()))
-    binding_signature = binding.signatures[0]
+    key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    user = next(iter(key.details.users))
+    binding_signature = user.signatures[0]
 
     expires = pgp.key_expires_at(key)
 
     assert expires == datetime.datetime.fromtimestamp(
-        key.created_at + binding_signature.key_expiration_seconds,
+        key.created_at + binding_signature.key_expiration_time(),
         datetime.UTC,
     )
 
@@ -442,7 +442,7 @@ def test_key_length_returns_dsa_bits() -> None:
 
 
 def test_certificate_records_its_latest_self_signature() -> None:
-    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
     data = MockData(None, committees_after_commit={})
     writer, _write, _write_as = _make_foundation_committer_with_audit(data)
 
@@ -453,21 +453,21 @@ def test_certificate_records_its_latest_self_signature() -> None:
 
     assert latest_self_signature is not None
     assert key_model.latest_self_signature == datetime.datetime.fromtimestamp(
-        latest_self_signature.creation_time, datetime.UTC
+        latest_self_signature.created(), datetime.UTC
     )
 
 
 def test_expiry_is_recorded_against_the_signing_key_not_the_certificate() -> None:
-    key, _ = keys_writer.openpgp.PublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
-    binding = next(iter(key.user_bindings()))
-    binding_signature = binding.signatures[0]
+    key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_V4_EXPIRING_KEY_ASC)
+    user = next(iter(key.details.users))
+    binding_signature = user.signatures[0]
 
     # Expiry is per key, so it belongs to the SigningKey rows and not to the certificate above them
     assert not hasattr(sql.SigningCertificate, "expires")
     primary = next(facts for facts in pgp.signing_key_facts(key) if facts.is_primary)
 
     assert primary.expires == datetime.datetime.fromtimestamp(
-        key.created_at + binding_signature.key_expiration_seconds, datetime.UTC
+        key.created_at + binding_signature.key_expiration_time(), datetime.UTC
     )
 
 

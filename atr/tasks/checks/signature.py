@@ -171,7 +171,7 @@ def _check_core_logic_verify_signature(
     except OSError as e:
         raise task.CheckRetryableError("Unable to read the signature file", {"error": str(e)}) from e
     try:
-        signature, _ = openpgp.DetachedSignature.from_armor(armored.decode("utf-8"))
+        signature, _ = openpgp.composed.DetachedSignature.from_armor(armored.decode("utf-8"))
     except Exception as e:
         return {
             "verified": False,
@@ -186,7 +186,7 @@ def _check_core_logic_verify_signature(
                 key_has_apache_uid=False,
             ),
         }
-    signature_info = signature.signature_info()
+    signature_info = signature.signature
     try:
         with open(artifact_path, "rb"):
             pass
@@ -206,8 +206,8 @@ def _check_core_logic_verify_signature(
         }
     except OSError as e:
         raise task.CheckRetryableError("Unable to read the artifact file", {"error": str(e)}) from e
-    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
-    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
+    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprint()}
+    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_id()}
     candidate_keys = [key for key in public_keys if _key_matches_signature(key, issuer_fingerprints, issuer_key_ids)]
 
     matched_key = _first_verifying_key(signature, candidate_keys, artifact_path)
@@ -258,9 +258,9 @@ def _check_core_logic_verify_signature(
             "debug_info": debug_info,
         }
 
-    key_id = signature_info.issuer_key_ids[0] if signature_info.issuer_key_ids else matched_key.key_id
+    key_id = signature_info.issuer_key_id()[0] if signature_info.issuer_key_id() else matched_key.key_id
     username = _signer_username(matched_key, signature_info) or "Unknown"
-    timestamp = signature_info.creation_time
+    timestamp = signature_info.created()
     return {
         "verified": True,
         "key_id": key_id,
@@ -278,8 +278,8 @@ def _check_core_logic_verify_signature(
 
 def _debug_info(
     *,
-    key: openpgp.PublicKey | None,
-    signature_info: openpgp.SignatureInfo | None,
+    key: openpgp.composed.SignedPublicKey | None,
+    signature_info: openpgp.packet.Signature | None,
     status: str,
     valid: bool,
     num_committee_keys: int,
@@ -290,10 +290,12 @@ def _debug_info(
     # key_id below names the issuing key, so the fingerprint beside it has to name the same one
     fingerprint = signing_key_fingerprint or certificate_fingerprint
     key_id = key.key_id if (key is not None) else "Not available"
-    creation_time = signature_info.creation_time if (signature_info is not None) else None
+    creation_time = signature_info.created() if (signature_info is not None) else None
     username = _signer_username(key, signature_info) if ((key is not None) and (signature_info is not None)) else None
     return {
-        "key_id": (signature_info.issuer_key_ids[0] if (signature_info and signature_info.issuer_key_ids) else key_id),
+        "key_id": (
+            signature_info.issuer_key_id()[0] if (signature_info and signature_info.issuer_key_id()) else key_id
+        ),
         "fingerprint": fingerprint,
         "pubkey_fingerprint": certificate_fingerprint,
         "creation_date": creation_time if (creation_time is not None) else "Not available",
@@ -306,18 +308,17 @@ def _debug_info(
         "stderr": "Not available",
         "num_committee_keys": num_committee_keys,
         "key_has_apache_uid": key_has_apache_uid,
-        "hash_algorithm": signature_info.hash_algorithm if (signature_info is not None) else "Not available",
-        "signature_type": signature_info.signature_type if (signature_info is not None) else "Not available",
-        "public_key_algorithm": (
-            signature_info.public_key_algorithm if (signature_info is not None) else "Not available"
-        ),
+        "hash_algorithm": signature_info.hash_alg() if (signature_info is not None) else "Not available",
+        "signature_type": signature_info.typ() if (signature_info is not None) else "Not available",
+        # The signature no longer carries its own algorithm, so this reports the certificate's instead
+        "public_key_algorithm": (key.public_key_algorithm if (key is not None) else "Not available"),
     }
 
 
 def _expired_key_result(
     *,
-    matched_key: openpgp.PublicKey,
-    signature_info: openpgp.SignatureInfo,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
     expires: datetime.datetime,
     num_committee_keys: int,
     key_has_apache_uid: bool,
@@ -342,10 +343,10 @@ def _expired_key_result(
 
 
 def _first_verifying_key(
-    signature: openpgp.DetachedSignature,
-    candidate_keys: list[openpgp.PublicKey],
+    signature: openpgp.composed.DetachedSignature,
+    candidate_keys: list[openpgp.composed.SignedPublicKey],
     artifact_path: str,
-) -> openpgp.PublicKey | None:
+) -> openpgp.composed.SignedPublicKey | None:
     for candidate_key in candidate_keys:
         try:
             signature.verify_file(candidate_key, artifact_path)
@@ -357,7 +358,7 @@ def _first_verifying_key(
 
 
 def _key_matches_signature(
-    key: openpgp.PublicKey,
+    key: openpgp.composed.SignedPublicKey,
     issuer_fingerprints: set[str],
     issuer_key_ids: set[str],
 ) -> bool:
@@ -365,20 +366,20 @@ def _key_matches_signature(
         return True
 
     key_fingerprints = {key.fingerprint.lower()}
-    key_fingerprints.update(subkey.fingerprint.lower() for subkey in key.subkey_bindings())
+    key_fingerprints.update(subkey.key.fingerprint.lower() for subkey in key.public_subkeys)
     if key_fingerprints.intersection(issuer_fingerprints):
         return True
 
     key_ids = {key.key_id.lower()}
-    key_ids.update(subkey.key_id.lower() for subkey in key.subkey_bindings())
+    key_ids.update(subkey.key.key_id.lower() for subkey in key.public_subkeys)
     return bool(key_ids.intersection(issuer_key_ids))
 
 
 def _key_refusal_result(
     *,
     status: pgp.SigningKeyStatus,
-    matched_key: openpgp.PublicKey,
-    signature_info: openpgp.SignatureInfo,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
     num_committee_keys: int,
     key_has_apache_uid: bool,
 ) -> dict[str, Any] | None:
@@ -417,8 +418,8 @@ def _key_refusal_result(
 
 def _not_signing_key_result(
     *,
-    matched_key: openpgp.PublicKey,
-    signature_info: openpgp.SignatureInfo,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
     num_committee_keys: int,
     key_has_apache_uid: bool,
 ) -> dict[str, Any]:
@@ -441,11 +442,11 @@ def _not_signing_key_result(
     }
 
 
-def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.PublicKey]:
-    public_keys: list[openpgp.PublicKey] = []
+def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.composed.SignedPublicKey]:
+    public_keys: list[openpgp.composed.SignedPublicKey] = []
     for ascii_armored_key in ascii_armored_keys:
         try:
-            public_key, _ = openpgp.PublicKey.from_armor(ascii_armored_key)
+            public_key, _ = openpgp.composed.SignedPublicKey.from_armor(ascii_armored_key)
         except Exception as e:
             log.warning(f"Failed to parse committee public key: {e}")
             continue
@@ -477,8 +478,8 @@ async def _record_uploader_concern(
 
 def _revoked_key_result(
     *,
-    matched_key: openpgp.PublicKey,
-    signature_info: openpgp.SignatureInfo,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
     num_committee_keys: int,
     key_has_apache_uid: bool,
 ) -> dict[str, Any]:
@@ -501,12 +502,13 @@ def _revoked_key_result(
     }
 
 
-def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureInfo) -> str | None:
-    if signature_info.signer_user_id:
-        return signature_info.signer_user_id
-    for binding in key.user_bindings():
-        if binding.is_primary:
-            return binding.user_id
+def _signer_username(key: openpgp.composed.SignedPublicKey, signature_info: openpgp.packet.Signature) -> str | None:
+    signer_user_id = signature_info.signers_userid()
+    if signer_user_id:
+        return signer_user_id
+    for user in key.details.users:
+        if user.is_primary:
+            return user.user_id
     if key.user_ids:
         return key.user_ids[0]
     return None
@@ -514,8 +516,8 @@ def _signer_username(key: openpgp.PublicKey, signature_info: openpgp.SignatureIn
 
 def _unidentified_key_result(
     *,
-    matched_key: openpgp.PublicKey,
-    signature_info: openpgp.SignatureInfo,
+    matched_key: openpgp.composed.SignedPublicKey,
+    signature_info: openpgp.packet.Signature,
     num_committee_keys: int,
     key_has_apache_uid: bool,
 ) -> dict[str, Any]:

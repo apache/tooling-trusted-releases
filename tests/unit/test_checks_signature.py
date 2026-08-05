@@ -394,11 +394,11 @@ async def test_check_records_a_concern_when_the_signer_did_not_upload(
 
 
 def test_key_matches_signature_accepts_subkey_issuer_metadata() -> None:
-    public_key, _ = openpgp.PublicKey.from_armor(_EMBEDDED_PUBLIC_KEY_ASC)
-    signature, _ = openpgp.DetachedSignature.from_armor(_EMBEDDED_DETACHED_SIGNATURE_ASC)
-    signature_info = signature.signature_info()
-    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
-    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
+    public_key, _ = openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_PUBLIC_KEY_ASC)
+    signature, _ = openpgp.composed.DetachedSignature.from_armor(_EMBEDDED_DETACHED_SIGNATURE_ASC)
+    signature_info = signature.signature
+    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprint()}
+    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_id()}
 
     assert signature_check._key_matches_signature(public_key, issuer_fingerprints, issuer_key_ids)
 

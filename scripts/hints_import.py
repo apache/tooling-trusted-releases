@@ -96,7 +96,7 @@ def key_packet_ids(body: bytes) -> set[str]:
 
 
 def lenient_member_ids(armored: str) -> set[str]:
-    key, _ = openpgp.PublicKey.from_armor(armored)
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(armored)
     return util.openpgp_member_ids(key)
 
 

@@ -99,7 +99,7 @@ def _algorithm_name(algorithm: int) -> str:
     return _ALGORITHM_NAMES.get(algorithm, str(algorithm))
 
 
-def _key_length(key: openpgp.PublicKey) -> int:
+def _key_length(key: openpgp.composed.SignedPublicKey) -> int:
     bits = pgp.public_params_bits(key.public_params)
     if bits is None:
         raise ValueError(f"Key size is not available for algorithm {key.public_key_algorithm}")
@@ -111,8 +111,8 @@ def _block_downgrade_reason(stored_block: str, incoming_block: str) -> str | Non
     # effective state back: no revocation dropped, no regression to an older self-signature. A minimised
     # re-export keeps both and passes. A block we can't parse can't be judged, so allow it through
     try:
-        stored_key, _ = openpgp.PublicKey.from_armor(stored_block)
-        incoming_key, _ = openpgp.PublicKey.from_armor(incoming_block)
+        stored_key, _ = openpgp.composed.SignedPublicKey.from_armor(stored_block)
+        incoming_key, _ = openpgp.composed.SignedPublicKey.from_armor(incoming_block)
     except Exception:
         return None
     dropped = pgp.revocations_dropped(stored_key, incoming_key)
@@ -129,7 +129,7 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
     """The SigningKey rows a certificate's block describes, or None if the block is for another key."""
     if isinstance(block, bytes):
         block = block.decode("utf-8", errors="replace")
-    key, _ = openpgp.PublicKey.from_armor(block)
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(block)
     if key.fingerprint.lower() != certificate_fingerprint.lower():
         return None
     return [
@@ -257,7 +257,7 @@ class FoundationCommitter(GeneralPublic):
 
     def public_key_model(
         self,
-        key: openpgp.PublicKey,
+        key: openpgp.composed.SignedPublicKey,
         ldap_data: cache.EmailUidLookup,
         original_key_block: str | None = None,
     ) -> sql.SigningCertificate:
@@ -265,7 +265,6 @@ class FoundationCommitter(GeneralPublic):
         asf_uid = self.__uids_asf_uid(uids, ldap_data)
         if not uids:
             raise ValueError("No UIDs found in key")
-
         # Use the original key block if available
         ascii_armored = original_key_block if original_key_block else key.to_armored()
 
@@ -505,7 +504,7 @@ class FoundationCommitter(GeneralPublic):
         return key
 
     def __block_model_create(self, key_block: str, ldap_data: cache.EmailUidLookup) -> datatypes.Key:
-        public_key, _ = openpgp.PublicKey.from_armor(key_block)
+        public_key, _ = openpgp.composed.SignedPublicKey.from_armor(key_block)
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
         _validate_key_strength(public_key)
         return datatypes.Key(
@@ -927,7 +926,7 @@ class CommitteeParticipant(FoundationCommitter):
 
     def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
         try:
-            public_key, _ = openpgp.PublicKey.from_armor(key_block)
+            public_key, _ = openpgp.composed.SignedPublicKey.from_armor(key_block)
         except Exception as e:
             raise ValueError(f"Error loading OpenPGP key block: {e}") from e
         key_list = []
@@ -1304,7 +1303,7 @@ class FoundationAdmin(CommitteeMember):
         return (num_unlinked, num_deleted, publication)
 
 
-def _validate_key_strength(key: openpgp.PublicKey) -> None:
+def _validate_key_strength(key: openpgp.composed.SignedPublicKey) -> None:
     """Raise ValueError if the key is recently-generated and does not meet the minimum cryptographic strength."""
     algorithm = _algorithm_id(key.public_key_algorithm)
     length = _key_length(key)

@@ -169,8 +169,8 @@ async def test_match_release_no_match_wrong_hash(tmp_path: pathlib.Path) -> None
 
 @pytest.mark.asyncio
 async def test_resolve_signing_key_from_signature_rejects_mismatched_issuer_metadata() -> None:
-    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
-    subkey = next(iter(parsed_key.subkey_bindings()))
+    parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    subkey = next(iter(parsed_key.public_subkeys))
     stored = SimpleNamespace(
         fingerprint=parsed_key.fingerprint.lower(),
         ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
@@ -182,14 +182,14 @@ async def test_resolve_signing_key_from_signature_rejects_mismatched_issuer_meta
         await atr.api._resolve_signing_key_from_signature(
             db_data,
             issuer_fingerprints={parsed_key.fingerprint.lower()},
-            issuer_key_ids={subkey.key_id.lower()},
+            issuer_key_ids={subkey.key.key_id.lower()},
         )
 
 
 @pytest.mark.asyncio
 async def test_resolve_signing_key_from_signature_returns_subkey_fingerprint() -> None:
-    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
-    subkey = next(iter(parsed_key.subkey_bindings()))
+    parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    subkey = next(iter(parsed_key.public_subkeys))
     stored = SimpleNamespace(
         fingerprint=parsed_key.fingerprint.lower(),
         ascii_armored_key=_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC,
@@ -200,11 +200,11 @@ async def test_resolve_signing_key_from_signature_returns_subkey_fingerprint() -
     resolved, signer_fingerprint = await atr.api._resolve_signing_key_from_signature(
         db_data,
         issuer_fingerprints=set(),
-        issuer_key_ids={subkey.key_id.lower()},
+        issuer_key_ids={subkey.key.key_id.lower()},
     )
 
     assert resolved is stored
-    assert signer_fingerprint == subkey.fingerprint.lower()
+    assert signer_fingerprint == subkey.key.fingerprint.lower()
 
 
 @pytest.mark.asyncio
@@ -407,7 +407,7 @@ async def _call_signature_provenance(
     monkeypatch: pytest.MonkeyPatch,
     matched: bool,
 ) -> tuple[dict, int]:
-    parsed_key, _ = atr.api.openpgp.PublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
     committee = SimpleNamespace(key="example", is_podling=False)
     stored = SimpleNamespace(
         fingerprint=parsed_key.fingerprint.lower(),
@@ -415,16 +415,16 @@ async def _call_signature_provenance(
         committees=[committee],
     )
     signature = SimpleNamespace(
-        signature_info=lambda: SimpleNamespace(
-            issuer_fingerprints={parsed_key.fingerprint.lower()},
-            issuer_key_ids=set(),
+        signature=SimpleNamespace(
+            issuer_fingerprint=lambda: {parsed_key.fingerprint.lower()},
+            issuer_key_id=lambda: set(),
         )
     )
     matched_committees = [committee] if matched else []
 
     monkeypatch.setattr(atr.api.db, "session", _mock_session_factory(MockKeyDBSession([stored])))
     monkeypatch.setattr(
-        atr.api.openpgp,
+        atr.api.openpgp.composed,
         "DetachedSignature",
         SimpleNamespace(from_armor=lambda _text: (signature, "")),
     )

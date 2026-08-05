@@ -1095,11 +1095,11 @@ async def number_of_release_files(release: sql.Release) -> int:
     return count
 
 
-def openpgp_member_ids(key: openpgp.PublicKey) -> set[str]:
+def openpgp_member_ids(key: openpgp.composed.SignedPublicKey) -> set[str]:
     member_ids = {key.fingerprint.lower(), key.key_id.lower()}
-    for binding in key.subkey_bindings():
-        member_ids.add(binding.fingerprint.lower())
-        member_ids.add(binding.key_id.lower())
+    for subkey in key.public_subkeys:
+        member_ids.add(subkey.key.fingerprint.lower())
+        member_ids.add(subkey.key.key_id.lower())
     return member_ids
 
 

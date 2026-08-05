@@ -1618,10 +1618,10 @@ async def signature_provenance(
 
     signing_keys: list[models.api.SignatureProvenanceKey] = []
     signature_asc_data = data.signature_asc_text
-    sig, _ = openpgp.DetachedSignature.from_armor(signature_asc_data)
-    signature_info = sig.signature_info()
-    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprints}
-    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_ids}
+    sig, _ = openpgp.composed.DetachedSignature.from_armor(signature_asc_data)
+    signature_info = sig.signature
+    issuer_fingerprints = {fingerprint.lower() for fingerprint in signature_info.issuer_fingerprint()}
+    issuer_key_ids = {key_id.lower() for key_id in signature_info.issuer_key_id()}
     if (not issuer_fingerprints) and (not issuer_key_ids):
         raise exceptions.NotFound("No signer fingerprint or key id found")
     async with db.session() as db_data:
@@ -2276,16 +2276,18 @@ async def _match_release(release_directory: safe.StatePath, data: models.api.Sig
 
 
 def _matched_issuer_fingerprint(
-    key: openpgp.PublicKey,
+    key: openpgp.composed.SignedPublicKey,
     issuer_fingerprints: set[str],
     issuer_key_ids: set[str],
 ) -> str | None:
     key_fingerprint = key.fingerprint.lower()
     if _issuer_matches_component(key_fingerprint, key.key_id.lower(), issuer_fingerprints, issuer_key_ids):
         return key_fingerprint
-    for subkey in key.subkey_bindings():
-        subkey_fingerprint = subkey.fingerprint.lower()
-        if _issuer_matches_component(subkey_fingerprint, subkey.key_id.lower(), issuer_fingerprints, issuer_key_ids):
+    for subkey in key.public_subkeys:
+        subkey_fingerprint = subkey.key.fingerprint.lower()
+        if _issuer_matches_component(
+            subkey_fingerprint, subkey.key.key_id.lower(), issuer_fingerprints, issuer_key_ids
+        ):
             return subkey_fingerprint
     return None
 
@@ -2335,7 +2337,7 @@ async def _resolve_signing_key_from_signature(
         if isinstance(armored, bytes):
             armored = armored.decode("utf-8", errors="replace")
         try:
-            parsed, _ = openpgp.PublicKey.from_armor(armored)
+            parsed, _ = openpgp.composed.SignedPublicKey.from_armor(armored)
         except Exception as e:
             log.info(f"Failed to parse key {stored.fingerprint}: {e}")
             continue
