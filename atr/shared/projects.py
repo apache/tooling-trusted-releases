@@ -301,6 +301,7 @@ class EditMetadataForm(form.Form):
     homepage: form.OptionalURL = form.label(
         "Homepage",
         "Project website URL.",
+        required=True,
     )
     lifecycle_page: form.OptionalURL = form.label(
         "Lifecycle page",
@@ -309,6 +310,7 @@ class EditMetadataForm(form.Form):
     download_page: form.OptionalURL = form.label(
         "Download page",
         "URL of the project's official download page.",
+        required=True,
     )
     bug_database: form.OptionalURL = form.label(
         "Bug database",
@@ -323,6 +325,7 @@ class EditMetadataForm(form.Form):
         "Repository URLs, one per line.",
         widget=form.Widget.TEXTAREA,
         rows=3,
+        required=True,
     )
     standards: form.URIList = form.label(
         "Standards",

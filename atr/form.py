@@ -160,11 +160,12 @@ def flash_error_summary(errors: list[pydantic_core.ErrorDetails], flash_data: di
 def json_suitable(field_value: Any) -> Any:
     if isinstance(field_value, datastructures.FileStorage):
         return field_value.filename
-    elif isinstance(field_value, list):
-        if all(isinstance(f, datastructures.FileStorage) for f in field_value):
-            return [f.filename for f in field_value]
-        else:
-            return field_value
+    # A model-level validation error carries the whole submitted mapping as its input, so a file
+    # nested inside a dict or list has to be reduced to its name too, not just one at the top level
+    if isinstance(field_value, dict):
+        return {key: json_suitable(value) for key, value in field_value.items()}
+    if isinstance(field_value, list):
+        return [json_suitable(item) for item in field_value]
     return field_value
 
 
@@ -176,6 +177,7 @@ def label(
     widget: Widget | None = None,
     max_length: int | None = None,
     readonly: bool = False,
+    required: bool = False,
     **kwargs,
 ) -> Any:
     extra: dict[str, Any] = {}
@@ -184,6 +186,10 @@ def label(
     if documentation is not None:
         extra["documentation"] = documentation
     extra["readonly"] = readonly
+    # A field with no default is already marked required from is_required. This flag is for the fields
+    # that carry an empty default - a list, an optional - but a validator still makes them mandatory
+    if required:
+        extra["required"] = True
     if len(kwargs) > 0:
         extra.update(kwargs)
     return pydantic.Field(default, description=description, json_schema_extra=extra, max_length=max_length)
@@ -877,6 +883,11 @@ def _render_field_value(
     return field_value
 
 
+def _label_marks_required(field_info: pydantic.fields.FieldInfo) -> bool:
+    extra = field_info.json_schema_extra
+    return isinstance(extra, dict) and bool(extra.get("required"))
+
+
 def _render_row(  # noqa: C901
     field_info: pydantic.fields.FieldInfo,
     field_name: str,
@@ -926,7 +937,15 @@ def _render_row(  # noqa: C901
 
     label_classes = f"{label_col_class} col-form-label text-sm-end"
     label_classes_with_error = f"{label_classes} text-danger" if has_flash_error else label_classes
-    label_elem = htpy.label(for_=field_name, class_=label_classes_with_error)[label_text]
+    label_content: list[Any] = [label_text]
+    # A field with no default is required, but a collection type carries an empty default even when a
+    # validator makes it mandatory, so `required=True` on the label covers what is_required can't see
+    if is_required or _label_marks_required(field_info):
+        # The asterisk is hidden from screen readers, which pick the requirement up from the
+        # visually-hidden note beside it instead
+        label_content.append(htm.span(".text-danger.ms-1", aria_hidden="true")["*"])
+        label_content.append(htm.span(".visually-hidden")[" (required)"])
+    label_elem = htpy.label(for_=field_name, class_=label_classes_with_error)[label_content]
 
     widget_elem = _render_widget(
         field_name=field_name,

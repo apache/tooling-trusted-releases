@@ -56,6 +56,7 @@ class AddOpenPGPKeyForm(form.Form):
         "Associating your key with a committee adds it to that committee's public KEYS file on the"
         " ASF distribution site, which ATR and downstream users rely on to verify the signatures on its"
         " releases. Associate a key with a committee when you sign releases for it.",
+        required=True,
     )
 
     @pydantic.model_validator(mode="after")
