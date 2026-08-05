@@ -566,12 +566,21 @@ def project_order_key(project: sql.Project, latest_release: datetime.datetime | 
 
 async def project_release_counts(data: db.Session) -> dict[str, tuple[int, int]]:
     via = sql.validate_instrumented_attribute
-    non_draft_case = sqlalchemy.case((via(sql.Release.phase) != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, 1), else_=0)
+    active_case = sqlalchemy.case(
+        (
+            sqlalchemy.and_(
+                via(sql.Release.phase) != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+                via(sql.Release.is_archived).is_(False),
+            ),
+            1,
+        ),
+        else_=0,
+    )
     query = sqlmodel.select(
-        sql.Release.project_key, sqlalchemy.func.count(), sqlalchemy.func.sum(non_draft_case)
+        sql.Release.project_key, sqlalchemy.func.count(), sqlalchemy.func.sum(active_case)
     ).group_by(via(sql.Release.project_key))
     result = await data.execute(query)
-    return {key: (total, non_draft) for key, total, non_draft in result.all()}
+    return {key: (total, active) for key, total, active in result.all()}
 
 
 async def release_completed_svn_publish_task(

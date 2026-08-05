@@ -188,7 +188,7 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
             continue
         if project.committee and committee_project_counts[str(project.committee.key)] <= 1:
             continue
-        total_releases, non_draft_releases = release_counts.get(str(project.key), (0, 0))
+        total_releases, active_releases = release_counts.get(str(project.key), (0, 0))
         if total_releases == 0:
             action_forms[str(project.key)] = await form.render(
                 model_cls=shared.projects.DeleteSelectedProject,
@@ -203,7 +203,7 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
                     " ready to delete only if the vote passes, and you must then return to complete it."
                 ),
             )
-        elif non_draft_releases == 0:
+        elif active_releases == 0:
             action_forms[str(project.key)] = await form.render(
                 model_cls=shared.projects.ArchiveSelectedProject,
                 action=util.as_url(post.projects.archive),
@@ -215,7 +215,7 @@ async def projects(session: web.Committer, _projects: Literal["projects"]) -> st
                 confirm=(
                     "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
                     " ready to archive only if the vote passes, and you must then return to complete it, which"
-                    " deletes the draft releases and retires the project."
+                    " deletes any draft releases and retires the project."
                 ),
             )
 
@@ -553,7 +553,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             ),
             empty=True,
         )
-    elif all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in releases):
+    elif not any((r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived) for r in releases):
         delete_form = await form.render(
             model_cls=shared.projects.ArchiveSelectedProject,
             action=util.as_url(post.projects.archive),
@@ -565,7 +565,7 @@ async def _delete_form(project: sql.Project) -> htm.Element | None:
             confirm=(
                 "This starts a binding CAP approval vote by the committee PMC. ATR will mark the project"
                 " ready to archive only if the vote passes, and you must then return to complete it, which"
-                " deletes the draft releases and retires the project."
+                " deletes any draft releases and retires the project."
             ),
         )
     return delete_form

@@ -188,8 +188,11 @@ def _action_eligibility_error(
         return None
     if (not completing) and (not releases):
         return f"Project '{project.key}' has no releases to archive."
-    if not all(r.phase == sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT for r in releases):
-        return f"Project '{project.key}' has non-draft releases and cannot be archived."
+    active_releases = [
+        r for r in releases if (r.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT) and (not r.is_archived)
+    ]
+    if active_releases:
+        return f"Project '{project.key}' has active releases and cannot be archived."
     if not completing:
         return None
     new_drafts = [r for r in releases if (requested_at is None) or (r.created > requested_at)]
