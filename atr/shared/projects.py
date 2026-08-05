@@ -297,7 +297,7 @@ class EditMetadataForm(form.Form):
         prefix="Apache",
     )
     description: str = form.label(description="Project description", widget=form.Widget.TEXTAREA)
-    short_description: str = form.label(description="Short description", widget=form.Widget.TEXT)
+    short_description: str = form.label(description="Short description", widget=form.Widget.TEXT, default="")
     homepage: form.OptionalURL = form.label(
         "Homepage",
         "Project website URL.",
