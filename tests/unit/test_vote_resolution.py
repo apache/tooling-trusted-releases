@@ -108,14 +108,40 @@ async def test_cancel_form_keeps_hidden_result_with_partial_defaults(
 async def test_cancel_form_overrides_tabulated_result_before_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    release = _candidate_release()
+    release.project.policy_finish_vote_template = "The vote on {{PROJECT_NAME}} {{VERSION}} {{OUTCOME}}."
     _context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
         monkeypatch,
+        release=release,
         pass_fail_allowed=False,
         vote_end=datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC),
     )
 
     defaults = form_render.call_args.kwargs["defaults"]
+    assert defaults["email_body"] == "The vote on Project 1.0.0 was cancelled."
     assert defaults["vote_result"] == "Cancelled"
+
+
+@pytest.mark.parametrize("vote_mode", [sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED])
+@pytest.mark.asyncio
+async def test_resolve_page_defers_selectable_outcome_to_post(
+    monkeypatch: pytest.MonkeyPatch,
+    vote_mode: sql.VoteMode,
+) -> None:
+    release = _candidate_release()
+    release.vote_mode = vote_mode
+    release.effective_vote_mode = vote_mode
+    release.release_policy = SimpleNamespace(vote_mode=vote_mode)
+    release.current_vote_seq = 1
+    release.project.policy_finish_vote_template = "The vote on {{PROJECT_NAME}} {{VERSION}} {{OUTCOME}}."
+
+    _context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        release=release,
+    )
+
+    defaults = form_render.call_args.kwargs["defaults"]
+    assert defaults["email_body"] == "The vote on Project 1.0.0 {{OUTCOME}}."
 
 
 @pytest.mark.asyncio

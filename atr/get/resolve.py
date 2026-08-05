@@ -206,7 +206,6 @@ async def selected(  # noqa: C901
             thread_id=thread_id,
             podling_thread_id=release.podling_thread_id,
         )
-        outcome = "passed" if trusted_passed else "failed"
     elif (not is_trusted_mode) and (details is not None) and (thread_id is not None):
         atr_tally = tabulate.email_tally_block(
             details.votes,
@@ -216,10 +215,9 @@ async def selected(  # noqa: C901
             non_binding_label,
             podling_thread_id=release.podling_thread_id,
         )
-        outcome = "passed" if details.passed else "failed"
         defaults["vote_result"] = "Passed" if details.passed else "Failed"
 
-    defaults["email_body"] = construct.finish_vote_body(
+    email_body = construct.finish_vote_body(
         release.project.policy_finish_vote_template,
         {
             "ATR_TALLY": atr_tally,
@@ -231,6 +229,7 @@ async def selected(  # noqa: C901
             "YOUR_FULL_NAME": full_name,
         },
     )
+    defaults["email_body"] = email_body
 
     if is_trusted_mode:
         binding_sufficient = trusted_passed
@@ -248,6 +247,7 @@ async def selected(  # noqa: C901
     duration_blocks_result = (not pass_fail_allowed) and (not bypass_active)
     if duration_blocks_result:
         cancel_only = True
+        defaults["email_body"] = email_body.replace("{{OUTCOME}}", "was cancelled")
         defaults["vote_result"] = "Cancelled"
         form_cls = shared.resolve.CancelSubmitForm
         submit_classes = "btn-danger"
