@@ -152,7 +152,7 @@ async def selected(  # noqa: C901
         mail_warnings = latest_vote_task.result.mail_send_warnings
 
     pass_fail_allowed = interaction.vote_pass_fail_allowed(latest_vote_task)
-    bypass_active = interaction.vote_duration_bypass()
+    bypass_active = interaction.vote_resolution_bypass(release)
     vote_end = interaction.vote_end_get(latest_vote_task)
     is_trusted_mode = release.effective_vote_mode == sql.VoteMode.TRUSTED
     vote_round = interaction.trusted_vote_round(release)

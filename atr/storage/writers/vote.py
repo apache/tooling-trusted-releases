@@ -577,7 +577,7 @@ class ReleaseManager(CommitteeParticipant):
         if (
             (vote_result != "cancelled")
             and (not interaction.vote_pass_fail_allowed(latest_vote_task))
-            and (not interaction.vote_duration_bypass())
+            and (not interaction.vote_resolution_bypass(release))
         ):
             raise storage.AccessError(
                 "The vote cannot be resolved before the voting period has ended unless it is cancelled.",
@@ -1005,7 +1005,7 @@ class ReleaseManager(CommitteeParticipant):
 
             latest_vote_task = await interaction.release_current_vote_task(release, self.__data)
             vote_end = interaction.vote_end_get(latest_vote_task)
-            resolution_bypass = interaction.vote_duration_bypass()
+            resolution_bypass = interaction.vote_resolution_bypass(release)
             if (
                 (vote_result != "cancelled")
                 and (vote_end is not None)

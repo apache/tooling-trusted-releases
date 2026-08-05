@@ -52,6 +52,7 @@ PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 _NO_EXPECTED_VOTE_ROUND: Final[object] = object()
+_PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS: Final[frozenset[str]] = frozenset({"tooling-presentations"})
 
 
 class ApacheUserMissingError(RuntimeError):
@@ -1037,10 +1038,6 @@ async def validate_trusted_jwt(publisher: str, jwt: str) -> tuple[github.Trusted
     return payload, asf_uid
 
 
-def vote_duration_bypass() -> bool:
-    return not config.is_production_mode()
-
-
 def vote_end_get(latest_vote_task: sql.Task | None) -> datetime.datetime | None:
     if latest_vote_task is None:
         return None
@@ -1059,6 +1056,10 @@ def vote_pass_fail_allowed(latest_vote_task: sql.Task | None) -> bool:
     if vote_end is None:
         return False
     return datetime.datetime.now(datetime.UTC) >= vote_end
+
+
+def vote_resolution_bypass(release: sql.Release) -> bool:
+    return (not config.is_production_mode()) or (release.project_key in _PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS)
 
 
 async def wait_for_task(

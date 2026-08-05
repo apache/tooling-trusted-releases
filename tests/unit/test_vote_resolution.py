@@ -20,6 +20,7 @@ import datetime
 import inspect
 import unittest.mock as mock
 from types import SimpleNamespace
+from typing import Literal
 
 import pytest
 import quart
@@ -514,7 +515,7 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, "Vote marked as cancelled", None)
@@ -531,14 +532,18 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
     assert success == "Vote marked as cancelled"
 
 
+@pytest.mark.parametrize("vote_result", ["failed", "passed"])
 @pytest.mark.asyncio
-async def test_resolve_allows_early_passed_with_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_resolve_allows_early_result_for_production_bypass_project(
+    monkeypatch: pytest.MonkeyPatch, vote_result: Literal["failed", "passed"]
+) -> None:
     """Writer allows Passed before the end of the vote when bypass is active."""
     data = _mock_data()
     write_as = _mock_write_as()
     writer = _writer_with_mocks(data, write_as)
 
     release = _candidate_release()
+    release.project_key = "tooling-presentations"
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
@@ -546,21 +551,21 @@ async def test_resolve_allows_early_passed_with_bypass(monkeypatch: pytest.Monke
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
-        return_value=(release, None, "Vote marked as passed", None)
+        return_value=(release, None, f"Vote marked as {vote_result}", None)
     )
 
     _release, _round, success, _error = await writer.resolve(
-        _project_key(),
+        safe.ProjectKey("tooling-presentations"),
         _version_key(),
-        "passed",
+        vote_result,
         "Chair",
-        "The vote has passed.",
+        f"The vote has {vote_result}.",
     )
 
-    assert success == "Vote marked as passed"
+    assert success == f"Vote marked as {vote_result}"
 
 
 @pytest.mark.asyncio
@@ -578,7 +583,7 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
 
     past_task = _latest_vote_task_with_end(-24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release: False)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, "Vote marked as passed", None)
@@ -729,6 +734,25 @@ async def test_resolve_page_uses_cancel_form_before_vote_end(
 
 
 @pytest.mark.asyncio
+async def test_resolve_page_allows_early_result_when_bypass_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vote_end = datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.UTC)
+
+    context, form_render, _archive_lookup, _vote_committee, _vote_details = await _render_standard_resolve_page(
+        monkeypatch,
+        pass_fail_allowed=False,
+        resolution_bypass=True,
+        vote_end=vote_end,
+    )
+
+    assert context["cancel_only"] is False
+    assert form_render.call_args.kwargs["model_cls"] is shared.resolve.SubmitForm
+    assert form_render.call_args.kwargs["submit_classes"] == "btn-primary"
+    assert form_render.call_args.kwargs["submit_label"] == "Resolve vote"
+
+
+@pytest.mark.asyncio
 async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Writer rejects Failed when the end of the vote has not been reached and no bypass is active."""
     data = _mock_data()
@@ -736,6 +760,7 @@ async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> 
     writer = _writer_with_mocks(data, write_as)
 
     release = _candidate_release()
+    release.project_key = "project"
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
@@ -743,7 +768,7 @@ async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> 
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
 
     with pytest.raises(storage.AccessError, match="unless it is cancelled"):
         await writer.resolve(
@@ -763,13 +788,14 @@ async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> 
     writer = _writer_with_mocks(data, write_as)
 
     release = _candidate_release()
+    release.project_key = "project"
     query = mock.MagicMock()
     query.demand = mock.AsyncMock(return_value=release)
     data.release = mock.MagicMock(return_value=query)
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
 
     with pytest.raises(storage.AccessError, match="voting period"):
         await writer.resolve(
@@ -969,6 +995,7 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     writer._ReleaseManager__send_resolution = mock.AsyncMock(return_value=None)
 
     release = _candidate_release()
+    release.project_key = "tooling-presentations"
     release.vote_mode = sql.VoteMode.TRUSTED
     release.effective_vote_mode = sql.VoteMode.TRUSTED
     release.current_vote_seq = 1
@@ -977,14 +1004,14 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     data.release = mock.MagicMock(return_value=query)
 
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: True)
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
     monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
     )
 
     _release, _round, success, _error = await writer.resolve(
-        _project_key(),
+        safe.ProjectKey("tooling-presentations"),
         _version_key(),
         "passed",
         "Chair",
@@ -995,6 +1022,42 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
 
     assert success == "Vote marked as passed"
     write_as.revision.create_revision_with_quarantine.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trusted_resolve_rejects_insufficient_votes_for_other_production_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _mock_data()
+    write_as = _mock_write_as()
+    writer = _writer_with_mocks(data, write_as)
+
+    release = _candidate_release()
+    release.project_key = "project"
+    release.vote_mode = sql.VoteMode.TRUSTED
+    release.effective_vote_mode = sql.VoteMode.TRUSTED
+    release.current_vote_seq = 1
+    query = mock.MagicMock()
+    query.demand = mock.AsyncMock(return_value=release)
+    data.release = mock.MagicMock(return_value=query)
+
+    monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
+    )
+
+    with pytest.raises(storage.AccessError, match="does not have enough binding"):
+        await writer.resolve(
+            _project_key(),
+            _version_key(),
+            "passed",
+            "Chair",
+            "The vote has passed.",
+            expected_vote_seq=1,
+            expected_vote_mode=sql.VoteMode.TRUSTED,
+        )
 
 
 @pytest.mark.asyncio
@@ -1133,7 +1196,7 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
 
     past_task = _latest_vote_task_with_end(-24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
-    monkeypatch.setattr(interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release: False)
     effective_ballots = mock.AsyncMock(return_value=[mock.MagicMock(), mock.MagicMock(), mock.MagicMock()])
     monkeypatch.setattr(interaction, "effective_trusted_ballots", effective_ballots)
     monkeypatch.setattr(
@@ -1213,6 +1276,28 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
     """vote_pass_fail_allowed returns True when the end of the vote has elapsed."""
     task = _latest_vote_task_with_end(-24)
     assert interaction.vote_pass_fail_allowed(task) is True
+
+
+@pytest.mark.parametrize(
+    ("production_mode", "project_key", "expected"),
+    [
+        (False, "project", True),
+        (True, "tooling", False),
+        (True, "tooling-presentations", True),
+        (True, "tooling-presentations-demo", False),
+    ],
+)
+def test_vote_resolution_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+    production_mode: bool,
+    project_key: str,
+    expected: bool,
+) -> None:
+    release = _candidate_release()
+    release.project_key = project_key
+    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: production_mode)
+
+    assert interaction.vote_resolution_bypass(release) is expected
 
 
 @pytest.mark.asyncio
@@ -1460,6 +1545,7 @@ async def _render_standard_resolve_page(
     ballot_receipt_message_ids: mock.AsyncMock | None = None,
     ballots_for_resolution: mock.AsyncMock | None = None,
     pass_fail_allowed: bool = True,
+    resolution_bypass: bool = False,
     vote_end: datetime.datetime | None = None,
 ) -> tuple[dict[str, object], mock.AsyncMock, mock.AsyncMock, mock.AsyncMock, mock.AsyncMock]:
     release = release or _candidate_release()
@@ -1473,6 +1559,7 @@ async def _render_standard_resolve_page(
     vote_committee = mock.AsyncMock(return_value=release.project.committee)
     vote_details = mock.AsyncMock()
     form_render = mock.AsyncMock(return_value="FORM")
+    resolution_bypass_check = mock.Mock(return_value=resolution_bypass)
     ballot_receipt_message_ids = ballot_receipt_message_ids or mock.AsyncMock(return_value=set())
     ballots_for_resolution = ballots_for_resolution or mock.AsyncMock(return_value=[])
     is_binding_for_release = mock.AsyncMock(return_value=(True, "Project"))
@@ -1505,7 +1592,7 @@ async def _render_standard_resolve_page(
     monkeypatch.setattr(
         resolve.interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task())
     )
-    monkeypatch.setattr(resolve.interaction, "vote_duration_bypass", lambda: False)
+    monkeypatch.setattr(resolve.interaction, "vote_resolution_bypass", resolution_bypass_check)
     monkeypatch.setattr(resolve.interaction, "vote_end_get", lambda _task: vote_end)
     monkeypatch.setattr(resolve.interaction, "vote_pass_fail_allowed", lambda _task: pass_fail_allowed)
     monkeypatch.setattr(resolve.interaction, "ballot_receipt_message_ids", ballot_receipt_message_ids)
@@ -1520,6 +1607,7 @@ async def _render_standard_resolve_page(
     html = await _resolve_handler()(session, "resolve", _project_key(), _version_key())
 
     assert html == "HTML"
+    resolution_bypass_check.assert_called_once_with(release)
     return context, form_render, archive_lookup, vote_committee, vote_details
 
 

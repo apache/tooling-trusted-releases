@@ -272,13 +272,13 @@
       {% if bypass_active %}
         <div class="border rounded bg-warning-subtle p-3 mb-3">
           <i class="bi bi-exclamation-triangle me-1"></i>
-          <strong>Debug bypass:</strong>
+          <strong>Early resolution enabled:</strong>
           {% if vote_end %}
             The voting period has not ended yet (ends {{ vote_end.strftime('%Y-%m-%d %H:%M:%S UTC') }}).
           {% else %}
             The end of the vote could not be determined.
           {% endif %}
-          Resolving as passed or failed is allowed because debug/test mode is active.
+          ATR allows this vote to be resolved as passed or failed now.
         </div>
       {% else %}
         <div class="border rounded bg-info-subtle p-3 mb-3">
