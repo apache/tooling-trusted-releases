@@ -266,6 +266,12 @@ async def _render_page(
         " above to complete the process.",
     ]
 
+    if config.get().SVN_PUBLISH_URL and (
+        user.is_committee_member(release.committee, session.uid)
+        or user.is_release_manager(release.committee, session.uid)
+    ):
+        await _render_svn_publish(page, release)
+
     page.h2["Distribute on third party platforms"]
     if release.is_embargoed:
         page.div(".p-3.mb-4.bg-danger-subtle.border.border-danger.rounded")[
@@ -283,12 +289,6 @@ async def _render_page(
 
     page.append(_render_dist_warning())
     page.append(_render_distribution_buttons(release))
-
-    if config.get().SVN_PUBLISH_URL and (
-        user.is_committee_member(release.committee, session.uid)
-        or user.is_release_manager(release.committee, session.uid)
-    ):
-        await _render_svn_publish(page, release)
 
     if user.is_participant_for_committee(release.committee, session.participant_committees):
         page.h2["Inactivity"]
