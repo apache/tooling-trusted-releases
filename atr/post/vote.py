@@ -102,6 +102,6 @@ async def selected_post(  # noqa: C901
         await quart.flash(error_message, "error")
         return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))
 
-    success_message = f"Sending your vote to {email_to}."
+    success_message = f"Sending your vote to {', '.join(email_to)}."
     await quart.flash(success_message, "success")
     return await session.redirect(get.vote.selected, project_key=str(project_key), version_key=str(version_key))

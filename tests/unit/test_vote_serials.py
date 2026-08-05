@@ -413,7 +413,7 @@ async def test_podling_second_round_rolls_back_with_task_creation(sqlite_session
 @pytest.mark.asyncio
 async def test_post_vote_dispatches_trusted_email_manual_and_stale(monkeypatch) -> None:
     trusted_cast = mock.AsyncMock(return_value=(["dev@project.apache.org"], ""))
-    email_send = mock.AsyncMock(return_value=(["dev@project.apache.org"], ""))
+    email_send = mock.AsyncMock(return_value=(["dev@project.apache.org", "private@project.apache.org"], ""))
     flash = mock.AsyncMock()
 
     @contextlib.asynccontextmanager
@@ -457,6 +457,10 @@ async def test_post_vote_dispatches_trusted_email_manual_and_stale(monkeypatch) 
     assert result == "redirect"
     trusted_cast.assert_not_awaited()
     email_send.assert_awaited_once()
+    assert flash.call_args.args == (
+        "Sending your vote to dev@project.apache.org, private@project.apache.org.",
+        "success",
+    )
 
     trusted_cast.reset_mock()
     email_send.reset_mock()
