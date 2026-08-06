@@ -466,17 +466,23 @@ async def catalog_committee_get(
             ]
         ],
     ]
-    reviewed_form = await form.render(
-        model_cls=CatalogReviewedForm,
-        action=f"/admin/catalog/{committee_key}/reviewed",
-        submit_label="Save review status",
-        defaults={"reviewed": committee.catalog_reviewed},
-    )
+    if committee.catalog_reviewed:
+        # Reviewed is set-once, so there is nothing left to submit - just say so.
+        reviewed_control: htm.Element = htpy.div(".alert.alert-success")[
+            "The PMC has reviewed this catalogue. This cannot be undone."
+        ]
+    else:
+        reviewed_control = await form.render(
+            model_cls=CatalogReviewedForm,
+            action=f"/admin/catalog/{committee_key}/reviewed",
+            submit_label="Mark as reviewed",
+            confirm="Marking this catalogue as reviewed cannot be undone. Continue?",
+        )
     return await template.render(
         "catalog-committee.html",
         committee_key=str(committee_key),
         projects=table,
-        reviewed_form=reviewed_form,
+        reviewed_form=reviewed_control,
     )
 
 
@@ -491,11 +497,13 @@ async def catalog_reviewed_post(
     """
     URL: POST /catalog/<committee_key>/reviewed
 
-    Record whether the PMC has reviewed the catalogue seeded for them.
+    Record that the PMC has reviewed the catalogue seeded for them. This is one-way,
+    so we only act on a ticked box - an unticked submit leaves things as they were.
     """
-    async with storage.write(session) as write:
-        waca = write.as_committee_admin(str(committee_key))
-        await waca.committee.catalog_reviewed_set(reviewed_form.reviewed)
+    if reviewed_form.reviewed:
+        async with storage.write(session) as write:
+            waca = write.as_committee_admin(str(committee_key))
+            await waca.committee.catalog_reviewed_mark()
     return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
 
 

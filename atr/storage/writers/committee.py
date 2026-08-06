@@ -209,14 +209,18 @@ class FoundationAdmin(CommitteeMember):
             archived=archived.isoformat() if (archived is not None) else None,
         )
 
-    async def catalog_reviewed_set(self, reviewed: bool) -> None:
-        """Record whether the PMC has reviewed the catalogue we seeded for them."""
+    async def catalog_reviewed_mark(self) -> None:
+        """Record that the PMC has reviewed the catalogue we seeded for them.
+
+        This is one-way. Once a catalogue is marked reviewed, there is no path back.
+        If we need to "unmark" it can be done in the database.
+        """
         await self.__data.begin_immediate()
         try:
             committee = await self.__data.committee(key=self.__committee_key).demand(
                 storage.AccessError(f"Committee not found: {self.__committee_key}", status=404)
             )
-            committee.catalog_reviewed = reviewed
+            committee.catalog_reviewed = True
             committee.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
             await self.__data.commit()
         except Exception:
@@ -225,7 +229,7 @@ class FoundationAdmin(CommitteeMember):
         self.__write_as.append_to_audit_log(
             asf_uid=self.__asf_uid,
             committee_key=self.__committee_key,
-            catalog_reviewed=reviewed,
+            catalog_reviewed=True,
         )
 
     async def roster_person_remove(self, asf_uid: str) -> None:
