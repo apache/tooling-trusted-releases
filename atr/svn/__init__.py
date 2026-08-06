@@ -91,7 +91,7 @@ class SvnInfo(pydantic.BaseModel):
     relative_url: str
     repository_root: str
     revision: str
-    last_changed_author: str
+    last_changed_author: str | None = None
     last_changed_rev: str
     last_changed_date: str
     checksum: str | None = None
@@ -278,8 +278,9 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
     entry = entries[0]
     if entry.get("revision") != str(revision):
         return False
-    if entry.findtext("author") != author:
-        return False
+    if config.svn_publish_kind() is config.SvnPublishKind.ASF_DISTRIBUTION:
+        if entry.findtext("author") != author:
+            return False
     if entry.findtext("msg") != message:
         return False
     target_path = info.relative_url.removeprefix("^")

@@ -25,20 +25,6 @@ import atr.config as config
 import atr.svn as svn
 
 
-def _svn_info() -> svn.SvnInfo:
-    return svn.SvnInfo(
-        path="project",
-        name="project",
-        url="https://example.invalid/project",
-        relative_url="^/project",
-        repository_root="https://example.invalid",
-        revision="43",
-        last_changed_author="alice",
-        last_changed_rev="42",
-        last_changed_date="2026-05-01 00:00:00 +0000",
-    )
-
-
 def test_error_message_falls_back_to_sanitised_first_line(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         config.get(), "SVN_PUBLISH_URL", "https://internal.example.invalid/repos/dist/atr", raising=False
@@ -78,6 +64,7 @@ def test_error_message_uses_specific_stacked_error() -> None:
 
 
 async def test_publish_revision_matches_exact_provenance(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr", raising=False)
     log_output = """
     <log>
       <logentry revision="42">
@@ -97,7 +84,25 @@ async def test_publish_revision_matches_exact_provenance(monkeypatch: pytest.Mon
     assert run.await_count == 2
 
 
+async def test_publish_revision_matches_without_author_on_local_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "svn://127.0.0.1:3690/atr-dev-publish", raising=False)
+    log_output = """
+    <log>
+      <logentry revision="42">
+        <date>2026-05-01T00:00:00.000000Z</date>
+        <paths><path action="A" kind="dir">/project</path></paths>
+        <msg>Publish project-1.0.0</msg>
+      </logentry>
+    </log>
+    """
+    run = mock.AsyncMock(side_effect=[log_output, "atr"])
+    monkeypatch.setattr(svn, "_run_svn_command", run)
+
+    assert await svn.publish_revision_matches(_svn_info(), "alice", "Publish project-1.0.0")
+
+
 async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr", raising=False)
     valid_log = """
     <log>
       <logentry revision="42">
@@ -110,6 +115,7 @@ async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.
     """
     invalid_logs = [
         valid_log.replace("<author>alice</author>", "<author>bob</author>"),
+        valid_log.replace("<author>alice</author>", ""),
         valid_log.replace("Publish project-1.0.0", "Publish another release"),
         valid_log.replace('action="A"', 'action="M"'),
         valid_log.replace('revision="42"', 'revision="41"'),
@@ -121,6 +127,37 @@ async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.
     run = mock.AsyncMock(side_effect=[valid_log, "another-tool"])
     monkeypatch.setattr(svn, "_run_svn_command", run)
     assert not await svn.publish_revision_matches(_svn_info(), "alice", "Publish project-1.0.0")
+
+
+async def test_run_command_timeout_drains_output() -> None:
+    child = "import os, time; os.write(1, b'x' * 1_000_000); time.sleep(5)"
+    with pytest.raises(svn.CommandTimeoutError):
+        await asyncio.wait_for(
+            svn.run_command(sys.executable, "-c", child, timeout_seconds=0.1),
+            timeout=2,
+        )
+
+
+async def test_run_command_times_out() -> None:
+    with pytest.raises(svn.CommandTimeoutError):
+        await svn.run_command("sleep", "5", timeout_seconds=0.1)
+
+
+async def test_svn_info_from_url_allows_missing_author(monkeypatch: pytest.MonkeyPatch) -> None:
+    output = """
+Path: project
+URL: svn://127.0.0.1:3690/atr-dev-publish/project
+Relative URL: ^/project
+Repository Root: svn://127.0.0.1:3690/atr-dev-publish
+Revision: 42
+Last Changed Rev: 42
+Last Changed Date: 2026-05-01 00:00:00 +0000
+""".strip()
+    monkeypatch.setattr(svn, "_run_svn_info", mock.AsyncMock(return_value=output))
+
+    info = await svn.SvnInfo.from_url("svn://127.0.0.1:3690/atr-dev-publish/project")
+
+    assert info.last_changed_author is None
 
 
 async def test_svn_info_from_url_allows_missing_name(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,15 +178,38 @@ Last Changed Date: 2026-05-01 00:00:00 +0000
     assert info.name is None
 
 
-async def test_run_command_times_out() -> None:
-    with pytest.raises(svn.CommandTimeoutError):
-        await svn.run_command("sleep", "5", timeout_seconds=0.1)
+def test_svn_publish_kind_classification(monkeypatch: pytest.MonkeyPatch) -> None:
+    classified = [
+        ("https://dist.apache.org/repos/dist/atr", config.SvnPublishKind.ASF_DISTRIBUTION),
+        ("svn://127.0.0.1:3690/atr-dev-publish", config.SvnPublishKind.LOCAL_REPOSITORY),
+        ("svn://localhost/atr-dev-publish", config.SvnPublishKind.LOCAL_REPOSITORY),
+        ("file:///opt/atr/state/dev-svn-repo", config.SvnPublishKind.LOCAL_REPOSITORY),
+    ]
+    for url, kind in classified:
+        monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", url, raising=False)
+        assert config.svn_publish_kind() is kind
+
+    rejected = [
+        "",
+        "http://dist.apache.org/repos/dist/atr",
+        "https://evilapache.org/repos/dist/atr",
+        "svn://svn.example.org/atr-dev-publish",
+    ]
+    for url in rejected:
+        monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", url, raising=False)
+        with pytest.raises(ValueError):
+            config.svn_publish_kind()
 
 
-async def test_run_command_timeout_drains_output() -> None:
-    child = "import os, time; os.write(1, b'x' * 1_000_000); time.sleep(5)"
-    with pytest.raises(svn.CommandTimeoutError):
-        await asyncio.wait_for(
-            svn.run_command(sys.executable, "-c", child, timeout_seconds=0.1),
-            timeout=2,
-        )
+def _svn_info() -> svn.SvnInfo:
+    return svn.SvnInfo(
+        path="project",
+        name="project",
+        url="https://example.invalid/project",
+        relative_url="^/project",
+        repository_root="https://example.invalid",
+        revision="43",
+        last_changed_author="alice",
+        last_changed_rev="42",
+        last_changed_date="2026-05-01 00:00:00 +0000",
+    )

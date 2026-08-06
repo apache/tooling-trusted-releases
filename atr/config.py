@@ -16,6 +16,7 @@
 # under the License.
 
 import enum
+import ipaddress
 import os
 import urllib.parse
 from typing import Final
@@ -67,6 +68,15 @@ def _config_secrets_get(
     if not isinstance(value, str):
         raise ValueError(f"Secret value for {key} is not a string")
     return cast(value)
+
+
+def _svn_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _validate_svn_dist_public_url(url: str) -> None:
@@ -180,6 +190,11 @@ class ProfilingConfig(AppConfig):
     USE_BLOCKBUSTER = True
 
 
+class SvnPublishKind(enum.Enum):
+    ASF_DISTRIBUTION = "asf_distribution"
+    LOCAL_REPOSITORY = "local_repository"
+
+
 class TestConfig(DebugConfig):
     pass
 
@@ -242,6 +257,21 @@ def is_production_mode() -> bool:
 
 def is_test_mode() -> bool:
     return get_mode() == Mode.Test
+
+
+def svn_publish_kind() -> SvnPublishKind:
+    url = get().SVN_PUBLISH_URL
+    if not url:
+        raise ValueError("SVN_PUBLISH_URL is not configured")
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or ""
+    if (parsed.scheme == "https") and ((host == "apache.org") or host.endswith(".apache.org")):
+        return SvnPublishKind.ASF_DISTRIBUTION
+    if parsed.scheme == "file":
+        return SvnPublishKind.LOCAL_REPOSITORY
+    if (parsed.scheme == "svn") and _svn_loopback_host(host):
+        return SvnPublishKind.LOCAL_REPOSITORY
+    raise ValueError("SVN_PUBLISH_URL must be an https apache.org URL, a file URL, or a loopback svn URL")
 
 
 def validate() -> None:
