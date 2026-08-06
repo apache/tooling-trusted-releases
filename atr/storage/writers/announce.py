@@ -238,6 +238,7 @@ class ReleaseManager(CommitteeParticipant):
                     "is recorded but has no revision number"
                 )
             try:
+                kind = config.svn_publish_kind()
                 target = util.svn_publish_target()
                 public_url = util.publication_check_url(
                     committee, effective_download_path_suffix, util.DownloadFile.METADATA
@@ -245,7 +246,10 @@ class ReleaseManager(CommitteeParticipant):
             except ValueError as exc:
                 log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
             else:
-                await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
+                if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
+                    await self.__check_publication_artifacts(
+                        unfinished_path, target, public_url, acknowledge_unreachable
+                    )
 
         if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
             raise storage.AccessError(
