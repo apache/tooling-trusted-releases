@@ -38,6 +38,7 @@ _SAFE_TYPE_EXAMPLES: dict[type[safe.SafeType], str] = {
     safe.ProjectKey: "tooling",
     safe.ReleaseKey: "tooling-0.0.1",
     safe.RelPath: "dir/file.txt",
+    safe.RelDirPath: ".",
     safe.RevisionNumber: "00001",
     safe.VersionKey: "0.0.1",
 }

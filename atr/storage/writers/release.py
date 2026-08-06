@@ -1030,7 +1030,7 @@ class CommitteeParticipant(FoundationCommitter):
         full_source_item_path: safe.StatePath = interim_path / source_path
 
         if await aiofiles.os.path.isdir(full_source_item_path):
-            if (target_dir_rel == source_file_rel) or (interim_path / target_dir_path).path.resolve().is_relative_to(
+            if (target_dir_rel == source_file_rel) or target_path.path.resolve().is_relative_to(
                 full_source_item_path.path.resolve()
             ):
                 raise datatypes.FailedError("Cannot move a directory into itself or a subdirectory of itself")

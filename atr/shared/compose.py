@@ -32,7 +32,7 @@ type MOVE_FILE = Literal["MOVE_FILE"]
 class MoveFileForm(form.Form):
     variant: MOVE_FILE = form.value(MOVE_FILE)
     source_files: form.RelPathList = form.label("Files to move", required=True)
-    target_directory: safe.RelPath = form.label("Target directory", required=True)
+    target_directory: safe.RelDirPath = form.label("Target directory", required=True)
 
     @pydantic.model_validator(mode="after")
     def validate_move(self) -> "MoveFileForm":

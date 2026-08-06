@@ -300,6 +300,13 @@ class RelPath(SafeType):
         return self.as_path() >= other.as_path()
 
 
+class RelDirPath(RelPath):
+    def _additional_validations(self, value: str) -> None:
+        if value == ".":
+            return
+        super()._additional_validations(value)
+
+
 class RevisionNumber(Numeric):
     """A revision number that has been validated for safety."""
 
