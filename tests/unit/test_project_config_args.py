@@ -147,6 +147,32 @@ def test_editing_an_unrelated_field_leaves_a_stored_cycle_match_alone() -> None:
     assert project.cycle_match == "^(2025)"
 
 
+def test_project_config_accepts_repository_web_and_vcs_uris() -> None:
+    args = _project_config_project(repositories=["https://github.com/apache/x", "git+ssh://git@host/x.git"])
+
+    assert args.project is not None
+    assert args.project.repositories == ["https://github.com/apache/x", "git+ssh://git@host/x.git"]
+
+
+@pytest.mark.parametrize("uri", ["javascript:alert(1)", "data:text/html,pwned"])
+def test_project_config_rejects_browser_executable_repository_uri(uri: str) -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("disallowed or missing scheme")):
+        _project_config_project(repositories=[uri])
+
+
+def test_project_config_accepts_web_standard_uri() -> None:
+    args = _project_config_project(standards=["https://example.org/spec"])
+
+    assert args.project is not None
+    assert args.project.standards == ["https://example.org/spec"]
+
+
+def test_project_config_rejects_vcs_scheme_for_standard() -> None:
+    # A VCS locator is valid for a repository but a standard must be a web page
+    with pytest.raises(pydantic.ValidationError, match=re.escape("disallowed or missing scheme")):
+        _project_config_project(standards=["git+ssh://git@host/x.git"])
+
+
 def _apply_version_scheme(project: sql.Project, **fields: object) -> None:
     args = api.ProjectConfigProjectArgs.model_validate(fields)
     project_writer._apply_version_scheme(project, args, args.model_fields_set)

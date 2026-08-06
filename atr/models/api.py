@@ -539,6 +539,20 @@ class ProjectConfigProjectArgs(schema.Strict):
     calver_format: str | None = None
     branch_template: str | None = None
 
+    @pydantic.field_validator("repositories")
+    @classmethod
+    def _validate_repository_uris(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            validation.validate_uri_list(v, validation.REPOSITORY_URI_SCHEMES)
+        return v
+
+    @pydantic.field_validator("standards")
+    @classmethod
+    def _validate_standard_uris(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            validation.validate_uri_list(v, validation.STANDARD_URI_SCHEMES)
+        return v
+
     @pydantic.field_validator("version_method", mode="before")
     @classmethod
     def version_method_to_enum(cls, v):

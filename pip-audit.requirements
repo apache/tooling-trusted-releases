@@ -85,14 +85,14 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.43.1
+djlint==1.43.2
 dnspython==2.8.0
     # via
     #   email-validator
     #   tooling-trusted-releases
 dulwich==1.2.12
     # via tooling-trusted-releases
-dunamai==1.26.1
+dunamai==1.26.2
     # via tooling-trusted-releases
 easydict==1.13
     # via
@@ -136,7 +136,7 @@ h11==0.16.0
     # via
     #   hypercorn
     #   wsproto
-h2==4.4.0
+h2==4.4.1
     # via hypercorn
 hpack==4.2.0
     # via h2
@@ -223,9 +223,7 @@ packaging==26.2
 pathspec==1.1.1
     # via djlint
 platformdirs==4.11.0
-    # via
-    #   python-discovery
-    #   virtualenv
+    # via virtualenv
 pre-commit==4.6.1
 priority==2.0.0
     # via hypercorn
@@ -269,7 +267,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.5.0
+python-discovery==1.5.1
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -315,9 +313,9 @@ rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
-rpgp-py==0.19.8
+rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.0
+ruff==0.16.1
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -364,7 +362,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.7.0
+virtualenv==21.7.1
     # via pre-commit
 watchfiles==1.2.0
     # via

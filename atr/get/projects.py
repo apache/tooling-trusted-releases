@@ -42,6 +42,7 @@ import atr.get.vote as vote
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.post as post
 import atr.registry as registry
 import atr.render as render
@@ -1062,6 +1063,15 @@ async def _render_lifecycle_tab(project: sql.Project, *, can_edit_policy: bool) 
     return block.collect()
 
 
+def _metadata_uri(url: str, allowed_schemes: frozenset[str]) -> htm.Element | str:
+    # Only link a URI whose scheme is on the field's allowlist; anything else renders as plain text,
+    # so a stored javascript: or data: URI that reached us by another route (e.g. a DOAP import) can
+    # never become a clickable href
+    if validation.uri_scheme_allowed(url, allowed_schemes):
+        return htm.a(href=url, target="_blank", rel="noopener")[url]
+    return url
+
+
 def _render_metadata_card(project: sql.Project) -> htm.Element:
     card = htm.Block(htm.div, classes=".card.mb-4")
     card.div(".card-header.bg-light")[htm.h3(".mb-2")["Reference metadata"]]
@@ -1082,13 +1092,16 @@ def _render_metadata_card(project: sql.Project) -> htm.Element:
                 ]
             )
 
-    for label, urls in [("Repositories", project.repositories), ("Standards", project.standards)]:
+    for label, urls, schemes in [
+        ("Repositories", project.repositories, validation.REPOSITORY_URI_SCHEMES),
+        ("Standards", project.standards, validation.STANDARD_URI_SCHEMES),
+    ]:
         if urls:
             rows.append(
                 htm.tr[
                     htm.th(".border-0.w-25")[label],
                     htm.td(".text-break.border-0")[
-                        htm.ul(".mb-0.ps-3")[*[htm.li[htm.a(href=u, target="_blank", rel="noopener")[u]] for u in urls]]
+                        htm.ul(".mb-0.ps-3")[*[htm.li[_metadata_uri(u, schemes)] for u in urls]]
                     ],
                 ]
             )

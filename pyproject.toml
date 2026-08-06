@@ -172,8 +172,8 @@ strict-checking = true
 [tool.uv]
 # Dependency cooldown, requires uv 0.9.17+
 exclude-newer = "5 days"
-exclude-newer-package = { cryptography = "2026-08-04" }
-override-dependencies = ["cryptography>=50.0,<51.0.0"]
+exclude-newer-package = { cryptography = "2026-08-04", h2 = "2026-08-07" }
+override-dependencies = ["cryptography>=50.0,<51.0.0","h2>=4.4.1,<4.4.2"]
 required-version = ">=0.9.17"
 
 [tool.uv.extra-build-dependencies]

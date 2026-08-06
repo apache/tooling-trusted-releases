@@ -323,14 +323,14 @@ class EditMetadataForm(form.Form):
         "Mailing lists page",
         "URL of the page on the project website that lists its mailing lists.",
     )
-    repositories: form.URIList = form.label(
+    repositories: form.RepositoryURIList = form.label(
         "Repositories",
         "Repository URLs, one per line.",
         widget=form.Widget.TEXTAREA,
         rows=3,
         required=True,
     )
-    standards: form.URIList = form.label(
+    standards: form.StandardURIList = form.label(
         "Standards",
         "URLs of standards this project implements, one per line.",
         widget=form.Widget.TEXTAREA,

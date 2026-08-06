@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import urllib.parse as parse
 from typing import Any, Final
 
 import re2
@@ -24,6 +25,15 @@ from . import safe
 MAX_IGNORE_PATTERN_LENGTH: Final[int] = 128
 MAX_PROJECT_PATTERN_LENGTH: Final[int] = 128
 RE2_MAX_MEM: Final[int] = 1 << 20
+
+# Positive per-field allowlists of URI schemes ATR will store and later render as a link. Each keeps
+# out schemes that execute in the browser (javascript:, data:) while admitting only what the field
+# legitimately carries: repositories are reached over the web or a VCS locator, whereas a standard is
+# a page a reader visits
+REPOSITORY_URI_SCHEMES: Final[frozenset[str]] = frozenset(
+    {"http", "https", "git", "git+ssh", "git+https", "ssh", "svn"}
+)
+STANDARD_URI_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
 
 
 def compile_ignore_pattern(pattern: str):
@@ -69,6 +79,11 @@ def pagination_args_validate(query_args: Any) -> None:
             raise ValueError("Maximum offset of 1000000 exceeded")
         elif offset < 0:
             raise ValueError("Minimum offset less than 0 is nonsense")
+
+
+def uri_scheme_allowed(uri: str, allowed_schemes: frozenset[str]) -> bool:
+    # Case folded, since urlsplit keeps the scheme as written and schemes are case insensitive
+    return parse.urlsplit(uri).scheme.lower() in allowed_schemes
 
 
 def validate_announce_recipients(recipients: list[str]) -> None:
@@ -126,6 +141,14 @@ def validate_trusted_publishing_workflow_paths(paths: list[str]) -> None:
     for path in paths:
         if not path.startswith(".github/workflows/"):
             raise ValueError("GitHub workflow paths must start with '.github/workflows/'.")
+
+
+def validate_uri_list(uris: list[str], allowed_schemes: frozenset[str]) -> None:
+    disallowed = [uri for uri in uris if not uri_scheme_allowed(uri, allowed_schemes)]
+    if disallowed:
+        raise ValueError(
+            f"URI{'s' if (len(disallowed) > 1) else ''} with a disallowed or missing scheme: {', '.join(disallowed)}"
+        )
 
 
 def validate_vote_recipients(committee_key: str, recipients: list[str]) -> None:

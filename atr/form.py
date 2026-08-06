@@ -22,7 +22,6 @@ import enum
 import pathlib
 import re
 import types
-import urllib.parse as parse
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, TypeAliasType, get_args, get_origin
 
 import htpy
@@ -36,6 +35,7 @@ import quart_wtf.utils as utils
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.schema as schema
+import atr.models.validation as validation
 import atr.sessions as sessions
 import atr.util as util
 
@@ -506,23 +506,30 @@ def to_str_list(v: Any) -> list[str]:
     raise ValueError(f"Expected a string or list of strings, got {type(v).__name__}")
 
 
-def to_uri_list(v: Any) -> list[str]:
+def to_repository_uri_list(v: Any) -> list[str]:
+    # A repository is reached over the web or a VCS locator like git+ssh://git@host:path, which
+    # pydantic's AnyUrl would reject; the allowlist admits those while keeping out browser-executable
+    # schemes. Entries are otherwise kept exactly as given.
+    items = _to_uri_items(v)
+    validation.validate_uri_list(items, validation.REPOSITORY_URI_SCHEMES)
+    return items
+
+
+def to_standard_uri_list(v: Any) -> list[str]:
+    # A standard is a page a reader visits, so only web schemes are allowed here
+    items = _to_uri_items(v)
+    validation.validate_uri_list(items, validation.STANDARD_URI_SCHEMES)
+    return items
+
+
+def _to_uri_items(v: Any) -> list[str]:
     if v is None or v == "":
         return []
     if isinstance(v, list):
-        items = [str(item) for item in v if item not in (None, "")]
-    elif isinstance(v, str):
-        items = [line.strip() for line in v.split("\n") if line.strip()]
-    else:
-        raise ValueError(f"Expected a string or list of URIs, got {type(v).__name__}")
-
-    # We accept any URI scheme here rather than leaning on pydantic's AnyUrl,
-    # which rejects VCS locators like git+ssh://git@host:path. urlsplit just needs a scheme to
-    # be present, and we keep each entry exactly as given.
-    invalid = [item for item in items if not parse.urlsplit(item).scheme]
-    if invalid:
-        raise ValueError(f"Invalid URI{'s' if len(invalid) > 1 else ''}: {', '.join(invalid)}")
-    return items
+        return [str(item) for item in v if item not in (None, "")]
+    if isinstance(v, str):
+        return [line.strip() for line in v.split("\n") if line.strip()]
+    raise ValueError(f"Expected a string or list of URIs, got {type(v).__name__}")
 
 
 # Validator types come before other functions
@@ -620,9 +627,15 @@ StrList = Annotated[
     pydantic.Field(default_factory=list),
 ]
 
-URIList = Annotated[
+RepositoryURIList = Annotated[
     list[str],
-    functional_validators.BeforeValidator(to_uri_list),
+    functional_validators.BeforeValidator(to_repository_uri_list),
+    pydantic.Field(default_factory=list),
+]
+
+StandardURIList = Annotated[
+    list[str],
+    functional_validators.BeforeValidator(to_standard_uri_list),
     pydantic.Field(default_factory=list),
 ]
 
