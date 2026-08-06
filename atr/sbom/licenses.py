@@ -70,43 +70,61 @@ def check(
             if not license_expr:
                 continue
 
-            if isinstance(license_choice, LicenseExpression):
-                try:
-                    atoms = license_expression_atoms(license_expr)
-                except ValueError:
-                    atoms = {license_expr}
-            else:
-                atoms = {license_expr}
-
-            categories = [_atom_category(atom) for atom in atoms]
-            # "A OR B" lets the component be used under either half, so the friendliest half decides.
-            # Anything else - an AND, parentheses, or a licence standing on its own - all applies at
-            # once, so there the sternest half wins
-            if isinstance(license_choice, LicenseExpression) and _is_simple_disjunction(license_expr):
-                category = min(categories, key=_category_severity)
-            else:
-                category = max(categories, key=_category_severity)
-
-            # A licence ATR cannot place reads as None here, and that is as concerning as Category X
+            reading = assess(license_expr, isinstance(license_choice, LicenseExpression))
             issue = models.licenses.Issue(
                 component_name=name,
                 component_version=version,
                 license_expression=license_expr,
-                category=category if (category is not None) else models.licenses.Category.X,
-                any_unknown=(category is None),
+                category=reading.category,
+                any_unknown=reading.any_unknown,
+                chosen=reading.chosen,
                 scope=scope,
                 component_type=type,
             )
-            if category == models.licenses.Category.A:
+            if reading.category == models.licenses.Category.A:
                 if include_all:
                     good.append(issue)
-            elif category == models.licenses.Category.B:
+            elif reading.category == models.licenses.Category.B:
                 # Category B may ship in a binary but not in source, so a source release makes it an error
                 (errors if is_source_release else warnings).append(issue)
             else:
                 errors.append(issue)
 
     return good, warnings, errors
+
+
+def assess(license_expr: str, is_expression: bool) -> models.licenses.Choice:
+    # Read one declared licence. "A OR B" lets the component be used under either half, so the
+    # friendliest half decides and the rest are set aside as alternatives. Anything else - an AND,
+    # parentheses, or a licence standing on its own - all applies at once, so there the sternest
+    # half wins and there is no choice to offer
+    if is_expression:
+        try:
+            atoms = license_expression_atoms(license_expr)
+        except ValueError:
+            atoms = {license_expr}
+    else:
+        atoms = {license_expr}
+
+    ordered = sorted(atoms)
+    categories = {atom: _atom_category(atom) for atom in ordered}
+
+    if is_expression and _is_simple_disjunction(license_expr):
+        chosen = min(ordered, key=lambda atom: _category_severity(categories[atom]))
+        return models.licenses.Choice(
+            expression=license_expr,
+            category=_resolved_category(categories[chosen]),
+            any_unknown=(categories[chosen] is None),
+            chosen=chosen,
+            alternatives=[(atom, _resolved_category(categories[atom])) for atom in ordered if atom != chosen],
+        )
+
+    worst = max(categories.values(), key=_category_severity)
+    return models.licenses.Choice(
+        expression=license_expr,
+        category=_resolved_category(worst),
+        any_unknown=(worst is None),
+    )
 
 
 def expression(license_choice: License) -> str | None:
@@ -156,6 +174,12 @@ def _name_to_id() -> dict[str, str]:
         for license_id in license_ids:
             index.setdefault(_normalised_name(license_id), license_id)
     return index
+
+
+def _resolved_category(category: models.licenses.Category | None) -> models.licenses.Category:
+    # A licence ATR cannot place reads as None, and that is as concerning as Category X, so X stands
+    # in for the unknown
+    return category if (category is not None) else models.licenses.Category.X
 
 
 def _normalised_name(text: str) -> str:

@@ -30,6 +30,23 @@ def test_expression() -> None:
     assert licenses.expression(cdx_license.DisjunctiveLicense(name="Some bespoke licence")) == "Some bespoke licence"
 
 
+def test_assess_picks_the_friendliest_half_of_a_disjunction_and_sets_the_rest_aside() -> None:
+    reading = licenses.assess("Apache-2.0 OR GPL-3.0-only", is_expression=True)
+
+    assert (reading.category, reading.chosen) == (models.licenses.Category.A, "Apache-2.0")
+    # The half not taken is kept so the report can show what else was on offer
+    assert reading.alternatives == [("GPL-3.0-only", models.licenses.Category.X)]
+
+
+def test_assess_offers_no_choice_for_a_single_licence_or_a_conjunction() -> None:
+    single = licenses.assess("Apache-2.0", is_expression=False)
+    conjunction = licenses.assess("Apache-2.0 AND GPL-3.0-only", is_expression=True)
+
+    # A single licence, or an AND that all applies, carries the whole expression with no half to pick
+    assert (single.chosen, single.alternatives) == (None, [])
+    assert (conjunction.chosen, conjunction.category) == (None, models.licenses.Category.X)
+
+
 def test_check() -> None:
     good, warnings, errors = licenses.check(
         sboms.with_components(
@@ -109,6 +126,19 @@ def test_check_a_disjunction_settles_on_the_friendliest_category() -> None:
     assert [issue.component_name for issue in good] == ["dual"]
     assert warnings == []
     assert errors == []
+
+
+def test_check_records_the_chosen_half_of_a_disjunction_it_still_flags() -> None:
+    # "B OR X" still warns, but only on the friendlier B half, and the report keeps the half it settled on
+    _good, warnings, _errors = licenses.check(
+        sboms.with_components(
+            {"type": "library", "name": "weak-or-forbidden", "licenses": [{"expression": "EPL-2.0 OR GPL-3.0-only"}]},
+        ),
+    )
+
+    assert [(issue.category, issue.chosen, issue.license_expression) for issue in warnings] == [
+        (models.licenses.Category.B, "EPL-2.0", "EPL-2.0 OR GPL-3.0-only"),
+    ]
 
 
 def test_check_a_conjunction_settles_on_the_sternest_category() -> None:

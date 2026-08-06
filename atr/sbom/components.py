@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cyclonedx.model.license import LicenseExpression
+
 if TYPE_CHECKING:
     from cyclonedx.model.bom import Bom
     from cyclonedx.model.component import Component
@@ -46,14 +48,20 @@ def _item(component: Component) -> models.components.Item:
     return models.components.Item(
         name=component.name or "unknown",
         version=component.version,
-        licenses=_licenses(component),
+        license_choices=_licenses(component),
         purl=str(component.purl) if component.purl else None,
     )
 
 
-def _licenses(component: Component) -> list[str]:
-    values = {expr for choice in component.licenses if (expr := licenses.expression(choice))}
-    return sorted(values)
+def _licenses(component: Component) -> list[models.licenses.Choice]:
+    # One reading per declared licence, deduplicated by expression and sorted so the table is stable
+    readings: dict[str, models.licenses.Choice] = {}
+    for choice in component.licenses:
+        expr = licenses.expression(choice)
+        if not expr:
+            continue
+        readings.setdefault(expr, licenses.assess(expr, isinstance(choice, LicenseExpression)))
+    return [readings[expr] for expr in sorted(readings)]
 
 
 def _sort_key(item: models.components.Item) -> tuple[str, str]:

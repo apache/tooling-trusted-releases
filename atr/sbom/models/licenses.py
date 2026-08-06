@@ -34,6 +34,18 @@ class Category(enum.Enum):
         return self.name
 
 
+class Choice(Strict):
+    # ATR's reading of one declared licence. Where an OR let the component be used under the
+    # friendliest of several licences, `chosen` names that half and `alternatives` holds the halves
+    # ATR set aside; for a single licence, or an AND that all applies at once, `chosen` is None and
+    # the whole `expression` carries the category
+    expression: str
+    category: Category
+    any_unknown: bool = False
+    chosen: str | None = None
+    alternatives: list[tuple[str, Category]] = pydantic.Field(default_factory=list)
+
+
 class Issue(Strict):
     component_name: str
     component_version: str | None
@@ -41,6 +53,8 @@ class Issue(Strict):
     license_expression: str
     category: Category
     any_unknown: bool = False
+    # The half of an OR ATR chose, where there was a choice. None where the whole expression applies
+    chosen: str | None = None
     scope: str | None = None
 
     @pydantic.field_validator("category", mode="before")
@@ -51,4 +65,8 @@ class Issue(Strict):
     def __str__(self):
         type_str = "Component" if (self.component_type is None) else self.component_type
         version_str = f"@{self.component_version}" if (self.component_version != "UNKNOWN") else ""
-        return f"{type_str} {self.component_name}{version_str} declares license {self.license_expression}"
+        licence = self.license_expression
+        if (self.chosen is not None) and (self.chosen != self.license_expression):
+            # An OR let ATR take the friendliest half, so name that half but keep the original on show
+            licence = f"{self.chosen} (chosen from {self.license_expression})"
+        return f"{type_str} {self.component_name}{version_str} declares license {licence}"

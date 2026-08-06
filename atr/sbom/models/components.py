@@ -19,13 +19,15 @@ from __future__ import annotations
 
 import pydantic
 
+# pydantic resolves this annotation at runtime, so the import has to stay out of a type-checking block
+from . import licenses  # noqa: TC001
 from .base import Strict
 
 
 class Item(Strict):
     name: str
     version: str | None = None
-    licenses: list[str] = pydantic.Field(default_factory=list)
+    license_choices: list[licenses.Choice] = pydantic.Field(default_factory=list)
     purl: str | None = None
 
 

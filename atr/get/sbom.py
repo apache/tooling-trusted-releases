@@ -71,7 +71,7 @@ async def quality(
     if breakdown is None:
         block.p["This SBOM could not be read, so its components cannot be shown."]
     else:
-        _components_section(block, breakdown, _license_categories(task))
+        _components_section(block, breakdown)
     _license_section(block, task)
     _vulnerability_section(block, task, task_result)
 
@@ -164,7 +164,6 @@ def _component_label(item: sbom.models.components.Item) -> str:
 def _components_section(
     block: htm.Block,
     breakdown: sbom.models.components.Breakdown,
-    license_categories: dict[str, sbom.models.licenses.Category],
 ) -> None:
     if breakdown.subject is not None:
         block.p["This SBOM describes ", htm.strong[_component_label(breakdown.subject)], "."]
@@ -184,20 +183,19 @@ def _components_section(
                     htm.span(".badge.bg-secondary.me-2.font-monospace")[str(len(group.items))],
                     htm.strong[group.component_type.capitalize()],
                 ],
-                _components_table(group.items, license_categories),
+                _components_table(group.items),
             ]
         )
 
 
 def _components_table(
     items: list[sbom.models.components.Item],
-    license_categories: dict[str, sbom.models.licenses.Category],
 ) -> htm.Element:
     rows = [
         htm.tr[
             htm.td[item.name],
             htm.td[item.version or "-"],
-            htm.td[_licenses_cell(item.licenses, license_categories)],
+            htm.td[_licenses_cell(item.license_choices)],
             htm.td[htm.code[item.purl] if item.purl else "-"],
         ]
         for item in items
@@ -267,27 +265,32 @@ def _extract_vulnerability_severity(vuln: results.VulnerabilityDetails) -> str:
     return "Unknown"
 
 
-def _license_badge(name: str, categories: dict[str, sbom.models.licenses.Category]) -> htm.Element:
-    category = categories.get(name, sbom.models.licenses.Category.A)
-    return htm.div(".d-flex.align-items-center")[
-        htm.span(f".badge.me-2{_license_category_style(category)}")[str(category)],
+def _choice_badges(choice: sbom.models.licenses.Choice) -> list[htm.Element]:
+    # A single licence, or an AND that all applies, shows one badge for the whole expression. An OR
+    # ATR resolved shows the chosen half in its category colour and the halves it set aside drained
+    # of colour, so a reader sees what was on offer without the alternatives reading as a verdict
+    if choice.chosen is None:
+        return [_license_badge(choice.expression, choice.category)]
+    return [
+        _license_badge(choice.chosen, choice.category),
+        *(_license_alternative_badge(name, category) for name, category in choice.alternatives),
+    ]
+
+
+def _license_alternative_badge(name: str, category: sbom.models.licenses.Category) -> htm.Element:
+    # The category box keeps its letter but loses its colour, marking a licence ATR could have used
+    # but set aside in favour of a friendlier half of the same OR
+    return htm.div(".d-flex.align-items-center.text-muted")[
+        htm.span(".badge.me-2.bg-secondary.bg-opacity-25.text-dark")[str(category)],
         name,
     ]
 
 
-def _license_categories(task: sql.Task | None) -> dict[str, sbom.models.licenses.Category]:
-    # The score task already categorised every licence expression it found wanting, so a licence
-    # absent from both lists is Category A - no need to run the classifier a second time here
-    task_result = _score_result(task)
-    if task_result is None:
-        return {}
-    categories: dict[str, sbom.models.licenses.Category] = {}
-    for issues in (task_result.license_warnings, task_result.license_errors):
-        if issues is None:
-            continue
-        for issue in _load_license_issues(issues):
-            categories[issue.license_expression] = issue.category
-    return categories
+def _license_badge(name: str, category: sbom.models.licenses.Category) -> htm.Element:
+    return htm.div(".d-flex.align-items-center")[
+        htm.span(f".badge.me-2{_license_category_style(category)}")[str(category)],
+        name,
+    ]
 
 
 def _license_category_style(category: sbom.models.licenses.Category) -> str:
@@ -393,13 +396,11 @@ def _license_tally(
     )
 
 
-def _licenses_cell(
-    names: list[str],
-    categories: dict[str, sbom.models.licenses.Category],
-) -> htm.Element | str:
-    if not names:
+def _licenses_cell(choices: list[sbom.models.licenses.Choice]) -> htm.Element | str:
+    if not choices:
         return "-"
-    return htm.div(".d-flex.flex-column.gap-1")[*(_license_badge(name, categories) for name in names)]
+    badges = [badge for choice in choices for badge in _choice_badges(choice)]
+    return htm.div(".d-flex.flex-column.gap-1")[*badges]
 
 
 def _load_license_issues(issues: list[str]) -> list[sbom.models.licenses.Issue]:

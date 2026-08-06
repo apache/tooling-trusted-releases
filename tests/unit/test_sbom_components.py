@@ -46,7 +46,10 @@ def test_breakdown() -> None:
         ("application", ["gamma"]),
         ("library", ["alpha", "beta"]),
     ]
-    assert breakdown.groups[1].items[0].licenses == ["Apache-2.0"]
+    licence_choices = breakdown.groups[1].items[0].license_choices
+    assert [(choice.expression, str(choice.category), choice.chosen) for choice in licence_choices] == [
+        ("Apache-2.0", "A", None)
+    ]
 
     # A BOM need not say what it is about
     assert components.breakdown(sboms.with_components({"type": "library", "name": "alpha"})).subject is None
