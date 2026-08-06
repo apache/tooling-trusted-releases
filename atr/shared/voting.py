@@ -29,7 +29,7 @@ import atr.util as util
 
 
 class StartVotingForm(form.Form):
-    email_to: str = form.label("To (mailing list)", widget=form.Widget.CUSTOM)
+    email_to: str = form.label("To (mailing list)", widget=form.Widget.CUSTOM, required=True)
     email_cc: form.StrList = form.label("CC")
     email_bcc: form.StrList = form.label("BCC")
     second_round_email_to: str | None = form.label(
@@ -42,9 +42,9 @@ class StartVotingForm(form.Form):
         "Minimum number of hours the vote will be open for.",
         default=72,
     )
-    subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
+    subject: str = form.label("Subject", widget=form.Widget.CUSTOM, required=True)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
-    body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
+    body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000, required=True)
     notify_when_finished: form.Bool = form.label(
         "Email reminder",
         widget=form.Widget.CUSTOM,

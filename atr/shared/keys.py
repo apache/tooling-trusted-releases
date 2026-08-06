@@ -82,6 +82,7 @@ class AddSSHKeyForm(form.Form):
         "Your SSH public key should be in the standard format, starting with a key type"
         ' (like "ssh-rsa" or "ssh-ed25519") followed by the key data.',
         widget=form.Widget.TEXTAREA,
+        required=True,
     )
 
 
@@ -126,12 +127,14 @@ class UploadFileForm(form.Form):
         "Upload a KEYS file containing multiple PGP public keys."
         " The file should contain keys in ASCII-armored format, starting with"
         ' "-----BEGIN PGP PUBLIC KEY BLOCK-----".',
+        required=True,
     )
     selected_committee: str = form.label(
         "Associate keys with committee",
         "Choose the committee whose KEYS file these keys belong to. Every key in the uploaded file is"
         " added to that committee's public KEYS file, which is used to verify the signatures on its releases.",
         widget=form.Widget.RADIO,
+        required=True,
     )
 
     @pydantic.model_validator(mode="after")
@@ -147,6 +150,7 @@ class UploadRemoteForm(form.Form):
         "Committee",
         "Choose the committee whose existing KEYS file to fetch from the ASF downloads server and import.",
         widget=form.Widget.RADIO,
+        required=True,
     )
 
 

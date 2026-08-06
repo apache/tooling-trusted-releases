@@ -32,7 +32,7 @@ type DELETE_TOKEN = Literal["delete_token"]
 
 class AddTokenForm(form.Form):
     variant: ADD_TOKEN = form.value(ADD_TOKEN)
-    label: str = form.label("Label")
+    label: str = form.label("Label", required=True)
 
     @pydantic.field_validator("label", mode="after")
     @classmethod
@@ -51,7 +51,7 @@ class DeleteTokenForm(form.Form):
 
 
 class IssueForm(form.Form):
-    pat: str = form.label("PAT", widget=form.Widget.TEXT)
+    pat: str = form.label("PAT", widget=form.Widget.TEXT, required=True)
 
 
 type TokenForm = Annotated[

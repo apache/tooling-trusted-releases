@@ -33,7 +33,7 @@ class DeleteCacheForm(form.Empty):
 
 
 class TallyForm(form.Form):
-    thread: str = form.label("Thread URL or ID")
+    thread: str = form.label("Thread URL or ID", required=True)
 
 
 type UserCacheForm = Annotated[

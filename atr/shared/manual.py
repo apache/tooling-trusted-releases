@@ -24,9 +24,11 @@ import atr.models.safe as safe
 
 
 class ResolveVoteForm(form.Form):
-    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
-    vote_thread_url: str = form.label("Vote thread URL")
-    vote_result_url: str = form.label("Vote result URL")
+    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label(
+        "Vote result", widget=form.Widget.RADIO, required=True
+    )
+    vote_thread_url: str = form.label("Vote thread URL", required=True)
+    vote_result_url: str = form.label("Vote result URL", required=True)
 
     @pydantic.field_validator("vote_thread_url", "vote_result_url", mode="after")
     @classmethod

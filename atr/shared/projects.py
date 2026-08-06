@@ -122,11 +122,13 @@ class AddProjectForm(form.Form):
         "Project name",
         'For example, "Example" or "Example Components". Use title case; the "Apache" prefix is added for you.',
         prefix="Apache",
+        required=True,
     )
     key: Annotated[safe.ProjectKey, pydantic.BeforeValidator(_strip_whitespace)] = form.label(
         "Project key",
         'For example, "example" or "example-components". '
         "You must start with your committee key (above), and you must use lower case.",
+        required=True,
     )
 
     @pydantic.field_validator("display_name", mode="before")
@@ -295,8 +297,9 @@ class EditMetadataForm(form.Form):
         "Project name",
         'For example, "Example" or "Example Components". Use title case; the "Apache" prefix is added for you.',
         prefix="Apache",
+        required=True,
     )
-    description: str = form.label(description="Project description", widget=form.Widget.TEXTAREA)
+    description: str = form.label(description="Project description", widget=form.Widget.TEXTAREA, required=True)
     short_description: str = form.label(description="Short description", widget=form.Widget.TEXT, default="")
     homepage: form.OptionalURL = form.label(
         "Homepage",
@@ -557,7 +560,7 @@ class TrustedPublishingPolicyForm(form.Form):
 class AddCategoryForm(form.Form):
     variant: ADD_CATEGORY = form.value(ADD_CATEGORY)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    category_to_add: str = form.label("New category name")
+    category_to_add: str = form.label("New category name", required=True)
 
 
 class RemoveCategoryForm(form.Form):
@@ -569,7 +572,7 @@ class RemoveCategoryForm(form.Form):
 class AddLanguageForm(form.Form):
     variant: ADD_LANGUAGE = form.value(ADD_LANGUAGE)
     project_key: safe.ProjectKey = form.label("Project name", widget=form.Widget.HIDDEN)
-    language_to_add: str = form.label("New language name")
+    language_to_add: str = form.label("New language name", required=True)
 
 
 class RemoveLanguageForm(form.Form):
@@ -584,7 +587,7 @@ class ArchiveSelectedProject(form.Form):
 
 class ArchiveSelectedRelease(form.Form):
     variant: ARCHIVE_SELECTED_RELEASE = form.value(ARCHIVE_SELECTED_RELEASE)
-    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.")
+    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.", required=True)
 
 
 class CompleteApprovalRequest(form.Form):
@@ -593,7 +596,7 @@ class CompleteApprovalRequest(form.Form):
 
 class ConfirmReleaseArchival(form.Form):
     variant: CONFIRM_RELEASE_ARCHIVAL = form.value(CONFIRM_RELEASE_ARCHIVAL)
-    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.")
+    confirm_archive: Literal["ARCHIVE"] = form.label("Confirmation", "Type ARCHIVE to confirm.", required=True)
 
 
 class DeleteSelectedProject(form.Form):

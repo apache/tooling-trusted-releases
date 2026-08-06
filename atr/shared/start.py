@@ -50,6 +50,7 @@ class StartReleaseForm(form.Form):
         " and you can also set your own tag before a vote starts."
         " Release candidate drafts inactive for 90 days are cleaned up automatically,"
         " with a warning email sent at 80 days.",
+        required=True,
     )
     auto_archive_prior: form.Bool = form.label(
         "Auto archive prior release",

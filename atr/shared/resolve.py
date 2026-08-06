@@ -49,10 +49,11 @@ class ResolveFormBase(form.Form):
 
 class CancelSubmitForm(ResolveFormBase):
     variant: CANCEL_SUBMIT = form.value(CANCEL_SUBMIT)
-    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000)
+    email_body: str = form.label("Email body", widget=form.Widget.TEXTAREA, max_length=100_000, required=True)
     confirm_cancel: Literal["CONFIRM"] = form.label(
         "Confirm",
         "Type CONFIRM (in capitals) to cancel this vote.",
+        required=True,
     )
     vote_result: Literal["Cancelled"] = form.label("Vote result", default="Cancelled", widget=form.Widget.HIDDEN)
 
@@ -65,8 +66,11 @@ class SubmitForm(ResolveFormBase):
         "{{OUTCOME}} is a placeholder - it will be replaced with the vote result you select when the email is sent.",
         widget=form.Widget.TEXTAREA,
         max_length=100_000,
+        required=True,
     )
-    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label("Vote result", widget=form.Widget.RADIO)
+    vote_result: Literal["Passed", "Failed", "Cancelled"] = form.label(
+        "Vote result", widget=form.Widget.RADIO, required=True
+    )
     automatic_resolve_when_finished: form.Bool = form.label(
         "Automatically resolve the second round vote",
         widget=form.Widget.CUSTOM,

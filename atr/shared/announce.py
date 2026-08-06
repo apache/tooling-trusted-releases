@@ -28,12 +28,12 @@ class AnnounceForm(form.Form):
     """Form for announcing a release preview."""
 
     revision_number: safe.RevisionNumber = form.label("Revision number", widget=form.Widget.HIDDEN)
-    email_to: str = form.label("To", widget=form.Widget.CUSTOM)
+    email_to: str = form.label("To", widget=form.Widget.CUSTOM, required=True)
     email_cc: form.StrList = form.label("CC")
     email_bcc: form.StrList = form.label("BCC")
-    subject: str = form.label("Subject", widget=form.Widget.CUSTOM)
+    subject: str = form.label("Subject", widget=form.Widget.CUSTOM, required=True)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
-    body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000)
+    body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000, required=True)
     download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
     download_page: form.OptionalURL = form.label(
         "Download page URL",
@@ -56,6 +56,7 @@ class AnnounceForm(form.Form):
     confirm_announce: Literal["CONFIRM"] = form.label(
         "Confirm",
         "Type CONFIRM (in capitals) to enable the submit button.",
+        required=True,
     )
 
     @pydantic.field_validator("download_page")

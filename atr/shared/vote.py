@@ -33,7 +33,7 @@ def message_id_source_archive_url(message_id: str, vote_recipient: str) -> str:
 
 
 class CastVoteForm(form.Form):
-    decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM)
+    decision: Literal["+1", "0", "-1"] = form.label("Your vote", widget=form.Widget.CUSTOM, required=True)
     comment: str = form.label("Comment (optional)", widget=form.Widget.TEXTAREA, max_length=50_000)
     vote_seq: form.OptionalInt = form.label("Vote serial", default=None, widget=form.Widget.HIDDEN)
     vote_mode: sql.VoteMode = form.label("Vote mode", widget=form.Widget.HIDDEN)

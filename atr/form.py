@@ -186,8 +186,8 @@ def label(
     if documentation is not None:
         extra["documentation"] = documentation
     extra["readonly"] = readonly
-    # A field with no default is already marked required from is_required. This flag is for the fields
-    # that carry an empty default - a list, an optional - but a validator still makes them mandatory
+    # Marks the field required in the UI. It has to be stated, since is_required over-fires on any field
+    # that simply lacks a default, whether or not the user must actually fill it in
     if required:
         extra["required"] = True
     if len(kwargs) > 0:
@@ -938,9 +938,9 @@ def _render_row(  # noqa: C901
     label_classes = f"{label_col_class} col-form-label text-sm-end"
     label_classes_with_error = f"{label_classes} text-danger" if has_flash_error else label_classes
     label_content: list[Any] = [label_text]
-    # A field with no default is required, but a collection type carries an empty default even when a
-    # validator makes it mandatory, so `required=True` on the label covers what is_required can't see
-    if is_required or _label_marks_required(field_info):
+    # Opt-in via required=True, not is_required: a bare field with no default reads as required to
+    # pydantic but still accepts empty input here, so is_required marks far more than is really mandatory
+    if _label_marks_required(field_info):
         # The asterisk is hidden from screen readers, which pick the requirement up from the
         # visually-hidden note beside it instead
         label_content.append(htm.span(".text-danger.ms-1", aria_hidden="true")["*"])

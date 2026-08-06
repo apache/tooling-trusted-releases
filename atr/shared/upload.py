@@ -45,6 +45,7 @@ class SvnImportForm(form.Form):
     svn_path: safe.RelPath = form.label(
         "SVN path",
         "Path within the committee's svn:dist directory, e.g. 'java-library/4_0_4' or '3.1.5rc1'.",
+        required=True,
     )
     revision: str = form.label(
         "Revision",

@@ -157,8 +157,8 @@ class DistributionAutomateForm(form.Form):
         "Owner or Namespace",
         MAVEN_OWNER_NAMESPACE_HELP,
     )
-    package: safe.Alphanumeric = form.label("Package")
-    version: safe.VersionKey = form.label("Version")
+    package: safe.Alphanumeric = form.label("Package", required=True)
+    version: safe.VersionKey = form.label("Version", required=True)
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
@@ -183,8 +183,8 @@ class DistributionRecordForm(form.Form):
         "Owner or Namespace",
         MAVEN_OWNER_NAMESPACE_HELP,
     )
-    package: safe.Alphanumeric = form.label("Package")
-    version: safe.VersionKey = form.label("Version")
+    package: safe.Alphanumeric = form.label("Package", required=True)
+    version: safe.VersionKey = form.label("Version", required=True)
     details: form.Bool = form.label(
         "Include details",
         "Include the details of the distribution in the response",
