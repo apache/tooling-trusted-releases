@@ -608,6 +608,8 @@ async def _step_07a_process_validated_rsync_read(
             files = [
                 f for pattern in file_patterns for f in await asyncio.to_thread(glob.glob, f"{source_dir}/{pattern}")
             ]
+            if not files:
+                raise RsyncArgsError(f"No files match the tag for release {release.key}")
             argv[-1:] = files
 
         ###################################################
