@@ -1,6 +1,6 @@
 {
   "dependencies": {
     "bootstrap": "5.3.8",
-    "mermaid": "11.15.0"
+    "mermaid": "11.16.1"
   }
 }
