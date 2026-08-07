@@ -22,6 +22,16 @@ fi
 # Ensure that the permissions of secret files are correct
 STATE_DIR=state scripts/check-perms
 
+if [ "${TESTS:-0}" = "1" ] && [ -z "${SVN_PUBLISH_URL:-}" ]
+then
+  if [ ! -d state/dev-svn-repo/db ]
+  then
+    svnadmin create state/dev-svn-repo
+  fi
+  export SVN_PUBLISH_URL="file:///opt/atr/state/dev-svn-repo"
+  export SVN_TOKEN="${SVN_TOKEN:-dummy}"
+fi
+
 mkdir -p /opt/atr/state/hypercorn/logs
 echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn/logs/hypercorn.log
 exec hypercorn --worker-class uvloop --bind "${BIND}" \

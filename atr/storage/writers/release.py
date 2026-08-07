@@ -1250,9 +1250,9 @@ class ReleaseManager(CommitteeParticipant):
         try:
             revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
         except svn.CommandExecutionError as exc:
-            log.exception("SVN publish failed")
+            log.error(f"SVN publish failed: {svn.error_message(exc)}")
             if "E160020" not in exc.output:
-                raise datatypes.FailedError(svn.error_message(exc)) from exc
+                raise datatypes.FailedError(svn.error_message(exc)) from None
             healed = await self.__already_published_result(
                 internal_url,
                 task_args.asf_uid,
@@ -1265,7 +1265,7 @@ class ReleaseManager(CommitteeParticipant):
                 message = f"{message}: {match.group(1)}"
                 if svn_publish_url := config.get().SVN_PUBLISH_URL:
                     message = message.replace(svn_publish_url, "")
-            raise datatypes.FailedError(message) from exc
+            raise datatypes.FailedError(message) from None
         if revision is None:
             raise datatypes.FailedError("SVN publish did not return a Committed revision line")
         return results.SvnPublish(

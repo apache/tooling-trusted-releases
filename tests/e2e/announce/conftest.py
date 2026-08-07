@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Page
 
 PROJECT_KEY: Final[str] = "test"
+PUBLISH_RUN: Final[str] = str(int(time.time()))
 # TODO: We need a convention to scope this per test
 VERSION_KEY: Final[str] = "0.1+e2e-announce"
 FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
@@ -80,6 +81,7 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.wait_for_load_state()
 
     page.locator("input#vote_duration").fill("0")
+    page.locator("#automatic_publish_when_resolved").uncheck()
     # Acknowledge every concern group raised by the checks (e.g. Rat Check)
     # so the vote-start form accepts the submission.
     for _box in page.locator('input[name="concerns_noted"]').all():
@@ -96,6 +98,8 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
     page.locator('input[name="vote_result"][value="Passed"]').check()
     page.get_by_role("button", name="Resolve vote").click()
     page.wait_for_url(f"**/finish/{PROJECT_KEY}/{VERSION_KEY}")
+
+    _publish_to_svn(page, VERSION_KEY)
 
     page.close()
 
@@ -178,6 +182,19 @@ def _publish_release(page: Page, version: str) -> None:
     page.wait_for_url(f"**/releases/finished/{PROJECT_KEY}**")
 
 
+def _publish_to_svn(page: Page, version: str, max_attempts: int = 30) -> None:
+    helpers.visit(page, f"/finish/{PROJECT_KEY}/{version}")
+    page.locator("#download_path_suffix").fill(f"{version}-{PUBLISH_RUN}")
+    page.get_by_role("button", name="Publish to SVN").click()
+    published_locator = page.locator('div.alert-success:has-text("Published to SVN")')
+    for _ in range(max_attempts):
+        if published_locator.is_visible(timeout=500):
+            return
+        time.sleep(0.5)
+        page.reload()
+    raise TimeoutError(f"SVN publish did not complete for {PROJECT_KEY} {version}")
+
+
 def _run_release_to_finish(context: BrowserContext, page: Page, version: str, opt_in_archive: bool) -> None:
     helpers.visit(page, f"/start/{PROJECT_KEY}")
     page.locator("input#version_key").fill(version)
@@ -208,6 +225,7 @@ def _run_release_to_finish(context: BrowserContext, page: Page, version: str, op
     page.wait_for_load_state()
 
     page.locator("input#vote_duration").fill("0")
+    page.locator("#automatic_publish_when_resolved").uncheck()
     # Acknowledge every concern group raised by the checks (e.g. Rat Check)
     # so the vote-start form accepts the submission.
     for _box in page.locator('input[name="concerns_noted"]').all():
@@ -224,6 +242,8 @@ def _run_release_to_finish(context: BrowserContext, page: Page, version: str, op
     page.locator('input[name="vote_result"][value="Passed"]').check()
     page.get_by_role("button", name="Resolve vote").click()
     page.wait_for_url(f"**/finish/{PROJECT_KEY}/{version}")
+
+    _publish_to_svn(page, version)
 
 
 def _wait_for_vote_start_readiness(

@@ -88,6 +88,19 @@ def _validate_svn_dist_public_url(url: str) -> None:
         raise RuntimeError("SVN_DIST_PUBLIC_URL must be an atr or release dist URL")
 
 
+def _validate_svn_publish(conf: type["AppConfig"]) -> None:
+    if not conf.SVN_PUBLISH_URL:
+        raise RuntimeError("SVN_PUBLISH_URL must be configured; in development, run make svn-dev-repo")
+    if not conf.SVN_TOKEN:
+        raise RuntimeError("SVN_TOKEN must be configured; in development, any value works")
+    try:
+        kind = svn_publish_kind()
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if (not is_production_mode()) and (kind is not SvnPublishKind.LOCAL_REPOSITORY):
+        raise RuntimeError("SVN_PUBLISH_URL must be a local repository outside of production; run make svn-dev-repo")
+
+
 class AppConfig:
     ACCOUNT_CHECK_INTERVAL = decouple.config("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
     ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
@@ -315,6 +328,7 @@ def validate() -> None:
             raise RuntimeError(f"{name} must be a relative path")
 
     _validate_svn_dist_public_url(conf.SVN_DIST_PUBLIC_URL)
+    _validate_svn_publish(conf)
 
     if (not is_dev_environment()) and (get_mode() == Mode.Debug):
         raise RuntimeError("Debug mode can only be set in development environment")

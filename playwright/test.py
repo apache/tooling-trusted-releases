@@ -201,6 +201,9 @@ def lifecycle_04_start_vote(page: Page, credentials: Credentials, version_key: s
     logging.info("Page loaded after following the start vote link")
     logging.info(f"Current URL: {page.url}")
 
+    logging.info("Disabling automatic SVN publication, to publish manually later")
+    page.locator("#automatic_publish_when_resolved").uncheck()
+
     logging.info("Locating and activating the button to prepare the vote email")
     submit_button_locator = page.get_by_role("button", name="Send vote email")
     expect(submit_button_locator).to_be_enabled()
@@ -263,6 +266,32 @@ def lifecycle_05_resolve_vote(page: Page, credentials: Credentials, version_key:
     logging.info(f"Waiting for navigation to /finish/{TEST_PROJECT}/{version_key} after resolving the vote")
     wait_for_path(page, f"/finish/{TEST_PROJECT}/{version_key}")
     logging.info("Vote resolution actions completed successfully")
+
+
+def lifecycle_05b_publish_to_svn(page: Page, credentials: Credentials, version_key: str) -> None:
+    go_to_path(page, f"/finish/{TEST_PROJECT}/{version_key}")
+
+    logging.info(f"Locating the publish to SVN button for {TEST_PROJECT} {version_key}")
+    publish_button_locator = page.get_by_role("button", name="Publish to SVN")
+    expect(publish_button_locator).to_be_enabled()
+
+    suffix = f"{version_key}-{int(time.time())}"
+    logging.info(f"Filling the download path suffix with {suffix}")
+    page.locator("#download_path_suffix").fill(suffix)
+    publish_button_locator.click()
+
+    logging.info("Waiting for the SVN publish task to complete")
+    published_locator = page.locator('div.alert-success:has-text("Published to SVN")')
+    published = False
+    for _ in range(30):
+        if published_locator.is_visible(timeout=500):
+            published = True
+            logging.info("SVN publish completed")
+            break
+        time.sleep(0.5)
+        page.reload()
+    if not published:
+        raise RuntimeError(f"SVN publish did not complete for {TEST_PROJECT} {version_key}")
 
 
 def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_key: str) -> None:
@@ -657,6 +686,7 @@ def test_all(page: Page, credentials: Credentials, skip_slow: bool) -> None:
         test_lifecycle_03_add_file,
         test_lifecycle_04_start_vote,
         test_lifecycle_05_resolve_vote,
+        test_lifecycle_05b_publish_to_svn,
         test_lifecycle_06_announce_preview,
         test_lifecycle_07_release_exists,
     ]
@@ -1019,6 +1049,10 @@ def test_lifecycle_04_start_vote(page: Page, credentials: Credentials) -> None:
 def test_lifecycle_05_resolve_vote(page: Page, credentials: Credentials) -> None:
     lifecycle_05_resolve_vote(page, credentials, version_key="0.1+preview")
     lifecycle_05_resolve_vote(page, credentials, version_key="0.1+release")
+
+
+def test_lifecycle_05b_publish_to_svn(page: Page, credentials: Credentials) -> None:
+    lifecycle_05b_publish_to_svn(page, credentials, version_key="0.1+release")
 
 
 def test_lifecycle_06_announce_preview(page: Page, credentials: Credentials) -> None:

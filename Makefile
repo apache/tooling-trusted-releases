@@ -7,6 +7,8 @@
 BIND ?= 127.0.0.1:8080
 IMAGE ?= tooling-trusted-release
 STATE_DIR ?= state
+SVN_PUBLISH_URL ?= file://$(abspath $(STATE_DIR)/dev-svn-repo)
+SVN_TOKEN ?= dummy
 
 build: build-alpine
 
@@ -118,10 +120,11 @@ serve:
 	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
 	  atr.server:app --debug --reload --worker-class uvloop
 
-serve-local:
+serve-local: svn-dev-repo
 	@scripts/check-certs
 	@scripts/check-perms
-	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
+	@APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
+	  SVN_PUBLISH_URL="$(SVN_PUBLISH_URL)" SVN_TOKEN="$(SVN_TOKEN)" \
 	  SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
 	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
 	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
@@ -133,9 +136,7 @@ svn-dev-repo:
 	else echo "Local SVN repo already exists at $(STATE_DIR)/dev-svn-repo"; \
 	fi
 	@echo
-	@echo "Export these before running make serve-local to publish into it:"
-	@echo "  export SVN_PUBLISH_URL=\"file://$(abspath $(STATE_DIR)/dev-svn-repo)\""
-	@echo "  export SVN_TOKEN=\"dummy\""
+	@echo "serve-local publishes to $(SVN_PUBLISH_URL) unless overridden"
 
 sync:
 	uv sync --frozen --no-dev

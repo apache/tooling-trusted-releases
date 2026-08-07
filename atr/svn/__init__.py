@@ -138,7 +138,7 @@ class SvnLog(pydantic_xml.BaseXmlModel, tag="log"):
 
 
 async def commit(path: pathlib.Path, url: str, username: str, revision: str, message: str) -> str:
-    log.debug(f"running svn commit for user '{username}' to '{url}'")
+    log.debug(f"running svn commit for user '{username}'")
     # The username here is the ASF UID of the committer
     svn_token = config.get().SVN_TOKEN
     if svn_token is None:
@@ -341,7 +341,7 @@ async def _run_svn_command(sub_cmd: str, path: str, *args: str, timeout_seconds:
 
 
 async def _run_svn_info(path_or_url: str) -> str:
-    log.debug(f"fetching svn info for '{path_or_url}'")
+    log.debug("fetching svn info")
     return await _run_svn_command("info", path_or_url, timeout_seconds=INFO_TIMEOUT_SECONDS)
 
 

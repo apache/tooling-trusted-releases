@@ -68,6 +68,7 @@ import atr.pubsub as pubsub
 import atr.sessions as sessions
 import atr.ssh as ssh
 import atr.storage as storage
+import atr.svn as svn
 import atr.tasks as tasks
 import atr.tasks.quarantine as quarantine
 import atr.template as template
@@ -336,6 +337,8 @@ def _app_setup_lifecycle(app: base.QuartApp, app_config: type[config.AppConfig])
         await _backfill_archive_cache()
 
         await cache.admins_startup_load()
+
+        await _svn_publish_reachability_check()
         admins_task = asyncio.create_task(cache.admins_refresh_loop())
         app.extensions["admins_task"] = admins_task
 
@@ -1225,6 +1228,53 @@ def _set_file_permissions_to_read_only() -> None:
                 fixed_count += 1
     if fixed_count > 0:
         log.info(f"Set permissions of {fixed_count} files to read only (0o444)")
+
+
+def _svn_publish_description(kind: config.SvnPublishKind) -> str:
+    if kind is config.SvnPublishKind.LOCAL_REPOSITORY:
+        return f"local SVN publish repository at {config.get().SVN_PUBLISH_URL}"
+    return "configured SVN publish repository"
+
+
+def _svn_publish_failure_reason(kind: config.SvnPublishKind, exc: Exception) -> str:
+    if kind is config.SvnPublishKind.LOCAL_REPOSITORY:
+        return str(exc)
+    if isinstance(exc, svn.CommandExecutionError):
+        return svn.error_message(exc)
+    return str(exc)
+
+
+async def _svn_publish_reachability_check() -> None:
+    url = config.get().SVN_PUBLISH_URL
+    if not url:
+        raise RuntimeError("SVN_PUBLISH_URL must be configured; in development, run make svn-dev-repo")
+    kind = config.svn_publish_kind()
+    description = _svn_publish_description(kind)
+    try:
+        await svn.run_command("svn", "info", url, "--non-interactive", timeout_seconds=svn.INFO_TIMEOUT_SECONDS)
+    except Exception as exc:
+        reason = _svn_publish_failure_reason(kind, exc)
+        if not config.is_production_mode():
+            raise RuntimeError(
+                f"The {description} is not reachable: {reason}. In development, create one with make svn-dev-repo"
+            ) from exc
+        log.error(f"The {description} is not reachable: {reason}")
+        await _svn_publish_unreachable_notify(description, reason)
+        return
+    log.info(f"The {description} is reachable")
+
+
+async def _svn_publish_unreachable_notify(description: str, reason: str) -> None:
+    message = (
+        f"The {description} was not reachable when ATR started: {reason}."
+        " Publishing to SVN may fail until this is resolved."
+    )
+    try:
+        for asf_uid in sorted(cache.admins_get()):
+            async with storage.write_as_user_service(asf_uid) as waus:
+                await waus.notifications_create(message)
+    except Exception:
+        log.exception("Failed to record SVN publish reachability notifications")
 
 
 def _unique_routes_check(app: base.QuartApp) -> None:

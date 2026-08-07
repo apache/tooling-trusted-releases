@@ -363,7 +363,7 @@ class FoundationCommitter(GeneralPublic):
                 await asyncio.to_thread(source.write_text, content, encoding="utf-8")
             await svn.publish_file(source, target_url, self.__asf_uid, f"Publish KEYS for {committee.key} via ATR")
         except svn.CommandExecutionError as e:
-            log.warning(f"Failed to publish KEYS to SVN for committee {committee.key}: {e}")
+            log.warning(f"Failed to publish KEYS to SVN for committee {committee.key}: {svn.error_message(e)}")
             return outcome.Error(RuntimeError(svn.error_message(e)))
         except Exception as e:
             log.warning(f"Failed to publish KEYS to SVN for committee {committee.key}: {e}")
