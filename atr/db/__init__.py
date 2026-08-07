@@ -350,6 +350,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         _child_committees: bool = False,
         _projects: bool = False,
         _signing_certificates: bool = False,
+        _signing_keys: bool = False,
     ) -> Query[sql.Committee]:
         via = sql.validate_instrumented_attribute
         query = sqlmodel.select(sql.Committee)
@@ -387,7 +388,11 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.options(select_in_load(sql.Committee.child_committees))
         if _projects:
             query = query.options(select_in_load(sql.Committee.projects))
-        if _signing_certificates:
+        if _signing_certificates and _signing_keys:
+            query = query.options(
+                select_in_load_nested(sql.Committee.signing_certificates, sql.SigningCertificate.signing_keys)
+            )
+        elif _signing_certificates:
             query = query.options(select_in_load(sql.Committee.signing_certificates))
 
         return Query(self, query)
@@ -592,6 +597,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         deleted: Opt[bool] = False,
         historic_use: Opt[bool] = NOT_SET,
         _committees: bool = False,
+        _signing_keys: bool = False,
     ) -> Query[sql.SigningCertificate]:
         via = sql.validate_instrumented_attribute
         query = sqlmodel.select(sql.SigningCertificate)
@@ -616,6 +622,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
 
         if _committees:
             query = query.options(select_in_load(sql.SigningCertificate.committees))
+        if _signing_keys:
+            query = query.options(select_in_load(sql.SigningCertificate.signing_keys))
 
         return Query(self, query)
 

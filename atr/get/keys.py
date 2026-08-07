@@ -228,9 +228,13 @@ async def keys(session: web.Committer, _keys: Literal["keys"]) -> str:
     committees_to_query = list(set(session.member_committees + session.participant_committees))
 
     async with db.session() as data:
-        user_keys = await data.signing_certificate(apache_uid=session.uid.lower(), _committees=True).all()
+        user_keys = await data.signing_certificate(
+            apache_uid=session.uid.lower(), _committees=True, _signing_keys=True
+        ).all()
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
-        user_committees_with_keys = await data.committee(name_in=committees_to_query, _signing_certificates=True).all()
+        user_committees_with_keys = await data.committee(
+            name_in=committees_to_query, _signing_certificates=True, _signing_keys=True
+        ).all()
 
         all_fingerprints = [k.fingerprint for c in user_committees_with_keys for k in c.signing_certificates]
         artifact_counts: dict[str, int] = {}
@@ -347,6 +351,19 @@ def _add_signing_keys(page: htm.Block, signing_keys: list[sql.SigningKey]) -> No
     page.div(".table-responsive.mb-4")[htm.table(".table.border.table-striped.table-sm")[thead, tbody.collect()]]
 
 
+def _certificate_key_id(key: sql.SigningCertificate) -> htm.Element:
+    link = htm.a(href=util.as_url(details, fingerprint=key.fingerprint))[key.fingerprint[-16:].upper()]
+    # A certificate whose primary and every subkey are revoked can't sign anything, so strike it through
+    # and say so, since these tables carry no per-key status column
+    if key.signing_keys and all(signing_key.revoked for signing_key in key.signing_keys):
+        return htm.span[
+            htm.span(".text-decoration-line-through")[link],
+            " ",
+            htm.span(".text-muted")["(revoked)"],
+        ]
+    return link
+
+
 async def _committee_keys(
     page: htm.Block,
     user_committees_with_keys: list[sql.Committee],
@@ -377,8 +394,7 @@ async def _committee_keys(
                 tbody = htm.Block(htm.tbody)
                 for key in sorted_keys:
                     row = htm.Block(htm.tr)
-                    details_url = util.as_url(details, fingerprint=key.fingerprint)
-                    row.td(".text-break.font-monospace.px-2")[htm.a(href=details_url)[key.fingerprint[-16:].upper()]]
+                    row.td(".text-break.font-monospace.px-2")[_certificate_key_id(key)]
                     email = util.email_from_uid(key.primary_declared_uid) if key.primary_declared_uid else "-"
                     row.td(".text-break.px-2")[email or "-"]
                     row.td(".text-break.px-2")[key.apache_uid or "-"]
@@ -462,9 +478,7 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.SigningCertificate]
         tbody = htm.Block(htm.tbody)
         for key in user_keys:
             row = htm.Block(htm.tr, classes=".page-user-openpgp-key")
-            row.td(".text-break.px-2.align-middle")[
-                htm.a(href=util.as_url(details, fingerprint=key.fingerprint))[key.fingerprint[-16:].upper()]
-            ]
+            row.td(".text-break.px-2.align-middle")[_certificate_key_id(key)]
             if key.committees:
                 committee_keys = ", ".join([c.key for c in key.committees])
                 row.td(".text-break.px-2.align-middle")[committee_keys]
