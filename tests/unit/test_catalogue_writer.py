@@ -280,6 +280,98 @@ async def test_delete_project_removes_project_and_contents(sessionmaker) -> None
 
 
 @pytest.mark.asyncio
+async def test_archive_project_marks_it_retired(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        assert project.status == sql.ProjectStatus.RETIRED
+
+
+@pytest.mark.asyncio
+async def test_restore_project_returns_it_to_active(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        await _writer(data).restore_project(safe.ProjectKey("alpha-one"))
+
+        project = await data.get(sql.Project, "alpha-one")
+        assert project is not None
+        assert project.status == sql.ProjectStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_archive_rejects_a_project_already_in_that_status(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+        with pytest.raises(storage.AccessError, match="already"):
+            await _writer(data).archive_project(safe.ProjectKey("alpha-one"))
+
+
+@pytest.mark.asyncio
+async def test_restore_rejects_a_project_already_in_that_status(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+
+        with pytest.raises(storage.AccessError, match="already"):
+            await _writer(data).restore_project(safe.ProjectKey("alpha-one"))
+
+
+@pytest.mark.asyncio
+async def test_archive_release_marks_it_archived(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        assert release.is_archived is True
+
+
+@pytest.mark.asyncio
+async def test_restore_release_returns_it_to_current(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        assert release.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_archive_release_rejects_one_already_in_that_status(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        with pytest.raises(storage.AccessError, match="already"):
+            await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_restore_release_rejects_one_already_in_that_status(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        with pytest.raises(storage.AccessError, match="already"):
+            await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+
+@pytest.mark.asyncio
 async def test_delete_project_orphans_a_child_super_pointer_rather_than_deleting_it(sessionmaker) -> None:
     # A sub-project points at the deleted project via super_project_key; the child must
     # survive with its pointer cleared, not be swept away by the delete

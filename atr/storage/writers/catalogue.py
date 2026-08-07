@@ -108,6 +108,64 @@ class FoundationAdmin:
             moved_to_project=to_project,
         )
 
+    async def archive_project(self, project_key: safe.ProjectKey) -> None:
+        await self._set_project_status(project_key, sql.ProjectStatus.RETIRED)
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, archived_project=str(project_key))
+
+    async def restore_project(self, project_key: safe.ProjectKey) -> None:
+        await self._set_project_status(project_key, sql.ProjectStatus.ACTIVE)
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_project=str(project_key))
+
+    async def _set_project_status(self, project_key: safe.ProjectKey, status: sql.ProjectStatus) -> None:
+        key = str(project_key)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            project = await self.__data.project(key=key).get()
+            if project is None:
+                raise storage.AccessError(f"Project '{key}' not found.", status=404)
+            if project.status == status:
+                raise storage.AccessError(f"Project '{key}' is already {status.value}.", status=409)
+            # the committee index sorts projects into current and archived by status, so the whole site goes stale
+            project.status = status
+            project.mark_updated(by=self.__asf_uid, update_type=sql.UpdateType.MANUAL)
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+
+    async def archive_release(self, release_key: safe.ReleaseKey) -> None:
+        await self._set_release_archived(release_key, True)
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, archived_release=str(release_key))
+
+    async def restore_release(self, release_key: safe.ReleaseKey) -> None:
+        await self._set_release_archived(release_key, False)
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_release=str(release_key))
+
+    async def _set_release_archived(self, release_key: safe.ReleaseKey, archived: bool) -> None:
+        key = str(release_key)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.get(sql.Release, key)
+            if release is None:
+                raise storage.AccessError(f"Release '{key}' not found.", status=404)
+            if release.is_archived == archived:
+                state = "archived" if archived else "active"
+                raise storage.AccessError(f"Release '{key}' is already {state}.", status=409)
+            # Only the status flag moves. We leave the archived date alone: it mirrors a
+            # lifecycle event, and a catalogued release we archive by hand may well have no
+            # such event, which the model allows (an archived-but-undated release). The flag
+            # feeds both the project's current-versus-archived split and the committee
+            # summary's latest and count, so the whole site regenerates
+            release.is_archived = archived
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+
     async def rename_project(self, old_key: safe.ProjectKey, new_key: safe.ProjectKey, new_name: str | None) -> None:
         old = str(old_key)
         new = str(new_key)

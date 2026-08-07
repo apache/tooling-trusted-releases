@@ -426,6 +426,11 @@ async def catalog_committee_get(
             for project in projects
         ]
 
+    rows = []
+    for project, release_count, artifact_count in summaries:
+        status_action = await _catalog_status_action(str(committee_key), project)
+        rows.append((project, release_count, artifact_count, status_action))
+
     table = htpy.table(".table")[
         htpy.thead[
             htpy.tr[
@@ -456,13 +461,14 @@ async def catalog_committee_get(
                             ".btn.btn-sm.btn-outline-secondary.me-1",
                             href=f"/admin/catalog/{committee_key}/move/{project.key}",
                         )["Move"],
+                        status_action,
                         htpy.a(
                             ".btn.btn-sm.btn-outline-danger",
                             href=f"/admin/catalog/{committee_key}/remove/{project.key}",
                         )["Delete or merge"],
                     ],
                 ]
-                for project, release_count, artifact_count in summaries
+                for project, release_count, artifact_count, status_action in rows
             ]
         ],
     ]
@@ -752,6 +758,70 @@ async def catalog_remove_post(
 
 
 @admin.typed
+async def catalog_archive_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _archive: Literal["archive"],
+    project_key: safe.ProjectKey,
+    _archive_form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/archive/<project_key>
+
+    Retire a catalogued project, keeping its releases and artifacts in place.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.archive_project(project_key)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+@admin.typed
+async def catalog_restore_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _restore: Literal["restore"],
+    project_key: safe.ProjectKey,
+    _restore_form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/restore/<project_key>
+
+    Bring a retired project back to active.
+    """
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.restore_project(project_key)
+    return await session.redirect(catalog_committee_get, committee_key=str(committee_key))
+
+
+async def _catalog_status_action(committee_key: str, project: sql.Project) -> htm.Element:
+    # A live project can be retired, and a retired one brought back. Both are one-way status
+    # flips, so we render them as small POST buttons rather than a whole confirmation page
+    if project.status == sql.ProjectStatus.ACTIVE:
+        return await form.render(
+            model_cls=form.Empty,
+            action=f"/admin/catalog/{committee_key}/archive/{project.key}",
+            form_classes=".d-inline",
+            submit_classes="btn-sm btn-outline-warning me-1",
+            submit_label="Archive",
+            confirm=f"Archive {project.key}? It stays catalogued but is marked retired.",
+            empty=True,
+        )
+    return await form.render(
+        model_cls=form.Empty,
+        action=f"/admin/catalog/{committee_key}/restore/{project.key}",
+        form_classes=".d-inline",
+        submit_classes="btn-sm btn-outline-secondary me-1",
+        submit_label="Restore",
+        confirm=f"Restore {project.key} to active?",
+        empty=True,
+    )
+
+
+@admin.typed
 async def catalog_project_get(
     _session: web.Committer,
     _catalog: Literal["catalog"],
@@ -771,11 +841,17 @@ async def catalog_project_get(
         artifact_counts = await _catalog_release_key_counts(data, sql.Artifact, "release_key", release_keys)
         revision_counts = await _catalog_release_key_counts(data, sql.Revision, "release_key", release_keys)
 
+    rows = []
+    for release in releases:
+        status_action = await _catalog_release_status_action(str(committee_key), str(project_key), release)
+        rows.append((release, status_action))
+
     table = htpy.table(".table")[
         htpy.thead[
             htpy.tr[
                 htpy.th["Version"],
                 htpy.th["Phase"],
+                htpy.th["Status"],
                 htpy.th["Artifacts"],
                 htpy.th["Managed"],
                 htpy.th["Actions"],
@@ -786,6 +862,7 @@ async def catalog_project_get(
                 htpy.tr[
                     htpy.td[htpy.strong[release.version]],
                     htpy.td[release.phase.value],
+                    htpy.td["archived" if release.is_archived else "active"],
                     htpy.td[str(artifact_counts.get(str(release.key), 0))],
                     htpy.td["Yes" if (revision_counts.get(str(release.key), 0) > 0) else "No"],
                     htpy.td[
@@ -794,10 +871,11 @@ async def catalog_project_get(
                             str(project_key),
                             release.version,
                             managed=revision_counts.get(str(release.key), 0) > 0,
-                        )
+                        ),
+                        status_action,
                     ],
                 ]
-                for release in releases
+                for release, status_action in rows
             ]
         ],
     ]
@@ -817,6 +895,31 @@ def _catalog_release_move_action(committee_key: str, project_key: str, version: 
         ".btn.btn-sm.btn-outline-secondary.me-1",
         href=f"/admin/catalog/{committee_key}/project/{project_key}/release/{version}/move",
     )["Move"]
+
+
+async def _catalog_release_status_action(committee_key: str, project_key: str, release: sql.Release) -> htm.Element:
+    # A current release can be archived, and an archived one brought back. Both are one-way
+    # flag flips, so we render them as small POST buttons rather than a whole confirmation page
+    base = f"/admin/catalog/{committee_key}/project/{project_key}/release/{release.version}"
+    if release.is_archived:
+        return await form.render(
+            model_cls=form.Empty,
+            action=f"{base}/restore",
+            form_classes=".d-inline",
+            submit_classes="btn-sm btn-outline-secondary me-1",
+            submit_label="Restore",
+            confirm=f"Restore {release.version} to current?",
+            empty=True,
+        )
+    return await form.render(
+        model_cls=form.Empty,
+        action=f"{base}/archive",
+        form_classes=".d-inline",
+        submit_classes="btn-sm btn-outline-warning me-1",
+        submit_label="Archive",
+        confirm=f"Archive {release.version}? It stays catalogued but is marked archived.",
+        empty=True,
+    )
 
 
 class CatalogReleaseMoveForm(form.Form):
@@ -900,6 +1003,60 @@ async def catalog_release_move_post(
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
         await wafa.catalogue.move_release(release_key, target)
+    return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
+
+
+@admin.typed
+async def catalog_release_archive_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _archive: Literal["archive"],
+    _archive_form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/archive
+
+    Mark a single catalogued release as archived, leaving its files in place.
+    """
+    try:
+        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.archive_release(release_key)
+    return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
+
+
+@admin.typed
+async def catalog_release_restore_post(
+    session: web.Committer,
+    _catalog: Literal["catalog"],
+    committee_key: safe.CommitteeKey,
+    _project: Literal["project"],
+    project_key: safe.ProjectKey,
+    _release: Literal["release"],
+    version_key: safe.VersionKey,
+    _restore: Literal["restore"],
+    _restore_form: form.Empty,
+) -> web.WerkzeugResponse:
+    """
+    URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/restore
+
+    Bring a single archived release back to current.
+    """
+    try:
+        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
+    except ValueError as error:
+        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with storage.write(session) as write:
+        wafa = write.as_foundation_admin()
+        await wafa.catalogue.restore_release(release_key)
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 
