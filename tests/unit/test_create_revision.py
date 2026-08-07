@@ -117,6 +117,7 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     latest_revision = mock.MagicMock()
     latest_revision.key = f"{release_key} 00005"
@@ -212,6 +213,7 @@ async def test_expected_revision_match_proceeds(tmp_path: pathlib.Path):
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     old_revision = mock.MagicMock()
     old_revision.key = f"{release_key} 00005"
@@ -277,6 +279,7 @@ async def test_expected_revision_mismatch_rejected(tmp_path: pathlib.Path):
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     old_revision = mock.MagicMock()
     old_revision.key = f"{release_key} 00005"
@@ -344,6 +347,7 @@ async def test_intervening_revision_triggers_merge_and_uses_latest_parent(tmp_pa
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     old_revision = mock.MagicMock()
     old_revision.key = f"{release_key} 00005"
@@ -421,6 +425,7 @@ async def test_intervening_revision_with_path_provenance_verifies_sources(tmp_pa
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     old_revision = mock.MagicMock()
     old_revision.key = f"{release_key} 00005"
@@ -727,6 +732,7 @@ async def test_v1_previous_attestable_suppresses_file_state_rows(tmp_path: pathl
     release.release_policy = None
     release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     release_key = sql.release_key("proj", "1.0")
+    release.key = release_key
 
     old_revision = mock.MagicMock()
     old_revision.name = f"{release_key} 00001"

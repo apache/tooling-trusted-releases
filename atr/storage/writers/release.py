@@ -675,8 +675,7 @@ class CommitteeParticipant(FoundationCommitter):
         svn_revision: str,
         target_subdirectory: safe.RelPath | None,
     ) -> sql.Task:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
@@ -913,9 +912,11 @@ class CommitteeParticipant(FoundationCommitter):
         if isinstance(result, sql.Quarantined):
             return result
         async with db.session() as data:
-            release_key = sql.release_key(upload_args.project, upload_args.version)
+            release = await data.release(project_key=str(upload_args.project), version=str(upload_args.version)).demand(
+                storage.AccessError("Release not found", status=404)
+            )
             return await data.revision(
-                release_key=str(release_key),
+                release_key=release.key,
                 number=result.number,
             ).demand(storage.AccessError("Revision not found", status=404))
 
@@ -1528,7 +1529,7 @@ class FoundationAdmin(FoundationCommitter):
         if project is None:
             return f"Project {project_key!s} not found"
         release_key = f"{project.key}-{version!s}"
-        if await self.__data.release(key=release_key).get() is not None:
+        if await self.__data.release(project_key=project.key, version=str(version)).get() is not None:
             return None
 
         try:

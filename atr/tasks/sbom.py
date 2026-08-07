@@ -619,10 +619,12 @@ async def _sbom_describes_source(args: args.ScoreArgs, sbom_rel_path: str) -> bo
             break
     if not artifact_rel:
         return False
-    release_key = sql.release_key(str(args.project_key), str(args.version_key))
     revision_seq = int(str(args.revision_number))
     async with db.session() as data:
-        classification = await data.release_file_classification_at(release_key, artifact_rel, revision_seq)
+        release = await data.release(project_key=str(args.project_key), version=str(args.version_key)).get()
+        if release is None:
+            return False
+        classification = await data.release_file_classification_at(release.key, artifact_rel, revision_seq)
     if classification is None:
         return False
     return classify.FileType(classification) == classify.FileType.SOURCE

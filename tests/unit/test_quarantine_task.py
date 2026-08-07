@@ -663,6 +663,7 @@ async def test_validate_success_calls_promote(tmp_path: pathlib.Path):
 def _attach_active_release(mock_data: mock.AsyncMock) -> None:
     active_project = mock.MagicMock(status=sql.ProjectStatus.ACTIVE, committee_key="committee")
     release = mock.MagicMock(project=active_project)
+    release.key = "proj-1.0"
     release_query = mock.MagicMock()
     release_query.demand = mock.AsyncMock(return_value=release)
     mock_data.release = mock.MagicMock(return_value=release_query)

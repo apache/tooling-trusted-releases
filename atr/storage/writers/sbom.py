@@ -79,8 +79,7 @@ class CommitteeParticipant(FoundationCommitter):
         revision_number: safe.RevisionNumber,
         rel_path: safe.RelPath,
     ) -> sql.Task:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
@@ -115,8 +114,7 @@ class CommitteeParticipant(FoundationCommitter):
         file_path: safe.StatePath,
         sbom_path: safe.StatePath,
     ) -> sql.Task:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
@@ -149,8 +147,7 @@ class CommitteeParticipant(FoundationCommitter):
         sbom_path_in_new_revision: safe.StatePath,
         rel_path: safe.RelPath,
     ) -> sql.Task:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
@@ -187,8 +184,7 @@ class CommitteeParticipant(FoundationCommitter):
         rel_path: safe.RelPath,
     ) -> sql.Task:
         await self.__data.begin_immediate()
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)
@@ -236,8 +232,7 @@ class CommitteeParticipant(FoundationCommitter):
         revision_number: safe.RevisionNumber,
         rel_path: safe.RelPath,
     ) -> sql.Task:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         storage.ensure_project_active(release.project)

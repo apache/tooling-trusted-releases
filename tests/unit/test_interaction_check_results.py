@@ -36,6 +36,11 @@ class CheckResultQuery:
         return self
 
 
+class ReleaseQuery:
+    async def get(self) -> object:
+        return types.SimpleNamespace(key="proj-1.0")
+
+
 class CheckResultSession:
     def __init__(self, results: list[object]) -> None:
         self.kwargs: dict[str, object] | None = None
@@ -50,6 +55,9 @@ class CheckResultSession:
     def check_result(self, **kwargs: object) -> CheckResultQuery:
         self.kwargs = kwargs
         return CheckResultQuery(self._results)
+
+    def release(self, **_kwargs: object) -> ReleaseQuery:
+        return ReleaseQuery()
 
 
 @pytest.mark.asyncio

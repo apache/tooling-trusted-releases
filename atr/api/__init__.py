@@ -91,7 +91,9 @@ async def checks_list(
     # TODO: We should perhaps paginate this
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_key).demand(exceptions.NotFound(f"Release {release_key} not found"))
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound(f"Release {release_key} not found")
+        )
         check_results = await interaction.checks_for(release, caller_data=data)
 
     return models.api.ChecksListResults(
@@ -127,11 +129,11 @@ async def checks_list_revision(
     """
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
-        release_result = await data.release(key=release_key).demand(
+        release_result = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             exceptions.NotFound(f"Release '{release_key}' does not exist")
         )
 
-        revision_result = await data.revision(release_key=release_key, number=str(revision)).get()
+        revision_result = await data.revision(release_key=release_result.key, number=str(revision)).get()
         if revision_result is None:
             raise exceptions.NotFound(f"Revision '{revision}' does not exist for release '{release_key}'")
 
@@ -465,7 +467,10 @@ async def distribution_list(
     """
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
-        distributions = await data.distribution(release_key=str(release_key)).all()
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound(f"Release {release_key} not found")
+        )
+        distributions = await data.distribution(release_key=release.key).all()
     entries = [
         models.api.DistributionListEntry(
             platform=dist.platform.name,
@@ -1395,8 +1400,9 @@ async def release_get(
     Get a release by project and version.
     """
     async with db.session() as data:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_key).demand(exceptions.NotFound())
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound()
+        )
     return models.api.ReleaseGetResults(
         endpoint="/release/get",
         release=release,
@@ -1419,12 +1425,13 @@ async def release_paths(
     List paths in a release by project and version.
     """
     async with db.session() as data:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await data.release(key=release_key).demand(exceptions.NotFound())
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound()
+        )
         if revision is None:
             dir_path = paths.release_directory(release)
         else:
-            await data.revision(release_key=release_key, number=str(revision)).demand(exceptions.NotFound())
+            await data.revision(release_key=release.key, number=str(revision)).demand(exceptions.NotFound())
             dir_path = paths.release_directory_version(release) / str(revision)
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
@@ -1452,7 +1459,10 @@ async def release_revisions(
     """
     async with db.session() as data:
         release_key = sql.release_key(str(project_key), str(version_key))
-        revisions = await data.revision(release_key=release_key).all()
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound(f"Release {release_key} not found")
+        )
+        revisions = await data.revision(release_key=release.key).all()
     if not isinstance(revisions, list):
         revisions = list(revisions)
     revisions.sort(key=lambda rev: rev.number)
@@ -1569,7 +1579,7 @@ async def sbom_generate(
         raise exceptions.BadRequest("SBOM generation requires .tar.gz, .tgz, .zip or .jar files")
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
-        release = await db_data.release(key=str(release_key), _committee=True).get()
+        release = await db_data.release(project_key=str(data.project), version=str(data.version), _committee=True).get()
     if (release is None) or user.embargo_hides_release(release, asf_uid, is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
     if release.phase != sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
@@ -1756,8 +1766,7 @@ async def task_get(
         task = await data.task(id=task_id).get()
         release = None
         if (task is not None) and (task.project_key is not None) and (task.version_key is not None):
-            release_key = sql.release_key(task.project_key, task.version_key)
-            release = await data.release(key=str(release_key), _committee=True).get()
+            release = await data.release(project_key=task.project_key, version=task.version_key, _committee=True).get()
     if (task is None) or (task.asf_uid != asf_uid):
         raise exceptions.NotFound(f"Task {task_id} not found")
     if (release is not None) and user.embargo_hides_release(release, asf_uid, is_member=False):
@@ -1893,7 +1902,7 @@ async def vote_cast(
     asf_uid = _jwt_asf_uid()
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
-        release = await db_data.release(key=str(release_key), _committee=True).get()
+        release = await db_data.release(project_key=str(data.project), version=str(data.version), _committee=True).get()
     if (release is not None) and user.embargo_hides_release(release, asf_uid, is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
 
@@ -1984,7 +1993,8 @@ async def vote_start(
         async with db.session() as db_data:
             release_key = sql.release_key(data.project, data.version)
             release = await db_data.release(
-                key=str(release_key),
+                project_key=str(data.project),
+                version=str(data.version),
                 _project=True,
                 _committee=True,
                 _project_release_policy=True,
@@ -2076,9 +2086,12 @@ async def vote_tabulate(
     """
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
-        release = await db_data.release(key=str(release_key), _project_release_policy=True, _committee=True).demand(
-            exceptions.NotFound(f"Release {release_key} not found"),
-        )
+        release = await db_data.release(
+            project_key=str(data.project),
+            version=str(data.version),
+            _project_release_policy=True,
+            _committee=True,
+        ).demand(exceptions.NotFound(f"Release {release_key} not found"))
 
     if user.embargo_hides_release(release, _jwt_asf_uid(), is_member=False):
         raise exceptions.NotFound(f"Release {release_key} not found")
@@ -2299,7 +2312,8 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
     async with db.session() as db_data:
         release_key = sql.release_key(data.project, data.version)
         release = await db_data.release(
-            key=str(release_key),
+            project_key=str(data.project),
+            version=str(data.version),
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
             _project=True,
             _project_release_policy=True,

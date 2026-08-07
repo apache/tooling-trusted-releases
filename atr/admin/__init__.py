@@ -996,13 +996,13 @@ async def catalog_release_move_post(
         target = safe.ProjectKey(raw)
     except ValueError as error:
         raise exceptions.BadRequest(f"Invalid project key: {error}") from error
-    try:
-        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
-    except ValueError as error:
-        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
-        await wafa.catalogue.move_release(release_key, target)
+        await wafa.catalogue.move_release(release.safe_key, target)
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 
@@ -1023,13 +1023,13 @@ async def catalog_release_archive_post(
 
     Mark a single catalogued release as archived, leaving its files in place.
     """
-    try:
-        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
-    except ValueError as error:
-        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
-        await wafa.catalogue.archive_release(release_key)
+        await wafa.catalogue.archive_release(release.safe_key)
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 
@@ -1050,13 +1050,13 @@ async def catalog_release_restore_post(
 
     Bring a single archived release back to current.
     """
-    try:
-        release_key = safe.ReleaseKey(f"{project_key}-{version_key}")
-    except ValueError as error:
-        raise exceptions.BadRequest(f"Invalid release key: {error}") from error
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            exceptions.NotFound("Release not found")
+        )
     async with storage.write(session) as write:
         wafa = write.as_foundation_admin()
-        await wafa.catalogue.restore_release(release_key)
+        await wafa.catalogue.restore_release(release.safe_key)
     return await session.redirect(catalog_project_get, committee_key=str(committee_key), project_key=str(project_key))
 
 

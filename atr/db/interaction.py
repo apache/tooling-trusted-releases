@@ -272,8 +272,11 @@ async def check_results_for_revision(
                 primary_rel_path=rel_path or db.NOT_SET,
             )
         elif include_legacy_revision_results:
+            release = await data.release(project_key=str(project_key), version=str(version_key)).get()
+            if release is None:
+                return []
             query = data.check_result(
-                release_key=sql.release_key(str(project_key), str(version_key)),
+                release_key=release.key,
                 revision_number=str(revision_number),
                 checker=checker_arg,
                 primary_rel_path=rel_path or db.NOT_SET,
@@ -430,16 +433,15 @@ async def latest_info(
     project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> tuple[safe.RevisionNumber, str, datetime.datetime] | None:
     """Get the name, editor, and timestamp of the latest revision."""
-    release_key = sql.release_key(project_key, version_key)
     async with db.session() as data:
         # TODO: No need to get release here
         # Just use maximum seq from revisions
-        release = await data.release(key=str(release_key), _project=True).demand(
-            RuntimeError(f"Release {release_key} does not exist")
+        release = await data.release(project_key=str(project_key), version=str(version_key), _project=True).demand(
+            RuntimeError(f"Release {project_key} {version_key} does not exist")
         )
         if release.latest_revision_number is None:
             return None
-        revision = await data.revision(release_key=str(release_key), number=release.latest_revision_number).get()
+        revision = await data.revision(release_key=release.key, number=release.latest_revision_number).get()
         if not revision:
             return None
     return revision.safe_number, revision.asfuid, revision.created
@@ -832,34 +834,36 @@ async def tasks_ongoing_revision(
     revision_number: safe.RevisionNumber | None = None,
 ) -> tuple[int, str | None]:
     via = sql.validate_instrumented_attribute
-    subquery = (
-        sqlalchemy.select(via(sql.Revision.number))
-        .where(
-            via(sql.Revision.release_key) == sql.release_key(str(project_key), str(version_key)),
-        )
-        .order_by(via(sql.Revision.seq).desc())
-        .limit(1)
-        .scalar_subquery()
-        .label("latest_revision")
-    )
-
-    query = (
-        sqlmodel.select(
-            sqlalchemy.func.count().label("task_count"),
-            subquery,
-        )
-        .select_from(sql.Task)
-        .where(
-            sql.Task.project_key == str(project_key),
-            sql.Task.version_key == str(version_key),
-            sql.Task.revision_number == (subquery if (revision_number is None) else str(revision_number)),
-            sql.validate_instrumented_attribute(sql.Task.status).in_(
-                [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
-            ),
-        )
-    )
-
     async with db.session() as session:
+        release = await session.release(project_key=str(project_key), version=str(version_key)).get()
+        if release is None:
+            return 0, None
+        subquery = (
+            sqlalchemy.select(via(sql.Revision.number))
+            .where(
+                via(sql.Revision.release_key) == release.key,
+            )
+            .order_by(via(sql.Revision.seq).desc())
+            .limit(1)
+            .scalar_subquery()
+            .label("latest_revision")
+        )
+
+        query = (
+            sqlmodel.select(
+                sqlalchemy.func.count().label("task_count"),
+                subquery,
+            )
+            .select_from(sql.Task)
+            .where(
+                sql.Task.project_key == str(project_key),
+                sql.Task.version_key == str(version_key),
+                sql.Task.revision_number == (subquery if (revision_number is None) else str(revision_number)),
+                sql.validate_instrumented_attribute(sql.Task.status).in_(
+                    [sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+                ),
+            )
+        )
         task_count, latest_revision = (await session.execute(query)).one()
         return task_count, latest_revision
 

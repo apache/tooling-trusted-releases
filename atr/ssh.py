@@ -713,7 +713,7 @@ async def _step_07c_ensure_release_object_for_write(project_key: safe.ProjectKey
     release_key = sql.release_key(str(project_key), str(version_key))
     async with db.session() as data:
         await data.begin_immediate()
-        release = await data.release(key=release_key, _committee=True).get()
+        release = await data.release(project_key=str(project_key), version=str(version_key), _committee=True).get()
         if release is None:
             project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).demand(
                 RuntimeError("Project not found after validation")

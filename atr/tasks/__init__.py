@@ -214,7 +214,8 @@ async def draft_checks(
 
     async with db.ensure_session(caller_data) as data:
         release = await data.release(
-            key=sql.release_key(str(project_key), str(release_version)),
+            project_key=str(project_key),
+            version=str(release_version),
             _committee=True,
             _release_policy=True,
             _project_release_policy=True,

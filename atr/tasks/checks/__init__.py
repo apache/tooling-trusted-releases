@@ -344,10 +344,12 @@ async def resolve_archive_dir(args: FunctionArguments) -> safe.StatePath | None:
     """Resolve the extracted archive directory for the primary archive."""
     if args.primary_rel_path is None:
         return None
-    release_key = sql.release_key(str(args.project_key), str(args.version_key))
     revision_seq = int(str(args.revision_number))
     async with db.session() as data:
-        content_hash = await data.release_file_hash_at(release_key, str(args.primary_rel_path), revision_seq)
+        release = await data.release(project_key=str(args.project_key), version=str(args.version_key)).get()
+        if release is None:
+            return None
+        content_hash = await data.release_file_hash_at(release.key, str(args.primary_rel_path), revision_seq)
     if content_hash is None:
         abs_path = file_paths.revision_path_for_file(
             args.project_key, args.version_key, args.revision_number, str(args.primary_rel_path)
@@ -389,10 +391,9 @@ async def resolve_cache_key(  # noqa: C901
         policy = release.release_policy or release.project.release_policy
     if not ignore_path:
         if file:
-            release_key = sql.release_key(str(release.safe_project_key), str(release.safe_version_key))
             revision_seq = int(str(revision))
             async with db.session() as data:
-                file_hash = await data.release_file_hash_at(release_key, file, revision_seq)
+                file_hash = await data.release_file_hash_at(release.key, file, revision_seq)
         if file_hash is None:
             if path is None:
                 path = file_paths.revision_path_for_file(

@@ -349,7 +349,7 @@ class ReleaseManager(CommitteeParticipant):
         if promote:
             await self.__data.begin_immediate()
         try:
-            release_key = sql.release_key(project_key, version_key)
+            release_key = safe.ReleaseKey(release.key)
             if promote is True:
                 # This verifies the state and sets the phase to RELEASE_CANDIDATE
                 allowed_vote_modes = (
@@ -507,7 +507,8 @@ class ReleaseManager(CommitteeParticipant):
         additional_bcc: list[str] | None = None,
     ) -> tuple[sql.Release, int | None, str, str | None]:
         release = await self.__data.release(
-            key=sql.release_key(str(project_key), str(version_key)),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -611,7 +612,8 @@ class ReleaseManager(CommitteeParticipant):
         vote_result: Literal["passed", "failed", "cancelled"],
     ) -> str:
         release = await self.__data.release(
-            key=sql.release_key(str(project_key), str(version_key)),
+            project_key=str(project_key),
+            version=str(version_key),
             phase=sql.ReleasePhase.RELEASE_CANDIDATE,
             _project=True,
             _committee=True,
@@ -982,7 +984,8 @@ class ReleaseManager(CommitteeParticipant):
         await self.__data.begin_immediate()
         try:
             release = await self.__data.release(
-                key=sql.release_key(str(project_key), str(version_key)),
+                project_key=str(project_key),
+                version=str(version_key),
                 phase=sql.ReleasePhase.RELEASE_CANDIDATE,
                 _project=True,
                 _committee=True,

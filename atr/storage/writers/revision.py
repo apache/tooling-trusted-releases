@@ -401,15 +401,14 @@ class CommitteeParticipant(FoundationCommitter):
         version_key: safe.VersionKey,
         quarantined_id: int,
     ) -> None:
-        release_key = sql.release_key(str(project_key), str(version_key))
-        release = await self.__data.release(key=str(release_key)).demand(
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
             storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404)
         )
         self.__assert_release_in_committee(release)
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)
         quarantined = await self.__data.quarantined(
-            id=quarantined_id, release_key=release_key, status=sql.QuarantineStatus.FAILED
+            id=quarantined_id, release_key=release.key, status=sql.QuarantineStatus.FAILED
         ).get()
         if quarantined is None:
             raise RuntimeError("Quarantine failure not found or not in FAILED state")
@@ -441,11 +440,14 @@ class CommitteeParticipant(FoundationCommitter):
         expected_revision: safe.RevisionNumber | None = None,
     ) -> sql.Revision | sql.Quarantined:
         """Create a new revision, quarantining archives that require validation."""
-        release_key = sql.release_key(str(project_key), str(version_key))
         async with db.session() as data:
-            release = await data.release(key=release_key, _release_policy=True, _project_release_policy=True).demand(
-                RuntimeError("Release does not exist for new revision creation")
-            )
+            release = await data.release(
+                project_key=str(project_key),
+                version=str(version_key),
+                _release_policy=True,
+                _project_release_policy=True,
+            ).demand(RuntimeError("Release does not exist for new revision creation"))
+            release_key = release.key
             self.__assert_release_in_committee(release)
             storage.ensure_project_active(release.project)
             self.__write.ensure_release_writable(release)
@@ -634,8 +636,10 @@ class CommitteeParticipant(FoundationCommitter):
         if len(tag.encode("utf-8")) > 256:
             raise storage.AccessError("Tag must be at most 256 bytes", status=400)
 
-        release_key = str(sql.release_key(project_key, version_key))
-        release = await self.__data.release(release_key).demand(storage.AccessError("No release found"))
+        release = await self.__data.release(project_key=str(project_key), version=str(version_key)).demand(
+            storage.AccessError("No release found")
+        )
+        release_key = release.key
         self.__assert_release_in_committee(release)
         storage.ensure_project_active(release.project)
         self.__write.ensure_release_writable(release)

@@ -30,7 +30,6 @@ import atr.db as db
 import atr.log as log
 import atr.models.results as results
 import atr.models.safe as safe
-import atr.models.sql as sql
 import atr.tasks.checks as checks
 import atr.user as user
 import atr.util as util
@@ -192,7 +191,8 @@ async def _check_download_suffix_duplication(
     # directory (or the {{VERSION}} in the template) gets dropped before the release ships
     async with db.session() as data:
         release = await data.release(
-            key=str(sql.release_key(args.project_key, args.version_key)),
+            project_key=str(args.project_key),
+            version=str(args.version_key),
             _committee=True,
             _project_release_policy=True,
         ).demand(RuntimeError(f"Release {args.project_key} {args.version_key} not found"))
@@ -391,10 +391,12 @@ async def _check_source_artifact_present(
     relative_paths: list[safe.RelPath],
     base_path: safe.StatePath,
 ) -> None:
-    release_key_str = str(sql.release_key(args.project_key, args.version_key))
     revision_seq = int(str(args.revision_number))
     async with db.session() as data:
-        classifications = await data.release_file_classifications_at(release_key_str, revision_seq)
+        release = await data.release(project_key=str(args.project_key), version=str(args.version_key)).demand(
+            RuntimeError(f"Release {args.project_key} {args.version_key} not found")
+        )
+        classifications = await data.release_file_classifications_at(release.key, revision_seq)
 
     missing_paths = [p for p in relative_paths if str(p) not in classifications]
     if missing_paths:

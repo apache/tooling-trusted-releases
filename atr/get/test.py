@@ -158,8 +158,7 @@ async def test_merge(
 
     files: list[str] = []
     async with db.session() as data:
-        release_key = sql.release_key(project_key, version_key)
-        release = await data.release(key=str(release_key), _project=True).demand(
+        release = await data.release(project_key=str(project_key), version=str(version_key), _project=True).demand(
             RuntimeError("Release not found after merge test")
         )
         release_dir = paths.release_directory(release)

@@ -438,6 +438,10 @@ def _mock_db_session(
 ) -> mock.AsyncMock:
     mock_data = mock.AsyncMock()
     mock_data.release_file_classifications_at = mock.AsyncMock(return_value=classifications)
+    mock_release = mock.MagicMock(key="test-1.0")
+    mock_release_query = mock.MagicMock()
+    mock_release_query.demand = mock.AsyncMock(return_value=mock_release)
+    mock_data.release = mock.MagicMock(return_value=mock_release_query)
     mock_project = mock.MagicMock()
     mock_project.policy_source_artifact_paths = source_artifact_paths or []
     mock_project.policy_binary_artifact_paths = binary_artifact_paths or []

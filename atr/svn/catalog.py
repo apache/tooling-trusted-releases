@@ -258,7 +258,7 @@ async def _resolve_archive(
     project = await _resolve_project(data, committee, subproject)
     if project is None:
         return None
-    release_record = await data.release(key=f"{project.key}-{version}").get()
+    release_record = await data.release(project_key=project.key, version=version).get()
     if (release_record is None) or release_record.is_archived:
         return None
     return _safe_keys(project.key, version)
@@ -300,7 +300,7 @@ async def _resolve_release(data: db.Session, rel_files: _ReleaseFiles) -> _Resol
     if project is None:
         log.info(f"dist commit for unknown project: {rel_files.committee}/{rel_files.subproject or ''} {version}")
         return None
-    if await data.release(key=f"{project.key}-{version}").get() is not None:
+    if await data.release(project_key=project.key, version=version).get() is not None:
         # Already catalogued, whether by ATR or an earlier watcher pass
         return None
     keys = _safe_keys(project.key, version)

@@ -197,9 +197,10 @@ async def confidential_release_block(
     ]
     if (len(project_keys) != 1) or (len(version_keys) != 1):
         return
-    release_key = sql.release_key(str(project_keys[0]), str(version_keys[0]))
     async with db.session() as data:
-        release = await data.release(key=str(release_key), _committee=True).get()
+        release = await data.release(
+            project_key=str(project_keys[0]), version=str(version_keys[0]), _committee=True
+        ).get()
     if release is None:
         return
     uid = session.uid if (session is not None) else None

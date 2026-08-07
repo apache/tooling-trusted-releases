@@ -239,14 +239,12 @@ async def _get_page_data(
     """Get all the data needed to render the finish page."""
     async with db.session() as data:
         via = sql.validate_instrumented_attribute
-        distributions = await data.distribution(
-            release_key=sql.release_key(str(project_key), str(version_key)),
-        ).all()
         release = await data.release(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
         ).demand(base.ASFQuartException("Release does not exist", errorcode=404))
+        distributions = await data.distribution(release_key=release.key).all()
         tasks = [
             t
             for t in (

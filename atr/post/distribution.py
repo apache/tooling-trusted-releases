@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Final, Literal
 
 import atr.blueprints.post as post
+import atr.db as db
 import atr.db.interaction as interaction
 import atr.get as get
 import atr.models.distribution as distribution
@@ -134,14 +135,17 @@ async def delete(
     """
     sql_platform = delete_form.platform.to_sql()  # type: ignore[attr-defined]
 
-    url_release = sql.release_key(project_key, version_key)
-    if url_release != delete_form.release_key:
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
+            RuntimeError("Release does not exist")
+        )
+    if release.safe_key != delete_form.release_key:
         raise RuntimeError("Release name mismatch")
 
     # Delete the distribution
     async with storage.write_as_project_release_manager(project_key, session) as warm:
         await warm.distributions.delete_distribution(
-            release_key=delete_form.release_key,
+            release_key=release.safe_key,
             platform=sql_platform,
             owner_namespace=delete_form.owner_namespace,
             package=delete_form.package,
