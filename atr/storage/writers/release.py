@@ -1247,6 +1247,7 @@ class ReleaseManager(CommitteeParticipant):
             f"Released by {task_args.asf_uid} via ATR"
         )
 
+        await self.__remove_existing_publication_files(committee, preview_path, internal_url, task_args.asf_uid)
         try:
             revision = await svn.publish_release(preview_path.path, internal_url, task_args.asf_uid, log_message)
         except svn.CommandExecutionError as exc:
@@ -1292,6 +1293,33 @@ class ReleaseManager(CommitteeParticipant):
             kind="svn_publish",
             svn_revision=revision,
             message=f"Already published to SVN as r{revision}",
+        )
+
+    async def __remove_existing_publication_files(
+        self,
+        committee: sql.Committee,
+        preview_path: safe.StatePath,
+        internal_url: str,
+        asf_uid: str,
+    ) -> None:
+        if not (config.is_test_mode() and (committee.key == "test")):
+            return
+        if config.svn_publish_kind() is not config.SvnPublishKind.LOCAL_REPOSITORY:
+            return
+        try:
+            existing = set(await svn.list_files(internal_url))
+        except svn.CommandExecutionError:
+            return
+        conflicts = [
+            str(rel_path) async for rel_path in util.paths_recursive(preview_path) if str(rel_path) in existing
+        ]
+        if not conflicts:
+            return
+        await svn.remove_files(
+            internal_url,
+            conflicts,
+            asf_uid,
+            "Remove previously published files before republishing\n\nTool: ATR",
         )
 
 

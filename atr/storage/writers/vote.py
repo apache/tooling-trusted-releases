@@ -407,7 +407,7 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError(
                         "Automatic SVN publish is only available in email and Trusted Vote modes", status=403
                     )
-                if self.__asf_uid not in committee.committee_members:
+                if not self.__write.authorisation.is_member_of(committee.key):
                     raise storage.AccessError("Automatic SVN publish requires a committee member initiator", status=403)
                 if automatic_publish_asf_uid is None:
                     automatic_publish_asf_uid = self.__asf_uid

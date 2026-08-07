@@ -299,6 +299,29 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
     return tool.strip() == ASF_TOOL
 
 
+async def remove_files(base_url: str, rel_paths: list[str], username: str, message: str) -> None:
+    log.debug(f"running svnmucc rm for user '{username}'")
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    actions: list[str] = []
+    for rel_path in rel_paths:
+        actions.extend(["rm", f"{base_url}/{rel_path}"])
+    await _run_svnmucc_command(
+        *actions,
+        "--username",
+        username,
+        "--password",
+        svn_token,
+        "--non-interactive",
+        "--with-revprop",
+        f"asf:tool={ASF_TOOL}",
+        "-m",
+        message,
+        timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
+    )
+
+
 async def run_command(cmd: str, *args: str, timeout_seconds: float | None = None) -> str:
     """Run a svn command asynchronously.
 
