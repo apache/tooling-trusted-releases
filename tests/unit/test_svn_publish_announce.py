@@ -16,6 +16,7 @@
 # under the License.
 
 import pathlib
+import unittest.mock as mock
 
 import pytest
 
@@ -125,6 +126,38 @@ async def test_announce_blocks_when_server_unreachable(
 
     assert info.value.status == 503
     assert "see https://status.apache.org/ for its status." in str(info.value)
+
+
+async def test_announce_local_blocks_when_artifact_missing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = tmp_path / "artifact.tar.gz"
+    artifact.write_text("content", encoding="utf-8")
+
+    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(return_value=["other.tar.gz"]))
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
+
+    with pytest.raises(storage.AccessError) as info:
+        await check(safe.StatePath(tmp_path), "svn://127.0.0.1:3690/atr-dev-publish/tooling")
+
+    assert info.value.status == 409
+    assert "artifact.tar.gz" in str(info.value)
+
+
+async def test_announce_local_passes_when_artifacts_listed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = tmp_path / "artifact.tar.gz"
+    artifact.write_text("content", encoding="utf-8")
+
+    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(return_value=["artifact.tar.gz"]))
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
+
+    await check(safe.StatePath(tmp_path), "svn://127.0.0.1:3690/atr-dev-publish/tooling")
 
 
 def _summary(

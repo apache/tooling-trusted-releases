@@ -42,6 +42,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
+import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
 import atr.util as util
@@ -243,6 +244,7 @@ class ReleaseManager(CommitteeParticipant):
                 public_url = util.publication_check_url(
                     committee, effective_download_path_suffix, util.DownloadFile.METADATA
                 )
+                internal_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
             except ValueError as exc:
                 log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
             else:
@@ -250,6 +252,8 @@ class ReleaseManager(CommitteeParticipant):
                     await self.__check_publication_artifacts(
                         unfinished_path, target, public_url, acknowledge_unreachable
                     )
+                else:
+                    await self.__check_local_publication_artifacts(unfinished_path, internal_url)
 
         if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
             raise storage.AccessError(
@@ -435,6 +439,28 @@ class ReleaseManager(CommitteeParticipant):
             archived=archive_date.isoformat(),
         )
         return None
+
+    async def __check_local_publication_artifacts(
+        self,
+        unfinished_path: safe.StatePath,
+        internal_url: str,
+    ) -> None:
+        rel_paths = await self.__artifact_rel_paths(unfinished_path)
+        if not rel_paths:
+            return
+        try:
+            listed = set(await svn.list_files(internal_url))
+        except svn.CommandExecutionError as exc:
+            raise storage.AccessError(
+                f"The local SVN publish repository could not be checked: {svn.error_message(exc)}",
+                status=409,
+            ) from None
+        if missing := [rel_path for rel_path in rel_paths if rel_path not in listed]:
+            raise storage.AccessError(
+                f"This release cannot be announced, because {len(missing)} of {len(rel_paths)} artifacts are"
+                f" missing from the SVN publication; the first missing artifact is {missing[0]}.",
+                status=409,
+            )
 
     async def __check_publication_artifacts(
         self,
