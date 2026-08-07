@@ -24,7 +24,6 @@ from typing import Literal
 import sqlalchemy
 import sqlmodel
 
-import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -401,8 +400,6 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError(
                         "Automatic SVN publish is not available for expedited releases", status=403
                     )
-                if not config.get().SVN_PUBLISH_URL:
-                    raise storage.AccessError("Automatic SVN publish is not available on this server", status=403)
                 if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
                     raise storage.AccessError(
                         "Automatic SVN publish is only available in email and Trusted Vote modes", status=403
@@ -1306,8 +1303,6 @@ class ReleaseManager(CommitteeParticipant):
         if not isinstance(preview_result, sql.Revision):
             return None
         if vote_task_with_publish_options is None:
-            return None
-        if not config.get().SVN_PUBLISH_URL:
             return None
         if not bool(vote_task_with_publish_options.task_args.get("automatic_publish_when_resolved", False)):
             return None

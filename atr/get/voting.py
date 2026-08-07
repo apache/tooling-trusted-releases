@@ -114,7 +114,7 @@ async def selected(
         flash_data = await sessions.form_error_pop(quart.request.path)
         submitted_concerns = util.submitted_concerns_from_flash(flash_data)
 
-        publish_eligible = bool(config.get().SVN_PUBLISH_URL) and user.is_committee_member(committee, session.uid)
+        publish_eligible = user.is_committee_member(committee, session.uid)
         default_download_path_suffix = _default_download_path_suffix(release, committee)
         content = await _render_page(
             release=release,

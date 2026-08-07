@@ -33,8 +33,13 @@ def announcing_writer(
     unfinished = tmp_path / "unfinished" / "example" / "2.0.0"
     (unfinished / "00003").mkdir(parents=True)
     monkeypatch.setattr(announce.aioshutil, "move", mock.AsyncMock(side_effect=lambda *a, **k: calls.append("move")))
-    monkeypatch.setattr(announce.config, "get", lambda: SimpleNamespace(SVN_PUBLISH_URL=""))
     monkeypatch.setattr(announce.config, "is_dev_environment", lambda: True)
+    monkeypatch.setattr(announce.config, "svn_publish_kind", lambda: announce.config.SvnPublishKind.ASF_DISTRIBUTION)
+    monkeypatch.setattr(
+        announce.interaction,
+        "release_completed_svn_publish_task_for_revision",
+        mock.AsyncMock(return_value=SimpleNamespace(task_args={}, result=None)),
+    )
     monkeypatch.setattr(
         announce.construct, "announce_release_subject_and_body", mock.AsyncMock(return_value=("Subject", ""))
     )
@@ -53,6 +58,9 @@ def announcing_writer(
         mock.AsyncMock(side_effect=lambda *a, **k: calls.append("delete")),
     )
     monkeypatch.setattr(announce.util, "permitted_announce_recipients", lambda *a, **k: ["announce@example.apache.org"])
+    monkeypatch.setattr(announce.util, "publication_check_url", lambda *a, **k: "https://example.invalid/")
+    monkeypatch.setattr(announce.util, "svn_publish_internal_url", lambda *a, **k: "https://example.invalid/")
+    monkeypatch.setattr(announce.util, "svn_publish_target", lambda: None)
     data = mock.MagicMock()
     data.release.return_value.demand = mock.AsyncMock(return_value=release_row())
     # A released version queues a catalog-site regeneration, which first looks for an existing queued one.
@@ -64,6 +72,7 @@ def announcing_writer(
     release_manager._ReleaseManager__write_as = mock.MagicMock()
     release_manager._ReleaseManager__asf_uid = "alice"
     release_manager._ReleaseManager__committee_key = "alpha"
+    release_manager._ReleaseManager__check_publication_artifacts = mock.AsyncMock()
     release_manager._ReleaseManager__promote_in_database = mock.AsyncMock()
     release_manager._ReleaseManager__write_artifact_rows = mock.AsyncMock()
     return release_manager
@@ -96,6 +105,7 @@ def release_row() -> SimpleNamespace:
         project_key="example",
         release_policy=None,
         safe_latest_revision_number=safe.RevisionNumber("00003"),
+        safe_version_key=safe.VersionKey("2.0.0"),
         unwrap_revision_number="00003",
         version="2.0.0",
     )

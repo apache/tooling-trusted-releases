@@ -138,13 +138,6 @@ async def _embargo_message(release: sql.Release) -> str:
             " distributed on a third party platform. Submitting this form sends the public announcement."
             " This action is not reversible."
         )
-    if not config.get().SVN_PUBLISH_URL:
-        return (
-            "This is an expedited security release, and is embargoed. The embargo is broken when the release"
-            " is distributed on a third party platform, or when this form is submitted, whichever happens"
-            " first. Please ensure that you have the authority to lift the embargo before proceeding. This"
-            " action is not reversible."
-        )
     completed = await interaction.release_completed_svn_publish_task(release.safe_project_key, release.safe_version_key)
     if completed is not None:
         return (
@@ -198,8 +191,6 @@ def _missing_distributions_message(release: sql.Release) -> str:
 
 
 async def _publication_pending_message(release: sql.Release) -> str:
-    if not config.get().SVN_PUBLISH_URL:
-        return ""
     completed = await interaction.release_completed_svn_publish_task_for_revision(
         release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
     )

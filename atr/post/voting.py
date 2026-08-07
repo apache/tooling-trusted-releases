@@ -20,7 +20,6 @@ from __future__ import annotations
 from typing import Literal
 
 import atr.blueprints.post as post
-import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -281,11 +280,6 @@ async def _publish_opt_in_error(
 ) -> web.WerkzeugResponse | None:
     if not start_voting_form.automatic_publish_when_resolved:
         return None
-    if not config.get().SVN_PUBLISH_URL:
-        return await session.form_error(
-            "automatic_publish_when_resolved",
-            "Automatic SVN publish is not available on this server.",
-        )
     if vote_mode not in {sql.VoteMode.EMAIL, sql.VoteMode.TRUSTED}:
         return await session.form_error(
             "automatic_publish_when_resolved",

@@ -24,7 +24,6 @@ import markupsafe
 import quart
 
 import atr.blueprints.get as get
-import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
@@ -91,7 +90,7 @@ async def selected(
                 ', '.join(missing)
             }"
 
-    if (not announce_msg) and config.get().SVN_PUBLISH_URL and (release.latest_revision_number is not None):
+    if (not announce_msg) and (release.latest_revision_number is not None):
         completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
             project_key, version_key, release.safe_latest_revision_number
         )
@@ -266,9 +265,8 @@ async def _render_page(
         " above to complete the process.",
     ]
 
-    if config.get().SVN_PUBLISH_URL and (
-        user.is_committee_member(release.committee, session.uid)
-        or user.is_release_manager(release.committee, session.uid)
+    if user.is_committee_member(release.committee, session.uid) or user.is_release_manager(
+        release.committee, session.uid
     ):
         await _render_svn_publish(page, release)
 

@@ -217,43 +217,38 @@ class ReleaseManager(CommitteeParticipant):
             raise storage.AccessError("Release already exists", status=409)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
-        published_revision: int | None = None
-        effective_download_path_suffix = download_path_suffix
-        if config.get().SVN_PUBLISH_URL:
-            completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
-                project_key,
-                release.safe_version_key,
-                preview_revision_number,
-                caller_data=self.__data,
+        completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
+            project_key,
+            release.safe_version_key,
+            preview_revision_number,
+            caller_data=self.__data,
+        )
+        if completed_publish is None:
+            raise storage.AccessError(
+                "This release cannot be announced until it has been published to SVN",
+                status=409,
             )
-            if completed_publish is None:
-                raise storage.AccessError(
-                    "This release cannot be announced until it has been published to SVN",
-                    status=409,
-                )
-            effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
-            published_revision = self.__publish_revision_from_task(completed_publish)
-            if published_revision is None:
-                log.warning(
-                    f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
-                    "is recorded but has no revision number"
-                )
-            try:
-                kind = config.svn_publish_kind()
-                target = util.svn_publish_target()
-                public_url = util.publication_check_url(
-                    committee, effective_download_path_suffix, util.DownloadFile.METADATA
-                )
-                internal_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
-            except ValueError as exc:
-                log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
+        effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
+        published_revision = self.__publish_revision_from_task(completed_publish)
+        if published_revision is None:
+            log.warning(
+                f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
+                "is recorded but has no revision number"
+            )
+        try:
+            kind = config.svn_publish_kind()
+            target = util.svn_publish_target()
+            public_url = util.publication_check_url(
+                committee, effective_download_path_suffix, util.DownloadFile.METADATA
+            )
+            internal_url = util.svn_publish_internal_url(committee, effective_download_path_suffix)
+        except ValueError as exc:
+            log.warning(f"SVN publication target is not configured for {project_key!s} {version_key!s}: {exc}")
+        else:
+            if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
+                await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
             else:
-                if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
-                    await self.__check_publication_artifacts(
-                        unfinished_path, target, public_url, acknowledge_unreachable
-                    )
-                else:
-                    await self.__check_local_publication_artifacts(unfinished_path, internal_url)
+                await self.__check_local_publication_artifacts(unfinished_path, internal_url)
 
         if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
             raise storage.AccessError(
