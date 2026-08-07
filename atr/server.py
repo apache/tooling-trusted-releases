@@ -825,15 +825,15 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
                 name="Apache Test",
                 status=sql.ProjectStatus.ACTIVE,
                 committee_key="test",
-                description="Test project for the end-to-end suite.",
-                homepage="https://test.apache.org/",
-                download_page="https://test.apache.org/download",
-                repositories=["https://github.com/apache/test"],
                 created=datetime.datetime.now(datetime.UTC),
                 created_by="test",
             )
             data.add(test_project)
-            await data.commit()
+        test_project.description = "Test project for the end-to-end suite."
+        test_project.homepage = "https://test.apache.org/"
+        test_project.download_page = "https://test.apache.org/download"
+        test_project.repositories = ["https://github.com/apache/test"]
+        await data.commit()
 
         test_client_project = await data.project(key="test-client").get()
         if not test_client_project:
@@ -842,15 +842,15 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
                 name="Apache Test Client",
                 status=sql.ProjectStatus.ACTIVE,
                 committee_key="test",
-                description="Test client project for the end-to-end suite.",
-                homepage="https://test.apache.org/",
-                download_page="https://test.apache.org/download",
-                repositories=["https://github.com/apache/test-client"],
                 created=datetime.datetime.now(datetime.UTC),
                 created_by="test",
             )
             data.add(test_client_project)
-            await data.commit()
+        test_client_project.description = "Test client project for the end-to-end suite."
+        test_client_project.homepage = "https://test.apache.org/"
+        test_client_project.download_page = "https://test.apache.org/download"
+        test_client_project.repositories = ["https://github.com/apache/test-client"]
+        await data.commit()
 
         # A podling equivalent, so we can exercise incubator/podling behaviours in tests
         test_podling_committee = await data.committee(key="test-podling").get()
@@ -873,15 +873,15 @@ async def _initialise_test_environment(conf: type[config.AppConfig]) -> None:
                 name="Apache Test Podling",
                 status=sql.ProjectStatus.ACTIVE,
                 committee_key="test-podling",
-                description="Test podling project for the end-to-end suite.",
-                homepage="https://test.apache.org/",
-                download_page="https://test.apache.org/download",
-                repositories=["https://github.com/apache/test-podling"],
                 created=datetime.datetime.now(datetime.UTC),
                 created_by="test",
             )
             data.add(test_podling_project)
-            await data.commit()
+        test_podling_project.description = "Test podling project for the end-to-end suite."
+        test_podling_project.homepage = "https://test.apache.org/"
+        test_podling_project.download_page = "https://test.apache.org/download"
+        test_podling_project.repositories = ["https://github.com/apache/test-podling"]
+        await data.commit()
 
 
 def _is_hot_reload() -> bool:
