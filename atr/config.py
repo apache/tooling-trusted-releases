@@ -17,6 +17,7 @@
 
 import enum
 import ipaddress
+import logging
 import os
 import urllib.parse
 from typing import Final
@@ -45,29 +46,31 @@ def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: 
 def _config_secrets_get(
     secrets_path: str, key: str, default: str | None = None, cast: type = str, allow_not_found: bool = True
 ) -> str | None:
+    sentinel = object()
+    # We do not use the cast keyword argument here
+    # If we did, it would also be applied to the default sentinel value
+    value = decouple.config(key, default=sentinel)
+    if value is not sentinel:
+        if not isinstance(value, str):
+            raise ValueError(f"Secret value for {key} is not a string")
+        try:
+            decouple.RepositoryIni(secrets_path)[key]
+        except (FileNotFoundError, KeyError):
+            pass
+        else:
+            logging.warning(f"Secret {key} from the environment overrides the value in {secrets_path}")
+        return cast(value)
+
     try:
         repo_ini = decouple.RepositoryIni(secrets_path)
     except FileNotFoundError:
         if allow_not_found is False:
             raise
-    else:
-        try:
-            value = repo_ini[key]
-            return cast(value)
-        except KeyError:
-            pass
-
-    # There is no secrets file, or it does not contain the key
-    # Try getting the value from environment variables
-    sentinel = object()
-    # We do not use the cast keyword argument here
-    # If we did, it would also be applied to the default sentinel value
-    value = decouple.config(key, default=sentinel)
-    if value is sentinel:
         return default
-    if not isinstance(value, str):
-        raise ValueError(f"Secret value for {key} is not a string")
-    return cast(value)
+    try:
+        return cast(repo_ini[key])
+    except KeyError:
+        return default
 
 
 def _svn_loopback_host(host: str) -> bool:
