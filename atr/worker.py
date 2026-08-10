@@ -61,6 +61,7 @@ def main() -> None:
     import atr.config as config
 
     conf = config.get()
+    config.validate()
     if os.path.isdir(conf.STATE_DIR):
         os.chdir(conf.STATE_DIR)
 
@@ -485,3 +486,4 @@ if __name__ == "__main__":
         with open("logs/atr-worker-error.log", "a") as f:
             f.write(f"{datetime.datetime.now(datetime.UTC)}: {e}\n")
             f.flush()
+        raise

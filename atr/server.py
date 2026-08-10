@@ -99,7 +99,6 @@ _MIGRATIONS: Final[list[tuple[str, str]]] = [
     ("keys_import.log", "logs/keys-import.log"),
     ("route-performance.log", "logs/route-performance.log"),
     # Secrets
-    ("secrets.ini", "secrets/curated/secrets.ini"),
     ("apptoken.txt", "secrets/generated/apptoken.txt"),
     ("ssh_host_key", "secrets/generated/ssh_host_key"),
     # Subversion

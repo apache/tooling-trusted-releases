@@ -31,21 +31,10 @@ _RAT_VERSION: Final = "0.18"
 
 def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: type = str) -> str | None:
     secrets_path = os.path.join(state_dir, "secrets", "curated", "secrets.ini")
-
-    # This code is deprecated and will be removed
-    # TODO: Remove this once migrations are no longer likely2026-
-    deprecated_path = os.path.join(state_dir, "secrets.ini")
-    if os.path.exists(deprecated_path):
-        if os.path.exists(secrets_path):
-            raise RuntimeError(f"Conflicting secrets files exist: {deprecated_path} and {secrets_path}")
-        return _config_secrets_get(deprecated_path, key, default, cast, allow_not_found=False)
-
     return _config_secrets_get(secrets_path, key, default, cast)
 
 
-def _config_secrets_get(
-    secrets_path: str, key: str, default: str | None = None, cast: type = str, allow_not_found: bool = True
-) -> str | None:
+def _config_secrets_get(secrets_path: str, key: str, default: str | None = None, cast: type = str) -> str | None:
     sentinel = object()
     # We do not use the cast keyword argument here
     # If we did, it would also be applied to the default sentinel value
@@ -64,8 +53,6 @@ def _config_secrets_get(
     try:
         repo_ini = decouple.RepositoryIni(secrets_path)
     except FileNotFoundError:
-        if allow_not_found is False:
-            raise
         return default
     try:
         return cast(repo_ini[key])
@@ -80,6 +67,14 @@ def _svn_loopback_host(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _validate_no_root_secrets(conf: type["AppConfig"]) -> None:
+    if os.path.isfile(os.path.join(conf.STATE_DIR, "secrets.ini")):
+        raise RuntimeError(
+            "A secrets.ini file in the state directory root is no longer supported; "
+            "move it to secrets/curated/secrets.ini, or delete it if already migrated"
+        )
 
 
 def _validate_svn_dist_public_url(url: str) -> None:
@@ -301,6 +296,8 @@ def validate() -> None:
     Dev URLs cannot be set in production mode
     """
     conf = get()
+
+    _validate_no_root_secrets(conf)
 
     absolute_paths = [
         (conf.PROJECT_ROOT, "PROJECT_ROOT"),

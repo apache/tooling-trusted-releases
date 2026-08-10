@@ -41,8 +41,25 @@ def test_environment_overrides_secrets_file(monkeypatch: pytest.MonkeyPatch, tmp
     assert config._config_secrets_get(str(secrets_path), "EXAMPLE_SECRET") == "from-environment"
 
 
+def test_root_secrets_file_not_read(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    (tmp_path / "secrets.ini").write_text("[settings]\nEXAMPLE_SECRET = from-root\n")
+    monkeypatch.delenv("EXAMPLE_SECRET", raising=False)
+    assert config._config_secrets("EXAMPLE_SECRET", str(tmp_path)) is None
+    curated = tmp_path / "secrets" / "curated"
+    curated.mkdir(parents=True)
+    (curated / "secrets.ini").write_text("[settings]\nEXAMPLE_SECRET = from-curated\n")
+    assert config._config_secrets("EXAMPLE_SECRET", str(tmp_path)) == "from-curated"
+
+
 def test_secrets_file_used_without_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     secrets_path = tmp_path / "secrets.ini"
     secrets_path.write_text("[settings]\nEXAMPLE_SECRET = from-file\n")
     monkeypatch.delenv("EXAMPLE_SECRET", raising=False)
     assert config._config_secrets_get(str(secrets_path), "EXAMPLE_SECRET") == "from-file"
+
+
+def test_validate_rejects_root_secrets(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(config.AppConfig, "STATE_DIR", str(tmp_path))
+    (tmp_path / "secrets.ini").write_text("[settings]\n")
+    with pytest.raises(RuntimeError, match=r"secrets\.ini"):
+        config.validate()
