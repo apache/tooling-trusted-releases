@@ -153,6 +153,7 @@ _PRIVATE_KEY_MARKERS: Final[tuple[str, ...]] = (
     f"-----BEGIN EC {_PEM_PRIVATE} KEY-----",
     f"-----BEGIN ED25519 {_PEM_PRIVATE} KEY-----",
 )
+_TREE_COMPARISON_CHUNK_SIZE: Final[int] = 4 * 1024 * 1024
 
 
 @dataclasses.dataclass(frozen=True)
@@ -264,6 +265,17 @@ class PublicResolver(aiohttp.abc.AbstractResolver):
             if not ipaddress.ip_address(result["host"]).is_global:
                 raise aiohttp.ClientConnectionError(f"The address of {host} is not public")
         return results
+
+
+@dataclasses.dataclass(frozen=True)
+class TreeDifferences:
+    only_in_base: list[str]
+    only_in_other: list[str]
+    differing: list[str]
+
+    @property
+    def identical(self) -> bool:
+        return not (self.only_in_base or self.only_in_other or self.differing)
 
 
 def archive_format_stem(name: str) -> str | None:
@@ -1515,6 +1527,12 @@ async def thread_messages(  # noqa: C901
         yield msg_id, msg_json
 
 
+async def tree_differences(base: pathlib.Path, other: pathlib.Path) -> TreeDifferences:
+    # Compare trees in Python directly instead of using e.g. a diff or rsync call
+    # Only exposes file level differences, not line level
+    return await asyncio.to_thread(_tree_differences, base, other)
+
+
 def unwrap[T](value: T | None, error_message: str = "unexpected None when unwrapping value") -> T:
     """
     Will unwrap the given value or raise a ValueError if it is None
@@ -1941,3 +1959,42 @@ def _thread_messages_walk(node: dict[str, Any] | None, message_ids: set[str]) ->
         message_ids.add(str(mid))
     for child in node.get("children", []):
         _thread_messages_walk(child, message_ids)
+
+
+def _tree_differences(base: pathlib.Path, other: pathlib.Path) -> TreeDifferences:
+    base_entries = _tree_entries(base)
+    other_entries = _tree_entries(other)
+    only_in_base = sorted(set(base_entries) - set(other_entries))
+    only_in_other = sorted(set(other_entries) - set(base_entries))
+    shared = set(base_entries) & set(other_entries)
+    differing = sorted(rel for rel in shared if not _tree_files_identical(base_entries[rel], other_entries[rel]))
+    return TreeDifferences(only_in_base, only_in_other, differing)
+
+
+def _tree_entries(root: pathlib.Path) -> dict[str, pathlib.Path]:
+    entries: dict[str, pathlib.Path] = {}
+    stack = [root]
+    while stack:
+        directory = stack.pop()
+        for entry in os.scandir(directory):
+            path = pathlib.Path(entry.path)
+            if entry.is_dir(follow_symlinks=False):
+                stack.append(path)
+            else:
+                entries[path.relative_to(root).as_posix()] = path
+    return entries
+
+
+def _tree_files_identical(base_file: pathlib.Path, other_file: pathlib.Path) -> bool:
+    if not (base_file.is_file(follow_symlinks=False) and other_file.is_file(follow_symlinks=False)):
+        return False
+    if base_file.stat().st_size != other_file.stat().st_size:
+        return False
+    with base_file.open("rb") as base_handle, other_file.open("rb") as other_handle:
+        while True:
+            base_chunk = base_handle.read(_TREE_COMPARISON_CHUNK_SIZE)
+            other_chunk = other_handle.read(_TREE_COMPARISON_CHUNK_SIZE)
+            if base_chunk != other_chunk:
+                return False
+            if not base_chunk:
+                return True
