@@ -283,6 +283,21 @@ async def github_tp_payload_write(
     )
 
 
+async def latest_revision_number(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey
+) -> safe.RevisionNumber | None:
+    directory = paths.get_attestable_dir() / str(project_key) / str(version_key)
+    try:
+        names = await aiofiles.os.listdir(directory)
+    except FileNotFoundError:
+        return None
+    stems = [name.removesuffix(".json") for name in names if name.endswith(".json")]
+    numbers = sorted(stem for stem in stems if (len(stem) == 5) and stem.isascii() and stem.isdigit())
+    if not numbers:
+        return None
+    return safe.RevisionNumber(numbers[-1])
+
+
 async def load(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

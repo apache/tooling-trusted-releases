@@ -18,9 +18,17 @@
 import json
 import pathlib
 
+import pytest
+
 import atr.attestable as attestable
 import atr.models.attestable as models
 import atr.models.safe as safe
+
+
+def write_sidecar_names(directory: pathlib.Path, names: list[str]) -> None:
+    directory.mkdir(parents=True)
+    for name in names:
+        (directory / name).write_text("{}", encoding="utf-8")
 
 
 def test_attestable_v2_round_trip():
@@ -290,6 +298,26 @@ def test_parse_attestable_v1():
     assert isinstance(result, models.AttestableV1)
     assert result.version == 1
     assert result.paths == {"a.tar.gz": "h1"}
+
+
+async def test_latest_revision_number(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    names = [
+        "00001.json",
+        "00002.json",
+        "00002.checks.json",
+        "00002.github-tp.json",
+        "123456.json",
+        "9.json",
+        "\uff15\uff15\uff15\uff15\uff15.json",
+        "notes.txt",
+    ]
+    write_sidecar_names(tmp_path / "proj" / "1.0", names)
+    monkeypatch.setattr(attestable.paths, "get_attestable_dir", lambda: safe.StatePath(tmp_path))
+
+    latest = await attestable.latest_revision_number(safe.ProjectKey("proj"), safe.VersionKey("1.0"))
+
+    assert latest == safe.RevisionNumber("00002")
+    assert await attestable.latest_revision_number(safe.ProjectKey("proj"), safe.VersionKey("2.0")) is None
 
 
 def test_parse_attestable_v2():

@@ -15,9 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import dataclasses
 from typing import Final, Literal
 
+import quart
+
+import atr.analysis as analysis
 import atr.archives as archives
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.cycles as cycles
 import atr.db as db
@@ -26,6 +31,7 @@ import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.vote as vote
 import atr.htm as htm
+import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -48,6 +54,13 @@ _PHASE_BADGE_VARIANTS: Final[dict[sql.ReleasePhase, str]] = {
 }
 
 
+@dataclasses.dataclass(frozen=True)
+class PublishedFile:
+    path: str
+    size: int | None
+    url: str | None
+
+
 @get.typed
 async def selected(
     session: web.Committer,
@@ -60,7 +73,6 @@ async def selected(
     View all the files in a release (any phase).
     """
     release = await session.release(project_key, version_key, phase=None)
-    file_stats = await _release_file_stats(release, project_key, version_key)
     approval = await _archival_approval(release)
 
     block = htm.Block()
@@ -96,50 +108,14 @@ async def selected(
         ],
     ]
 
-    files_card = htm.Block(htm.div, classes=".card.mb-4")
-    files_card.div(".card-header.d-flex.justify-content-between.align-items-center")[htm.h3(".mb-0")["Files"]]
-
-    if file_stats:
-        tbody = htm.Block(htm.tbody)
-        for stat in file_stats:
-            if stat.is_file:
-                file_url = util.as_url(
-                    selected_path,
-                    project_key=release.project.key,
-                    version_key=release.version,
-                    file_path=stat.path,
-                )
-                file_link = htm.a(href=file_url)[stat.path]
-            else:
-                file_link = htm.strong[stat.path + "/"]
-
-            tbody.tr[
-                htm.td[util.format_permissions(stat.permissions)],
-                htm.td[file_link],
-                htm.td[util.format_file_size(stat.size) if stat.is_file else "-"],
-                htm.td[util.format_datetime(stat.modified)],
-            ]
-
-        files_card.div(".card-body")[
-            htm.div(".table-responsive")[
-                htm.table(".table.table-striped")[
-                    htm.thead[
-                        htm.tr[
-                            htm.th["Permissions"],
-                            htm.th["File path"],
-                            htm.th["Size"],
-                            htm.th["Modified"],
-                        ]
-                    ],
-                    tbody.collect(),
-                ]
-            ]
-        ]
+    if release.phase == sql.ReleasePhase.RELEASE:
+        file_stats = []
+        published = await _published_release_files(release, project_key, version_key)
     else:
-        phase_name = _phase_display_name(release.phase)
-        files_card.div(".card-body")[htm.div(".alert.alert-info")[f"This {phase_name} does not have any files."]]
+        file_stats = await _release_file_stats(release, project_key, version_key)
+        published = []
 
-    block.append(files_card.collect())
+    block.append(_files_card(release, file_stats, published))
 
     if release.phase == sql.ReleasePhase.RELEASE:
         actions_card = await _render_release_actions(session, release, approval)
@@ -156,13 +132,24 @@ async def selected_path(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     file_path: safe.RelPath,
-) -> str:
+) -> str | web.WerkzeugResponse:
     """
     URL: /file/<project_key>/<version_key>/<path:file_path>
     View the content of a specific file in a release (any phase).
     """
 
     release = await session.release(project_key, version_key, phase=None)
+    if release.phase == sql.ReleasePhase.RELEASE:
+        published = await _published_release_files(release, project_key, version_key)
+        url = next((f.url for f in published if f.path == str(file_path)), None)
+        if url is not None:
+            return quart.redirect(url)
+        return await session.redirect(
+            selected,
+            error="This file is not available through ATR after release.",
+            project_key=project_key,
+            version_key=version_key,
+        )
     _max_view_size = 512 * 1024
     full_path = paths.release_directory(release) / file_path
     content_listing = await archives.list_archive(full_path)
@@ -214,6 +201,69 @@ async def _archival_approval(release: sql.Release) -> sql.ApprovalRequest | None
             status_in=[sql.ApprovalStatus.PENDING, sql.ApprovalStatus.APPROVED],
             release_version=release.version,
         ).get()
+
+
+def _files_card(release: sql.Release, file_stats: list[util.FileStat], published: list[PublishedFile]) -> htm.Element:
+    files_card = htm.Block(htm.div, classes=".card.mb-4")
+    files_card.div(".card-header.d-flex.justify-content-between.align-items-center")[htm.h3(".mb-0")["Files"]]
+
+    if published:
+        tbody = htm.Block(htm.tbody)
+        for published_file in published:
+            link = htm.a(href=published_file.url)[published_file.path] if published_file.url else published_file.path
+            tbody.tr[
+                htm.td[link],
+                htm.td[util.format_file_size(published_file.size) if (published_file.size is not None) else "-"],
+            ]
+        files_card.div(".card-body")[
+            htm.div(".table-responsive")[
+                htm.table(".table.table-striped")[
+                    htm.thead[htm.tr[htm.th["File path"], htm.th["Size"]]],
+                    tbody.collect(),
+                ]
+            ]
+        ]
+    elif file_stats:
+        tbody = htm.Block(htm.tbody)
+        for stat in file_stats:
+            if stat.is_file:
+                file_url = util.as_url(
+                    selected_path,
+                    project_key=release.project.key,
+                    version_key=release.version,
+                    file_path=stat.path,
+                )
+                file_link = htm.a(href=file_url)[stat.path]
+            else:
+                file_link = htm.strong[stat.path + "/"]
+
+            tbody.tr[
+                htm.td[util.format_permissions(stat.permissions)],
+                htm.td[file_link],
+                htm.td[util.format_file_size(stat.size) if stat.is_file else "-"],
+                htm.td[util.format_datetime(stat.modified)],
+            ]
+
+        files_card.div(".card-body")[
+            htm.div(".table-responsive")[
+                htm.table(".table.table-striped")[
+                    htm.thead[
+                        htm.tr[
+                            htm.th["Permissions"],
+                            htm.th["File path"],
+                            htm.th["Size"],
+                            htm.th["Modified"],
+                        ]
+                    ],
+                    tbody.collect(),
+                ]
+            ]
+        ]
+    else:
+        phase_name = _phase_display_name(release.phase)
+        files_card.div(".card-body")[htm.div(".alert.alert-info")[f"This {phase_name} does not have any files."]]
+
+    return files_card.collect()
 
 
 def _get_navigation_info(release: sql.Release) -> tuple[str, str, Phase] | None:
@@ -271,16 +321,58 @@ def _phase_display_name(phase: sql.ReleasePhase) -> str:
     return "release"
 
 
+def _published_files(
+    artifacts: list[sql.Artifact],
+    attested: atr.models.attestable.Attestable | None,
+    archived: bool,
+) -> list[PublishedFile]:
+    dist_dir = next((a.download_path_suffix for a in artifacts if a.download_path_suffix), None)
+    sizes: dict[str, int | None] = {}
+    if attested is not None:
+        for path_key, content_hash in attestable.path_hashes(attested).items():
+            entry = attested.hashes.get(content_hash)
+            sizes[path_key] = entry.size if (entry is not None) else None
+    else:
+        for artifact in artifacts:
+            for sibling in (
+                artifact.artifact_path,
+                artifact.signature_path,
+                artifact.checksum_path,
+                artifact.sbom_path,
+            ):
+                if sibling:
+                    sizes.setdefault(sibling, None)
+    files = []
+    for rel_path in sorted(sizes):
+        url = None
+        if dist_dir:
+            is_artifact = analysis.is_artifact(rel_path)
+            kind = util.DownloadFile.ARTIFACT if is_artifact else util.DownloadFile.METADATA
+            url = util.download_url_for_published_path(f"{dist_dir}/{rel_path}", kind, archived=archived)
+        files.append(PublishedFile(path=rel_path, size=sizes[rel_path], url=url))
+    return files
+
+
+async def _published_release_files(
+    release: sql.Release,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+) -> list[PublishedFile]:
+    async with db.session() as data:
+        artifacts = list(await data.artifact(project_key=str(project_key), version=str(version_key)).all())
+    attested = None
+    if (revision_number := await attestable.latest_revision_number(project_key, version_key)) is not None:
+        attested = await attestable.load(project_key, version_key, revision_number)
+    return _published_files(artifacts, attested, release.is_archived)
+
+
 async def _release_file_stats(
     release: sql.Release,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
 ) -> list[util.FileStat]:
-    if release.phase == sql.ReleasePhase.RELEASE:
-        gen = util.content_list(paths.get_finished_dir(), project_key, version_key)
-    else:
-        revision_number = release.safe_latest_revision_number
-        gen = util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
+    revision_number = release.safe_latest_revision_number
+    gen = util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
     file_stats = [stat async for stat in gen]
     file_stats.sort(key=lambda fs: fs.path)
     return file_stats
