@@ -16,9 +16,9 @@
 # under the License.
 
 import atr.constants as constants
-import atr.get.file as file_get
 import atr.models.attestable as attestable_models
 import atr.models.sql as sql
+import atr.shared.published as published
 
 
 def test_published_files_from_artifact_rows_without_dist_dir() -> None:
@@ -32,7 +32,7 @@ def test_published_files_from_artifact_rows_without_dist_dir() -> None:
         )
     ]
 
-    files = file_get._published_files(artifacts, None, False)
+    files = published.files(artifacts, None, False)
 
     assert [f.path for f in files] == [
         "apache-foo-1.0.tar.gz",
@@ -54,7 +54,7 @@ def test_published_files_use_archive_host_when_archived() -> None:
         )
     ]
 
-    files = file_get._published_files(artifacts, None, True)
+    files = published.files(artifacts, None, True)
 
     assert [f.url for f in files] == [
         f"{constants.ARCHIVE_APACHE_URL}/tooling/foo/apache-foo-1.0.tar.gz",
@@ -86,7 +86,7 @@ def test_published_files_use_attestable_paths_and_sizes() -> None:
         },
     )
 
-    files = file_get._published_files(artifacts, attested, False)
+    files = published.files(artifacts, attested, False)
 
     assert [f.path for f in files] == ["README.md", "apache-foo-1.0.tar.gz", "apache-foo-1.0.tar.gz.asc"]
     by_path = {f.path: f for f in files}
@@ -99,3 +99,30 @@ def test_published_files_use_attestable_paths_and_sizes() -> None:
         == f"{constants.DOWNLOADS_APACHE_URL}/tooling/foo/apache-foo-1.0.tar.gz.asc"
     )
     assert by_path["README.md"].url == f"{constants.DOWNLOADS_APACHE_URL}/tooling/foo/README.md"
+
+
+def test_published_files_use_each_artifact_row_directory() -> None:
+    artifacts = [
+        sql.Artifact(
+            project_key="foo",
+            version="1.0",
+            artifact_path="apache-foo-1.0-bin.tar.gz",
+            download_path_suffix="foo/binaries",
+        ),
+        sql.Artifact(
+            project_key="foo",
+            version="1.0",
+            artifact_path="apache-foo-1.0-src.tar.gz",
+            download_path_suffix="foo/source",
+        ),
+        sql.Artifact(project_key="foo", version="1.0", artifact_path="apache-foo-1.0.pom"),
+    ]
+
+    files = published.files(artifacts, None, False)
+
+    by_path = {f.path: f for f in files}
+    binaries = f"{constants.CLOSER_LUA_URL}/foo/binaries/apache-foo-1.0-bin.tar.gz?action=download"
+    source = f"{constants.CLOSER_LUA_URL}/foo/source/apache-foo-1.0-src.tar.gz?action=download"
+    assert by_path["apache-foo-1.0-bin.tar.gz"].url == binaries
+    assert by_path["apache-foo-1.0-src.tar.gz"].url == source
+    assert by_path["apache-foo-1.0.pom"].url is None

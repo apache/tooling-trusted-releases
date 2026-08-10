@@ -15,14 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import dataclasses
 from typing import Final, Literal
 
 import quart
 
-import atr.analysis as analysis
 import atr.archives as archives
-import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.cycles as cycles
 import atr.db as db
@@ -31,7 +28,6 @@ import atr.get.compose as compose
 import atr.get.finish as finish
 import atr.get.vote as vote
 import atr.htm as htm
-import atr.models.attestable
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
@@ -52,13 +48,6 @@ _PHASE_BADGE_VARIANTS: Final[dict[sql.ReleasePhase, str]] = {
     sql.ReleasePhase.RELEASE_PREVIEW: "warning",
     sql.ReleasePhase.RELEASE: "success",
 }
-
-
-@dataclasses.dataclass(frozen=True)
-class PublishedFile:
-    path: str
-    size: int | None
-    url: str | None
 
 
 @get.typed
@@ -110,7 +99,7 @@ async def selected(
 
     if release.phase == sql.ReleasePhase.RELEASE:
         file_stats = []
-        published = await _published_release_files(release, project_key, version_key)
+        published = await shared.published.release_files(release)
     else:
         file_stats = await _release_file_stats(release, project_key, version_key)
         published = []
@@ -140,7 +129,7 @@ async def selected_path(
 
     release = await session.release(project_key, version_key, phase=None)
     if release.phase == sql.ReleasePhase.RELEASE:
-        published = await _published_release_files(release, project_key, version_key)
+        published = await shared.published.release_files(release)
         url = next((f.url for f in published if f.path == str(file_path)), None)
         if url is not None:
             return quart.redirect(url)
@@ -203,7 +192,9 @@ async def _archival_approval(release: sql.Release) -> sql.ApprovalRequest | None
         ).get()
 
 
-def _files_card(release: sql.Release, file_stats: list[util.FileStat], published: list[PublishedFile]) -> htm.Element:
+def _files_card(
+    release: sql.Release, file_stats: list[util.FileStat], published: list[shared.published.PublishedFile]
+) -> htm.Element:
     files_card = htm.Block(htm.div, classes=".card.mb-4")
     files_card.div(".card-header.d-flex.justify-content-between.align-items-center")[htm.h3(".mb-0")["Files"]]
 
@@ -319,51 +310,6 @@ def _phase_display_name(phase: sql.ReleasePhase) -> str:
     elif phase == sql.ReleasePhase.RELEASE:
         return "release"
     return "release"
-
-
-def _published_files(
-    artifacts: list[sql.Artifact],
-    attested: atr.models.attestable.Attestable | None,
-    archived: bool,
-) -> list[PublishedFile]:
-    dist_dir = next((a.download_path_suffix for a in artifacts if a.download_path_suffix), None)
-    sizes: dict[str, int | None] = {}
-    if attested is not None:
-        for path_key, content_hash in attestable.path_hashes(attested).items():
-            entry = attested.hashes.get(content_hash)
-            sizes[path_key] = entry.size if (entry is not None) else None
-    else:
-        for artifact in artifacts:
-            for sibling in (
-                artifact.artifact_path,
-                artifact.signature_path,
-                artifact.checksum_path,
-                artifact.sbom_path,
-            ):
-                if sibling:
-                    sizes.setdefault(sibling, None)
-    files = []
-    for rel_path in sorted(sizes):
-        url = None
-        if dist_dir:
-            is_artifact = analysis.is_artifact(rel_path)
-            kind = util.DownloadFile.ARTIFACT if is_artifact else util.DownloadFile.METADATA
-            url = util.download_url_for_published_path(f"{dist_dir}/{rel_path}", kind, archived=archived)
-        files.append(PublishedFile(path=rel_path, size=sizes[rel_path], url=url))
-    return files
-
-
-async def _published_release_files(
-    release: sql.Release,
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-) -> list[PublishedFile]:
-    async with db.session() as data:
-        artifacts = list(await data.artifact(project_key=str(project_key), version=str(version_key)).all())
-    attested = None
-    if (revision_number := await attestable.latest_revision_number(project_key, version_key)) is not None:
-        attested = await attestable.load(project_key, version_key, revision_number)
-    return _published_files(artifacts, attested, release.is_archived)
 
 
 async def _release_file_stats(

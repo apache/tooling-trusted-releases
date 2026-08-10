@@ -34,6 +34,7 @@ import atr.mapping as mapping
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.shared as shared
 import atr.template as template
 import atr.util as util
 import atr.web as web
@@ -60,7 +61,13 @@ async def all_selected(
         user_ssh_keys = await data.ssh_key(asf_uid=session.uid).all()
 
     back_url = mapping.release_as_url(release)
-    file_count, total_bytes, formatted_size = await util.get_release_stats(release)
+    if release.phase == sql.ReleasePhase.RELEASE:
+        published = await shared.published.release_files(release)
+        file_count = len(published)
+        total_bytes = sum((f.size or 0) for f in published)
+        formatted_size = util.format_file_size(total_bytes)
+    else:
+        file_count, total_bytes, formatted_size = await util.get_release_stats(release)
 
     return await template.render(
         "download-all.html",
@@ -147,6 +154,10 @@ async def urls_selected(
             release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
                 ValueError("Release not found")
             )
+        if release.phase == sql.ReleasePhase.RELEASE:
+            published = await shared.published.release_files(release)
+            lines = [f"{f.url} {f.path}" for f in published if f.url]
+            return web.TextResponse("".join(f"{line}\n" for line in lines))
         url_list_str = await _generate_file_url_list(release)
         return web.TextResponse(url_list_str)
     except ValueError as e:
@@ -174,6 +185,12 @@ async def zip_selected(
         return web.TextResponse(f"Error: {e}", status=404)
     except Exception as e:
         return web.TextResponse(_text_error(e), status=500)
+
+    if release.phase == sql.ReleasePhase.RELEASE:
+        return web.TextResponse(
+            "Error: Released files are served from the ASF download services, so ATR cannot provide a ZIP archive.",
+            status=404,
+        )
 
     base_dir = paths.release_directory(release)
     files_to_zip = []
@@ -210,6 +227,8 @@ async def _download_or_list(
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             base.ASFQuartException("Release does not exist", errorcode=404)
         )
+    if release.phase == sql.ReleasePhase.RELEASE:
+        return await _published_response(release, validated_path)
     full_path = paths.release_directory(release) / validated_path
 
     if await aiofiles.os.path.isdir(full_path):
@@ -295,6 +314,61 @@ async def _list(
     html.body[div.collect(separator=htm.br)]
     response_body = html.collect()
     return web.ElementResponse(response_body)
+
+
+def _published_list(
+    published: list[shared.published.PublishedFile], project_key: str, version_key: str, file_path: str
+) -> web.Response:
+    prefix = "" if (file_path == ".") else f"{file_path}/"
+    children: dict[str, str | None] = {}
+    for published_file in published:
+        if not published_file.path.startswith(prefix):
+            continue
+        remainder = published_file.path[len(prefix) :]
+        head, separator, _ = remainder.partition("/")
+        if separator:
+            children.setdefault(
+                f"{head}/",
+                util.as_url(path, project_key=project_key, version_key=version_key, file_path=f"{prefix}{head}"),
+            )
+        else:
+            children[head] = published_file.url
+    if not children:
+        return web.TextResponse("Error: File or directory not found.", status=404)
+
+    html = htm.Block(htm.html)
+    html.style["body { margin: 1rem; font: 1.25rem/1.5 serif; }"]
+    div = htm.Block()
+    if file_path != ".":
+        parent_path_str = str(pathlib.Path(file_path).parent)
+        if parent_path_str == ".":
+            parent_link_url = util.as_url(path_empty, project_key=project_key, version_key=version_key)
+        else:
+            parent_link_url = util.as_url(
+                path,
+                project_key=project_key,
+                version_key=version_key,
+                file_path=parent_path_str,
+            )
+        div.a(href=parent_link_url)["../"]
+    for name in sorted(children):
+        if (url := children[name]) is not None:
+            div.a(href=url)[name]
+        else:
+            div.span[name]
+    html.body[div.collect(separator=htm.br)]
+    return web.ElementResponse(html.collect())
+
+
+async def _published_response(release: sql.Release, validated_path: pathlib.Path) -> web.Response:
+    published = await shared.published.release_files(release)
+    path_str = str(validated_path)
+    for published_file in published:
+        if published_file.path == path_str:
+            if published_file.url is None:
+                return web.TextResponse("Error: No public download location is recorded for this file.", status=404)
+            return quart.redirect(published_file.url)
+    return _published_list(published, release.project_key, release.version, path_str)
 
 
 def _text_error(error: BaseException) -> str:
