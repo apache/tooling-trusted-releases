@@ -355,7 +355,9 @@ async def atomic_modify_file(
         await asyncio.to_thread(os.close, lock_fd)
 
 
-async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str = "utf-8") -> None:
+async def atomic_write_file(
+    file_path: pathlib.Path, content: str, encoding: str = "utf-8", mode: int | None = None
+) -> None:
     """Atomically write content to a file using a temporary file."""
     await aiofiles.os.makedirs(file_path.parent, exist_ok=True)
     temp_path = file_path.parent / f".{file_path.name}.{uuid.uuid4()}.tmp"
@@ -364,6 +366,8 @@ async def atomic_write_file(file_path: pathlib.Path, content: str, encoding: str
             await f.write(content)
             await f.flush()
             await asyncio.to_thread(os.fsync, f.fileno())
+        if mode is not None:
+            await asyncio.to_thread(os.chmod, temp_path, mode)
         await aiofiles.os.rename(temp_path, file_path)
     except Exception:
         with contextlib.suppress(FileNotFoundError):

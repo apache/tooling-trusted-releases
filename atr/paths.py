@@ -29,6 +29,11 @@ def archive_download_url(path: str | safe.RelPath) -> str:
     return f"{constants.ARCHIVE_APACHE_URL}/{path}"
 
 
+def audit_release_log_file(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> safe.StatePath:
+    base = safe.StatePath(pathlib.Path(config.get().STATE_DIR) / "audit" / "releases")
+    return base / project_key / f"{version_key}.jsonl"
+
+
 def base_path_for_revision(
     project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
 ) -> safe.StatePath:
