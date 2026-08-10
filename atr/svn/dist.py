@@ -40,9 +40,12 @@ _GROUPING_BUCKETS: Final[frozenset[str]] = frozenset(
     {"providers", "source", "sources", "binaries", "bin", "src", "releases"}
 )
 
-# Buckets scoped to one committee, where the name is a real subproject elsewhere. cordova ships each
-# platform repo under platforms/ (cordova-android-13.0.0.tgz), so the name comes from the file
-_COMMITTEE_BUCKETS: Final[frozenset[tuple[str, str]]] = frozenset({("maven", "plugins"), ("cordova", "platforms")})
+# Buckets scoped to one committee, where the name is a real subproject elsewhere. Eg. cordova ships each
+# platform repo under platforms/ (cordova-android-13.0.0.tgz) and its tooling under tools/, so the
+# name comes from the file rather than the bucket dir
+_COMMITTEE_BUCKETS: Final[frozenset[tuple[str, str]]] = frozenset(
+    {("maven", "plugins"), ("cordova", "platforms"), ("cordova", "tools")}
+)
 
 # Dirs of bundled third-party packages, never a release
 _EXCLUDED_PARTS: Final[frozenset[str]] = frozenset({"repos"})
