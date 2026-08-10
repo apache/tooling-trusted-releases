@@ -175,6 +175,22 @@ def error_message(exc: CommandExecutionError) -> str:
     return f"svn exited with code {exc.returncode}"
 
 
+async def export(
+    url: str,
+    revision: int | None,
+    destination: pathlib.Path,
+    timeout_seconds: float = EXPORT_TIMEOUT_SECONDS,
+) -> None:
+    arguments = ["export", "--non-interactive", "--ignore-externals", "--ignore-keywords"]
+    if revision is not None:
+        arguments.extend(["-r", str(revision)])
+        pegged_url = f"{url}@{revision}"
+    else:
+        pegged_url = f"{url}@"
+    arguments.extend(["--", pegged_url, str(destination)])
+    await run_command("svn", *arguments, timeout_seconds=timeout_seconds)
+
+
 async def get_diff(path: pathlib.Path, revision: int) -> str:
     log.debug(f"running svn diff for '{path}': r{revision}")
     svn_token = config.get().SVN_TOKEN
