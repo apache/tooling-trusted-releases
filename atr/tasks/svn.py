@@ -94,7 +94,7 @@ async def _import_files_core(args: args.SvnImport) -> str:
                 "-r",
                 args.revision,
                 "--",
-                f"{constants.SVN_DIST_ROOT_URL}/{args.svn_url!s}",
+                f"{constants.SVN_DIST_ROOT_URL}/{args.svn_url!s}@{args.revision}",
                 str(temp_export_path),
             ]
 
