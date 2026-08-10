@@ -149,8 +149,7 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
         url,
         "--username",
         username,
-        "--password",
-        svn_token,
+        "--password-from-stdin",
         "--non-interactive",
         "--with-revprop",
         f"asf:tool={ASF_TOOL}",
@@ -158,6 +157,7 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
         revision,
         "-m",
         message,
+        stdin_bytes=svn_token.encode(),
     )
 
 
@@ -198,7 +198,15 @@ async def get_diff(path: pathlib.Path, revision: int) -> str:
         raise ValueError("SVN_TOKEN must be set")
     # TODO: Or omit username entirely?
     return await _run_svn_command(
-        "diff", str(path), "-c", str(revision), "--username", ASF_TOOL, "--password", svn_token
+        "diff",
+        str(path),
+        "-c",
+        str(revision),
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        stdin_bytes=svn_token.encode(),
     )
 
 
@@ -208,7 +216,16 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     if svn_token is None:
         raise ValueError("SVN_TOKEN must be set")
     # TODO: Or omit username entirely?
-    log_output = await _run_svn_command("log", str(path), "--xml", "--username", ASF_TOOL, "--password", svn_token)
+    log_output = await _run_svn_command(
+        "log",
+        str(path),
+        "--xml",
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        stdin_bytes=svn_token.encode(),
+    )
     root = ElementTree.fromstring(log_output)
     return SvnLog.from_xml_tree(root)
 
@@ -236,14 +253,14 @@ async def publish_file(local_path: pathlib.Path, target_url: str, username: str,
         target_url,
         "--username",
         username,
-        "--password",
-        svn_token,
+        "--password-from-stdin",
         "--non-interactive",
         "--with-revprop",
         f"asf:tool={ASF_TOOL}",
         "-m",
         message,
         timeout_seconds=KEYS_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
     )
 
 
@@ -259,8 +276,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         target_url,
         "--username",
         username,
-        "--password",
-        svn_token,
+        "--password-from-stdin",
         "--non-interactive",
         "--no-auth-cache",
         "--no-ignore",
@@ -271,6 +287,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         "-m",
         message,
         timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
     )
     revision = parse_committed_revision(output)
     if revision is None:
@@ -329,18 +346,20 @@ async def remove_files(base_url: str, rel_paths: list[str], username: str, messa
         *actions,
         "--username",
         username,
-        "--password",
-        svn_token,
+        "--password-from-stdin",
         "--non-interactive",
         "--with-revprop",
         f"asf:tool={ASF_TOOL}",
         "-m",
         message,
         timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
     )
 
 
-async def run_command(cmd: str, *args: str, timeout_seconds: float | None = None) -> str:
+async def run_command(
+    cmd: str, *args: str, timeout_seconds: float | None = None, stdin_bytes: bytes | None = None
+) -> str:
     """Run a svn command asynchronously.
 
     Arguments:
@@ -350,11 +369,12 @@ async def run_command(cmd: str, *args: str, timeout_seconds: float | None = None
     proc = await asyncio.create_subprocess_exec(
         cmd,
         *args,
+        stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
 
-    communicate = asyncio.create_task(proc.communicate())
+    communicate = asyncio.create_task(proc.communicate(stdin_bytes))
     try:
         stdout, stderr = await asyncio.wait_for(asyncio.shield(communicate), timeout_seconds)
     except TimeoutError:
@@ -376,9 +396,11 @@ async def update(path: pathlib.Path) -> str:
     return await _run_svn_command("update", str(path), "--parents")
 
 
-async def _run_svn_command(sub_cmd: str, path: str, *args: str, timeout_seconds: float | None = None) -> str:
+async def _run_svn_command(
+    sub_cmd: str, path: str, *args: str, timeout_seconds: float | None = None, stdin_bytes: bytes | None = None
+) -> str:
     # Do not log this command, as it may contain a password or secret token
-    return await run_command("svn", *[sub_cmd, *args, path], timeout_seconds=timeout_seconds)
+    return await run_command("svn", *[sub_cmd, *args, path], timeout_seconds=timeout_seconds, stdin_bytes=stdin_bytes)
 
 
 async def _run_svn_info(path_or_url: str) -> str:
@@ -386,8 +408,10 @@ async def _run_svn_info(path_or_url: str) -> str:
     return await _run_svn_command("info", path_or_url, timeout_seconds=INFO_TIMEOUT_SECONDS)
 
 
-async def _run_svnmucc_command(*args: str, timeout_seconds: float | None = None) -> str:
-    return await run_command("svnmucc", *args, timeout_seconds=timeout_seconds)
+async def _run_svnmucc_command(
+    *args: str, timeout_seconds: float | None = None, stdin_bytes: bytes | None = None
+) -> str:
+    return await run_command("svnmucc", *args, timeout_seconds=timeout_seconds, stdin_bytes=stdin_bytes)
 
 
 def _sanitised_first_line(output: str) -> str:
