@@ -203,6 +203,58 @@ async def test_clone_from_older_revision_skips_merge_without_intervening_change(
 
 
 @pytest.mark.asyncio
+async def test_commit_new_revision_writes_audit_entry(tmp_path: pathlib.Path):
+    base_dir = safe.StatePath(tmp_path)
+    temp_dir = tmp_path / "interim"
+    temp_dir.mkdir()
+    release_key = sql.release_key("proj", "1.0")
+    release = mock.MagicMock()
+    release.phase = sql.ReleasePhase.RELEASE_PREVIEW
+    release.release_policy = None
+    release.project.release_policy = None
+    release.activity_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    safe_data = MockSafeData(parent_key=None)
+    calls: list[object] = []
+    safe_data.commit.side_effect = lambda: calls.append("commit")
+
+    with (
+        mock.patch.object(revision.sql, "Revision", side_effect=_make_fake_revision),
+        mock.patch.object(revision.attestable, "write_files_data", new_callable=mock.AsyncMock),
+        mock.patch.object(revision.paths, "get_archives_dir", return_value=base_dir / "archives"),
+        mock.patch.object(revision.paths, "release_directory", return_value=base_dir / "rev" / "00006"),
+        mock.patch.object(revision.storage, "audit", side_effect=lambda **kwargs: calls.append(kwargs)),
+        mock.patch.object(revision.util, "chmod_directories"),
+    ):
+        await revision._commit_new_revision(
+            safe_data,
+            asf_uid="test",
+            description="Upload of 2 files through web interface",
+            merge_base_revision_key=None,
+            path_to_hash={},
+            path_to_size={},
+            previous_attestable=None,
+            project_key=safe.ProjectKey("proj"),
+            release=release,
+            release_key=release_key,
+            temp_dir=str(temp_dir),
+            version_key=safe.VersionKey("1.0"),
+        )
+
+    assert calls == [
+        "commit",
+        {
+            "action": "revision_create",
+            "asf_uid": "test",
+            "project_key": "proj",
+            "version_key": "1.0",
+            "revision_number": "00006",
+            "description": "Upload of 2 files through web interface",
+            "was_quarantined": False,
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_expected_revision_match_proceeds(tmp_path: pathlib.Path):
     temp_dir = safe.StatePath(tmp_path)
     release = mock.MagicMock()

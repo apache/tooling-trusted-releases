@@ -244,6 +244,16 @@ async def _commit_new_revision(
     # This also releases the write lock obtained in _lock_and_merge
     await data.commit()
 
+    storage.audit(
+        action="revision_create",
+        asf_uid=asf_uid,
+        project_key=str(project_key),
+        version_key=str(version_key),
+        revision_number=new_revision.number,
+        description=description,
+        was_quarantined=was_quarantined,
+    )
+
     async with data.begin():
         # Run checks if in DRAFT phase
         # We could also run this outside the data Session

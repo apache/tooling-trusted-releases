@@ -23,6 +23,7 @@ import datetime
 import inspect
 import json
 import logging
+import logging.handlers
 import os
 import signal
 import threading
@@ -63,7 +64,7 @@ def main() -> None:
     if os.path.isdir(conf.STATE_DIR):
         os.chdir(conf.STATE_DIR)
 
-    _setup_logging()
+    listeners = _setup_logging()
     log.add_context(worker_pid=os.getpid())
     log.info(f"Starting worker process with pid {os.getpid()}")
 
@@ -97,7 +98,11 @@ def main() -> None:
         except asyncio.CancelledError:
             log.debug("Cancelled all running tasks")
 
-    asyncio.run(_start())
+    try:
+        asyncio.run(_start())
+    finally:
+        for listener in listeners:
+            listener.stop()
 
     # If the worker decides to stop running (see #230 in _worker_loop_run()), shutdown the database gracefully
     asyncio.run(db.shutdown_database())
@@ -172,7 +177,7 @@ def _memory_watchdog_run() -> None:
         time.sleep(_MEMORY_WATCHDOG_POLL_SECONDS)
 
 
-def _setup_logging() -> None:
+def _setup_logging() -> list[logging.handlers.QueueListener]:
     import atr.config as config
     import atr.loggers as loggers
 
@@ -191,18 +196,19 @@ def _setup_logging() -> None:
     loggers.configure_structlog(shared_processors)
 
     # Audit logger
-    loggers.setup_dedicated_file_logger(
+    storage_audit_listener = loggers.setup_dedicated_file_logger(
         "atr.storage.audit",
         conf.STORAGE_AUDIT_LOG_FILE,
         shared_processors,
     )
 
     # Completed recurring tasks
-    loggers.setup_dedicated_file_logger(
+    task_log_listener = loggers.setup_dedicated_file_logger(
         _TASK_LOG_LOGGER,
         conf.TASK_LOG_FILE,
         shared_processors,
     )
+    return [storage_audit_listener, task_log_listener]
 
 
 def _task_args_for_log(
