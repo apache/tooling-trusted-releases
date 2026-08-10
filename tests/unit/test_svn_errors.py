@@ -16,7 +16,9 @@
 # under the License.
 
 import asyncio
+import pathlib
 import sys
+import time
 import unittest.mock as mock
 
 import pytest
@@ -129,6 +131,26 @@ async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.
     assert not await svn.publish_revision_matches(_svn_info(), "alice", "Publish project-1.0.0")
 
 
+async def test_run_command_terminates_child_on_cancel(tmp_path: pathlib.Path) -> None:
+    ready = tmp_path / "ready"
+    marker = tmp_path / "terminated"
+    child = (
+        "import pathlib, signal, sys, time\n"
+        f"marker = pathlib.Path({str(marker)!r})\n"
+        "signal.signal(signal.SIGTERM, lambda *args: (marker.write_text('x'), sys.exit(0)))\n"
+        f"pathlib.Path({str(ready)!r}).write_text('x')\n"
+        "time.sleep(10)\n"
+    )
+    task = asyncio.create_task(svn.run_command(sys.executable, "-c", child))
+    assert await asyncio.to_thread(_wait_for_file, ready)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert await asyncio.to_thread(_wait_for_file, marker)
+
+
 async def test_run_command_timeout_drains_output() -> None:
     child = "import os, time; os.write(1, b'x' * 1_000_000); time.sleep(5)"
     with pytest.raises(svn.CommandTimeoutError):
@@ -199,6 +221,14 @@ def test_svn_publish_kind_classification(monkeypatch: pytest.MonkeyPatch) -> Non
         monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", url, raising=False)
         with pytest.raises(ValueError):
             config.svn_publish_kind()
+
+
+def _wait_for_file(path: pathlib.Path) -> bool:
+    for _ in range(100):
+        if path.exists():
+            return True
+        time.sleep(0.05)
+    return False
 
 
 def _svn_info() -> svn.SvnInfo:

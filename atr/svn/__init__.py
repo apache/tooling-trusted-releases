@@ -381,6 +381,9 @@ async def run_command(
         await _terminate_process(proc, communicate)
         timeout = timeout_seconds if timeout_seconds is not None else 0.0
         raise CommandTimeoutError(timeout)
+    except asyncio.CancelledError:
+        await asyncio.shield(_terminate_process(proc, communicate))
+        raise
 
     # if the proc.communicate() call returns an error
     # print the error out and return an empty string.

@@ -27,6 +27,40 @@ import atr.storage.writers.announce as announce_writer
 import atr.util as util
 
 
+class FakeExport:
+    def __init__(self, tree: dict[str, bytes]) -> None:
+        self.calls: list[tuple[str, int | None]] = []
+        self.tree = tree
+
+    async def __call__(self, url: str, revision: int | None, destination: pathlib.Path) -> None:
+        self.calls.append((url, revision))
+        self.write(destination)
+
+    def write(self, destination: pathlib.Path) -> None:
+        destination.mkdir(parents=True)
+        for rel_path, content in self.tree.items():
+            path = destination / rel_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+
+
+def local_check_setup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, bytes]
+) -> safe.StatePath:
+    release = tmp_path / "release"
+    release.mkdir()
+    for rel_path, content in files.items():
+        (release / rel_path).write_bytes(content)
+    temporary = tmp_path / "temporary"
+    temporary.mkdir()
+    monkeypatch.setattr(announce_writer.paths, "get_tmp_dir", lambda: safe.StatePath(temporary))
+    return safe.StatePath(release)
+
+
+def temporary_entries(tmp_path: pathlib.Path) -> list[str]:
+    return [entry.name for entry in (tmp_path / "temporary").iterdir()]
+
+
 async def fake_propagation_blocked(
     target: util.SvnPublishTarget,
     public_url: str,
@@ -128,36 +162,75 @@ async def test_announce_blocks_when_server_unreachable(
     assert "see https://status.apache.org/ for its status." in str(info.value)
 
 
-async def test_announce_local_blocks_when_artifact_missing(
+async def test_announce_local_blocks_when_export_fails(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    artifact = tmp_path / "artifact.tar.gz"
-    artifact.write_text("content", encoding="utf-8")
-
-    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(return_value=["other.tar.gz"]))
+    release_path = local_check_setup(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    error = announce_writer.svn.CommandExecutionError(1, "svn: E170013: Unable to connect to a repository")
+    monkeypatch.setattr(announce_writer.svn, "export", mock.AsyncMock(side_effect=error))
     writer = object.__new__(announce_writer.ReleaseManager)
     check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
 
     with pytest.raises(storage.AccessError) as info:
-        await check(safe.StatePath(tmp_path), "svn://127.0.0.1:3690/atr-dev-publish/tooling")
+        await check(release_path, "svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)
 
     assert info.value.status == 409
-    assert "artifact.tar.gz" in str(info.value)
+    assert "could not be checked" in str(info.value)
 
 
-async def test_announce_local_passes_when_artifacts_listed(
+async def test_announce_local_blocks_when_file_differs(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    artifact = tmp_path / "artifact.tar.gz"
-    artifact.write_text("content", encoding="utf-8")
-
-    monkeypatch.setattr(announce_writer.svn, "list_files", mock.AsyncMock(return_value=["artifact.tar.gz"]))
+    release_path = local_check_setup(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    monkeypatch.setattr(announce_writer.svn, "export", FakeExport({"artifact.tar.gz": b"tampered"}))
     writer = object.__new__(announce_writer.ReleaseManager)
     check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
 
-    await check(safe.StatePath(tmp_path), "svn://127.0.0.1:3690/atr-dev-publish/tooling")
+    with pytest.raises(storage.AccessError) as info:
+        await check(release_path, "svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)
+
+    assert info.value.status == 409
+    assert "differ" in str(info.value)
+    assert "artifact.tar.gz" in str(info.value)
+    assert temporary_entries(tmp_path) == []
+
+
+async def test_announce_local_blocks_when_file_missing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_path = local_check_setup(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    monkeypatch.setattr(announce_writer.svn, "export", FakeExport({}))
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
+
+    with pytest.raises(storage.AccessError) as info:
+        await check(release_path, "svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)
+
+    assert info.value.status == 409
+    assert "missing" in str(info.value)
+    assert "artifact.tar.gz" in str(info.value)
+
+
+async def test_announce_local_passes_and_warns_on_unexpected_files(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_path = local_check_setup(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    export = FakeExport({"artifact.tar.gz": b"content", "unexpected.txt": b"extra"})
+    monkeypatch.setattr(announce_writer.svn, "export", export)
+    warnings: list[str] = []
+    monkeypatch.setattr(announce_writer.log, "warning", warnings.append)
+    writer = object.__new__(announce_writer.ReleaseManager)
+    check = getattr(writer, "_ReleaseManager__check_local_publication_artifacts")
+
+    await check(release_path, "svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)
+
+    assert any("unexpected.txt" in warning for warning in warnings)
+    assert export.calls == [("svn://127.0.0.1:3690/atr-dev-publish/tooling", 3)]
+    assert temporary_entries(tmp_path) == []
 
 
 def _summary(

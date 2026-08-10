@@ -21,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
+import pathlib
+import tempfile
 from typing import Final
 
 import aiofiles.os
@@ -248,7 +250,7 @@ class ReleaseManager(CommitteeParticipant):
             if kind is config.SvnPublishKind.ASF_DISTRIBUTION:
                 await self.__check_publication_artifacts(unfinished_path, target, public_url, acknowledge_unreachable)
             else:
-                await self.__check_local_publication_artifacts(unfinished_path, internal_url)
+                await self.__check_local_publication_artifacts(unfinished_path, internal_url, published_revision)
 
         if (not config.is_dev_environment()) and (not await mail.relay_reachable()):
             raise storage.AccessError(
@@ -439,23 +441,40 @@ class ReleaseManager(CommitteeParticipant):
         self,
         unfinished_path: safe.StatePath,
         internal_url: str,
+        svn_revision: int | None,
     ) -> None:
-        rel_paths = await self.__artifact_rel_paths(unfinished_path)
-        if not rel_paths:
-            return
+        temp_dir = await asyncio.to_thread(tempfile.mkdtemp, dir=paths.get_tmp_dir())
         try:
-            listed = set(await svn.list_files(internal_url))
-        except svn.CommandExecutionError as exc:
-            raise storage.AccessError(
-                f"The local SVN publish repository could not be checked: {svn.error_message(exc)}",
-                status=409,
-            ) from None
-        if missing := [rel_path for rel_path in rel_paths if rel_path not in listed]:
-            raise storage.AccessError(
-                f"This release cannot be announced, because {len(missing)} of {len(rel_paths)} artifacts are"
-                f" missing from the SVN publication; the first missing artifact is {missing[0]}.",
-                status=409,
-            )
+            export_path = pathlib.Path(temp_dir) / "export"
+            try:
+                await svn.export(internal_url, svn_revision, export_path)
+            except svn.CommandExecutionError as exc:
+                raise storage.AccessError(
+                    f"The local SVN publish repository could not be checked: {svn.error_message(exc)}",
+                    status=409,
+                ) from None
+            differences = await util.tree_differences(unfinished_path.path, export_path)
+            if unexpected := differences.only_in_other:
+                log.warning(
+                    f"The SVN publication contains {len(unexpected)} unexpected files; the first is {unexpected[0]}"
+                )
+            if missing := differences.only_in_base:
+                raise storage.AccessError(
+                    f"This release cannot be announced, because {len(missing)} files are missing from the"
+                    f" SVN publication; the first missing file is {missing[0]}.",
+                    status=409,
+                )
+            if differing := differences.differing:
+                raise storage.AccessError(
+                    f"This release cannot be announced, because {len(differing)} files in the SVN publication"
+                    f" differ from the release files; the first differing file is {differing[0]}.",
+                    status=409,
+                )
+        finally:
+            try:
+                await aioshutil.rmtree(temp_dir)
+            except OSError as exc:
+                log.warning(f"Could not remove the publication check directory {temp_dir}: {exc}")
 
     async def __check_publication_artifacts(
         self,
