@@ -285,10 +285,13 @@ async def _start_release(
     version: safe.VersionKey,
     auto_archive: bool,
     expedited: bool,
+    download_path_suffix: str | None = None,
 ) -> tuple[sql.Release, sql.Project]:
     """Creates the initial release draft record and revision directory."""
     await data.begin_immediate()
-    project = await data.project(key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True).get()
+    project = await data.project(
+        key=str(project_key), status=sql.ProjectStatus.ACTIVE, _committee=True, _release_policy=True
+    ).get()
     if not project:
         raise storage.AccessError(f"Project {project_key} not found", status=404)
 
@@ -304,6 +307,12 @@ async def _start_release(
     cycle_key = await _ensure_project_cycle(data, project, version)
 
     now = datetime.datetime.now(datetime.UTC)
+    # Null defers to the project policy default; keep it null when the release manager left
+    # the pre-filled policy value untouched, so we don't pin a stale copy of the template
+    if (download_path_suffix is None) or (download_path_suffix == project.policy_download_path_suffix):
+        download_path_override = None
+    else:
+        download_path_override = download_path_suffix
     release = sql.Release(
         phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
         project_key=project.key,
@@ -314,6 +323,7 @@ async def _start_release(
         expedited=expedited,
         created=now,
         activity_at=now,
+        download_path_suffix=download_path_override,
     )
     write.ensure_release_writable(release)
     data.add(release)
@@ -876,7 +886,11 @@ class CommitteeParticipant(FoundationCommitter):
         return int(result.scalar_one())
 
     async def start(
-        self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool = False
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        auto_archive: bool = False,
+        download_path_suffix: str | None = None,
     ) -> tuple[sql.Release, sql.Project]:
         return await _start_release(
             self.__data,
@@ -887,6 +901,7 @@ class CommitteeParticipant(FoundationCommitter):
             version,
             auto_archive,
             expedited=False,
+            download_path_suffix=download_path_suffix,
         )
 
     async def upload_file(self, upload_args: api.ReleaseUploadArgs) -> sql.Revision | sql.Quarantined:
@@ -1202,6 +1217,10 @@ class ReleaseManager(CommitteeParticipant):
                 version_key=str(version_key),
                 revision_number=str(expected_revision),
             )
+            # Lock the chosen suffix onto the release so the catalogue and the
+            # announcement email read back exactly what we published to
+            release.download_path_suffix = str(download_path_suffix) if download_path_suffix is not None else ""
+            self.__data.add(release)
             self.__data.add(task)
             await self.__data.commit()
         except storage.AccessError:
@@ -1409,7 +1428,11 @@ class CommitteeMember(ReleaseManager):
             raise storage.AccessError("A CAP approval request for this release is already in progress.", status=409)
 
     async def start_expedited(
-        self, project_key: safe.ProjectKey, version: safe.VersionKey, auto_archive: bool = False
+        self,
+        project_key: safe.ProjectKey,
+        version: safe.VersionKey,
+        auto_archive: bool = False,
+        download_path_suffix: str | None = None,
     ) -> tuple[sql.Release, sql.Project]:
         return await _start_release(
             self.__data,
@@ -1420,6 +1443,7 @@ class CommitteeMember(ReleaseManager):
             version,
             auto_archive,
             expedited=True,
+            download_path_suffix=download_path_suffix,
         )
 
 

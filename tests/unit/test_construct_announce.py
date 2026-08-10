@@ -56,6 +56,8 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
         short_display_name="Apache MyProject",
         name="MyProject",
         key="myproject",
+        committee_key="myproject",
+        policy_download_path_suffix="",
         bug_database="bug_database",
         download_page="download_page",
         homepage="homepage",
@@ -63,7 +65,9 @@ async def test_announce_release_subject_and_body_does_not_expand_injected_tag(mo
         mailing_lists="mailing_lists",
         repositories="repository",
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
+    release = SimpleNamespace(
+        key="myproject-1.0.0", committee=committee, project=project, download_path_suffix=None, version="1.0.0"
+    )
     revision = SimpleNamespace(number="1", tag="{{YOUR_FULL_NAME}}")
 
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
@@ -92,6 +96,8 @@ async def test_announce_release_subject_and_body_uses_podling_canonical_download
         short_display_name="Apache MyProject",
         name="MyProject",
         key="myproject",
+        committee_key="myproject",
+        policy_download_path_suffix="",
         bug_database="bug_database",
         download_page="download_page",
         homepage="homepage",
@@ -99,7 +105,13 @@ async def test_announce_release_subject_and_body_uses_podling_canonical_download
         mailing_lists="mailing_lists",
         repositories="repository",
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
+    release = SimpleNamespace(
+        key="myproject-1.0.0",
+        committee=committee,
+        project=project,
+        download_path_suffix="apache-myproject-1.0.0",
+        version="1.0.0",
+    )
     revision = SimpleNamespace(number="1", tag=None)
 
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
@@ -113,7 +125,6 @@ async def test_announce_release_subject_and_body_uses_podling_canonical_download
             project_key=safe.ProjectKey("myproject"),
             version_key=safe.VersionKey("1.0.0"),
             revision_number=safe.RevisionNumber("1"),
-            download_path_suffix=safe.RelPath("apache-myproject-1.0.0"),
         ),
     )
 
@@ -128,6 +139,8 @@ async def test_announce_release_subject_and_body_uses_top_level_canonical_downlo
         short_display_name="Apache MyProject",
         name="MyProject",
         key="myproject",
+        committee_key="myproject",
+        policy_download_path_suffix="",
         bug_database="bug_database",
         download_page="download_page",
         homepage="homepage",
@@ -135,7 +148,9 @@ async def test_announce_release_subject_and_body_uses_top_level_canonical_downlo
         mailing_lists="mailing_lists",
         repositories="repository",
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
+    release = SimpleNamespace(
+        key="myproject-1.0.0", committee=committee, project=project, download_path_suffix=None, version="1.0.0"
+    )
     revision = SimpleNamespace(number="1", tag=None)
 
     monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))

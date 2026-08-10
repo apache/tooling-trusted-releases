@@ -198,7 +198,7 @@ async def _render_page(project: sql.Project, releases: list[sql.Release], can_cr
         submit_classes="btn-primary btn-lg",
         submit_label="Start new release",
         cancel_url=util.as_url(root.index),
-        defaults={"project_key": project.key},
+        defaults={"project_key": project.key, "download_path_suffix": project.policy_download_path_suffix},
         pre_submit=_cycle_preview(project),
         skip=skip,
     )

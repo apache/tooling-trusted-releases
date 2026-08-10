@@ -408,6 +408,9 @@ class ReleaseManager(CommitteeParticipant):
                     raise storage.AccessError("Automatic SVN publish requires a committee member initiator", status=403)
                 if automatic_publish_asf_uid is None:
                     automatic_publish_asf_uid = self.__asf_uid
+                # Lock the chosen suffix onto the release now as the single source of truth for publish and email
+                release.download_path_suffix = str(download_path_suffix) if download_path_suffix is not None else ""
+                self.__data.add(release)
             if permitted_recipients is None:
                 permitted_recipients = util.permitted_podling_first_round_recipients(
                     self.__asf_uid,

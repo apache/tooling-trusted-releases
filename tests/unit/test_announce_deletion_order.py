@@ -85,7 +85,6 @@ def release_arguments() -> dict[str, Any]:
         "preview_revision_number": safe.RevisionNumber("00003"),
         "email_to": "announce@example.apache.org",
         "body": "Body",
-        "download_path_suffix": None,
         "fullname": "Alice",
     }
 
@@ -96,6 +95,7 @@ def release_row() -> SimpleNamespace:
         committee=SimpleNamespace(key="alpha"),
         is_active=True,
         key="example",
+        policy_download_path_suffix="",
         release_policy=None,
     )
     return SimpleNamespace(
@@ -104,6 +104,7 @@ def release_row() -> SimpleNamespace:
         project=project,
         project_key="example",
         release_policy=None,
+        download_path_suffix=None,
         safe_latest_revision_number=safe.RevisionNumber("00003"),
         safe_version_key=safe.VersionKey("2.0.0"),
         unwrap_revision_number="00003",

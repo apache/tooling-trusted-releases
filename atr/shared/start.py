@@ -21,6 +21,7 @@ import pydantic
 
 import atr.form as form
 import atr.models.sql as sql
+import atr.models.validation as validation
 import atr.util as util
 
 _REQUIRED_METADATA_FIELDS: Final[tuple[tuple[str, str], ...]] = (
@@ -52,6 +53,13 @@ class StartReleaseForm(form.Form):
         " with a warning email sent at 80 days.",
         required=True,
     )
+    download_path_suffix: str = form.label(
+        "Download path suffix",
+        "Pre-fills the SVN publish path for this release. Defaults to the project policy;"
+        " edit it to override the path for this release, or clear it to publish to the"
+        " distribution root. May use {{MAJOR_VERSION}}, {{PROJECT_KEY}}, and {{VERSION}}.",
+        default="",
+    )
     auto_archive_prior: form.Bool = form.label(
         "Auto archive prior release",
         "If set, release of this version will auto-archive the prior release in the cycle",
@@ -68,4 +76,10 @@ class StartReleaseForm(form.Form):
     def validate_version_key(cls, value: str) -> str:
         if error := util.version_key_error(value):
             raise ValueError(error)
+        return value
+
+    @pydantic.field_validator("download_path_suffix", mode="before")
+    @classmethod
+    def validate_download_path_suffix(cls, value: str) -> str:
+        validation.validate_download_path_suffix(value)
         return value

@@ -80,12 +80,18 @@ async def selected(
             if start_release_form.expedited:
                 wacm = await write.as_project_committee_member(project_key)
                 new_release, _project = await wacm.release.start_expedited(
-                    project_key, version, start_release_form.auto_archive_prior
+                    project_key,
+                    version,
+                    start_release_form.auto_archive_prior,
+                    download_path_suffix=start_release_form.download_path_suffix,
                 )
             else:
                 wacp = await write.as_project_committee_participant(project_key)
                 new_release, _project = await wacp.release.start(
-                    project_key, version, start_release_form.auto_archive_prior
+                    project_key,
+                    version,
+                    start_release_form.auto_archive_prior,
+                    download_path_suffix=start_release_form.download_path_suffix,
                 )
 
         return await session.redirect(

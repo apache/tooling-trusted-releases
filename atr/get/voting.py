@@ -115,7 +115,7 @@ async def selected(
         submitted_concerns = util.submitted_concerns_from_flash(flash_data)
 
         publish_eligible = user.is_committee_member(committee, session.uid)
-        default_download_path_suffix = _default_download_path_suffix(release, committee)
+        default_download_path_suffix = _default_download_path_suffix(release)
         content = await _render_page(
             release=release,
             revision_number=str(release.safe_latest_revision_number),
@@ -171,13 +171,8 @@ def _add_automatic_publish_fields(
     ]
 
 
-def _default_download_path_suffix(release: sql.Release, committee: sql.Committee) -> safe.RelPath | None:
-    return construct.resolve_download_path_suffix(
-        template=release.project.policy_download_path_suffix,
-        project_key=release.project.key,
-        version=release.version,
-        is_top_level=(release.project.key == util.unwrap(committee.key)),
-    )
+def _default_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
+    return construct.effective_download_path_suffix(release)
 
 
 def _podling_vote_round(release: sql.Release, committee: sql.Committee) -> int | None:

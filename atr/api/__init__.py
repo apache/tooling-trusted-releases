@@ -1152,7 +1152,6 @@ async def publisher_release_announce(
                 preview_revision_number=data.revision,
                 email_to=data.email_to,
                 body=data.body,
-                download_path_suffix=data.path_suffix,
                 fullname=asf_uid,
             )
     except storage.AccessError as e:
@@ -1276,7 +1275,6 @@ async def release_announce(
                 preview_revision_number=data.revision,
                 email_to=data.email_to,
                 body=body,
-                download_path_suffix=data.path_suffix,
                 fullname=fullname,
             )
     except storage.AccessError as e:
@@ -2327,7 +2325,6 @@ async def _release_announce_body(data: models.api.ReleaseAnnounceArgs, asf_uid: 
         project_key=data.project,
         version_key=data.version,
         revision_number=revision_number,
-        download_path_suffix=data.path_suffix,
     )
     _, body = await construct.announce_release_subject_and_body(
         "", release.project.policy_announce_release_template, options

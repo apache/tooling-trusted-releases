@@ -197,13 +197,7 @@ async def _check_download_suffix_duplication(
             _project_release_policy=True,
         ).demand(RuntimeError(f"Release {args.project_key} {args.version_key} not found"))
 
-    committee = release.committee
-    suffix = construct.resolve_download_path_suffix(
-        template=release.project.policy_download_path_suffix,
-        project_key=release.project.key,
-        version=str(release.version),
-        is_top_level=(committee is not None) and (release.project.key == committee.key),
-    )
+    suffix = construct.effective_download_path_suffix(release)
     if suffix is None:
         return
 

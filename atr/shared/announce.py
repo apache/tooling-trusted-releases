@@ -34,7 +34,6 @@ class AnnounceForm(form.Form):
     subject: str = form.label("Subject", widget=form.Widget.CUSTOM, required=True)
     subject_template_hash: str = form.label("Subject template hash", widget=form.Widget.HIDDEN)
     body: str = form.label("Body", widget=form.Widget.CUSTOM, max_length=100_000, required=True)
-    download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix", widget=form.Widget.CUSTOM)
     download_page: form.OptionalURL = form.label(
         "Download page URL",
         "URL of the project's official download page. It is checked for a 200 response and then"

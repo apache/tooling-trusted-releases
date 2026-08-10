@@ -1464,6 +1464,11 @@ class Release(sqlmodel.SQLModel, table=True):
 
     check_cache_key: str | None = sqlmodel.Field(default=None, **example("ef0ccb0a-3514-4b65-abcd-879850349f74"))
 
+    # Per-release override for the SVN publication path suffix, chosen before the files
+    # are published. Null means we've not set one, so fall back to the project policy
+    # default; an empty string is a deliberate choice of the distribution root.
+    download_path_suffix: str | None = sqlmodel.Field(default=None, **example("incubator/example/0.0.1"))
+
     # M-1: Release -> Project
     # 1-M: Project -> [Release]
     project_key: str = sqlmodel.Field(foreign_key="project.key", **example("example"))

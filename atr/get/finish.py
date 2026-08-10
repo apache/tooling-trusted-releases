@@ -451,15 +451,7 @@ def _render_task(task: sql.Task) -> htm.Element:
 
 
 def _svn_download_path_default(release: sql.Release) -> str:
-    committee = release.project.committee
-    if committee is None:
-        return ""
-    suffix = construct.resolve_download_path_suffix(
-        template=release.project.policy_download_path_suffix,
-        project_key=release.project.key,
-        version=release.version,
-        is_top_level=(release.project.key == util.unwrap(committee.key)),
-    )
+    suffix = construct.effective_download_path_suffix(release)
     return str(suffix) if suffix is not None else ""
 
 

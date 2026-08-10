@@ -181,7 +181,6 @@ class AnnounceReleaseOptions:
     project_key: safe.ProjectKey
     version_key: safe.VersionKey
     revision_number: safe.RevisionNumber
-    download_path_suffix: safe.RelPath | None = None
 
 
 @dataclasses.dataclass
@@ -212,6 +211,7 @@ async def announce_release_subject_and_body(
             version=str(options.version_key),
             _project=True,
             _committee=True,
+            _project_release_policy=True,
             phase=sql.ReleasePhase.RELEASE_PREVIEW,
         ).demand(RuntimeError(f"Release {options.project_key} {options.version_key} not found"))
         if not release.committee:
@@ -224,7 +224,7 @@ async def announce_release_subject_and_body(
 
     project = release.project
     project_display_name = project.short_display_name if project else str(options.project_key)
-    download_relpath = paths.committee_dist_relpath(committee, options.download_path_suffix)
+    download_relpath = paths.committee_dist_relpath(committee, effective_download_path_suffix(release))
     download_url = f"{paths.downloads_url(download_relpath)}/"
 
     values: _AnnounceValues = {
@@ -446,6 +446,23 @@ async def start_vote_subject_default(project_key: safe.ProjectKey) -> str:
         ).demand(RuntimeError(f"Project {project_key} not found"))
 
     return project.policy_start_vote_subject
+
+
+def effective_download_path_suffix(release: sql.Release) -> safe.RelPath | None:
+    """The suffix a release publishes to: an explicit per-release override if set,
+    otherwise the project policy default. Both are templates, resolved for this release."""
+    override = release.download_path_suffix
+    if override == "":
+        # An empty override is a deliberate choice of the distribution root
+        return None
+    template = override if (override is not None) else release.project.policy_download_path_suffix
+    return resolve_download_path_suffix(
+        template=template,
+        project_key=release.project.key,
+        version=release.version,
+        # A top level project shares its key with its committee
+        is_top_level=(release.project.key == release.project.committee_key),
+    )
 
 
 def resolve_download_path_suffix(

@@ -67,7 +67,6 @@ async def test_release_announce_omitted_body_renders_policy_template(monkeypatch
     assert calls["subject"] == ""
     assert calls["body"] == "Body {{VERSION}}"
     assert calls["options"].revision_number == safe.RevisionNumber("00003")
-    assert calls["options"].download_path_suffix == safe.RelPath("example/1.0.0")
     assert calls["options"].fullname == "Example User"
 
 

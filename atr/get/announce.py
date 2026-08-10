@@ -30,7 +30,6 @@ import atr.get.projects as projects
 import atr.htm as htm
 import atr.models.safe as safe
 import atr.models.sql as sql
-import atr.paths as paths
 import atr.post as post
 import atr.render as render
 import atr.shared as shared
@@ -66,21 +65,8 @@ async def selected(
     default_body_template = await construct.announce_release_default(project_key)
     subject_template_hash = construct.template_hash(default_subject_template)
 
-    # The download path suffix can be changed
-    # The defaults depend on whether the project is top level or not
     if (committee := release.project.committee) is None:
         raise ValueError("Release has no committee")
-    top_level_project = release.project.key == util.unwrap(committee.key)
-    # The stored policy template wins; empty falls back to defaults
-    default_download_path_suffix = construct.resolve_download_path_suffix(
-        template=release.project.policy_download_path_suffix,
-        project_key=release.project.key,
-        version=release.version,
-        is_top_level=top_level_project,
-    )
-    default_download_path_value = (
-        "/" if (default_download_path_suffix is None) else f"/{default_download_path_suffix!s}/"
-    )
 
     # Expand the templates
     options = construct.AnnounceReleaseOptions(
@@ -89,18 +75,9 @@ async def selected(
         project_key=project_key,
         version_key=version_key,
         revision_number=release.safe_latest_revision_number,
-        download_path_suffix=default_download_path_suffix,
     )
     default_subject, default_body = await construct.announce_release_subject_and_body(
         default_subject_template, default_body_template, options
-    )
-
-    description_download_prefix = paths.downloads_url(paths.committee_dist_relpath(committee))
-    preview_url = util.as_url(
-        post.announce.preview,
-        project_key=release.project.key,
-        version_key=release.version,
-        revision_number=release.unwrap_revision_number,
     )
 
     permitted_recipients = util.permitted_announce_recipients(
@@ -117,9 +94,6 @@ async def selected(
         default_subject=default_subject,
         subject_template_hash=subject_template_hash,
         default_body=default_body,
-        default_download_path_value=default_download_path_value,
-        download_path_description=f"The URL will be {description_download_prefix} plus this suffix",
-        preview_url=preview_url,
         embargo_message=embargo_message,
     )
 
@@ -216,13 +190,9 @@ async def _render_announce_form(
     subject_template_hash: str,
     default_subject: str,
     default_body: str,
-    default_download_path_value: str,
-    download_path_description: str,
-    preview_url: str,
 ) -> None:
     custom_subject_widget = _render_subject_field(default_subject, release.project.key)
     custom_body_widget = _render_body_field(default_body, release.project.key)
-    download_path_widget = _render_download_path_field(default_download_path_value, download_path_description)
     policy_to, policy_cc, policy_bcc = release.project.policy_recipients(sql.RecipientAction.ANNOUNCE)
     permitted_set = set(permitted_recipients)
     fallback_to = permitted_recipients[0] if permitted_recipients else None
@@ -277,14 +247,12 @@ async def _render_announce_form(
             "email_to": recipient_radios,
             "subject": custom_subject_widget,
             "body": custom_body_widget,
-            "download_path_suffix": download_path_widget,
         },
         skip=skip,
         form_classes=".atr-canary.py-4.px-5.mb-4.border.rounded",
         border=True,
         wider_widgets=True,
     )
-    page.append(htpy.div("#announce-body-config.d-none", data_preview_url=preview_url))
 
 
 def _render_body_field(default_body: str, project_key: str) -> htm.Element:
@@ -305,29 +273,12 @@ def _render_body_field(default_body: str, project_key: str) -> htm.Element:
     return htm.div[textarea, link]
 
 
-def _render_download_path_field(default_value: str, description: str) -> htm.Element:
-    """Render the download path suffix field with custom help text."""
-    base_text = description.split(" plus this suffix")[0] if (" plus this suffix" in description) else description
-    return htm.div[
-        htpy.input(
-            "#download_path_suffix.form-control",
-            type="text",
-            name="download_path_suffix",
-            value=default_value,
-        ),
-        htpy.div(".form-text.text-muted.mt-2", data_base_text=base_text)[description],
-    ]
-
-
 async def _render_page(
     release: sql.Release,
     permitted_recipients: list[str],
     default_subject: str,
     subject_template_hash: str,
     default_body: str,
-    default_download_path_value: str,
-    download_path_description: str,
-    preview_url: str,
     embargo_message: str | None,
 ) -> htm.Element:
     """Render the announce page."""
@@ -376,9 +327,6 @@ async def _render_page(
         subject_template_hash=subject_template_hash,
         default_subject=default_subject,
         default_body=default_body,
-        default_download_path_value=default_download_path_value,
-        download_path_description=download_path_description,
-        preview_url=preview_url,
     )
     return page.collect()
 

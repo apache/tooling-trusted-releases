@@ -121,7 +121,6 @@ class ReleaseManager(CommitteeParticipant):
         preview_revision_number: safe.RevisionNumber | None,
         email_to: str,
         body: str,
-        download_path_suffix: safe.RelPath | None,
         fullname: str,
         subject_template_hash: str | None = None,
         email_cc: list[str] | None = None,

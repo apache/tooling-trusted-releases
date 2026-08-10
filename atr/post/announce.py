@@ -27,7 +27,6 @@ import quart
 import atr.blueprints.post as post
 import atr.config as config
 import atr.construct as construct
-import atr.form as form
 import atr.get as get
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -44,35 +43,6 @@ _DOWNLOAD_PAGE_OVERALL_TIMEOUT: Final = 30
 _DOWNLOAD_PAGE_REDIRECT_LIMIT: Final = 3
 _DOWNLOAD_PAGE_TIMEOUT: Final = aiohttp.ClientTimeout(total=10, connect=5)
 _REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
-
-
-class PreviewForm(form.Form):
-    download_path_suffix: safe.OptionalRelPath = form.label("Download path suffix")
-
-
-@post.typed
-async def preview(
-    session: web.Committer,
-    _announce_preview: Literal["announce/preview"],
-    project_key: safe.ProjectKey,
-    version_key: safe.VersionKey,
-    revision_number: safe.RevisionNumber,
-    preview_form: PreviewForm,
-) -> web.QuartResponse:
-    """
-    URL: /announce/preview/<project_key>/<version_key>/<revision_number>
-    """
-    default_body_template = await construct.announce_release_default(project_key)
-    options = construct.AnnounceReleaseOptions(
-        asfuid=session.uid,
-        fullname=session.fullname,
-        project_key=project_key,
-        version_key=version_key,
-        revision_number=revision_number,
-        download_path_suffix=preview_form.download_path_suffix,
-    )
-    _, body = await construct.announce_release_subject_and_body("", default_body_template, options)
-    return web.TextResponse(body)
 
 
 @post.typed
@@ -128,7 +98,6 @@ async def selected(
                 preview_revision_number=preview_revision_number,
                 email_to=announce_form.email_to,
                 body=announce_form.body,
-                download_path_suffix=announce_form.download_path_suffix,
                 fullname=session.fullname,
                 subject_template_hash=announce_form.subject_template_hash,
                 email_cc=announce_form.email_cc,
