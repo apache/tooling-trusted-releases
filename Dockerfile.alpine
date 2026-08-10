@@ -39,11 +39,14 @@ RUN patch -p2 < /opt/atr/patches/generics.py.patch || :
 
 FROM python:3.14.5-alpine3.22 AS depbuilder
 
+ARG TARGETARCH
+
 RUN apk update && \
     apk add --no-cache \
       curl \
       go \
       icu-libs
+RUN [ "$TARGETARCH" != "arm64" ] || apk add --no-cache gcompat
 
 # install additional tools
 ENV RAT_VERSION=0.18
@@ -63,10 +66,16 @@ RUN set -eux; \
 # WORKDIR /var/run
 ENV SYFT_VERSION=1.46.0
 ENV SYFT_INSTALL_SHA256=8a277b4b4dc21809ecd9a0e4926f4d7319affc6451a607fdeb3e5e1fbd9bc573
-ENV SYFT_SHA256=574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2
+ENV SYFT_SHA256_amd64=574df1a0862ff88ad933be214e81069e35b17618a13e019f8f1c84fe063222a2
+ENV SYFT_SHA256_arm64=9640d29da74a63de41d2cc2373ac2092462165ee99709f7d8dc3dea57a748b06
 # RUN GOPATH=/usr/local go install github.com/anchore/syft/cmd/syft@v${SYFT_VERSION}
 # Faster than a go-install; the resulting binary is pinned by SHA after install
-RUN curl -fsSL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh -o /tmp/syft-install.sh && \
+RUN case "$TARGETARCH" in \
+      amd64|"") SYFT_SHA256="$SYFT_SHA256_amd64" ;; \
+      arm64) SYFT_SHA256="$SYFT_SHA256_arm64" ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh -o /tmp/syft-install.sh && \
     echo "${SYFT_INSTALL_SHA256}  /tmp/syft-install.sh" | sha256sum -c - && \
     sh /tmp/syft-install.sh -b /usr/local/bin "v${SYFT_VERSION}" && \
     echo "${SYFT_SHA256}  /usr/local/bin/syft" | sha256sum -c - && \
@@ -77,8 +86,16 @@ ENV SBOMQS_VERSION=1.1.0
 RUN GOPATH=/usr/local go install github.com/interlynk-io/sbomqs@v${SBOMQS_VERSION}
 
 ENV CDXCLI_VERSION=0.32.0
-ENV CDXCLI_SHA256=29138e6068e6cf2dc60e776d078c2b17cbf45750c485aa12c28e1fef5556a15f
-RUN curl -fsSL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/cyclonedx-linux-musl-x64 \
+ENV CDXCLI_ASSET_amd64=cyclonedx-linux-musl-x64
+ENV CDXCLI_ASSET_arm64=cyclonedx-linux-arm64
+ENV CDXCLI_SHA256_amd64=29138e6068e6cf2dc60e776d078c2b17cbf45750c485aa12c28e1fef5556a15f
+ENV CDXCLI_SHA256_arm64=abf0b7c5648a5b127791d691cad41f004aceea27c75bb42c9572fdc9694770cf
+RUN case "$TARGETARCH" in \
+      amd64|"") CDXCLI_ASSET="$CDXCLI_ASSET_amd64"; CDXCLI_SHA256="$CDXCLI_SHA256_amd64" ;; \
+      arm64) CDXCLI_ASSET="$CDXCLI_ASSET_arm64"; CDXCLI_SHA256="$CDXCLI_SHA256_arm64" ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CDXCLI_VERSION}/${CDXCLI_ASSET} \
     -o /usr/local/bin/cyclonedx && \
     echo "${CDXCLI_SHA256}  /usr/local/bin/cyclonedx" | sha256sum -c - && \
     chmod +x /usr/local/bin/cyclonedx
@@ -89,6 +106,8 @@ RUN sh /tmp/check_syft_cli_spec.sh
 
 # final image
 FROM python:3.14.5-alpine3.22
+
+ARG TARGETARCH
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -112,6 +131,7 @@ RUN apk update && \
       re2 \
       rsync \
       subversion
+RUN [ "$TARGETARCH" != "arm64" ] || apk add --no-cache gcompat
 
 RUN addgroup -g 1000 atr && \
     adduser -u 1000 -G atr -D atr && \
@@ -140,6 +160,8 @@ COPY --from=builder /opt/atr/start-atr.sh .
 RUN chmod +x ./start-atr.sh
 
 RUN java -version
+
+RUN cyclonedx --version
 
 EXPOSE 8080
 
