@@ -264,6 +264,8 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         "--non-interactive",
         "--no-auth-cache",
         "--no-ignore",
+        "--config-option",
+        "config:miscellany:enable-auto-props=no",
         "--with-revprop",
         f"asf:tool={ASF_TOOL}",
         "-m",
