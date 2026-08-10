@@ -42,6 +42,13 @@ import atr.storage.writers.catalogue as catalogue
 
 
 @pytest.fixture
+def import_root(tmp_path: pathlib.Path, monkeypatch) -> pathlib.Path:
+    root = tmp_path / "imports"
+    monkeypatch.setattr(catalogue_import, "_import_root", lambda: safe.StatePath(root))
+    return root
+
+
+@pytest.fixture
 async def sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_sessionmaker[db.Session]]:
     engine = sqlalchemy.ext.asyncio.create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -60,6 +67,76 @@ async def sessionmaker() -> AsyncIterator[sqlalchemy.ext.asyncio.async_sessionma
     maker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
     yield maker
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_an_artifact_repoint_survives_a_repoint_of_the_release_it_came_from(sessionmaker) -> None:
+    # A repointed release takes its artifacts, so an artifact the file sends elsewhere must leave first
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        data.add(sql.Project(key="alpha-three", name="Apache Three", committee_key="alpha"))
+        await data.commit()
+        data.add(
+            sql.Release(
+                key="alpha-three-1.0.0",
+                project_key="alpha-three",
+                cycle_key="alpha-three-default",
+                version="1.0.0",
+                phase=sql.ReleasePhase.RELEASE,
+                created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+            )
+        )
+        await data.commit()
+        for path in ("a.tgz", "b.tgz"):
+            data.add(
+                sql.Artifact(
+                    project_key="alpha-one",
+                    version="1.0.0",
+                    artifact_path=path,
+                    release_key="alpha-one-1.0.0",
+                    download_path_suffix=f"alpha/{path}",
+                )
+            )
+        await data.commit()
+
+        release_repoint = _release_row("alpha-one", "1.0.0")
+        release_repoint["project_key"] = "alpha-two"
+        artifact_repoint = _artifact_row("alpha-three", "1.0.0", "a.tgz")
+        artifact_repoint["download_path_suffix"] = "alpha/a.tgz"
+        diff = await _writer(data).import_catalogue_csvs(
+            {"releases": [release_repoint], "artifacts": [artifact_repoint]}, "alpha", catalogue_diff.Mode.ADDITIVE
+        )
+
+        assert (diff.counts["release_repoint"], diff.counts["artifact_repoint"], diff.counts["conflict"]) == (1, 1, 0)
+        data.expire_all()
+        # The repointed artifact goes where the file asked; the other follows its release
+        assert await data.get(sql.Artifact, ("alpha-three", "1.0.0", "a.tgz")) is not None
+        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "b.tgz")) is not None
+
+
+@pytest.mark.asyncio
+async def test_export_leaves_out_projects_with_live_workflow_data(sessionmaker) -> None:
+    # The import refuses those rows, so an export that carried them could not be uploaded again
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "2.0.0"})
+        data.add(
+            sql.Revision(
+                release_key="alpha-two-2.0.0",
+                number="00001",
+                seq=1,
+                asfuid="tester",
+                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            )
+        )
+        await data.commit()
+
+        projects_csv = await catalogue_import.export_table(data, "alpha", "projects")
+        releases_csv = await catalogue_import.export_table(data, "alpha", "releases")
+
+    projects = [row["key"] for row in csv.DictReader(io.StringIO(projects_csv))]
+    releases = [row["key"] for row in csv.DictReader(io.StringIO(releases_csv))]
+    assert projects == ["alpha-one"]
+    assert releases == ["alpha-one-1.0.0"]
 
 
 @pytest.mark.asyncio
@@ -114,28 +191,152 @@ async def test_export_table_round_trips_through_the_row_models(sessionmaker) -> 
 
 
 @pytest.mark.asyncio
-async def test_export_leaves_out_projects_with_live_workflow_data(sessionmaker) -> None:
-    # The import refuses those rows, so an export that carried them could not be uploaded again
+async def test_import_catalogue_csvs_classifies_and_applies_under_one_lock(sessionmaker) -> None:
+    # The production entry point: build the snapshot, classify, and apply in one transaction
     async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "2.0.0"})
+        data.add(sql.Committee(key="alpha", name="Alpha", is_podling=False))
+        data.add(sql.Project(key="alpha-one", name="Apache One", committee_key="alpha"))
+        await data.commit()
+
+        rows = {
+            "projects": [_project_row("alpha-two", "alpha")],
+            "releases": [_release_row("alpha-two", "1.0.0")],
+            "artifacts": [_artifact_row("alpha-two", "1.0.0", "a.tar.gz")],
+        }
+        diff = await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.ADDITIVE)
+
+        assert diff.counts["add"] == 3
+        assert diff.counts["conflict"] == 0
+        assert await data.get(sql.Project, "alpha-two") is not None
+        assert await data.get(sql.Release, "alpha-two-1.0.0") is not None
+        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz")) is not None
+
+
+@pytest.mark.asyncio
+async def test_import_hangs_a_new_project_under_its_longest_prefix_sibling(sessionmaker) -> None:
+    # The CSV does not carry super_project_key, so it is derived the way the creation path derives it
+    async with sessionmaker() as data:
+        data.add(sql.Committee(key="alpha", name="Alpha", is_podling=False))
+        data.add(sql.Project(key="alpha", name="Apache Alpha", committee_key="alpha"))
+        await data.commit()
+
+        rows = {"projects": [_project_row("alpha-one", "alpha"), _project_row("alpha-one-extra", "alpha")]}
+        await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.ADDITIVE)
+
+        data.expire_all()
+        one = await data.get(sql.Project, "alpha-one")
+        extra = await data.get(sql.Project, "alpha-one-extra")
+        assert one is not None and extra is not None
+        assert one.super_project_key == "alpha"
+        assert extra.super_project_key == "alpha-one"
+
+
+@pytest.mark.asyncio
+async def test_import_refuses_a_move_onto_an_existing_target_release(sessionmaker) -> None:
+    # The target project already holds the version, so re-keying would collide; the release_repoint is a
+    # conflict the preview shows rather than a failure the apply hits
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "1.0.0"})
+
+        move_row = _release_row("alpha-one", "1.0.0")
+        move_row["project_key"] = "alpha-two"
+        diff = await _writer(data).import_catalogue_csvs(
+            {"releases": [move_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
+        )
+
+        assert diff.counts["release_repoint"] == 0
+        assert diff.counts["conflict"] == 1
+        assert await data.get(sql.Release, "alpha-one-1.0.0") is not None
+
+
+@pytest.mark.asyncio
+async def test_import_refuses_to_write_a_diff_that_was_not_the_one_previewed(sessionmaker) -> None:
+    # The watcher catalogues releases while the page is open, and a replace deletes whatever the
+    # files do not list, so the apply must write only what the admin was shown
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        rows = {"releases": [_release_row("alpha-one", "1.0.0")]}
+        snapshot = await catalogue_import.build_snapshot(data, "alpha")
+        previewed = catalogue_diff.fingerprint(
+            catalogue_diff.classify(rows, snapshot, "alpha", catalogue_diff.Mode.REPLACE)
+        )
+
+        # A release lands under the committee between the preview and the apply
         data.add(
-            sql.Revision(
-                release_key="alpha-two-2.0.0",
-                number="00001",
-                seq=1,
-                asfuid="tester",
-                phase=sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT,
+            sql.Release(
+                key="alpha-two-9.0.0",
+                project_key="alpha-two",
+                cycle_key="alpha-two-default",
+                version="9.0.0",
+                phase=sql.ReleasePhase.RELEASE,
+                created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
             )
         )
         await data.commit()
 
-        projects_csv = await catalogue_import.export_table(data, "alpha", "projects")
-        releases_csv = await catalogue_import.export_table(data, "alpha", "releases")
+        with pytest.raises(catalogue_import.StaleError):
+            await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.REPLACE, previewed)
 
-    projects = [row["key"] for row in csv.DictReader(io.StringIO(projects_csv))]
-    releases = [row["key"] for row in csv.DictReader(io.StringIO(releases_csv))]
-    assert projects == ["alpha-one"]
-    assert releases == ["alpha-one-1.0.0"]
+        # The release the preview never showed is still there
+        data.expire_all()
+        assert await data.get(sql.Release, "alpha-two-9.0.0") is not None
+
+
+@pytest.mark.asyncio
+async def test_import_repoints_a_release_and_its_artifact_to_another_project(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="a.tar.gz",
+                release_key="alpha-one-1.0.0",
+                download_path_suffix="alpha/1.0.0",
+            )
+        )
+        await data.commit()
+
+        # Keep the existing release key, retarget its project -> classified as a release_repoint
+        move_row = _release_row("alpha-one", "1.0.0")
+        move_row["project_key"] = "alpha-two"
+        diff = await _writer(data).import_catalogue_csvs(
+            {"releases": [move_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
+        )
+
+        assert diff.counts["release_repoint"] == 1
+        assert await data.get(sql.Release, "alpha-two-1.0.0") is not None
+        assert await data.get(sql.Release, "alpha-one-1.0.0") is None
+        artifact = await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz"))
+        assert artifact is not None
+        assert artifact.release_key == "alpha-two-1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_import_repoints_an_artifact(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "1.0.0"})
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="a.tar.gz",
+                release_key="alpha-one-1.0.0",
+                download_path_suffix="alpha/1.0.0",
+            )
+        )
+        await data.commit()
+
+        # Same dist identity, different owning project -> classified as a repoint
+        repoint_row = _artifact_row("alpha-two", "1.0.0", "a.tar.gz")
+        repoint_row["download_path_suffix"] = "alpha/1.0.0"
+        diff = await _writer(data).import_catalogue_csvs(
+            {"artifacts": [repoint_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
+        )
+
+        assert diff.counts["artifact_repoint"] == 1
+        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz")) is not None
+        assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "a.tar.gz")) is None
 
 
 @pytest.mark.asyncio
@@ -166,25 +367,6 @@ async def test_replace_deletes_artifacts_the_file_does_not_list(sessionmaker) ->
         assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "drop.tgz")) is None
         # The release itself is untouched: releases.csv was not uploaded
         assert await data.get(sql.Release, "alpha-one-1.0.0") is not None
-
-
-@pytest.mark.asyncio
-async def test_import_hangs_a_new_project_under_its_longest_prefix_sibling(sessionmaker) -> None:
-    # The CSV does not carry super_project_key, so it is derived the way the creation path derives it
-    async with sessionmaker() as data:
-        data.add(sql.Committee(key="alpha", name="Alpha", is_podling=False))
-        data.add(sql.Project(key="alpha", name="Apache Alpha", committee_key="alpha"))
-        await data.commit()
-
-        rows = {"projects": [_project_row("alpha-one", "alpha"), _project_row("alpha-one-extra", "alpha")]}
-        await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.ADDITIVE)
-
-        data.expire_all()
-        one = await data.get(sql.Project, "alpha-one")
-        extra = await data.get(sql.Project, "alpha-one-extra")
-        assert one is not None and extra is not None
-        assert one.super_project_key == "alpha"
-        assert extra.super_project_key == "alpha-one"
 
 
 @pytest.mark.asyncio
@@ -234,155 +416,6 @@ async def test_replace_reparents_a_sub_project_it_does_not_delete(sessionmaker) 
         live = await data.get(sql.Project, "alpha-one-live")
         assert live is not None
         assert live.super_project_key == "alpha-one"
-
-
-@pytest.mark.asyncio
-async def test_an_artifact_repoint_survives_a_repoint_of_the_release_it_came_from(sessionmaker) -> None:
-    # A repointed release takes its artifacts, so an artifact the file sends elsewhere must leave first
-    async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
-        data.add(sql.Project(key="alpha-three", name="Apache Three", committee_key="alpha"))
-        await data.commit()
-        data.add(
-            sql.Release(
-                key="alpha-three-1.0.0",
-                project_key="alpha-three",
-                cycle_key="alpha-three-default",
-                version="1.0.0",
-                phase=sql.ReleasePhase.RELEASE,
-                created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
-            )
-        )
-        await data.commit()
-        for path in ("a.tgz", "b.tgz"):
-            data.add(
-                sql.Artifact(
-                    project_key="alpha-one",
-                    version="1.0.0",
-                    artifact_path=path,
-                    release_key="alpha-one-1.0.0",
-                    download_path_suffix=f"alpha/{path}",
-                )
-            )
-        await data.commit()
-
-        release_repoint = _release_row("alpha-one", "1.0.0")
-        release_repoint["project_key"] = "alpha-two"
-        artifact_repoint = _artifact_row("alpha-three", "1.0.0", "a.tgz")
-        artifact_repoint["download_path_suffix"] = "alpha/a.tgz"
-        diff = await _writer(data).import_catalogue_csvs(
-            {"releases": [release_repoint], "artifacts": [artifact_repoint]}, "alpha", catalogue_diff.Mode.ADDITIVE
-        )
-
-        assert (diff.counts["release_repoint"], diff.counts["artifact_repoint"], diff.counts["conflict"]) == (1, 1, 0)
-        data.expire_all()
-        # The repointed artifact goes where the file asked; the other follows its release
-        assert await data.get(sql.Artifact, ("alpha-three", "1.0.0", "a.tgz")) is not None
-        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "b.tgz")) is not None
-
-
-@pytest.mark.asyncio
-async def test_import_catalogue_csvs_classifies_and_applies_under_one_lock(sessionmaker) -> None:
-    # The production entry point: build the snapshot, classify, and apply in one transaction
-    async with sessionmaker() as data:
-        data.add(sql.Committee(key="alpha", name="Alpha", is_podling=False))
-        data.add(sql.Project(key="alpha-one", name="Apache One", committee_key="alpha"))
-        await data.commit()
-
-        rows = {
-            "projects": [_project_row("alpha-two", "alpha")],
-            "releases": [_release_row("alpha-two", "1.0.0")],
-            "artifacts": [_artifact_row("alpha-two", "1.0.0", "a.tar.gz")],
-        }
-        diff = await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.ADDITIVE)
-
-        assert diff.counts["add"] == 3
-        assert diff.counts["conflict"] == 0
-        assert await data.get(sql.Project, "alpha-two") is not None
-        assert await data.get(sql.Release, "alpha-two-1.0.0") is not None
-        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz")) is not None
-
-
-@pytest.mark.asyncio
-async def test_import_repoints_a_release_and_its_artifact_to_another_project(sessionmaker) -> None:
-    async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
-        data.add(
-            sql.Artifact(
-                project_key="alpha-one",
-                version="1.0.0",
-                artifact_path="a.tar.gz",
-                release_key="alpha-one-1.0.0",
-                download_path_suffix="alpha/1.0.0",
-            )
-        )
-        await data.commit()
-
-        # Keep the existing release key, retarget its project -> classified as a release_repoint
-        move_row = _release_row("alpha-one", "1.0.0")
-        move_row["project_key"] = "alpha-two"
-        diff = await _writer(data).import_catalogue_csvs(
-            {"releases": [move_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
-        )
-
-        assert diff.counts["release_repoint"] == 1
-        assert await data.get(sql.Release, "alpha-two-1.0.0") is not None
-        assert await data.get(sql.Release, "alpha-one-1.0.0") is None
-        artifact = await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz"))
-        assert artifact is not None
-        assert artifact.release_key == "alpha-two-1.0.0"
-
-
-@pytest.mark.asyncio
-async def test_import_refuses_a_move_onto_an_existing_target_release(sessionmaker) -> None:
-    # The target project already holds the version, so re-keying would collide; the release_repoint is a
-    # conflict the preview shows rather than a failure the apply hits
-    async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "1.0.0"})
-
-        move_row = _release_row("alpha-one", "1.0.0")
-        move_row["project_key"] = "alpha-two"
-        diff = await _writer(data).import_catalogue_csvs(
-            {"releases": [move_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
-        )
-
-        assert diff.counts["release_repoint"] == 0
-        assert diff.counts["conflict"] == 1
-        assert await data.get(sql.Release, "alpha-one-1.0.0") is not None
-
-
-@pytest.mark.asyncio
-async def test_import_repoints_an_artifact(sessionmaker) -> None:
-    async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0", "alpha-two": "1.0.0"})
-        data.add(
-            sql.Artifact(
-                project_key="alpha-one",
-                version="1.0.0",
-                artifact_path="a.tar.gz",
-                release_key="alpha-one-1.0.0",
-                download_path_suffix="alpha/1.0.0",
-            )
-        )
-        await data.commit()
-
-        # Same dist identity, different owning project -> classified as a repoint
-        repoint_row = _artifact_row("alpha-two", "1.0.0", "a.tar.gz")
-        repoint_row["download_path_suffix"] = "alpha/1.0.0"
-        diff = await _writer(data).import_catalogue_csvs(
-            {"artifacts": [repoint_row]}, "alpha", catalogue_diff.Mode.ADDITIVE
-        )
-
-        assert diff.counts["artifact_repoint"] == 1
-        assert await data.get(sql.Artifact, ("alpha-two", "1.0.0", "a.tar.gz")) is not None
-        assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "a.tar.gz")) is None
-
-
-@pytest.fixture
-def import_root(tmp_path: pathlib.Path, monkeypatch) -> pathlib.Path:
-    root = tmp_path / "imports"
-    monkeypatch.setattr(catalogue_import, "_import_root", lambda: safe.StatePath(root))
-    return root
 
 
 @pytest.mark.asyncio
@@ -471,39 +504,6 @@ async def _seed_two_projects_with_release(data: db.Session, versioned_projects: 
             )
         )
     await data.commit()
-
-
-@pytest.mark.asyncio
-async def test_import_refuses_to_write_a_diff_that_was_not_the_one_previewed(sessionmaker) -> None:
-    # The watcher catalogues releases while the page is open, and a replace deletes whatever the
-    # files do not list, so the apply must write only what the admin was shown
-    async with sessionmaker() as data:
-        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
-        rows = {"releases": [_release_row("alpha-one", "1.0.0")]}
-        snapshot = await catalogue_import.build_snapshot(data, "alpha")
-        previewed = catalogue_diff.fingerprint(
-            catalogue_diff.classify(rows, snapshot, "alpha", catalogue_diff.Mode.REPLACE)
-        )
-
-        # A release lands under the committee between the preview and the apply
-        data.add(
-            sql.Release(
-                key="alpha-two-9.0.0",
-                project_key="alpha-two",
-                cycle_key="alpha-two-default",
-                version="9.0.0",
-                phase=sql.ReleasePhase.RELEASE,
-                created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
-            )
-        )
-        await data.commit()
-
-        with pytest.raises(catalogue_import.StaleError):
-            await _writer(data).import_catalogue_csvs(rows, "alpha", catalogue_diff.Mode.REPLACE, previewed)
-
-        # The release the preview never showed is still there
-        data.expire_all()
-        assert await data.get(sql.Release, "alpha-two-9.0.0") is not None
 
 
 def _writer(data: db.Session) -> catalogue.FoundationAdmin:
