@@ -207,11 +207,6 @@ async def draft_checks(
     suffix_filter: list[str] | None = None,
 ) -> int:
     """Core logic to analyse a draft revision and queue checks."""
-    # Construct path to the specific revision
-    # We don't have the release object here, so we can't use util.release_directory
-    revision_path = file_paths.get_unfinished_dir() / str(project_key) / str(release_version) / str(revision_number)
-    relative_paths = [path async for path in util.paths_recursive(revision_path)]
-
     async with db.ensure_session(caller_data) as data:
         release = await data.release(
             project_key=str(project_key),
@@ -220,6 +215,11 @@ async def draft_checks(
             _release_policy=True,
             _project_release_policy=True,
         ).demand(RuntimeError("Release not found"))
+        # Read the revision files from the tree that matches the release's embargo status.
+        revision_path = file_paths.base_path_for_revision(
+            project_key, release_version, revision_number, embargoed=release.is_embargoed
+        )
+        relative_paths = [path async for path in util.paths_recursive(revision_path)]
         other_releases = (
             await data.release(project_key=str(project_key), phase=sql.ReleasePhase.RELEASE)
             .order_by(sql.Release.released)

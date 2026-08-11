@@ -190,6 +190,7 @@ def _app_dirs_setup(state_dir_str: str) -> None:
         pathlib.Path(state_dir_str) / "secrets" / "generated",
         pathlib.Path(paths.get_archives_dir()),
         pathlib.Path(paths.get_catalog_site_dir()),
+        pathlib.Path(paths.get_embargoed_dir()),
         pathlib.Path(paths.get_finished_dir()),
         pathlib.Path(paths.get_quarantined_dir()),
         pathlib.Path(paths.get_runtime_dir()),
@@ -198,6 +199,7 @@ def _app_dirs_setup(state_dir_str: str) -> None:
     ]
     archives_dir = pathlib.Path(paths.get_archives_dir())
     unfinished_dir = pathlib.Path(paths.get_unfinished_dir())
+    embargoed_dir = pathlib.Path(paths.get_embargoed_dir())
     enforce_permissions = not config.is_dev_environment()
     for directory in directories_to_ensure:
         directory.mkdir(parents=True, exist_ok=True)
@@ -206,8 +208,9 @@ def _app_dirs_setup(state_dir_str: str) -> None:
         # Some directories need custom permissions
         if directory == archives_dir:
             _enforce_archives_permissions(archives_dir)
-        elif directory == unfinished_dir:
-            _enforce_unfinished_permissions(unfinished_dir)
+        elif directory in (unfinished_dir, embargoed_dir):
+            # The embargoed tree holds the same immutable revision layout as unfinished
+            _enforce_unfinished_permissions(directory)
         else:
             util.chmod_directories(directory, permissions=0o755)
 
@@ -1214,9 +1217,13 @@ async def _reset_request_log_context():
 
 
 def _set_file_permissions_to_read_only() -> None:
-    """Set permissions of all files in the unfinished and finished directories to read only."""
+    """Set permissions of all files in the unfinished, embargoed and finished directories to read only."""
     # TODO: After a migration period, incorrect permissions should be an error
-    directories = [pathlib.Path(paths.get_unfinished_dir()), pathlib.Path(paths.get_finished_dir())]
+    directories = [
+        pathlib.Path(paths.get_unfinished_dir()),
+        pathlib.Path(paths.get_embargoed_dir()),
+        pathlib.Path(paths.get_finished_dir()),
+    ]
     fixed_count = 0
     for directory in directories:
         if not directory.exists():

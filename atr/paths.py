@@ -35,9 +35,14 @@ def audit_release_log_file(project_key: safe.ProjectKey, version_key: safe.Versi
 
 
 def base_path_for_revision(
-    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
+    embargoed: bool = False,
 ) -> safe.StatePath:
-    return get_unfinished_dir() / project_key / version_key / revision
+    # Callers without a Release object pass embargoed explicitly; it's always the release's
+    # is_embargoed, so the root choice matches _release_root.
+    return _unfinished_root(embargoed) / project_key / version_key / revision
 
 
 def closer_download_url(path: str | safe.RelPath) -> str:
@@ -85,6 +90,10 @@ def get_catalog_site_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().CATALOG_SITE_DIR))
 
 
+def get_embargoed_dir() -> safe.StatePath:
+    return safe.StatePath(pathlib.Path(config.get().EMBARGOED_STORAGE_DIR))
+
+
 def get_finished_dir() -> safe.StatePath:
     return safe.StatePath(pathlib.Path(config.get().FINISHED_STORAGE_DIR))
 
@@ -111,9 +120,12 @@ def get_unfinished_dir() -> safe.StatePath:
 
 
 def get_unfinished_dir_for(
-    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
+    embargoed: bool = False,
 ) -> safe.StatePath:
-    return get_unfinished_dir() / project_key / version_key / revision
+    return base_path_for_revision(project_key, version_key, revision, embargoed=embargoed)
 
 
 def get_unfinished_tombstone_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> safe.StatePath:
@@ -136,62 +148,55 @@ def release_directory(release: sql.Release) -> safe.StatePath:
 
 
 def release_directory_base(release: sql.Release) -> safe.StatePath:
-    """Determine the filesystem directory for a given release based on its phase."""
-    phase = release.phase
-    project_key = release.project_key
-    version_key = release.version
-
-    base_dir: safe.StatePath | None = None
-    match phase:
-        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE_CANDIDATE:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE_PREVIEW:
-            base_dir = get_unfinished_dir()
-        case sql.ReleasePhase.RELEASE:
-            base_dir = get_finished_dir()
-        # Do not add "case _" here
-    return base_dir / project_key / version_key
+    """Determine the filesystem directory for a given release based on its phase and embargo status."""
+    return _release_root(release) / release.project_key / release.version
 
 
 def release_directory_revision(release: sql.Release) -> safe.StatePath | None:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project_key
-    path_version = release.version
-    match release.phase:
-        case (
-            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-            | sql.ReleasePhase.RELEASE_CANDIDATE
-            | sql.ReleasePhase.RELEASE_PREVIEW
-        ):
-            if (path_revision := release.latest_revision_number) is None:
-                return None
-            path = get_unfinished_dir() / path_project / path_version / path_revision
-        case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
-        # Do not add "case _" here
-    return path
+    base = _release_root(release) / release.project_key / release.version
+    # A released release has no revision subdirectory; everything earlier is revision-scoped.
+    if release.phase == sql.ReleasePhase.RELEASE:
+        return base
+    if (path_revision := release.latest_revision_number) is None:
+        return None
+    return base / path_revision
 
 
 def release_directory_version(release: sql.Release) -> safe.StatePath:
     """Return the path to the directory containing the active files for a given release phase."""
-    path_project = release.project_key
-    path_version = release.version
-    match release.phase:
-        case (
-            sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT
-            | sql.ReleasePhase.RELEASE_CANDIDATE
-            | sql.ReleasePhase.RELEASE_PREVIEW
-        ):
-            path = get_unfinished_dir() / path_project / path_version
-        case sql.ReleasePhase.RELEASE:
-            path = get_finished_dir() / path_project / path_version
-        # Do not add "case _" here
-    return path
+    return _release_root(release) / release.project_key / release.version
 
 
 def revision_path_for_file(
-    project_key: safe.ProjectKey, version_key: safe.VersionKey, revision: safe.RevisionNumber, file_name: str
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    revision: safe.RevisionNumber,
+    file_name: str,
+    embargoed: bool = False,
 ) -> safe.StatePath:
-    return base_path_for_revision(project_key, version_key, revision) / file_name
+    return base_path_for_revision(project_key, version_key, revision, embargoed=embargoed) / file_name
+
+
+def _release_root(release: sql.Release) -> safe.StatePath:
+    # The phase decides the tree: a release's files sit in the unfinished area until it's
+    # published, and in the finished area thereafter. Embargo only shifts the pre-publication
+    # root, so it applies within the unfinished cases and never to a published release.
+    base_dir: safe.StatePath | None = None
+    match release.phase:
+        case sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT:
+            base_dir = _unfinished_root(release.is_embargoed)
+        case sql.ReleasePhase.RELEASE_CANDIDATE:
+            base_dir = _unfinished_root(release.is_embargoed)
+        case sql.ReleasePhase.RELEASE_PREVIEW:
+            base_dir = _unfinished_root(release.is_embargoed)
+        case sql.ReleasePhase.RELEASE:
+            base_dir = get_finished_dir()
+        # Do not add "case _" here
+    return base_dir
+
+
+def _unfinished_root(embargoed: bool) -> safe.StatePath:
+    # Before publication a release's files live in the unfinished tree, unless it's embargoed,
+    # in which case they're kept apart in the embargoed tree.
+    return get_embargoed_dir() if embargoed else get_unfinished_dir()

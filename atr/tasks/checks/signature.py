@@ -469,6 +469,7 @@ async def _record_uploader_concern(
         revision_number=args.revision_number,
         primary_rel_path=args.primary_rel_path,
         afresh=False,
+        embargoed=recorder.embargoed,
     )
     await uploader_recorder.concern(
         "The artifact was not uploaded by the owner of the signing key",

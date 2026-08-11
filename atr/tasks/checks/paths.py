@@ -66,6 +66,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
+        embargoed=base_recorder.embargoed,
     )
     recorder_suggestions = await checks.Recorder.create(
         checker=checks.function_key(check) + "_warnings",
@@ -76,6 +77,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
+        embargoed=base_recorder.embargoed,
     )
     recorder_notes = await checks.Recorder.create(
         checker=checks.function_key(check) + "_success",
@@ -86,6 +88,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
+        embargoed=base_recorder.embargoed,
     )
     recorder_source = await checks.Recorder.create(
         checker=checks.function_key(check) + "_source",
@@ -96,6 +99,7 @@ async def check(args: checks.FunctionArguments) -> results.Results | None:
         revision_number=args.revision_number,
         primary_rel_path=None,
         afresh=True,
+        embargoed=base_recorder.embargoed,
     )
 
     # As primary_rel_path is None, the base path is the release candidate draft directory

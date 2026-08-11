@@ -1781,6 +1781,7 @@ class FoundationAdmin(FoundationCommitter):
         ]
         if release.phase == sql.ReleasePhase.RELEASE:
             release_dirs.append(paths.get_unfinished_dir() / str(project_key) / str(version))
+            release_dirs.append(paths.get_embargoed_dir() / str(project_key) / str(version))
             release_dirs.append(paths.get_unfinished_tombstone_for(project_key, version))
 
         # Delete from the database using bulk SQL DELETE for efficiency

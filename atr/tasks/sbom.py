@@ -86,7 +86,10 @@ async def augment(args: args.FileArgs) -> results.Results | None:
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    embargoed = await _release_is_embargoed(args.project_key, args.version_key)
+    base_dir = paths.get_unfinished_dir_for(
+        args.project_key, args.version_key, args.revision_number, embargoed=embargoed
+    )
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -155,7 +158,10 @@ async def generate(args: args.FileArgs) -> results.Results | None:
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    embargoed = await _release_is_embargoed(args.project_key, args.version_key)
+    base_dir = paths.get_unfinished_dir_for(
+        args.project_key, args.version_key, args.revision_number, embargoed=embargoed
+    )
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMGenerationError("Revision directory does not exist", {"base_dir": str(base_dir)})
     if not await aiofiles.os.path.isfile(base_dir / path_str):
@@ -238,7 +244,10 @@ async def osv_scan(args: args.FileArgs) -> results.Results | None:
     revision_str = str(args.revision_number)
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    embargoed = await _release_is_embargoed(args.project_key, args.version_key)
+    base_dir = paths.get_unfinished_dir_for(
+        args.project_key, args.version_key, args.revision_number, embargoed=embargoed
+    )
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScanningError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -311,7 +320,10 @@ async def osv_scan(args: args.FileArgs) -> results.Results | None:
 async def score_qs(args: args.FileArgs) -> results.Results | None:
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    embargoed = await _release_is_embargoed(args.project_key, args.version_key)
+    base_dir = paths.get_unfinished_dir_for(
+        args.project_key, args.version_key, args.revision_number, embargoed=embargoed
+    )
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -350,7 +362,10 @@ async def score_qs(args: args.FileArgs) -> results.Results | None:
 async def score_tool(args: args.ScoreArgs) -> results.Results | None:
     path_str = str(args.file_path)
 
-    base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
+    embargoed = await _release_is_embargoed(args.project_key, args.version_key)
+    base_dir = paths.get_unfinished_dir_for(
+        args.project_key, args.version_key, args.revision_number, embargoed=embargoed
+    )
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -660,6 +675,14 @@ def _promote_primary_component(doc: dict[str, Any]) -> None:
         return
     metadata["component"] = root_component
     doc["components"] = [c for c in doc.get("components", []) if c is not root_component]
+
+
+async def _release_is_embargoed(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> bool:
+    # Embargoed releases keep their files in a separate root, so the source revision has to be read
+    # from there. A missing release falls back to the shared unfinished tree.
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).get()
+    return bool(release and release.is_embargoed)
 
 
 async def _sbom_describes_source(args: args.ScoreArgs, sbom_rel_path: str) -> bool:

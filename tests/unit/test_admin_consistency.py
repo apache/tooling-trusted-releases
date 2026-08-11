@@ -25,11 +25,13 @@ import atr.config as config
 import atr.models.sql as sql
 
 
-def release(phase: sql.ReleasePhase, project_key: str, version: str) -> mock.MagicMock:
+def release(phase: sql.ReleasePhase, project_key: str, version: str, expedited: bool = False) -> mock.MagicMock:
     result = mock.MagicMock()
     result.phase = phase
     result.project_key = project_key
     result.version = version
+    # Mirror the real is_embargoed property, so path resolution picks the right storage root.
+    result.is_embargoed = expedited and (phase != sql.ReleasePhase.RELEASE)
     return result
 
 

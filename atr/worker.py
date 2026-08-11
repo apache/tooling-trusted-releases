@@ -130,6 +130,12 @@ async def _execute_check_task(
     version_key = safe.VersionKey(task_obj.version_key)
     revision_number = safe.RevisionNumber(task_obj.revision_number)
 
+    # An embargoed release keeps its files in a separate root, so the recorder needs to know
+    # which tree to read from. A missing release falls back to the shared unfinished tree.
+    async with db.session() as data:
+        release = await data.release(project_key=str(project_key), version=str(version_key)).get()
+    embargoed = bool(release and release.is_embargoed)
+
     async def recorder_factory(checker_version: str | None = None) -> checks.Recorder:
         return await checks.Recorder.create(
             checker=handler,
@@ -139,6 +145,7 @@ async def _execute_check_task(
             version_key=version_key,
             revision_number=revision_number,
             primary_rel_path=task_obj.safe_primary_rel_path,
+            embargoed=embargoed,
         )
 
     function_arguments = checks.FunctionArguments(

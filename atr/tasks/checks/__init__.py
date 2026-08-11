@@ -67,6 +67,7 @@ class Recorder:
     member_rel_path: str | None
     revision_number: safe.RevisionNumber
     afresh: bool
+    embargoed: bool
     __cached: bool
     __input_hash: str | None
 
@@ -81,6 +82,7 @@ class Recorder:
         primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
         afresh: bool = True,
+        embargoed: bool = False,
     ) -> None:
         self.checker = function_key(checker)
         self.checker_version = checker_version
@@ -89,6 +91,7 @@ class Recorder:
         self.primary_rel_path = primary_rel_path
         self.member_rel_path = member_rel_path
         self.afresh = afresh
+        self.embargoed = embargoed
         self.constructed = False
         self.member_problems: dict[sql.CheckResultStatus, int] = {}
         self.__cached = False
@@ -109,6 +112,7 @@ class Recorder:
         primary_rel_path: safe.RelPath | None = None,
         member_rel_path: str | None = None,
         afresh: bool = True,
+        embargoed: bool = False,
     ) -> Recorder:
         recorder = cls(
             checker,
@@ -120,6 +124,7 @@ class Recorder:
             primary_rel_path,
             member_rel_path,
             afresh,
+            embargoed,
         )
         if afresh is True:
             # Clear outer path whether it's specified or not
@@ -191,7 +196,9 @@ class Recorder:
         return self.abs_path_base() / rel_path_part
 
     def abs_path_base(self) -> safe.StatePath:
-        return file_paths.base_path_for_revision(self.project_key, self.version_key, self.revision_number)
+        return file_paths.base_path_for_revision(
+            self.project_key, self.version_key, self.revision_number, embargoed=self.embargoed
+        )
 
     async def project(self) -> sql.Project:
         # TODO: Cache project
@@ -352,7 +359,11 @@ async def resolve_archive_dir(args: FunctionArguments) -> safe.StatePath | None:
         content_hash = await data.release_file_hash_at(release.key, str(args.primary_rel_path), revision_seq)
     if content_hash is None:
         abs_path = file_paths.revision_path_for_file(
-            args.project_key, args.version_key, args.revision_number, str(args.primary_rel_path)
+            args.project_key,
+            args.version_key,
+            args.revision_number,
+            str(args.primary_rel_path),
+            embargoed=release.is_embargoed,
         )
         if await aiofiles.os.path.isfile(abs_path):
             content_hash = await hashes.compute_file_hash(abs_path)
@@ -397,7 +408,11 @@ async def resolve_cache_key(  # noqa: C901
         if file_hash is None:
             if path is None:
                 path = file_paths.revision_path_for_file(
-                    release.safe_project_key, release.safe_version_key, revision, file or ""
+                    release.safe_project_key,
+                    release.safe_version_key,
+                    revision,
+                    file or "",
+                    embargoed=release.is_embargoed,
                 )
             file_hash = await hashes.compute_file_hash(path)
     if file_hash:
@@ -456,7 +471,10 @@ async def _resolve_all_files(release: sql.Release, rel_path: str | None = None) 
         return []
     if not (
         base_path := file_paths.base_path_for_revision(
-            release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number
+            release.safe_project_key,
+            release.safe_version_key,
+            release.safe_latest_revision_number,
+            embargoed=release.is_embargoed,
         )
     ):
         return []
@@ -539,7 +557,11 @@ async def _resolve_suffixed_file_existence(release: sql.Release, rel_path: str |
     entries = []
     for candidate in analysis.sbom_candidates(rel_path, analysis.SBOM_SUFFIXES):
         abs_path = file_paths.revision_path_for_file(
-            release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, candidate
+            release.safe_project_key,
+            release.safe_version_key,
+            release.safe_latest_revision_number,
+            candidate,
+            embargoed=release.is_embargoed,
         )
         entries.append(f"{candidate}={await aiofiles.os.path.exists(abs_path.path)}")
     return sorted(entries)
@@ -549,7 +571,11 @@ async def _resolve_unsuffixed_file_hash(release: sql.Release, rel_path: str | No
     if (not rel_path) or (not release.latest_revision_number):
         return ""
     abs_path = file_paths.revision_path_for_file(
-        release.safe_project_key, release.safe_version_key, release.safe_latest_revision_number, rel_path
+        release.safe_project_key,
+        release.safe_version_key,
+        release.safe_latest_revision_number,
+        rel_path,
+        embargoed=release.is_embargoed,
     )
     plain_path = abs_path.path.with_suffix("")
     if await aiofiles.os.path.isfile(plain_path):

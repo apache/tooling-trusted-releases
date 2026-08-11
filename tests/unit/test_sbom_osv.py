@@ -75,7 +75,8 @@ def sleeps(monkeypatch):
 async def test_osv_scan_reports_truncated_response_as_unavailable(tmp_path, monkeypatch):
     rel_path = safe.RelPath("artifact.cdx.json")
     (tmp_path / str(rel_path)).write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(tasks_sbom.paths, "get_unfinished_dir_for", lambda *_args: safe.StatePath(tmp_path))
+    monkeypatch.setattr(tasks_sbom, "_release_is_embargoed", mock.AsyncMock(return_value=False))
+    monkeypatch.setattr(tasks_sbom.paths, "get_unfinished_dir_for", lambda *_args, **_kwargs: safe.StatePath(tmp_path))
     monkeypatch.setattr(tasks_sbom.sbom.utilities, "path_to_bundle", lambda _path: mock.sentinel.bundle)
     monkeypatch.setattr(
         tasks_sbom.sbom.osv,

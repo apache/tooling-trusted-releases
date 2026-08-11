@@ -155,6 +155,8 @@ class AppConfig:
     JWT_SECRET_KEY = _config_secrets("JWT_SECRET_KEY", STATE_DIR, default=None, cast=str)
     FINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "finished")
     UNFINISHED_STORAGE_DIR = os.path.join(STATE_DIR, "unfinished")
+    # Embargoed (expedited, pre-release) files live apart from the shared unfinished tree
+    EMBARGOED_STORAGE_DIR = os.path.join(STATE_DIR, "embargoed")
     # TODO: By convention this is at /x1/, but we can symlink it here perhaps?
     # TODO: We need to get Puppet to check SVN out initially, or do it manually
     SVN_STORAGE_DIR = os.path.join(STATE_DIR, "subversion")
@@ -325,6 +327,7 @@ def validate() -> None:
         (conf.STATE_DIR, "STATE_DIR"),
         (conf.FINISHED_STORAGE_DIR, "FINISHED_STORAGE_DIR"),
         (conf.UNFINISHED_STORAGE_DIR, "UNFINISHED_STORAGE_DIR"),
+        (conf.EMBARGOED_STORAGE_DIR, "EMBARGOED_STORAGE_DIR"),
         (conf.SVN_STORAGE_DIR, "SVN_STORAGE_DIR"),
         (conf.ARCHIVES_STORAGE_DIR, "ARCHIVES_STORAGE_DIR"),
         (conf.ATTESTABLE_STORAGE_DIR, "ATTESTABLE_STORAGE_DIR"),

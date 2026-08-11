@@ -21,7 +21,28 @@ import types
 import pytest
 
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.paths as paths
+
+
+def _storage_config(tmp_path: pathlib.Path) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        UNFINISHED_STORAGE_DIR=str(tmp_path / "unfinished"),
+        EMBARGOED_STORAGE_DIR=str(tmp_path / "embargoed"),
+        FINISHED_STORAGE_DIR=str(tmp_path / "finished"),
+    )
+
+
+def _release(phase: sql.ReleasePhase, embargoed: bool, revision: str | None = "00001") -> types.SimpleNamespace:
+    # is_embargoed is a property on the real model; here we set it directly so each branch is
+    # exercised in isolation, independent of the expedited/phase combination that produces it.
+    return types.SimpleNamespace(
+        project_key="example",
+        version="1.2.3",
+        phase=phase,
+        is_embargoed=embargoed,
+        latest_revision_number=revision,
+    )
 
 
 def test_committee_dist_relpath_for_podling() -> None:
@@ -88,3 +109,70 @@ def test_quarantine_directory_rejects_non_alnum_token():
     quarantined = types.SimpleNamespace(token="../escape")
     with pytest.raises(ValueError, match="Invalid quarantine token"):
         paths.quarantine_directory(quarantined)
+
+
+def test_get_embargoed_dir_uses_embargoed_storage_dir(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    assert paths.get_embargoed_dir().path == tmp_path / "embargoed"
+
+
+def test_release_directory_base_routes_embargoed_release_to_embargoed_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE_CANDIDATE, embargoed=True)
+    assert paths.release_directory_base(release).path == tmp_path / "embargoed" / "example" / "1.2.3"
+
+
+def test_release_directory_base_routes_unembargoed_draft_to_unfinished_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, embargoed=False)
+    assert paths.release_directory_base(release).path == tmp_path / "unfinished" / "example" / "1.2.3"
+
+
+def test_release_directory_base_routes_released_to_finished_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE, embargoed=False)
+    assert paths.release_directory_base(release).path == tmp_path / "finished" / "example" / "1.2.3"
+
+
+def test_release_directory_includes_revision_under_embargoed_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE_PREVIEW, embargoed=True, revision="00007")
+    assert paths.release_directory(release).path == tmp_path / "embargoed" / "example" / "1.2.3" / "00007"
+
+
+def test_release_directory_revision_uses_embargoed_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT, embargoed=True, revision="00003")
+    revision_dir = paths.release_directory_revision(release)
+    assert revision_dir is not None
+    assert revision_dir.path == tmp_path / "embargoed" / "example" / "1.2.3" / "00003"
+
+
+def test_release_directory_version_uses_embargoed_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    release = _release(sql.ReleasePhase.RELEASE_CANDIDATE, embargoed=True)
+    assert paths.release_directory_version(release).path == tmp_path / "embargoed" / "example" / "1.2.3"
+
+
+def test_base_path_for_revision_defaults_to_unfinished_root(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    result = paths.base_path_for_revision("example", "1.2.3", "00001")
+    assert result.path == tmp_path / "unfinished" / "example" / "1.2.3" / "00001"
+
+
+def test_base_path_for_revision_uses_embargoed_root_when_flagged(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    result = paths.base_path_for_revision("example", "1.2.3", "00001", embargoed=True)
+    assert result.path == tmp_path / "embargoed" / "example" / "1.2.3" / "00001"
+
+
+def test_get_unfinished_dir_for_uses_embargoed_root_when_flagged(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    result = paths.get_unfinished_dir_for("example", "1.2.3", "00001", embargoed=True)
+    assert result.path == tmp_path / "embargoed" / "example" / "1.2.3" / "00001"
+
+
+def test_revision_path_for_file_uses_embargoed_root_when_flagged(monkeypatch, tmp_path: pathlib.Path):
+    monkeypatch.setattr("atr.config.get", lambda: _storage_config(tmp_path))
+    result = paths.revision_path_for_file("example", "1.2.3", "00001", "file.tar.gz", embargoed=True)
+    assert result.path == tmp_path / "embargoed" / "example" / "1.2.3" / "00001" / "file.tar.gz"

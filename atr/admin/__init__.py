@@ -2700,8 +2700,22 @@ async def _consistency_database_dirs(releases: Sequence[sql.Release]) -> list[st
 async def _get_filesystem_dirs() -> list[str]:
     filesystem_dirs = []
     await _get_filesystem_dirs_finished(filesystem_dirs)
+    await _get_filesystem_dirs_embargoed(filesystem_dirs)
     await _get_filesystem_dirs_unfinished(filesystem_dirs)
     return filesystem_dirs
+
+
+async def _get_filesystem_dirs_embargoed(filesystem_dirs: list[str]) -> None:
+    embargoed_dir = paths.get_embargoed_dir()
+    embargoed_dir_contents = await aiofiles.os.listdir(embargoed_dir)
+    for project_dir in embargoed_dir_contents:
+        project_dir_path = os.path.join(embargoed_dir, project_dir)
+        if await aiofiles.os.path.isdir(project_dir_path):
+            for version_dir in await aiofiles.os.listdir(project_dir_path):
+                if await aiofiles.os.path.isdir(os.path.join(project_dir_path, version_dir)):
+                    version_dir_path = os.path.join(project_dir_path, version_dir)
+                    if await aiofiles.os.path.isdir(version_dir_path):
+                        filesystem_dirs.append(version_dir_path)
 
 
 async def _get_filesystem_dirs_finished(filesystem_dirs: list[str]) -> None:

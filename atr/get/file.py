@@ -318,7 +318,9 @@ async def _release_file_stats(
     version_key: safe.VersionKey,
 ) -> list[util.FileStat]:
     revision_number = release.safe_latest_revision_number
-    gen = util.content_list(paths.get_unfinished_dir(), project_key, version_key, revision_number)
+    # Embargoed releases keep their files in a separate root, so list from wherever this one lives.
+    root = paths.get_embargoed_dir() if release.is_embargoed else paths.get_unfinished_dir()
+    gen = util.content_list(root, project_key, version_key, revision_number)
     file_stats = [stat async for stat in gen]
     file_stats.sort(key=lambda fs: fs.path)
     return file_stats
