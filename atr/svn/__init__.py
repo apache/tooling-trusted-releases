@@ -181,14 +181,16 @@ async def export(
     destination: pathlib.Path,
     timeout_seconds: float = EXPORT_TIMEOUT_SECONDS,
 ) -> None:
+    stdin_bytes = _authentication(url)
     arguments = ["export", "--non-interactive", "--ignore-externals", "--ignore-keywords"]
     if revision is not None:
         arguments.extend(["-r", str(revision)])
         pegged_url = f"{url}@{revision}"
     else:
         pegged_url = f"{url}@"
+    arguments.extend(["--username", ASF_TOOL, "--password-from-stdin"])
     arguments.extend(["--", pegged_url, str(destination)])
-    await run_command("svn", *arguments, timeout_seconds=timeout_seconds)
+    await run_command("svn", *arguments, timeout_seconds=timeout_seconds, stdin_bytes=stdin_bytes)
 
 
 async def get_diff(path: pathlib.Path, revision: int) -> str:
@@ -245,7 +247,17 @@ async def info_authenticated(url: str) -> str:
 
 async def list_files(url: str) -> list[str]:
     """List every file below a URL, as paths relative to it. Directories are left out."""
-    output = await _run_svn_command("list", url, "--recursive", timeout_seconds=LIST_TIMEOUT_SECONDS)
+    output = await _run_svn_command(
+        "list",
+        url,
+        "--recursive",
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        timeout_seconds=LIST_TIMEOUT_SECONDS,
+        stdin_bytes=_authentication(url),
+    )
     return [line for line in output.splitlines() if line and (not line.endswith("/"))]
 
 

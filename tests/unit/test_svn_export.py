@@ -21,6 +21,7 @@ import unittest.mock as mock
 
 import pytest
 
+import atr.config as config
 import atr.svn as svn
 
 requires_svn = pytest.mark.skipif(
@@ -30,8 +31,10 @@ requires_svn = pytest.mark.skipif(
 
 
 @requires_svn
-async def test_export_pinned_revision_of_deleted_path(tmp_path: pathlib.Path) -> None:
+async def test_export_pinned_revision_of_deleted_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
     repository = tmp_path / "repository"
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", f"file://{repository}", raising=False)
     await svn.run_command("svnadmin", "create", str(repository))
     url = f"file://{repository}/release"
     source = tmp_path / "source"
@@ -47,6 +50,8 @@ async def test_export_pinned_revision_of_deleted_path(tmp_path: pathlib.Path) ->
 
 
 async def test_export_pins_revision(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "file:///repo", raising=False)
     run_command = mock.AsyncMock(return_value="")
     monkeypatch.setattr(svn, "run_command", run_command)
     destination = tmp_path / "dest"
@@ -61,14 +66,31 @@ async def test_export_pins_revision(tmp_path: pathlib.Path, monkeypatch: pytest.
         "--ignore-keywords",
         "-r",
         "42",
+        "--username",
+        svn.ASF_TOOL,
+        "--password-from-stdin",
         "--",
         "file:///repo/example@42",
         str(destination),
         timeout_seconds=svn.EXPORT_TIMEOUT_SECONDS,
+        stdin_bytes=b"dummy",
     )
 
 
+async def test_export_requires_token(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", None, raising=False)
+    run_command = mock.AsyncMock(return_value="")
+    monkeypatch.setattr(svn, "run_command", run_command)
+
+    with pytest.raises(ValueError, match="SVN_TOKEN"):
+        await svn.export("file:///repo/example", 1, tmp_path / "dest")
+
+    run_command.assert_not_awaited()
+
+
 async def test_export_without_revision(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "file:///repo", raising=False)
     run_command = mock.AsyncMock(return_value="")
     monkeypatch.setattr(svn, "run_command", run_command)
     destination = tmp_path / "dest"
@@ -81,8 +103,45 @@ async def test_export_without_revision(tmp_path: pathlib.Path, monkeypatch: pyte
         "--non-interactive",
         "--ignore-externals",
         "--ignore-keywords",
+        "--username",
+        svn.ASF_TOOL,
+        "--password-from-stdin",
         "--",
         "file:///repo/example@",
         str(destination),
         timeout_seconds=10.0,
+        stdin_bytes=b"dummy",
     )
+
+
+async def test_list_files_authenticates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "file:///repo", raising=False)
+    run_command = mock.AsyncMock(return_value="a.tar.gz\nsub/\nsub/b.tar.gz\n")
+    monkeypatch.setattr(svn, "run_command", run_command)
+
+    assert await svn.list_files("file:///repo/example") == ["a.tar.gz", "sub/b.tar.gz"]
+
+    run_command.assert_awaited_once_with(
+        "svn",
+        "list",
+        "--recursive",
+        "--username",
+        svn.ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        "file:///repo/example",
+        timeout_seconds=svn.LIST_TIMEOUT_SECONDS,
+        stdin_bytes=b"dummy",
+    )
+
+
+async def test_list_files_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", None, raising=False)
+    run_command = mock.AsyncMock(return_value="")
+    monkeypatch.setattr(svn, "run_command", run_command)
+
+    with pytest.raises(ValueError, match="SVN_TOKEN"):
+        await svn.list_files("file:///repo/example")
+
+    run_command.assert_not_awaited()
