@@ -17,6 +17,7 @@
 
 """keys.py"""
 
+import datetime
 from typing import Annotated, Literal
 
 import markupsafe
@@ -24,6 +25,7 @@ import pydantic
 
 import atr.form as form
 import atr.htm as htm
+import atr.models.sql as sql
 import atr.shared as shared
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
@@ -160,6 +162,12 @@ type UploadKeysForm = Annotated[
 ]
 
 
+def certificate_all_revoked(certificate: sql.SigningCertificate) -> bool:
+    # Every key on the certificate is revoked, so it can no longer sign anything
+    signing_keys = certificate.signing_keys
+    return bool(signing_keys) and all(signing_key.revoked for signing_key in signing_keys)
+
+
 def publication_added_notice(publications: dict[str, storage.outcome.Outcome[datatypes.KeysPublish]]) -> str | None:
     committees = publication_disabled(publications)
     if not committees:
@@ -258,6 +266,73 @@ async def render_upload_page(
         content=page.collect(),
         description="Import OpenPGP public signing keys from a KEYS file.",
     )
+
+
+def signing_key_expiry(signing_key: sql.SigningKey) -> str | htm.Element:
+    if signing_key.expires is None:
+        return "Never"
+    expires_str = signing_key.expires.strftime("%Y-%m-%d")
+    days_until_expiry = (signing_key.expires - datetime.datetime.now(datetime.UTC)).days
+    if days_until_expiry < 0:
+        return htm.span(".text-danger.fw-bold")[expires_str]
+    if days_until_expiry <= 30:
+        return htm.span(".text-warning.fw-bold")[
+            expires_str,
+            " ",
+            htm.span(".badge.bg-warning.text-dark.ms-2")[f"in {util.plural(days_until_expiry, 'day')}"],
+        ]
+    return expires_str
+
+
+def signing_key_state(signing_key: sql.SigningKey) -> Literal["revoked", "expired", "cannot_sign", "good"]:
+    # Revocation outranks expiry, which outranks a key that simply can't sign
+    if signing_key.revoked:
+        return "revoked"
+    if signing_key.expires is not None and (signing_key.expires <= datetime.datetime.now(datetime.UTC)):
+        return "expired"
+    if not signing_key.can_sign:
+        return "cannot_sign"
+    return "good"
+
+
+def signing_key_status(signing_key: sql.SigningKey) -> str | htm.Element:
+    state = signing_key_state(signing_key)
+    if state == "revoked":
+        return htm.span(".badge.bg-danger.text-white")["Revoked"]
+    if state == "expired":
+        return htm.span(".badge.bg-danger.text-white")["Expired"]
+    if state == "cannot_sign":
+        return htm.span(".badge.bg-secondary.text-white")["Cannot sign"]
+    return htm.span(".badge.bg-success.text-white")["Good"]
+
+
+def signing_keys_list(signing_keys: list[sql.SigningKey]) -> htm.Element | None:
+    # A collapsed breakdown of the certificate's primary and subkeys, so a list can flag a key
+    # which has expired or been revoked without a per-key status column of its own. Any link
+    # through to the details belongs on the certificate key id above, not on each row
+    if not signing_keys:
+        return None
+    ordered = sorted(signing_keys, key=lambda k: (not k.is_primary, k.created))
+    usable = sum(1 for k in ordered if signing_key_state(k) == "good")
+
+    summary = htm.Block(htm.summary, classes=".small")
+    summary.text(util.plural(len(ordered), "signing key"))
+    # Only worth calling out when some key can't sign - all usable needs no badge
+    if usable < len(ordered):
+        summary.span(".badge.bg-warning.text-dark.ms-2")[f"{usable} usable"]
+
+    lines = htm.Block(htm.div, classes=".mt-1")
+    for signing_key in ordered:
+        lines.append(
+            htm.div(".small.d-flex.flex-wrap.gap-2.align-items-center.mb-1")[
+                htm.span(".fw-semibold")["Primary" if signing_key.is_primary else "Subkey"],
+                htm.span(".text-muted.font-monospace")[signing_key.key_id.upper()],
+                htm.span(".text-muted")[f"created {signing_key.created.strftime('%Y-%m-%d')}"],
+                htm.span(".text-muted")["expires ", signing_key_expiry(signing_key)],
+                signing_key_status(signing_key),
+            ]
+        )
+    return htm.details(".mt-1")[summary.collect(), lines.collect()]
 
 
 def _get_results_table_css() -> htm.Element:

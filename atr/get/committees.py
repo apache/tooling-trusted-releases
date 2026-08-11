@@ -71,6 +71,7 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
             key=str(name),
             _projects=True,
             _signing_certificates=True,
+            _signing_keys=True,
         ).demand(base.ASFQuartException(f"Committee {name!s} not found", errorcode=404))
 
         roster = sorted(set(committee.committee_members + committee.committers))
@@ -111,6 +112,8 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         committee.signing_certificates,
         key=lambda k: (k.apache_uid or "", k.fingerprint[-16:]),
     )
+    key_lists = _committee_key_lists(signing_keys)
+    revoked_certificates = {c.fingerprint for c in signing_keys if shared.keys.certificate_all_revoked(c)}
     committee_member = False
     if isinstance(session, web.Committer):
         committee_member = await session.prevent_confusing_ui_display_committee(name, False)
@@ -161,6 +164,8 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         roster=roster,
         names=names,
         signing_keys=signing_keys,
+        key_lists=key_lists,
+        revoked_certificates=revoked_certificates,
         artifact_counts=artifact_counts,
         ci_builds_enabled=committee.key in signing_committees,
         algorithms=shared.algorithms,
@@ -178,3 +183,12 @@ async def view(session: web.Committer, _committees: Literal["committees"], name:
         ),
         is_standing=is_standing,
     )
+
+
+def _committee_key_lists(certificates: list[sql.SigningCertificate]) -> dict[str, htm.Element]:
+    key_lists: dict[str, htm.Element] = {}
+    for certificate in certificates:
+        keys_list = shared.keys.signing_keys_list(certificate.signing_keys)
+        if keys_list is not None:
+            key_lists[certificate.fingerprint] = keys_list
+    return key_lists

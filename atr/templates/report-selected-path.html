@@ -157,6 +157,17 @@
                             </span>
                           {% endif %}
                         </div>
+                      {% elif primary_result.checker.endswith("signature.check") and primary_result.data.get("fingerprint") %}
+                        {% set signing_fingerprint = primary_result.data.get("fingerprint") %}
+                        {% set certificate_fingerprint = primary_result.data.get("certificate_fingerprint") %}
+                        <div class="mb-2">
+                          {% if certificate_fingerprint and (signing_fingerprint != certificate_fingerprint) %}
+                            <p class="mb-1">Signed by <strong>subkey</strong> <code class="text-break">{{ signing_fingerprint|upper }}</code></p>
+                            <p class="mb-0 small text-muted">of certificate <code class="text-break">{{ certificate_fingerprint|upper }}</code></p>
+                          {% else %}
+                            <p class="mb-0">Signed by <strong>primary key</strong> <code class="text-break">{{ signing_fingerprint|upper }}</code></p>
+                          {% endif %}
+                        </div>
                       {% endif %}
                       <table class="table table-bordered table-sm mb-0">
                         <tbody>

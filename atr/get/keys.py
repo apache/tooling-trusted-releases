@@ -16,7 +16,6 @@
 # under the License.
 
 
-import datetime
 from typing import Literal
 
 import htpy
@@ -344,8 +343,8 @@ def _add_signing_keys(page: htm.Block, signing_keys: list[sql.SigningKey]) -> No
                 htm.td(".px-2.text-break")[signing_key.key_id.upper()],
                 htm.td(".px-2")["Primary" if signing_key.is_primary else "Subkey"],
                 htm.td(".px-2")[signing_key.created.strftime("%Y-%m-%d")],
-                htm.td(".px-2")[_signing_key_expiry(signing_key)],
-                htm.td(".px-2")[_signing_key_status(signing_key)],
+                htm.td(".px-2")[shared.keys.signing_key_expiry(signing_key)],
+                htm.td(".px-2")[shared.keys.signing_key_status(signing_key)],
             ]
         )
     page.div(".table-responsive.mb-4")[htm.table(".table.border.table-striped.table-sm")[thead, tbody.collect()]]
@@ -355,7 +354,7 @@ def _certificate_key_id(key: sql.SigningCertificate) -> htm.Element:
     link = htm.a(href=util.as_url(details, fingerprint=key.fingerprint))[key.fingerprint[-16:].upper()]
     # A certificate whose primary and every subkey are revoked can't sign anything, so strike it through
     # and say so, since these tables carry no per-key status column
-    if key.signing_keys and all(signing_key.revoked for signing_key in key.signing_keys):
+    if shared.keys.certificate_all_revoked(key):
         return htm.span[
             htm.span(".text-decoration-line-through")[link],
             " ",
@@ -394,7 +393,7 @@ async def _committee_keys(
                 tbody = htm.Block(htm.tbody)
                 for key in sorted_keys:
                     row = htm.Block(htm.tr)
-                    row.td(".text-break.font-monospace.px-2")[_certificate_key_id(key)]
+                    row.td(".text-break.px-2")[*_key_id_cell_contents(key)]
                     email = util.email_from_uid(key.primary_declared_uid) if key.primary_declared_uid else "-"
                     row.td(".text-break.px-2")[email or "-"]
                     row.td(".text-break.px-2")[key.apache_uid or "-"]
@@ -463,6 +462,15 @@ async def _key_and_is_owner(
     return key, is_owner
 
 
+def _key_id_cell_contents(certificate: sql.SigningCertificate) -> list[htm.Element]:
+    # The certificate key id links through to the details, with the signing keys collapsed beneath it
+    contents = [htm.div(".font-monospace")[_certificate_key_id(certificate)]]
+    keys_list = shared.keys.signing_keys_list(certificate.signing_keys)
+    if keys_list is not None:
+        contents.append(keys_list)
+    return contents
+
+
 async def _openpgp_keys(page: htm.Block, user_keys: list[sql.SigningCertificate]) -> None:
     page.h3["Your OpenPGP keys"]
     if user_keys:
@@ -478,7 +486,7 @@ async def _openpgp_keys(page: htm.Block, user_keys: list[sql.SigningCertificate]
         tbody = htm.Block(htm.tbody)
         for key in user_keys:
             row = htm.Block(htm.tr, classes=".page-user-openpgp-key")
-            row.td(".text-break.px-2.align-middle")[_certificate_key_id(key)]
+            row.td(".text-break.px-2.align-middle")[*_key_id_cell_contents(key)]
             if key.committees:
                 committee_keys = ", ".join([c.key for c in key.committees])
                 row.td(".text-break.px-2.align-middle")[committee_keys]
@@ -527,32 +535,6 @@ def _render_committee_checkboxes(
         row_div.append(col_div)
 
     return row_div.collect()
-
-
-def _signing_key_expiry(signing_key: sql.SigningKey) -> str | htm.Element:
-    if signing_key.expires is None:
-        return "Never"
-    expires_str = signing_key.expires.strftime("%Y-%m-%d")
-    days_until_expiry = (signing_key.expires - datetime.datetime.now(datetime.UTC)).days
-    if days_until_expiry < 0:
-        return htm.span(".text-danger.fw-bold")[expires_str]
-    if days_until_expiry <= 30:
-        return htm.span(".text-warning.fw-bold")[
-            expires_str,
-            " ",
-            htm.span(".badge.bg-warning.text-dark.ms-2")[f"in {util.plural(days_until_expiry, 'day')}"],
-        ]
-    return expires_str
-
-
-def _signing_key_status(signing_key: sql.SigningKey) -> str | htm.Element:
-    if signing_key.revoked:
-        return htm.span(".badge.bg-danger.text-white")["Revoked"]
-    if signing_key.expires is not None and (signing_key.expires <= datetime.datetime.now(datetime.UTC)):
-        return htm.span(".badge.bg-danger.text-white")["Expired"]
-    if not signing_key.can_sign:
-        return htm.span(".badge.bg-secondary.text-white")["Cannot sign"]
-    return htm.span(".badge.bg-success.text-white")["Good"]
 
 
 async def _ssh_keys(page: htm.Block, user_ssh_keys: list[sql.SSHKey]) -> None:
