@@ -33,6 +33,7 @@ _SAFE_TYPE_EXAMPLES: dict[type[safe.SafeType], str] = {
     safe.Alphanumeric: "abc-123",
     safe.OwnerNamespace: "com.example",
     safe.AsfUid: "user1",
+    safe.CommitHash: "1a2b3c4d",
     safe.CommitteeKey: "tooling",
     safe.Numeric: "12345",
     safe.ProjectKey: "tooling",

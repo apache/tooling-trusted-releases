@@ -40,6 +40,11 @@
                target="_blank">Vote thread</a>
           </p>
         {% endif %}
+        {% if release.commit_hash %}
+          <p>
+            <strong>Commit hash:</strong> <code>{{ release.commit_hash }}</code>
+          </p>
+        {% endif %}
       </div>
     </div>
     <div class="d-flex flex-wrap gap-2">

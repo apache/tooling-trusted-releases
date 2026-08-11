@@ -157,6 +157,9 @@
     {% if activity_form %}
       <div class="mb-2">{{ activity_form|safe }}</div>
     {% endif %}
+    <h3 id="commit-hash" class="mt-4">Commit hash</h3>
+    <p>Record the source commit hash for this release.</p>
+    <div class="mb-2">{{ commit_hash_form|safe }}</div>
     {% if is_viewing_as_admin_fn(current_user.uid) %}
       <h3 id="cache-control" class="mt-4">Check cache control</h3>
       <p>Each button creates a new revision and restarts all checks.</p>

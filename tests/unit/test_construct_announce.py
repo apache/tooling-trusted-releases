@@ -189,7 +189,7 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
         homepage=None,
         repositories=[],
     )
-    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project)
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=None)
     revision = SimpleNamespace(number="1", tag=None)
 
     async def no_release_policy(_data, _project_key):
@@ -216,6 +216,49 @@ async def test_start_vote_subject_and_body_uses_canonical_keys_url(
     )
 
     assert body == expected_url
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("commit_hash", "expected"),
+    [("1a2b3c4d5e6f", "1a2b3c4d5e6f"), (None, "")],
+)
+async def test_start_vote_body_renders_commit_token(monkeypatch, commit_hash: str | None, expected: str) -> None:
+    committee = SimpleNamespace(key="myproject", is_podling=False, display_name="Apache MyProject")
+    project = SimpleNamespace(
+        short_display_name="Apache MyProject",
+        key="myproject",
+        bug_database=None,
+        homepage=None,
+        repositories=[],
+    )
+    release = SimpleNamespace(key="myproject-1.0.0", committee=committee, project=project, commit_hash=commit_hash)
+    revision = SimpleNamespace(number="1", tag=None)
+
+    async def no_release_policy(_data, _project_key):
+        return None
+
+    monkeypatch.setattr(construct.config.get(), "APP_HOST", "atr.example.invalid")
+    monkeypatch.setattr(construct.config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(construct.config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.example.invalid/repos/dist/atr")
+    monkeypatch.setattr(construct.db, "session", _mock_session_factory(MockDBSession(release, revision)))
+    monkeypatch.setattr(construct.db, "get_project_release_policy", no_release_policy)
+    monkeypatch.setattr(construct.util, "as_url", lambda *_args, **_kwargs: "/example")
+
+    _subject, body = await construct.start_vote_subject_and_body(
+        "",
+        "{{COMMIT}}",
+        construct.StartVoteOptions(
+            asfuid="sbp",
+            fullname="Some Body",
+            project_key=safe.ProjectKey("myproject"),
+            version_key=safe.VersionKey("1.0.0"),
+            revision_number=safe.RevisionNumber("1"),
+            vote_duration=72,
+        ),
+    )
+
+    assert body == expected
 
 
 def test_substitute_does_not_rescan_replacement_values() -> None:

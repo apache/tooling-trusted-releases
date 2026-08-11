@@ -298,6 +298,26 @@ async def latest_revision_number(
     return safe.RevisionNumber(numbers[-1])
 
 
+async def latest_github_tp_payload(
+    project_key: safe.ProjectKey, version_key: safe.VersionKey
+) -> github.TrustedPublisherPayload | None:
+    # Only Trusted Publishing uploads leave a .github-tp.json, and a later hand upload
+    # doesn't, so we walk back from the newest revision to the most recent one that did
+    directory = paths.get_attestable_dir() / str(project_key) / str(version_key)
+    suffix = ".github-tp.json"
+    try:
+        names = await aiofiles.os.listdir(directory)
+    except FileNotFoundError:
+        return None
+    stems = sorted(name.removesuffix(suffix) for name in names if name.endswith(suffix))
+    for stem in reversed(stems):
+        if (len(stem) == 5) and stem.isascii() and stem.isdigit():
+            payload = await github_tp_payload_read(project_key, version_key, safe.RevisionNumber(stem))
+            if payload is not None:
+                return payload
+    return None
+
+
 async def load(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,

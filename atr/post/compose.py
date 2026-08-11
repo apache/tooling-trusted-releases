@@ -19,9 +19,12 @@ from typing import Literal
 
 import quart
 
+import atr.attestable as attestable
 import atr.blueprints.post as post
 import atr.errors as errors
+import atr.get as get
 import atr.log as log
+import atr.mapping as mapping
 import atr.models.safe as safe
 import atr.shared as shared
 import atr.storage as storage
@@ -34,14 +37,45 @@ async def selected(
     _compose: Literal["compose"],
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
-    move_form: shared.compose.MoveFileForm,
+    compose_form: shared.compose.ComposeForm,
 ) -> tuple[web.QuartResponse, int] | web.WerkzeugResponse:
     """
     URL: /compose/<project_key>/<version_key>
     """
-    respond = _respond_helper(session, project_key, version_key)
+    match compose_form:
+        case shared.compose.MoveFileForm():
+            respond = _respond_helper(session, project_key, version_key)
+            return await _move_file_to_revision(compose_form, session, project_key, version_key, respond)
+        case shared.compose.SetCommitHashForm():
+            return await _set_commit_hash(session, project_key, version_key, compose_form.commit_hash)
 
-    return await _move_file_to_revision(move_form, session, project_key, version_key, respond)
+
+async def _set_commit_hash(
+    session: web.Committer,
+    project_key: safe.ProjectKey,
+    version_key: safe.VersionKey,
+    commit_hash: safe.CommitHash | None,
+) -> web.WerkzeugResponse:
+    submitted = str(commit_hash) if (commit_hash is not None) else None
+    # Trusted Publishing is authoritative, so a hand-entered value has to agree with its attestation
+    payload = await attestable.latest_github_tp_payload(project_key, version_key)
+    if (payload is not None) and (submitted != payload.sha):
+        return await session.redirect(
+            get.compose.selected,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            error="The commit hash was set via Trusted Publishing and cannot be edited.",
+        )
+    try:
+        async with storage.write(session) as write:
+            wacp = await write.as_project_committee_participant(project_key)
+            release = await wacp.release.set_commit_hash(project_key, version_key, submitted)
+    except storage.AccessError as e:
+        return await session.redirect(
+            get.compose.selected, project_key=str(project_key), version_key=str(version_key), error=str(e)
+        )
+    await quart.flash("Commit hash updated", "success")
+    return await mapping.release_as_redirect(session, release)
 
 
 async def _move_file_to_revision(
@@ -92,7 +126,6 @@ def _respond_helper(
     session: web.Committer, project_key: safe.ProjectKey, version_key: safe.VersionKey
 ) -> shared.compose.Respond:
     """Create a response helper function for the compose route."""
-    import atr.get as get
 
     async def respond(
         http_status: int,

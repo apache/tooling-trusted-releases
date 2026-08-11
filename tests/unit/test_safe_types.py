@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import pydantic
 import pytest
 
 import atr.models.safe as safe
@@ -71,3 +72,37 @@ def test_safe_version_types_accept_valid_version(cls: type[safe.Alphanumeric]):
 def test_safe_version_types_reject_too_long():
     with pytest.raises(ValueError, match="at most"):
         safe.VersionKey("1" * (safe.MAX_VERSION_LENGTH + 1))
+
+
+@pytest.mark.parametrize("value", ["abc1234", "0123456789abcdef", "a" * 7, "f" * 64])
+def test_commit_hash_accepts_valid_hex(value: str):
+    assert str(safe.CommitHash(value)) == value
+
+
+@pytest.mark.parametrize("bad", ["abc", "abcdef", "a" * 65])
+def test_commit_hash_rejects_bad_length(bad: str):
+    with pytest.raises(ValueError, match="7 and 64"):
+        safe.CommitHash(bad)
+
+
+@pytest.mark.parametrize("bad", ["ghijklm", "xyz1234", "abc 123"])
+def test_commit_hash_rejects_non_hex(bad: str):
+    with pytest.raises(ValueError):
+        safe.CommitHash(bad)
+
+
+@pytest.mark.parametrize(("value", "expected"), [("ABC1234", "abc1234"), ("DeadBeef12", "deadbeef12")])
+def test_optional_commit_hash_lowercases(value: str, expected: str):
+    result = pydantic.TypeAdapter(safe.OptionalCommitHash).validate_python(value)
+    assert str(result) == expected
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_optional_commit_hash_blank_is_none(value: str):
+    assert pydantic.TypeAdapter(safe.OptionalCommitHash).validate_python(value) is None
+
+
+@pytest.mark.parametrize("bad", ["abc", "nothex1", "a" * 65])
+def test_optional_commit_hash_rejects_invalid(bad: str):
+    with pytest.raises(ValueError):
+        pydantic.TypeAdapter(safe.OptionalCommitHash).validate_python(bad)

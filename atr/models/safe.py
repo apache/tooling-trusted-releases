@@ -25,6 +25,7 @@ from typing import Annotated, Any, Final
 import pydantic
 
 _ALPHANUM: Final = frozenset(string.ascii_letters + string.digits + "-")
+_HEX_LOWER: Final = frozenset(string.hexdigits.lower())
 _PROJECT_CHARS: Final = _ALPHANUM
 _ASF_UID_CHARS: Final = frozenset(string.ascii_lowercase + string.digits + "-_")
 _NUMERIC: Final = frozenset(string.digits)
@@ -206,6 +207,19 @@ class AsfUid(SafeType):
             raise ValueError("ASF UID must start with a lowercase letter")
 
 
+class CommitHash(SafeType):
+    """A source commit hash, validated as lowercase hexadecimal of a git-like length."""
+
+    @classmethod
+    def _valid_chars(cls) -> frozenset[str]:
+        return _HEX_LOWER
+
+    def _additional_validations(self, value: str) -> None:
+        # Wide enough for a short hash through to a full SHA-256 object name
+        if not (7 <= len(value) <= 64):
+            raise ValueError("A commit hash must be between 7 and 64 hexadecimal characters")
+
+
 class CommitteeKey(Alphanumeric):
     pass
 
@@ -333,6 +347,14 @@ def _empty_to_none(v: object) -> object:
     return v
 
 
+def _lower_or_none(v: object) -> object:
+    """Fold a commit hash to lowercase, treating a blank string as absent."""
+    if isinstance(v, str):
+        stripped = v.strip().lower()
+        return stripped or None
+    return v
+
+
 def _strip_slashes_or_none(v: object) -> object:
     """Strip leading/trailing slashes from a path string; return None if only slashes."""
     if isinstance(v, str):
@@ -346,6 +368,11 @@ def _strip_slashes_or_none(v: object) -> object:
 type OptionalAlphanumeric = Annotated[
     Alphanumeric | None,
     pydantic.BeforeValidator(_strip_slashes_or_none),
+]
+
+type OptionalCommitHash = Annotated[
+    CommitHash | None,
+    pydantic.BeforeValidator(_lower_or_none),
 ]
 
 type OptionalOwnerNamespace = Annotated[

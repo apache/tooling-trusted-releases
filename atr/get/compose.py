@@ -25,6 +25,7 @@ import htpy
 import quart
 from quart_wtf import utils
 
+import atr.attestable as attestable
 import atr.blueprints.get as get
 import atr.db as db
 import atr.db.interaction as interaction
@@ -38,6 +39,7 @@ import atr.models.sql as sql
 import atr.paths as paths
 import atr.post as post
 import atr.render as render
+import atr.shared as shared
 import atr.shared.activity as activity
 import atr.shared.draft as draft
 import atr.storage as storage
@@ -153,6 +155,7 @@ async def selected(
         submit_disabled=release.check_cache_key is None,
     )
     activity_form_html = await _activity_form_html(release, session)
+    commit_hash_form_html = await _commit_hash_form_html(release)
 
     has_files = await util.has_files(release)
 
@@ -231,6 +234,7 @@ async def selected(
         recheck_form=recheck_form,
         cache_reset_form=cache_reset_form,
         activity_form=activity_form_html,
+        commit_hash_form=commit_hash_form_html,
         csrf_input=str(form.csrf_input()),
         has_files=has_files,
         blocker_errors=blocker_errors,
@@ -269,6 +273,29 @@ async def _activity_form_html(release: sql.Release, session: web.Committer) -> s
         pre_submit=activity.inactivity_form_intro(release),
     )
     return str(activity_form)
+
+
+async def _commit_hash_form_html(release: sql.Release) -> str:
+    action = util.as_url(
+        post.compose.selected, project_key=release.safe_project_key, version_key=release.safe_version_key
+    )
+    payload = await attestable.latest_github_tp_payload(release.safe_project_key, release.safe_version_key)
+    if payload is not None:
+        # GitHub has attested the commit, so we show it locked rather than as an editable form
+        locked = htm.div(".mb-3")[
+            htpy.label(".form-label")["Commit hash"],
+            htpy.input(type="text", class_="form-control", value=payload.sha, readonly=True, disabled=True),
+            htm.div(".form-text")["Set by GitHub via Trusted Publishing; it cannot be changed here."],
+        ]
+        return str(locked)
+    commit_hash_form = await form.render(
+        model_cls=shared.compose.SetCommitHashForm,
+        action=action,
+        submit_label="Save commit hash",
+        submit_classes="btn-outline-primary",
+        defaults={"commit_hash": release.commit_hash or ""},
+    )
+    return str(commit_hash_form)
 
 
 def _banner_html(quarantine_pending: int, ongoing: int) -> str:

@@ -1469,6 +1469,11 @@ class Release(sqlmodel.SQLModel, table=True):
     # default; an empty string is a deliberate choice of the distribution root.
     download_path_suffix: str | None = sqlmodel.Field(default=None, **example("incubator/example/0.0.1"))
 
+    # The source commit hash for this release. Auto-filled from the Trusted Publishing
+    # attestation when a workflow uploads, or recorded by hand otherwise. Null until we
+    # know it.
+    commit_hash: str | None = sqlmodel.Field(default=None, **example("1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"))
+
     # M-1: Release -> Project
     # 1-M: Project -> [Release]
     project_key: str = sqlmodel.Field(foreign_key="project.key", **example("example"))

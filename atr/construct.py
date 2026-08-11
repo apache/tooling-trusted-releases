@@ -95,6 +95,7 @@ class _VoteSubjectValues(TypedDict):
 class _VoteValues(TypedDict):
     BUG_DATABASE: str
     CHECKLIST_URL: str
+    COMMIT: str
     COMMITTEE: str
     DURATION: str
     HOMEPAGE: str
@@ -122,6 +123,7 @@ TEMPLATE_DESCRIPTIONS: Final[dict[str, str]] = {
     "ATR_TALLY": "Vote tally block - URL, ballots, counts",
     "BUG_DATABASE": "Bug database URL",
     "CHECKLIST_URL": "URL to the release checklist",
+    "COMMIT": "Source commit hash, if recorded",
     "COMMITTEE": "Committee name",
     "DOWNLOAD_PAGE": "Download page URL",
     "DOWNLOAD_URL": "URL to download the release",
@@ -419,6 +421,7 @@ async def start_vote_subject_and_body(subject: str, body: str, options: StartVot
     body_values: _VoteValues = {
         "BUG_DATABASE": project.bug_database or "",
         "CHECKLIST_URL": checklist_url,
+        "COMMIT": release.commit_hash or "",
         "COMMITTEE": committee.display_name,
         "DURATION": str(options.vote_duration or "an unlimited number of"),
         "HOMEPAGE": project.homepage or "",

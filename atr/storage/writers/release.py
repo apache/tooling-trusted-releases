@@ -449,6 +449,37 @@ class CommitteeParticipant(FoundationCommitter):
         )
         return release
 
+    async def set_commit_hash(
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        commit_hash: str | None,
+    ) -> sql.Release:
+        # Shared by the Trusted Publishing auto-fill and the manual recording form
+        release = await self.__data.release(
+            project_key=str(project_key), version=str(version_key), _committee=True, _project=True
+        ).demand(storage.AccessError(f"Release '{project_key!s} {version_key!s}' not found.", status=404))
+        storage.ensure_project_active(release.project)
+        self.__write.ensure_release_writable(release)
+        previous_commit_hash = release.commit_hash
+        via = sql.validate_instrumented_attribute
+        result = await self.__data.execute(
+            sqlmodel.update(sql.Release).where(via(sql.Release.key) == release.key).values(commit_hash=commit_hash)
+        )
+        if getattr(result, "rowcount", 0) != 1:
+            await self.__data.rollback()
+            raise storage.AccessError("The release state has changed, please refresh and try again", status=409)
+        await self.__data.refresh(release)
+        await self.__data.commit()
+        self.__write_as.append_to_audit_log(
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version=str(version_key),
+            previous_commit_hash=previous_commit_hash,
+            commit_hash=commit_hash,
+        )
+        return release
+
     async def delete(
         self,
         project_key: safe.ProjectKey,
