@@ -19,6 +19,7 @@ import asyncio
 import datetime
 import pathlib
 import re
+import urllib.parse
 from typing import Final, Self
 
 import defusedxml.ElementTree as ElementTree
@@ -26,6 +27,7 @@ import pydantic
 import pydantic_xml
 
 import atr.config as config
+import atr.constants as constants
 import atr.log as log
 
 ASF_TOOL: Final[str] = "atr"
@@ -140,9 +142,7 @@ class SvnLog(pydantic_xml.BaseXmlModel, tag="log"):
 async def commit(path: pathlib.Path, url: str, username: str, revision: str, message: str) -> str:
     log.debug(f"running svn commit for user '{username}'")
     # The username here is the ASF UID of the committer
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
+    stdin_bytes = _authentication(url)
     return await _run_svnmucc_command(
         "put",
         str(path),
@@ -157,7 +157,7 @@ async def commit(path: pathlib.Path, url: str, username: str, revision: str, mes
         revision,
         "-m",
         message,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
 
 
@@ -231,9 +231,6 @@ async def get_log(path: pathlib.Path) -> SvnLog:
 
 
 async def info_authenticated(url: str) -> str:
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
     return await _run_svn_command(
         "info",
         url,
@@ -242,7 +239,7 @@ async def info_authenticated(url: str) -> str:
         "--password-from-stdin",
         "--non-interactive",
         timeout_seconds=INFO_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=_authentication(url),
     )
 
 
@@ -260,9 +257,7 @@ def parse_committed_revision(output: str) -> int | None:
 
 async def publish_file(local_path: pathlib.Path, target_url: str, username: str, message: str) -> None:
     log.debug(f"running svnmucc put for user '{username}'")
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
+    stdin_bytes = _authentication(target_url)
     await _run_svnmucc_command(
         "put",
         str(local_path),
@@ -276,15 +271,13 @@ async def publish_file(local_path: pathlib.Path, target_url: str, username: str,
         "-m",
         message,
         timeout_seconds=KEYS_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
 
 
 async def publish_release(source_dir: pathlib.Path, target_url: str, username: str, message: str) -> int | None:
     log.debug(f"running svn import for user '{username}'")
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
+    stdin_bytes = _authentication(target_url)
     output = await run_command(
         "svn",
         "import",
@@ -303,7 +296,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
         "-m",
         message,
         timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
     revision = parse_committed_revision(output)
     if revision is None:
@@ -312,9 +305,7 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
 
 
 async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> bool:
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
+    stdin_bytes = _authentication(info.url)
     revision = info.last_changed_rev_number
     log_output = await _run_svn_command(
         "log",
@@ -328,7 +319,7 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
         "--password-from-stdin",
         "--non-interactive",
         timeout_seconds=INFO_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
     root = ElementTree.fromstring(log_output)
     entries = root.findall("logentry")
@@ -358,16 +349,14 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
         "--password-from-stdin",
         "--non-interactive",
         timeout_seconds=INFO_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
     return tool.strip() == ASF_TOOL
 
 
 async def remove_files(base_url: str, rel_paths: list[str], username: str, message: str) -> None:
     log.debug(f"running svnmucc rm for user '{username}'")
-    svn_token = config.get().SVN_TOKEN
-    if svn_token is None:
-        raise ValueError("SVN_TOKEN must be set")
+    stdin_bytes = _authentication(base_url)
     actions: list[str] = []
     for rel_path in rel_paths:
         actions.extend(["rm", f"{base_url}/{rel_path}"])
@@ -382,7 +371,7 @@ async def remove_files(base_url: str, rel_paths: list[str], username: str, messa
         "-m",
         message,
         timeout_seconds=PUBLISH_TIMEOUT_SECONDS,
-        stdin_bytes=svn_token.encode(),
+        stdin_bytes=stdin_bytes,
     )
 
 
@@ -426,6 +415,31 @@ async def run_command(
 async def update(path: pathlib.Path) -> str:
     log.debug(f"running svn update for '{path}'")
     return await _run_svn_command("update", str(path), "--parents")
+
+
+def _authentication(url: str) -> bytes:
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    if not _is_trusted_url(url):
+        raise ValueError(f"Refusing to send SVN credentials to {url}")
+    return svn_token.encode()
+
+
+def _is_trusted_url(url: str) -> bool:
+    target = urllib.parse.urlsplit(url)
+    if target.query or target.fragment:
+        return False
+    for base in (config.get().SVN_PUBLISH_URL, constants.SVN_DIST_ROOT_URL):
+        if not base:
+            continue
+        trusted = urllib.parse.urlsplit(base)
+        if (target.scheme.lower(), target.netloc.lower()) != (trusted.scheme.lower(), trusted.netloc.lower()):
+            continue
+        trusted_path = trusted.path.rstrip("/")
+        if (target.path == trusted_path) or target.path.startswith(trusted_path + "/"):
+            return True
+    return False
 
 
 async def _run_svn_command(

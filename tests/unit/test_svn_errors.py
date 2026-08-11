@@ -127,7 +127,8 @@ async def test_publish_revision_matches_without_author_on_local_repository(monke
     run = mock.AsyncMock(side_effect=[log_output, "atr"])
     monkeypatch.setattr(svn, "_run_svn_command", run)
 
-    assert await svn.publish_revision_matches(_svn_info(), "alice", "Publish project-1.0.0")
+    info = _svn_info("svn://127.0.0.1:3690/atr-dev-publish")
+    assert await svn.publish_revision_matches(info, "alice", "Publish project-1.0.0")
 
 
 async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -259,13 +260,13 @@ def _wait_for_file(path: pathlib.Path) -> bool:
     return False
 
 
-def _svn_info() -> svn.SvnInfo:
+def _svn_info(root: str = "https://dist.apache.org/repos/dist/atr") -> svn.SvnInfo:
     return svn.SvnInfo(
         path="project",
         name="project",
-        url="https://example.invalid/project",
+        url=f"{root}/project",
         relative_url="^/project",
-        repository_root="https://example.invalid",
+        repository_root=root,
         revision="43",
         last_changed_author="alice",
         last_changed_rev="42",

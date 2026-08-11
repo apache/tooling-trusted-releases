@@ -39,7 +39,11 @@ async def test_publish_release_ignores_auto_props(tmp_path: pathlib.Path, monkey
         "[miscellany]\nenable-auto-props = yes\n[auto-props]\n*.txt = svn:eol-style=CRLF\n"
     )
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(svn.config, "get", lambda: types.SimpleNamespace(SVN_TOKEN="dummy"))
+    monkeypatch.setattr(
+        svn.config,
+        "get",
+        lambda: types.SimpleNamespace(SVN_TOKEN="dummy", SVN_PUBLISH_URL=f"file://{repository}"),
+    )
     source = tmp_path / "source"
     source.mkdir()
     (source / "a.txt").write_bytes(b"one\ntwo\n")

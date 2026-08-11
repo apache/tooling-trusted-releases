@@ -30,12 +30,30 @@ requires_svn = pytest.mark.skipif(
 )
 
 
+async def test_info_authenticated_allows_dist_root_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        svn.config,
+        "get",
+        lambda: types.SimpleNamespace(SVN_TOKEN="dummy", SVN_PUBLISH_URL="file:///repo"),
+    )
+    run_command = mock.AsyncMock(return_value="")
+    monkeypatch.setattr(svn, "run_command", run_command)
+
+    await svn.info_authenticated("https://dist.apache.org/repos/dist/release/tooling")
+
+    run_command.assert_awaited_once()
+
+
 @requires_svn
 async def test_info_authenticated_reads_local_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(svn.config, "get", lambda: types.SimpleNamespace(SVN_TOKEN="dummy"))
     repository = tmp_path / "repository"
+    monkeypatch.setattr(
+        svn.config,
+        "get",
+        lambda: types.SimpleNamespace(SVN_TOKEN="dummy", SVN_PUBLISH_URL=f"file://{repository}"),
+    )
     await svn.run_command("svnadmin", "create", str(repository))
 
     output = await svn.info_authenticated(f"file://{repository}")
@@ -43,8 +61,37 @@ async def test_info_authenticated_reads_local_repository(
     assert f"file://{repository}" in output
 
 
+async def test_info_authenticated_rejects_untrusted_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        svn.config,
+        "get",
+        lambda: types.SimpleNamespace(SVN_TOKEN="dummy", SVN_PUBLISH_URL="https://dist.apache.org/repos/dist/atr"),
+    )
+    run_command = mock.AsyncMock(return_value="")
+    monkeypatch.setattr(svn, "run_command", run_command)
+    untrusted = [
+        "https://dist.apache.org.example.net/repos/dist/atr/project",
+        "https://dist.apache.org/other/atr/project",
+        "https://user@dist.apache.org/repos/dist/atr/project",
+        "http://dist.apache.org/repos/dist/atr/project",
+        "https://dist.apache.org/repos/distant",
+        "https://dist.apache.org/repos/dist/atr/project?query=1",
+        "https://dist.apache.org/repos/dist/atr/project#fragment",
+    ]
+
+    for url in untrusted:
+        with pytest.raises(ValueError, match="Refusing to send SVN credentials"):
+            await svn.info_authenticated(url)
+
+    run_command.assert_not_awaited()
+
+
 async def test_info_authenticated_sends_token_on_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svn.config, "get", lambda: types.SimpleNamespace(SVN_TOKEN="dummy"))
+    monkeypatch.setattr(
+        svn.config,
+        "get",
+        lambda: types.SimpleNamespace(SVN_TOKEN="dummy", SVN_PUBLISH_URL="https://svn.example.invalid/repos"),
+    )
     run_command = mock.AsyncMock(return_value="")
     monkeypatch.setattr(svn, "run_command", run_command)
 
