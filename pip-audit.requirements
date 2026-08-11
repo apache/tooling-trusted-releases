@@ -20,7 +20,7 @@ aiosqlite==0.22.1
     # via tooling-trusted-releases
 aiozipstream==0.4
     # via tooling-trusted-releases
-alembic==1.18.5
+alembic==1.19.0
     # via tooling-trusted-releases
 annotated-types==0.8.0
     # via pydantic
@@ -51,7 +51,7 @@ boolean-py==5.0
     # via license-expression
 certifi==2026.7.22
     # via requests
-cffi==2.1.0
+cffi==2.1.1
     # via
     #   asfpy
     #   cmarkgfm
@@ -85,7 +85,7 @@ defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.43.2
+djlint==1.44.0
 dnspython==2.8.0
     # via
     #   email-validator
@@ -189,7 +189,7 @@ ldap3==2.10.2rc3
     # via tooling-trusted-releases
 license-expression==30.4.4
     # via cyclonedx-python-lib
-mako==1.3.12
+mako==1.4.1
     # via alembic
 markdown-it-py==4.2.0
     # via rich
@@ -216,7 +216,7 @@ orjson==3.11.9
     # via tooling-trusted-releases
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
-packaging==26.2
+packaging==26.3
     # via
     #   dunamai
     #   tooling-trusted-releases
@@ -284,7 +284,7 @@ quart==0.21.0
     #   quart-wtforms
 quart-rate-limiter==0.12.1
     # via tooling-trusted-releases
-quart-schema==0.23.0
+quart-schema==0.24.0
     # via tooling-trusted-releases
 quart-uploads==0.0.4
     # via quart-wtforms
