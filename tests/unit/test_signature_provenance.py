@@ -64,6 +64,9 @@ class MockDBSession:
         self._projects = projects
         self._releases = releases
 
+    async def execute(self, _query: object) -> object:
+        return SimpleNamespace(scalars=lambda: [])
+
     def project(self, **kwargs: object) -> MockQuery:
         key = kwargs.get("key")
         committee_key = kwargs.get("committee_key")

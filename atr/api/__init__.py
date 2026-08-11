@@ -1426,15 +1426,23 @@ async def release_paths(
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(
             exceptions.NotFound()
         )
-        if revision is None:
-            dir_path = paths.release_directory(release)
-        else:
+        if revision is not None:
             await data.revision(release_key=release.key, number=str(revision)).demand(exceptions.NotFound())
-            dir_path = paths.release_directory_version(release) / str(revision)
+    if (release.phase == sql.ReleasePhase.RELEASE) and (revision is None):
+        files = [published_file.path for published_file in await shared.published.release_files(release)]
+        if not files:
+            raise exceptions.NotFound("Files not found")
+        return models.api.ReleasePathsResults(
+            endpoint="/release/paths",
+            rel_paths=files,
+        ).model_dump(mode="json"), 200
+    if revision is None:
+        dir_path = paths.release_directory(release)
+    else:
+        dir_path = paths.release_directory_version(release) / str(revision)
     if not (await aiofiles.os.path.isdir(dir_path)):
         raise exceptions.NotFound("Files not found")
-    files: list[str] = [str(path) for path in [p async for p in util.paths_recursive(dir_path)]]
-    files.sort()
+    files = sorted(str(path) for path in [p async for p in util.paths_recursive(dir_path)])
     return models.api.ReleasePathsResults(
         endpoint="/release/paths",
         rel_paths=files,
@@ -2207,6 +2215,29 @@ async def _ldap_fullname(asf_uid: str) -> str:
     return asf_uid
 
 
+async def _match_artifact_rows(
+    db_data: db.Session,
+    project_keys: list[str],
+    data: models.api.SignatureProvenanceArgs,
+    version: safe.VersionKey | None = None,
+) -> bool:
+    if not project_keys:
+        return False
+    via = sql.validate_instrumented_attribute
+    query = (
+        sqlmodel.select(via(sql.Artifact.signature_path))
+        .where(via(sql.Artifact.project_key).in_(project_keys))
+        .where(sql.Artifact.signature_sha3_256 == data.signature_sha3_256)
+    )
+    if version is not None:
+        query = query.where(sql.Artifact.version == str(version))
+    signature_paths = (await db_data.execute(query)).scalars()
+    return any(
+        (signature_path is not None) and (signature_path.rsplit("/", 1)[-1] == data.signature_file_name)
+        for signature_path in signature_paths
+    )
+
+
 async def _match_committees(
     key_committees: list[sql.Committee], data: models.api.SignatureProvenanceArgs, asf_uid: str
 ) -> list[sql.Committee]:
@@ -2216,6 +2247,9 @@ async def _match_committees(
             if committee.key in matched:
                 continue
             projects = await db_data.project(committee_key=committee.key).all()
+            if await _match_artifact_rows(db_data, [project.key for project in projects], data):
+                matched[committee.key] = committee
+                continue
             release_dirs: list[safe.StatePath] = []
             for project in projects:
                 releases = await db_data.release(project_key=project.key).all()
@@ -2245,6 +2279,9 @@ async def _match_committees_scoped(
         committee = committees_by_key.get(project.committee_key)
         if committee is None:
             return []
+
+        if await _match_artifact_rows(db_data, [str(project_key)], data, version=data.version_key):
+            return [committee]
 
         if data.version_key is not None:
             release = await db_data.release(
