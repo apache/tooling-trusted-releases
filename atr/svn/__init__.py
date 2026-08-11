@@ -107,7 +107,7 @@ class SvnInfo(pydantic.BaseModel):
 
     @classmethod
     async def from_url(cls, url: str) -> Self:
-        output = await _run_svn_info(url)
+        output = await info_authenticated(url)
 
         nfo = {}
         for line in output.split("\n"):
@@ -312,6 +312,9 @@ async def publish_release(source_dir: pathlib.Path, target_url: str, username: s
 
 
 async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> bool:
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
     revision = info.last_changed_rev_number
     log_output = await _run_svn_command(
         "log",
@@ -320,7 +323,12 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
         "--verbose",
         "-r",
         str(revision),
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
         timeout_seconds=INFO_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
     )
     root = ElementTree.fromstring(log_output)
     entries = root.findall("logentry")
@@ -345,7 +353,12 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
         "-r",
         str(revision),
         "asf:tool",
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
         timeout_seconds=INFO_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
     )
     return tool.strip() == ASF_TOOL
 
@@ -420,11 +433,6 @@ async def _run_svn_command(
 ) -> str:
     # Do not log this command, as it may contain a password or secret token
     return await run_command("svn", *[sub_cmd, *args, path], timeout_seconds=timeout_seconds, stdin_bytes=stdin_bytes)
-
-
-async def _run_svn_info(path_or_url: str) -> str:
-    log.debug("fetching svn info")
-    return await _run_svn_command("info", path_or_url, timeout_seconds=INFO_TIMEOUT_SECONDS)
 
 
 async def _run_svnmucc_command(

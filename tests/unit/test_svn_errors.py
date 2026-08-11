@@ -65,8 +65,34 @@ def test_error_message_uses_specific_stacked_error() -> None:
     assert "status.apache.org" not in message
 
 
+async def test_publish_revision_matches_authenticates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
+    log_output = """
+    <log>
+      <logentry revision="42">
+        <author>alice</author>
+        <date>2026-05-01T00:00:00.000000Z</date>
+        <paths><path action="A" kind="dir">/project</path></paths>
+        <msg>Publish project-1.0.0</msg>
+      </logentry>
+    </log>
+    """
+    run = mock.AsyncMock(side_effect=[log_output, "atr"])
+    monkeypatch.setattr(svn, "_run_svn_command", run)
+
+    assert await svn.publish_revision_matches(_svn_info(), "alice", "Publish project-1.0.0")
+
+    for call in run.await_args_list:
+        assert "--username" in call.args
+        assert "--password-from-stdin" in call.args
+        assert "--non-interactive" in call.args
+        assert call.kwargs["stdin_bytes"] == b"dummy"
+
+
 async def test_publish_revision_matches_exact_provenance(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
     log_output = """
     <log>
       <logentry revision="42">
@@ -88,6 +114,7 @@ async def test_publish_revision_matches_exact_provenance(monkeypatch: pytest.Mon
 
 async def test_publish_revision_matches_without_author_on_local_repository(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "svn://127.0.0.1:3690/atr-dev-publish", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
     log_output = """
     <log>
       <logentry revision="42">
@@ -105,6 +132,7 @@ async def test_publish_revision_matches_without_author_on_local_repository(monke
 
 async def test_publish_revision_rejects_provenance_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://dist.apache.org/repos/dist/atr", raising=False)
+    monkeypatch.setattr(config.get(), "SVN_TOKEN", "dummy", raising=False)
     valid_log = """
     <log>
       <logentry revision="42">
@@ -175,7 +203,7 @@ Revision: 42
 Last Changed Rev: 42
 Last Changed Date: 2026-05-01 00:00:00 +0000
 """.strip()
-    monkeypatch.setattr(svn, "_run_svn_info", mock.AsyncMock(return_value=output))
+    monkeypatch.setattr(svn, "info_authenticated", mock.AsyncMock(return_value=output))
 
     info = await svn.SvnInfo.from_url("svn://127.0.0.1:3690/atr-dev-publish/project")
 
@@ -193,7 +221,7 @@ Last Changed Author: alice
 Last Changed Rev: 42
 Last Changed Date: 2026-05-01 00:00:00 +0000
 """.strip()
-    monkeypatch.setattr(svn, "_run_svn_info", mock.AsyncMock(return_value=output))
+    monkeypatch.setattr(svn, "info_authenticated", mock.AsyncMock(return_value=output))
 
     info = await svn.SvnInfo.from_url("https://example.invalid/project")
 
