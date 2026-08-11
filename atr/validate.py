@@ -452,6 +452,11 @@ def release_key(r: sql.Release) -> Divergences:
 @release_components("Release")
 def release_on_disk(r: sql.Release) -> Divergences:
     """Check that the release is on disk."""
+    if r.phase == sql.ReleasePhase.RELEASE:
+        unfinished = paths.get_unfinished_dir() / r.project_key / r.version
+        expected = "no unfinished directory to remain after release"
+        yield from divergences_predicate(lambda p: not p.path.exists(), expected, unfinished)
+        return
     path = paths.release_directory(r)
 
     def okay(p: safe.StatePath) -> bool:

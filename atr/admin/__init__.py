@@ -27,7 +27,7 @@ import pathlib
 import statistics
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Annotated, Any, Final, Literal, NamedTuple
 
 import aiofiles.os
@@ -1364,10 +1364,7 @@ async def consistency(_session: web.Committer, _consistency: Literal["consistenc
     # Get all releases from the database
     async with db.session() as data:
         releases = await data.release().all()
-    database_dirs = []
-    for release in releases:
-        path = paths.release_directory_version(release)
-        database_dirs.append(str(path))
+    database_dirs = await _consistency_database_dirs(releases)
     if len(set(database_dirs)) != len(database_dirs):
         raise base.ASFQuartException("Duplicate release directories in database", errorcode=500)
 
@@ -2688,6 +2685,16 @@ def _format_exception_location(exc: BaseException) -> str:
     lineno = last_tb.tb_lineno
     func = frame.f_code.co_name
     return f"{type(exc).__name__} at {filename}:{lineno} in {func}: {exc}"
+
+
+async def _consistency_database_dirs(releases: Sequence[sql.Release]) -> list[str]:
+    database_dirs: list[str] = []
+    for release in releases:
+        path = paths.release_directory_version(release)
+        if (release.phase == sql.ReleasePhase.RELEASE) and (not await aiofiles.os.path.isdir(path)):
+            continue
+        database_dirs.append(str(path))
+    return database_dirs
 
 
 async def _get_filesystem_dirs() -> list[str]:
