@@ -1250,7 +1250,7 @@ async def _svn_publish_reachability_check() -> None:
     kind = config.svn_publish_kind()
     description = _svn_publish_description(kind)
     try:
-        await svn.run_command("svn", "info", url, "--non-interactive", timeout_seconds=svn.INFO_TIMEOUT_SECONDS)
+        await svn.info_authenticated(url)
     except Exception as exc:
         reason = _svn_publish_failure_reason(kind, exc)
         if not config.is_production_mode():

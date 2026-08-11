@@ -230,6 +230,22 @@ async def get_log(path: pathlib.Path) -> SvnLog:
     return SvnLog.from_xml_tree(root)
 
 
+async def info_authenticated(url: str) -> str:
+    svn_token = config.get().SVN_TOKEN
+    if svn_token is None:
+        raise ValueError("SVN_TOKEN must be set")
+    return await _run_svn_command(
+        "info",
+        url,
+        "--username",
+        ASF_TOOL,
+        "--password-from-stdin",
+        "--non-interactive",
+        timeout_seconds=INFO_TIMEOUT_SECONDS,
+        stdin_bytes=svn_token.encode(),
+    )
+
+
 async def list_files(url: str) -> list[str]:
     """List every file below a URL, as paths relative to it. Directories are left out."""
     output = await _run_svn_command("list", url, "--recursive", timeout_seconds=LIST_TIMEOUT_SECONDS)
