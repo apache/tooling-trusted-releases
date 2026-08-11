@@ -63,3 +63,10 @@ def test_validate_rejects_root_secrets(monkeypatch: pytest.MonkeyPatch, tmp_path
     (tmp_path / "secrets.ini").write_text("[settings]\n")
     with pytest.raises(RuntimeError, match=r"secrets\.ini"):
         config.validate()
+
+
+def test_validate_rejects_system_state_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    for state_dir in ["/usr/local/var/atr", "/usr", "/opt/../usr/local/var/atr"]:
+        monkeypatch.setattr(config.AppConfig, "STATE_DIR", state_dir)
+        with pytest.raises(RuntimeError, match="STATE_DIR"):
+            config.validate()

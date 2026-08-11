@@ -130,6 +130,7 @@ RUN apk update && \
       openjdk17 \
       re2 \
       rsync \
+      setpriv \
       subversion
 RUN [ "$TARGETARCH" != "arm64" ] || apk add --no-cache gcompat
 

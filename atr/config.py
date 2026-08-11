@@ -19,10 +19,13 @@ import enum
 import ipaddress
 import logging
 import os
+import pathlib
 import urllib.parse
 from typing import Final
 
 import decouple
+
+import atr.sandbox as sandbox
 
 _MB: Final = 1024 * 1024
 _GB: Final = 1024 * _MB
@@ -75,6 +78,13 @@ def _validate_no_root_secrets(conf: type["AppConfig"]) -> None:
             "A secrets.ini file in the state directory root is no longer supported; "
             "move it to secrets/curated/secrets.ini, or delete it if already migrated"
         )
+
+
+def _validate_state_dir(conf: type["AppConfig"]) -> None:
+    state_dir = pathlib.Path(conf.STATE_DIR).resolve()
+    for path in sandbox.SYSTEM_PATHS:
+        if state_dir.is_relative_to(path):
+            raise RuntimeError(f"STATE_DIR must not be under the sandbox system path {path}")
 
 
 def _validate_svn_dist_public_url(url: str) -> None:
@@ -298,6 +308,7 @@ def validate() -> None:
     conf = get()
 
     _validate_no_root_secrets(conf)
+    _validate_state_dir(conf)
 
     absolute_paths = [
         (conf.PROJECT_ROOT, "PROJECT_ROOT"),

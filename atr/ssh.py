@@ -45,6 +45,7 @@ import atr.models.github as github
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.sandbox as sandbox
 import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.user as user
@@ -69,6 +70,7 @@ _RATE_LIMIT_USER: Final = 10
 _RATE_WINDOW: Final = 60.0
 _RSYNC_TIMEOUT: Final = 90 * 60
 _RSYNC_MAX_UPLOAD_SIZE: Final = 2_000_000_000
+_RSYNC_STDERR_LIMIT: Final = 65536
 
 # Keyed by IP address; catches all connections including failed auth
 global_ip_rate_buckets: dict[str, collections.deque[float]] = {}
@@ -285,6 +287,13 @@ def _build_rsync_write_argv(argv: list[str], path: safe.StatePath) -> list[str]:
     if len(argv) < 2 or argv[-2] != ".":
         raise RuntimeError("Validated rsync write argv must end with '.' and the destination path")
     return [*argv[:-2], f"--max-size={_RSYNC_MAX_UPLOAD_SIZE}", "--info=skip2", ".", str(path)]
+
+
+async def _drain_stderr(stream: asyncio.StreamReader) -> bytes:
+    collected = b""
+    while chunk := await stream.read(8192):
+        collected += chunk[: _RSYNC_STDERR_LIMIT - len(collected)]
+    return collected
 
 
 def _output_stderr(process: asyncssh.SSHServerProcess, message: str) -> None:
@@ -612,6 +621,8 @@ async def _step_07a_process_validated_rsync_read(
                 raise RsyncArgsError(f"No files match the tag for release {release.key}")
             argv[-1:] = files
 
+        argv = sandbox.command(argv, ro_paths=[str(source_dir)])
+
         ###################################################
         ### Calls _step_08_execute_rsync_sender_command ###
         ###################################################
@@ -659,6 +670,7 @@ async def _step_07b_process_validated_rsync_write(
             if old_rev is not None:
                 log.info(f"Using old revision {old_rev.number} and interim path {path}")
             rsync_argv = _build_rsync_write_argv(argv, path)
+            rsync_argv = sandbox.command(rsync_argv, rw_paths=[str(path)])
 
             ###################################################
             ### Calls _step_08_execute_rsync_upload_command ###
@@ -746,19 +758,31 @@ async def _step_08_execute_rsync(process: asyncssh.SSHServerProcess, argv: list[
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    # Redirect the client's streams to the rsync process
-    # TODO: Do we instead need send_eof=False on stderr only?
-    # , stdout=proc.stdout
-    # , stderr=proc.stderr
-    # , send_eof=False
-    await process.redirect(stdin=proc.stdin, stdout=proc.stdout, send_eof=False)
-    # Wait for rsync to finish and get its exit status
+    stderr_stream = proc.stderr
+    drain = asyncio.create_task(_drain_stderr(stderr_stream)) if stderr_stream is not None else None
     try:
-        exit_status = await asyncio.wait_for(proc.wait(), timeout=_RSYNC_TIMEOUT)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        raise RsyncArgsError(f"rsync operation timed out after {_RSYNC_TIMEOUT} seconds")
+        # Redirect the client's streams to the rsync process
+        # TODO: Do we instead need send_eof=False on stderr only?
+        # , stdout=proc.stdout
+        # , stderr=proc.stderr
+        # , send_eof=False
+        await process.redirect(stdin=proc.stdin, stdout=proc.stdout, send_eof=False)
+        # Wait for rsync to finish and get its exit status
+        try:
+            exit_status = await asyncio.wait_for(proc.wait(), timeout=_RSYNC_TIMEOUT)
+        except TimeoutError:
+            raise RsyncArgsError(f"rsync operation timed out after {_RSYNC_TIMEOUT} seconds")
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        if drain is not None:
+            try:
+                stderr_output = await asyncio.wait_for(drain, timeout=10)
+            except TimeoutError:
+                stderr_output = b""
+            if stderr_output:
+                log.warning(f"rsync stderr: {stderr_output.decode(errors='replace')}")
     log.info(f"Rsync finished with exit status {exit_status}")
     return exit_status
 
