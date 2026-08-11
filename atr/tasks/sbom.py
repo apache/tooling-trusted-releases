@@ -40,12 +40,15 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.sbom as sbom
+import atr.sbom.models.bundle
+import atr.shared as shared
 import atr.storage as storage
 import atr.tasks.checks as checks
 import atr.util as util
 
 _CONFIG: Final = config.get()
 _OSV_UNAVAILABLE_MESSAGE: Final = "The OSV service could not be reached; try the scan again later"
+_PREVIOUS_SBOM_MAX_SIZE: Final[int] = 64 * 1024 * 1024
 
 
 class SBOMConversionError(Exception):
@@ -348,9 +351,6 @@ async def score_tool(args: args.ScoreArgs) -> results.Results | None:
     path_str = str(args.file_path)
 
     base_dir = paths.get_unfinished_dir_for(args.project_key, args.version_key, args.revision_number)
-    previous_base_dir = None
-    if args.previous_release_version is not None:
-        previous_base_dir = paths.get_finished_dir_for(args.project_key, args.previous_release_version)
     if not await aiofiles.os.path.isdir(base_dir):
         raise SBOMScoringError("Revision directory does not exist", {"base_dir": str(base_dir)})
     full_path = base_dir / path_str
@@ -374,20 +374,14 @@ async def score_tool(args: args.ScoreArgs) -> results.Results | None:
     prev_version = None
     prev_licenses = None
     prev_vulnerabilities = None
-    if previous_base_dir is not None:
-        previous_full_path = previous_base_dir / path_str
-        try:
-            previous_bundle = sbom.utilities.path_to_bundle(previous_full_path.path)
-        except FileNotFoundError:
-            # Previous release didn't include this file
-            previous_bundle = None
-        if previous_bundle is not None:
-            prev_version, _ = sbom.utilities.get_props_from_bundle(previous_bundle)
-            prev_good, prev_license_warnings, prev_license_errors = sbom.licenses.check(
-                previous_bundle.bom, include_all=True, is_source_release=is_source
-            )
-            prev_licenses = [*prev_good, *prev_license_warnings, *prev_license_errors]
-            prev_vulnerabilities = sbom.osv.vulns_from_bundle(previous_bundle)
+    previous_bundle = await _previous_bundle(args, path_str)
+    if previous_bundle is not None:
+        prev_version, _ = sbom.utilities.get_props_from_bundle(previous_bundle)
+        prev_good, prev_license_warnings, prev_license_errors = sbom.licenses.check(
+            previous_bundle.bom, include_all=True, is_source_release=is_source
+        )
+        prev_licenses = [*prev_good, *prev_license_warnings, *prev_license_errors]
+        prev_vulnerabilities = sbom.osv.vulns_from_bundle(previous_bundle)
 
     return results.SBOMToolScore(
         kind="sbom_tool_score",
@@ -468,6 +462,29 @@ def _extracted_dir(temp_dir: str) -> str | None:
     if extract_dir is None:
         extract_dir = temp_dir
     return extract_dir
+
+
+async def _fetch_previous_sbom(url: str) -> str | None:
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with util.create_secure_session(timeout=timeout, public=True) as session:
+        async with session.get(url, allow_redirects=False) as response:
+            response.raise_for_status()
+            if response.status != 200:
+                log.warning(f"The previous release SBOM at {url} returned status {response.status}")
+                return None
+            content_length = response.content_length
+            if (content_length is not None) and (content_length > _PREVIOUS_SBOM_MAX_SIZE):
+                log.warning(f"The previous release SBOM at {url} is too large ({content_length} bytes)")
+                return None
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.content.iter_chunked(65536):
+                size += len(chunk)
+                if size > _PREVIOUS_SBOM_MAX_SIZE:
+                    log.warning(f"The previous release SBOM at {url} is too large (limit {_PREVIOUS_SBOM_MAX_SIZE})")
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks).decode("utf-8")
 
 
 async def _generate_cyclonedx_core(
@@ -593,6 +610,41 @@ async def _generate_cyclonedx_core(
         except FileNotFoundError:
             log.error("syft command not found. Is it installed and in PATH?")
             raise SBOMGenerationError("syft command not found")
+
+
+async def _previous_bundle(score_args: args.ScoreArgs, path_str: str) -> atr.sbom.models.bundle.Bundle | None:
+    if score_args.previous_release_version is None:
+        return None
+    local_path = paths.get_finished_dir_for(score_args.project_key, score_args.previous_release_version) / path_str
+    if await aiofiles.os.path.isfile(local_path):
+        try:
+            return sbom.utilities.path_to_bundle(local_path.path)
+        except FileNotFoundError:
+            pass
+    url = await _previous_sbom_url(score_args, path_str)
+    if url is None:
+        return None
+    try:
+        text = await _fetch_previous_sbom(url)
+    except (TimeoutError, aiohttp.ClientError) as error:
+        log.warning(f"Could not fetch the previous release SBOM from {url}: {error}")
+        return None
+    if text is None:
+        return None
+    return sbom.utilities.text_to_bundle(text, pathlib.Path(path_str))
+
+
+async def _previous_sbom_url(score_args: args.ScoreArgs, path_str: str) -> str | None:
+    async with db.session() as data:
+        release = await data.release(
+            project_key=str(score_args.project_key), version=str(score_args.previous_release_version)
+        ).get()
+    if release is None:
+        return None
+    if release.phase != sql.ReleasePhase.RELEASE:
+        return None
+    published = await shared.published.release_files(release)
+    return next((f.url for f in published if f.path == path_str), None)
 
 
 def _promote_primary_component(doc: dict[str, Any]) -> None:

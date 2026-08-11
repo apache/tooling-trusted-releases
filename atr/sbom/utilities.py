@@ -165,36 +165,7 @@ def patch_to_data(patch_ops: models.patch.Patch) -> list[dict[str, Any]]:
 
 
 def path_to_bundle(path: pathlib.Path) -> models.bundle.Bundle:
-    text = path.read_text(encoding="utf-8")
-    bom: Bom | None = None
-    source_type: Literal["json", "xml"] | None = None
-    # Default to latest schema version
-    spec_version: SchemaVersion | None = None
-    if path.name.endswith(".json"):
-        bom_json: dict[str, Any] = json.loads(text)
-        bom = Bom.from_json(data=bom_json)
-        source_type = "json"
-        version_str = bom_json.get("specVersion", "1.7")
-        spec_version = SchemaVersion.from_version(version_str)
-    elif path.name.endswith(".xml"):
-        bom_xml = ElementTree.fromstring(text)
-        bom = Bom.from_xml(bom_xml)
-        tag = re.match(r"\{http://cyclonedx.org/schema/bom/(.+)}", bom_xml.tag)
-        version = "1.7"
-        if tag:
-            version = tag.group(1)
-        spec_version = SchemaVersion.from_version(version)
-        source_type = "xml"
-        if bom:
-            outputter: BaseOutput = make_outputter(
-                bom=bom, output_format=OutputFormat.JSON, schema_version=spec_version
-            )
-            text: str = outputter.output_as_string()
-    if not bom or not source_type or not spec_version:
-        raise ValueError("Error importing BOM")
-    return models.bundle.Bundle(
-        doc=orjson.loads(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
-    )
+    return text_to_bundle(path.read_text(encoding="utf-8"), path)
 
 
 def record_atr_tool(doc: dict[str, Any], patch_ops: models.patch.Patch) -> models.patch.Patch:
@@ -239,6 +210,38 @@ def resolve_pointer(doc: dict[str, Any], path: str) -> Any:
     except jsonpointer.JsonPointerException:
         raise ValueError("JSON pointer cannot be resolved") from None
     return copy.deepcopy(value)
+
+
+def text_to_bundle(text: str, path: pathlib.Path) -> models.bundle.Bundle:
+    bom: Bom | None = None
+    source_type: Literal["json", "xml"] | None = None
+    # Default to latest schema version
+    spec_version: SchemaVersion | None = None
+    if path.name.endswith(".json"):
+        bom_json: dict[str, Any] = json.loads(text)
+        bom = Bom.from_json(data=bom_json)
+        source_type = "json"
+        version_str = bom_json.get("specVersion", "1.7")
+        spec_version = SchemaVersion.from_version(version_str)
+    elif path.name.endswith(".xml"):
+        bom_xml = ElementTree.fromstring(text)
+        bom = Bom.from_xml(bom_xml)
+        tag = re.match(r"\{http://cyclonedx.org/schema/bom/(.+)}", bom_xml.tag)
+        version = "1.7"
+        if tag:
+            version = tag.group(1)
+        spec_version = SchemaVersion.from_version(version)
+        source_type = "xml"
+        if bom:
+            outputter: BaseOutput = make_outputter(
+                bom=bom, output_format=OutputFormat.JSON, schema_version=spec_version
+            )
+            text = outputter.output_as_string()
+    if not bom or not source_type or not spec_version:
+        raise ValueError("Error importing BOM")
+    return models.bundle.Bundle(
+        doc=orjson.loads(text), bom=bom, path=path, text=text, source_type=source_type, spec_version=spec_version
+    )
 
 
 def _extract_cdx_score(type: str, score_str: str) -> dict[str, str | float]:
