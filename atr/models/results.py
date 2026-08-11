@@ -241,6 +241,12 @@ class SvnImportFiles(schema.Strict):
     msg: str = schema.description("The message from the SVN import")
 
 
+class ReleaseFinalise(schema.Strict):
+    kind: Literal["release_finalise"] = schema.Field(alias="kind")
+    audit_events: int = schema.description("The number of audit log events recorded for the release")
+    message: str = schema.description("A short status message describing the finalisation outcome")
+
+
 class SvnPublish(schema.Strict):
     """Result of the task to publish a release preview to SVN."""
 
@@ -305,6 +311,7 @@ Results = Annotated[
     | Maintenance
     | MessageSend
     | MetadataUpdate
+    | ReleaseFinalise
     | SBOMAugment
     | SBOMConvert
     | SBOMGenerate

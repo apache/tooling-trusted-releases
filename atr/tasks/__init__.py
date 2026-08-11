@@ -405,6 +405,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return quarantine.validate
         case sql.TaskType.RAT_CHECK:
             return rat.check
+        case sql.TaskType.RELEASE_FINALISE:
+            return svnpub.finalise
         case sql.TaskType.SBOM_AUGMENT:
             return sbom.augment
         case sql.TaskType.SBOM_CONVERT:

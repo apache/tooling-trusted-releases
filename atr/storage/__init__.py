@@ -342,6 +342,13 @@ class WriteAsJwtMintService(WriteAsSystemService):
         self.tokens_issue_system_jwt = admin.tokens.issue_system_jwt
 
 
+class WriteAsReleaseFinaliseService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.release_finalise_published = admin.release.finalise_published_release
+
+
 class WriteAsAutomatedMailService(WriteAsSystemService):
     def __init__(self, write: Write, data: db.Session):
         super().__init__(write, data)

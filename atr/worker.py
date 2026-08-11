@@ -335,6 +335,7 @@ async def _task_process(task_id: int, task_type: str, task_args: list[str] | dic
     try:
         if (
             asf_uid != constants.SYSTEM_SERVICE_UID
+            and task_type_member != sql.TaskType.RELEASE_FINALISE
             and not (config.is_test_mode() and asf_uid == "test")
             and (config.is_production_mode() or config.is_ldap_configured())
         ):

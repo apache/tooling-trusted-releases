@@ -174,6 +174,19 @@ def _ensure_footer_enum(value: Any) -> mail.MailFooterCategory | None:
         return None
 
 
+class ReleaseFinalise(schema.Strict):
+    asf_uid: str = schema.description("ASF UID of the user who announced the release")
+    project_key: safe.ProjectKey = schema.description("Project key in ATR")
+    version_key: safe.VersionKey = schema.description("Version key in ATR")
+    revision_number: safe.RevisionNumber = schema.description("Published preview revision number")
+    svn_revision: int = schema.description("The SVN revision number that the publish landed in")
+    download_path_suffix: safe.OptionalRelPath = pydantic.Field(
+        default=None,
+        description="Optional path suffix appended under the committee distribution path",
+    )
+    audit_until: str = schema.description("Inclusive audit log datetime boundary for the release log")
+
+
 class Send(schema.Strict):
     """Arguments for the task to send an email."""
 

@@ -21,6 +21,12 @@ import atr.storage as storage
 import atr.tasks.checks as checks
 
 
+@checks.with_model(args.ReleaseFinalise)
+async def finalise(task_args: args.ReleaseFinalise) -> results.Results | None:
+    async with storage.write_as_system(storage.WriteAsReleaseFinaliseService) as warfs:
+        return await warfs.release_finalise_published(task_args)
+
+
 @checks.with_model(args.SvnPublish)
 async def publish(task_args: args.SvnPublish) -> results.Results | None:
     async with storage.write(task_args.asf_uid) as write:

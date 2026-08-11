@@ -18,13 +18,15 @@
 import asyncio
 import json
 import pathlib
-from typing import Any
+from typing import Any, Final
 
 import atr.config as config
 import atr.log as log
 import atr.models.safe as safe
 import atr.paths as paths
 import atr.util as util
+
+RELEASE_ANNOUNCE_ACTION: Final[str] = "release_announce"
 
 
 async def write_release_log(

@@ -248,6 +248,7 @@ class TaskType(enum.StrEnum):
     PATHS_CHECK = "paths_check"
     QUARANTINE_VALIDATE = "quarantine_validate"
     RAT_CHECK = "rat_check"
+    RELEASE_FINALISE = "release_finalise"
     SBOM_AUGMENT = "sbom_augment"
     SBOM_CONVERT = "sbom_convert"
     SBOM_GENERATE = "sbom_generate"
@@ -304,6 +305,8 @@ class TaskType(enum.StrEnum):
                 return "Quarantine validation"
             case TaskType.RAT_CHECK:
                 return "Rat check"
+            case TaskType.RELEASE_FINALISE:
+                return "Release finalisation"
             case TaskType.SBOM_AUGMENT:
                 return "SBOM augmentation"
             case TaskType.SBOM_CONVERT:

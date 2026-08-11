@@ -23,16 +23,21 @@ import base64
 import contextlib
 import dataclasses
 import datetime
+import pathlib
 import re
+import stat
+import tempfile
 from typing import TYPE_CHECKING, Any, Final
 
 import aiofiles.os
+import aioshutil
 import sqlalchemy
 import sqlalchemy.dialects.sqlite as sqlite
 import sqlalchemy.engine as engine
 import sqlmodel
 
 import atr.analysis as analysis
+import atr.auditlog as auditlog
 import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.constants as constants
@@ -56,10 +61,10 @@ import atr.storage.datatypes as datatypes
 import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
+import atr.tasks.task
 import atr.util as util
 
 if TYPE_CHECKING:
-    import pathlib
     from collections.abc import AsyncIterator, Sequence
 
     import werkzeug.datastructures as datastructures
@@ -1688,6 +1693,49 @@ class FoundationAdmin(FoundationCommitter):
             return final_error
         return await self.delete(project_key, version)
 
+    async def finalise_published_release(self, task_args: args.ReleaseFinalise) -> results.ReleaseFinalise:
+        release = await self.__data.release(
+            project_key=str(task_args.project_key),
+            version=str(task_args.version_key),
+            phase=sql.ReleasePhase.RELEASE,
+            _project=True,
+            _committee=True,
+        ).demand(datatypes.FailedError("Released release not found for finalisation"))
+        committee = release.project.committee
+        if committee is None:
+            raise datatypes.FailedError("Release has no committee - Invalid state")
+        version_dir = paths.get_unfinished_dir() / task_args.project_key / task_args.version_key
+        tombstone_dir = paths.get_unfinished_dir() / task_args.project_key / f"{task_args.version_key}.deleting-"
+        version_state = await self.__directory_state(version_dir)
+        if version_state is False:
+            raise datatypes.FailedError("The unfinished release path is not a directory")
+        version_dir_present = version_state is True
+        if version_dir_present:
+            revision_dir = version_dir / task_args.revision_number
+            if not await aiofiles.os.path.isdir(revision_dir):
+                raise datatypes.FailedError("The published revision is no longer in the unfinished directory")
+            await self.__verify_publication_export(committee, task_args, revision_dir)
+        audit_events = await self.__release_audit_log(task_args)
+        await self.__remove_release_directory(version_dir, tombstone_dir, version_dir_present, task_args)
+        self.__write_as.append_to_audit_log(
+            asf_uid=task_args.asf_uid,
+            project_key=str(task_args.project_key),
+            version_key=str(task_args.version_key),
+            revision_number=str(task_args.revision_number),
+            svn_revision=task_args.svn_revision,
+            audit_events=audit_events,
+        )
+        message = (
+            f"Verified the SVN publication and removed the local files for {release.key}"
+            if version_dir_present
+            else f"The local files for {release.key} were already removed"
+        )
+        return results.ReleaseFinalise(
+            kind="release_finalise",
+            audit_events=audit_events,
+            message=message,
+        )
+
     async def notify_seen(
         self,
         project_key: safe.ProjectKey,
@@ -1861,3 +1909,79 @@ class FoundationAdmin(FoundationCommitter):
         )
         result = await self.__data.execute(stmt)
         return int(result.scalar_one()) > 0
+
+    async def __directory_state(self, path: safe.StatePath) -> bool | None:
+        try:
+            mode = (await asyncio.to_thread(path.path.lstat)).st_mode
+        except FileNotFoundError:
+            return None
+        return stat.S_ISDIR(mode)
+
+    async def __release_audit_log(self, task_args: args.ReleaseFinalise) -> int:
+        try:
+            return await auditlog.write_release_log(
+                task_args.project_key,
+                task_args.version_key,
+                until=task_args.audit_until,
+                required_action=auditlog.RELEASE_ANNOUNCE_ACTION,
+            )
+        except ValueError as exc:
+            raise atr.tasks.task.DeferredError(str(exc)) from exc
+
+    async def __remove_release_directory(
+        self,
+        version_dir: safe.StatePath,
+        tombstone_dir: safe.StatePath,
+        version_dir_present: bool,
+        task_args: args.ReleaseFinalise,
+    ) -> None:
+        reason = f"release {task_args.project_key} {task_args.version_key} is announced and verified in SVN"
+        tombstone_state = await self.__directory_state(tombstone_dir)
+        if tombstone_state is False:
+            raise datatypes.FailedError("The tombstone path is not a directory")
+        if tombstone_state:
+            await util.delete_immutable_directory(tombstone_dir, reason=reason)
+        if not version_dir_present:
+            return
+        await asyncio.to_thread(version_dir.path.chmod, 0o755)
+        await aiofiles.os.rename(version_dir, tombstone_dir)
+        await util.delete_immutable_directory(tombstone_dir, reason=reason)
+
+    async def __verify_publication_export(
+        self,
+        committee: sql.Committee,
+        task_args: args.ReleaseFinalise,
+        revision_dir: safe.StatePath,
+    ) -> None:
+        try:
+            internal_url = util.svn_publish_internal_url(committee, task_args.download_path_suffix)
+        except ValueError as exc:
+            raise datatypes.FailedError(f"SVN publish URL is not acceptable: {exc}") from exc
+        temp_dir = await asyncio.to_thread(tempfile.mkdtemp, dir=paths.get_tmp_dir())
+        try:
+            export_path = pathlib.Path(temp_dir) / "export"
+            try:
+                await svn.export(internal_url, task_args.svn_revision, export_path)
+            except svn.CommandExecutionError as exc:
+                raise datatypes.FailedError(
+                    f"The SVN publication could not be exported: {svn.error_message(exc)}"
+                ) from None
+            differences = await util.tree_differences(revision_dir.path, export_path)
+            if unexpected := differences.only_in_other:
+                log.warning(
+                    f"The SVN publication contains {len(unexpected)} unexpected files; the first is {unexpected[0]}"
+                )
+            if missing := differences.only_in_base:
+                raise datatypes.FailedError(
+                    f"{len(missing)} files are missing from the SVN publication; the first is {missing[0]}"
+                )
+            if differing := differences.differing:
+                raise datatypes.FailedError(
+                    f"{len(differing)} files in the SVN publication differ from the local release files;"
+                    f" the first is {differing[0]}"
+                )
+        finally:
+            try:
+                await aioshutil.rmtree(temp_dir)
+            except OSError as exc:
+                log.warning(f"Could not remove the publication check directory {temp_dir}: {exc}")
