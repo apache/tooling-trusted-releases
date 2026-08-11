@@ -37,6 +37,8 @@ import atr.storage as storage
 # SQLite allows 999 bound variables by default, and an artifact key is three of them
 _DELETE_CHUNK: Final[int] = 300
 
+type ArtifactFacts = tuple[str | None, int | None, str | None, str | None]
+
 
 class FoundationAdmin:
     def __init__(self, write: storage.Write, write_as: storage.WriteAsFoundationAdmin, data: db.Session):
@@ -354,6 +356,44 @@ class FoundationAdmin:
             chunk = pks[start : start + _DELETE_CHUNK]
             await self.__data.execute(sqlmodel.delete(sql.Artifact).where(identity.in_(chunk)))
 
+    async def _preserved_artifact_facts(
+        self, diff: catalogue_diff.CatalogueDiff
+    ) -> dict[tuple[str, str, str], ArtifactFacts]:
+        pks = [
+            (str(add.project_key), str(add.version), str(add.artifact_path))
+            for add in diff.adds
+            if isinstance(add, catalogue_rows.ArtifactRow)
+        ]
+        if not pks:
+            return {}
+        via = sql.validate_instrumented_attribute
+        identity = sqlalchemy.tuple_(
+            via(sql.Artifact.project_key), via(sql.Artifact.version), via(sql.Artifact.artifact_path)
+        )
+        facts: dict[tuple[str, str, str], ArtifactFacts] = {}
+        for start in range(0, len(pks), _DELETE_CHUNK):
+            chunk = pks[start : start + _DELETE_CHUNK]
+            rows = (await self.__data.execute(sqlmodel.select(sql.Artifact).where(identity.in_(chunk)))).scalars()
+            for row in rows:
+                facts[(row.project_key, row.version, row.artifact_path)] = (
+                    row.key_fingerprint,
+                    row.svn_revision,
+                    row.signature_sha3_256,
+                    row.signature_path,
+                )
+        return facts
+
+    def _restore_artifact_facts(self, row: sql.Artifact, preserved: dict[tuple[str, str, str], ArtifactFacts]) -> None:
+        facts = preserved.get((row.project_key, row.version, row.artifact_path))
+        if facts is None:
+            return
+        fingerprint, svn_revision, signature_sha3, signature_path = facts
+        row.svn_revision = svn_revision
+        if row.signature_path != signature_path:
+            return
+        row.key_fingerprint = fingerprint
+        row.signature_sha3_256 = signature_sha3
+
     async def _resolve_super_projects(self, project_keys: list[str]) -> None:
         # A sub-project hangs under the longest project key in its committee that prefixes its own,
         # which is the rule the project creation path applies. The CSV does not carry the column
@@ -450,6 +490,7 @@ class FoundationAdmin:
 
     async def _apply_diff(self, diff: catalogue_diff.CatalogueDiff) -> None:
         await self.__data.execute(sqlalchemy.text("PRAGMA defer_foreign_keys=ON"))
+        preserved = await self._preserved_artifact_facts(diff)
         # Deletions run first, so the committee is cleared before the files are re-added and a row
         # can reuse a key it has just released. A deleted project leaves its surviving sub-projects
         # with no super pointer, and they hang under whatever the files put back in its place
@@ -467,7 +508,9 @@ class FoundationAdmin:
         await self.__data.flush()
         for add in diff.adds:
             if isinstance(add, catalogue_rows.ArtifactRow):
-                self.__data.add(add.to_sql())
+                row = add.to_sql()
+                self._restore_artifact_facts(row, preserved)
+                self.__data.add(row)
         await self._reassign_cycles_for_added_releases(diff)
         # Artifacts repoint first: a repointed release takes its artifacts by project and version,
         # so an artifact the file sends elsewhere has to leave before the release takes it along

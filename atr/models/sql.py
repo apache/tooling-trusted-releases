@@ -2096,6 +2096,11 @@ class Artifact(sqlmodel.SQLModel, table=True):
     )
     # Path to the .asc detached signature file
     signature_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.asc"))
+    signature_sha3_256: str | None = sqlmodel.Field(
+        default=None,
+        index=True,
+        **example("da43c7a4d3d1e8408d3f0ac0f624a1e1f6c0d1c1a4d1a3b31843b6d15c2f2f2f"),
+    )
     # Path to the strongest available checksum file (SHA-512 preferred over SHA-256 over MD5)
     checksum_path: str | None = sqlmodel.Field(default=None, **example("apache-example-0.0.1.tar.gz.sha512"))
     # Path to the paired CycloneDX SBOM, if one rides alongside the artifact (.cdx.json preferred over .cdx.xml)

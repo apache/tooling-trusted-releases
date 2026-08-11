@@ -206,6 +206,7 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
         release_key: Opt[str | None] = NOT_SET,
         key_fingerprint: Opt[str | None] = NOT_SET,
         signature_path: Opt[str | None] = NOT_SET,
+        signature_sha3_256: Opt[str | None] = NOT_SET,
         checksum_path: Opt[str | None] = NOT_SET,
         classification: Opt[str | None] = NOT_SET,
         svn_revision: Opt[int | None] = NOT_SET,
@@ -225,6 +226,8 @@ class Session(sqlalchemy.ext.asyncio.AsyncSession):
             query = query.where(sql.Artifact.key_fingerprint == key_fingerprint)
         if is_defined(signature_path):
             query = query.where(sql.Artifact.signature_path == signature_path)
+        if is_defined(signature_sha3_256):
+            query = query.where(sql.Artifact.signature_sha3_256 == signature_sha3_256)
         if is_defined(checksum_path):
             query = query.where(sql.Artifact.checksum_path == checksum_path)
         if is_defined(classification):

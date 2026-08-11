@@ -35,6 +35,7 @@ import atr.config as config
 import atr.construct as construct
 import atr.db as db
 import atr.db.interaction as interaction
+import atr.hashes as hashes
 import atr.log as log
 import atr.mail as mail
 import atr.models.args as args
@@ -674,6 +675,9 @@ class ReleaseManager(CommitteeParticipant):
                 if signature_path is not None
                 else None
             )
+            signature_sha3 = (
+                await hashes.file_sha3(str(finished_path / signature_path)) if (signature_path is not None) else None
+            )
             self.__data.add(
                 sql.Artifact(
                     project_key=release.project_key,
@@ -682,6 +686,7 @@ class ReleaseManager(CommitteeParticipant):
                     release_key=release.key,
                     key_fingerprint=fingerprint,
                     signature_path=signature_path,
+                    signature_sha3_256=signature_sha3,
                     checksum_path=checksum_path,
                     sbom_path=sbom_path,
                     classification=classifications.get(rel),

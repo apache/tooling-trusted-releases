@@ -340,6 +340,37 @@ async def test_import_repoints_an_artifact(sessionmaker) -> None:
 
 
 @pytest.mark.asyncio
+async def test_replace_clears_signature_facts_when_the_signature_changes(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="keep.tgz",
+                release_key="alpha-one-1.0.0",
+                signature_path="keep.tgz.asc",
+                download_path_suffix="alpha/keep.tgz",
+                svn_revision=1234,
+                signature_sha3_256="ab" * 32,
+            )
+        )
+        await data.commit()
+
+        keep = _artifact_row("alpha-one", "1.0.0", "keep.tgz")
+        keep["signature_path"] = "keep.tgz.sig"
+        keep["download_path_suffix"] = "alpha/keep.tgz"
+        await _writer(data).import_catalogue_csvs({"artifacts": [keep]}, "alpha", catalogue_diff.Mode.REPLACE)
+
+        data.expire_all()
+        row = await data.get(sql.Artifact, ("alpha-one", "1.0.0", "keep.tgz"))
+        assert row is not None
+        assert row.svn_revision == 1234
+        assert row.signature_sha3_256 is None
+        assert row.key_fingerprint is None
+
+
+@pytest.mark.asyncio
 async def test_replace_deletes_artifacts_the_file_does_not_list(sessionmaker) -> None:
     async with sessionmaker() as data:
         await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
@@ -367,6 +398,36 @@ async def test_replace_deletes_artifacts_the_file_does_not_list(sessionmaker) ->
         assert await data.get(sql.Artifact, ("alpha-one", "1.0.0", "drop.tgz")) is None
         # The release itself is untouched: releases.csv was not uploaded
         assert await data.get(sql.Release, "alpha-one-1.0.0") is not None
+
+
+@pytest.mark.asyncio
+async def test_replace_preserves_computed_artifact_facts(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_two_projects_with_release(data, {"alpha-one": "1.0.0"})
+        data.add(
+            sql.Artifact(
+                project_key="alpha-one",
+                version="1.0.0",
+                artifact_path="keep.tgz",
+                release_key="alpha-one-1.0.0",
+                signature_path="keep.tgz.asc",
+                download_path_suffix="alpha/keep.tgz",
+                svn_revision=1234,
+                signature_sha3_256="ab" * 32,
+            )
+        )
+        await data.commit()
+
+        keep = _artifact_row("alpha-one", "1.0.0", "keep.tgz")
+        keep["signature_path"] = "keep.tgz.asc"
+        keep["download_path_suffix"] = "alpha/keep.tgz"
+        await _writer(data).import_catalogue_csvs({"artifacts": [keep]}, "alpha", catalogue_diff.Mode.REPLACE)
+
+        data.expire_all()
+        row = await data.get(sql.Artifact, ("alpha-one", "1.0.0", "keep.tgz"))
+        assert row is not None
+        assert row.svn_revision == 1234
+        assert row.signature_sha3_256 == "ab" * 32
 
 
 @pytest.mark.asyncio
