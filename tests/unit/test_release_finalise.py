@@ -131,6 +131,22 @@ async def seed_released(data: db.Session) -> None:
     await data.commit()
 
 
+async def test_admin_delete_removes_unfinished_and_tombstone(
+    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup_state(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    (tmp_path / "unfinished" / "project" / "1.0.0.deleting-" / "00001").mkdir(parents=True)
+    async with sqlite_sessionmaker() as data:
+        await seed_released(data)
+
+        error = await writer(data).delete(safe.ProjectKey("project"), safe.VersionKey("1.0.0"))
+
+        assert error is None
+        assert await data.release(project_key="project", version="1.0.0").get() is None
+    assert not entry_exists(tmp_path / "unfinished" / "project" / "1.0.0")
+    assert not entry_exists(tmp_path / "unfinished" / "project" / "1.0.0.deleting-")
+
+
 def test_finalise_wiring() -> None:
     assert tasks.resolve(sql.TaskType.RELEASE_FINALISE) is svnpub.finalise
     assert sql.TaskType.RELEASE_FINALISE.label == "Release finalisation"

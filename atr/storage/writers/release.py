@@ -1705,7 +1705,7 @@ class FoundationAdmin(FoundationCommitter):
         if committee is None:
             raise datatypes.FailedError("Release has no committee - Invalid state")
         version_dir = paths.get_unfinished_dir() / task_args.project_key / task_args.version_key
-        tombstone_dir = paths.get_unfinished_dir() / task_args.project_key / f"{task_args.version_key}.deleting-"
+        tombstone_dir = paths.get_unfinished_tombstone_for(task_args.project_key, task_args.version_key)
         version_state = await self.__directory_state(version_dir)
         if version_state is False:
             raise datatypes.FailedError("The unfinished release path is not a directory")
@@ -1779,6 +1779,9 @@ class FoundationAdmin(FoundationCommitter):
             paths.get_archives_dir() / str(project_key) / str(version),
             paths.get_quarantined_dir() / str(project_key) / str(version),
         ]
+        if release.phase == sql.ReleasePhase.RELEASE:
+            release_dirs.append(paths.get_unfinished_dir() / str(project_key) / str(version))
+            release_dirs.append(paths.get_unfinished_tombstone_for(project_key, version))
 
         # Delete from the database using bulk SQL DELETE for efficiency
         log.info(f"Deleting database records for release: {project_key!s} {version!s}")

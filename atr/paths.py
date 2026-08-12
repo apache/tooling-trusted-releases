@@ -116,6 +116,10 @@ def get_unfinished_dir_for(
     return get_unfinished_dir() / project_key / version_key / revision
 
 
+def get_unfinished_tombstone_for(project_key: safe.ProjectKey, version_key: safe.VersionKey) -> safe.StatePath:
+    return get_unfinished_dir() / project_key / f"{version_key}.deleting-"
+
+
 def quarantine_directory(quarantined: sql.Quarantined) -> safe.StatePath:
     if not quarantined.token.isalnum():
         raise ValueError("Invalid quarantine token")
