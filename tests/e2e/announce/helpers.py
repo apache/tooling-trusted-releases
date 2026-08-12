@@ -15,10 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import time
 from typing import Final
 
 import e2e.helpers as root_helpers
-from playwright.sync_api import Locator, Page
+from playwright.sync_api import Page
 
 # Auto-archive scenario constants. Picks a permissive cycle_match so the
 # regex doesn't reject the older VERSION_KEY in announce/conftest.py
@@ -32,15 +33,19 @@ FINISH_POLICY_URL: Final[str] = "/projects/test?tab=finish"
 FINISHED_LIST_URL: Final[str] = "/releases/finished/test"
 CURRENT_ANNOUNCE_URL: Final[str] = f"/announce/test/{CURRENT_VERSION}"
 START_URL: Final[str] = "/start/test"
+ANNOUNCE_VERSION: Final[str] = "0.1+e2e-announce"
+PUBLISH_RUN: Final[str] = str(int(time.time()))
 
 
 def ensure_cycle_match(page: Page, cycle_match: str) -> None:
     """Set the project's cycle_match if it isn't already at the desired value."""
     root_helpers.visit(page, LIFECYCLE_POLICY_URL)
     field = page.locator("input#cycle_match")
-    if field.input_value() == cycle_match:
+    if (field.input_value() == cycle_match) and page.locator("#version_method_simple").is_checked():
         return
+    page.locator("#version_method_semver").check()
     field.fill(cycle_match)
+    page.locator("#version_method_simple").check()
     page.get_by_role("button", name="Save").click()
     page.wait_for_load_state()
 
@@ -64,8 +69,5 @@ def ensure_policy_auto_archive(page: Page, enabled: bool) -> None:
     page.wait_for_load_state()
 
 
-def fill_path_suffix(page: Page, value: str) -> Locator:
-    """Fill the download path suffix input and return the help text locator."""
-    help_text = page.locator("#download_path_suffix + .form-text")
-    page.locator("#download_path_suffix").fill(value)
-    return help_text
+def publish_suffix(version: str) -> str:
+    return f"{version}-{PUBLISH_RUN}"

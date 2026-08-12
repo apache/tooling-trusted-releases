@@ -36,7 +36,7 @@ def page_release_with_file(page: Page) -> Generator[Page]:
     helpers.delete_release_if_exists(page, sbom_helpers.PROJECT_KEY, sbom_helpers.VERSION_KEY)
 
     helpers.visit(page, f"/start/{sbom_helpers.PROJECT_KEY}")
-    page.get_by_role("textbox").type(sbom_helpers.VERSION_KEY)
+    page.locator("#version_key").fill(sbom_helpers.VERSION_KEY)
     page.get_by_role("button", name="Start new release").click()
     helpers.visit(page, f"/upload/{sbom_helpers.PROJECT_KEY}/{sbom_helpers.VERSION_KEY}")
     page.locator('input[name="file_data"]').set_input_files(

@@ -32,14 +32,14 @@ def test_filter_narrows_committee_count(page_releases: Page) -> None:
     expect(count_span).to_have_text("0")
 
 
-def test_project_tiles_link_to_finished_releases(page_releases: Page) -> None:
-    """Project tiles link through to a project's finished releases."""
+def test_project_tiles_link_to_catalog(page_releases: Page) -> None:
+    """Project tiles link through to a project's catalog page."""
     tiles = page_releases.locator(".page-project-subcard a.stretched-link")
     if tiles.count() == 0:
         return
     href = tiles.first.get_attribute("href")
     assert href is not None
-    assert "/releases/finished/" in href
+    assert "/catalog/" in href
 
 
 def test_releases_page_shows_committee_grid(page_releases: Page) -> None:

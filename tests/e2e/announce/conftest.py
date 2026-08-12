@@ -31,9 +31,8 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Page
 
 PROJECT_KEY: Final[str] = "test"
-PUBLISH_RUN: Final[str] = str(int(time.time()))
 # TODO: We need a convention to scope this per test
-VERSION_KEY: Final[str] = "0.1+e2e-announce"
+VERSION_KEY: Final[str] = announce_helpers.ANNOUNCE_VERSION
 FILE_NAME: Final[str] = "apache-test-0.2.tar.gz"
 CURRENT_DIR: Final[pathlib.Path] = pathlib.Path(__file__).parent.resolve()
 ANNOUNCE_URL: Final[str] = f"/announce/{PROJECT_KEY}/{VERSION_KEY}"
@@ -57,6 +56,7 @@ def announce_context(browser: Browser) -> Generator[BrowserContext]:
 
     helpers.visit(page, f"/start/{PROJECT_KEY}")
     page.locator("input#version_key").fill(VERSION_KEY)
+    page.locator("#download_path_suffix").fill(announce_helpers.publish_suffix(VERSION_KEY))
     page.get_by_role("button", name="Start new release").click()
     page.wait_for_url(f"**/compose/{PROJECT_KEY}/{VERSION_KEY}")
 
@@ -184,7 +184,7 @@ def _publish_release(page: Page, version: str) -> None:
 
 def _publish_to_svn(page: Page, version: str, max_attempts: int = 30) -> None:
     helpers.visit(page, f"/finish/{PROJECT_KEY}/{version}")
-    page.locator("#download_path_suffix").fill(f"{version}-{PUBLISH_RUN}")
+    assert page.locator("#download_path_suffix").input_value() == announce_helpers.publish_suffix(version)
     page.get_by_role("button", name="Publish to SVN").click()
     published_locator = page.locator('div.alert-success:has-text("Published to SVN")')
     for _ in range(max_attempts):
@@ -198,6 +198,7 @@ def _publish_to_svn(page: Page, version: str, max_attempts: int = 30) -> None:
 def _run_release_to_finish(context: BrowserContext, page: Page, version: str, opt_in_archive: bool) -> None:
     helpers.visit(page, f"/start/{PROJECT_KEY}")
     page.locator("input#version_key").fill(version)
+    page.locator("#download_path_suffix").fill(announce_helpers.publish_suffix(version))
     if opt_in_archive:
         page.locator("input#auto_archive_prior").check()
     page.get_by_role("button", name="Start new release").click()

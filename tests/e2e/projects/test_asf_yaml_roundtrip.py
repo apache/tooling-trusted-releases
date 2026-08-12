@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 _BASE_URL: Final[str] = os.environ.get("ATR_BASE_URL", "https://localhost.apache.org:8080")
 
-PROJECT_KEY: Final[str] = "test-asfyaml"
+PROJECT_KEY: Final[str] = "e2e-asfyaml"
 EXPORT_URL: Final[str] = f"/project/yaml/{PROJECT_KEY}"
 
 # The asfyaml import endpoint is gated to system PATs, so we authenticate as the
@@ -46,7 +46,7 @@ SYSTEM_SERVICE_UID: Final[str] = "system"
 SOURCE_YAML: Final[str] = """\
 project:
   metadata:
-    key: test-asfyaml
+    key: e2e-asfyaml
     committee: test
     name: Apache Test Asfyaml
     short_description: A round-trip fixture project.
