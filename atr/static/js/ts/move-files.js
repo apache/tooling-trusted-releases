@@ -333,6 +333,9 @@ async function moveFiles(files, dest, csrfToken, signal) {
             },
             signal,
         });
+        if (response.redirected) {
+            return { ok: false, message: "The server did not accept the move request. Please reload the page and try again." };
+        }
         if (response.ok) {
             return { ok: true };
         }
