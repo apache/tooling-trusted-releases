@@ -151,7 +151,12 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     """Create the base Quart application."""
     if asfquart.construct is ...:
         raise ValueError("asfquart.construct is not set")
-    app = asfquart.construct(__name__, token_file="secrets/generated/apptoken.txt", basic_auth=False)
+    app = asfquart.construct(
+        __name__,
+        app_dir=app_config.STATE_DIR,
+        token_file="secrets/generated/apptoken.txt",
+        basic_auth=False,
+    )
     app.jinja_environment = template.SyncEnvironment
     # ASFQuart sets secret_key from apptoken.txt, or generates a new one
     # We must preserve this because from_object will overwrite it
@@ -167,13 +172,10 @@ def _app_create_base(app_config: type[config.AppConfig]) -> base.QuartApp:
     return app
 
 
-def _app_dirs_setup(state_dir_str: str, hot_reload: bool) -> None:
+def _app_dirs_setup(state_dir_str: str) -> None:
     """Setup application directories."""
     if not os.path.isdir(state_dir_str):
         raise RuntimeError(f"State directory not found: {state_dir_str}")
-    os.chdir(state_dir_str)
-    if hot_reload is False:
-        print(f"Working directory changed to: {os.getcwd()}")
 
     # Note that the hypercorn directories are not managed by ATR
     directories_to_ensure = [
@@ -670,11 +672,12 @@ def _create_app(app_config: type[config.AppConfig]) -> base.QuartApp:
     """Create and configure the application."""
     if os.sep != "/":
         raise RuntimeError('ATR requires a POSIX compatible filesystem where os.sep is "/"')
+    _validate_launch_directory()
     config_mode = config.get_mode()
     hot_reload = _is_hot_reload()
     _validate_config(app_config, hot_reload)
     _migrate_state(app_config.STATE_DIR, hot_reload)
-    _app_dirs_setup(app_config.STATE_DIR, hot_reload)
+    _app_dirs_setup(app_config.STATE_DIR)
     _validate_secrets_permissions(pathlib.Path(app_config.STATE_DIR))
     log.performance_init()
     app = _app_create_base(app_config)
@@ -1328,6 +1331,11 @@ def _validate_config(app_config: type[config.AppConfig], hot_reload: bool) -> No
         print("Please remove downloads from the state directory", file=sys.stderr)
         print("Announced release files are now published to SVN", file=sys.stderr)
         print("!!!", file=sys.stderr)
+
+
+def _validate_launch_directory() -> None:
+    if os.listdir():
+        raise RuntimeError("ATR must be launched from an empty directory; make serve and start-atr.sh arrange this")
 
 
 def _validate_secrets_permissions(state_dir: pathlib.Path) -> None:

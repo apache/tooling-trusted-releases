@@ -33,6 +33,7 @@ import sqlalchemy
 import sqlalchemy.engine as engine
 import sqlmodel
 
+import atr.config as config
 import atr.constants as constants
 import atr.db as db
 import atr.log as log
@@ -202,7 +203,7 @@ class WorkerManager:
             if global_worker_debug:
                 timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
                 log_file_name = f"worker_{timestamp}_{os.getpid()}.log"
-                log_file_path = os.path.join(project_root, "state", log_file_name)
+                log_file_path = os.path.join(config.get().STATE_DIR, "logs", log_file_name)
 
                 # Open log file for writing
                 log_file = await asyncio.to_thread(open, log_file_path, "w")

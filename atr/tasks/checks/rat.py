@@ -197,11 +197,7 @@ def _check_core_logic_execute_rat(
     xml_output_path: str,
 ) -> tuple[checkdata.Rat | None, str | None]:
     """Execute Apache RAT and process its output."""
-    # Change working directory to scan_root when running the process
-    current_dir = os.getcwd()
-    os.chdir(scan_root)
-
-    log.info(f"Executing Apache RAT from directory: {os.getcwd()}")
+    log.info(f"Executing Apache RAT from directory: {scan_root}")
 
     try:
         # Run the actual RAT command
@@ -213,13 +209,13 @@ def _check_core_logic_execute_rat(
             text=True,
             check=False,
             timeout=300,
+            cwd=scan_root,
         )
 
         if process.returncode != 0:
             log.error(f"Apache RAT failed with return code {process.returncode}")
             log.error(f"STDOUT: {process.stdout}")
             log.error(f"STDERR: {process.stderr}")
-            os.chdir(current_dir)
             return checkdata.Rat(
                 message=f"Apache RAT process failed with code {process.returncode}",
                 errors=[
@@ -232,23 +228,17 @@ def _check_core_logic_execute_rat(
         log.info(f"Apache RAT completed successfully with return code {process.returncode}")
         log.info(f"stdout: {process.stdout[:200]}...")
     except subprocess.TimeoutExpired as e:
-        os.chdir(current_dir)
         log.error(f"Apache RAT process timed out: {e}")
         return checkdata.Rat(
             message="Apache RAT process timed out",
             errors=[f"Timeout: {e}"],
         ), None
     except (OSError, subprocess.SubprocessError) as e:
-        # Change back to the original directory before raising
-        os.chdir(current_dir)
         log.error(f"Exception running Apache RAT: {e}")
         return checkdata.Rat(
             message=f"Apache RAT process failed: {e}",
             errors=[f"Process error: {e}"],
         ), None
-
-    # Change back to the original directory
-    os.chdir(current_dir)
 
     # Check that the output file exists
     if not os.path.exists(xml_output_path):
@@ -256,7 +246,7 @@ def _check_core_logic_execute_rat(
         # List files in the temporary directory
         log.info(f"Files in {temp_dir}: {os.listdir(temp_dir)}")
         # Look in the current directory too
-        log.info(f"Files in current directory: {os.listdir('.')}")
+        log.info(f"Files in {scan_root}: {os.listdir(scan_root)}")
         return checkdata.Rat(
             message=f"RAT output XML file not found: {xml_output_path}",
             errors=[f"Missing output file: {xml_output_path}"],
@@ -376,41 +366,12 @@ def _synchronous_check_jar_exists(rat_jar_path: str) -> tuple[str, checkdata.Rat
     # Check that the RAT JAR exists
     if not os.path.exists(rat_jar_path):
         log.error(f"Apache RAT JAR not found at: {rat_jar_path}")
-        # Try a few common locations:
-        # ./rat.jar
-        # ./state/rat.jar
-        # ../rat.jar
-        # ../state/rat.jar
-        # NOTE: We're also doing something like this in task_verify_rat_license
-        # Should probably decide one place to do it, and do it well
-        alternative_paths = [
-            os.path.join(os.getcwd(), os.path.basename(rat_jar_path)),
-            os.path.join(os.getcwd(), "state", os.path.basename(rat_jar_path)),
-            os.path.join(os.path.dirname(os.getcwd()), os.path.basename(rat_jar_path)),
-            os.path.join(os.path.dirname(os.getcwd()), "state", os.path.basename(rat_jar_path)),
-        ]
+        return rat_jar_path, checkdata.Rat(
+            message=f"Apache RAT JAR not found at: {rat_jar_path}",
+            errors=[f"Missing JAR: {rat_jar_path}"],
+        )
 
-        for alt_path in alternative_paths:
-            if os.path.exists(alt_path):
-                log.info(f"Found alternative RAT JAR at: {alt_path}")
-                rat_jar_path = alt_path
-                break
-
-        # Double check whether we found the JAR
-        if not os.path.exists(rat_jar_path):
-            log.error("Tried alternative paths but Apache RAT JAR still not found")
-            log.error(f"Current directory: {os.getcwd()}")
-            log.error(f"Directory contents: {os.listdir(os.getcwd())}")
-            if os.path.exists("state"):
-                log.error(f"State directory contents: {os.listdir('state')}")
-
-            return rat_jar_path, checkdata.Rat(
-                message=f"Apache RAT JAR not found at: {rat_jar_path}",
-                errors=[f"Missing JAR: {rat_jar_path}"],
-            )
-    else:
-        log.info(f"Found Apache RAT JAR at: {rat_jar_path}")
-
+    log.info(f"Found Apache RAT JAR at: {rat_jar_path}")
     return rat_jar_path, None
 
 

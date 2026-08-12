@@ -27,12 +27,15 @@ import decouple
 
 import atr.sandbox as sandbox
 
+_ENVIRONMENT_CONFIG: Final = decouple.Config(decouple.RepositoryEmpty())
 _MB: Final = 1024 * 1024
 _GB: Final = 1024 * _MB
 _RAT_VERSION: Final = "0.18"
 
 
 def _config_secrets(key: str, state_dir: str, default: str | None = None, cast: type = str) -> str | None:
+    if not state_dir.startswith("/"):
+        raise RuntimeError("STATE_DIR must be an absolute path")
     secrets_path = os.path.join(state_dir, "secrets", "curated", "secrets.ini")
     return _config_secrets_get(secrets_path, key, default, cast)
 
@@ -41,7 +44,7 @@ def _config_secrets_get(secrets_path: str, key: str, default: str | None = None,
     sentinel = object()
     # We do not use the cast keyword argument here
     # If we did, it would also be applied to the default sentinel value
-    value = decouple.config(key, default=sentinel)
+    value = _ENVIRONMENT_CONFIG(key, default=sentinel)
     if value is not sentinel:
         if not isinstance(value, str):
             raise ValueError(f"Secret value for {key} is not a string")
@@ -107,31 +110,31 @@ def _validate_svn_publish(conf: type["AppConfig"]) -> None:
 
 
 class AppConfig:
-    ACCOUNT_CHECK_INTERVAL = decouple.config("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
-    ATR_STATUS = decouple.config("ATR_STATUS", default="ALPHA", cast=str)
-    DISABLE_CHECK_CACHE = decouple.config("DISABLE_CHECK_CACHE", default=False, cast=bool)
-    APP_HOST = decouple.config("APP_HOST", default="127.0.0.1")
-    SSH_HOST = decouple.config("SSH_HOST", default="0.0.0.0")
-    SSH_PORT = decouple.config("SSH_PORT", default=2222, cast=int)
+    ACCOUNT_CHECK_INTERVAL = _ENVIRONMENT_CONFIG("ACCOUNT_CHECK_INTERVAL", default=300, cast=int)
+    ATR_STATUS = _ENVIRONMENT_CONFIG("ATR_STATUS", default="ALPHA", cast=str)
+    DISABLE_CHECK_CACHE = _ENVIRONMENT_CONFIG("DISABLE_CHECK_CACHE", default=False, cast=bool)
+    APP_HOST = _ENVIRONMENT_CONFIG("APP_HOST", default="127.0.0.1")
+    SSH_HOST = _ENVIRONMENT_CONFIG("SSH_HOST", default="0.0.0.0")
+    SSH_PORT = _ENVIRONMENT_CONFIG("SSH_PORT", default=2222, cast=int)
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    STATE_DIR = decouple.config("STATE_DIR", default=os.path.join(PROJECT_ROOT, "state"))
+    STATE_DIR = _ENVIRONMENT_CONFIG("STATE_DIR", default=os.path.join(PROJECT_ROOT, "state"))
     LDAP_BIND_DN = _config_secrets("LDAP_BIND_DN", STATE_DIR, default=None, cast=str)
     LDAP_BIND_PASSWORD = _config_secrets("LDAP_BIND_PASSWORD", STATE_DIR, default=None, cast=str)
-    LOG_LEVEL = decouple.config("LOG_LEVEL", default="INFO", cast=lambda x: x.upper())
-    LOG_JSON = decouple.config("LOG_JSON", default=False, cast=bool)
+    LOG_LEVEL = _ENVIRONMENT_CONFIG("LOG_LEVEL", default="INFO", cast=lambda x: x.upper())
+    LOG_JSON = _ENVIRONMENT_CONFIG("LOG_JSON", default=False, cast=bool)
     LOG_PUBLIC_KEY = _config_secrets("LOG_PUBLIC_KEY", STATE_DIR, default=None, cast=str)
-    MAX_SESSION_AGE = decouple.config("MAX_SESSION_AGE", default=60 * 60 * 72, cast=int)
+    MAX_SESSION_AGE = _ENVIRONMENT_CONFIG("MAX_SESSION_AGE", default=60 * 60 * 72, cast=int)
     PUBSUB_URL = _config_secrets("PUBSUB_URL", STATE_DIR, default=None, cast=str)
     PUBSUB_USER = _config_secrets("PUBSUB_USER", STATE_DIR, default=None, cast=str)
     PUBSUB_PASSWORD = _config_secrets("PUBSUB_PASSWORD", STATE_DIR, default=None, cast=str)
     # The dist pubsub watcher catalogues non-ATR releases it sees. Off by default, so
     # it runs in report mode (logs what it would create); set true to write to the db.
-    DIST_CATALOG_WRITE = decouple.config("DIST_CATALOG_WRITE", default=False, cast=bool)
+    DIST_CATALOG_WRITE = _ENVIRONMENT_CONFIG("DIST_CATALOG_WRITE", default=False, cast=bool)
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
-    SVN_DIST_PUBLIC_URL = decouple.config("SVN_DIST_PUBLIC_URL", default="https://dist.apache.org/repos/dist/atr")
+    SVN_DIST_PUBLIC_URL = _ENVIRONMENT_CONFIG("SVN_DIST_PUBLIC_URL", default="https://dist.apache.org/repos/dist/atr")
     GITHUB_TOKEN = _config_secrets("GITHUB_TOKEN", STATE_DIR, default=None, cast=str)
-    CAP_API_BASE_URL = decouple.config("CAP_API_BASE_URL", default="https://cap-test.apache.org")
+    CAP_API_BASE_URL = _ENVIRONMENT_CONFIG("CAP_API_BASE_URL", default="https://cap-test.apache.org")
     CAP_ROLE_ACCOUNT_TOKEN = _config_secrets("CAP_ROLE_ACCOUNT_TOKEN", STATE_DIR, default=None, cast=str)
     RELEASE_CATALOG_URL = _config_secrets("RELEASE_CATALOG_URL", STATE_DIR, default="https://catalog.apache.org/")
 
@@ -154,7 +157,7 @@ class AppConfig:
     ATTESTABLE_STORAGE_DIR = os.path.join(STATE_DIR, "attestable")
     # The static release catalog site, rebuilt from the catalogue on each change
     CATALOG_SITE_DIR = os.path.join(STATE_DIR, "catalog-site")
-    SQLITE_DB_PATH = decouple.config("SQLITE_DB_PATH", default="database/atr.db")
+    SQLITE_DB_PATH = _ENVIRONMENT_CONFIG("SQLITE_DB_PATH", default="database/atr.db")
     STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
     AUTH_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "auth-audit.log")
     PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
@@ -162,15 +165,17 @@ class AppConfig:
     TASK_LOG_FILE = os.path.join(STATE_DIR, "logs", "tasks.log")
 
     # Apache RAT configuration
-    APACHE_RAT_JAR_PATH = decouple.config("APACHE_RAT_JAR_PATH", default=f"/opt/tools/apache-rat-{_RAT_VERSION}.jar")
+    APACHE_RAT_JAR_PATH = _ENVIRONMENT_CONFIG(
+        "APACHE_RAT_JAR_PATH", default=f"/opt/tools/apache-rat-{_RAT_VERSION}.jar"
+    )
     # Maximum content length for requests
-    MAX_CONTENT_LENGTH: int = decouple.config("MAX_CONTENT_LENGTH", default=512 * _MB, cast=int)
+    MAX_CONTENT_LENGTH: int = _ENVIRONMENT_CONFIG("MAX_CONTENT_LENGTH", default=512 * _MB, cast=int)
     # Maximum duration to receive upload request bodies
-    UPLOAD_BODY_TIMEOUT: int = decouple.config("UPLOAD_BODY_TIMEOUT", default=3600, cast=int)
+    UPLOAD_BODY_TIMEOUT: int = _ENVIRONMENT_CONFIG("UPLOAD_BODY_TIMEOUT", default=3600, cast=int)
     # Maximum size limit for archive extraction
-    MAX_EXTRACT_SIZE: int = decouple.config("MAX_EXTRACT_SIZE", default=2 * _GB, cast=int)
+    MAX_EXTRACT_SIZE: int = _ENVIRONMENT_CONFIG("MAX_EXTRACT_SIZE", default=2 * _GB, cast=int)
     # Chunk size for reading files during extraction
-    EXTRACT_CHUNK_SIZE: int = decouple.config("EXTRACT_CHUNK_SIZE", default=4 * _MB, cast=int)
+    EXTRACT_CHUNK_SIZE: int = _ENVIRONMENT_CONFIG("EXTRACT_CHUNK_SIZE", default=4 * _MB, cast=int)
 
     # Session cookie security
     SESSION_COOKIE_SECURE = True
@@ -181,8 +186,8 @@ class AppConfig:
     # CSRF time limit
     WTF_CSRF_TIME_LIMIT = None
 
-    ADMIN_USERS_ADDITIONAL = decouple.config("ADMIN_USERS_ADDITIONAL", default="", cast=str)
-    TOOLING_USERS_ADDITIONAL = decouple.config("TOOLING_USERS_ADDITIONAL", default="", cast=str)
+    ADMIN_USERS_ADDITIONAL = _ENVIRONMENT_CONFIG("ADMIN_USERS_ADDITIONAL", default="", cast=str)
+    TOOLING_USERS_ADDITIONAL = _ENVIRONMENT_CONFIG("TOOLING_USERS_ADDITIONAL", default="", cast=str)
 
 
 class DebugConfig(AppConfig):
@@ -236,9 +241,9 @@ def get() -> type[AppConfig]:
 def get_mode() -> Mode:
     global _global_mode
 
-    profiling = decouple.config("PROFILING", default=False, cast=bool)
-    production = decouple.config("PRODUCTION", default=False, cast=bool)
-    test = decouple.config("TESTS", default=False, cast=bool)
+    profiling = _ENVIRONMENT_CONFIG("PROFILING", default=False, cast=bool)
+    production = _ENVIRONMENT_CONFIG("PRODUCTION", default=False, cast=bool)
+    test = _ENVIRONMENT_CONFIG("TESTS", default=False, cast=bool)
 
     # Make sure we don't set more than one - which would fall back into whichever is first in the next conditional
     # This prevents accidental production in test mode, for example
@@ -322,7 +327,9 @@ def validate() -> None:
         (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
         (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
+        (conf.REQUEST_LOG_FILE, "REQUEST_LOG_FILE"),
         (conf.TASK_LOG_FILE, "TASK_LOG_FILE"),
+        (conf.APACHE_RAT_JAR_PATH, "APACHE_RAT_JAR_PATH"),
     ]
     relative_paths = [
         (conf.SQLITE_DB_PATH, "SQLITE_DB_PATH"),

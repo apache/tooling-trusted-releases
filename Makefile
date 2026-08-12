@@ -7,7 +7,7 @@
 BIND ?= 127.0.0.1:8080
 IMAGE ?= tooling-trusted-release
 STATE_DIR ?= state
-SVN_PUBLISH_URL ?= file://$(abspath $(STATE_DIR)/dev-svn-repo)
+SVN_PUBLISH_URL ?=
 SVN_TOKEN ?= dummy
 
 build: build-alpine
@@ -113,21 +113,28 @@ run-playwright-slow:
 	docker run --net=host -it atr-playwright python3 test.py --tidy
 
 serve:
-	@scripts/check-certs
-	@scripts/check-perms
-	SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
-	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
+	@STATE_DIR="$(STATE_DIR)" scripts/check-certs
+	@STATE_DIR="$(STATE_DIR)" scripts/check-perms
+	@root="$$PWD"; case "$(STATE_DIR)" in /*) sd="$(STATE_DIR)";; *) sd="$$root/$(STATE_DIR)";; esac; \
+	mkdir -p "$$sd/launch" && cd "$$sd/launch" && \
+	SSH_HOST=127.0.0.1 STATE_DIR="$$sd" PYTHONPATH="$$root" \
+	  uv run --frozen --project "$$root" hypercorn --bind $(BIND) \
+	  --keyfile "$$sd/hypercorn/secrets/localhost.apache.org+2-key.pem" \
+	  --certfile "$$sd/hypercorn/secrets/localhost.apache.org+2.pem" \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 serve-local: svn-dev-repo
-	@scripts/check-certs
-	@scripts/check-perms
-	@APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
-	  SVN_PUBLISH_URL="$(SVN_PUBLISH_URL)" SVN_TOKEN="$(SVN_TOKEN)" \
-	  SSH_HOST=127.0.0.1 uv run --frozen hypercorn --bind $(BIND) \
-	  --keyfile hypercorn/secrets/localhost.apache.org+2-key.pem \
-	  --certfile hypercorn/secrets/localhost.apache.org+2.pem \
+	@STATE_DIR="$(STATE_DIR)" scripts/check-certs
+	@STATE_DIR="$(STATE_DIR)" scripts/check-perms
+	@root="$$PWD"; case "$(STATE_DIR)" in /*) sd="$(STATE_DIR)";; *) sd="$$root/$(STATE_DIR)";; esac; \
+	svnurl="$(SVN_PUBLISH_URL)"; svnurl="$${svnurl:-file://$$sd/dev-svn-repo}"; \
+	mkdir -p "$$sd/launch" && cd "$$sd/launch" && \
+	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
+	  SVN_PUBLISH_URL="$$svnurl" SVN_TOKEN="$(SVN_TOKEN)" \
+	  SSH_HOST=127.0.0.1 STATE_DIR="$$sd" PYTHONPATH="$$root" \
+	  uv run --frozen --project "$$root" hypercorn --bind $(BIND) \
+	  --keyfile "$$sd/hypercorn/secrets/localhost.apache.org+2-key.pem" \
+	  --certfile "$$sd/hypercorn/secrets/localhost.apache.org+2.pem" \
 	  atr.server:app --debug --reload --worker-class uvloop
 
 svn-dev-repo:
@@ -136,7 +143,8 @@ svn-dev-repo:
 	else echo "Local SVN repo already exists at $(STATE_DIR)/dev-svn-repo"; \
 	fi
 	@echo
-	@echo "serve-local publishes to $(SVN_PUBLISH_URL) unless overridden"
+	@case "$(STATE_DIR)" in /*) sd="$(STATE_DIR)";; *) sd="$$PWD/$(STATE_DIR)";; esac; \
+	svnurl="$(SVN_PUBLISH_URL)"; echo "serve-local publishes to $${svnurl:-file://$$sd/dev-svn-repo} unless overridden"
 
 sync:
 	uv sync --frozen --no-dev

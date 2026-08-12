@@ -1791,7 +1791,7 @@ async def performance(_session: web.Committer, _performance: Literal["performanc
         raise base.ASFQuartException("APP is not set", errorcode=500)
 
     # Read and parse the performance log file
-    log_path = pathlib.Path("logs") / "route-performance.log"
+    log_path = pathlib.Path(config.get().PERFORMANCE_LOG_FILE)
     # # Show current working directory and its files
     # cwd = await asyncio.to_thread(Path.cwd)
     # await asyncio.to_thread(APP.logger.info, "Current working directory: %s", cwd)
@@ -2779,15 +2779,19 @@ async def _update_keys(asf_uid: str) -> int:
     if not hasattr(app, "background_tasks"):
         app.background_tasks = set()
 
-    if await aiofiles.os.path.exists("../Dockerfile.alpine"):
-        # Not in a container, developing locally
-        command = ["uv", "run", "--frozen", "python3", "scripts/keys_import.py", asf_uid]
-    else:
-        # In a container
-        command = [sys.executable, "scripts/keys_import.py", asf_uid]
+    project_root = config.get().PROJECT_ROOT
+    script_path = os.path.join(project_root, "scripts", "keys_import.py")
+    env = os.environ.copy()
+    python_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{project_root}:{python_path}" if python_path else project_root
 
     process = await asyncio.create_subprocess_exec(
-        *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=".."
+        sys.executable,
+        script_path,
+        asf_uid,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
 
     task = asyncio.create_task(_log_process(process))

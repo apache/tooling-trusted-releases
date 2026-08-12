@@ -85,6 +85,9 @@ def process_revision_directives_custom_naming(
     """Generate revision IDs and filenames like NNNN_YYYY.MM.DD_COMMITSHORT.py."""
     global project_root
 
+    if alembic_config.cmd_opts is None:
+        return
+
     if context.script is None:
         raise RuntimeError("MigrationContext.script is None, cannot determine script directory")
 

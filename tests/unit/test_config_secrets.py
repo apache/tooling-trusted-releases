@@ -23,6 +23,12 @@ import pytest
 import atr.config as config
 
 
+def test_config_secrets_rejects_relative_state_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXAMPLE_SECRET", "from-environment")
+    with pytest.raises(RuntimeError, match="absolute"):
+        config._config_secrets("EXAMPLE_SECRET", "relative/state")
+
+
 def test_environment_override_warns(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

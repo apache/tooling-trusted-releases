@@ -27,7 +27,7 @@ import time
 import traceback
 from typing import TYPE_CHECKING
 
-sys.path.append(".")
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 
 import atr.cache as cache

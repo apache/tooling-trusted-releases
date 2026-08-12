@@ -34,7 +34,10 @@ fi
 
 mkdir -p /opt/atr/state/hypercorn/logs
 echo "Starting hypercorn on ${BIND}" >> /opt/atr/state/hypercorn/logs/hypercorn.log
+mkdir -p /opt/atr/state/launch
+cd /opt/atr/state/launch
+export PYTHONPATH=/opt/atr
 exec hypercorn --worker-class uvloop --bind "${BIND}" \
-  --keyfile hypercorn/secrets/key.pem \
-  --certfile hypercorn/secrets/cert.pem \
+  --keyfile /opt/atr/state/hypercorn/secrets/key.pem \
+  --certfile /opt/atr/state/hypercorn/secrets/cert.pem \
   atr.server:app >> /opt/atr/state/hypercorn/logs/hypercorn.log 2>&1

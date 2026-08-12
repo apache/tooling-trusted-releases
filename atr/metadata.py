@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import pathlib
+
 
 def _get_undefined() -> tuple[str, str]:
     return "undefined", "undefined"
@@ -30,9 +32,13 @@ def _get_version_from_git() -> tuple[str, str] | None:
         # a development environment.
         return None
 
+    project_root = pathlib.Path(__file__).resolve().parent.parent
+    if not (project_root / ".git").exists():
+        return None
+
     try:
         # We start in state/, so we need to go up one level
-        version = dunamai.Version.from_git()
+        version = dunamai.Version.from_git(path=project_root)
         if version.distance > 0:
             dirty = "+dirty" if version.dirty else ""
             # The development version number should reflect the next release that is going to be cut,

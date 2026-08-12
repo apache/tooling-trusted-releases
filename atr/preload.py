@@ -23,7 +23,6 @@ being run in an asynchronous context.
 """
 
 import asyncio
-import os
 import pathlib
 
 import asfquart.base as base
@@ -53,7 +52,7 @@ def _preload_templates(app: base.QuartApp) -> None:
     # Checking for modifications means that Jinja will call os.stat() in an asynchronous context
     app.jinja_env.auto_reload = False
 
-    template_dir = pathlib.Path(os.path.join(os.path.dirname(os.getcwd()), "atr", "templates"))
+    template_dir = pathlib.Path(app.root_path) / "templates"
 
     if not template_dir.exists():
         print(f"Warning: Template directory {template_dir} does not exist")

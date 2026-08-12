@@ -53,8 +53,6 @@ _GITHUB_OIDC_EXPECTED: Final[dict[str, str]] = {
 _GITHUB_OIDC_ISSUER: Final[str] = "https://token.actions.githubusercontent.com"
 _GITHUB_TRUSTED_DOMAINS: Final[list[str]] = ["token.actions.githubusercontent.com"]
 _JWT_KEY_APP_EXTENSION: Final[str] = "jwt_secret_key"
-_JWT_KEY_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt")
-_JWT_KEY_TMP_PATH: Final[pathlib.Path] = pathlib.Path("secrets/generated/jwt_secret_key.txt.tmp")
 _JWT_KEY_HEX_LENGTH: Final[int] = (256 // 8) * 2
 
 
@@ -239,16 +237,25 @@ def _extract_bearer_token(request: quart.Request) -> str:
     return token
 
 
+def _jwt_key_path() -> pathlib.Path:
+    return pathlib.Path(config.get().STATE_DIR) / "secrets" / "generated" / "jwt_secret_key.txt"
+
+
+def _jwt_key_tmp_path() -> pathlib.Path:
+    return pathlib.Path(config.get().STATE_DIR) / "secrets" / "generated" / "jwt_secret_key.txt.tmp"
+
+
 def _new_signing_key() -> str:
     return secrets.token_hex(256 // 8)
 
 
 def _read_signing_key() -> str | None:
-    if not _JWT_KEY_PATH.exists():
+    key_path = _jwt_key_path()
+    if not key_path.exists():
         return None
-    key = _JWT_KEY_PATH.read_text(encoding="utf-8").strip()
+    key = key_path.read_text(encoding="utf-8").strip()
     if key == "":
-        raise RuntimeError(f"JWT signing key file is empty: {_JWT_KEY_PATH}")
+        raise RuntimeError(f"JWT signing key file is empty: {key_path}")
     if len(key) != _JWT_KEY_HEX_LENGTH:
         raise RuntimeError("JWT signing key is not 256 bits")
     return key
@@ -310,13 +317,15 @@ def _write_signing_key(key: str) -> None:
         raise ValueError("JWT signing key must not be empty")
     if len(key) != _JWT_KEY_HEX_LENGTH:
         raise ValueError("JWT signing key must be 256 bits")
-    _JWT_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if _JWT_KEY_TMP_PATH.exists():
-        _JWT_KEY_TMP_PATH.unlink()
-    temp_fd = os.open(_JWT_KEY_TMP_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    key_path = _jwt_key_path()
+    key_tmp_path = _jwt_key_tmp_path()
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    if key_tmp_path.exists():
+        key_tmp_path.unlink()
+    temp_fd = os.open(key_tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(temp_fd, "w", encoding="utf-8") as file:
         file.write(key)
         file.flush()
         os.fsync(file.fileno())
-    os.chmod(_JWT_KEY_TMP_PATH, 0o400)
-    os.replace(_JWT_KEY_TMP_PATH, _JWT_KEY_PATH)
+    os.chmod(key_tmp_path, 0o400)
+    os.replace(key_tmp_path, key_path)

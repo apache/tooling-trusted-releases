@@ -58,13 +58,6 @@ _MESSAGE_SEND_SENSITIVE_ARGS: Final = frozenset({"body", "email_to", "email_cc",
 
 def main() -> None:
     """Main entry point."""
-    import atr.config as config
-
-    conf = config.get()
-    config.validate()
-    if os.path.isdir(conf.STATE_DIR):
-        os.chdir(conf.STATE_DIR)
-
     listeners = _setup_logging()
     log.add_context(worker_pid=os.getpid())
     log.info(f"Starting worker process with pid {os.getpid()}")
@@ -184,12 +177,13 @@ def _setup_logging() -> list[logging.handlers.QueueListener]:
 
     conf = config.get()
 
-    os.makedirs("logs", exist_ok=True)
+    worker_log_path = os.path.join(conf.STATE_DIR, "logs", "atr-worker.log")
+    os.makedirs(os.path.dirname(worker_log_path), exist_ok=True)
     os.makedirs(os.path.dirname(conf.STORAGE_AUDIT_LOG_FILE), exist_ok=True)
     os.makedirs(os.path.dirname(conf.TASK_LOG_FILE), exist_ok=True)
 
     shared_processors = loggers.shared_processors()
-    output_handler = logging.FileHandler("logs/atr-worker.log")
+    output_handler = logging.FileHandler(worker_log_path)
     output_handler.setFormatter(loggers.create_json_formatter(shared_processors))
 
     logging.basicConfig(level=logging.INFO, handlers=[output_handler], force=True)
@@ -479,12 +473,16 @@ async def _worker_loop_run() -> None:
 
 
 if __name__ == "__main__":
+    import atr.config as config
+
+    config.validate()
     log.info("Starting ATR worker...")
     try:
         main()
     except Exception as e:
-        os.makedirs("logs", exist_ok=True)
-        with open("logs/atr-worker-error.log", "a") as f:
+        error_log_path = os.path.join(config.get().STATE_DIR, "logs", "atr-worker-error.log")
+        os.makedirs(os.path.dirname(error_log_path), exist_ok=True)
+        with open(error_log_path, "a") as f:
             f.write(f"{datetime.datetime.now(datetime.UTC)}: {e}\n")
             f.flush()
         raise
