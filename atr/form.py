@@ -157,6 +157,19 @@ def flash_error_summary(errors: list[pydantic_core.ErrorDetails], flash_data: di
     return markupsafe.Markup(summary)
 
 
+def flash_error_text(flash_data: dict[str, Any]) -> str:
+    parts = []
+    for flash_datum in flash_data.values():
+        if "msg" not in flash_datum:
+            continue
+        label = flash_datum["label"]
+        if label == "*":
+            parts.append(flash_datum["msg"])
+        else:
+            parts.append(f"{label}: {flash_datum['msg']}")
+    return "; ".join(parts)
+
+
 def json_suitable(field_value: Any) -> Any:
     if isinstance(field_value, datastructures.FileStorage):
         return field_value.filename
