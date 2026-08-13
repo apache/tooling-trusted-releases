@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import contextlib
-import datetime
 import json
 import logging
 from typing import TYPE_CHECKING, Final, Protocol
@@ -575,8 +574,7 @@ class Write:
 # Do not rename this interface
 # It is named to reserve the atr.storage.audit logger name
 def audit(**kwargs: basic.JSON) -> None:
-    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
-    now = now.replace("+00:00", "Z")
+    now = log.audit_datetime()
     action = log.caller_name(depth=2)
     request_user_id = log.get_context("user_id")
     admin_user_id = log.get_context("admin_id")

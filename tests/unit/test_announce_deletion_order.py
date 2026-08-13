@@ -22,16 +22,25 @@ from typing import Any
 
 import pytest
 
+import atr.models.args as args
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.announce as announce
 
 
+def added_tasks(release_manager: announce.ReleaseManager, task_type: sql.TaskType) -> list[sql.Task]:
+    data = getattr(release_manager, "_ReleaseManager__data")
+    added = [call.args[0] for call in data.add.call_args_list]
+    return [task for task in added if getattr(task, "task_type", None) == task_type]
+
+
 def announcing_writer(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, calls: list[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, calls: list[str], finalise: bool = False
 ) -> announce.ReleaseManager:
     unfinished = tmp_path / "unfinished" / "example" / "2.0.0"
     (unfinished / "00003").mkdir(parents=True)
+    monkeypatch.setattr(announce.config.get(), "RELEASE_FINALISE", finalise)
     monkeypatch.setattr(announce.aioshutil, "move", mock.AsyncMock(side_effect=lambda *a, **k: calls.append("move")))
     monkeypatch.setattr(announce.config, "is_dev_environment", lambda: True)
     monkeypatch.setattr(announce.config, "svn_publish_kind", lambda: announce.config.SvnPublishKind.ASF_DISTRIBUTION)
@@ -49,9 +58,10 @@ def announcing_writer(
     monkeypatch.setattr(
         announce.construct, "release_notification", lambda *a, **k: SimpleNamespace(as_task_args=lambda: {})
     )
+    monkeypatch.setattr(announce.log, "audit_flush", lambda: calls.append("flush"))
     monkeypatch.setattr(announce.paths, "release_directory", lambda _release: tmp_path / "finished" / "example")
     monkeypatch.setattr(announce.paths, "release_directory_base", lambda _release: unfinished)
-    monkeypatch.setattr(announce.util, "chmod_directories", lambda *a, **k: None)
+    monkeypatch.setattr(announce.util, "chmod_directories", lambda *a, **k: calls.append("chmod"))
     monkeypatch.setattr(
         announce.util,
         "delete_immutable_directory",
@@ -65,6 +75,11 @@ def announcing_writer(
     data.release.return_value.demand = mock.AsyncMock(return_value=release_row())
     # A released version queues a catalog-site regeneration, which first looks for an existing queued one.
     data.task.return_value.get = mock.AsyncMock(return_value=None)
+    data.add = mock.MagicMock(
+        side_effect=lambda obj: (
+            calls.append("finalise") if getattr(obj, "task_type", None) == sql.TaskType.RELEASE_FINALISE else None
+        )
+    )
     data.commit = mock.AsyncMock(side_effect=lambda: calls.append("commit"))
     release_manager = object.__new__(announce.ReleaseManager)
     release_manager._ReleaseManager__data = data
@@ -139,7 +154,33 @@ async def test_commit_failure_skips_prior_revision_deletion(
     with pytest.raises(storage.AccessError, match="Files moved successfully"):
         await release_manager.release(**release_arguments())
 
-    assert calls == ["move"]
+    assert calls == ["chmod", "move"]
+
+
+@pytest.mark.asyncio
+async def test_finalise_queues_task_and_keeps_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    calls: list[str] = []
+    release_manager = announcing_writer(monkeypatch, tmp_path, calls, finalise=True)
+    monkeypatch.setattr(
+        announce.interaction,
+        "release_completed_svn_publish_task_for_revision",
+        mock.AsyncMock(return_value=SimpleNamespace(task_args={}, result={"svn_revision": 85})),
+    )
+
+    await release_manager.release(**release_arguments())
+
+    assert calls == ["flush", "finalise", "commit"]
+    tasks = added_tasks(release_manager, sql.TaskType.RELEASE_FINALISE)
+    assert len(tasks) == 1
+    task_args = tasks[0].task_args
+    parsed = args.ReleaseFinalise.model_validate(task_args)
+    assert parsed.svn_revision == 85
+    audit_call = release_manager._ReleaseManager__write_as.append_to_audit_log.call_args
+    assert audit_call.kwargs["action"] == "release_announce"
+    assert audit_call.kwargs["datetime"] == parsed.audit_until
+    rows_path = release_manager._ReleaseManager__write_artifact_rows.call_args.args[2]
+    assert pathlib.Path(str(rows_path)) == tmp_path / "unfinished" / "example" / "2.0.0" / "00003"
+    assert (tmp_path / "unfinished" / "example" / "2.0.0" / "00003").is_dir()
 
 
 @pytest.mark.asyncio
@@ -149,4 +190,7 @@ async def test_prior_revisions_deleted_after_commit(monkeypatch: pytest.MonkeyPa
 
     await release_manager.release(**release_arguments())
 
-    assert calls == ["move", "commit", "delete"]
+    assert calls == ["chmod", "move", "commit", "delete"]
+    assert added_tasks(release_manager, sql.TaskType.RELEASE_FINALISE) == []
+    audit_call = release_manager._ReleaseManager__write_as.append_to_audit_log.call_args
+    assert audit_call.kwargs["action"] == "release_announce"

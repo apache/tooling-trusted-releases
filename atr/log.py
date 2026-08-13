@@ -60,6 +60,18 @@ def add_context(**kwargs):
     structlog.contextvars.bind_contextvars(**kwargs)
 
 
+def audit_datetime() -> str:
+    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
+    return now.replace("+00:00", "Z")
+
+
+def audit_flush() -> None:
+    for handler in logging.getLogger("atr.storage.audit").handlers:
+        handler_queue = getattr(handler, "queue", None)
+        if handler_queue is not None:
+            handler_queue.join()
+
+
 def auth_event(event: str, asfuid: str | None = None, **kwargs):
     request_user_id = get_context("user_id")
     request_asf_id = get_context("asfuid")

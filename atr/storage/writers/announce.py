@@ -30,6 +30,7 @@ import aioshutil
 import sqlmodel
 
 import atr.analysis as analysis
+import atr.auditlog as auditlog
 import atr.catalog_site as catalog_site
 import atr.config as config
 import atr.construct as construct
@@ -208,15 +209,19 @@ class ReleaseManager(CommitteeParticipant):
         subject, _ = await construct.announce_release_subject_and_body(subject_template, "", options)
 
         # Prepare paths for file operations
+        finalise = config.get().RELEASE_FINALISE
         unfinished_revisions_path = paths.release_directory_base(release)
         unfinished_path = unfinished_revisions_path / release.unwrap_revision_number
         unfinished_dir = str(unfinished_path)
         release_date = datetime.datetime.now(datetime.UTC)
-        predicted_finished_release = self.__predicted_finished_release(release, release_date)
-        finished_path = paths.release_directory(predicted_finished_release)
-        finished_dir = str(finished_path)
-        if await aiofiles.os.path.exists(finished_dir):
-            raise storage.AccessError("Release already exists", status=409)
+        artifact_files_path = unfinished_path
+        if not finalise:
+            predicted_finished_release = self.__predicted_finished_release(release, release_date)
+            finished_path = paths.release_directory(predicted_finished_release)
+            finished_dir = str(finished_path)
+            artifact_files_path = finished_path
+            if await aiofiles.os.path.exists(finished_dir):
+                raise storage.AccessError("Release already exists", status=409)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
         completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
@@ -259,29 +264,71 @@ class ReleaseManager(CommitteeParticipant):
                 status=503,
             )
 
-        # Ensure that the permissions of every directory are 755
-        await asyncio.to_thread(util.chmod_directories, unfinished_path)
-
-        try:
-            # Move the release files from somewhere in unfinished to somewhere in finished
-            # The whole finished hierarchy is write once for each directory, and then read only
-            # TODO: Set permissions to help enforce this, or find alternative methods
-            await aioshutil.move(unfinished_dir, finished_dir)
+        audit_stamp = log.audit_datetime()
+        finalise_args: args.ReleaseFinalise | None = None
+        if finalise:
+            if published_revision is None:
+                raise storage.AccessError(
+                    "The completed SVN publish has no recorded revision - Invalid state", status=500
+                )
+            finalise_args = args.ReleaseFinalise(
+                asf_uid=self.__asf_uid,
+                project_key=project_key,
+                version_key=version_key,
+                revision_number=preview_revision_number,
+                svn_revision=published_revision,
+                download_path_suffix=effective_download_path_suffix,
+                audit_until=audit_stamp,
+            )
             self.__write_as.append_to_audit_log(
+                action=auditlog.RELEASE_ANNOUNCE_ACTION,
+                datetime=audit_stamp,
                 asf_uid=self.__asf_uid,
                 project_key=str(project_key),
                 version_key=str(version_key),
                 revision_number=str(preview_revision_number),
-                source_directory=unfinished_dir,
-                target_directory=finished_dir,
                 email_to=email_to,
                 email_cc=basic.as_json(email_cc or []),
                 email_bcc=basic.as_json(email_bcc or []),
             )
-        except Exception as e:
-            raise storage.AccessError(f"Error moving files: {e!s}", status=500)
+            await asyncio.to_thread(log.audit_flush)
+        else:
+            # Ensure that the permissions of every directory are 755
+            await asyncio.to_thread(util.chmod_directories, unfinished_path)
+            try:
+                # Move the release files from somewhere in unfinished to somewhere in finished
+                # The whole finished hierarchy is write once for each directory, and then read only
+                # TODO: Set permissions to help enforce this, or find alternative methods
+                await aioshutil.move(unfinished_dir, finished_dir)
+                self.__write_as.append_to_audit_log(
+                    action=auditlog.RELEASE_ANNOUNCE_ACTION,
+                    datetime=audit_stamp,
+                    asf_uid=self.__asf_uid,
+                    project_key=str(project_key),
+                    version_key=str(version_key),
+                    revision_number=str(preview_revision_number),
+                    source_directory=unfinished_dir,
+                    target_directory=finished_dir,
+                    email_to=email_to,
+                    email_cc=basic.as_json(email_cc or []),
+                    email_bcc=basic.as_json(email_bcc or []),
+                )
+            except Exception as e:
+                raise storage.AccessError(f"Error moving files: {e!s}", status=500)
 
         try:
+            if finalise_args is not None:
+                self.__data.add(
+                    sql.Task(
+                        status=sql.TaskStatus.QUEUED,
+                        task_type=sql.TaskType.RELEASE_FINALISE,
+                        task_args=finalise_args.model_dump(),
+                        asf_uid=self.__asf_uid,
+                        project_key=str(project_key),
+                        version_key=str(version_key),
+                        revision_number=str(preview_revision_number),
+                    )
+                )
             task = sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.MESSAGE_SEND,
@@ -323,7 +370,7 @@ class ReleaseManager(CommitteeParticipant):
             await self.__write_artifact_rows(
                 release,
                 committee,
-                finished_path,
+                artifact_files_path,
                 preview_revision_number,
                 published_revision,
                 effective_download_path_suffix,
@@ -345,23 +392,27 @@ class ReleaseManager(CommitteeParticipant):
         except storage.AccessError:
             raise
         except Exception as e:
+            if finalise:
+                raise storage.AccessError(f"Error queuing announcement: {e!s}", status=500)
             raise storage.AccessError(
                 f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed.",
                 status=500,
             )
-        try:
-            if unfinished_revisions_path:
-                # This removes all of the prior revisions
-                # Each prior revision directory is immutable
-                await util.delete_immutable_directory(
-                    unfinished_revisions_path,
-                    reason=f"user {self.__asf_uid} is releasing {project_key} {version_key} {preview_revision_number}",
+        if not finalise:
+            try:
+                if unfinished_revisions_path:
+                    # This removes all of the prior revisions
+                    # Each prior revision directory is immutable
+                    await util.delete_immutable_directory(
+                        unfinished_revisions_path,
+                        reason=f"user {self.__asf_uid} is releasing"
+                        f" {project_key} {version_key} {preview_revision_number}",
+                    )
+            except Exception as e:
+                raise storage.AccessError(
+                    f"Release announced, but error deleting prior revisions: {e!s}. Manual cleanup needed.",
+                    status=500,
                 )
-        except Exception as e:
-            raise storage.AccessError(
-                f"Release announced, but error deleting prior revisions: {e!s}. Manual cleanup needed.",
-                status=500,
-            )
         await self.__archive_prior_release(release, auto_archive_prior)
 
     async def __archive_prior_release(self, release_row: sql.Release, auto_archive_prior: bool) -> None:
@@ -640,7 +691,7 @@ class ReleaseManager(CommitteeParticipant):
         self,
         release: sql.Release,
         committee: sql.Committee,
-        finished_path: safe.StatePath,
+        files_path: safe.StatePath,
         revision_number: safe.RevisionNumber,
         svn_revision: int | None,
         download_path_suffix: safe.RelPath | None,
@@ -650,7 +701,7 @@ class ReleaseManager(CommitteeParticipant):
         # The preview revision created when a vote passes has no checks of its own, so the
         # signature check sits on the parent draft it was promoted from
         parent_revision_number = await self.__parent_revision_number(release.key, revision_number)
-        rel_paths = {str(p) async for p in util.paths_recursive(finished_path)}
+        rel_paths = {str(p) async for p in util.paths_recursive(files_path)}
         classifications = await self.__data.release_file_classifications_at(release.key, revision_seq)
         # The directory the files publish to under the dist root, the same for every artifact here
         dist_dir = str(paths.committee_dist_relpath(committee, download_path_suffix))
@@ -676,7 +727,7 @@ class ReleaseManager(CommitteeParticipant):
                 else None
             )
             signature_sha3 = (
-                await hashes.file_sha3(str(finished_path / signature_path)) if (signature_path is not None) else None
+                await hashes.file_sha3(str(files_path / signature_path)) if (signature_path is not None) else None
             )
             self.__data.add(
                 sql.Artifact(

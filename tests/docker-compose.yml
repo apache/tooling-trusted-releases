@@ -28,6 +28,7 @@ services:
       - TESTS=1
       - APP_HOST=atr-dev:8080
       - BIND=0.0.0.0:8080
+      - RELEASE_FINALISE=true
       - SSH_HOST=0.0.0.0
     networks:
       - test-network
