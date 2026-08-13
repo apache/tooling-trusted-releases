@@ -98,8 +98,8 @@ async def selected(
     )
 
     return await template.blank(
-        title=f"Announce and publish {release.project.display_name} {release.version}",
-        description=f"Announce and publish {release.project.display_name} {release.version} as a release.",
+        title=f"Announce {release.project.display_name} {release.version}",
+        description=f"Announce {release.project.display_name} {release.version} as a release.",
         content=content,
         javascripts=["announce-confirm"],
     )
@@ -241,7 +241,7 @@ async def _render_announce_form(
         page,
         model_cls=shared.announce.AnnounceForm,
         action=util.as_url(post.announce.selected, project_key=release.project.key, version_key=release.version),
-        submit_label="Publish & announce",
+        submit_label="Announce",
         defaults=defaults_dict,
         custom={
             "email_to": recipient_radios,
@@ -299,13 +299,13 @@ async def _render_page(
     render.html_nav_phase(page, release.project.key, release.version, staging=False)
 
     page.h1[
-        "Publish ",
+        "Announce ",
         htm.strong[release.project.short_display_name],
         " ",
         htm.em[release.version],
     ]
     page.append(_render_release_card(release))
-    page.h2["Publish and announce this release"]
+    page.h2["Announce this release"]
 
     if banner := render.archived_project_banner(release.project, "Release actions are disabled."):
         page.append(banner)

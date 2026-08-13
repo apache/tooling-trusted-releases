@@ -320,7 +320,7 @@ def lifecycle_06_announce_preview(page: Page, credentials: Credentials, version_
     expect(confirm_input_locator).to_be_visible()
 
     logging.info("Verifying submit button is initially disabled")
-    submit_button_locator = form_locator.get_by_role("button", name="Publish & announce")
+    submit_button_locator = form_locator.get_by_role("button", name="Announce")
     expect(submit_button_locator).to_be_disabled()
 
     logging.info("Typing CONFIRM in the confirmation input")

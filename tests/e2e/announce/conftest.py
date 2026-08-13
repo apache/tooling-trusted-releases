@@ -178,7 +178,7 @@ def _poll_for_vote_thread_link(page: Page, max_attempts: int = 30) -> None:
 def _publish_release(page: Page, version: str) -> None:
     helpers.visit(page, f"/announce/{PROJECT_KEY}/{version}")
     page.locator("input#confirm_announce").fill("CONFIRM")
-    page.get_by_role("button", name="Publish & announce").click()
+    page.get_by_role("button", name="Announce").click()
     page.wait_for_url(f"**/releases/finished/{PROJECT_KEY}**")
 
 

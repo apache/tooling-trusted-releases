@@ -261,7 +261,7 @@ async def _render_page(
         " to ",
         htm.code["dist/release"],
         "; 2. optionally record third party distributions that you made; and then, when ready, 3. use ",
-        htm.strong["Publish and announce"],
+        htm.strong["Announce"],
         " above to complete the process.",
     ]
 
@@ -358,7 +358,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                 ],
                 htm.a(
                     f".btn{announce_classes}.me-2",
-                    title=f"Publish and announce {release.key}",
+                    title=f"Announce {release.key}",
                     href=util.as_url(
                         announce.selected,
                         project_key=release.project.key,
@@ -368,7 +368,7 @@ def _render_release_card(release: sql.Release, announce_disable_message: str) ->
                     else None,
                 )[
                     htm.icon("check-circle"),
-                    " Publish and announce",
+                    " Announce",
                 ],
                 htm.span(".page-preview-meta-item.page-extra-muted")[f"{announce_disable_message}"],
             ],

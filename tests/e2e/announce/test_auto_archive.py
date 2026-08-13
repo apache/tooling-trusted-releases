@@ -33,7 +33,7 @@ def test_announce_archives_prior_release(
     # Submit the announce form. On success the server redirects to
     # /releases/finished/<project>.
     page.locator("input#confirm_announce").fill("CONFIRM")
-    page.get_by_role("button", name="Publish & announce").click()
+    page.get_by_role("button", name="Announce").click()
     page.wait_for_url(f"**{helpers.FINISHED_LIST_URL}**")
 
     # Verify on a fresh page that the prior release now carries the Archived
