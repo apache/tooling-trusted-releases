@@ -19,13 +19,11 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import datetime
 import pathlib
 import tempfile
 from typing import Final
 
-import aiofiles.os
 import aioshutil
 import sqlmodel
 
@@ -131,9 +129,6 @@ class ReleaseManager(CommitteeParticipant):
         acknowledge_unreachable: bool = False,
         auto_archive_prior: bool = False,
     ) -> None:
-        unfinished_dir: str = ""
-        finished_dir: str = ""
-
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
@@ -209,19 +204,9 @@ class ReleaseManager(CommitteeParticipant):
         subject, _ = await construct.announce_release_subject_and_body(subject_template, "", options)
 
         # Prepare paths for file operations
-        finalise = config.get().RELEASE_FINALISE
         unfinished_revisions_path = paths.release_directory_base(release)
         unfinished_path = unfinished_revisions_path / release.unwrap_revision_number
-        unfinished_dir = str(unfinished_path)
         release_date = datetime.datetime.now(datetime.UTC)
-        artifact_files_path = unfinished_path
-        if not finalise:
-            predicted_finished_release = self.__predicted_finished_release(release, release_date)
-            finished_path = paths.release_directory(predicted_finished_release)
-            finished_dir = str(finished_path)
-            artifact_files_path = finished_path
-            if await aiofiles.os.path.exists(finished_dir):
-                raise storage.AccessError("Release already exists", status=409)
         # TODO: This is not reliable because of race conditions
         # But it adds a layer of protection in most cases
         completed_publish = await interaction.release_completed_svn_publish_task_for_revision(
@@ -238,10 +223,7 @@ class ReleaseManager(CommitteeParticipant):
         effective_download_path_suffix = self.__download_path_suffix_from_task(completed_publish)
         published_revision = self.__publish_revision_from_task(completed_publish)
         if published_revision is None:
-            log.warning(
-                f"SVN publication for {project_key!s} {version_key!s} {preview_revision_number!s} "
-                "is recorded but has no revision number"
-            )
+            raise storage.AccessError("The completed SVN publish has no recorded revision - Invalid state", status=500)
         try:
             kind = config.svn_publish_kind()
             target = util.svn_publish_target()
@@ -265,73 +247,43 @@ class ReleaseManager(CommitteeParticipant):
             )
 
         audit_stamp = log.audit_datetime()
-        finalise_args: args.ReleaseFinalise | None = None
-        if finalise:
-            if published_revision is None:
-                raise storage.AccessError(
-                    "The completed SVN publish has no recorded revision - Invalid state", status=500
-                )
-            finalise_args = args.ReleaseFinalise(
-                asf_uid=self.__asf_uid,
-                project_key=project_key,
-                version_key=version_key,
-                revision_number=preview_revision_number,
-                svn_revision=published_revision,
-                download_path_suffix=effective_download_path_suffix,
-                email_to=email_to,
-                email_cc=email_cc or [],
-                email_bcc=email_bcc or [],
-                audit_until=audit_stamp,
-            )
-            self.__write_as.append_to_audit_log(
-                action=auditlog.RELEASE_ANNOUNCE_ACTION,
-                datetime=audit_stamp,
-                asf_uid=self.__asf_uid,
-                project_key=str(project_key),
-                version_key=str(version_key),
-                revision_number=str(preview_revision_number),
-                email_to=email_to,
-                email_cc=basic.as_json(email_cc or []),
-                email_bcc=basic.as_json(email_bcc or []),
-            )
-            await asyncio.to_thread(log.audit_flush)
-        else:
-            # Ensure that the permissions of every directory are 755
-            await asyncio.to_thread(util.chmod_directories, unfinished_path)
-            try:
-                # Move the release files from somewhere in unfinished to somewhere in finished
-                # The whole finished hierarchy is write once for each directory, and then read only
-                # TODO: Set permissions to help enforce this, or find alternative methods
-                await aioshutil.move(unfinished_dir, finished_dir)
-                self.__write_as.append_to_audit_log(
-                    action=auditlog.RELEASE_ANNOUNCE_ACTION,
-                    datetime=audit_stamp,
+        finalise_args = args.ReleaseFinalise(
+            asf_uid=self.__asf_uid,
+            project_key=project_key,
+            version_key=version_key,
+            revision_number=preview_revision_number,
+            svn_revision=published_revision,
+            download_path_suffix=effective_download_path_suffix,
+            email_to=email_to,
+            email_cc=email_cc or [],
+            email_bcc=email_bcc or [],
+            audit_until=audit_stamp,
+        )
+        self.__write_as.append_to_audit_log(
+            action=auditlog.RELEASE_ANNOUNCE_ACTION,
+            datetime=audit_stamp,
+            asf_uid=self.__asf_uid,
+            project_key=str(project_key),
+            version_key=str(version_key),
+            revision_number=str(preview_revision_number),
+            email_to=email_to,
+            email_cc=basic.as_json(email_cc or []),
+            email_bcc=basic.as_json(email_bcc or []),
+        )
+        await asyncio.to_thread(log.audit_flush)
+
+        try:
+            self.__data.add(
+                sql.Task(
+                    status=sql.TaskStatus.QUEUED,
+                    task_type=sql.TaskType.RELEASE_FINALISE,
+                    task_args=finalise_args.model_dump(),
                     asf_uid=self.__asf_uid,
                     project_key=str(project_key),
                     version_key=str(version_key),
                     revision_number=str(preview_revision_number),
-                    source_directory=unfinished_dir,
-                    target_directory=finished_dir,
-                    email_to=email_to,
-                    email_cc=basic.as_json(email_cc or []),
-                    email_bcc=basic.as_json(email_bcc or []),
                 )
-            except Exception as e:
-                raise storage.AccessError(f"Error moving files: {e!s}", status=500)
-
-        try:
-            if finalise_args is not None:
-                self.__data.add(
-                    sql.Task(
-                        status=sql.TaskStatus.QUEUED,
-                        task_type=sql.TaskType.RELEASE_FINALISE,
-                        task_args=finalise_args.model_dump(),
-                        asf_uid=self.__asf_uid,
-                        project_key=str(project_key),
-                        version_key=str(version_key),
-                        revision_number=str(preview_revision_number),
-                    )
-                )
+            )
             task = sql.Task(
                 status=sql.TaskStatus.QUEUED,
                 task_type=sql.TaskType.MESSAGE_SEND,
@@ -373,7 +325,7 @@ class ReleaseManager(CommitteeParticipant):
             await self.__write_artifact_rows(
                 release,
                 committee,
-                artifact_files_path,
+                unfinished_path,
                 preview_revision_number,
                 published_revision,
                 effective_download_path_suffix,
@@ -395,27 +347,7 @@ class ReleaseManager(CommitteeParticipant):
         except storage.AccessError:
             raise
         except Exception as e:
-            if finalise:
-                raise storage.AccessError(f"Error queuing announcement: {e!s}", status=500)
-            raise storage.AccessError(
-                f"Files moved successfully, but error queuing announcement: {e!s}. Manual cleanup needed.",
-                status=500,
-            )
-        if not finalise:
-            try:
-                if unfinished_revisions_path:
-                    # This removes all of the prior revisions
-                    # Each prior revision directory is immutable
-                    await util.delete_immutable_directory(
-                        unfinished_revisions_path,
-                        reason=f"user {self.__asf_uid} is releasing"
-                        f" {project_key} {version_key} {preview_revision_number}",
-                    )
-            except Exception as e:
-                raise storage.AccessError(
-                    f"Release announced, but error deleting prior revisions: {e!s}. Manual cleanup needed.",
-                    status=500,
-                )
+            raise storage.AccessError(f"Error queuing announcement: {e!s}", status=500)
         await self.__archive_prior_release(release, auto_archive_prior)
 
     async def __archive_prior_release(self, release_row: sql.Release, auto_archive_prior: bool) -> None:
@@ -495,7 +427,7 @@ class ReleaseManager(CommitteeParticipant):
         self,
         unfinished_path: safe.StatePath,
         internal_url: str,
-        svn_revision: int | None,
+        svn_revision: int,
     ) -> None:
         temp_dir = await asyncio.to_thread(tempfile.mkdtemp, dir=paths.get_tmp_dir())
         try:
@@ -599,14 +531,6 @@ class ReleaseManager(CommitteeParticipant):
                 return candidate
         return None
 
-    def __predicted_finished_release(self, release: sql.Release, release_date: datetime.datetime) -> sql.Release:
-        # Taking a deep copy stops this from being a SQLAlchemy proxy object
-        # https://docs.sqlalchemy.org/en/20/orm/session_basics.html
-        predicted_finished_release = copy.deepcopy(release)
-        predicted_finished_release.phase = sql.ReleasePhase.RELEASE
-        predicted_finished_release.released = release_date
-        return predicted_finished_release
-
     async def __promote_in_database(
         self,
         release: sql.Release,
@@ -696,7 +620,7 @@ class ReleaseManager(CommitteeParticipant):
         committee: sql.Committee,
         files_path: safe.StatePath,
         revision_number: safe.RevisionNumber,
-        svn_revision: int | None,
+        svn_revision: int,
         download_path_suffix: safe.RelPath | None,
         dated: datetime.datetime,
     ) -> None:
