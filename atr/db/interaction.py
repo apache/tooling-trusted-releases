@@ -48,11 +48,13 @@ PENDING_QUARANTINE_VOTE_BLOCK_MESSAGE: Final[str] = (
     "Archive validation is still in progress. Please wait for it to complete before starting a vote."
 )
 
+_ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST: Final[str] = "tooling-vm-ec2-de.apache.org"
 # Infra-provided service account with permission to run ATR workflows
 # audit_guidance required actor for ATR distribution workflows; must not be used for project TP workflows.
 _GITHUB_TRUSTED_ROLE_NID: Final[int] = 254436773
 _NO_EXPECTED_VOTE_ROUND: Final[object] = object()
 _PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS: Final[frozenset[str]] = frozenset({"tooling-presentations"})
+_TOOLING_COMMITTEE_KEY: Final[str] = "tooling"
 
 
 class ApacheUserMissingError(RuntimeError):
@@ -1071,7 +1073,10 @@ def vote_pass_fail_allowed(latest_vote_task: sql.Task | None) -> bool:
     return datetime.datetime.now(datetime.UTC) >= vote_end
 
 
-def vote_resolution_bypass(release: sql.Release) -> bool:
+def vote_resolution_bypass(release: sql.Release, asf_uid: str | None) -> bool:
+    app_host = config.get().APP_HOST.split(":", 1)[0]
+    if app_host == _ATR_DEV_VOTE_RESOLUTION_BYPASS_HOST:
+        return user.is_admin(asf_uid) and (release.project.committee_key == _TOOLING_COMMITTEE_KEY)
     return (not config.is_production_mode()) or (release.project_key in _PRODUCTION_VOTE_RESOLUTION_BYPASS_PROJECT_KEYS)
 
 

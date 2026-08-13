@@ -541,7 +541,6 @@ async def test_resolve_allows_cancelled_before_vote_end(monkeypatch: pytest.Monk
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, "Vote marked as cancelled", None)
@@ -577,7 +576,9 @@ async def test_resolve_allows_early_result_for_production_bypass_project(
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
+    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST="release-test.apache.org"))
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction.user, "is_admin", lambda asf_uid: asf_uid == "chair")
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, f"Vote marked as {vote_result}", None)
@@ -609,7 +610,7 @@ async def test_resolve_allows_passed_after_vote_end(monkeypatch: pytest.MonkeyPa
 
     past_task = _latest_vote_task_with_end(-24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
-    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release: False)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
 
     writer._ReleaseManager__resolve_release = mock.AsyncMock(
         return_value=(release, None, "Vote marked as passed", None)
@@ -794,7 +795,7 @@ async def test_resolve_rejects_early_failed(monkeypatch: pytest.MonkeyPatch) -> 
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
 
     with pytest.raises(storage.AccessError, match="unless it is cancelled"):
         await writer.resolve(
@@ -821,7 +822,7 @@ async def test_resolve_rejects_early_passed(monkeypatch: pytest.MonkeyPatch) -> 
 
     future_task = _latest_vote_task_with_end(24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=future_task))
-    monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
 
     with pytest.raises(storage.AccessError, match="voting period"):
         await writer.resolve(
@@ -1030,7 +1031,9 @@ async def test_trusted_resolve_allows_insufficient_votes_with_bypass(monkeypatch
     data.release = mock.MagicMock(return_value=query)
 
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
+    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST="release-test.apache.org"))
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction.user, "is_admin", lambda asf_uid: asf_uid == "chair")
     monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
@@ -1068,7 +1071,9 @@ async def test_trusted_resolve_rejects_insufficient_votes_for_other_production_p
     data.release = mock.MagicMock(return_value=query)
 
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=_latest_vote_task()))
+    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST="release-test.apache.org"))
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(interaction.user, "is_admin", lambda asf_uid: asf_uid == "chair")
     monkeypatch.setattr(interaction, "ballots_for_resolution", mock.AsyncMock(return_value=[]))
     monkeypatch.setattr(
         interaction, "trusted_ballot_summary", mock.AsyncMock(return_value=interaction.TrustedVoteSummary())
@@ -1222,7 +1227,7 @@ async def test_trusted_resolve_passes_round_two_via_carried_ipmc_ballots(monkeyp
 
     past_task = _latest_vote_task_with_end(-24)
     monkeypatch.setattr(interaction, "release_current_vote_task", mock.AsyncMock(return_value=past_task))
-    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release: False)
+    monkeypatch.setattr(interaction, "vote_resolution_bypass", lambda _release, _asf_uid: False)
     effective_ballots = mock.AsyncMock(return_value=[mock.MagicMock(), mock.MagicMock(), mock.MagicMock()])
     monkeypatch.setattr(interaction, "effective_trusted_ballots", effective_ballots)
     monkeypatch.setattr(
@@ -1305,25 +1310,36 @@ def test_vote_pass_fail_allowed_returns_true_after_vote_end() -> None:
 
 
 @pytest.mark.parametrize(
-    ("production_mode", "project_key", "expected"),
+    ("app_host", "production_mode", "is_admin", "committee_key", "project_key", "expected"),
     [
-        (False, "project", True),
-        (True, "tooling", False),
-        (True, "tooling-presentations", True),
-        (True, "tooling-presentations-demo", False),
+        ("tooling-vm-ec2-de.apache.org", True, True, "tooling", "tooling", True),
+        ("tooling-vm-ec2-de.apache.org:443", True, True, "tooling", "tooling-demo", True),
+        ("tooling-vm-ec2-de.apache.org", True, False, "tooling", "tooling", False),
+        ("tooling-vm-ec2-de.apache.org", True, True, "other", "tooling", False),
+        ("tooling-vm-ec2-de.apache.org", False, False, "tooling", "tooling", False),
+        ("release-test.apache.org", True, True, "tooling", "tooling", False),
+        ("release-test.apache.org", True, False, "tooling", "tooling-presentations", True),
+        ("127.0.0.1", False, False, "other", "project", True),
+        ("127.0.0.1", True, True, "tooling", "tooling", False),
     ],
 )
 def test_vote_resolution_bypass(
     monkeypatch: pytest.MonkeyPatch,
+    app_host: str,
     production_mode: bool,
+    is_admin: bool,
+    committee_key: str,
     project_key: str,
     expected: bool,
 ) -> None:
     release = _candidate_release()
     release.project_key = project_key
+    release.project.committee_key = committee_key
+    monkeypatch.setattr(interaction.config, "get", lambda: SimpleNamespace(APP_HOST=app_host))
     monkeypatch.setattr(interaction.config, "is_production_mode", lambda: production_mode)
+    monkeypatch.setattr(interaction.user, "is_admin", lambda _asf_uid: is_admin)
 
-    assert interaction.vote_resolution_bypass(release) is expected
+    assert interaction.vote_resolution_bypass(release, "admin") is expected
 
 
 @pytest.mark.asyncio
@@ -1418,6 +1434,7 @@ def _candidate_release(podling_thread_id: str | None = None) -> SimpleNamespace:
         ),
         project=SimpleNamespace(
             key="project",
+            committee_key="project",
             status=sql.ProjectStatus.ACTIVE,
             is_active=True,
             display_name="Project",
@@ -1633,7 +1650,7 @@ async def _render_standard_resolve_page(
     html = await _resolve_handler()(session, "resolve", _project_key(), _version_key())
 
     assert html == "HTML"
-    resolution_bypass_check.assert_called_once_with(release)
+    resolution_bypass_check.assert_called_once_with(release, session.uid)
     return context, form_render, archive_lookup, vote_committee, vote_details
 
 
