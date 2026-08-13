@@ -820,6 +820,7 @@ class ReleaseManager(CommitteeParticipant):
                 release.safe_version_key,
                 preview_revision,
                 latest_vote_task,
+                release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -1157,6 +1158,7 @@ class ReleaseManager(CommitteeParticipant):
                 release.safe_version_key,
                 preview_revision,
                 latest_vote_task,
+                release,
             )
             if (voting_round == 2) and (release.podling_thread_id is not None):
                 round_one_email_address, round_one_message_id = await util.email_mid_from_thread_id(
@@ -1302,6 +1304,7 @@ class ReleaseManager(CommitteeParticipant):
         version_key: safe.VersionKey,
         preview_result: sql.Revision | sql.Quarantined,
         vote_task_with_publish_options: sql.Task | None,
+        release: sql.Release,
     ) -> str | None:
         if not isinstance(preview_result, sql.Revision):
             return None
@@ -1328,6 +1331,8 @@ class ReleaseManager(CommitteeParticipant):
             )
         except Exception as exc:
             log.warning(f"Automatic SVN publish enqueue skipped for {project_key!s} {version_key!s}: {exc}")
+            await self.__data.refresh(release)
+            await self.__data.refresh(vote_task_with_publish_options)
             return f"Automatic SVN publish was not queued: {exc}"
         return None
 

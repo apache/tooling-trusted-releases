@@ -33,6 +33,41 @@ import atr.storage.writers.vote as vote_writer
 INTERNAL_PUBLISH_URL: Final[str] = "https://internal.example.invalid/repos/dist/atr"
 
 
+async def test_automatic_publish_failure_reloads_caller_objects(monkeypatch) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    data = mock.MagicMock()
+    data.refresh = mock.AsyncMock()
+    release_writer = SimpleNamespace(
+        publish_to_svn=mock.AsyncMock(side_effect=storage.AccessError("A newer revision appeared", status=409))
+    )
+    write_as = SimpleNamespace(release=release_writer)
+    writer = object.__new__(vote_writer.ReleaseManager)
+    writer._ReleaseManager__data = data
+    writer._ReleaseManager__write_as = write_as
+    writer._ReleaseManager__asf_uid = "resolver"
+    task = sql.Task(
+        status=sql.TaskStatus.QUEUED,
+        task_type=sql.TaskType.VOTE_INITIATE,
+        task_args={"automatic_publish_when_resolved": True, "initiator_id": "resolver"},
+        asf_uid="resolver",
+    )
+    preview_revision = sql.Revision(number="00001", seq=1, release_key="example-1.0", asfuid="resolver")
+    release = sql.Release(key="example-1.0", project_key="example", version="1.0")
+
+    enqueue = getattr(writer, "_ReleaseManager__enqueue_automatic_svn_publish")
+    error = await enqueue(
+        safe.ProjectKey("example"),
+        safe.VersionKey("1.0"),
+        preview_revision,
+        task,
+        release,
+    )
+
+    assert error is not None
+    assert "A newer revision appeared" in error
+    assert [call.args[0] for call in data.refresh.await_args_list] == [release, task]
+
+
 async def test_automatic_publish_uses_carried_original_initiator(monkeypatch) -> None:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
     release_writer = SimpleNamespace(publish_to_svn=mock.AsyncMock())
@@ -53,12 +88,15 @@ async def test_automatic_publish_uses_carried_original_initiator(monkeypatch) ->
     )
     preview_revision = sql.Revision(number="00001", seq=1, release_key="example-1.0", asfuid="resolver")
 
+    release = sql.Release(key="example-1.0", project_key="example", version="1.0")
+
     enqueue = getattr(writer, "_ReleaseManager__enqueue_automatic_svn_publish")
     await enqueue(
         safe.ProjectKey("example"),
         safe.VersionKey("1.0"),
         preview_revision,
         task,
+        release,
     )
 
     release_writer.publish_to_svn.assert_awaited_once()
