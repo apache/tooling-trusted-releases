@@ -1274,7 +1274,7 @@ async def _render_releases_sections(
         sections.append(heading["Full releases"])
         release_buttons = []
         for rel in full_releases:
-            file_count = await util.number_of_release_files(rel)
+            file_count = len(await shared.published.release_files(rel))
             release_buttons.append(
                 htm.a(
                     ".btn.btn-sm.btn-outline-success.py-2.px-3",
