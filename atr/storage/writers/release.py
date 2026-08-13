@@ -1257,6 +1257,8 @@ class ReleaseManager(CommitteeParticipant):
             release.download_path_suffix = str(download_path_suffix) if download_path_suffix is not None else ""
             self.__data.add(release)
             self.__data.add(task)
+            await self.__data.flush()
+            await self.__data.refresh(release, attribute_names=["_latest_revision_number"])
             await self.__data.commit()
         except storage.AccessError:
             await self.__data.rollback()

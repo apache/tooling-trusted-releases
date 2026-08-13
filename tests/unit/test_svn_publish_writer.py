@@ -234,6 +234,27 @@ async def test_publish_to_svn_execute_returns_result(sqlite_sessionmaker, monkey
         assert publish_release.await_args.args[1] == f"{INTERNAL_PUBLISH_URL}/project/project-1.0.0"
 
 
+async def test_publish_to_svn_keeps_latest_revision_number_loaded(
+    sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
+    async with sqlite_sessionmaker() as data:
+        await _seed_preview_release(data)
+        release = await data.release(project_key="project", version="1.0.0").demand(AssertionError("no release"))
+        assert release.latest_revision_number == "00001"
+        writer = _release_writer(data)
+
+        await writer.publish_to_svn(
+            safe.ProjectKey("project"),
+            safe.VersionKey("1.0.0"),
+            safe.RevisionNumber("00001"),
+            safe.RelPath("project-1.0.0"),
+        )
+
+        assert "_latest_revision_number" not in sqlalchemy.inspect(release).unloaded
+        assert release.latest_revision_number == "00001"
+
+
 async def test_publish_to_svn_rejects_duplicate_completed_task(
     sqlite_sessionmaker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
