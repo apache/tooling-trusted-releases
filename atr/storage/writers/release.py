@@ -1717,6 +1717,7 @@ class FoundationAdmin(FoundationCommitter):
                 raise datatypes.FailedError("The published revision is no longer in the unfinished directory")
             await self.__verify_publication_export(committee, task_args, revision_dir)
         audit_events = await self.__release_audit_log(task_args)
+        await self.__remove_derived_directories(task_args)
         await self.__remove_release_directory(version_dir, tombstone_dir, version_dir_present, task_args)
         self.__write_as.append_to_audit_log(
             asf_uid=task_args.asf_uid,
@@ -1940,6 +1941,25 @@ class FoundationAdmin(FoundationCommitter):
             until=task_args.audit_until,
             marker=marker,
         )
+
+    async def __remove_derived_directories(self, task_args: args.ReleaseFinalise) -> None:
+        reason = f"release {task_args.project_key} {task_args.version_key} is announced and verified in SVN"
+        archives_dir = paths.get_archives_dir() / task_args.project_key / task_args.version_key
+        quarantined_dir = paths.get_quarantined_dir() / task_args.project_key / task_args.version_key
+        archives_state = await self.__directory_state(archives_dir)
+        quarantined_state = await self.__directory_state(quarantined_dir)
+        if archives_state is False:
+            raise datatypes.FailedError("The archives path is not a directory")
+        if quarantined_state is False:
+            raise datatypes.FailedError("The quarantined path is not a directory")
+        if archives_state:
+            await util.delete_immutable_directory(archives_dir, reason=reason)
+        if not quarantined_state:
+            return
+        if await aiofiles.os.listdir(quarantined_dir):
+            log.warning(f"Leaving the non-empty quarantine directory {quarantined_dir} in place")
+            return
+        await aiofiles.os.rmdir(quarantined_dir)
 
     async def __remove_release_directory(
         self,

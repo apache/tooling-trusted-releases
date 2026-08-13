@@ -94,6 +94,8 @@ def setup_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, files: 
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", INTERNAL_PUBLISH_URL, raising=False)
     monkeypatch.setattr(release_writer.paths, "get_tmp_dir", lambda: safe.StatePath(tmp_path / "temporary"))
     monkeypatch.setattr(release_writer.paths, "get_unfinished_dir", lambda: safe.StatePath(tmp_path / "unfinished"))
+    monkeypatch.setattr(release_writer.paths, "get_archives_dir", lambda: safe.StatePath(tmp_path / "archives"))
+    monkeypatch.setattr(release_writer.paths, "get_quarantined_dir", lambda: safe.StatePath(tmp_path / "quarantined"))
     (tmp_path / "temporary").mkdir()
     for rel_path, content in files.items():
         path = tmp_path / "unfinished" / "project" / "1.0.0" / "00001" / rel_path
@@ -228,6 +230,44 @@ async def test_finalise_ignores_sibling_release_with_deleting_suffix(
     assert entry_exists(sibling)
 
 
+async def test_finalise_keeps_non_empty_quarantine(
+    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup_state(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    monkeypatch.setattr(release_writer.svn, "export", FakeExport({"artifact.tar.gz": b"content"}))
+    monkeypatch.setattr(release_writer.auditlog, "write_release_log", mock.AsyncMock(return_value=7))
+    quarantined_dir = tmp_path / "quarantined" / "project" / "1.0.0"
+    (quarantined_dir / "token").mkdir(parents=True)
+    warnings: list[str] = []
+    monkeypatch.setattr(release_writer.log, "warning", warnings.append)
+    async with sqlite_sessionmaker() as data:
+        await seed_released(data)
+
+        result = await writer(data).finalise_published_release(finalise_args())
+
+    assert result.kind == "release_finalise"
+    assert any("non-empty quarantine" in warning for warning in warnings)
+    assert entry_exists(quarantined_dir / "token")
+
+
+async def test_finalise_rejects_non_directory_archives_path(
+    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup_state(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    monkeypatch.setattr(release_writer.svn, "export", FakeExport({"artifact.tar.gz": b"content"}))
+    monkeypatch.setattr(release_writer.auditlog, "write_release_log", mock.AsyncMock(return_value=7))
+    archives_path = tmp_path / "archives" / "project" / "1.0.0"
+    archives_path.parent.mkdir(parents=True)
+    archives_path.write_bytes(b"not a directory")
+    async with sqlite_sessionmaker() as data:
+        await seed_released(data)
+
+        with pytest.raises(datatypes.FailedError, match="archives path is not a directory"):
+            await writer(data).finalise_published_release(finalise_args())
+
+    assert entry_exists(tmp_path / "unfinished" / "project" / "1.0.0")
+
+
 async def test_finalise_rejects_tombstone_that_is_a_file(
     sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -267,6 +307,45 @@ async def test_finalise_rejects_version_path_symlink(
 
     delete.assert_not_awaited()
     assert export.calls == []
+
+
+async def test_finalise_removes_derived_directories(
+    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup_state(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
+    monkeypatch.setattr(release_writer.svn, "export", FakeExport({"artifact.tar.gz": b"content"}))
+    monkeypatch.setattr(release_writer.auditlog, "write_release_log", mock.AsyncMock(return_value=7))
+    archives_dir = tmp_path / "archives" / "project" / "1.0.0"
+    extracted = archives_dir / "blake3_abc" / "inner"
+    extracted.mkdir(parents=True)
+    (extracted / "file.txt").write_bytes(b"extracted")
+    quarantined_dir = tmp_path / "quarantined" / "project" / "1.0.0"
+    quarantined_dir.mkdir(parents=True)
+    async with sqlite_sessionmaker() as data:
+        await seed_released(data)
+
+        await writer(data).finalise_published_release(finalise_args())
+
+    assert not entry_exists(archives_dir)
+    assert not entry_exists(quarantined_dir)
+    assert entry_exists(tmp_path / "archives" / "project")
+
+
+async def test_finalise_removes_derived_directories_when_already_removed(
+    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup_state(tmp_path, monkeypatch, {})
+    monkeypatch.setattr(release_writer.svn, "export", FakeExport({}))
+    monkeypatch.setattr(release_writer.auditlog, "write_release_log", mock.AsyncMock(return_value=7))
+    archives_dir = tmp_path / "archives" / "project" / "1.0.0"
+    archives_dir.mkdir(parents=True)
+    async with sqlite_sessionmaker() as data:
+        await seed_released(data)
+
+        result = await writer(data).finalise_published_release(finalise_args())
+
+    assert "already removed" in result.message
+    assert not entry_exists(archives_dir)
 
 
 async def test_finalise_removes_stale_tombstone_when_already_removed(
