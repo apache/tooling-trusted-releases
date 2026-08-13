@@ -133,7 +133,8 @@ class AppConfig:
     RELEASE_FINALISE = _ENVIRONMENT_CONFIG(
         "RELEASE_FINALISE",
         cast=bool,
-        default=APP_HOST.split(":", 1)[0] in ("127.0.0.1", "atr", "localhost.apache.org"),
+        default=APP_HOST.split(":", 1)[0]
+        in ("127.0.0.1", "atr", "localhost.apache.org", "tooling-vm-ec2-de.apache.org"),
     )
     SVN_TOKEN = _config_secrets("SVN_TOKEN", STATE_DIR, default=None, cast=str)
     SVN_PUBLISH_URL = _config_secrets("SVN_PUBLISH_URL", STATE_DIR, default=None, cast=str)
