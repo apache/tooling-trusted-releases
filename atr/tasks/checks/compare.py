@@ -42,6 +42,7 @@ import atr.models.github as github_models
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.paths as paths
+import atr.sandbox as sandbox
 import atr.tasks.checks as checks
 import atr.tasks.task as task
 import atr.util as util
@@ -298,6 +299,8 @@ def _compare_trees_rsync(repo_dir: safe.StatePath, archive_dir: safe.StatePath) 
         f"{repo_dir}{os.sep}",
         f"{archive_dir}{os.sep}",
     ]
+    # A dry-run diff, so rsync only reads the two trees - confine it to those at the kernel level.
+    command = sandbox.command(command, ro_paths=[str(repo_dir), str(archive_dir)])
     result = subprocess.run(
         command,
         capture_output=True,

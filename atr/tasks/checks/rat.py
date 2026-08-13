@@ -32,6 +32,7 @@ import atr.models.checkdata as checkdata
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.sandbox as sandbox
 import atr.tasks.checks as checks
 import atr.tasks.task as task
 import atr.util as util
@@ -464,7 +465,16 @@ def _synchronous_core(  # noqa: C901
             errors=[str(e)],
             structural=True,
         )
-    error_result, xml_output_path = _check_core_logic_execute_rat(command, scan_root, scratch_dir, xml_output_path)
+    # Confine RAT/java to the archive it scans and the RAT jar (read only), plus the scratch
+    # directory it writes the report into. The plain command is kept for storage below.
+    sandboxed_command = sandbox.command(
+        command,
+        ro_paths=[scan_root, os.path.dirname(rat_jar_path)],
+        rw_paths=[scratch_dir],
+    )
+    error_result, xml_output_path = _check_core_logic_execute_rat(
+        sandboxed_command, scan_root, scratch_dir, xml_output_path
+    )
     if error_result is not None:
         return error_result
 

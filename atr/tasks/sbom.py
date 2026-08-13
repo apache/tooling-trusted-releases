@@ -39,6 +39,7 @@ import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
+import atr.sandbox as sandbox
 import atr.sbom as sbom
 import atr.sbom.models.bundle
 import atr.shared as shared
@@ -331,11 +332,10 @@ async def score_qs(args: args.FileArgs) -> results.Results | None:
     if not (analysis.is_cyclonedx_json(full_path_str) and await aiofiles.os.path.isfile(full_path)):
         raise SBOMScoringError("SBOM file does not exist", {"file_path": path_str})
     proc = await asyncio.create_subprocess_exec(
-        "sbomqs",
-        "score",
-        "--json",
-        "--",
-        full_path.name,
+        *sandbox.command(
+            ["sbomqs", "score", "--json", "--", full_path.name],
+            ro_paths=[str(full_path.parent)],
+        ),
         cwd=str(full_path.parent),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -566,7 +566,7 @@ async def _generate_cyclonedx_core(
 
         try:
             process = await asyncio.create_subprocess_exec(
-                *syft_command,
+                *sandbox.command(syft_command, ro_paths=[str(temp_dir)]),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
