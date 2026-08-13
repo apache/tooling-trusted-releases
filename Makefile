@@ -6,6 +6,7 @@
 
 BIND ?= 127.0.0.1:8080
 IMAGE ?= tooling-trusted-release
+RAT_VERSION ?= 0.18
 STATE_DIR ?= state
 SVN_PUBLISH_URL ?=
 SVN_TOKEN ?= dummy
@@ -117,7 +118,8 @@ serve:
 	@STATE_DIR="$(STATE_DIR)" scripts/check-perms
 	@root="$$PWD"; case "$(STATE_DIR)" in /*) sd="$(STATE_DIR)";; *) sd="$$root/$(STATE_DIR)";; esac; \
 	mkdir -p "$$sd/launch" && cd "$$sd/launch" && \
-	SSH_HOST=127.0.0.1 STATE_DIR="$$sd" PYTHONPATH="$$root" \
+	APACHE_RAT_JAR_PATH="$${APACHE_RAT_JAR_PATH:-$$sd/tools/apache-rat-$(RAT_VERSION).jar}" \
+	  SSH_HOST=127.0.0.1 STATE_DIR="$$sd" PYTHONPATH="$$root" \
 	  uv run --frozen --project "$$root" hypercorn --bind $(BIND) \
 	  --keyfile "$$sd/hypercorn/secrets/localhost.apache.org+2-key.pem" \
 	  --certfile "$$sd/hypercorn/secrets/localhost.apache.org+2.pem" \
@@ -130,6 +132,7 @@ serve-local: svn-dev-repo
 	svnurl="$(SVN_PUBLISH_URL)"; svnurl="$${svnurl:-file://$$sd/dev-svn-repo}"; \
 	mkdir -p "$$sd/launch" && cd "$$sd/launch" && \
 	APP_HOST=localhost.apache.org:8080 DISABLE_CHECK_CACHE=1 TESTS=1 \
+	  APACHE_RAT_JAR_PATH="$${APACHE_RAT_JAR_PATH:-$$sd/tools/apache-rat-$(RAT_VERSION).jar}" \
 	  SVN_PUBLISH_URL="$$svnurl" SVN_TOKEN="$(SVN_TOKEN)" \
 	  SSH_HOST=127.0.0.1 STATE_DIR="$$sd" PYTHONPATH="$$root" \
 	  uv run --frozen --project "$$root" hypercorn --bind $(BIND) \
