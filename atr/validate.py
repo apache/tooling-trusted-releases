@@ -233,6 +233,15 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     committees_sorted = await data.committee(_child_committees=True).order_by(sql.Committee.key).all()
     projects_sorted = await data.project(_distribution_channels=True).order_by(sql.Project.key).all()
     releases_sorted = await data.release().order_by(sql.Release.key).all()
+    finalising_tasks = await data.task(
+        status_in=[sql.TaskStatus.QUEUED, sql.TaskStatus.ACTIVE],
+        task_type=sql.TaskType.RELEASE_FINALISE,
+    ).all()
+    finalising_releases = {
+        (task.project_key, task.version_key)
+        for task in finalising_tasks
+        if (task.project_key is not None) and (task.version_key is not None)
+    }
 
     for c in await asyncio.to_thread(committees, committees_sorted):
         yield c
@@ -240,7 +249,7 @@ async def everything(data: db.Session) -> AsyncAnnotatedDivergences:
     for p in await asyncio.to_thread(projects, projects_sorted):
         yield p
 
-    for r in await asyncio.to_thread(releases, releases_sorted):
+    for r in await asyncio.to_thread(releases, releases_sorted, finalising_releases):
         yield r
 
 
@@ -399,11 +408,12 @@ def projects(ps: Iterable[sql.Project]) -> AnnotatedDivergences:
         yield from project(p)
 
 
-def release(r: sql.Release) -> AnnotatedDivergences:
+def release(r: sql.Release, finalising: bool = False) -> AnnotatedDivergences:
     """Check that a release is valid."""
     yield from release_created(r)
     yield from release_key(r)
-    yield from release_on_disk(r)
+    if (r.phase != sql.ReleasePhase.RELEASE) or (not finalising):
+        yield from release_on_disk(r)
     yield from release_package_managers(r)
     yield from release_released(r)
     yield from release_sboms(r)
@@ -517,7 +527,10 @@ def release_vote_logic(r: sql.Release) -> Divergences:
     yield from divergences_predicate(okay, expected, actual)
 
 
-def releases(rs: Iterable[sql.Release]) -> AnnotatedDivergences:
+def releases(
+    rs: Iterable[sql.Release], finalising_releases: set[tuple[str, str]] | None = None
+) -> AnnotatedDivergences:
     """Check that the releases are valid."""
+    finalising_releases = finalising_releases or set()
     for r in rs:
-        yield from release(r)
+        yield from release(r, (r.project_key, r.version) in finalising_releases)
