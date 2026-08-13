@@ -44,11 +44,11 @@ INTERNAL_PUBLISH_URL: Final[str] = "https://internal.example.invalid/repos/dist/
 
 class FakeExport:
     def __init__(self, tree: dict[str, bytes]) -> None:
-        self.calls: list[tuple[str, int | None]] = []
+        self.calls: list[tuple[str, int | None, float]] = []
         self.tree = tree
 
-    async def __call__(self, url: str, revision: int | None, destination: pathlib.Path) -> None:
-        self.calls.append((url, revision))
+    async def __call__(self, url: str, revision: int | None, destination: pathlib.Path, timeout_seconds: float) -> None:
+        self.calls.append((url, revision, timeout_seconds))
         self.write(destination)
 
     def write(self, destination: pathlib.Path) -> None:
@@ -309,7 +309,7 @@ async def test_finalise_verifies_compiles_and_deletes(
     assert result.kind == "release_finalise"
     assert result.audit_events == 7
     assert "removed the local files" in result.message
-    assert export.calls == [(f"{INTERNAL_PUBLISH_URL}/project/project-1.0.0", 42)]
+    assert export.calls == [(f"{INTERNAL_PUBLISH_URL}/project/project-1.0.0", 42, 480.0)]
     delete.assert_awaited_once()
     assert str(delete.await_args.args[0]) == str(tmp_path / "unfinished" / "project" / "1.0.0.deleting-")
     assert not entry_exists(tmp_path / "unfinished" / "project" / "1.0.0")

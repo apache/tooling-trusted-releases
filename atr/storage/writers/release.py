@@ -1972,7 +1972,7 @@ class FoundationAdmin(FoundationCommitter):
         try:
             export_path = pathlib.Path(temp_dir) / "export"
             try:
-                await svn.export(internal_url, task_args.svn_revision, export_path)
+                await svn.export(internal_url, task_args.svn_revision, export_path, timeout_seconds=480.0)
             except svn.CommandExecutionError as exc:
                 raise datatypes.FailedError(
                     f"The SVN publication could not be exported: {svn.error_message(exc)}"

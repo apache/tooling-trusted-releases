@@ -69,7 +69,7 @@ RECURRING_TASK_TYPES: Final[frozenset[sql.TaskType]] = frozenset(
 # of files, so it needs far longer than the usual limit without being unbounded.
 TASK_TYPE_TIMEOUT_SECONDS: Final[dict[sql.TaskType, int]] = {
     sql.TaskType.CATALOG_SITE_GENERATE: 1800,
-    sql.TaskType.RELEASE_FINALISE: 1800,
+    sql.TaskType.RELEASE_FINALISE: 600,
 }
 
 
