@@ -61,7 +61,6 @@ import atr.storage.datatypes as datatypes
 import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
-import atr.tasks.task
 import atr.util as util
 
 if TYPE_CHECKING:
@@ -1922,15 +1921,23 @@ class FoundationAdmin(FoundationCommitter):
         return stat.S_ISDIR(mode)
 
     async def __release_audit_log(self, task_args: args.ReleaseFinalise) -> int:
-        try:
-            return await auditlog.write_release_log(
-                task_args.project_key,
-                task_args.version_key,
-                until=task_args.audit_until,
-                required_action=auditlog.RELEASE_ANNOUNCE_ACTION,
-            )
-        except ValueError as exc:
-            raise atr.tasks.task.DeferredError(str(exc)) from exc
+        marker = {
+            "datetime": task_args.audit_until,
+            "action": auditlog.RELEASE_ANNOUNCE_ACTION,
+            "asf_uid": task_args.asf_uid,
+            "project_key": str(task_args.project_key),
+            "version_key": str(task_args.version_key),
+            "revision_number": str(task_args.revision_number),
+            "email_to": task_args.email_to,
+            "email_cc": task_args.email_cc,
+            "email_bcc": task_args.email_bcc,
+        }
+        return await auditlog.write_release_log(
+            task_args.project_key,
+            task_args.version_key,
+            until=task_args.audit_until,
+            marker=marker,
+        )
 
     async def __remove_release_directory(
         self,

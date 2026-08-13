@@ -91,6 +91,31 @@ async def test_write_release_log(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     assert file_mode(target) == 0o444
 
 
+async def test_write_release_log_appends_missing_marker(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stray = {"datetime": "2026-08-10T12:00:01.000Z", "action": "announce", "project_key": "proj", "version_key": "1.0"}
+    source = write_source(tmp_path, monkeypatch, [wrap(stray)])
+    marker = {
+        "datetime": "2026-08-10T12:00:02.000Z",
+        "action": "announce",
+        "project_key": "proj",
+        "version_key": "1.0",
+        "email_to": "announce@proj.apache.org",
+    }
+
+    count = await auditlog.write_release_log(
+        safe.ProjectKey("proj"), safe.VersionKey("1.0"), until="2026-08-10T12:00:02.000Z", marker=marker
+    )
+
+    target = tmp_path / "audit" / "releases" / "proj" / "1.0.jsonl"
+    events = read_events(target)
+    assert count == 2
+    assert [event["action"] for event in events] == ["announce", "announce"]
+    assert events[1]["email_to"] == "announce@proj.apache.org"
+    assert json.loads(source.read_text(encoding="utf-8").splitlines()[-1])["event"] == marker
+
+
 async def test_write_release_log_boundary_and_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     announced = {
         "datetime": "2026-08-10T12:00:02.000Z",
@@ -100,21 +125,17 @@ async def test_write_release_log_boundary_and_marker(tmp_path: pathlib.Path, mon
     }
     archived = {"datetime": "2026-08-10T12:00:03.000Z", "action": "archive", "project_key": "proj", "version": "1.0"}
     created = {"datetime": "2026-08-10T12:00:01.000Z", "action": "create", "project_key": "proj", "version": "1.0"}
-    write_source(tmp_path, monkeypatch, [wrap(created), wrap(announced), wrap(archived)])
+    source = write_source(tmp_path, monkeypatch, [wrap(created), wrap(announced), wrap(archived)])
     project_key = safe.ProjectKey("proj")
     version_key = safe.VersionKey("1.0")
     until = "2026-08-10T12:00:02.000Z"
 
-    count = await auditlog.write_release_log(project_key, version_key, until=until, required_action="announce")
+    count = await auditlog.write_release_log(project_key, version_key, until=until, marker=announced)
 
     target = tmp_path / "audit" / "releases" / "proj" / "1.0.jsonl"
     assert count == 2
     assert [event["action"] for event in read_events(target)] == ["create", "announce"]
-
-    with pytest.raises(ValueError):
-        await auditlog.write_release_log(
-            project_key, version_key, until="2026-08-10T12:00:01.500Z", required_action="announce"
-        )
+    assert len(source.read_text(encoding="utf-8").splitlines()) == 3
 
 
 async def test_write_release_log_replaces_readonly(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

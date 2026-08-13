@@ -34,17 +34,29 @@ async def write_release_log(
     version_key: safe.VersionKey,
     *,
     until: str | None = None,
-    required_action: str | None = None,
+    marker: dict[str, Any] | None = None,
 ) -> int:
     source = pathlib.Path(config.get().STORAGE_AUDIT_LOG_FILE)
     events = await asyncio.to_thread(_matching_events, source, str(project_key), str(version_key), until)
-    if required_action is not None:
-        if not any(event.get("action") == required_action for event in events):
-            raise ValueError(f"No {required_action} event was found for {project_key}-{version_key}")
+    if (marker is not None) and (not _marker_present(events, marker)):
+        await asyncio.to_thread(_append_event, source, marker)
+        events.append(_normalise(marker, str(project_key), str(version_key)))
     target = paths.audit_release_log_file(project_key, version_key)
     content = "".join(json.dumps(event, allow_nan=False) + "\n" for event in events)
     await util.atomic_write_file(target.path, content, mode=0o444)
     return len(events)
+
+
+def _append_event(source: pathlib.Path, event: dict[str, Any]) -> None:
+    line = json.dumps({"event": event, "level": "info", "logger": "atr.storage.audit"}, allow_nan=False)
+    with source.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+def _marker_present(events: list[dict[str, Any]], marker: dict[str, Any]) -> bool:
+    return any(
+        (event.get("action") == marker["action"]) and (event.get("datetime") == marker["datetime"]) for event in events
+    )
 
 
 def _matches(event: dict[str, Any], project_key: str, version_key: str, release_key: str) -> bool:

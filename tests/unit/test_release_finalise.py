@@ -38,7 +38,6 @@ import atr.storage.datatypes as datatypes
 import atr.storage.writers.release as release_writer
 import atr.tasks as tasks
 import atr.tasks.svnpub as svnpub
-import atr.tasks.task
 
 INTERNAL_PUBLISH_URL: Final[str] = "https://internal.example.invalid/repos/dist/atr"
 
@@ -86,6 +85,7 @@ def finalise_args() -> args.ReleaseFinalise:
         revision_number=safe.RevisionNumber("00001"),
         svn_revision=42,
         download_path_suffix=safe.RelPath("project-1.0.0"),
+        email_to="announce@project.apache.org",
         audit_until="2026-08-11T00:00:00.000Z",
     )
 
@@ -152,28 +152,6 @@ def test_finalise_wiring() -> None:
     assert sql.TaskType.RELEASE_FINALISE.label == "Release finalisation"
     parsed = results.ResultsAdapter.validate_python({"kind": "release_finalise", "audit_events": 1, "message": "x"})
     assert isinstance(parsed, results.ReleaseFinalise)
-
-
-async def test_finalise_defers_when_announce_event_missing(
-    sqlite_sessionmaker, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    setup_state(tmp_path, monkeypatch, {"artifact.tar.gz": b"content"})
-    monkeypatch.setattr(release_writer.svn, "export", FakeExport({"artifact.tar.gz": b"content"}))
-    monkeypatch.setattr(
-        release_writer.auditlog,
-        "write_release_log",
-        mock.AsyncMock(side_effect=ValueError("No release_announce event was found")),
-    )
-    delete = mock.AsyncMock()
-    monkeypatch.setattr(release_writer.util, "delete_immutable_directory", delete)
-    async with sqlite_sessionmaker() as data:
-        await seed_released(data)
-
-        with pytest.raises(atr.tasks.task.DeferredError):
-            await writer(data).finalise_published_release(finalise_args())
-
-    delete.assert_not_awaited()
-    assert entry_exists(tmp_path / "unfinished" / "project" / "1.0.0" / "00001" / "artifact.tar.gz")
 
 
 async def test_finalise_fails_when_publication_differs(
@@ -336,7 +314,10 @@ async def test_finalise_verifies_compiles_and_deletes(
     assert str(delete.await_args.args[0]) == str(tmp_path / "unfinished" / "project" / "1.0.0.deleting-")
     assert not entry_exists(tmp_path / "unfinished" / "project" / "1.0.0")
     assert write_release_log.await_args.kwargs["until"] == "2026-08-11T00:00:00.000Z"
-    assert write_release_log.await_args.kwargs["required_action"] == auditlog.RELEASE_ANNOUNCE_ACTION
+    marker = write_release_log.await_args.kwargs["marker"]
+    assert marker["action"] == auditlog.RELEASE_ANNOUNCE_ACTION
+    assert marker["datetime"] == "2026-08-11T00:00:00.000Z"
+    assert marker["email_to"] == "announce@project.apache.org"
 
 
 async def test_finalise_warns_on_unexpected_publication_files(

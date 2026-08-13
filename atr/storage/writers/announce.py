@@ -278,6 +278,9 @@ class ReleaseManager(CommitteeParticipant):
                 revision_number=preview_revision_number,
                 svn_revision=published_revision,
                 download_path_suffix=effective_download_path_suffix,
+                email_to=email_to,
+                email_cc=email_cc or [],
+                email_bcc=email_bcc or [],
                 audit_until=audit_stamp,
             )
             self.__write_as.append_to_audit_log(

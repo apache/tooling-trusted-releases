@@ -184,6 +184,9 @@ class ReleaseFinalise(schema.Strict):
         default=None,
         description="Optional path suffix appended under the committee distribution path",
     )
+    email_to: str | None = pydantic.Field(default=None, description="The announcement email To address")
+    email_cc: list[str] = schema.factory(list)
+    email_bcc: list[str] = schema.factory(list)
     audit_until: str = schema.description("Inclusive audit log datetime boundary for the release log")
 
 

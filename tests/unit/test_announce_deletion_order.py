@@ -175,6 +175,7 @@ async def test_finalise_queues_task_and_keeps_files(monkeypatch: pytest.MonkeyPa
     task_args = tasks[0].task_args
     parsed = args.ReleaseFinalise.model_validate(task_args)
     assert parsed.svn_revision == 85
+    assert parsed.email_to == "announce@example.apache.org"
     audit_call = release_manager._ReleaseManager__write_as.append_to_audit_log.call_args
     assert audit_call.kwargs["action"] == "release_announce"
     assert audit_call.kwargs["datetime"] == parsed.audit_until
