@@ -26,6 +26,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.pool
 import sqlmodel
 
+import atr.config as config
 import atr.db as db
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -337,20 +338,6 @@ async def test_archive_release_marks_it_archived(sessionmaker) -> None:
 
 
 @pytest.mark.asyncio
-async def test_restore_release_returns_it_to_current(sessionmaker) -> None:
-    async with sessionmaker() as data:
-        await _seed_project(data, "alpha", "alpha-one")
-        await _seed_release_with_children(data, "alpha-one", "1.0.0")
-        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
-
-        await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
-
-        release = await data.get(sql.Release, "alpha-one-1.0.0")
-        assert release is not None
-        assert release.is_archived is False
-
-
-@pytest.mark.asyncio
 async def test_archive_release_rejects_one_already_in_that_status(sessionmaker) -> None:
     async with sessionmaker() as data:
         await _seed_project(data, "alpha", "alpha-one")
@@ -369,6 +356,85 @@ async def test_restore_release_rejects_one_already_in_that_status(sessionmaker) 
 
         with pytest.raises(storage.AccessError, match="already"):
             await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_archive_release_records_the_catalogue_admin_source(sessionmaker) -> None:
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+
+        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        assert release.archive_source is sql.ArchiveSource.CATALOG_ADMIN
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        sql.ArchiveSource.MANUAL,
+        sql.ArchiveSource.CAP,
+        sql.ArchiveSource.AUTO_PRIOR,
+        sql.ArchiveSource.DIST_WATCHER,
+        sql.ArchiveSource.CATALOG_ADMIN,
+    ],
+)
+@pytest.mark.asyncio
+async def test_restore_release_refuses_an_archival_whose_files_left_dist(sessionmaker, source) -> None:
+    # Every tracked source - by hand, CAP, auto, the dist watcher, or a catalogue archive -
+    # took the files out of dist, so the catalogue must not offer the release back to current.
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        release.is_archived = True
+        release.archive_source = source
+        await data.commit()
+
+        with pytest.raises(storage.AccessError, match="distribution area"):
+            await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+
+@pytest.mark.asyncio
+async def test_restore_release_allows_a_legacy_untracked_archival(sessionmaker) -> None:
+    # A release archived before the source was tracked (null source) is treated as a
+    # catalogue-metadata archive, so it can still be restored.
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        release.is_archived = True
+        release.archive_source = None
+        await data.commit()
+
+        await _writer(data).restore_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        assert release.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_archive_release_removes_files_from_dist(sessionmaker, monkeypatch) -> None:
+    # A catalogue archive acts on a current release, whose files are live in dist, so it
+    # queues a removal to take them out.
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", "https://svn.example.invalid/dist", raising=False)
+    async with sessionmaker() as data:
+        await _seed_project(data, "alpha", "alpha-one")
+        await _seed_release_with_children(data, "alpha-one", "1.0.0")
+        release = await data.get(sql.Release, "alpha-one-1.0.0")
+        assert release is not None
+        release.download_path_suffix = "alpha-one/1.0.0"
+        await data.commit()
+
+        await _writer(data).archive_release(safe.ReleaseKey("alpha-one-1.0.0"))
+
+        tasks = (await data.execute(sqlmodel.select(sql.Task))).scalars().all()
+        assert len([t for t in tasks if t.task_type is sql.TaskType.SVN_UNPUBLISH]) == 1
 
 
 @pytest.mark.asyncio

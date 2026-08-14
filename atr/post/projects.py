@@ -31,9 +31,9 @@ import atr.log as log
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.models.unsafe as unsafe
+import atr.notify as notify
 import atr.shared as shared
 import atr.storage as storage
-import atr.tasks.cap as cap
 import atr.util as util
 import atr.web as web
 
@@ -136,7 +136,7 @@ async def complete_approval(
     except storage.AccessError as e:
         return await session.redirect(get.projects.projects, error=f"Error completing {approval.action.value}: {e}")
 
-    await cap.notify(
+    await notify.user(
         approval.requested_by,
         f"Project {project_key} was {approval.action.value}d after CAP approval.",
         sql.NotificationLevel.INFO,

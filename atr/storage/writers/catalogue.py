@@ -33,6 +33,7 @@ import atr.shared.catalogue_import as catalogue_import
 import atr.shared.catalogue_rows as catalogue_rows
 import atr.shared.repoint as repoint
 import atr.storage as storage
+import atr.storage.writers.release as release_writer
 
 # SQLite allows 999 bound variables by default, and an artifact key is three of them
 _DELETE_CHUNK: Final[int] = 300
@@ -138,14 +139,6 @@ class FoundationAdmin:
             raise
 
     async def archive_release(self, release_key: safe.ReleaseKey) -> None:
-        await self._set_release_archived(release_key, True)
-        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, archived_release=str(release_key))
-
-    async def restore_release(self, release_key: safe.ReleaseKey) -> None:
-        await self._set_release_archived(release_key, False)
-        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_release=str(release_key))
-
-    async def _set_release_archived(self, release_key: safe.ReleaseKey, archived: bool) -> None:
         key = str(release_key)
         await self.__data.begin_immediate()
         self.__data.expire_all()
@@ -153,20 +146,46 @@ class FoundationAdmin:
             release = await self.__data.get(sql.Release, key)
             if release is None:
                 raise storage.AccessError(f"Release '{key}' not found.", status=404)
-            if release.is_archived == archived:
-                state = "archived" if archived else "active"
-                raise storage.AccessError(f"Release '{key}' is already {state}.", status=409)
-            # Only the status flag moves. We leave the archived date alone: it mirrors a
-            # lifecycle event, and a catalogued release we archive by hand may well have no
-            # such event, which the model allows (an archived-but-undated release). The flag
-            # feeds both the project's current-versus-archived split and the committee
-            # summary's latest and count, so the whole site regenerates
-            release.is_archived = archived
+            if release.is_archived:
+                raise storage.AccessError(f"Release '{key}' is already archived.", status=409)
+            # A catalogue archive only ever acts on a current release
+            release.is_archived = True
+            release.archive_source = sql.ArchiveSource.CATALOG_ADMIN
+            release_writer.queue_svn_unpublish(self.__data, self.__asf_uid, release)
             await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
             await self.__data.commit()
         except Exception:
             await self.__data.rollback()
             raise
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, archived_release=str(release_key))
+
+    async def restore_release(self, release_key: safe.ReleaseKey) -> None:
+        key = str(release_key)
+        await self.__data.begin_immediate()
+        self.__data.expire_all()
+        try:
+            release = await self.__data.get(sql.Release, key)
+            if release is None:
+                raise storage.AccessError(f"Release '{key}' not found.", status=404)
+            if not release.is_archived:
+                raise storage.AccessError(f"Release '{key}' is already active.", status=409)
+            # Only an existing archival (no tracked source, from before removal existed) left the
+            # files in place, so only they can be brought back.
+            if release.archive_source is not None:
+                raise storage.AccessError(
+                    f"Release '{key}' was removed from the distribution area, so its files"
+                    " are gone and it can't be restored to current; republish it to bring it back.",
+                    status=409,
+                )
+            # Clear the source with the flag, so a later archival records its own reason.
+            release.is_archived = False
+            release.archive_source = None
+            await catalog_site.queue_full_regeneration(self.__data, self.__asf_uid)
+            await self.__data.commit()
+        except Exception:
+            await self.__data.rollback()
+            raise
+        self.__write_as.append_to_audit_log(asf_uid=self.__asf_uid, restored_release=str(release_key))
 
     async def rename_project(self, old_key: safe.ProjectKey, new_key: safe.ProjectKey, new_name: str | None) -> None:
         old = str(old_key)

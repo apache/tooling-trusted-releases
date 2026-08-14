@@ -20,9 +20,12 @@ from types import SimpleNamespace
 
 import pytest
 
+import atr.config as config
 import atr.models.safe as safe
+import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.announce as announce
+import atr.storage.writers.release as release_writer
 
 
 def announced_release(*, release_opt_in: bool = True, policy_opt_in: bool = True) -> SimpleNamespace:
@@ -105,6 +108,41 @@ async def test_auto_archive_reports_archive_failure(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(storage.AccessError, match="Release announced, but archiving prior release"):
         await release_manager._ReleaseManager__archive_prior_release(announced_release(), True)
+
+
+@pytest.mark.asyncio
+async def test_auto_archive_enqueues_svn_unpublish_for_prior(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Archiving the prior release must remove it from dist, same as any archive
+    publish_url = "https://internal.example.invalid/repos/dist/release"
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", publish_url, raising=False)
+    monkeypatch.setattr(release_writer.catalog_site, "queue_regeneration", mock.AsyncMock())
+    prior = SimpleNamespace(
+        key="example-1.0.0",
+        phase=sql.ReleasePhase.RELEASE,
+        project_key="example",
+        version="1.0.0",
+        cycle_key="example-default",
+        download_path_suffix="example/1.0.0",
+    )
+    release_manager = writer()
+    mock_data = release_manager._ReleaseManager__data
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+    mock_data.add = mock.MagicMock()
+    mock_data.commit = mock.AsyncMock()
+
+    error = await release_manager._ReleaseManager__archive_release(
+        safe.ProjectKey("example"), safe.VersionKey("1.0.0"), prior
+    )
+
+    assert error is None
+    tasks = [
+        call.args[0]
+        for call in mock_data.add.call_args_list
+        if isinstance(call.args[0], sql.Task) and call.args[0].task_type is sql.TaskType.SVN_UNPUBLISH
+    ]
+    assert len(tasks) == 1
 
 
 def writer() -> announce.ReleaseManager:

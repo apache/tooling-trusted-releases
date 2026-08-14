@@ -78,6 +78,23 @@ async def test_complete_archive_claims_and_archives_in_one_transaction() -> None
 
 
 @pytest.mark.asyncio
+async def test_complete_archive_attributes_the_archival_to_the_requester() -> None:
+    # The SVN removal must commit under a real ASF UID, so the archival is attributed to the
+    # committer who requested the vote, not the system running the resolve task.
+    approval = _approval()
+    data = _data(approval=approval)
+    write = mock.MagicMock()
+    write.authorisation.asf_uid = "tester"
+    write_as = mock.MagicMock()
+    writer = release_writer.FoundationAdmin(write, write_as, data)
+
+    await writer.complete_archive(safe.ProjectKey("alpha-one"), safe.VersionKey("1.2.0"), 7)
+
+    write_as.append_to_audit_log.assert_called_once()
+    assert write_as.append_to_audit_log.call_args.kwargs["asf_uid"] == "requester"
+
+
+@pytest.mark.asyncio
 async def test_complete_archive_takes_the_write_lock_before_reading_the_approval() -> None:
     # Without the lock two completions could both read the approval as approved
     approval = _approval(status=sql.ApprovalStatus.PENDING)
@@ -120,6 +137,7 @@ def _approval(
         project_key="alpha-one",
         committee_key="alpha",
         release_version=release_version,
+        requested_by="requester",
     )
 
 

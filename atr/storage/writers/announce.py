@@ -44,6 +44,7 @@ import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.paths as paths
 import atr.storage as storage
+import atr.storage.writers.release as release
 import atr.svn as svn
 import atr.tasks.checks as checks
 import atr.tasks.checks.signature as signature
@@ -389,39 +390,15 @@ class ReleaseManager(CommitteeParticipant):
         version_key: safe.VersionKey,
         release_row: sql.Release,
     ) -> str | None:
-        if release_row.phase != sql.ReleasePhase.RELEASE:
-            return f"Release {project_key!s} {version_key!s} is not in the release phase"
-
-        archive_date = datetime.datetime.now(datetime.UTC)
-        via = sql.validate_instrumented_attribute
-        update_stmt = (
-            sqlmodel.update(sql.Release)
-            .where(via(sql.Release.key) == release_row.key)
-            .where(via(sql.Release.is_archived).is_(False))
-            .values(archived=archive_date, is_archived=True)
+        return await release.archive_release_core(
+            self.__data,
+            self.__write_as,
+            self.__asf_uid,
+            project_key,
+            version_key,
+            release_row,
+            sql.ArchiveSource.AUTO_PRIOR,
         )
-        update_result = await self.__data.execute_query(update_stmt)
-        if getattr(update_result, "rowcount", 0) != 1:
-            return f"Release {project_key!s} {version_key!s} is already archived"
-
-        self.__data.add(
-            sql.LifecycleEvent(
-                project_key=release_row.project_key,
-                cycle_key=release_row.cycle_key,
-                version_key=release_row.key,
-                event=sql.LifecycleEventType.ARCHIVE,
-                effective=archive_date,
-                published=archive_date,
-            )
-        )
-        await self.__data.commit()
-        self.__write_as.append_to_audit_log(
-            asf_uid=self.__asf_uid,
-            project_key=str(project_key),
-            version=str(version_key),
-            archived=archive_date.isoformat(),
-        )
-        return None
 
     async def __check_local_publication_artifacts(
         self,

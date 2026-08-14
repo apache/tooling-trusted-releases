@@ -21,10 +21,13 @@ from types import SimpleNamespace
 
 import pytest
 
+import atr.config as config
 import atr.models.safe as safe
 import atr.models.sql as sql
 import atr.storage as storage
 import atr.storage.writers.release as release
+
+_PUBLISH_URL = "https://internal.example.invalid/repos/dist/release"
 
 
 class ReleaseQuery:
@@ -129,10 +132,121 @@ async def test_archive_succeeds_and_writes_lifecycle_event():
     assert mock_data.commit.await_count == 1
 
 
+@pytest.mark.asyncio
+async def test_archive_enqueues_svn_unpublish_when_published(monkeypatch):
+    # Archiving a release that ATR published should queue its removal from dist
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
+    target = _archive_candidate(version="1.0.0", download_path_suffix="example/1.0.0")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+
+    await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+    added_args = [call.args[0] for call in mock_data.add.call_args_list]
+    tasks = [a for a in added_args if isinstance(a, sql.Task) and a.task_type is sql.TaskType.SVN_UNPUBLISH]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.project_key == "example"
+    assert task.version_key == "1.0.0"
+    # The task only names the release; the executor resolves where the files went
+    assert "download_path_suffix" not in task.task_args
+
+
+@pytest.mark.asyncio
+async def test_archive_enqueues_svn_unpublish_for_a_root_published_release(monkeypatch):
+    # An empty suffix means the release lives at the committee dist root; it must still be removed
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
+    target = _archive_candidate(version="1.0.0", download_path_suffix="")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+
+    await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+    added_args = [call.args[0] for call in mock_data.add.call_args_list]
+    tasks = [a for a in added_args if isinstance(a, sql.Task) and a.task_type is sql.TaskType.SVN_UNPUBLISH]
+    assert len(tasks) == 1
+    assert tasks[0].version_key == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_archive_queues_svn_unpublish_without_a_suffix(monkeypatch):
+    # A catalogued release carries no release-level suffix but its artifacts still record
+    # dist locations, so a removal is queued and the executor works out what to take out.
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
+    target = _archive_candidate(version="1.0.0", download_path_suffix=None)
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+
+    await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+    added_args = [call.args[0] for call in mock_data.add.call_args_list]
+    tasks = [a for a in added_args if isinstance(a, sql.Task) and a.task_type is sql.TaskType.SVN_UNPUBLISH]
+    assert len(tasks) == 1
+    assert tasks[0].version_key == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_archive_skips_svn_unpublish_when_svn_not_configured(monkeypatch):
+    # Without an SVN publish target there is nothing to remove, so no task
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", None, raising=False)
+    target = _archive_candidate(version="1.0.0", download_path_suffix="example/1.0.0")
+    member = _make_member(release_result=target, siblings=[_archive_candidate(version="2.0.0")])
+    mock_data = member._CommitteeMember__data  # type: ignore[attr-defined]
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+
+    await member.archive(safe.ProjectKey("example"), safe.VersionKey("1.0.0"))
+
+    added_args = [call.args[0] for call in mock_data.add.call_args_list]
+    tasks = [a for a in added_args if isinstance(a, sql.Task) and a.task_type is sql.TaskType.SVN_UNPUBLISH]
+    assert tasks == []
+
+
+@pytest.mark.asyncio
+async def test_archive_core_skips_svn_unpublish_for_a_dist_watcher_archival(monkeypatch):
+    # The dist watcher archives a release because its files already left dist, so
+    # there is nothing to remove and no task to enqueue
+    monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", _PUBLISH_URL, raising=False)
+    monkeypatch.setattr(release.catalog_site, "queue_regeneration", mock.AsyncMock())
+    target = _archive_candidate(version="1.0.0", download_path_suffix="example/1.0.0")
+    mock_data = mock.MagicMock()
+    update_result = mock.MagicMock()
+    update_result.rowcount = 1
+    mock_data.execute_query = mock.AsyncMock(return_value=update_result)
+    mock_data.add = mock.MagicMock()
+    mock_data.commit = mock.AsyncMock()
+
+    error = await release.archive_release_core(
+        mock_data,
+        mock.MagicMock(),
+        "alice",
+        safe.ProjectKey("example"),
+        safe.VersionKey("1.0.0"),
+        target,
+        sql.ArchiveSource.DIST_WATCHER,
+    )
+
+    assert error is None
+    added_args = [call.args[0] for call in mock_data.add.call_args_list]
+    tasks = [a for a in added_args if isinstance(a, sql.Task) and a.task_type is sql.TaskType.SVN_UNPUBLISH]
+    assert tasks == []
+
+
 def _archive_candidate(
     version: str = "1.0.0",
     phase: sql.ReleasePhase = sql.ReleasePhase.RELEASE,
     is_archived: bool = False,
+    download_path_suffix: str | None = "",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         key=f"example-{version}",
@@ -143,6 +257,7 @@ def _archive_candidate(
         released=datetime.datetime(2026, 1, int(version[0]) or 1, tzinfo=datetime.UTC),
         project_key="example",
         cycle_key="example-default",
+        download_path_suffix=download_path_suffix,
     )
 
 

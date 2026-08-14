@@ -255,6 +255,16 @@ class SvnPublish(schema.Strict):
     message: str = schema.description("A short status message describing the publish outcome")
 
 
+class SvnUnpublish(schema.Strict):
+    """Result of the task to remove an archived release from the SVN dist area."""
+
+    kind: Literal["svn_unpublish"] = schema.Field(alias="kind")
+    svn_revision: int | None = schema.description("The SVN revision the removal landed in, or None if nothing remained")
+    message: str = schema.description("A short status message describing the removal outcome")
+    # Files left in dist that may need manual cleanup.
+    leftover: list[str] = schema.factory(list)
+
+
 class VoteAutoResolve(schema.Strict):
     """Result of the task to automatically resolve a vote."""
 
@@ -321,6 +331,7 @@ Results = Annotated[
     | SBOMToolScore
     | SvnImportFiles
     | SvnPublish
+    | SvnUnpublish
     | VoteAutoResolve
     | VoteEndNotify
     | VoteInitiate,
