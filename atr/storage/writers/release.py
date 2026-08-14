@@ -37,6 +37,7 @@ import sqlalchemy.engine as engine
 import sqlmodel
 
 import atr.analysis as analysis
+import atr.attestable as attestable
 import atr.auditlog as auditlog
 import atr.catalog_site as catalog_site
 import atr.config as config
@@ -49,7 +50,7 @@ import atr.hashes as hashes
 import atr.log as log
 import atr.models.api as api
 import atr.models.args as args
-import atr.models.attestable as attestable
+import atr.models.attestable as attestable_models
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
@@ -107,17 +108,17 @@ class DeleteFileResult:
     metadata_files_deleted: int
 
 
-async def _archive_release(
+async def archive_release_core(
     data: db.Session,
     write_as: storage.WriteAs,
     asf_uid: str,
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     release: sql.Release,
+    source: sql.ArchiveSource,
 ) -> str | None:
-    # The archive core, shared by a committee member archiving by hand and the
-    # system archiving a dist removal. Only an announced release can be
-    # archived.
+    # Only an announced release can be archived. The source is recorded so the removal
+    # from SVN can be gated on it and a restore can refuse a release whose files have left dist.
     if release.phase != sql.ReleasePhase.RELEASE:
         return f"Release {project_key!s} {version_key!s} is not in the release phase"
 
@@ -127,13 +128,17 @@ async def _archive_release(
         sqlmodel.update(sql.Release)
         .where(via(sql.Release.key) == release.key)
         .where(via(sql.Release.is_archived).is_(False))
-        .values(archived=archive_date, is_archived=True)
+        .values(archived=archive_date, is_archived=True, archive_source=source)
     )
     update_result = await data.execute_query(update_stmt)
     if getattr(update_result, "rowcount", 0) != 1:
         return f"Release {project_key!s} {version_key!s} is already archived"
 
-    # TODO: SVN move to archive.apache.org goes here once SVN is wired up.
+    # The dist watcher archives a release because its files already left dist, so
+    # there's nothing left to remove - every other source is a live release we're
+    # taking out of the dist area.
+    if source is not sql.ArchiveSource.DIST_WATCHER:
+        queue_svn_unpublish(data, asf_uid, release)
 
     data.add(
         sql.LifecycleEvent(
@@ -201,7 +206,7 @@ async def _claim_release_archive_approval(
     project_key: safe.ProjectKey,
     version_key: safe.VersionKey,
     committee_key: str,
-) -> None:
+) -> str:
     approval = await data.approval_request(id=approval_request_id).get()
     if (approval is None) or (approval.status != sql.ApprovalStatus.APPROVED):
         raise storage.AccessError("This approval request is not ready to complete.", status=409)
@@ -214,6 +219,9 @@ async def _claim_release_archive_approval(
     if approval.committee_key != committee_key:
         raise storage.AccessError("This approval request was filed for a different committee.", status=409)
     approval.status = sql.ApprovalStatus.COMPLETED
+    # The requester is a real committer, so the archival - and the SVN removal it commits -
+    # is attributed to them rather than to the system running the resolve task.
+    return approval.requested_by
 
 
 async def _ensure_project_cycle(data: db.Session, project: sql.Project, version: safe.VersionKey) -> str:
@@ -243,6 +251,26 @@ def _normalise_signature_field(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def queue_svn_unpublish(data: db.Session, asf_uid: str, release: sql.Release) -> None:
+    # Queue a task to take the release's files out of the dist area.
+    if not config.get().SVN_PUBLISH_URL:
+        return
+    data.add(
+        sql.Task(
+            status=sql.TaskStatus.QUEUED,
+            task_type=sql.TaskType.SVN_UNPUBLISH,
+            task_args=args.SvnUnpublish(
+                asf_uid=asf_uid,
+                project_key=safe.ProjectKey(release.project_key),
+                version_key=safe.VersionKey(release.version),
+            ).model_dump(),
+            asf_uid=asf_uid,
+            project_key=release.project_key,
+            version_key=release.version,
+        )
+    )
 
 
 async def _signature_provenance_metadata_for(
@@ -671,7 +699,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         async def modify(
             path: safe.StatePath, old_rev: sql.Revision | None
-        ) -> dict[safe.RelPath, attestable.ProvenanceV2] | None:
+        ) -> dict[safe.RelPath, attestable_models.ProvenanceV2] | None:
             # Uses new_revision_number for logging only
             path_in_new_revision = path / rel_path
 
@@ -708,16 +736,16 @@ class CommitteeParticipant(FoundationCommitter):
                 await f.write(f"{hash_value}  {rel_path.name}\n")
 
             generated_rel = safe.RelPath(str(rel_path.parent / hash_path_rel_name))
-            generator = attestable.GeneratorV2.SHA512_FROM_CONTENT
+            generator = attestable_models.GeneratorV2.SHA512_FROM_CONTENT
             metadata: dict[str, Any] = {
                 "initiated_by": self.__asf_uid,
                 "source_content_hashes": {str(rel_path): source_content_hash},
                 "source_paths": [str(rel_path)],
             }
             if signature_metadata is not None:
-                generator = attestable.GeneratorV2.SHA512_FROM_SIGNATURE
+                generator = attestable_models.GeneratorV2.SHA512_FROM_SIGNATURE
                 metadata.update(signature_metadata)
-            provenance = attestable.ProvenanceV2(generator=generator, metadata=metadata)
+            provenance = attestable_models.ProvenanceV2(generator=generator, metadata=metadata)
             return {generated_rel: provenance}
 
         await self.__write_as.revision.create_revision_with_quarantine(
@@ -1476,8 +1504,14 @@ class CommitteeMember(ReleaseManager):
             if release is None:
                 raise storage.AccessError(f"Release {project_key!s} {version_key!s} not found", status=404)
             await self.__assert_archivable_without_vote(project, release, project_key, version_key)
-            error = await _archive_release(
-                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
+            error = await archive_release_core(
+                self.__data,
+                self.__write_as,
+                self.__asf_uid,
+                project_key,
+                version_key,
+                release,
+                sql.ArchiveSource.MANUAL,
             )
             if error is not None:
                 raise storage.AccessError(error, status=409)
@@ -1570,7 +1604,6 @@ class FoundationAdmin(FoundationCommitter):
         """Archive an announced release as the system.
 
         Used by the dist watcher when a release directory leaves the dist area.
-        Shares the archive core with the committee-member path, log matches.
         """
         release = await self.__data.release(
             project_key=str(project_key),
@@ -1579,7 +1612,15 @@ class FoundationAdmin(FoundationCommitter):
         ).get()
         if release is None:
             return f"Release {project_key!s} {version_key!s} not found"
-        return await _archive_release(self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release)
+        return await archive_release_core(
+            self.__data,
+            self.__write_as,
+            self.__asf_uid,
+            project_key,
+            version_key,
+            release,
+            sql.ArchiveSource.DIST_WATCHER,
+        )
 
     async def complete_archive(
         self,
@@ -1587,13 +1628,14 @@ class FoundationAdmin(FoundationCommitter):
         version_key: safe.VersionKey,
         approval_request_id: int,
     ) -> str | None:
-        """Archive a release whose CAP approval vote has passed, as the system.
+        """Archive a release whose CAP approval vote has passed.
 
-        The CAP resolve task runs this once a vote passes, so there's no
-        committer in the loop to press the button. It mirrors the by-hand
-        committee-member path: take the write lock, claim the approval, then
-        archive. The lock is taken before the approval is read, so an approval
-        can only ever complete one archival.
+        The CAP resolve task runs this once a vote passes, so there's no committer
+        pressing the button - but the person who requested the vote is a real committer,
+        so the archival, and the SVN removal it commits, is attributed to them rather than
+        to the system. It mirrors the by-hand committee-member path: take the write lock,
+        claim the approval, then archive. The lock is taken before the approval is read, so
+        an approval can only ever complete one archival.
         """
         await self.__data.begin_immediate()
         self.__data.expire_all()
@@ -1608,7 +1650,7 @@ class FoundationAdmin(FoundationCommitter):
             committee = release.committee
             if committee is None:
                 return f"Release {project_key!s} {version_key!s} has no committee"
-            await _claim_release_archive_approval(
+            requested_by = await _claim_release_archive_approval(
                 self.__data, approval_request_id, project_key, version_key, committee.key
             )
             if release.is_archived:
@@ -1617,8 +1659,14 @@ class FoundationAdmin(FoundationCommitter):
                 # blocking the release
                 await self.__data.commit()
                 return None
-            return await _archive_release(
-                self.__data, self.__write_as, self.__asf_uid, project_key, version_key, release
+            return await archive_release_core(
+                self.__data,
+                self.__write_as,
+                requested_by,
+                project_key,
+                version_key,
+                release,
+                sql.ArchiveSource.CAP,
             )
         except storage.AccessError as e:
             await self.__data.rollback()
@@ -1791,6 +1839,146 @@ class FoundationAdmin(FoundationCommitter):
             audit_events=audit_events,
             message=message,
         )
+
+    async def unpublish_from_svn_execute(self, task_args: args.SvnUnpublish) -> results.SvnUnpublish:
+        # The removal is the inverse of the publish - take out the files ATR recorded.
+        publish_url = config.get().SVN_PUBLISH_URL
+        if not publish_url:
+            # The publish target went away between queuing and running, so fail
+            # cleanly rather than let the URL builder raise a bare ValueError.
+            raise datatypes.FailedError("SVN_PUBLISH_URL is not configured")
+        release = await self.__data.release(
+            project_key=str(task_args.project_key),
+            version=str(task_args.version_key),
+            _committee=True,
+            _project_release_policy=True,
+        ).demand(datatypes.FailedError("Release not found for removal"))
+        committee = release.committee
+        if committee is None:
+            raise datatypes.FailedError("Release has no committee - Invalid state")
+
+        # Where ATR published: the release's own suffix if it locked one, else the project policy
+        # default (an empty suffix is the committee root on purpose). Resolved the same way publish
+        # resolves it, so we look where the files actually went rather than at a raw null.
+        effective_suffix = construct.effective_download_path_suffix(release)
+        release_dir = str(paths.committee_dist_relpath(committee, effective_suffix))
+        root_url = publish_url.rstrip("/")
+        pairs, exact, alternatives = await self.__removal_wanted(task_args, release_dir)
+        if not pairs:
+            return results.SvnUnpublish(
+                kind="svn_unpublish", svn_revision=None, message=f"No published files recorded for {release.key}"
+            )
+        rel_paths, leftover = await self.__plan_removals(root_url, release.version, pairs, exact, alternatives)
+        if not rel_paths:
+            return results.SvnUnpublish(
+                kind="svn_unpublish", svn_revision=None, message=f"{release.key} was already absent from dist"
+            )
+
+        log_message = (
+            f"Unpublish {task_args.project_key!s}-{task_args.version_key!s}\n\n"
+            f"Committee: {committee.key}\n"
+            "Tool: ATR\n"
+            f"Archived by {task_args.asf_uid} via ATR"
+        )
+        try:
+            output = await svn.remove_files(root_url, rel_paths, task_args.asf_uid, log_message)
+        except svn.CommandExecutionError as exc:
+            log.error(f"SVN unpublish failed: {svn.error_message(exc)}")
+            raise datatypes.FailedError(svn.error_message(exc)) from None
+        revision = svn.parse_svnmucc_revision(output)
+        self.__write_as.append_to_audit_log(
+            asf_uid=task_args.asf_uid,
+            project_key=str(task_args.project_key),
+            version=str(task_args.version_key),
+            svn_revision=revision,
+        )
+        landed = f" as r{revision}" if revision is not None else ""
+        return results.SvnUnpublish(
+            kind="svn_unpublish",
+            svn_revision=revision,
+            message=f"Removed {len(rel_paths)} file(s) for {release.key} from SVN{landed}",
+            leftover=leftover,
+        )
+
+    async def __removal_wanted(
+        self, task_args: args.SvnUnpublish, release_dir: str
+    ) -> tuple[list[tuple[str, set[str]]], bool, bool]:
+        # Use the attestable manifest - the full list of files ATR published - and fall back
+        # to the recorded artifact rows for a release that has none (one catalogued or
+        # imported, never published through ATR). exact says whether the set is complete: a
+        # manifest is, the fallback isn't (it omits non-artifact files like a README), so a
+        # fallback removal can leave files behind that the caller flags for cleanup.
+        # alternatives says the directories are candidates for one location, tried newest first
+        # (the manifest case), rather than distinct directories each holding their own files.
+        artifacts = await self.__data.artifact(
+            project_key=str(task_args.project_key), version=str(task_args.version_key)
+        ).all()
+        artifact_dirs = sorted({suffix for artifact in artifacts if (suffix := artifact.download_path_suffix)})
+        revision_number = await attestable.latest_revision_number(task_args.project_key, task_args.version_key)
+        if revision_number is not None:
+            manifest = await attestable.load(task_args.project_key, task_args.version_key, revision_number)
+            if manifest is not None:
+                # Where the artifact rows say the files sit
+                # Project policy path (release_dir) as a fallback for releases moved by hand in alpha
+                # dist directly.
+                names = set(manifest.paths.keys())
+                ordered: list[str] = []
+                for directory in [*artifact_dirs, release_dir]:
+                    if directory not in ordered:
+                        ordered.append(directory)
+                return [(directory, names) for directory in ordered], True, True
+        wanted: dict[str, set[str]] = {}
+        for artifact in artifacts:
+            directory = artifact.download_path_suffix or release_dir
+            for name in (artifact.artifact_path, artifact.signature_path, artifact.checksum_path, artifact.sbom_path):
+                if name:
+                    wanted.setdefault(directory, set()).add(name)
+        return list(wanted.items()), False, False
+
+    async def __plan_removals(
+        self, root_url: str, version: str, pairs: list[tuple[str, set[str]]], exact: bool, alternatives: bool
+    ) -> tuple[list[str], list[str]]:
+        # Keep only what's still in the dist area, so a re-run or a partial earlier removal is
+        # idempotent: svnmucc is atomic and would fail the whole commit on an already-gone path.
+        rel_paths: list[str] = []
+        leftover: list[str] = []
+        for directory, names in pairs:
+            # Recursive listing finds the files wherever the release put them, nested or
+            # not. A directory that holds nothing but our files - a version directory the
+            # release owns outright - comes out whole. A shared directory (the committee root, or
+            # a flat category dir like plugins/) may hold other releases, so there we only take
+            # our own files. The non-empty guard stops an empty listing removing a phantom path.
+            present = await self.__list_present(f"{root_url}/{directory}")
+            if present is None:
+                continue
+            found: list[str] = []
+            if present and (present <= names):
+                found.append(directory)
+            else:
+                found.extend(f"{directory}/{name}" for name in sorted(names) if name in present)
+                # Files a fallback removal missed are worth flagging only in the release's own
+                # directory - one carrying its version. A shared category dir (plugins/, providers/)
+                # holds siblings, not our leftovers, so we say nothing there.
+                if (not exact) and (version in directory):
+                    leftover.extend(f"{directory}/{other}" for other in sorted(present - names))
+            if found:
+                rel_paths.extend(found)
+                # When the directories are candidates for one location the files sit in the first
+                # that has them; stop, so a stale duplicate elsewhere is left alone.
+                if alternatives:
+                    break
+        return sorted(rel_paths), sorted(leftover)
+
+    async def __list_present(self, url: str) -> set[str] | None:
+        # None means the path simply isn't there - already gone, so nothing to remove. Any
+        # other error is no proof the path has gone, so it stays a failure.
+        try:
+            return set(await svn.list_files(url))
+        except svn.CommandExecutionError as exc:
+            if svn.path_missing_error(exc):
+                return None
+            log.error(f"SVN unpublish listing failed: {svn.error_message(exc)}")
+            raise datatypes.FailedError(svn.error_message(exc)) from None
 
     async def notify_seen(
         self,

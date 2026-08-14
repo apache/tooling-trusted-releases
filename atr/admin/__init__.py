@@ -922,13 +922,20 @@ async def _catalog_release_status_action(committee_key: str, project_key: str, r
     # flag flips, so we render them as small POST buttons rather than a whole confirmation page
     base = f"/admin/catalog/{committee_key}/project/{project_key}/release/{release.version}"
     if release.is_archived:
+        # A tracked source removed the release's files, so restore can't just flip the flag -
+        # only a legacy archival (null source) can be brought back.
+        if release.archive_source is not None:
+            return htpy.span(
+                ".btn.btn-sm.btn-outline-secondary.me-1.disabled",
+                title="Its files have left the distribution area - republish to restore it",
+            )["Restore"]
         return await form.render(
             model_cls=form.Empty,
             action=f"{base}/restore",
             form_classes=".d-inline",
             submit_classes="btn-sm btn-outline-secondary me-1",
             submit_label="Restore",
-            confirm=f"Restore {release.version} to current?",
+            confirm=f"Restore {release.version} to current? Files will not be modified.",
             empty=True,
         )
     return await form.render(
@@ -937,7 +944,7 @@ async def _catalog_release_status_action(committee_key: str, project_key: str, r
         form_classes=".d-inline",
         submit_classes="btn-sm btn-outline-warning me-1",
         submit_label="Archive",
-        confirm=f"Archive {release.version}? It stays catalogued but is marked archived.",
+        confirm=f"Archive {release.version}? It will be archived and its files removed from the distribution area.",
         empty=True,
     )
 
@@ -1041,7 +1048,7 @@ async def catalog_release_archive_post(
     """
     URL: POST /catalog/<committee_key>/project/<project_key>/release/<version_key>/archive
 
-    Mark a single catalogued release as archived, leaving its files in place.
+    Mark a single catalogued release as archived and remove its files from the distribution area.
     """
     async with db.session() as data:
         release = await data.release(project_key=str(project_key), version=str(version_key)).demand(

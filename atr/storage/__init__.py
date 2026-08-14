@@ -361,6 +361,13 @@ class WriteAsReleaseFinaliseService(WriteAsSystemService):
         self.release_finalise_published = admin.release.finalise_published_release
 
 
+class WriteAsReleaseUnpublishService(WriteAsSystemService):
+    def __init__(self, write: Write, data: db.Session):
+        super().__init__(write, data)
+        admin = WriteAsFoundationAdmin(write, data)
+        self.release_unpublish_from_svn = admin.release.unpublish_from_svn_execute
+
+
 class WriteAsAutomatedMailService(WriteAsSystemService):
     def __init__(self, write: Write, data: db.Session):
         super().__init__(write, data)

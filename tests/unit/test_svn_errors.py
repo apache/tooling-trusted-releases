@@ -54,6 +54,14 @@ def test_error_message_reports_timeout() -> None:
     assert "see https://status.apache.org/" in message
 
 
+def test_parse_svnmucc_revision_reads_the_svnmucc_commit_line() -> None:
+    # svnmucc reports a commit in its own format, not svn's "Committed revision N.",
+    # so the removal path must parse this shape or it never records a revision.
+    assert svn.parse_svnmucc_revision("r4231 committed by asftool at 2026-09-02T14:23:07.482Z") == 4231
+    assert svn.parse_svnmucc_revision("Committed revision 4231.") is None
+    assert svn.parse_svnmucc_revision("no revision line here") is None
+
+
 def test_error_message_uses_specific_stacked_error() -> None:
     exc = svn.CommandExecutionError(
         1,
@@ -272,3 +280,43 @@ def _svn_info(root: str = "https://dist.apache.org/repos/dist/atr") -> svn.SvnIn
         last_changed_rev="42",
         last_changed_date="2026-05-01 00:00:00 +0000",
     )
+
+
+def test_path_missing_error_recognises_svn_info_not_found() -> None:
+    # Real svn 1.14 stderr for `svn info` on a missing URL (file:// and https)
+    exc = svn.CommandExecutionError(
+        1,
+        "svn: warning: W170000: URL 'https://svn/x' non-existent in revision 87117\n"
+        "svn: E200009: Could not display info for all targets because some targets don't exist",
+    )
+    assert svn.path_missing_error(exc) is True
+
+
+def test_path_missing_error_recognises_svn_list_not_found() -> None:
+    # Real svn 1.14 stderr for `svn list` on a missing directory
+    exc = svn.CommandExecutionError(
+        1,
+        "svn: warning: W160013: Path '/missing/dir' not found\n"
+        "svn: E200009: Could not list all targets because some targets don't exist",
+    )
+    assert svn.path_missing_error(exc) is True
+
+
+def test_path_missing_error_recognises_svn_delete_not_found() -> None:
+    # Real svn 1.14 stderr for `svn delete` on a missing URL
+    exc = svn.CommandExecutionError(1, "svn: E160013: URL 'https://svn/gone' does not exist")
+    assert svn.path_missing_error(exc) is True
+
+
+def test_path_missing_error_rejects_a_connection_error() -> None:
+    exc = svn.CommandExecutionError(1, "svn: E170013: Unable to connect to a repository at URL 'https://svn'")
+    assert svn.path_missing_error(exc) is False
+
+
+def test_path_missing_error_rejects_a_timeout() -> None:
+    assert svn.path_missing_error(svn.CommandTimeoutError(30.0)) is False
+
+
+def test_path_missing_error_rejects_an_auth_failure() -> None:
+    exc = svn.CommandExecutionError(1, "svn: E215004: Authentication failed")
+    assert svn.path_missing_error(exc) is False

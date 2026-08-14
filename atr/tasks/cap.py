@@ -25,26 +25,11 @@ import atr.models.cap
 import atr.models.results as results
 import atr.models.safe as safe
 import atr.models.sql as sql
+import atr.notify as notify
 import atr.storage as storage
 import atr.tasks as tasks
 import atr.tasks.checks as checks
 import atr.util as util
-
-
-async def notify(
-    asf_uid: str,
-    message: str,
-    level: sql.NotificationLevel,
-    link: str | None = None,
-    link_text: str | None = None,
-) -> None:
-    if asf_uid == constants.SYSTEM_SERVICE_UID:
-        return
-    try:
-        async with storage.write_as_user_service(asf_uid) as waus:
-            await waus.notifications_create(message, level, link=link, link_text=link_text)
-    except Exception:
-        log.exception("Failed to record CAP notification")
 
 
 @checks.with_model(args.CapApprovalResolveArgs)
@@ -82,7 +67,7 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
             # A passed archival vote completes itself, so there's no button left to press
             await _complete_release_archival(row)
             return
-        await notify(
+        await notify.user(
             row.requested_by,
             f"The CAP approval vote to {_describe_request(row)} passed. You can now complete this in ATR.",
             sql.NotificationLevel.INFO,
@@ -91,7 +76,7 @@ async def _apply_outcome(request_id: int, row: sql.ApprovalRequest, resolution: 
         )
         return
     if await _record_outcome(request_id, sql.ApprovalStatus.REJECTED, vote_outcome, permalink):
-        await notify(
+        await notify.user(
             row.requested_by,
             f"The CAP approval vote to {_describe_request(row)} did not pass (outcome: {vote_outcome}).",
             sql.NotificationLevel.WARNING,
@@ -121,7 +106,7 @@ async def _complete_release_archival(row: sql.ApprovalRequest) -> None:
                 await wacrs.project_record_approval_failure(row.id, error)
         except Exception:
             log.exception(f"Could not mark CAP request {row.id} as failed")
-        await notify(
+        await notify.user(
             row.requested_by,
             f"The CAP approval vote to {_describe_request(row)} passed, but ATR could not archive the"
             f" release automatically: {error}.",
@@ -130,7 +115,7 @@ async def _complete_release_archival(row: sql.ApprovalRequest) -> None:
         return
 
     # Same confirmation the by-hand completion posts
-    await notify(
+    await notify.user(
         row.requested_by,
         f"Release {project_key} {release_version} was archived after CAP approval.",
         sql.NotificationLevel.INFO,
@@ -171,7 +156,7 @@ async def _reschedule_or_fail(task_args: args.CapApprovalResolveArgs, row: sql.A
     attempts = len(constants.CAP_RESOLVE_RETRY_DELAYS) + 1
     error = f"CAP could not be resolved after {attempts} attempts"
     if await _record_outcome(task_args.approval_request_id, sql.ApprovalStatus.FAILED, None, None, error=error):
-        await notify(
+        await notify.user(
             row.requested_by,
             f"ATR could not resolve the CAP approval vote to {_describe_request(row)}: {error}.",
             sql.NotificationLevel.ERROR,
