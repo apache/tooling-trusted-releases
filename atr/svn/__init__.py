@@ -34,12 +34,18 @@ ASF_TOOL: Final[str] = "atr"
 EXPORT_TIMEOUT_SECONDS: Final[float] = 240.0
 INFO_TIMEOUT_SECONDS: Final[float] = 30.0
 KEYS_TIMEOUT_SECONDS: Final[float] = 60.0
-LIST_TIMEOUT_SECONDS: Final[float] = 60.0
+LIST_TIMEOUT_SECONDS: Final[float] = 120.0
 PUBLISH_TIMEOUT_SECONDS: Final[float] = 240.0
 _COMMITTED_REVISION_RE: Final = re.compile(r"^Committed revision (\d+)\.\s*$", re.MULTILINE)
+# svnmucc reports a commit as `r<N> committed by <author> at <date>`, a different
+# shape from the `Committed revision <N>.` line svn import and commit emit.
+_SVNMUCC_REVISION_RE: Final = re.compile(r"^r(\d+) committed by ", re.MULTILINE)
 _CONNECTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {"E000110", "E000111", "E120108", "E170013", "E175002", "E175012"}
 )
+# Codes svn emits when a commit's baseline is stale - a concurrent commit moved a
+# targeted path since we listed it.
+_OUT_OF_DATE_CODES: Final[frozenset[str]] = frozenset({"E160028", "E170004"})
 _ERROR_CODE_PRIORITY: Final[tuple[str, ...]] = (
     "E160020",
     "E215004",
@@ -52,6 +58,9 @@ _ERROR_CODE_PRIORITY: Final[tuple[str, ...]] = (
     "E170013",
 )
 _ERROR_CODE_RE: Final = re.compile(r"\bE\d{6}\b")
+# Codes svn emits when a path or URL genuinely isn't in the repository, as
+# opposed to a connection or auth failure.
+_MISSING_PATH_CODES: Final[frozenset[str]] = frozenset({"E160013", "E200009", "W160013", "W170000"})
 _ERROR_SUMMARIES: Final[dict[str, str]] = {
     "E000110": "The connection to the SVN server was reset",
     "E000111": "The connection to the SVN server was refused",
@@ -245,16 +254,22 @@ async def info_authenticated(url: str) -> str:
     )
 
 
-async def list_files(url: str) -> list[str]:
-    """List every file below a URL, as paths relative to it. Directories are left out."""
+async def list_files(url: str, revision: int | None = None) -> list[str]:
+    """List every file below a URL, as paths relative to it. Directories are left out.
+
+    Pass revision to list from a specific point in time. A caller planning changes can
+    then hand the same revision to svnmucc as its baseline, so the commit fails out of
+    date rather than acting on a tree that drifted between the listing and the change.
+    """
+    arguments = ["list"]
+    if revision is not None:
+        # Peg and operate at the one revision, the same shape export uses
+        arguments.extend(["-r", str(revision), f"{url}@{revision}"])
+    else:
+        arguments.append(url)
+    arguments.extend(["--recursive", "--username", ASF_TOOL, "--password-from-stdin", "--non-interactive"])
     output = await _run_svn_command(
-        "list",
-        url,
-        "--recursive",
-        "--username",
-        ASF_TOOL,
-        "--password-from-stdin",
-        "--non-interactive",
+        *arguments,
         timeout_seconds=LIST_TIMEOUT_SECONDS,
         stdin_bytes=_authentication(url),
     )
@@ -265,6 +280,32 @@ def parse_committed_revision(output: str) -> int | None:
     if (match := _COMMITTED_REVISION_RE.search(output)) is None:
         return None
     return int(match.group(1))
+
+
+def parse_svnmucc_revision(output: str) -> int | None:
+    if (match := _SVNMUCC_REVISION_RE.search(output)) is None:
+        return None
+    return int(match.group(1))
+
+
+def path_missing_error(exc: CommandExecutionError) -> bool:
+    """Whether the error says the path or URL simply isn't in the repository.
+
+    Matches only on svn's own error codes, never on free text: a connection or
+    auth failure, or a timeout (which carries no code), reads as False and stays
+    a real failure, since a transient error is no proof that a path has gone.
+    """
+    return any(code in exc.output for code in _MISSING_PATH_CODES)
+
+
+def retryable_error(exc: CommandExecutionError) -> bool:
+    """Whether the error is worth another attempt rather than a terminal failure.
+
+    A connection wobble, or an out-of-date baseline where a concurrent commit moved a
+    path since we listed it, both tend to clear on a retry, so the task can defer rather
+    than fail. Matches only on svn's own codes, never free text.
+    """
+    return any(code in exc.output for code in (_CONNECTION_ERROR_CODES | _OUT_OF_DATE_CODES))
 
 
 async def publish_file(local_path: pathlib.Path, target_url: str, username: str, message: str) -> None:
@@ -366,14 +407,20 @@ async def publish_revision_matches(info: SvnInfo, author: str, message: str) -> 
     return tool.strip() == ASF_TOOL
 
 
-async def remove_files(base_url: str, rel_paths: list[str], username: str, message: str) -> None:
+async def remove_files(
+    base_url: str, rel_paths: list[str], username: str, message: str, base_revision: int | None = None
+) -> str:
     log.debug(f"running svnmucc rm for user '{username}'")
     stdin_bytes = _authentication(base_url)
-    actions: list[str] = []
+    arguments: list[str] = []
+    if base_revision is not None:
+        # Baseline the commit, so a path that moved since the caller listed it fails the
+        # whole rm out of date rather than deleting against a tree we never saw.
+        arguments.extend(["-r", str(base_revision)])
     for rel_path in rel_paths:
-        actions.extend(["rm", f"{base_url}/{rel_path}"])
-    await _run_svnmucc_command(
-        *actions,
+        arguments.extend(["rm", f"{base_url}/{rel_path}"])
+    return await _run_svnmucc_command(
+        *arguments,
         "--username",
         username,
         "--password-from-stdin",

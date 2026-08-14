@@ -236,6 +236,14 @@ class SvnPublish(schema.Strict):
     )
 
 
+class SvnUnpublish(schema.Strict):
+    """Arguments for the task to remove an archived release from the SVN dist area."""
+
+    asf_uid: str = schema.description("ASF UID on whose behalf the removal is committed")
+    project_key: safe.ProjectKey = schema.description("Project key in ATR")
+    version_key: safe.VersionKey = schema.description("Version key in ATR")
+
+
 class SyncKeysFromSvn(schema.Strict):
     """Arguments for the task to reflect a committee's SVN KEYS file into ATR."""
 

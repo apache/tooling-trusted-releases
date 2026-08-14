@@ -444,6 +444,8 @@ def resolve(task_type: sql.TaskType) -> Callable[..., Awaitable[results.Results 
             return svn.import_files
         case sql.TaskType.SVN_PUBLISH:
             return svnpub.publish
+        case sql.TaskType.SVN_UNPUBLISH:
+            return svnpub.unpublish
         case sql.TaskType.SYNC_KEYS_FROM_SVN:
             return keys.sync_from_svn
         case sql.TaskType.TARGZ_INTEGRITY:

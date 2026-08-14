@@ -186,6 +186,10 @@ class FailedError(Exception):
     pass
 
 
+class RetryableError(Exception):
+    pass
+
+
 class ContentInvalidError(FailedError):
     pass
 
