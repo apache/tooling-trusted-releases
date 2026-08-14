@@ -35,27 +35,35 @@ async def generate(task_args: args.CatalogSiteGenerate, *, task_id: int | None =
     catalogue change.
     """
     async with db.session() as data:
+        # A full rebuild rewrites the whole tree and a partial rewrites the global index
+        # pages besides its own subtree, so an earlier regen that overlaps this one would
+        # race its writes. Let it finish and come back to this. Two different projects
+        # don't overlap, so they're free to run at once.
+        if (task_id is not None) and await _older_regen_active(data, task_id, task_args.project_key):
+            raise task.DeferredError
         if task_args.project_key is None:
             await catalog_site.generate_all(data)
-            return None
-        if (task_id is not None) and await _older_regen_active(data, task_id, task_args.project_key):
-            # Two regens of one project at once would race each other's writes.
-            raise task.DeferredError
-        await catalog_site.regenerate_project(data, task_args.project_key)
+        else:
+            await catalog_site.regenerate_project(data, task_args.project_key)
     return None
 
 
-async def _older_regen_active(data: db.Session, task_id: int, project_key: str) -> bool:
-    # True when an earlier-queued (lower id) regeneration of this project is still ACTIVE.
+async def _older_regen_active(data: db.Session, task_id: int, project_key: str | None) -> bool:
+    # True when an earlier-queued (lower id) regeneration that overlaps this one is still
+    # ACTIVE. A full regen (null project) touches every page, so it conflicts with any
+    # other; a project regen conflicts only with a full regen or another of its own project.
     via = sql.validate_instrumented_attribute
-    stmt = (
-        sqlmodel.select(via(sql.Task.id))
-        .where(
-            via(sql.Task.task_type) == sql.TaskType.CATALOG_SITE_GENERATE,
-            via(sql.Task.project_key) == project_key,
-            via(sql.Task.status) == sql.TaskStatus.ACTIVE,
-            via(sql.Task.id) < task_id,
+    conditions = [
+        via(sql.Task.task_type) == sql.TaskType.CATALOG_SITE_GENERATE,
+        via(sql.Task.status) == sql.TaskStatus.ACTIVE,
+        via(sql.Task.id) < task_id,
+    ]
+    if project_key is not None:
+        conditions.append(
+            sqlmodel.or_(
+                via(sql.Task.project_key).is_(None),
+                via(sql.Task.project_key) == project_key,
+            )
         )
-        .limit(1)
-    )
+    stmt = sqlmodel.select(via(sql.Task.id)).where(*conditions).limit(1)
     return (await data.execute(stmt)).first() is not None
