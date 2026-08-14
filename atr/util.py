@@ -1175,16 +1175,25 @@ def parse_npm_pack_info(raw: bytes, filename_basename: str | None = None) -> tup
     return NpmPackInfo(name=name, version=version, filename_match=filename_match), None
 
 
-async def paths_recursive(base_path: pathlib.Path | safe.StatePath) -> AsyncGenerator[safe.RelPath]:
+async def paths_recursive(
+    base_path: pathlib.Path | safe.StatePath, include_empty_dirs: bool = False
+) -> AsyncGenerator[safe.RelPath]:
     """Yield all file paths recursively within a base path, relative to the base path."""
     if (resolved_base_path := await is_dir_resolve(base_path)) is None:
         return
     async for rel_path in paths_recursive_all(base_path):
         abs_path_to_check = resolved_base_path / rel_path
         with contextlib.suppress(FileNotFoundError, OSError):
-            if await aiofiles.os.path.isfile(abs_path_to_check):
+            is_file = await aiofiles.os.path.isfile(abs_path_to_check)
+            # An empty dir has no files to imply it, so we keep it to preserve the tree shape
+            is_empty_dir = (
+                include_empty_dirs
+                and await aiofiles.os.path.isdir(abs_path_to_check)
+                and not await aiofiles.os.listdir(abs_path_to_check)
+            )
+            if is_file or is_empty_dir:
                 try:
-                    yield safe.RelPath.from_path(rel_path)
+                    yield safe.RelDirPath.from_path(rel_path) if is_empty_dir else safe.RelPath.from_path(rel_path)
                 except ValueError as err:
                     msg = f"Unsafe relative path {str(rel_path)!r}: {err}"
                     raise ValueError(msg) from err

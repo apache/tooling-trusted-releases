@@ -63,6 +63,8 @@
               <span class="atr-classification-badge" title="Disallowed file">bad</span>
             {% elif file_type == "source" %}
               <span class="atr-classification-badge" title="Source artifact">src</span>
+            {% elif file_type == "directory" %}
+              <span class="atr-classification-badge" title="Directory">dir</span>
             {% elif file_type == "metadata" %}
               <span class="atr-classification-badge" title="Metadata file">meta</span>
             {% elif file_type == "sbom" %}
@@ -73,15 +75,23 @@
             {% endif %}
           </td>
           <td class="py-2">
-            <a href="{{ as_url(get.file.selected_path, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
-               title="View file {{ path }}"
-               class="text-decoration-none text-reset">
+            {% if file_type != "directory" %}
+              <a href="{{ as_url(get.file.selected_path, project_key=project_key|string, version_key=version_key|string, file_path=path) }}"
+                 title="View file {{ path }}"
+                 class="text-decoration-none text-reset">
+                {% if path_style_class %}
+                  <strong><code class="{{ path_style_class }}">{{ path }}</code></strong>
+                {% else %}
+                  <code>{{ path }}</code>
+                {% endif %}
+              </a>
+            {% else %}
               {% if path_style_class %}
-                <strong><code class="{{ path_style_class }}">{{ path }}</code></strong>
+                <strong><code class="{{ path_style_class }}">{{ path }} (empty)</code></strong>
               {% else %}
-                <code>{{ path }}</code>
+                <code>{{ path }} (empty)</code>
               {% endif %}
-            </a>
+            {% endif %}
           </td>
           <td class="py-2 text-center">
             {% if has_suggestions %}
@@ -136,7 +146,9 @@
                    class="btn btn-sm btn-outline-secondary"
                    title="Show report for {{ path }}">Notes</a>
               {% else %}
-                <span class="btn btn-sm btn-outline-secondary disabled">No checks</span>
+                {% if file_type != "directory" %}
+                  <span class="btn btn-sm btn-outline-secondary disabled">No checks</span>
+                {% endif %}
               {% endif %}
 
               {% if phase == "release_candidate_draft" %}
@@ -163,12 +175,14 @@
                 <div class="d-flex justify-content-end align-items-center gap-2"
                      role="group"
                      aria-label="More file actions for {{ path }}">
-                  <a href="{{ as_url(get.download.path, project_key=release.project.key, version_key=release.version, file_path=path) }}"
-                     title="Download file {{ path }}"
-                     class="btn btn-sm btn-outline-secondary">Download</a>
-                  <a href="{{ as_url(get.draft.tools, project_key=release.project.key, version_key=release.version, file_path=path) }}"
-                     title="Tools for file {{ path }}"
-                     class="btn btn-sm btn-outline-secondary">Tools</a>
+                  {% if file_type != "directory" %}
+                    <a href="{{ as_url(get.download.path, project_key=release.project.key, version_key=release.version, file_path=path) }}"
+                       title="Download file {{ path }}"
+                       class="btn btn-sm btn-outline-secondary">Download</a>
+                    <a href="{{ as_url(get.draft.tools, project_key=release.project.key, version_key=release.version, file_path=path) }}"
+                       title="Tools for file {{ path }}"
+                       class="btn btn-sm btn-outline-secondary">Tools</a>
+                  {% endif %}
                   {{ delete_file_forms[path|string] }}
                 </div>
               </div>

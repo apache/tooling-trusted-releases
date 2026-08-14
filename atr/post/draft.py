@@ -132,15 +132,17 @@ async def delete_file(
     try:
         async with storage.write(session) as write:
             wacp = await write.as_project_committee_participant(project_key)
-            metadata_files_deleted = await wacp.release.delete_file(project_key, version_key, path_to_delete)
+            result = await wacp.release.delete_file(project_key, version_key, path_to_delete)
     except Exception as e:
-        log.exception("Error deleting file:")
-        await quart.flash(f"Error deleting file: {e!s}", "error")
+        noun = "directory" if isinstance(rel_path_to_delete, safe.RelDirPath) else "file"
+        log.exception(f"Error deleting {noun}:")
+        await quart.flash(f"Error deleting {noun}: {e!s}", "error")
         return await session.redirect(get.compose.selected, project_key=str(project_key), version_key=str(version_key))
 
-    success_message = f"File '{path_to_delete.name}' deleted successfully"
-    if metadata_files_deleted:
-        success_message += f", and {util.plural(metadata_files_deleted, 'associated metadata file')} deleted"
+    noun = "Directory" if result.was_directory else "File"
+    success_message = f"{noun} '{path_to_delete.name}' deleted successfully"
+    if result.metadata_files_deleted:
+        success_message += f", and {util.plural(result.metadata_files_deleted, 'associated metadata file')} deleted"
     return await session.redirect(
         get.compose.selected, success=success_message, project_key=str(project_key), version_key=str(version_key)
     )

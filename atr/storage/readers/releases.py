@@ -68,13 +68,16 @@ class GeneralPublic:
             base_path,
         )
         for path in all_paths:
-            db_value = db_classifications.get(str(path))
-            if db_value is not None:
-                info.file_types[path] = classify.FileType(db_value)
+            if isinstance(path, safe.RelDirPath):
+                info.file_types[path] = classify.FileType.DIRECTORY
             else:
-                info.file_types[path] = await classify.classify(
-                    path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
-                )
+                db_value = db_classifications.get(str(path))
+                if db_value is not None:
+                    info.file_types[path] = classify.FileType(db_value)
+                else:
+                    info.file_types[path] = await classify.classify(
+                        path, base_path=base_path, source_matcher=source_matcher, binary_matcher=binary_matcher
+                    )
         self.__pair_sboms(info, all_paths)
         self.__compute_checker_stats(info, all_paths)
         return info

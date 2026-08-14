@@ -98,6 +98,15 @@ class ArtifactInput:
     sbom_path: str | None = None
 
 
+@dataclasses.dataclass(frozen=True)
+class DeleteFileResult:
+    # What the delete removed - a directory has no companion metadata, so the
+    # count only ever moves for a real file. The handler needs the flag to word
+    # its success message
+    was_directory: bool
+    metadata_files_deleted: int
+
+
 async def _archive_release(
     data: db.Session,
     write_as: storage.WriteAs,
@@ -604,12 +613,13 @@ class CommitteeParticipant(FoundationCommitter):
 
     async def delete_file(
         self, project_key: safe.ProjectKey, version: safe.VersionKey, rel_path_to_delete: pathlib.Path
-    ) -> int:
+    ) -> DeleteFileResult:
         metadata_files_deleted = 0
+        was_directory = False
         description = "File deletion through web interface"
 
         async def modify(path: safe.StatePath, _old_rev: sql.Revision | None) -> None:
-            nonlocal metadata_files_deleted
+            nonlocal metadata_files_deleted, was_directory
             # Uses new_revision_number for logging only
             # Path to delete within the new revision directory
             path_in_new_revision = path / rel_path_to_delete
@@ -623,6 +633,13 @@ class CommitteeParticipant(FoundationCommitter):
                 # This indicates a potential severe issue with hard linking or logic
                 log.error(f"SEVERE ERROR! File {rel_path_to_delete} not found in new revision before deletion")
                 raise storage.AccessError("File to delete was not found in the new revision", status=500)
+
+            # An empty directory shown in the file list needs rmdir, not remove
+            # This will *only* succeed on an empty directory
+            if await aiofiles.os.path.isdir(path_in_new_revision):
+                await aiofiles.os.rmdir(path_in_new_revision)
+                was_directory = True
+                return
 
             # Check whether the file is an artifact
             if analysis.is_artifact(path_in_new_revision.path):
@@ -645,7 +662,7 @@ class CommitteeParticipant(FoundationCommitter):
             description=description,
             modify=modify,
         )
-        return metadata_files_deleted
+        return DeleteFileResult(was_directory=was_directory, metadata_files_deleted=metadata_files_deleted)
 
     async def generate_hash_file(
         self, project_key: safe.ProjectKey, version_key: safe.VersionKey, rel_path: pathlib.Path

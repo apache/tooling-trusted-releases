@@ -78,7 +78,7 @@ async def selected(
 
     # TODO: This takes 180ms for providers
     # We could cache it
-    all_paths = [path async for path in util.paths_recursive(base_path)]
+    all_paths = [path async for path in util.paths_recursive(base_path, include_empty_dirs=True)]
     all_paths.sort()
 
     async with storage.read(session) as read:
@@ -392,6 +392,15 @@ async def _quarantine_alerts(
 
 
 async def _render_delete_file_form(release: sql.Release, path: pathlib.Path | safe.RelPath) -> htm.Element:
+    # Empty dirs come through as RelDirPath, so the wording drops the metadata bit
+    if isinstance(path, safe.RelDirPath):
+        confirm = "Are you sure you want to delete this directory? This cannot be undone."
+    else:
+        confirm = (
+            "Are you sure you want to delete this file? "
+            "This will also delete any associated metadata files. "
+            "This cannot be undone."
+        )
     return await form.render(
         model_cls=draft.DeleteFileForm,
         action=util.as_url(
@@ -404,11 +413,7 @@ async def _render_delete_file_form(release: sql.Release, path: pathlib.Path | sa
         submit_label="Delete",
         empty=True,
         defaults={"file_path": str(path)},
-        confirm=(
-            "Are you sure you want to delete this file? "
-            "This will also delete any associated metadata files. "
-            "This cannot be undone."
-        ),
+        confirm=confirm,
     )
 
 
