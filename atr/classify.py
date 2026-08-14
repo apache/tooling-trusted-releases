@@ -126,6 +126,7 @@ _SBOM_XML_RE: Final[re.Pattern[bytes]] = re.compile(rb"http://cyclonedx\.org/sch
 
 class FileType(enum.Enum):
     BINARY = "binary"
+    DIRECTORY = "directory"
     DISALLOWED = "disallowed"
     DOCS = "docs"
     METADATA = "metadata"

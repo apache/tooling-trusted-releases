@@ -207,6 +207,8 @@ def _classification_badge_cell(
             label, title = "meta", "Metadata file"
         case classify.FileType.SBOM:
             label, title = "sbom", "SBOM"
+        case classify.FileType.DIRECTORY:
+            label, title = "dir", "Directory"
         case classify.FileType.DOCS | classify.FileType.BINARY | None:
             label, title = "bin", "Binary artifact"
     if severity is not None:
