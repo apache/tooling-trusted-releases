@@ -188,6 +188,7 @@ class AppConfig:
     # CSRF time limit
     WTF_CSRF_TIME_LIMIT = None
 
+    ADMIN_ONLY = _ENVIRONMENT_CONFIG("ADMIN_ONLY", default=False, cast=bool)
     ADMIN_USERS_ADDITIONAL = _ENVIRONMENT_CONFIG("ADMIN_USERS_ADDITIONAL", default="", cast=str)
     TOOLING_USERS_ADDITIONAL = _ENVIRONMENT_CONFIG("TOOLING_USERS_ADDITIONAL", default="", cast=str)
 

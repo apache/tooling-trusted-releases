@@ -118,6 +118,10 @@ class SSHServer(asyncssh.SSHServer):
             log.auth_failure("ssh", "ssh_account_disabled", username)
             raise asyncssh.PermissionDenied("Account disabled")
 
+        if config.get().ADMIN_ONLY and (not user.is_admin(username)):
+            log.auth_failure("ssh", "ssh_admin_only", username)
+            raise asyncssh.PermissionDenied("ATR is currently available to administrators only")
+
         try:
             # Load SSH keys for this user from the database
             async with db.session() as data:
@@ -195,6 +199,10 @@ class SSHServer(asyncssh.SSHServer):
 
         if not await ldap.is_active(self._github_asf_uid):
             log.auth_failure("githubssh", "ssh_workflow_account_disabled", self._github_asf_uid)
+            return False
+
+        if config.get().ADMIN_ONLY and (not user.is_admin(self._github_asf_uid)):
+            log.auth_failure("githubssh", "ssh_workflow_admin_only", self._github_asf_uid)
             return False
 
         now = int(time.time())

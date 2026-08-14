@@ -38,6 +38,7 @@ class MockApp:
 
 
 class MockConfig:
+    ADMIN_ONLY = False
     ADMIN_USERS_ADDITIONAL = ""
 
 

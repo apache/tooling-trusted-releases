@@ -36,6 +36,7 @@ import atr.db as db
 import atr.ldap as ldap
 import atr.log as log
 import atr.models.github as github
+import atr.user as user
 import atr.util as util
 
 _ALGORITHM: Final[str] = "HS256"
@@ -81,6 +82,10 @@ async def authenticate() -> dict[str, Any]:
     except jwt.PyJWTError as exc:
         log.auth_failure("jwt_token", "jwt_token_invalid_2")
         raise base.ASFQuartException(f"Invalid Bearer JWT: {exc}", errorcode=401) from exc
+
+    if config.get().ADMIN_ONLY and (not claims.get("atr_sys")) and (not user.is_admin(claims.get("sub"))):
+        log.auth_failure("jwt_token", "jwt_admin_only")
+        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     quart.g.jwt_claims = claims
     log.auth_success("jwt_token")

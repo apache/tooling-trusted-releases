@@ -33,7 +33,9 @@ import pydantic
 import quart
 import quart_schema
 
+import atr.config as config
 import atr.jwtoken as jwtoken
+import atr.user as user
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -91,6 +93,9 @@ async def authenticate_body(scheme: Auth, data: Any) -> None:
         raise
     except (interaction.InteractionError, pyjwt.InvalidTokenError, pydantic.ValidationError) as exc:
         raise base.ASFQuartException(f"Trusted Publisher auth failed: {exc}", errorcode=401) from exc
+
+    if config.get().ADMIN_ONLY and (not user.is_admin(asf_uid)):
+        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     quart.g.tp_context = TrustedPublisherContext(payload=payload, asf_uid=asf_uid, publisher=publisher)
 

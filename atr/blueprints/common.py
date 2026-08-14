@@ -28,6 +28,7 @@ import quart
 import quart_schema
 import werkzeug.exceptions as exceptions
 
+import atr.config as config
 import atr.db as db
 import atr.form as form
 import atr.models.safe as safe
@@ -59,6 +60,9 @@ async def authenticate() -> web.Committer:
     web_session = await sessions.read()
     if not isinstance(web_session, sql.UserSession):
         raise base.ASFQuartException("Not authenticated", errorcode=401)
+
+    if config.get().ADMIN_ONLY and (not user.is_admin(web_session.uid)):
+        raise base.ASFQuartException("ATR is currently available to administrators only", errorcode=403)
 
     # if not await ldap.is_active(web_session.uid):
     #     await sessions.deleted_or_banned(web_session.uid)
