@@ -16,19 +16,25 @@
 # under the License.
 
 import contextlib
+import datetime
 import hashlib
 import inspect
 import pathlib
 import unittest.mock as mock
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlmodel
 
 import atr.api
+import atr.db as db
 import atr.models.api as api
 import atr.models.safe as safe
 import atr.models.sql as sql
+import tests.unit.pgp_fixtures as pgp_fixtures
 
 _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v2
@@ -88,8 +94,13 @@ class MockDBSession:
 
 
 class MockKeyDBSession:
-    def __init__(self, signing_certificates: list[object]) -> None:
+    def __init__(self, signing_certificates: list[object], signing_keys: list[object] | None = None) -> None:
         self._signing_certificates = signing_certificates
+        self._signing_keys = signing_keys or []
+
+    async def execute(self, _query: object) -> object:
+        signing_keys = self._signing_keys
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: signing_keys))
 
     def signing_certificate(self, **kwargs: object) -> MockQuery:
         fingerprint = kwargs.get("fingerprint")
@@ -100,6 +111,46 @@ class MockKeyDBSession:
             )
             return MockQuery(match)
         return MockQuery(self._signing_certificates)
+
+
+@pytest.fixture
+async def sqlite_data() -> AsyncIterator[db.Session]:
+    engine = sqlalchemy.ext.asyncio.create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=sqlalchemy.pool.StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(sqlmodel.SQLModel.metadata.create_all)
+    sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(bind=engine, class_=db.Session, expire_on_commit=False)
+    async with sessionmaker() as data:
+        yield data
+    await engine.dispose()
+
+
+def _certificate(fingerprint: str, deleted: datetime.datetime | None = None) -> sql.SigningCertificate:
+    return sql.SigningCertificate(
+        fingerprint=fingerprint,
+        latest_self_signature=None,
+        primary_declared_uid="Alice <alice@example.org>",
+        secondary_declared_uids=[],
+        apache_uid="alice",
+        ascii_armored_key="",
+        deleted=deleted,
+    )
+
+
+def _signing_key(fingerprint: str, key_id: str, certificate_fingerprint: str) -> sql.SigningKey:
+    return sql.SigningKey(
+        fingerprint=fingerprint,
+        certificate_fingerprint=certificate_fingerprint,
+        is_primary=False,
+        key_id=key_id,
+        algorithm=1,
+        length=4096,
+        created=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC),
+        can_sign=True,
+    )
 
 
 def test_args_accepts_scoping_fields() -> None:
@@ -190,6 +241,50 @@ async def test_resolve_signing_key_from_signature_rejects_mismatched_issuer_meta
 
 
 @pytest.mark.asyncio
+async def test_resolve_signing_key_from_signature_prefers_the_signing_key_row() -> None:
+    stored = SimpleNamespace(fingerprint="ab" * 20, ascii_armored_key="", committees=[])
+    signing_key = SimpleNamespace(fingerprint="cd" * 20, key_id="cd" * 8, certificate_fingerprint="ab" * 20)
+    db_data = MockKeyDBSession([stored], [signing_key])
+
+    resolved, signer_fingerprint = await atr.api._resolve_signing_key_from_signature(
+        db_data, issuer_fingerprints=set(), issuer_key_ids={"cd" * 8}
+    )
+
+    assert resolved is stored
+    assert signer_fingerprint == "cd" * 20
+
+
+@pytest.mark.asyncio
+async def test_resolve_signing_key_from_signature_refuses_an_ambiguous_key_id() -> None:
+    signing_keys = [
+        SimpleNamespace(fingerprint="cd" * 20, key_id="cd" * 8, certificate_fingerprint="ab" * 20),
+        SimpleNamespace(fingerprint="ef" * 20, key_id="cd" * 8, certificate_fingerprint="12" * 20),
+    ]
+    db_data = MockKeyDBSession([], signing_keys)
+
+    with pytest.raises(atr.api.exceptions.Conflict, match="more than one signing key"):
+        await atr.api._resolve_signing_key_from_signature(db_data, issuer_fingerprints=set(), issuer_key_ids={"cd" * 8})
+
+
+@pytest.mark.asyncio
+async def test_resolve_signing_key_from_signature_reads_the_row_certificate_from_a_two_certificate_block() -> None:
+    parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
+    subkey = next(iter(parsed_key.public_subkeys))
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, _EMBEDDED_SUBKEY_PUBLIC_KEY_ASC
+    )
+    stored = SimpleNamespace(fingerprint=parsed_key.fingerprint.lower(), ascii_armored_key=block, committees=[])
+    db_data = MockKeyDBSession([stored])
+
+    resolved, signer_fingerprint = await atr.api._resolve_signing_key_from_signature(
+        db_data, issuer_fingerprints=set(), issuer_key_ids={subkey.key.key_id.lower()}
+    )
+
+    assert resolved is stored
+    assert signer_fingerprint == subkey.key.fingerprint.lower()
+
+
+@pytest.mark.asyncio
 async def test_resolve_signing_key_from_signature_returns_subkey_fingerprint() -> None:
     parsed_key, _ = atr.api.openpgp.composed.SignedPublicKey.from_armor(_EMBEDDED_SUBKEY_PUBLIC_KEY_ASC)
     subkey = next(iter(parsed_key.public_subkeys))
@@ -208,6 +303,29 @@ async def test_resolve_signing_key_from_signature_returns_subkey_fingerprint() -
 
     assert resolved is stored
     assert signer_fingerprint == subkey.key.fingerprint.lower()
+
+
+@pytest.mark.asyncio
+async def test_signing_key_for_issuer_matches_one_active_row_on_both_predicates(sqlite_data: db.Session) -> None:
+    key_id = "cd" * 8
+    sqlite_data.add_all(
+        [
+            _certificate("aa" * 20),
+            _certificate("bb" * 20, deleted=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)),
+            _certificate("cc" * 20),
+            _signing_key("11" * 20, key_id, "aa" * 20),
+            _signing_key("22" * 20, key_id, "bb" * 20),
+            _signing_key("33" * 20, key_id, "cc" * 20),
+        ]
+    )
+    await sqlite_data.commit()
+
+    matched = await atr.api._signing_key_for_issuer(sqlite_data, {"11" * 20}, {key_id})
+    assert (matched is not None) and (matched.fingerprint == "11" * 20)
+    assert await atr.api._signing_key_for_issuer(sqlite_data, {"22" * 20}, {key_id}) is None
+    assert await atr.api._signing_key_for_issuer(sqlite_data, {"11" * 20}, {"ee" * 8}) is None
+    with pytest.raises(atr.api.exceptions.Conflict):
+        await atr.api._signing_key_for_issuer(sqlite_data, set(), {key_id})
 
 
 @pytest.mark.asyncio

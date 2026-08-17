@@ -19,6 +19,7 @@ from collections.abc import Iterator
 from types import SimpleNamespace
 
 import openpgp
+import pytest
 
 import atr.pgp as pgp
 import tests.unit.pgp_fixtures as pgp_fixtures
@@ -86,6 +87,27 @@ def _packets(data: bytes) -> Iterator[tuple[int, int, int, int]]:
         body = index
         index += length
         yield tag, start, index, body
+
+
+def test_certificate_for_fingerprint_selects_the_named_certificate() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    second = pgp.certificate_for_fingerprint(block, pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT.upper())
+
+    assert second is not None
+    assert second.fingerprint.lower() == pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+    assert pgp.certificate_for_fingerprint(block, "0" * 40) is None
+
+
+def test_certificate_for_fingerprint_refuses_a_repeated_certificate() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    with pytest.raises(ValueError, match="appears 2 times"):
+        pgp.certificate_for_fingerprint(block, pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT)
 
 
 def test_latest_self_signature_skips_uid_revocations() -> None:

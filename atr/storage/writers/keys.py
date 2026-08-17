@@ -106,14 +106,16 @@ def _key_length(key: openpgp.composed.SignedPublicKey) -> int:
     return bits
 
 
-def _block_downgrade_reason(stored_block: str, incoming_block: str) -> str | None:
+def _block_downgrade_reason(fingerprint: str, stored_block: str, incoming_block: str) -> str | None:
     # Self-signatures are append-only, so a re-upload may add declarations but must not roll the
     # effective state back: no revocation dropped, no regression to an older self-signature. A minimised
     # re-export keeps both and passes. A block we can't parse can't be judged, so allow it through
     try:
-        stored_key, _ = openpgp.composed.SignedPublicKey.from_armor(stored_block)
-        incoming_key, _ = openpgp.composed.SignedPublicKey.from_armor(incoming_block)
+        stored_key = pgp.certificate_for_fingerprint(stored_block, fingerprint)
+        incoming_key = pgp.certificate_for_fingerprint(incoming_block, fingerprint)
     except Exception:
+        return None
+    if (stored_key is None) or (incoming_key is None):
         return None
     dropped = pgp.revocations_dropped(stored_key, incoming_key)
     if dropped:
@@ -129,8 +131,8 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
     """The SigningKey rows a certificate's block describes, or None if the block is for another key."""
     if isinstance(block, bytes):
         block = block.decode("utf-8", errors="replace")
-    key, _ = openpgp.composed.SignedPublicKey.from_armor(block)
-    if key.fingerprint.lower() != certificate_fingerprint.lower():
+    key = pgp.certificate_for_fingerprint(block, certificate_fingerprint)
+    if key is None:
         return None
     return [
         {
@@ -668,7 +670,7 @@ and was published by the committee.\
         existing = await self.__data.signing_certificate(fingerprint=model.fingerprint, deleted=db.NOT_SET).get()
         if (existing is None) or (existing.ascii_armored_key == model.ascii_armored_key):
             return False
-        downgrade = _block_downgrade_reason(existing.ascii_armored_key, model.ascii_armored_key)
+        downgrade = _block_downgrade_reason(model.fingerprint, existing.ascii_armored_key, model.ascii_armored_key)
         if downgrade is not None:
             log.warning(f"Not refreshing {model.fingerprint}: the uploaded block {downgrade}")
             return False
@@ -997,7 +999,8 @@ class CommitteeParticipant(FoundationCommitter):
         downgraded = {
             fingerprint
             for fingerprint in refreshed_fingerprints
-            if _block_downgrade_reason(stored_blocks[fingerprint], incoming_blocks[fingerprint]) is not None
+            if _block_downgrade_reason(fingerprint, stored_blocks[fingerprint], incoming_blocks[fingerprint])
+            is not None
         }
         if downgraded:
             kept = ", ".join(sorted(downgraded))

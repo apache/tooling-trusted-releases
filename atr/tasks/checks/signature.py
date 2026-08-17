@@ -41,7 +41,7 @@ INPUT_EXTRA_ARGS: Final[list[str]] = [
     "unsuffixed_file_hash",
     "unsuffixed_file_uploaders",
 ]
-CHECK_VERSION: Final[str] = "9"
+CHECK_VERSION: Final[str] = "10"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:
@@ -119,16 +119,18 @@ async def _check_core_logic(
         if automated or (key.apache_uid in uploader_uids):
             uploader_fingerprints.add(fingerprint)
 
-    public_keys = [key.ascii_armored_key for key in db_public_keys]
-    for i, key in enumerate(public_keys):
-        if isinstance(key, bytes):
-            public_keys[i] = key.decode("utf-8", errors="replace")
+    committee_keys = []
+    for key in db_public_keys:
+        armored = key.ascii_armored_key
+        if isinstance(armored, bytes):
+            armored = armored.decode("utf-8", errors="replace")
+        committee_keys.append((key.fingerprint.lower(), armored))
 
     return await asyncio.to_thread(
         _check_core_logic_verify_signature,
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=public_keys,
+        committee_keys=committee_keys,
         apache_uid_map=apache_uid_map,
         uploader_fingerprints=uploader_fingerprints,
     )
@@ -137,13 +139,13 @@ async def _check_core_logic(
 def _check_core_logic_verify_signature(
     signature_path: str,
     artifact_path: str,
-    ascii_armored_keys: list[str],
+    committee_keys: list[tuple[str, str]],
     apache_uid_map: dict[str, bool],
     uploader_fingerprints: set[str],
 ) -> dict[str, Any]:
     """Verify an OpenPGP signature for a file."""
     start = time.perf_counter_ns()
-    public_keys = _parse_public_keys(ascii_armored_keys)
+    public_keys = _parse_public_keys(committee_keys)
     if not public_keys:
         log.warning("No fingerprints found after parsing keys")
         return {
@@ -158,12 +160,12 @@ def _check_core_logic_verify_signature(
                 signature_info=None,
                 status="No public keys found to verify signature",
                 valid=False,
-                num_committee_keys=len(ascii_armored_keys),
+                num_committee_keys=len(committee_keys),
                 key_has_apache_uid=False,
             ),
         }
     end = time.perf_counter_ns()
-    log.info(f"Parsing of {util.plural(len(ascii_armored_keys), 'key')} took {(end - start) / 1000000} ms")
+    log.info(f"Parsing of {util.plural(len(committee_keys), 'key')} took {(end - start) / 1000000} ms")
 
     try:
         with open(signature_path, "rb") as sig_file:
@@ -182,7 +184,7 @@ def _check_core_logic_verify_signature(
                 signature_info=None,
                 status=str(e),
                 valid=False,
-                num_committee_keys=len(ascii_armored_keys),
+                num_committee_keys=len(committee_keys),
                 key_has_apache_uid=False,
             ),
         }
@@ -200,7 +202,7 @@ def _check_core_logic_verify_signature(
                 signature_info=signature_info,
                 status="Referenced artifact not found",
                 valid=False,
-                num_committee_keys=len(ascii_armored_keys),
+                num_committee_keys=len(committee_keys),
                 key_has_apache_uid=False,
             ),
         }
@@ -221,7 +223,7 @@ def _check_core_logic_verify_signature(
                 signature_info=signature_info,
                 status="No valid signature found",
                 valid=False,
-                num_committee_keys=len(ascii_armored_keys),
+                num_committee_keys=len(committee_keys),
                 key_has_apache_uid=False,
             ),
         }
@@ -233,7 +235,7 @@ def _check_core_logic_verify_signature(
         status=status,
         matched_key=matched_key,
         signature_info=signature_info,
-        num_committee_keys=len(ascii_armored_keys),
+        num_committee_keys=len(committee_keys),
         key_has_apache_uid=apache_uid_ok,
     )
     if refusal is not None:
@@ -244,7 +246,7 @@ def _check_core_logic_verify_signature(
         signature_info=signature_info,
         status="Valid signature",
         valid=True,
-        num_committee_keys=len(ascii_armored_keys),
+        num_committee_keys=len(committee_keys),
         key_has_apache_uid=apache_uid_ok,
         signing_key_fingerprint=status.fingerprint,
     )
@@ -442,13 +444,16 @@ def _not_signing_key_result(
     }
 
 
-def _parse_public_keys(ascii_armored_keys: list[str]) -> list[openpgp.composed.SignedPublicKey]:
+def _parse_public_keys(committee_keys: list[tuple[str, str]]) -> list[openpgp.composed.SignedPublicKey]:
     public_keys: list[openpgp.composed.SignedPublicKey] = []
-    for ascii_armored_key in ascii_armored_keys:
+    for fingerprint, ascii_armored_key in committee_keys:
         try:
-            public_key, _ = openpgp.composed.SignedPublicKey.from_armor(ascii_armored_key)
+            public_key = pgp.certificate_for_fingerprint(ascii_armored_key, fingerprint)
         except Exception as e:
-            log.warning(f"Failed to parse committee public key: {e}")
+            log.warning(f"Failed to parse committee public key {fingerprint}: {e}")
+            continue
+        if public_key is None:
+            log.warning(f"Stored block for {fingerprint} holds another key, skipping")
             continue
         public_keys.append(public_key)
     return public_keys

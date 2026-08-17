@@ -44,6 +44,7 @@ import atr.models.sql as sql
 import atr.models.unsafe as unsafe
 import atr.models.validation as validation
 import atr.paths as paths
+import atr.pgp as pgp
 import atr.principal as principal
 import atr.shared as shared
 import atr.shared.catalog as catalog
@@ -2374,25 +2375,58 @@ async def _resolve_signing_key_from_signature(
     issuer_fingerprints: set[str],
     issuer_key_ids: set[str],
 ) -> tuple[sql.SigningCertificate, str]:
-    if not issuer_key_ids:
-        for fingerprint in issuer_fingerprints:
-            stored = await db_data.signing_certificate(fingerprint=fingerprint, _committees=True).get()
-            if stored is not None:
-                return stored, fingerprint
+    signing_key = await _signing_key_for_issuer(db_data, issuer_fingerprints, issuer_key_ids)
+    if signing_key is not None:
+        stored = await db_data.signing_certificate(
+            fingerprint=signing_key.certificate_fingerprint, _committees=True
+        ).get()
+        if stored is not None:
+            return stored, signing_key.fingerprint
     candidates = await db_data.signing_certificate(_committees=True).all()
     for stored in candidates:
-        armored = stored.ascii_armored_key
-        if isinstance(armored, bytes):
-            armored = armored.decode("utf-8", errors="replace")
-        try:
-            parsed, _ = openpgp.composed.SignedPublicKey.from_armor(armored)
-        except Exception as e:
-            log.info(f"Failed to parse key {stored.fingerprint}: {e}")
-            continue
-        matched_fingerprint = _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
+        matched_fingerprint = _stored_certificate_issuer_match(stored, issuer_fingerprints, issuer_key_ids)
         if matched_fingerprint is not None:
             return stored, matched_fingerprint
     raise exceptions.NotFound("No matching signing key found for signature")
+
+
+async def _signing_key_for_issuer(
+    db_data: db.Session,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> sql.SigningKey | None:
+    via = sql.validate_instrumented_attribute
+    statement = (
+        sqlmodel.select(sql.SigningKey)
+        .join(sql.SigningCertificate)
+        .where(via(sql.SigningCertificate.deleted).is_(None))
+    )
+    if issuer_fingerprints:
+        statement = statement.where(via(sql.SigningKey.fingerprint).in_(sorted(issuer_fingerprints)))
+    if issuer_key_ids:
+        statement = statement.where(via(sql.SigningKey.key_id).in_(sorted(issuer_key_ids)))
+    signing_keys = (await db_data.execute(statement)).scalars().all()
+    if len(signing_keys) > 1:
+        raise exceptions.Conflict("Signature issuer matches more than one signing key")
+    return signing_keys[0] if signing_keys else None
+
+
+def _stored_certificate_issuer_match(
+    stored: sql.SigningCertificate,
+    issuer_fingerprints: set[str],
+    issuer_key_ids: set[str],
+) -> str | None:
+    armored = stored.ascii_armored_key
+    if isinstance(armored, bytes):
+        armored = armored.decode("utf-8", errors="replace")
+    try:
+        parsed = pgp.certificate_for_fingerprint(armored, stored.fingerprint)
+    except Exception as e:
+        log.info(f"Failed to parse key {stored.fingerprint}: {e}")
+        return None
+    if parsed is None:
+        return None
+    return _matched_issuer_fingerprint(parsed, issuer_fingerprints, issuer_key_ids)
 
 
 async def _vote_start_subject_and_body(

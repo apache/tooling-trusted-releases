@@ -15,8 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import io
 import pathlib
 from typing import Final
+
+import openpgp.armor
+import openpgp.composed
 
 # A certificate whose primary key remains valid long after its signing subkey has lapsed, which is
 # what routine subkey rotation looks like. The signature below was made while the subkey was still
@@ -100,6 +104,14 @@ hZnIBFP9OA8A/1t15vvaSJjtPZEKGFT7POk+2Z5Q2krVupn6V9oW4oDpAQDig6j9
 =8ozG
 -----END PGP PUBLIC KEY BLOCK-----
 """
+
+
+def two_certificate_block(first_armored: str, second_armored: str) -> str:
+    first, _ = openpgp.composed.SignedPublicKey.from_armor(first_armored)
+    second, _ = openpgp.composed.SignedPublicKey.from_armor(second_armored)
+    buffer = io.BytesIO()
+    openpgp.armor.write(first.to_bytes() + second.to_bytes(), openpgp.armor.BlockType.PublicKey, buffer)
+    return buffer.getvalue().decode()
 
 
 def write_expired_subkey_fixture(tmp_path: pathlib.Path) -> tuple[str, str]:

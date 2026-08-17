@@ -260,13 +260,30 @@ async def test_check_blocks_on_missing_signature_error_kind(
     ]
 
 
+def test_check_core_logic_finds_the_signer_when_it_is_second_in_the_stored_block(tmp_path: pathlib.Path) -> None:
+    signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
+    block = pgp_fixtures.two_certificate_block(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, _EMBEDDED_PUBLIC_KEY_ASC)
+
+    def verify(row_fingerprint: str) -> dict:
+        return signature_check._check_core_logic_verify_signature(
+            signature_path=signature_path,
+            artifact_path=artifact_path,
+            committee_keys=[(row_fingerprint, block)],
+            apache_uid_map={_PRIMARY_FINGERPRINT: True},
+            uploader_fingerprints={_PRIMARY_FINGERPRINT},
+        )
+
+    assert verify(_PRIMARY_FINGERPRINT)["verified"] is True
+    assert verify(pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT)["verified"] is False
+
+
 def test_check_core_logic_flags_a_signature_from_a_non_uploader(tmp_path: pathlib.Path) -> None:
     signature_path, artifact_path = _write_embedded_signature_fixture(tmp_path)
 
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
+        committee_keys=[(_PRIMARY_FINGERPRINT, _EMBEDDED_PUBLIC_KEY_ASC)],
         apache_uid_map={_PRIMARY_FINGERPRINT: True},
         uploader_fingerprints=set(),
     )
@@ -283,7 +300,7 @@ def test_check_core_logic_rejects_signature_from_a_revoked_subkey(tmp_path: path
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=[pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC],
+        committee_keys=[(pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC)],
         apache_uid_map={pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT: True},
         uploader_fingerprints={pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT},
     )
@@ -298,7 +315,7 @@ def test_check_core_logic_missing_artifact_is_a_blocker(tmp_path: pathlib.Path) 
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=str(tmp_path / "nonexistent.tar.gz"),
-        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+        committee_keys=[(pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)],
         apache_uid_map={},
         uploader_fingerprints=set(),
     )
@@ -316,7 +333,9 @@ def test_check_core_logic_unreadable_artifact_is_retryable(tmp_path: pathlib.Pat
         signature_check._check_core_logic_verify_signature(
             signature_path=signature_path,
             artifact_path=artifact_path,
-            ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+            committee_keys=[
+                (pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
+            ],
             apache_uid_map={},
             uploader_fingerprints=set(),
         )
@@ -328,7 +347,7 @@ def test_check_core_logic_rejects_signature_from_an_expired_subkey(tmp_path: pat
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=[pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC],
+        committee_keys=[(pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)],
         apache_uid_map={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT: True},
         uploader_fingerprints={pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT},
     )
@@ -343,7 +362,7 @@ def test_check_core_logic_verifies_signature_signed_by_signing_subkey(tmp_path: 
     result = signature_check._check_core_logic_verify_signature(
         signature_path=signature_path,
         artifact_path=artifact_path,
-        ascii_armored_keys=[_EMBEDDED_PUBLIC_KEY_ASC],
+        committee_keys=[(_PRIMARY_FINGERPRINT, _EMBEDDED_PUBLIC_KEY_ASC)],
         apache_uid_map={_PRIMARY_FINGERPRINT: True},
         uploader_fingerprints={_PRIMARY_FINGERPRINT},
     )

@@ -61,6 +61,14 @@ class SigningKeyStatus:
     revoked: bool
 
 
+def certificate_for_fingerprint(armored: str, fingerprint: str) -> openpgp.composed.SignedPublicKey | None:
+    keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(armored)
+    matches = [key for key in keys if key.fingerprint.lower() == fingerprint.lower()]
+    if len(matches) > 1:
+        raise ValueError(f"Certificate {fingerprint} appears {len(matches)} times in the block")
+    return matches[0] if matches else None
+
+
 def key_expires_at(key: openpgp.composed.SignedPublicKey) -> datetime.datetime | None:
     effective = _effective_self_signature(key)
     if effective is None:

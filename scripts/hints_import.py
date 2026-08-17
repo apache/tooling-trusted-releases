@@ -29,11 +29,11 @@ import sys
 
 sys.path.append(".")
 
-import openpgp
 import sqlmodel
 
 import atr.db as db
 import atr.models.sql as sql
+import atr.pgp as pgp
 import atr.util as util
 
 ARMOR_PATTERN = re.compile(rb"-----BEGIN PGP PUBLIC KEY BLOCK-----.*?-----END PGP [A-Z ]+-----", re.S)
@@ -95,8 +95,10 @@ def key_packet_ids(body: bytes) -> set[str]:
     raise ValueError(f"unknown key packet version {version}")
 
 
-def lenient_member_ids(armored: str) -> set[str]:
-    key, _ = openpgp.composed.SignedPublicKey.from_armor(armored)
+def lenient_member_ids(armored: str, fingerprint: str) -> set[str]:
+    key = pgp.certificate_for_fingerprint(armored, fingerprint)
+    if key is None:
+        return set()
     return util.openpgp_member_ids(key)
 
 
@@ -167,9 +169,9 @@ async def seed(hints: set[str]) -> None:
                 armored = armored.decode("utf-8", errors="replace")
             ids: set[str] = set()
             with contextlib.suppress(Exception):
-                ids.update(strict_member_ids(armored.encode("utf-8", errors="replace")))
+                ids.update(strict_member_ids(armored.encode("utf-8", errors="replace"), key.fingerprint))
             with contextlib.suppress(Exception):
-                ids.update(lenient_member_ids(armored))
+                ids.update(lenient_member_ids(armored, key.fingerprint))
             if not ids:
                 failed += 1
                 print(f"unparseable key {key.fingerprint}")
@@ -198,17 +200,25 @@ async def seed(hints: set[str]) -> None:
     print(f"uncovered hints inserted: {len(missing)}")
 
 
-def strict_member_ids(armored: bytes) -> set[str]:
+def strict_member_ids(armored: bytes, fingerprint: str) -> set[str]:
     ids: set[str] = set()
     error: Exception | None = None
+    matches = 0
     for block in ARMOR_PATTERN.findall(armored):
         try:
             payload = dearmor(block)
+            selected = False
             for tag, body in iter_packets(payload):
-                if tag in (6, 14):
+                if tag == 6:
+                    primary_ids = key_packet_ids(body)
+                    selected = fingerprint.lower() in primary_ids
+                    matches += selected
+                if selected and (tag in (6, 14)):
                     ids.update(key_packet_ids(body))
         except Exception as e:
             error = e
+    if matches > 1:
+        raise ValueError(f"certificate {fingerprint} appears {matches} times")
     if not ids:
         raise error or ValueError("no key packets found")
     return ids

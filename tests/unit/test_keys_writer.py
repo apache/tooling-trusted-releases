@@ -32,6 +32,7 @@ import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.storage.outcome as outcome
 import atr.storage.writers.keys as keys_writer
+import tests.unit.pgp_fixtures as pgp_fixtures
 
 _EMBEDDED_V4_EXPIRING_KEY_ASC = """-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v1.4.10 (GNU/Linux)
@@ -104,6 +105,15 @@ class MockData:
 
     def release(self, *_args, **_kwargs):
         return Query(SimpleNamespace(project=mock.AsyncMock()))
+
+
+def test_block_downgrade_reason_compares_the_named_certificate() -> None:
+    fingerprint = pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT
+    stored = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    assert keys_writer._block_downgrade_reason(fingerprint, stored, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC) is None
 
 
 @pytest.mark.asyncio
@@ -553,6 +563,20 @@ def test_set_automated_keys_file_requires_membership() -> None:
     error = oc.error_or_none()
     assert isinstance(error, storage.AccessError)
     assert error.status == 403
+
+
+def test_signing_key_rows_selects_the_certificate_matching_the_row() -> None:
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    rows = keys_writer._signing_key_rows(pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT, block)
+
+    assert rows is not None
+    assert {row["fingerprint"] for row in rows if row["is_primary"]} == {
+        pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+    }
+    assert keys_writer._signing_key_rows("0" * 40, block) is None
 
 
 @pytest.mark.asyncio
