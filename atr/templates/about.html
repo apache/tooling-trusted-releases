@@ -34,19 +34,19 @@
   <h2>Release functionality</h2>
 
   <p>
-    For Alpha v2, the ATR allows users to start votes by sending the vote initiation email to their own mailing lists. Announcements of finished releases, however, must still be performed manually using <a href="https://dist.apache.org/repos/dist/release/"><code>svn:dist/release</code></a> as usual.
+    The ATR allows users to start votes by sending the vote initiation email to their own mailing lists, and to publish and announce finished releases. During Alpha, ATR publishes to <code>svn:dist/atr</code> and a manual move to <a href="https://dist.apache.org/repos/dist/release/"><code>svn:dist/release</code></a> is needed, as described in <a href="{{ as_url(get.docs.page, path='promoting-to-release') }}">Promoting to release</a>; from Beta, ATR publishes directly to <code>svn:dist/release</code>.
   </p>
 
   <h2>Release process</h2>
 
   <p>
-    The following table compares <a href="https://release-test.apache.org/tutorial">the UI</a>, <a href="https://github.com/apache/tooling-releases-client"><code>atr</code> CLI</a>, and <a href="https://github.com/apache/tooling-actions"><code>apache/tooling-actions/*</code> GitHub actions</a> for each step in the release process. Variables <code>P</code>, <code>V</code>, and <code>R</code> represent the project, version, and revision of a release, respectively.
+    The following table compares <a href="{{ as_url(get.root.tutorial) }}">the UI</a>, <a href="https://github.com/apache/tooling-releases-client"><code>atr</code> CLI</a>, and <a href="https://github.com/apache/tooling-actions"><code>apache/tooling-actions/*</code> GitHub actions</a> for each step in the release process. Variables <code>P</code>, <code>V</code>, and <code>R</code> represent the project, version, and revision of a release, respectively.
   </p>
 
   <table class="table table-bordered table-striped">
     <tr>
       <th>Step</th>
-      <th><a href="https://release-test.apache.org/tutorial">UI</a></th>
+      <th><a href="{{ as_url(get.root.tutorial) }}">UI</a></th>
       <th><a href="https://github.com/apache/tooling-releases-client/blob/main/COMMANDS.md">CLI</a></th>
       <th><a href="https://github.com/apache/tooling-actions">GHA</a></th>
       <th><a href="/api/docs">API</a></th>

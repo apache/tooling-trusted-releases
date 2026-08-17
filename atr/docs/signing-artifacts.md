@@ -25,7 +25,7 @@ For users who prefer a faster route to signing artifacts, such as novice release
 
 Install GnuPG 2.1 or higher in your package manager. The `gpg` and `gpgconf` commands must be available in your `PATH`, with those exact names. Some package managers install GnuPG 2 with the `gpg2` command, so double check this.
 
-[Download the `gpgsign.sh` shell script](https://release-test.apache.org/static/sh/gpgsign.sh) that we make available as part of ATR. The rest of this guide will assume that it is available on your path as `gpgsign`, but you can call it using `sh gpgsign.sh` etc.
+[Download the `gpgsign.sh` shell script](/static/sh/gpgsign.sh) that we make available as part of ATR. The rest of this guide will assume that it is available on your path as `gpgsign`, but you can call it using `sh gpgsign.sh` etc.
 
 ### Step 2: Generate an OpenPGP keypair
 
@@ -52,7 +52,7 @@ This will create `.tar.gz.asc` files, which is standard. Supply an extra argumen
 
 ### Step 4: Upload your key to ATR
 
-Go to [add your OpenPGP key](https://release-test.apache.org/keys/add) on ATR and upload your _public_ key. Do not upload your private key. You must not reveal your private key to anyone, or store it on untrusted equipment.
+Go to [add your OpenPGP key](/keys/add) on ATR and upload your _public_ key. Do not upload your private key. You must not reveal your private key to anyone, or store it on untrusted equipment.
 
 The email address in your key is publically associated with releases you sign through your public key and your committee's public `KEYS` file. Treat this as a lasting public record. You can remove the key from ATR later, but that does not retract the signatures on releases that you have already published.
 
