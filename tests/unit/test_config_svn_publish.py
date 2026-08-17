@@ -46,6 +46,14 @@ def test_validate_svn_publish_requires_local_outside_production(monkeypatch: pyt
         config._validate_svn_publish(_conf(monkeypatch, "https://dist.apache.org/repos/dist/atr"))
 
 
+def test_validate_svn_publish_requires_matching_dist_area(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "is_production_mode", lambda: True)
+    monkeypatch.setattr(config.get(), "SVN_DIST_PUBLIC_URL", "https://dist.apache.org/repos/dist/release")
+    config._validate_svn_publish(_conf(monkeypatch, "https://svn-internal.apache.org/x/repos/dist/release"))
+    with pytest.raises(RuntimeError):
+        config._validate_svn_publish(_conf(monkeypatch, "https://dist.apache.org/repos/dist/atr"))
+
+
 def _conf(monkeypatch: pytest.MonkeyPatch, url: str) -> type[config.AppConfig]:
     monkeypatch.setattr(config.get(), "SVN_PUBLISH_URL", url, raising=False)
     monkeypatch.setattr(config.get(), "SVN_TOKEN", "x", raising=False)

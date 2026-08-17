@@ -66,6 +66,10 @@ def _config_secrets_get(secrets_path: str, key: str, default: str | None = None,
         return default
 
 
+def _dist_area(url: str) -> str:
+    return urllib.parse.urlparse(url).path.rstrip("/").rpartition("/")[2]
+
+
 def _svn_loopback_host(host: str) -> bool:
     if host == "localhost":
         return True
@@ -107,6 +111,10 @@ def _validate_svn_publish(conf: type["AppConfig"]) -> None:
         raise RuntimeError(str(exc)) from exc
     if (not is_production_mode()) and (kind is not SvnPublishKind.LOCAL_REPOSITORY):
         raise RuntimeError("SVN_PUBLISH_URL must be a local repository outside of production; run make svn-dev-repo")
+    if kind is not SvnPublishKind.ASF_DISTRIBUTION:
+        return
+    if _dist_area(conf.SVN_PUBLISH_URL) != _dist_area(conf.SVN_DIST_PUBLIC_URL):
+        raise RuntimeError("SVN_PUBLISH_URL and SVN_DIST_PUBLIC_URL must target the same dist area")
 
 
 class AppConfig:
