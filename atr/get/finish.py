@@ -250,16 +250,8 @@ async def _render_page(
     page.append(_render_release_card(release, announce_disable_message))
 
     page.p[
-        "On this page you should do three things: 1. publish to SVN ",
-        htm.code["dist/atr"],
-        " if you did not already, and then ",
-        htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
-            "manually ",
-            htm.code["svn mv"],
-            " the results",
-        ],
-        " to ",
-        htm.code["dist/release"],
+        "On this page you should do three things: ",
+        *_render_publish_step(),
         "; 2. optionally record third party distributions that you made; and then, when ready, 3. use ",
         htm.strong["Announce"],
         " above to complete the process.",
@@ -314,6 +306,23 @@ async def _render_page(
         description=f"Finish {release.project.display_name} {release.version} as a release preview.",
         content=content,
     )
+
+
+def _render_publish_step() -> list[htm.Element | str]:
+    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
+        return ["1. publish to SVN ", htm.code["dist/release"], " if you did not already"]
+    return [
+        "1. publish to SVN ",
+        htm.code["dist/atr"],
+        " if you did not already, and then ",
+        htm.a(href=util.as_url(docs.page, path="promoting-to-release"))[
+            "manually ",
+            htm.code["svn mv"],
+            " the results",
+        ],
+        " to ",
+        htm.code["dist/release"],
+    ]
 
 
 def _render_release_card(release: sql.Release, announce_disable_message: str) -> htm.Element:

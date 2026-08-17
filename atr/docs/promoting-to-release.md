@@ -17,9 +17,11 @@
 
 ## Overview
 
-> **This is ATR Alpha behaviour which will change in Beta.**
+SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting). Where ATR publishes to at the end of that process differs between Alpha and Beta.
 
-When the ATR workflow completes, i.e. when the vote is resolved and the release announced, ATR commits the approved artifacts to its own area of the Apache distribution SVN repository:
+### Alpha
+
+During Alpha, when the ATR workflow completes, i.e. when the vote is resolved and the release announced, ATR commits the approved artifacts to its own area of the Apache distribution SVN repository:
 
 * TLP: `https://dist.apache.org/repos/dist/atr/<committee>/`
 * Podling: `https://dist.apache.org/repos/dist/atr/incubator/<committee>/`
@@ -29,9 +31,11 @@ Files in `/dist/atr/` are **not mirrored** by the Apache distribution mirror net
 * TLP: `https://dist.apache.org/repos/dist/release/<committee>/`
 * Podling: `https://dist.apache.org/repos/dist/release/incubator/<committee>/`
 
-The move is a manual SVN step performed once per release. ATR does not do it for you yet because automatic publishing to SVN is currently in testing, so we use `/dist/atr/` instead of `/dist/release/`. `/dist/atr/` is a testing area which we intend to operate only for the duration of Alpha. When Beta starts, ATR will publish approved artifacts directly to `/dist/release/` after a successful vote, and this manual step will no longer be needed.
+The move is a manual SVN step performed once per release, and the rest of this page describes it. ATR does not do it for you during Alpha because automatic publishing to SVN is being tested: `/dist/atr/` is a testing area, not a release area.
 
-Note that SVN is not an intrinsic part of the ATR release process until publication. The candidate is staged in ATR and voted on there, whatever method was used to upload the files, as described in [Staging and voting](staging-and-voting).
+### Beta
+
+From Beta, ATR publishes the approved artifacts directly to `/dist/release/` after a successful vote, and the manual step described on this page is no longer needed. The finish page for your release shows which area your ATR instance publishes to.
 
 ## Prerequisites
 
