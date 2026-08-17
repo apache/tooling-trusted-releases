@@ -728,7 +728,7 @@ async def key_add(
         ocr, publications = await wafc.keys.ensure_stored_one(data.key)
         try:
             key = ocr.result_or_raise()
-        except datatypes.UnknownApacheUidError as e:
+        except (datatypes.UnknownApacheUidError, ValueError) as e:
             raise exceptions.BadRequest(str(e)) from e
 
         for selected_committee_key in selected_committee_keys:

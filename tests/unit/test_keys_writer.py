@@ -116,6 +116,57 @@ def test_block_downgrade_reason_compares_the_named_certificate() -> None:
     assert keys_writer._block_downgrade_reason(fingerprint, stored, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC) is None
 
 
+def test_block_models_splits_a_two_certificate_block() -> None:
+    writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    keys = writer._CommitteeParticipant__block_models(block, keys_writer.cache.EmailUidLookup({}))
+
+    fingerprints = [key.key_model.fingerprint for key in keys if isinstance(key, keys_writer.datatypes.Key)]
+    assert fingerprints == [
+        pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT,
+        pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT,
+    ]
+    for key in keys:
+        assert isinstance(key, keys_writer.datatypes.Key)
+        own = pgp.certificate_for_fingerprint(key.key_model.ascii_armored_key, key.key_model.fingerprint)
+        assert own is not None
+        assert key.key_model.ascii_armored_key != block
+
+
+def test_block_models_keeps_the_uploaded_text_of_a_single_certificate_block() -> None:
+    writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
+
+    keys = writer._CommitteeParticipant__block_models(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, keys_writer.cache.EmailUidLookup({})
+    )
+
+    assert len(keys) == 1
+    assert isinstance(keys[0], keys_writer.datatypes.Key)
+    assert keys[0].key_model.ascii_armored_key == pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC
+
+
+def test_block_models_reports_a_failing_certificate_without_losing_its_siblings() -> None:
+    writer, _write_as = _make_committee_member(MockData(None, committees_after_commit={}), "test")
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+    strengths = iter([None, ValueError("too weak")])
+
+    def validate(_public_key) -> None:
+        if (error := next(strengths)) is not None:
+            raise error
+
+    with mock.patch.object(keys_writer, "_validate_key_strength", side_effect=validate):
+        keys = writer._CommitteeParticipant__block_models(block, keys_writer.cache.EmailUidLookup({}))
+
+    assert isinstance(keys[0], keys_writer.datatypes.Key)
+    assert keys[0].key_model.fingerprint == pgp_fixtures.EXPIRED_SUBKEY_PRIMARY_FINGERPRINT
+    assert isinstance(keys[1], ValueError)
+
+
 @pytest.mark.asyncio
 async def test_database_add_model_audits_inserted_key():
     data = MockData(None, committees_after_commit={})
@@ -145,6 +196,63 @@ async def test_database_add_model_audits_inserted_key():
     assert audit_kwargs["asf_uid"] == "alice"
     assert audit_kwargs["fingerprint"] == "fp1"
     assert audit_kwargs["key_apache_uid"] == "alice"
+
+
+def test_deduplicate_keys_keeps_identical_copies_once() -> None:
+    armored = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    re_armored = keys_writer.openpgp.composed.SignedPublicKey.from_armor(armored)[0].to_armored()
+
+    deduplicated = keys_writer._deduplicate_keys([_parsed_key(armored), _parsed_key(re_armored)])
+
+    assert len(deduplicated) == 1
+    assert isinstance(deduplicated[0], keys_writer.datatypes.Key)
+
+
+def test_deduplicate_keys_prefers_the_copy_which_supersedes_the_other() -> None:
+    full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    stripped = pgp_fixtures.block_without_signature_type(full, 0x28)
+
+    deduplicated = keys_writer._deduplicate_keys([_parsed_key(stripped), _parsed_key(full)])
+
+    assert len(deduplicated) == 1
+    assert isinstance(deduplicated[0], keys_writer.datatypes.Key)
+    assert deduplicated[0].key_model.ascii_armored_key == full
+
+
+def test_deduplicate_keys_reports_incomparable_copies_for_that_key_only() -> None:
+    full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    unbound = pgp_fixtures.block_without_signature_type(full, 0x18)
+    other = _parsed_key(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
+
+    deduplicated = keys_writer._deduplicate_keys([_parsed_key(full), other, _parsed_key(unbound)])
+
+    assert len(deduplicated) == 2
+    assert isinstance(deduplicated[0], ValueError)
+    assert "differing content" in str(deduplicated[0])
+    assert deduplicated[1] is other
+
+
+@pytest.mark.asyncio
+async def test_database_add_models_links_a_stored_key_whose_reimport_is_a_downgrade(sqlite_data):
+    full = pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    fingerprint = pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+    sqlite_data.add(keys_writer.sql.Committee(key="alpha"))
+    stored = _signing_certificate(fingerprint, apache_uid="alice")
+    stored.ascii_armored_key = full
+    sqlite_data.add(stored)
+    await sqlite_data.commit()
+    writer, _write_as = _make_committee_member(sqlite_data, "alpha")
+    outcomes = outcome.List[keys_writer.datatypes.Key]()
+    outcomes.append_result(_parsed_key(pgp_fixtures.block_without_signature_type(full, 0x28)))
+
+    with mock.patch.object(writer, "_recheck_committee_drafts", new_callable=mock.AsyncMock):
+        outcomes, _publications = await writer._CommitteeParticipant__database_add_models(outcomes)
+
+    assert outcomes.error_count == 0
+    kept = await sqlite_data.signing_certificate(fingerprint=fingerprint).get()
+    assert (kept is not None) and (kept.ascii_armored_key == full)
+    links = (await sqlite_data.execute(sqlmodel.select(keys_writer.sql.KeyLink))).all()
+    assert [(link[0].committee_key, link[0].key_fingerprint) for link in links] == [("alpha", fingerprint)]
 
 
 @pytest.mark.asyncio
@@ -348,6 +456,20 @@ async def test_ensure_stored_one_accepts_test_key_without_email_cache() -> None:
     assert key.key_model.fingerprint == "557f8d855def8bbe2dc5603b64c271bb87b7fe7b"
     email_uid_view.assert_not_awaited()
     database_add_model.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ensure_stored_one_rejects_a_block_with_two_keys() -> None:
+    data = MockData(None, committees_after_commit={})
+    writer, _write, _write_as = _make_foundation_committer_with_audit(data)
+    block = pgp_fixtures.two_certificate_block(
+        pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
+    )
+
+    result, publications = await writer.ensure_stored_one(block)
+
+    assert publications == {}
+    assert "contains 2 keys" in str(result.error_or_none())
 
 
 @pytest.mark.asyncio
@@ -691,6 +813,13 @@ def _make_foundation_committer_with_audit(data: MockData, asf_uid: str = "alice"
     write.as_committee_participant = mock.MagicMock()
     write_as = mock.MagicMock()
     return keys_writer.FoundationCommitter(write, write_as, data), write, write_as
+
+
+def _parsed_key(armored: str) -> keys_writer.datatypes.Key:
+    key, _ = keys_writer.openpgp.composed.SignedPublicKey.from_armor(armored)
+    model = _signing_certificate(key.fingerprint.lower(), apache_uid=None)
+    model.ascii_armored_key = armored
+    return keys_writer.datatypes.Key(status=keys_writer.datatypes.KeyStatus.PARSED, key_model=model)
 
 
 def _playwright_test_key_text() -> str:

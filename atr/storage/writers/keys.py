@@ -127,6 +127,42 @@ def _block_downgrade_reason(fingerprint: str, stored_block: str, incoming_block:
     return None
 
 
+def _deduplicate_keys(roes: list[datatypes.Key | Exception]) -> list[datatypes.Key | Exception]:
+    groups: dict[str, list[datatypes.Key]] = {}
+    for roe in roes:
+        if isinstance(roe, datatypes.Key):
+            groups.setdefault(roe.key_model.fingerprint, []).append(roe)
+    deduplicated: list[datatypes.Key | Exception] = []
+    seen: set[str] = set()
+    for roe in roes:
+        if not isinstance(roe, datatypes.Key):
+            deduplicated.append(roe)
+            continue
+        fingerprint = roe.key_model.fingerprint
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        keys = groups[fingerprint]
+        deduplicated.append(keys[0] if (len(keys) == 1) else _preferred_key(fingerprint, keys))
+    return deduplicated
+
+
+def _preferred_key(fingerprint: str, keys: list[datatypes.Key]) -> datatypes.Key | Exception:
+    candidates: dict[bytes, datatypes.Key] = {}
+    for key in keys:
+        parsed = pgp.certificate_for_fingerprint(key.key_model.ascii_armored_key, fingerprint)
+        if parsed is None:
+            return ValueError(f"Key {fingerprint} could not be read back from its block")
+        candidates.setdefault(parsed.to_bytes(), key)
+    if len(candidates) == 1:
+        return next(iter(candidates.values()))
+    for candidate in candidates.values():
+        others = [other for other in candidates.values() if other is not candidate]
+        if all(_supersedes(fingerprint, candidate, other) for other in others):
+            return candidate
+    return ValueError(f"Key {fingerprint} appears {len(candidates)} times with differing content")
+
+
 def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[dict] | None:
     """The SigningKey rows a certificate's block describes, or None if the block is for another key."""
     if isinstance(block, bytes):
@@ -149,6 +185,14 @@ def _signing_key_rows(certificate_fingerprint: str, block: str | bytes) -> list[
         }
         for facts in pgp.signing_key_facts(key)
     ]
+
+
+def _supersedes(fingerprint: str, candidate: datatypes.Key, other: datatypes.Key) -> bool:
+    candidate_block = candidate.key_model.ascii_armored_key
+    other_block = other.key_model.ascii_armored_key
+    if _block_downgrade_reason(fingerprint, other_block, candidate_block) is not None:
+        return False
+    return _block_downgrade_reason(fingerprint, candidate_block, other_block) is not None
 
 
 async def _sync_signing_keys(data: db.Session, certificates: list[sql.SigningCertificate]) -> None:
@@ -506,7 +550,13 @@ class FoundationCommitter(GeneralPublic):
         return key
 
     def __block_model_create(self, key_block: str, ldap_data: cache.EmailUidLookup) -> datatypes.Key:
-        public_key, _ = openpgp.composed.SignedPublicKey.from_armor(key_block)
+        public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(key_block)
+        if len(public_keys) != 1:
+            raise ValueError(
+                f"This block contains {util.plural(len(public_keys), 'key')};"
+                " add one key at a time, or import a KEYS file"
+            )
+        public_key = public_keys[0]
         key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
         _validate_key_strength(public_key)
         return datatypes.Key(
@@ -928,21 +978,25 @@ class CommitteeParticipant(FoundationCommitter):
 
     def __block_models(self, key_block: str, ldap_data: cache.EmailUidLookup) -> list[datatypes.Key | Exception]:
         try:
-            public_key, _ = openpgp.composed.SignedPublicKey.from_armor(key_block)
+            public_keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(key_block)
         except Exception as e:
             raise ValueError(f"Error loading OpenPGP key block: {e}") from e
+        if not public_keys:
+            raise ValueError("Error loading OpenPGP key block: no keys found")
+        original_key_block = key_block if (len(public_keys) == 1) else None
         key_list = []
-        try:
-            key_model = self.public_key_model(public_key, ldap_data, original_key_block=key_block)
-            _validate_key_strength(public_key)
-            key = datatypes.Key(
-                status=datatypes.KeyStatus.PARSED,
-                key_model=key_model,
-                member_ids=sorted(util.openpgp_member_ids(public_key)),
-            )
-            key_list.append(key)
-        except Exception as e:
-            key_list.append(e)
+        for public_key in public_keys:
+            try:
+                key_model = self.public_key_model(public_key, ldap_data, original_key_block=original_key_block)
+                _validate_key_strength(public_key)
+                key = datatypes.Key(
+                    status=datatypes.KeyStatus.PARSED,
+                    key_model=key_model,
+                    member_ids=sorted(util.openpgp_member_ids(public_key)),
+                )
+                key_list.append(key)
+            except Exception as e:
+                key_list.append(e)
         return key_list
 
     async def __database_add_models(
@@ -1039,7 +1093,7 @@ class CommitteeParticipant(FoundationCommitter):
 
         outcomes.update_roes(Exception, replace_with_inserted)
 
-        persisted_fingerprints = {v["fingerprint"] for v in key_values}
+        persisted_fingerprints = {v["fingerprint"] for v in key_values} | downgraded
         # An artifact points at the SigningKey which signed it, so these rows must exist before an
         # artifact can be attributed
         await _sync_signing_keys(self.__data, [key.key_model for key in key_list])
@@ -1115,13 +1169,15 @@ class CommitteeParticipant(FoundationCommitter):
             for key_block in key_blocks
         ]
         key_model_batches = await asyncio.gather(*tasks, return_exceptions=True)
+        roes: list[datatypes.Key | Exception] = []
         for key_model_batch in key_model_batches:
             if isinstance(key_model_batch, Exception):
-                outcomes.append_error(key_model_batch)
+                roes.append(key_model_batch)
             elif isinstance(key_model_batch, BaseException):
                 raise key_model_batch
             else:
-                outcomes.extend_roes(Exception, key_model_batch)
+                roes.extend(key_model_batch)
+        outcomes.extend_roes(Exception, await asyncio.to_thread(_deduplicate_keys, roes))
         # Try adding the keys to the database
         # If not, all keys will be replaced with a PostParseError
         return await self.__database_add_models(outcomes, associate=associate)

@@ -17,6 +17,7 @@
 
 import io
 import pathlib
+from collections.abc import Iterator
 from typing import Final
 
 import openpgp.armor
@@ -104,6 +105,49 @@ hZnIBFP9OA8A/1t15vvaSJjtPZEKGFT7POk+2Z5Q2krVupn6V9oW4oDpAQDig6j9
 =8ozG
 -----END PGP PUBLIC KEY BLOCK-----
 """
+
+
+def block_without_signature_type(block: str, signature_type: int) -> str:
+    # Re-armour a certificate with every self-signature of a given type removed, which is what a
+    # stripped re-upload looks like at the packet level
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(block)
+    data = key.to_bytes()
+    kept = bytearray()
+    for tag, start, end, body in packets(data):
+        if not ((tag == 2) and (data[body] == 4) and (data[body + 1] == signature_type)):
+            kept += data[start:end]
+    stripped = openpgp.composed.SignedPublicKey.from_bytes(bytes(kept))
+    return stripped.to_armored()
+
+
+def packets(data: bytes) -> Iterator[tuple[int, int, int, int]]:
+    # Walk an OpenPGP byte stream, yielding (tag, start, end, body) per packet so a test can rewrite a
+    # certificate at the packet level. Covers both old and new-format framing
+    index = 0
+    while index < len(data):
+        start = index
+        header = data[index]
+        index += 1
+        if header & 0x40:
+            tag = header & 0x3F
+            first = data[index]
+            index += 1
+            if first < 192:
+                length = first
+            elif first < 224:
+                length = ((first - 192) << 8) + data[index] + 192
+                index += 1
+            else:
+                length = int.from_bytes(data[index : index + 4], "big")
+                index += 4
+        else:
+            tag = (header >> 2) & 0x0F
+            width = (1, 2, 4)[header & 0x03]
+            length = int.from_bytes(data[index : index + width], "big")
+            index += width
+        body = index
+        index += length
+        yield tag, start, index, body
 
 
 def two_certificate_block(first_armored: str, second_armored: str) -> str:

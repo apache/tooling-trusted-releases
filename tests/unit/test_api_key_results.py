@@ -15,7 +15,15 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import contextlib
+import inspect
+import unittest.mock as mock
+
+import pytest
+
+import atr.api
 import atr.models as models
+import atr.storage.outcome as outcome
 
 
 def test_key_delete_results_carry_publication_warnings() -> None:
@@ -29,3 +37,23 @@ def test_key_delete_results_carry_publication_warnings() -> None:
 
     assert parsed.warnings == [warning]
     assert models.api.KeyDeleteResults(endpoint="/key/delete", success=True).warnings == []
+
+
+@pytest.mark.asyncio
+async def test_key_add_reports_a_multi_key_block_as_a_bad_request() -> None:
+    write = mock.MagicMock()
+    write.as_foundation_committer.return_value.keys.ensure_stored_one = mock.AsyncMock(
+        return_value=(outcome.Error(ValueError("This block contains 2 keys; add one key at a time")), {})
+    )
+
+    @contextlib.asynccontextmanager
+    async def write_context(_asf_uid):
+        yield write
+
+    args = models.api.KeyAddArgs(asfuid="alice", key="-----BEGIN PGP PUBLIC KEY BLOCK-----\n", committees=[])
+    with (
+        mock.patch.object(atr.api, "_jwt_asf_uid", return_value="alice"),
+        mock.patch.object(atr.api.storage, "write", new=write_context),
+        pytest.raises(atr.api.exceptions.BadRequest, match="contains 2 keys"),
+    ):
+        await inspect.unwrap(atr.api.key_add)("key/add", args)
