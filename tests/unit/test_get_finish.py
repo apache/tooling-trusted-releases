@@ -27,3 +27,10 @@ def test_render_publish_step_omits_promotion_for_release_target(monkeypatch: pyt
     assert "dist/release" in html
     assert "dist/atr" not in html
     assert "<a " not in html
+
+
+def test_svn_publish_label_names_release_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.RELEASE)
+    assert finish._svn_publish_label() == "Publish to SVN dist/release"
+    monkeypatch.setattr(util, "svn_publish_target", lambda: util.SvnPublishTarget.ATR)
+    assert finish._svn_publish_label() == "Publish to SVN"

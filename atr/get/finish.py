@@ -424,7 +424,7 @@ async def _render_svn_publish(page: htm.Block, release: sql.Release) -> None:
             "download_path_suffix": _svn_download_path_default(release),
             "revision_number": release.latest_revision_number,
         },
-        submit_label="Publish to SVN",
+        submit_label=_svn_publish_label(),
     )
 
 
@@ -462,6 +462,12 @@ def _render_task(task: sql.Task) -> htm.Element:
 def _svn_download_path_default(release: sql.Release) -> str:
     suffix = construct.effective_download_path_suffix(release)
     return str(suffix) if suffix is not None else ""
+
+
+def _svn_publish_label() -> str:
+    if util.svn_publish_target() is util.SvnPublishTarget.RELEASE:
+        return "Publish to SVN dist/release"
+    return "Publish to SVN"
 
 
 def _svn_publish_revision(completed: sql.Task) -> int | None:
