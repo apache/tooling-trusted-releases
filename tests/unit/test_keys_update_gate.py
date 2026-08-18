@@ -94,3 +94,17 @@ async def test_keys_update_post_runs_for_the_atr_target() -> None:
 
     assert started["category"] == "success"
     update_keys.assert_awaited_once_with("alice")
+
+
+@pytest.mark.asyncio
+async def test_update_keys_runs_the_script_in_its_full_mode() -> None:
+    process = types.SimpleNamespace(pid=123, returncode=0, communicate=mock.AsyncMock(return_value=(b"", b"")))
+    create = mock.AsyncMock(return_value=process)
+    with (
+        mock.patch.object(admin.asyncio, "create_subprocess_exec", create),
+        mock.patch.object(admin.asfquart, "APP", types.SimpleNamespace()),
+    ):
+        assert await admin._update_keys("alice") == 123
+
+    arguments = [str(argument) for argument in create.call_args.args]
+    assert arguments[-4:] == ["alice", "--apply", "--allow-refresh", "--allow-undelete"]
