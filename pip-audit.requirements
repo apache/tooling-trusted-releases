@@ -20,7 +20,7 @@ aiosqlite==0.22.1
     # via tooling-trusted-releases
 aiozipstream==0.4
     # via tooling-trusted-releases
-alembic==1.19.0
+alembic==1.19.1
     # via tooling-trusted-releases
 annotated-types==0.8.0
     # via pydantic
@@ -58,7 +58,7 @@ cffi==2.1.1
     #   cryptography
 cfgv==3.5.0
     # via pre-commit
-charset-normalizer==3.4.9
+charset-normalizer==3.5.0
     # via requests
 click==8.4.2
     # via
@@ -78,14 +78,14 @@ cssbeautifier==2.0.3
     # via djlint
 cvss==3.6
     # via tooling-trusted-releases
-cyclonedx-python-lib==11.11.0
+cyclonedx-python-lib==11.12.0
     # via tooling-trusted-releases
 decouple-types==1.0.2
 defusedxml==0.7.1
     # via py-serializable
 distlib==0.4.3
     # via virtualenv
-djlint==1.44.0
+djlint==1.44.2
 dnspython==2.8.0
     # via
     #   email-validator
@@ -128,7 +128,7 @@ gitignore-parser==0.1.13
     # via tooling-trusted-releases
 google-re2==1.1.20251105
     # via tooling-trusted-releases
-greenlet==3.5.4
+greenlet==3.5.5
     # via
     #   sqlalchemy
     #   tooling-trusted-releases
@@ -222,9 +222,9 @@ packaging==26.3
     #   tooling-trusted-releases
 pathspec==1.1.1
     # via djlint
-platformdirs==4.11.0
+platformdirs==4.11.2
     # via virtualenv
-pre-commit==4.6.1
+pre-commit==4.6.2
 priority==2.0.0
     # via hypercorn
 propcache==0.5.2
@@ -252,7 +252,7 @@ pydantic-core==2.46.4
     # via
     #   pydantic
     #   pydantic-xml
-pydantic-xml==2.21.0
+pydantic-xml==2.21.1
     # via tooling-trusted-releases
 pygments==2.20.0
     # via rich
@@ -267,7 +267,7 @@ python-dateutil==2.9.0.post0
     #   strictyaml
 python-decouple==3.8
     # via tooling-trusted-releases
-python-discovery==1.5.1
+python-discovery==1.5.2
     # via virtualenv
 pyyaml==6.0.3
     # via
@@ -315,7 +315,7 @@ rpds-py==2026.6.3
     #   referencing
 rpgp-py==0.20.0
     # via tooling-trusted-releases
-ruff==0.16.1
+ruff==0.16.2
 semver==3.0.4
     # via tooling-trusted-releases
 six==1.17.0
@@ -324,7 +324,7 @@ six==1.17.0
     #   rfc3339-validator
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
     # via
     #   alembic
     #   sqlmodel
@@ -350,7 +350,7 @@ typing-extensions==4.16.0
     #   sqlalchemy
     #   sqlmodel
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.4
     # via pydantic
 tzdata==2026.3
     # via arrow
@@ -362,7 +362,7 @@ urllib3==2.7.0
     #   requests
 uvloop==0.22.1
     # via hypercorn
-virtualenv==21.7.1
+virtualenv==21.7.4
     # via pre-commit
 watchfiles==1.2.0
     # via
