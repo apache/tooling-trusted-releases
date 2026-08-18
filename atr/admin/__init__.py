@@ -35,6 +35,7 @@ import asfquart
 import asfquart.base as base
 import htpy
 import jwt
+import openpgp.composed
 import pydantic
 import quart
 import quart.datastructures as datastructures
@@ -61,6 +62,7 @@ import atr.models.unsafe as unsafe
 import atr.models.validation as validation
 import atr.noisy as noisy
 import atr.paths as paths
+import atr.pgp as pgp
 import atr.principal as principal
 import atr.shared as shared
 import atr.shared.catalogue_diff as catalogue_diff
@@ -75,6 +77,7 @@ import atr.web as web
 
 ROUTES_MODULE: Final[Literal[True]] = True
 
+_CERTIFICATE_FINDING_RANK: Final[dict[str, int]] = {"signing-keys": 1, "metadata": 2}
 _MAXIMUM_PERMITTED_AGE_DAYS: Final = datetime.timedelta(days=90)
 
 
@@ -1632,12 +1635,13 @@ async def keys_check_post(
     """Check public signing key details."""
     page = htm.Block()
     page.h1["Public signing key check results"]
-    try:
-        result = await _check_keys()
-        page.div[[htm.p[line] for line in result.split("\n")]]
-    except Exception as e:
-        log.exception("Exception during key check:")
-        page.p[f"Exception during key check: {e!s}"]
+    for check in (_check_keys, _check_certificate_blocks):
+        try:
+            result = await check()
+            page.div[[htm.p[line] for line in result.split("\n")]]
+        except Exception as e:
+            log.exception("Exception during key check:")
+            page.p[f"Exception during key check: {e!s}"]
     return await template.render(
         "blank.html",
         title="Check public signing key details",
@@ -2551,6 +2555,82 @@ async def validate_jwt_post(
         defaults={"token": token},
     )
     return await _validate_jwt_page(rendered_form, result=result)
+
+
+def _certificate_block_lines(
+    certificate: sql.SigningCertificate, signing_keys: set[str], shared: bool
+) -> list[tuple[str, str]]:
+    fingerprint = certificate.fingerprint.lower()
+    label = f"{fingerprint} (deleted)" if (certificate.deleted is not None) else fingerprint
+    text = certificate.ascii_armored_key
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    findings = []
+    if shared:
+        findings.append(("shared-text", f"{label}: stored text is shared with another row"))
+    try:
+        keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(text)
+    except Exception as e:
+        return [("unparseable", f"{label}: unparseable ({e})"), *findings]
+    shape = pgp.certificate_block_shape(keys, fingerprint)
+    if shape != "single":
+        findings.append((shape, f"{label}: {shape} ({util.plural(len(keys), 'certificate')} in the block)"))
+    own = [key for key in keys if key.fingerprint.lower() == fingerprint]
+    if len(own) == 1:
+        findings.extend(
+            (kind, f"{label}: {problem}")
+            for kind, problem in _certificate_metadata_problems(certificate, own[0], signing_keys)
+        )
+    return findings
+
+
+def _certificate_block_report(certificates: Sequence[sql.SigningCertificate], signing_keys: dict[str, set[str]]) -> str:
+    counts: collections.Counter[str] = collections.Counter()
+    findings: list[tuple[str, str]] = []
+    texts = collections.Counter(certificate.ascii_armored_key for certificate in certificates)
+    for certificate in certificates:
+        shared = texts[certificate.ascii_armored_key] > 1
+        certificate_findings = _certificate_block_lines(
+            certificate, signing_keys.get(certificate.fingerprint.lower(), set()), shared
+        )
+        counts.update(kind for kind, _ in certificate_findings)
+        findings.extend(certificate_findings)
+    summary = ", ".join(f"{count} {kind}" for kind, count in sorted(counts.items())) or "no problems"
+    ordered = sorted(findings, key=lambda finding: _CERTIFICATE_FINDING_RANK.get(finding[0], 0))
+    return "\n".join(
+        [f"Checked {util.plural(len(certificates), 'certificate block')}: {summary}", *(line for _, line in ordered)]
+    )
+
+
+def _certificate_metadata_problems(
+    certificate: sql.SigningCertificate, key: openpgp.composed.SignedPublicKey, signing_keys: set[str]
+) -> list[tuple[str, str]]:
+    problems = []
+    uids = list(key.user_ids)
+    if (certificate.primary_declared_uid is not None) and (certificate.primary_declared_uid not in uids):
+        problems.append(("metadata", f"declared uid {certificate.primary_declared_uid!r} is not in the certificate"))
+    latest = pgp.latest_self_signature_created_at(key)
+    if (certificate.latest_self_signature is not None) and (certificate.latest_self_signature != latest):
+        problems.append(
+            ("metadata", f"latest self-signature stored as {certificate.latest_self_signature}, certificate {latest}")
+        )
+    expected = {facts.fingerprint.lower() for facts in pgp.signing_key_facts(key)}
+    if missing := sorted(expected - signing_keys):
+        problems.append(("signing-keys", f"SigningKey rows missing for {', '.join(missing)}"))
+    return problems
+
+
+async def _check_certificate_blocks() -> str:
+    via = sql.validate_instrumented_attribute
+    async with db.session() as data:
+        certificates = (await data.execute(sqlmodel.select(sql.SigningCertificate))).scalars().all()
+        rows = await data.execute(
+            sqlmodel.select(via(sql.SigningKey.certificate_fingerprint), via(sql.SigningKey.fingerprint))
+        )
+        signing_keys: dict[str, set[str]] = collections.defaultdict(set)
+        for certificate_fingerprint, fingerprint in rows.all():
+            signing_keys[certificate_fingerprint.lower()].add(fingerprint.lower())
+    return await asyncio.to_thread(_certificate_block_report, certificates, signing_keys)
 
 
 async def _check_keys(fix: bool = False) -> str:

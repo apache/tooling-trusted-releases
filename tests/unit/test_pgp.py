@@ -45,6 +45,20 @@ def _block_with_grafted_signature(target_block: str, source_block: str, signatur
     return openpgp.composed.SignedPublicKey.from_bytes(bytes(kept)).to_armored()
 
 
+def test_certificate_block_shape_names_every_shape() -> None:
+    expired, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC)
+    revoked, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC)
+    own = pgp_fixtures.REVOKED_SUBKEY_PRIMARY_FINGERPRINT
+
+    assert pgp.certificate_block_shape([revoked], own) == "single"
+    assert pgp.certificate_block_shape([revoked, expired], own) == "multi-own-first"
+    assert pgp.certificate_block_shape([expired, revoked], own) == "multi-own-not-first"
+    assert pgp.certificate_block_shape([revoked, revoked], own) == "own-certificate-repeated"
+    assert pgp.certificate_block_shape([expired], own) == "wrong-fingerprint"
+    assert pgp.certificate_block_shape([expired, expired], own) == "no-own-certificate"
+    assert pgp.certificate_block_shape([], own) == "empty"
+
+
 def test_certificate_for_fingerprint_selects_the_named_certificate() -> None:
     block = pgp_fixtures.two_certificate_block(
         pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC

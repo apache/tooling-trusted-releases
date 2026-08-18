@@ -61,14 +61,11 @@ def _certificate_finding(certificate: sql.SigningCertificate, committees: tuple[
         return Finding(fingerprint, "unparseable", str(e)[:120], committees, deleted, raw)
     fingerprints = [key.fingerprint.lower() for key in keys]
     matches = [key for key in keys if key.fingerprint.lower() == fingerprint]
-    if not matches:
-        kind = "wrong-fingerprint" if (len(keys) == 1) else "no-own-certificate"
-        return Finding(fingerprint, kind, f"holds {fingerprints}", committees, deleted, raw)
-    if len(matches) > 1:
-        return Finding(fingerprint, "own-certificate-repeated", f"{len(matches)} copies", committees, deleted, raw)
-    if len(keys) == 1:
+    kind = pgp.certificate_block_shape(keys, fingerprint)
+    if kind == "single":
         return None
-    kind = "multi-own-first" if (fingerprints[0] == fingerprint) else "multi-own-not-first"
+    if kind not in _REPAIRABLE:
+        return Finding(fingerprint, kind, f"holds {fingerprints}", committees, deleted, raw)
     detail = f"{len(keys)} certificates" + _drift(certificate, matches[0])
     replacement = matches[0].to_armored()
     problem = _round_trip_problem(matches[0], replacement, fingerprint)

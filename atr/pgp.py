@@ -61,6 +61,20 @@ class SigningKeyStatus:
     revoked: bool
 
 
+def certificate_block_shape(keys: list[openpgp.composed.SignedPublicKey], fingerprint: str) -> str:
+    fingerprints = [key.fingerprint.lower() for key in keys]
+    matches = fingerprints.count(fingerprint.lower())
+    if not keys:
+        return "empty"
+    if matches == 0:
+        return "wrong-fingerprint" if (len(keys) == 1) else "no-own-certificate"
+    if matches > 1:
+        return "own-certificate-repeated"
+    if len(keys) == 1:
+        return "single"
+    return "multi-own-first" if (fingerprints[0] == fingerprint.lower()) else "multi-own-not-first"
+
+
 def certificate_for_fingerprint(armored: str, fingerprint: str) -> openpgp.composed.SignedPublicKey | None:
     keys, _ = openpgp.composed.SignedPublicKey.from_armor_many(armored)
     matches = [key for key in keys if key.fingerprint.lower() == fingerprint.lower()]
