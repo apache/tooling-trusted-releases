@@ -72,6 +72,10 @@ def print_and_flush(message: str) -> None:
     sys.stdout.flush()
 
 
+def release_target_refused() -> bool:
+    return util.svn_publish_target() is util.SvnPublishTarget.RELEASE
+
+
 def format_exception_location(exc: BaseException) -> str:
     tb = exc.__traceback__
     frames: list[TracebackType] = []
@@ -207,6 +211,11 @@ async def keys_import(conf: config.AppConfig, asf_uid: str) -> None:
 async def amain() -> None:
     conf = config.AppConfig()
     with log_to_file(conf):
+        if release_target_refused():
+            print_and_flush(
+                "Refusing: ATR publishes to the release area, so this would overwrite every committee's KEYS file there"
+            )
+            sys.exit(2)
         try:
             await keys_import(conf, sys.argv[1])
         except Exception as e:

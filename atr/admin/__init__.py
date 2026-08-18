@@ -1672,7 +1672,13 @@ async def keys_update_get(
     else:
         async with aiofiles.open(log_path) as f:
             previous_output = await f.read()
-    return await template.render("update-keys.html", empty_form=rendered_form, previous_output=previous_output)
+    return await template.render(
+        "update-keys.html",
+        empty_form=rendered_form,
+        previous_output=previous_output,
+        publish_gate=_keys_update_gated(),
+        publish_area=config.get().SVN_DIST_PUBLIC_URL,
+    )
 
 
 @admin.typed
@@ -1680,6 +1686,11 @@ async def keys_update_post(
     session: web.Committer, _keys_update: Literal["keys/update"], _form: form.Empty
 ) -> str | web.WerkzeugResponse | tuple[Mapping[str, Any], int]:
     """Update keys from remote data."""
+    if _keys_update_gated():
+        return {
+            "message": "Updating keys is unavailable while ATR publishes to the release area.",
+            "category": "error",
+        }, 200
     try:
         pid = await _update_keys(session.asf_uid)
         log.info(f"Keys update process started with PID {pid}")
@@ -2822,6 +2833,10 @@ async def _get_filesystem_dirs_unfinished(filesystem_dirs: list[str]) -> None:
                     version_dir_path = os.path.join(project_dir_path, version_dir)
                     if await aiofiles.os.path.isdir(version_dir_path):
                         filesystem_dirs.append(version_dir_path)
+
+
+def _keys_update_gated() -> bool:
+    return util.svn_publish_target() is util.SvnPublishTarget.RELEASE
 
 
 def _release_age_row(release: sql.Release, now: datetime.datetime) -> ReleaseAgeRow:

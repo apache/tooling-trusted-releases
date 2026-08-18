@@ -79,9 +79,19 @@
         </p>
     </div>
 
-    <div id="status"></div>
+    {% if publish_gate %}
+        <div class="page-warning">
+            <p>
+                <strong>Unavailable:</strong> ATR publishes to the release area, <code>{{ publish_area }}</code>.
+                Updating keys re-imports every committee's canonical KEYS file and republishes it, which would
+                overwrite every committee's own file there, so this operation is disabled on this instance.
+            </p>
+        </div>
+    {% else %}
+        <div id="status"></div>
 
-    {{ empty_form }}
+        {{ empty_form }}
+    {% endif %}
 
     {% if previous_output %}
         <h2>Previous output</h2>
@@ -91,5 +101,7 @@
 
 {% block javascripts %}
     {{ super() }}
-    <script src="{{ static_url('js/src/admin-update-form.js') }}"></script>
+    {% if not publish_gate %}
+        <script src="{{ static_url('js/src/admin-update-form.js') }}"></script>
+    {% endif %}
 {% endblock javascripts %}
