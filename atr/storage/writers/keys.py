@@ -927,16 +927,21 @@ class CommitteeParticipant(FoundationCommitter):
         return outcomes, publications
 
     async def import_keys_file(
-        self, project_key: safe.ProjectKey, version_key: safe.VersionKey
+        self,
+        project_key: safe.ProjectKey,
+        version_key: safe.VersionKey,
+        keys_file_text: str | None = None,
+        expected_revision: safe.RevisionNumber | None = None,
     ) -> tuple[outcome.List[datatypes.Key], dict[str, outcome.Outcome[datatypes.KeysPublish]]]:
         release = await self.__data.release(
             project_key=str(project_key),
             version=str(version_key),
             _committee=True,
         ).demand(storage.AccessError(f"Release not found: {project_key} {version_key}", status=404))
-        keys_path = paths.release_directory(release) / "KEYS"
-        async with aiofiles.open(keys_path, encoding="utf-8") as f:
-            keys_file_text = await f.read()
+        if keys_file_text is None:
+            keys_path = paths.release_directory(release) / "KEYS"
+            async with aiofiles.open(keys_path, encoding="utf-8") as f:
+                keys_file_text = await f.read()
         if release.committee is None:
             raise storage.AccessError("No committee found for release - Invalid state", status=500)
         if release.committee.key != self.__committee_key:
@@ -962,6 +967,7 @@ class CommitteeParticipant(FoundationCommitter):
                 allowed_phases=frozenset({sql.ReleasePhase.RELEASE_CANDIDATE_DRAFT}),
                 description=description,
                 modify=modify,
+                expected_revision=expected_revision,
             )
             release_keys_removed = True
         self.__write_as.append_to_audit_log(

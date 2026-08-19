@@ -19,8 +19,9 @@
 import asyncio
 import contextlib
 import gc
-from typing import Final, Literal
+from typing import Literal
 
+import aiofiles
 import aiohttp
 import asfquart.base as base
 import quart
@@ -44,11 +45,6 @@ import atr.storage.outcome as outcome
 import atr.util as util
 import atr.web as web
 
-# The Apache Subversion KEYS file is largest at 3732091 bytes
-_MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
-
-_MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
-
 
 class PrivateKeyUploadError(Exception):
     pass
@@ -67,6 +63,7 @@ async def add(
     try:
         key_text = await _add_key_text_resolve(session, add_openpgp_key_form)
         selected_committee_keys = add_openpgp_key_form.selected_committees
+        log.keys_submitted("web:keys/add", key_text, committee_keys=selected_committee_keys)
 
         async with storage.write() as write:
             wafc = write.as_foundation_committer()
@@ -166,10 +163,41 @@ async def import_selected_revision(
     """
     URL: /keys/import/<project_key>/<version_key>
     """
-    await session.release(project_key, version_key, with_committee=False, with_project=False)
+    release = await session.release(project_key, version_key, with_committee=False, with_project=False)
     async with storage.write() as write:
         wacm = await write.as_project_committee_member(project_key)
-        outcomes, publications = await wacm.keys.import_keys_file(project_key, version_key)
+        async with aiofiles.open(paths.release_directory(release) / "KEYS", "rb") as f:
+            keys_content = await f.read(shared.keys.MAX_KEYS_SIZE + 1)
+        if len(keys_content) > shared.keys.MAX_KEYS_SIZE:
+            await quart.flash(f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)", "error")
+            return await session.redirect(
+                get.compose.selected, project_key=str(project_key), version_key=str(version_key)
+            )
+        keys_text = keys_content.decode("utf-8")
+        if util.contains_private_key_text(keys_text):
+            del keys_content
+            del keys_text
+            gc.collect()
+            await quart.flash(util.PRIVATE_KEY_UPLOAD_WARNING, "error")
+            return await session.redirect(
+                get.compose.selected, project_key=str(project_key), version_key=str(version_key)
+            )
+        log.keys_submitted(
+            "web:keys/import",
+            keys_text,
+            committee_keys=[wacm.committee_key],
+            project_key=str(project_key),
+            version_key=str(version_key),
+        )
+        try:
+            outcomes, publications = await wacm.keys.import_keys_file(
+                project_key, version_key, keys_text, release.safe_latest_revision_number
+            )
+        except datatypes.RevisionMismatchError:
+            await quart.flash("The draft changed during the import, so its KEYS file was left in place", "error")
+            return await session.redirect(
+                get.compose.selected, project_key=str(project_key), version_key=str(version_key)
+            )
 
     message = f"Uploaded {util.plural(outcomes.result_count, 'key')}"
     if outcomes.error_count > 0:
@@ -268,6 +296,10 @@ async def upload(
 async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.AddOpenPGPKeyForm) -> str:
     if (file := add_form.public_key_file) is None:
         key_text = add_form.public_key
+        if (len(key_text) > shared.keys.MAX_PUBLIC_KEY_SIZE) or (
+            len(key_text.encode()) > shared.keys.MAX_PUBLIC_KEY_SIZE
+        ):
+            raise web.FlashError(f"Public key too large (limit {shared.keys.MAX_PUBLIC_KEY_SIZE} bytes)")
         if util.contains_private_key_text(key_text):
             vars(add_form)["public_key"] = ""
             session.form_data_discard(["public_key", "public_key_file"])
@@ -276,8 +308,8 @@ async def _add_key_text_resolve(session: web.Committer, add_form: shared.keys.Ad
             raise PrivateKeyUploadError
         return key_text
     data = await asyncio.to_thread(file.read)
-    if len(data) > _MAX_PUBLIC_KEY_SIZE:
-        raise web.FlashError(f"Uploaded key file too large (limit {_MAX_PUBLIC_KEY_SIZE} bytes)")
+    if len(data) > shared.keys.MAX_PUBLIC_KEY_SIZE:
+        raise web.FlashError(f"Uploaded key file too large (limit {shared.keys.MAX_PUBLIC_KEY_SIZE} bytes)")
     try:
         key_text = data.decode("utf-8")
     except UnicodeDecodeError as e:
@@ -343,18 +375,18 @@ async def _fetch_keys_from_url(keys_url: str) -> str:
             async with session.get(keys_url, allow_redirects=True) as response:
                 response.raise_for_status()
                 content_length = response.content_length
-                if (content_length is not None) and (content_length > _MAX_KEYS_SIZE):
+                if (content_length is not None) and (content_length > shared.keys.MAX_KEYS_SIZE):
                     raise base.ASFQuartException(
-                        f"KEYS file too large ({content_length} bytes, limit {_MAX_KEYS_SIZE})",
+                        f"KEYS file too large ({content_length} bytes, limit {shared.keys.MAX_KEYS_SIZE})",
                         errorcode=502,
                     )
                 chunks: list[bytes] = []
                 size = 0
                 async for chunk in response.content.iter_chunked(65536):
                     size += len(chunk)
-                    if size > _MAX_KEYS_SIZE:
+                    if size > shared.keys.MAX_KEYS_SIZE:
                         raise base.ASFQuartException(
-                            f"KEYS file too large (limit {_MAX_KEYS_SIZE} bytes)",
+                            f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)",
                             errorcode=502,
                         )
                     chunks.append(chunk)
@@ -474,6 +506,9 @@ async def _upload_file_keys(session: web.Committer, upload_file_form: shared.key
             return await shared.keys.render_upload_page(error=True)
 
         keys_content = await asyncio.to_thread(uploaded_file.read)
+        if len(keys_content) > shared.keys.MAX_KEYS_SIZE:
+            await quart.flash(f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)", "error")
+            return await shared.keys.render_upload_page(error=True)
         keys_text = keys_content.decode("utf-8", errors="replace")
         if util.contains_private_key_text(keys_text):
             vars(upload_file_form)["key"] = None
@@ -492,6 +527,7 @@ async def _upload_file_keys(session: web.Committer, upload_file_form: shared.key
             return await shared.keys.render_upload_page(error=True)
 
         selected_committee = upload_file_form.selected_committee
+        log.keys_submitted("web:keys/upload", keys_text, committee_keys=[selected_committee])
         return await _process_keys(keys_text, selected_committee)
     except Exception as e:
         log.exception("Error uploading KEYS file:")
@@ -520,6 +556,7 @@ async def _upload_remote_keys(upload_remote_form: shared.keys.UploadRemoteForm) 
             await quart.flash("No KEYS data found at ASF downloads", "error")
             return await shared.keys.render_upload_page(error=True)
 
+        log.keys_submitted("web:keys/upload:remote", keys_text, committee_keys=[selected_committee], url=keys_url)
         return await _process_keys(keys_text, selected_committee)
     except Exception as e:
         log.exception("Error fetching KEYS file from ASF:")

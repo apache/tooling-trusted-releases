@@ -170,6 +170,7 @@ class AppConfig:
     SQLITE_DB_PATH = _ENVIRONMENT_CONFIG("SQLITE_DB_PATH", default="database/atr.db")
     STORAGE_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "storage-audit.log")
     AUTH_AUDIT_LOG_FILE = os.path.join(STATE_DIR, "audit", "auth-audit.log")
+    KEYS_SUBMITTED_LOG_FILE = os.path.join(STATE_DIR, "audit", "keys-submitted.log")
     PERFORMANCE_LOG_FILE = os.path.join(STATE_DIR, "logs", "route-performance.log")
     REQUEST_LOG_FILE = os.path.join(STATE_DIR, "logs", "requests.log")
     TASK_LOG_FILE = os.path.join(STATE_DIR, "logs", "tasks.log")
@@ -338,6 +339,7 @@ def validate() -> None:
         (conf.CATALOG_SITE_DIR, "CATALOG_SITE_DIR"),
         (conf.STORAGE_AUDIT_LOG_FILE, "STORAGE_AUDIT_LOG_FILE"),
         (conf.AUTH_AUDIT_LOG_FILE, "AUTH_AUDIT_LOG_FILE"),
+        (conf.KEYS_SUBMITTED_LOG_FILE, "KEYS_SUBMITTED_LOG_FILE"),
         (conf.PERFORMANCE_LOG_FILE, "PERFORMANCE_LOG_FILE"),
         (conf.REQUEST_LOG_FILE, "REQUEST_LOG_FILE"),
         (conf.TASK_LOG_FILE, "TASK_LOG_FILE"),

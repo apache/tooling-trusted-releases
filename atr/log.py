@@ -17,6 +17,7 @@
 
 import collections
 import datetime
+import hashlib
 import inspect
 import json
 import logging
@@ -199,6 +200,24 @@ def info(msg: str, **kwargs) -> None:
 
 def interface_name(depth: int = 1) -> str:
     return caller_name(depth=depth)
+
+
+def keys_submitted(source: str, text: str, asfuid: str | None = None, **kwargs) -> None:
+    user_id = asfuid or get_context("user_id") or get_context("asfuid")
+    admin_user_id = get_context("admin_id")
+    record: dict[str, Any] = {"datetime": audit_datetime(), "source": source}
+    if (request_id := get_request_id()) is not None:
+        record["request_id"] = request_id
+    if isinstance(source_ip := get_context("source_ip"), str):
+        record["source_ip"] = source_ip
+    if user_id:
+        record["request_user_id"] = user_id
+    if admin_user_id:
+        record["admin_user_id"] = admin_user_id
+    record.update(kwargs)
+    record["sha3_256"] = hashlib.sha3_256(text.encode()).hexdigest()
+    record["text"] = text
+    logging.getLogger("atr.keys.submitted").info(json.dumps(record, allow_nan=False))
 
 
 def listeners_stop() -> None:

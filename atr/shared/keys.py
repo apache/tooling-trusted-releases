@@ -18,7 +18,7 @@
 """keys.py"""
 
 import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 import markupsafe
 import pydantic
@@ -31,6 +31,10 @@ import atr.storage as storage
 import atr.storage.datatypes as datatypes
 import atr.template as template
 import atr.util as util
+
+# The Apache Subversion KEYS file is largest at 3732091 bytes
+MAX_KEYS_SIZE: Final[int] = 10 * 1024 * 1024
+MAX_PUBLIC_KEY_SIZE: Final[int] = 1024 * 1024
 
 type DELETE_OPENPGP_KEY = Literal["delete_openpgp_key"]
 type DELETE_SSH_KEY = Literal["delete_ssh_key"]

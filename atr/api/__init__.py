@@ -716,12 +716,15 @@ async def key_add(
     Once associated with the specified committees, the key will appear in the
     automatically generated KEYS file for each committee.
     """
+    if (len(data.key) > shared.keys.MAX_PUBLIC_KEY_SIZE) or (len(data.key.encode()) > shared.keys.MAX_PUBLIC_KEY_SIZE):
+        raise exceptions.RequestEntityTooLarge(f"Key too large (limit {shared.keys.MAX_PUBLIC_KEY_SIZE} bytes)")
     if util.contains_private_key_text(data.key):
         vars(data)["key"] = ""
         gc.collect()
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     asf_uid = _jwt_asf_uid()
     selected_committee_keys = data.committees
+    log.keys_submitted("api:key/add", data.key, asfuid=asf_uid, committee_keys=list(selected_committee_keys))
 
     async with storage.write(asf_uid) as write:
         wafc = write.as_foundation_committer()
@@ -823,6 +826,8 @@ async def keys_upload(
     Upload a public OpenPGP KEYS file.
     """
     filetext = data.filetext
+    if (len(filetext) > shared.keys.MAX_KEYS_SIZE) or (len(filetext.encode()) > shared.keys.MAX_KEYS_SIZE):
+        raise exceptions.RequestEntityTooLarge(f"KEYS file too large (limit {shared.keys.MAX_KEYS_SIZE} bytes)")
     if util.contains_private_key_text(filetext):
         vars(data)["filetext"] = ""
         del filetext
@@ -830,6 +835,7 @@ async def keys_upload(
         raise exceptions.BadRequest(util.PRIVATE_KEY_UPLOAD_WARNING)
     asf_uid = _jwt_asf_uid()
     selected_committee_key = safe.CommitteeKey(data.committee)
+    log.keys_submitted("api:keys/upload", filetext, asfuid=asf_uid, committee_keys=[str(selected_committee_key)])
     async with storage.write(asf_uid) as write:
         wacm = write.as_committee_member(str(selected_committee_key))
         outcomes, publications = await wacm.keys.ensure_associated(filetext)

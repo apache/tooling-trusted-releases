@@ -475,6 +475,13 @@ def _app_setup_logging(app: base.QuartApp, config_mode: config.Mode, app_config:
     )
     app.extensions["auth_audit_listener"] = auth_audit_listener
 
+    keys_submitted_listener = loggers.setup_dedicated_file_logger(
+        "atr.keys.submitted",
+        app_config.KEYS_SUBMITTED_LOG_FILE,
+        shared_processors,
+    )
+    app.extensions["keys_submitted_listener"] = keys_submitted_listener
+
     # Request logs
     request_listener = loggers.setup_dedicated_file_logger(
         "atr.request",
@@ -649,6 +656,8 @@ async def _app_shutdown_log_listeners(app):
         storage_audit_listener.stop()
     if auth_audit_listener := app.extensions.get("auth_audit_listener"):
         auth_audit_listener.stop()
+    if keys_submitted_listener := app.extensions.get("keys_submitted_listener"):
+        keys_submitted_listener.stop()
     if request_listener := app.extensions.get("request_listener"):
         request_listener.stop()
     if listener := app.extensions.get("logging_listener"):
