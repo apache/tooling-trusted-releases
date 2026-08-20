@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import datetime
 from types import SimpleNamespace
 
 import openpgp
@@ -113,6 +114,22 @@ def test_latest_self_signature_survives_a_revoked_primary_uid() -> None:
 
     assert latest is not None
     assert latest.typ() == "cert-positive"
+
+
+def test_reference_time_excludes_future_signatures() -> None:
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+    before = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
+    at_certification = datetime.datetime(2026, 7, 17, 14, 49, 58, tzinfo=datetime.UTC)
+
+    assert pgp.latest_self_signature_created_at(key, at=before) is None
+    assert pgp.key_expires_at(key, at=before) is None
+    assert [facts.can_sign for facts in pgp.signing_key_facts(key, at=before)] == [False, False]
+    revoked = [component.revoked for component in pgp.certificate_components(key, at=at_certification)]
+    assert revoked == [False, False, False, False]
+    assert pgp.latest_self_signature_created_at(key, at=at_certification) == at_certification
+    assert pgp.latest_self_signature_created_at(key) is not None
+    expires = pgp.key_expires_at(key)
+    assert (expires is not None) and (expires.year == pgp_fixtures.REVOKED_UID_PRIMARY_EXPIRES_YEAR)
 
 
 def test_signing_key_status_expiry_follows_the_issuing_subkey() -> None:
