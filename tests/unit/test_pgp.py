@@ -77,6 +77,18 @@ def test_certificate_components_lists_each_part_with_its_signatures() -> None:
     assert components[3].facts.fingerprint == pgp_fixtures.REVOKED_UID_SIGNING_FINGERPRINT
 
 
+def test_certificate_components_revives_a_recertified_uid() -> None:
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.RECERTIFIED_UID_PUBLIC_KEY_ASC)
+    while_revoked = datetime.datetime(2021, 6, 1, tzinfo=datetime.UTC)
+    after_recertification = datetime.datetime(2023, 1, 1, tzinfo=datetime.UTC)
+
+    revoked_then = [c.revoked for c in pgp.certificate_components(key, at=while_revoked) if c.kind == "user-id"]
+    revoked_now = [c.revoked for c in pgp.certificate_components(key, at=after_recertification) if c.kind == "user-id"]
+
+    assert revoked_then == [False, True]
+    assert revoked_now == [False, False]
+
+
 def test_certificate_for_fingerprint_selects_the_named_certificate() -> None:
     block = pgp_fixtures.two_certificate_block(
         pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
@@ -116,6 +128,48 @@ def test_latest_self_signature_survives_a_revoked_primary_uid() -> None:
     assert latest.typ() == "cert-positive"
 
 
+def test_merge_certificate_blocks_drops_local_certifications() -> None:
+    merged = pgp.merge_certificate_blocks([pgp_fixtures.LOCAL_CERTIFICATION_PUBLIC_KEY_ASC])
+
+    signatures = [pgp._parsed_signature(body) for tag, body in pgp._frames(pgp._dearmored(merged)) if tag == 2]
+
+    assert [signature.typ() for signature in signatures if signature is not None] == ["cert-positive"]
+
+
+def test_merge_certificate_blocks_keeps_unknown_packets() -> None:
+    block = pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC
+    frames = pgp._frames(pgp._dearmored(block))
+    spliced = [*frames[:2], (60, b"experimental"), *frames[2:]]
+    variant = pgp._armored(b"".join(pgp._framed(tag, body) for tag, body in spliced))
+
+    merged = pgp.merge_certificate_blocks([variant, block])
+
+    assert (60, b"experimental") in pgp._frames(pgp._dearmored(merged))
+    assert pgp.merge_certificate_blocks([merged]) == merged
+
+
+def test_merge_certificate_blocks_refuses_different_primaries() -> None:
+    blocks = [pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC, pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC]
+
+    with pytest.raises(ValueError, match="different primary keys"):
+        pgp.merge_certificate_blocks(blocks)
+
+
+def test_merge_certificate_blocks_unions_and_commutes() -> None:
+    block = pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC
+    canonical = pgp.merge_certificate_blocks([block])
+    frames = pgp._frames(pgp._dearmored(block))
+    without_revocation = pgp._armored(b"".join(pgp._framed(tag, body) for tag, body in frames[:4] + frames[5:]))
+    without_subkey = pgp._armored(b"".join(pgp._framed(tag, body) for tag, body in frames[:6]))
+
+    forward = pgp.merge_certificate_blocks([without_revocation, without_subkey])
+    reverse = pgp.merge_certificate_blocks([without_subkey, without_revocation])
+    folded = pgp.merge_certificate_blocks([forward, block])
+
+    assert pgp.merge_certificate_blocks([canonical]) == canonical
+    assert (forward == reverse) and (folded == canonical)
+
+
 def test_reference_time_excludes_future_signatures() -> None:
     key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
     before = datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)
@@ -130,6 +184,14 @@ def test_reference_time_excludes_future_signatures() -> None:
     assert pgp.latest_self_signature_created_at(key) is not None
     expires = pgp.key_expires_at(key)
     assert (expires is not None) and (expires.year == pgp_fixtures.REVOKED_UID_PRIMARY_EXPIRES_YEAR)
+
+
+def test_signing_key_facts_conservative_when_every_uid_is_revoked() -> None:
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.ALL_UIDS_REVOKED_PUBLIC_KEY_ASC)
+
+    facts = pgp.signing_key_facts(key, at=datetime.datetime(2023, 1, 1, tzinfo=datetime.UTC))
+
+    assert (facts[0].can_sign, facts[0].expires) == (False, None)
 
 
 def test_signing_key_status_expiry_follows_the_issuing_subkey() -> None:

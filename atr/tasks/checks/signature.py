@@ -41,7 +41,7 @@ INPUT_EXTRA_ARGS: Final[list[str]] = [
     "unsuffixed_file_hash",
     "unsuffixed_file_uploaders",
 ]
-CHECK_VERSION: Final[str] = "11"
+CHECK_VERSION: Final[str] = "12"
 
 
 async def check(args: checks.FunctionArguments) -> results.Results | None:

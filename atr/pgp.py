@@ -15,8 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import base64
 import dataclasses
 import datetime
+import itertools
 from typing import Final, Literal
 
 import openpgp
@@ -30,6 +32,15 @@ _CERTIFICATION_SIGNATURE_TYPES: Final[frozenset[str]] = frozenset(
 _KEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "key-revocation"
 _SUBKEY_BINDING_SIGNATURE_TYPE: Final[str] = "subkey-binding"
 _SUBKEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "subkey-revocation"
+
+_ARMOR_BEGIN: Final[str] = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
+_ARMOR_END: Final[str] = "-----END PGP PUBLIC KEY BLOCK-----"
+_PRIMARY_KEY_TAG: Final[int] = 6
+_PUBLIC_SUBKEY_TAG: Final[int] = 14
+_SIGNATURE_TAG: Final[int] = 2
+_SKIPPABLE_PACKET_TAGS: Final[frozenset[int]] = frozenset({10, 12, 21})
+_USER_ATTRIBUTE_TAG: Final[int] = 17
+_USER_ID_TAG: Final[int] = 13
 
 ComponentKind = Literal["primary", "user-id", "user-attribute", "subkey"]
 
@@ -74,6 +85,16 @@ class SigningKeyStatus:
     revoked: bool
 
 
+def certificate_block_fingerprint(block: str) -> str:
+    frames = _frames(_dearmored(block))
+    if (not frames) or (frames[0][0] != _PRIMARY_KEY_TAG):
+        raise ValueError("The block does not begin with a primary key packet")
+    value = openpgp.packet.Packet.from_bytes(_framed(*frames[0])).value
+    if not isinstance(value, openpgp.packet.PublicKey):
+        raise ValueError("The primary packet is not a public key")
+    return value.fingerprint.lower()
+
+
 def certificate_block_shape(keys: list[openpgp.composed.SignedPublicKey], fingerprint: str) -> str:
     fingerprints = [key.fingerprint.lower() for key in keys]
     matches = fingerprints.count(fingerprint.lower())
@@ -86,6 +107,14 @@ def certificate_block_shape(keys: list[openpgp.composed.SignedPublicKey], finger
     if len(keys) == 1:
         return "single"
     return "multi-own-first" if (fingerprints[0] == fingerprint.lower()) else "multi-own-not-first"
+
+
+def certificate_blocks(text: str) -> list[str]:
+    frames = _frames(_dearmored(text))
+    starts = [index for index, frame in enumerate(frames) if frame[0] == _PRIMARY_KEY_TAG]
+    bounds = [*starts, len(frames)]
+    segments = [frames[begin:end] for begin, end in itertools.pairwise(bounds)]
+    return [_armored(b"".join(_framed(tag, body) for tag, body in segment)) for segment in segments]
 
 
 def certificate_components(
@@ -158,6 +187,35 @@ def latest_self_signature_created_at(
     return datetime.datetime.fromtimestamp(created, tz=datetime.UTC)
 
 
+def merge_certificate_blocks(blocks: list[str]) -> str:
+    if not blocks:
+        raise ValueError("No certificate blocks to merge")
+    grouped = [_certificate_groups(_frames(_dearmored(block))) for block in blocks]
+    primary_bodies = {groups[0][0][1] for groups in grouped}
+    if len(primary_bodies) > 1:
+        raise ValueError("The blocks hold different primary keys")
+    primary = openpgp.packet.Packet.from_bytes(_framed(*grouped[0][0][0])).value
+    if not isinstance(primary, openpgp.packet.PublicKey):
+        raise ValueError("The primary packet is not a public key")
+    sections: dict[tuple[int, bytes], dict[tuple[int, bytes], None]] = {}
+    for groups in grouped:
+        for head, attached in groups:
+            merged = sections.setdefault(head, {})
+            for frame in attached:
+                merged.setdefault(frame)
+    fingerprint = primary.fingerprint.lower()
+    key_id = primary.key_id.lower()
+    heads = list(sections)
+    parts = [_emitted_section(heads[0], list(sections[heads[0]]), fingerprint, key_id)]
+    for tag in (_USER_ID_TAG, _USER_ATTRIBUTE_TAG, _PUBLIC_SUBKEY_TAG):
+        section_heads = [head for head in heads[1:] if head[0] == tag]
+        section_heads.sort(key=lambda head: _section_order(head, list(sections[head]), fingerprint, key_id))
+        parts.extend(_emitted_section(head, list(sections[head]), fingerprint, key_id) for head in section_heads)
+    data = b"".join(parts)
+    openpgp.composed.SignedPublicKey.from_bytes(data)
+    return _armored(data)
+
+
 def public_params_bits(public_params: openpgp.types.PublicParams) -> int | None:
     for bits in (public_params.rsa_bits, public_params.dsa_bits, public_params.curve_bits):
         if isinstance(bits, int):
@@ -205,7 +263,7 @@ def signing_key_facts(
             created=datetime.datetime.fromtimestamp(key.created_at, tz=datetime.UTC),
             expires=primary_expires,
             revoked=primary_revoked,
-            can_sign=_declares_signing(_effective_self_signature(key, timestamp)),
+            can_sign=primary.algorithm.can_sign() and _declares_signing(_effective_self_signature(key, timestamp)),
         )
     ]
 
@@ -227,7 +285,7 @@ def signing_key_facts(
                 created=datetime.datetime.fromtimestamp(subkey.key.created_at, tz=datetime.UTC),
                 expires=min(expirations) if expirations else None,
                 revoked=primary_revoked or _subkey_is_revoked(primary, subkey),
-                can_sign=_declares_signing(binding_signature),
+                can_sign=subkey.key.algorithm.can_sign() and _declares_signing(binding_signature),
             )
         )
     return facts
@@ -258,7 +316,7 @@ def signing_key_status(
             identified=True,
             fingerprint=subkey.key.fingerprint.lower(),
             expires=min(expirations) if expirations else None,
-            can_sign=_declares_signing(binding_signature),
+            can_sign=subkey.key.algorithm.can_sign() and _declares_signing(binding_signature),
             # Revoking the primary revokes everything beneath it, so a live subkey binding isn't enough
             revoked=primary_revoked or _subkey_is_revoked(primary, subkey),
         )
@@ -268,13 +326,19 @@ def signing_key_status(
             identified=True,
             fingerprint=key.fingerprint.lower(),
             expires=key_expires_at(key, at=at),
-            can_sign=_declares_signing(_effective_self_signature(key, timestamp)),
+            can_sign=primary.algorithm.can_sign() and _declares_signing(_effective_self_signature(key, timestamp)),
             revoked=primary_revoked,
         )
 
     # Naming no key we hold is not the same as naming the primary, and a signature we can't attribute
     # is one we can't judge, so report it as such rather than borrowing the primary's answer
     return SigningKeyStatus(identified=False, fingerprint=None, expires=None, can_sign=False, revoked=False)
+
+
+def _armored(data: bytes) -> str:
+    encoded = base64.b64encode(data).decode("ascii")
+    lines = [encoded[index : index + 64] for index in range(0, len(encoded), 64)]
+    return "\n".join([_ARMOR_BEGIN, "", *lines, _ARMOR_END]) + "\n"
 
 
 def _attribute_label(attribute: openpgp.packet.UserAttribute) -> str:
@@ -294,8 +358,11 @@ def _binding_revoked(
             or (signature.typ() == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE)
         )
     ]
-    latest = _latest_signature(candidates, timestamp)
-    return (latest is not None) and (latest.typ() == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE)
+    active = [signature for signature in candidates if _signature_active(signature, timestamp)]
+    if not active:
+        return False
+    latest = max(active, key=_revocation_preferring_order)
+    return latest.typ() == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE
 
 
 def _binding_self_signatures(key: openpgp.composed.SignedPublicKey, timestamp: float) -> list[openpgp.packet.Signature]:
@@ -319,6 +386,60 @@ def _binding_self_signatures(key: openpgp.composed.SignedPublicKey, timestamp: f
             and (signature.typ() in _CERTIFICATION_SIGNATURE_TYPES)
         )
     return binding_sigs
+
+
+def _certificate_groups(
+    frames: list[tuple[int, bytes]],
+) -> list[tuple[tuple[int, bytes], list[tuple[int, bytes]]]]:
+    if (not frames) or (frames[0][0] != _PRIMARY_KEY_TAG):
+        raise ValueError("The block does not begin with a primary key packet")
+    groups = [(frames[0], [])]
+    for frame in frames[1:]:
+        if frame[0] == _PRIMARY_KEY_TAG:
+            raise ValueError("The block holds more than one certificate")
+        if frame[0] in (_USER_ID_TAG, _USER_ATTRIBUTE_TAG, _PUBLIC_SUBKEY_TAG):
+            groups.append((frame, []))
+        elif frame[0] not in _SKIPPABLE_PACKET_TAGS:
+            groups[-1][1].append(frame)
+    return groups
+
+
+def _crc24(data: bytes) -> int:
+    crc = 0xB704CE
+    for octet in data:
+        crc ^= octet << 16
+        for _ in range(8):
+            crc <<= 1
+            if crc & 0x1000000:
+                crc ^= 0x1864CFB
+    return crc & 0xFFFFFF
+
+
+def _dearmored(text: str) -> bytes:
+    lines = []
+    checksum = None
+    in_data = False
+    for line in text.splitlines()[1:]:
+        stripped = line.strip()
+        if not in_data:
+            if stripped == "":
+                in_data = True
+            elif ":" not in stripped:
+                in_data = True
+                lines.append(stripped)
+            continue
+        if stripped.startswith("-----END"):
+            break
+        if stripped.startswith("="):
+            checksum = stripped[1:5]
+            continue
+        lines.append(stripped)
+    data = base64.b64decode("".join(lines), validate=True)
+    if checksum is not None:
+        declared = int.from_bytes(base64.b64decode(checksum, validate=True))
+        if declared != _crc24(data):
+            raise ValueError("Armor checksum mismatch")
+    return data
 
 
 def _declares_signing(signature: openpgp.packet.Signature | None) -> bool:
@@ -353,6 +474,20 @@ def _direct_self_signatures(key: openpgp.composed.SignedPublicKey) -> list[openp
     ]
 
 
+def _earliest_self_certification(attached: list[tuple[int, bytes]], fingerprint: str, key_id: str) -> float:
+    created_values = []
+    for tag, body in attached:
+        if tag != _SIGNATURE_TAG:
+            continue
+        signature = _parsed_signature(body)
+        if (signature is None) or (signature.typ() not in _CERTIFICATION_SIGNATURE_TYPES):
+            continue
+        if not _signature_is_self(signature, fingerprint, key_id):
+            continue
+        created_values.append(signature.created() or 0)
+    return min(created_values) if created_values else float("inf")
+
+
 def _effective_self_signature(
     key: openpgp.composed.SignedPublicKey, timestamp: float
 ) -> openpgp.packet.Signature | None:
@@ -361,6 +496,73 @@ def _effective_self_signature(
         return direct
     binding = _latest_signature(_binding_self_signatures(key, timestamp), timestamp)
     return binding if (binding is not None) else direct
+
+
+def _emitted_section(
+    head: tuple[int, bytes], attached: list[tuple[int, bytes]], fingerprint: str, key_id: str
+) -> bytes:
+    signatures: list[tuple[bytes, openpgp.packet.Signature]] = []
+    opaques: list[tuple[int, bytes]] = []
+    for tag, body in attached:
+        signature = _parsed_signature(body) if (tag == _SIGNATURE_TAG) else None
+        if signature is None:
+            opaques.append((tag, body))
+            continue
+        if _local_certification(signature):
+            continue
+        signatures.append((body, signature))
+    if head[0] == _PRIMARY_KEY_TAG:
+        revocations = [pair for pair in signatures if pair[1].typ() == _KEY_REVOCATION_SIGNATURE_TYPE]
+        others = [pair for pair in signatures if pair[1].typ() != _KEY_REVOCATION_SIGNATURE_TYPE]
+        ordered = sorted(revocations, key=_signature_order) + sorted(others, key=_signature_order)
+    else:
+        ordered = sorted(signatures, key=_signature_order)
+    frames = [head, *[(_SIGNATURE_TAG, body) for body, _ in ordered], *sorted(opaques)]
+    return b"".join(_framed(tag, body) for tag, body in frames)
+
+
+def _framed(tag: int, body: bytes) -> bytes:
+    length = len(body)
+    if length < 192:
+        header = bytes((0xC0 | tag, length))
+    elif length < 8384:
+        header = bytes((0xC0 | tag, ((length - 192) >> 8) + 192, (length - 192) & 0xFF))
+    else:
+        header = bytes((0xC0 | tag, 0xFF)) + length.to_bytes(4)
+    return header + body
+
+
+def _frames(data: bytes) -> list[tuple[int, bytes]]:
+    frames = []
+    offset = 0
+    while offset < len(data):
+        ctb = data[offset]
+        if not ctb & 0x80:
+            raise ValueError(f"Invalid packet marker {ctb:#x} at offset {offset}")
+        if ctb & 0x40:
+            tag = ctb & 0x3F
+            first = _octets(data, offset + 1, 1)[0]
+            if first < 192:
+                length, header = first, 2
+            elif first < 224:
+                length, header = ((first - 192) << 8) + _octets(data, offset + 2, 1)[0] + 192, 3
+            elif first == 255:
+                length, header = int.from_bytes(_octets(data, offset + 2, 4)), 6
+            else:
+                raise ValueError(f"Partial packet length at offset {offset}")
+        else:
+            tag = (ctb >> 2) & 0x0F
+            kind = ctb & 0x03
+            if kind == 3:
+                raise ValueError(f"Indeterminate packet length at offset {offset}")
+            sizes = {0: 1, 1: 2, 2: 4}[kind]
+            length, header = int.from_bytes(_octets(data, offset + 1, sizes)), 1 + sizes
+        body = data[offset + header : offset + header + length]
+        if len(body) != length:
+            raise ValueError(f"Truncated packet at offset {offset}")
+        frames.append((tag, bytes(body)))
+        offset += header + length
+    return frames
 
 
 def _identity_component(
@@ -433,7 +635,29 @@ def _latest_signature(signatures: list[openpgp.packet.Signature], timestamp: flo
     valid = [signature for signature in signatures if _signature_active(signature, timestamp)]
     if not valid:
         return None
-    return max(valid, key=lambda signature: signature.created() or 0)
+    return max(valid, key=lambda signature: (signature.created() or 0, signature.to_bytes()))
+
+
+def _local_certification(signature: openpgp.packet.Signature) -> bool:
+    typ = signature.typ()
+    if (typ not in _CERTIFICATION_SIGNATURE_TYPES) and (typ != _CERTIFICATION_REVOCATION_SIGNATURE_TYPE):
+        return False
+    return signature.exportable_certification() is False
+
+
+def _octets(data: bytes, offset: int, count: int) -> bytes:
+    taken = data[offset : offset + count]
+    if len(taken) != count:
+        raise ValueError(f"Truncated packet header at offset {offset}")
+    return taken
+
+
+def _parsed_signature(body: bytes) -> openpgp.packet.Signature | None:
+    try:
+        value = openpgp.packet.Packet.from_bytes(_framed(_SIGNATURE_TAG, body)).value
+    except Exception:
+        return None
+    return value if isinstance(value, openpgp.packet.Signature) else None
 
 
 def _primary_is_revoked(key: openpgp.composed.SignedPublicKey) -> bool:
@@ -444,6 +668,11 @@ def _primary_is_revoked(key: openpgp.composed.SignedPublicKey) -> bool:
         if _revocation_verifies(signature, primary):
             return True
     return False
+
+
+def _revocation_preferring_order(signature: openpgp.packet.Signature) -> tuple[float, bool, bytes]:
+    is_revocation = signature.typ() == _CERTIFICATION_REVOCATION_SIGNATURE_TYPE
+    return (signature.created() or 0, is_revocation, signature.to_bytes())
 
 
 def _revocation_verifies(signature: openpgp.packet.Signature, primary: openpgp.packet.PublicKey) -> bool:
@@ -457,6 +686,21 @@ def _revocation_verifies(signature: openpgp.packet.Signature, primary: openpgp.p
     except openpgp.errors.Error:
         return False
     return True
+
+
+def _section_order(
+    head: tuple[int, bytes], attached: list[tuple[int, bytes]], fingerprint: str, key_id: str
+) -> tuple[float, bytes]:
+    tag, body = head
+    if tag != _PUBLIC_SUBKEY_TAG:
+        return (_earliest_self_certification(attached, fingerprint, key_id), body)
+    try:
+        value = openpgp.packet.Packet.from_bytes(_framed(tag, body)).value
+    except Exception:
+        return (float("inf"), body)
+    if not isinstance(value, openpgp.packet.PublicSubkey):
+        return (float("inf"), body)
+    return (value.created_at, body)
 
 
 def _signature_active(signature: openpgp.packet.Signature, timestamp: float) -> bool:
@@ -478,6 +722,11 @@ def _signature_is_self(signature: openpgp.packet.Signature, self_fingerprint: st
     fingerprints = {fingerprint.lower() for fingerprint in signature.issuer_fingerprint()}
     key_ids = {key_id.lower() for key_id in signature.issuer_key_id()}
     return (self_fingerprint in fingerprints) or (self_key_id in key_ids)
+
+
+def _signature_order(pair: tuple[bytes, openpgp.packet.Signature]) -> tuple[float, str, bytes]:
+    body, signature = pair
+    return (signature.created() or 0, signature.typ() or "", body)
 
 
 def _subkey_expires_at(
