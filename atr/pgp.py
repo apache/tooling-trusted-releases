@@ -17,7 +17,7 @@
 
 import dataclasses
 import datetime
-from typing import Final
+from typing import Final, Literal
 
 import openpgp
 
@@ -30,6 +30,19 @@ _CERTIFICATION_SIGNATURE_TYPES: Final[frozenset[str]] = frozenset(
 _KEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "key-revocation"
 _SUBKEY_BINDING_SIGNATURE_TYPE: Final[str] = "subkey-binding"
 _SUBKEY_REVOCATION_SIGNATURE_TYPE: Final[str] = "subkey-revocation"
+
+ComponentKind = Literal["primary", "user-id", "user-attribute", "subkey"]
+
+
+@dataclasses.dataclass(frozen=True)
+class Component:
+    kind: ComponentKind
+    label: str
+    flags: str | None
+    revoked: bool
+    self_signatures: int
+    other_signatures: int
+    facts: "SigningKeyFacts | None"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,6 +86,26 @@ def certificate_block_shape(keys: list[openpgp.composed.SignedPublicKey], finger
     if len(keys) == 1:
         return "single"
     return "multi-own-first" if (fingerprints[0] == fingerprint.lower()) else "multi-own-not-first"
+
+
+def certificate_components(key: openpgp.composed.SignedPublicKey) -> list[Component]:
+    fingerprint = key.fingerprint.lower()
+    key_id = key.key_id.lower()
+    facts = signing_key_facts(key)
+    primary_signatures = [*key.details.direct_signatures, *key.details.revocation_signatures]
+    components = [
+        _key_component("primary", facts[0], _effective_self_signature(key), primary_signatures, fingerprint, key_id)
+    ]
+    components.extend(
+        _identity_component("user-id", user.id, user.signatures, fingerprint, key_id) for user in key.details.users
+    )
+    for attribute in key.details.user_attributes:
+        label = _attribute_label(attribute.attr)
+        components.append(_identity_component("user-attribute", label, attribute.signatures, fingerprint, key_id))
+    for subkey_facts, subkey in zip(facts[1:], key.public_subkeys, strict=True):
+        binding = _latest_binding_signature(subkey)
+        components.append(_key_component("subkey", subkey_facts, binding, subkey.signatures, fingerprint, key_id))
+    return components
 
 
 def certificate_for_fingerprint(armored: str, fingerprint: str) -> openpgp.composed.SignedPublicKey | None:
@@ -216,10 +249,15 @@ def signing_key_status(
     return SigningKeyStatus(identified=False, fingerprint=None, expires=None, can_sign=False, revoked=False)
 
 
-def _binding_revoked(user: openpgp.types.SignedUser, fingerprint: str, key_id: str) -> bool:
+def _attribute_label(attribute: openpgp.packet.UserAttribute) -> str:
+    kind = " ".join(part for part in (attribute.kind, attribute.image_format) if part)
+    return f"{kind} ({len(attribute.data)} bytes)"
+
+
+def _binding_revoked(signatures: list[openpgp.packet.Signature], fingerprint: str, key_id: str) -> bool:
     candidates = [
         signature
-        for signature in user.signatures
+        for signature in signatures
         if _signature_is_self(signature, fingerprint, key_id)
         and (
             (signature.typ() in _CERTIFICATION_SIGNATURE_TYPES)
@@ -233,7 +271,9 @@ def _binding_revoked(user: openpgp.types.SignedUser, fingerprint: str, key_id: s
 def _binding_self_signatures(key: openpgp.composed.SignedPublicKey) -> list[openpgp.packet.Signature]:
     self_fingerprint = key.fingerprint.lower()
     self_key_id = key.key_id.lower()
-    active_users = [user for user in key.details.users if not _binding_revoked(user, self_fingerprint, self_key_id)]
+    active_users = [
+        user for user in key.details.users if not _binding_revoked(user.signatures, self_fingerprint, self_key_id)
+    ]
     primary_users = [user for user in active_users if user.is_primary]
     chosen_users = primary_users or active_users
     binding_sigs: list[openpgp.packet.Signature] = []
@@ -291,6 +331,17 @@ def _effective_self_signature(key: openpgp.composed.SignedPublicKey) -> openpgp.
     return _latest_signature(direct_sigs)
 
 
+def _identity_component(
+    kind: ComponentKind,
+    label: str,
+    signatures: list[openpgp.packet.Signature],
+    fingerprint: str,
+    key_id: str,
+) -> Component:
+    own, other = _signature_counts(signatures, fingerprint, key_id)
+    return Component(kind, label, None, _binding_revoked(signatures, fingerprint, key_id), own, other, None)
+
+
 def _issuer_is_primary(
     key: openpgp.composed.SignedPublicKey,
     issuer_fingerprints: set[str],
@@ -310,6 +361,31 @@ def _issuing_subkey(
         if subkey.key.key_id.lower() in issuer_key_ids:
             return subkey
     return None
+
+
+def _key_component(
+    kind: ComponentKind,
+    facts: SigningKeyFacts,
+    signature: openpgp.packet.Signature | None,
+    signatures: list[openpgp.packet.Signature],
+    fingerprint: str,
+    key_id: str,
+) -> Component:
+    own, other = _signature_counts(signatures, fingerprint, key_id)
+    return Component(kind, facts.fingerprint, _key_flags(signature), facts.revoked, own, other, facts)
+
+
+def _key_flags(signature: openpgp.packet.Signature | None) -> str | None:
+    if signature is None:
+        return None
+    flags = signature.key_flags()
+    letters = (
+        ("C", flags.certify),
+        ("S", flags.sign),
+        ("E", flags.encrypt_communications or flags.encrypt_storage),
+        ("A", flags.authenticate),
+    )
+    return "".join(letter for letter, declared in letters if declared)
 
 
 def _latest_binding_signature(subkey: openpgp.composed.SignedPublicSubKey) -> openpgp.packet.Signature | None:
@@ -347,6 +423,11 @@ def _revocation_verifies(signature: openpgp.packet.Signature, primary: openpgp.p
     except openpgp.errors.Error:
         return False
     return True
+
+
+def _signature_counts(signatures: list[openpgp.packet.Signature], fingerprint: str, key_id: str) -> tuple[int, int]:
+    own = sum(1 for signature in signatures if _signature_is_self(signature, fingerprint, key_id))
+    return own, len(signatures) - own
 
 
 def _signature_expired(signature: openpgp.packet.Signature, now: float) -> bool:

@@ -59,6 +59,23 @@ def test_certificate_block_shape_names_every_shape() -> None:
     assert pgp.certificate_block_shape([], own) == "empty"
 
 
+def test_certificate_components_lists_each_part_with_its_signatures() -> None:
+    key, _ = openpgp.composed.SignedPublicKey.from_armor(pgp_fixtures.REVOKED_UID_PUBLIC_KEY_ASC)
+
+    components = pgp.certificate_components(key)
+
+    assert [component.kind for component in components] == ["primary", "user-id", "user-id", "subkey"]
+    assert components[0].label == pgp_fixtures.REVOKED_UID_FINGERPRINT
+    assert (components[0].flags, components[3].flags) == ("C", "S")
+    assert [component.revoked for component in components] == [False, False, True, False]
+    assert [(component.self_signatures, component.other_signatures) for component in components[1:3]] == [
+        (1, 0),
+        (2, 0),
+    ]
+    assert (components[1].facts is None) and (components[3].facts is not None)
+    assert components[3].facts.fingerprint == pgp_fixtures.REVOKED_UID_SIGNING_FINGERPRINT
+
+
 def test_certificate_for_fingerprint_selects_the_named_certificate() -> None:
     block = pgp_fixtures.two_certificate_block(
         pgp_fixtures.EXPIRED_SUBKEY_PUBLIC_KEY_ASC, pgp_fixtures.REVOKED_SUBKEY_PUBLIC_KEY_ASC
